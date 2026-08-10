@@ -1,7 +1,6 @@
 """Demucs CLI separation implementation.
 
-Extracted from the audio-prepare-pipeline ``DemucsCleaner`` (ADR-0007):
-vocal separation through the ``demucs`` CLI, then ffmpeg normalization to the
+Vocal separation through the ``demucs`` CLI, then ffmpeg normalization to the
 target sample rate / channel count.
 """
 
@@ -11,10 +10,11 @@ import logging
 import shutil
 import subprocess
 import sys
-import wave
 from pathlib import Path
+from typing import Optional
 
-from demucs.BaseDemucs import BaseDemucs
+from src.separation.audio_utils import normalize_wav, probe_wav
+from src.separation.BaseSeparator import BaseSeparator
 from src.utils.AudioClass import Audio
 
 logger = logging.getLogger(__name__)
@@ -24,29 +24,49 @@ class DemucsError(RuntimeError):
     """Raised when Demucs separation cannot run or the output is unusable."""
 
 
-def probe_wav(path: Path) -> tuple[int, float, int]:
-    """Return ``(sample_rate, duration_s, channels)`` for a WAV file."""
-    with wave.open(str(path), "rb") as wf:
-        rate = wf.getframerate()
-        frames = wf.getnframes()
-        channels = wf.getnchannels()
-    duration = frames / float(rate) if rate else 0.0
-    return rate, duration, channels
-
-
-class HTDemucs(BaseDemucs):
+class HTDemucs(BaseSeparator):
     """Live Demucs backend: separates via the ``demucs`` CLI (vocals by default).
 
     Usage:
-        demucs = HTDemucs(output_dir="./data/demucsed")
-        separated = demucs.demucs(audio)  # returns a new Audio instance
+        separator = HTDemucs(output_dir="./data/separated")
+        cleaned = separator.separate(audio)
     """
 
+    def __init__(
+        self,
+        model: str = "htdemucs",
+        device: str = "cpu",
+        two_stems: str = "vocals",
+        output_dir: str | Path = ".data/demucsed",
+        work_dir: str | Path = "./temp_demucs",
+        sample_rate: int = 16000,
+        channels: int = 1,
+        demucs_bin: Optional[str] = None,
+        ffmpeg_bin: Optional[str] = None,
+    ) -> None:
+        super().__init__(
+            model=model,
+            device=device,
+            two_stems=two_stems,
+            output_dir=output_dir,
+            work_dir=work_dir,
+            sample_rate=sample_rate,
+            channels=channels,
+            ffmpeg_bin=ffmpeg_bin,
+        )
+        self.demucs_bin = demucs_bin
+
     def _demucs_prefix(self) -> list[str]:
-        """Binary prefix: configured binary or ``python -m demucs``."""
+        """Binary prefix: configured binary, PATH binary, or ``python -m demucs.separate``."""
         if self.demucs_bin:
             return [self.demucs_bin]
-        return [sys.executable, "-m", "demucs"]
+        bin_path = shutil.which("demucs")
+        if bin_path:
+            return [bin_path]
+        venv_bin = Path(sys.prefix) / "bin" / "demucs"
+        if venv_bin.is_file():
+            return [str(venv_bin)]
+        return [sys.executable, "-m", "demucs.separate"]
 
     def _separate_stem(self, audio_path: Path) -> Path:
         """Run Demucs and return the extracted stem WAV path."""
@@ -58,12 +78,12 @@ class HTDemucs(BaseDemucs):
             "--two-stems",
             self.two_stems,
             "-d",
-            self.device,
+            str(self.device),
             "-o",
             str(out_root),
             str(audio_path),
         ]
-        logger.info(f"Running demucs: {' '.join(cmd)}")
+        logger.info("Running demucs: %s", " ".join(cmd))
         completed = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if completed.returncode != 0:
             detail = (completed.stderr or completed.stdout or "").strip()
@@ -81,41 +101,8 @@ class HTDemucs(BaseDemucs):
             separated = matches[0]
         return separated
 
-    def _normalize(self, src: Path, dest: Path) -> None:
-        """Convert to the target sample rate / channels with ffmpeg."""
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        if src.suffix.lower() == ".wav":
-            try:
-                rate, _, ch = probe_wav(src)
-                if rate == self.sample_rate and ch == self.channels:
-                    if src.resolve() != dest.resolve():
-                        shutil.copy2(src, dest)
-                    return
-            except wave.Error:
-                pass
-
-        cmd = [
-            self.ffmpeg_bin,
-            "-y",
-            "-i",
-            str(src),
-            "-ar",
-            str(self.sample_rate),
-            "-ac",
-            str(self.channels),
-            "-c:a",
-            "pcm_s16le",
-            str(dest),
-        ]
-        completed = subprocess.run(cmd, capture_output=True, text=True, check=False)
-        if completed.returncode != 0:
-            detail = (completed.stderr or completed.stdout or "").strip()
-            raise DemucsError(
-                f"ffmpeg convert failed (exit {completed.returncode}): {detail[:2000] or 'no output'}"
-            )
-
-    def demucs(self, audio: Audio) -> Audio:
-        """Separate ``audio`` and return a demucsed ``Audio`` object."""
+    def separate(self, audio: Audio) -> Audio:
+        """Separate ``audio`` and return a cleaned ``Audio`` object."""
         src_path = Path(audio.path)
         if not src_path.is_file():
             raise DemucsError(f"audio not found: {src_path}")
@@ -129,7 +116,13 @@ class HTDemucs(BaseDemucs):
             ) from exc
 
         dest = self.output_dir / f"{src_path.stem}.wav"
-        self._normalize(separated, dest)
+        normalize_wav(
+            separated,
+            dest,
+            sample_rate=self.sample_rate,
+            channels=self.channels,
+            ffmpeg_bin=self.ffmpeg_bin,
+        )
 
         sample_rate, duration_s, channels = probe_wav(dest)
         return Audio(

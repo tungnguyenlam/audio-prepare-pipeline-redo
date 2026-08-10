@@ -8,6 +8,8 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
+    "bs-roformer-infer",
+    "demucs>=4.0.1",
     "ipykernel>=7.3.0",
     "ipywidgets>=8.1.8",
     "librosa>=0.11.0",
@@ -25,3 +27,6 @@ audio-prepare-pipeline-redo = "audio_prepare_pipeline_redo:main"
 [build-system]
 requires = ["uv_build>=0.12.2,<0.13.0"]
 build-backend = "uv_build"
+
+[tool.uv.sources]
+bs-roformer-infer = { git = "https://github.com/openmirlab/bs-roformer-infer.git" }
