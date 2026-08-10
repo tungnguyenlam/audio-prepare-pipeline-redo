@@ -14,6 +14,7 @@ from typing import Optional
 
 from bs_roformer import BSRoformerSession
 
+from src.base.model import ManagedModel
 from src.separation.audio_utils import normalize_wav, probe_wav
 from src.separation.BaseSeparator import BaseSeparator
 from src.utils.AudioClass import Audio
@@ -25,13 +26,14 @@ class BSRoFormerError(RuntimeError):
     """Raised when BS-RoFormer separation cannot run or the output is unusable."""
 
 
-class BSRoFormer(BaseSeparator):
+class BSRoFormer(BaseSeparator, ManagedModel):
     """BS-RoFormer backend for vocal/music separation.
 
     Usage:
         separator = BSRoFormer(device="mps")
+        separator.load()
         cleaned = separator.separate(audio)
-        separator.close()
+        separator.unload()
     """
 
     def __init__(
@@ -56,21 +58,27 @@ class BSRoFormer(BaseSeparator):
             channels=channels,
             ffmpeg_bin=ffmpeg_bin,
         )
+        ManagedModel.__init__(self)
         self.backend = backend
         self._session: BSRoformerSession | None = None
 
-    def _get_session(self) -> BSRoformerSession:
-        """Lazy-load the model once and reuse it across calls."""
-        if self._session is None:
-            # ``auto`` means CUDA-else-CPU; on Apple Silicon pass device="mps".
-            session_device = None if self.device in ("auto", "None") else self.device
-            self._session = BSRoformerSession(
-                model_name=self.model,
-                device=session_device,
-                backend=self.backend,
-            )
-            self._session.load()
-        return self._session
+    def _load(self) -> None:
+        """Create and load the BS-RoFormer session."""
+        # ``auto`` means CUDA-else-CPU; on Apple Silicon pass device="mps".
+        session_device = None if self.device in ("auto", "None") else self.device
+        session = BSRoformerSession(
+            model_name=self.model,
+            device=session_device,
+            backend=self.backend,
+        )
+        session.load()
+        self._session = session
+
+    def _unload(self) -> None:
+        """Close the BS-RoFormer session and clear its reference."""
+        if self._session is not None:
+            self._session.close()
+            self._session = None
 
     def _prepare_input(self, src: Path) -> tuple[Path, Path]:
         """Convert source to a working stereo WAV without corpus downsampling.
@@ -111,7 +119,11 @@ class BSRoFormer(BaseSeparator):
             shutil.rmtree(output_dir)
         output_dir.mkdir(parents=True)
 
-        session = self._get_session()
+        session = self._session
+        if session is None:  # pragma: no cover - guarded by separate()
+            raise BSRoFormerError(
+                "BS-RoFormer is not loaded. Call load() before separate(), or use it as a context manager."
+            )
         logger.info(
             "Running BS-RoFormer model=%s device=%s stem=%s",
             self.model,
@@ -131,6 +143,11 @@ class BSRoFormer(BaseSeparator):
 
     def separate(self, audio: Audio) -> Audio:
         """Separate ``audio`` and return a cleaned ``Audio`` object."""
+        if not self.is_loaded:
+            raise BSRoFormerError(
+                "BS-RoFormer is not loaded. Call load() before separate(), or use it as a context manager."
+            )
+
         src_path = Path(audio.path)
         if not src_path.is_file():
             raise BSRoFormerError(f"audio not found: {src_path}")
@@ -159,6 +176,5 @@ class BSRoFormer(BaseSeparator):
         )
 
     def close(self) -> None:
-        if self._session is not None:
-            self._session.close()
-            self._session = None
+        """Compatibility alias for :meth:`unload`."""
+        self.unload()
