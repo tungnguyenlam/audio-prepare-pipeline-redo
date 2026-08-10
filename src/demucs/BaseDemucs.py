@@ -11,7 +11,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
-from utils.AudioClass import Audio
+from src.utils.AudioClass import Audio
 
 
 class BaseDemucs(abc.ABC):
@@ -26,7 +26,7 @@ class BaseDemucs(abc.ABC):
         model: str = "htdemucs",
         device: str = "cpu",
         two_stems: str = "vocals",
-        output_dir: str | Path = "./demucsed",
+        output_dir: str | Path = ".data/demucsed",
         work_dir: str | Path = "./temp_demucs",
         sample_rate: int = 16000,
         channels: int = 1,

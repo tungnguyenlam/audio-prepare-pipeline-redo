@@ -1,0 +1,24 @@
+[project]
+name = "audio-prepare-pipeline-redo"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "tungnl5", email = "nguyenlamtung2005@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "librosa>=0.11.0",
+    "matplotlib>=3.11.1",
+    "numpy>=2.4.6",
+    "torch>=2.13.0",
+    "torchaudio>=2.11.0",
+    "yt-dlp>=2026.7.4",
+]
+
+[project.scripts]
+audio-prepare-pipeline-redo = "audio_prepare_pipeline_redo:main"
+
+[build-system]
+requires = ["uv_build>=0.12.2,<0.13.0"]
+build-backend = "uv_build"

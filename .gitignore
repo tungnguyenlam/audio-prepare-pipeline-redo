@@ -157,6 +157,17 @@ ENV/
 env.bak/
 venv.bak/
 
+# Local data artifacts
+/data/
+/demucsed/
+src/notebooks/temp_work/
+*.wav
+*.mp3
+*.flac
+*.m4a
+*.ogg
+*.opus
+
 # Spyder project settings
 .spyderproject
 .spyproject

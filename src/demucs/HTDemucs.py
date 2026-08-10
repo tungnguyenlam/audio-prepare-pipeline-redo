@@ -15,7 +15,7 @@ import wave
 from pathlib import Path
 
 from demucs.BaseDemucs import BaseDemucs
-from utils.AudioClass import Audio
+from src.utils.AudioClass import Audio
 
 logger = logging.getLogger(__name__)
 

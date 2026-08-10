@@ -14,7 +14,7 @@ import wave
 from pathlib import Path
 from typing import Optional
 
-from audio import Audio
+from src.utils.AudioClass import Audio
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ def probe_wav(path: Path) -> tuple[int, float, int]:
     return rate, duration, channels
 
 
-class YoutubeCrawler:
+class YtCrawler:
     """Crawls YouTube audio using yt-dlp and normalizes audio output using ffmpeg."""
 
     def __init__(

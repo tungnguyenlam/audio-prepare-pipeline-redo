@@ -88,6 +88,51 @@ class Audio:
             format=fmt,
         )
 
+    def show_mel_spectrogram(
+        self,
+        *,
+        n_mels: int = 128,
+        hop_length: int = 512,
+        fmax: Optional[float] = None,
+        title: Optional[str] = None,
+        show: bool = True,
+    ) -> None:
+        """Print (display) the mel-spectrogram of the audio file.
+
+        ``librosa`` is imported lazily so the dependency is only required when
+        this method is actually called.
+
+        Args:
+            n_mels: Number of mel bands.
+            hop_length: Number of samples between successive frames.
+            fmax: Highest frequency (in Hz) for the mel bands; defaults to
+                ``sr / 2``.
+            title: Optional title for the plot; defaults to the source title.
+            show: Whether to call ``pyplot.show()`` to render the figure.
+        """
+        import librosa
+        import librosa.display
+        import matplotlib.pyplot as plt
+
+        if not Path(self.path).exists():
+            raise FileNotFoundError(f"Audio file does not exist: {self.path}")
+
+        y, sr = librosa.load(str(self.path), sr=self.sample_rate, mono=True)
+        mel = librosa.feature.melspectrogram(
+            y=y, sr=sr, n_mels=n_mels, hop_length=hop_length, fmax=fmax
+        )
+        mel_db = librosa.power_to_db(mel, ref=mel.max())
+
+        plt.figure(figsize=(10, 4))
+        librosa.display.specshow(
+            mel_db, sr=sr, hop_length=hop_length, x_axis="time", y_axis="mel"
+        )
+        plt.colorbar(format="%+2.0f dB")
+        plt.title(title or self.title or self.source_id)
+        plt.tight_layout()
+        if show:
+            plt.show()
+
     def save_to(self, dest: str | Path) -> Audio:
         """Save (copy) the audio file to a destination file path or directory.
 
