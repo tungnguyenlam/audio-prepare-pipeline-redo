@@ -16,6 +16,7 @@ dependencies = [
     "matplotlib>=3.11.1",
     "numpy>=2.4.6",
     "pip>=26.2.1",
+    "pyannote.audio",
     "torch>=2.13.0",
     "torchaudio>=2.11.0",
     "yt-dlp>=2026.7.4",
