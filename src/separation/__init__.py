@@ -3,6 +3,7 @@
 from src.separation.BaseSeparator import BaseSeparator
 from src.separation.BSRoFormer import BSRoFormer, BSRoFormerError
 from src.separation.HTDemucs import DemucsError, HTDemucs
+from src.separation.MelRoFormer import MelRoFormer, MelRoFormerError
 
 __all__ = [
     "BaseSeparator",
@@ -10,4 +11,6 @@ __all__ = [
     "BSRoFormerError",
     "DemucsError",
     "HTDemucs",
+    "MelRoFormer",
+    "MelRoFormerError",
 ]

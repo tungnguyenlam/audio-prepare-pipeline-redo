@@ -159,8 +159,8 @@ venv.bak/
 
 # Local data artifacts
 /data/
+.data/
 /demucsed/
-src/notebooks/temp_work/
 *.wav
 *.mp3
 *.flac

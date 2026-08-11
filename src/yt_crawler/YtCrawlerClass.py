@@ -10,6 +10,7 @@ import logging
 import shutil
 import subprocess
 import sys
+import uuid
 import wave
 from pathlib import Path
 from typing import Optional
@@ -24,7 +25,6 @@ _VIDEO_SUFFIXES = {".mp4", ".mkv", ".webm", ".avi", ".mov", ".flv", ".m4v"}
 
 class DownloadError(RuntimeError):
     """Raised when yt-dlp or ffmpeg fails during download or post-processing."""
-
 
 
 def probe_wav(path: Path) -> tuple[int, float, int]:
@@ -42,8 +42,8 @@ class YtCrawler:
 
     def __init__(
         self,
-        output_dir: str | Path = "./downloads",
-        work_dir: str | Path = "./temp_work",
+        output_dir: str | Path = ".data/yt_crawler/downloads",
+        work_dir: str | Path = ".data/yt_crawler/work",
         audio_format: str = "wav",
         sample_rate: int = 16000,
         channels: int = 1,
@@ -70,8 +70,8 @@ class YtCrawler:
     def ingest(
         cls,
         link: str,
-        output_dir: str | Path = "./downloads",
-        work_dir: str | Path = "./temp_work",
+        output_dir: str | Path = ".data/yt_crawler/downloads",
+        work_dir: str | Path = ".data/yt_crawler/work",
         audio_format: str = "wav",
         sample_rate: int = 16000,
         channels: int = 1,
@@ -132,87 +132,94 @@ class YtCrawler:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.work_dir.mkdir(parents=True, exist_ok=True)
 
-        cmd = self.build_command(url, self.work_dir)
-        logger.info(f"Running yt-dlp command: {' '.join(cmd)}")
-        completed = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        # Isolate each download so leftover files from prior runs cannot be selected.
+        session_dir = self.work_dir / f"job-{uuid.uuid4().hex}"
+        session_dir.mkdir(parents=True, exist_ok=False)
 
-        if completed.returncode != 0:
-            detail = (completed.stderr or completed.stdout or "").strip()
-            raise DownloadError(
-                f"yt-dlp failed (exit code {completed.returncode}): {detail[:1000] or 'No error output'}"
+        try:
+            cmd = self.build_command(url, session_dir)
+            logger.info(f"Running yt-dlp command: {' '.join(cmd)}")
+            completed = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
             )
 
-        # Find metadata info JSON
-        info_paths = sorted(self.work_dir.glob("*.info.json"))
-        if not info_paths:
-            raise DownloadError("yt-dlp completed but no *.info.json file was generated.")
+            if completed.returncode != 0:
+                detail = (completed.stderr or completed.stdout or "").strip()
+                raise DownloadError(
+                    f"yt-dlp failed (exit code {completed.returncode}): {detail[:1000] or 'No error output'}"
+                )
 
-        info_file = info_paths[-1]
-        try:
-            info = json.loads(info_file.read_text(encoding="utf-8"))
-        except Exception as err:
-            raise DownloadError(f"Failed to parse yt-dlp metadata JSON: {err}") from err
+            info_paths = sorted(
+                session_dir.glob("*.info.json"),
+                key=lambda p: p.stat().st_mtime,
+            )
+            if not info_paths:
+                raise DownloadError("yt-dlp completed but no *.info.json file was generated.")
 
-        source_id = str(info.get("id") or info_file.name.removesuffix(".info.json"))
-        title = info.get("title")
-        if title is not None:
-            title = str(title)
-
-        # Locate downloaded audio candidates
-        audio_candidates = [
-            p
-            for p in self.work_dir.iterdir()
-            if p.is_file()
-            and p.suffix.lower() not in {".json"}
-            and source_id in p.stem
-            and p.suffix.lower() not in _VIDEO_SUFFIXES
-        ]
-
-        if not audio_candidates:
-            raise DownloadError(f"yt-dlp completed but no audio file found for source_id={source_id}")
-
-        # Prefer file matching requested audio_format if present
-        preferred = [p for p in audio_candidates if p.suffix.lower() == f".{self.audio_format}"]
-        src_audio = preferred[0] if preferred else audio_candidates[0]
-
-        final_dest = self.output_dir / f"{source_id}.{self.audio_format}"
-
-        # Standardize format, sample rate, and channels using ffmpeg
-        self._ensure_standard_audio(src_audio, final_dest)
-
-        # Probe metadata for final WAV file
-        duration_s = info.get("duration")
-        sample_rate = self.sample_rate
-        channels = self.channels
-
-        if final_dest.suffix.lower() == ".wav" and final_dest.exists():
+            info_file = info_paths[-1]
             try:
-                sample_rate, probed_dur, channels = probe_wav(final_dest)
-                if probed_dur > 0:
-                    duration_s = probed_dur
-            except Exception:
-                pass
+                info = json.loads(info_file.read_text(encoding="utf-8"))
+            except Exception as err:
+                raise DownloadError(f"Failed to parse yt-dlp metadata JSON: {err}") from err
 
-        # Cleanup transient video files if any remain
-        for folder in (self.work_dir, self.output_dir):
-            for path in folder.glob(f"{source_id}.*"):
+            source_id = str(info.get("id") or info_file.name.removesuffix(".info.json"))
+            title = info.get("title")
+            if title is not None:
+                title = str(title)
+
+            audio_candidates = [
+                p
+                for p in session_dir.iterdir()
+                if p.is_file()
+                and p.suffix.lower() not in {".json"}
+                and source_id in p.stem
+                and p.suffix.lower() not in _VIDEO_SUFFIXES
+            ]
+
+            if not audio_candidates:
+                raise DownloadError(
+                    f"yt-dlp completed but no audio file found for source_id={source_id}"
+                )
+
+            preferred = [
+                p for p in audio_candidates if p.suffix.lower() == f".{self.audio_format}"
+            ]
+            src_audio = preferred[0] if preferred else audio_candidates[0]
+
+            final_dest = self.output_dir / f"{source_id}.{self.audio_format}"
+
+            self._ensure_standard_audio(src_audio, final_dest)
+
+            duration_s = info.get("duration")
+            sample_rate = self.sample_rate
+            channels = self.channels
+
+            if final_dest.suffix.lower() == ".wav" and final_dest.exists():
+                try:
+                    sample_rate, probed_dur, channels = probe_wav(final_dest)
+                    if probed_dur > 0:
+                        duration_s = probed_dur
+                except Exception:
+                    pass
+
+            for path in self.output_dir.glob(f"{source_id}.*"):
                 if path.suffix.lower() in _VIDEO_SUFFIXES:
                     path.unlink(missing_ok=True)
 
-        return Audio(
-            path=final_dest.resolve(),
-            source_id=source_id,
-            title=title,
-            sample_rate=sample_rate,
-            duration_s=float(duration_s) if duration_s is not None else None,
-            channels=channels,
-            format=self.audio_format,
-        )
+            return Audio(
+                path=final_dest.resolve(),
+                source_id=source_id,
+                title=title,
+                sample_rate=sample_rate,
+                duration_s=float(duration_s) if duration_s is not None else None,
+                channels=channels,
+                format=self.audio_format,
+            )
+        finally:
+            shutil.rmtree(session_dir, ignore_errors=True)
 
     def _ensure_standard_audio(self, src: Path, dest: Path) -> None:
         """Convert audio to required format, sample rate, and channel count using ffmpeg."""

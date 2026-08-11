@@ -32,10 +32,13 @@ class Audio:
     format: str = "wav"
 
     def __repr__(self) -> str:
+        duration = (
+            f"{self.duration_s:.2f}s" if self.duration_s is not None else "None"
+        )
         return (
             f"Audio(source_id={self.source_id!r}, title={self.title!r}, "
             f"path={str(self.path)!r}, sample_rate={self.sample_rate}, "
-            f"duration_s={self.duration_s:.2f}s if self.duration_s else None, "
+            f"duration_s={duration}, "
             f"channels={self.channels}, format={self.format!r})"
         )
 

@@ -1,7 +1,8 @@
-"""BS-RoFormer separation backend via ``bs-roformer-infer``.
+"""Mel-Band RoFormer separation backend via ``melband-roformer-infer``.
 
-Uses the lifecycle ``BSRoformerSession`` API so the checkpoint is loaded once
-and reused across many ``Audio`` objects.
+Uses the lifecycle ``MelBandRoformerSession`` API so the Kimberley Jensen
+(or other registry) checkpoint is loaded once and reused across many
+``Audio`` objects.
 """
 
 from __future__ import annotations
@@ -10,9 +11,9 @@ import logging
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
-from bs_roformer import BSRoformerSession
+from mel_band_roformer import MelBandRoformerSession
 
 from src.base.model import ManagedModel
 from src.separation.audio_utils import normalize_wav, probe_wav
@@ -22,15 +23,31 @@ from src.utils.AudioClass import Audio
 logger = logging.getLogger(__name__)
 
 
-class BSRoFormerError(RuntimeError):
-    """Raised when BS-RoFormer separation cannot run or the output is unusable."""
+class MelRoFormerError(RuntimeError):
+    """Raised when Mel-Band RoFormer separation cannot run or the output is unusable."""
 
 
-class BSRoFormer(BaseSeparator, ManagedModel):
-    """BS-RoFormer backend for vocal/music separation.
+def _iter_manifest_outputs(manifest: Any):
+    """Yield ``(output_id, output_path)`` from either package manifest shape."""
+    outputs = getattr(manifest, "outputs", None)
+    if outputs is not None:
+        for output in outputs:
+            yield output.output_id, Path(output.output_path)
+        return
+
+    for output in manifest:
+        yield output["output_id"], Path(output["output_path"])
+
+
+class MelRoFormer(BaseSeparator, ManagedModel):
+    """Mel-Band RoFormer backend for vocal/music separation.
+
+    Default model is Kimberley Jensen's MelBand Roformer vocals checkpoint
+    (``melband-roformer-kim-vocals``), matching
+    https://github.com/KimberleyJensen/Mel-Band-Roformer-Vocal-Model.
 
     Usage:
-        separator = BSRoFormer(device="mps")
+        separator = MelRoFormer(device="mps")
         separator.load()
         cleaned = separator.separate(audio)
         separator.unload()
@@ -38,11 +55,11 @@ class BSRoFormer(BaseSeparator, ManagedModel):
 
     def __init__(
         self,
-        model: str = "roformer-model-bs-roformer-sw-by-jarredou",
+        model: str = "melband-roformer-kim-vocals",
         device: str = "auto",
         two_stems: str = "vocals",
-        output_dir: str | Path = ".data/bs_roformer/out",
-        work_dir: str | Path = ".data/bs_roformer/work",
+        output_dir: str | Path = ".data/mel_roformer/out",
+        work_dir: str | Path = ".data/mel_roformer/work",
         sample_rate: int = 16000,
         channels: int = 1,
         ffmpeg_bin: Optional[str] = None,
@@ -60,13 +77,13 @@ class BSRoFormer(BaseSeparator, ManagedModel):
         )
         ManagedModel.__init__(self)
         self.backend = backend
-        self._session: BSRoformerSession | None = None
+        self._session: MelBandRoformerSession | None = None
 
     def _load(self) -> None:
-        """Create and load the BS-RoFormer session."""
+        """Create and load the Mel-Band RoFormer session."""
         # ``auto`` means CUDA-else-CPU; on Apple Silicon pass device="mps".
         session_device = None if self.device in ("auto", "None") else self.device
-        session = BSRoformerSession(
+        session = MelBandRoformerSession(
             model_name=self.model,
             device=session_device,
             backend=self.backend,
@@ -75,7 +92,7 @@ class BSRoFormer(BaseSeparator, ManagedModel):
         self._session = session
 
     def _unload(self) -> None:
-        """Close the BS-RoFormer session and clear its reference."""
+        """Close the Mel-Band RoFormer session and clear its reference."""
         if self._session is not None:
             self._session.close()
             self._session = None
@@ -83,8 +100,8 @@ class BSRoFormer(BaseSeparator, ManagedModel):
     def _prepare_input(self, src: Path) -> tuple[Path, Path]:
         """Convert source to a working stereo WAV without corpus downsampling.
 
-        ``BSRoformerSession.infer`` processes a folder, so the input directory
-        is wiped and rebuilt to contain only this sample.
+        ``MelBandRoformerSession.infer`` processes a folder, so the input
+        directory is wiped and rebuilt to contain only this sample.
         """
         input_dir = self.work_dir / "input"
         if input_dir.exists():
@@ -106,7 +123,7 @@ class BSRoFormer(BaseSeparator, ManagedModel):
         completed = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if completed.returncode != 0:
             detail = (completed.stderr or completed.stdout or "").strip()
-            raise BSRoFormerError(
+            raise MelRoFormerError(
                 f"ffmpeg input conversion failed: {detail[-2000:] or 'no output'}"
             )
         return working_wav, input_dir
@@ -121,36 +138,40 @@ class BSRoFormer(BaseSeparator, ManagedModel):
 
         session = self._session
         if session is None:  # pragma: no cover - guarded by separate()
-            raise BSRoFormerError(
-                "BS-RoFormer is not loaded. Call load() before separate(), or use it as a context manager."
+            raise MelRoFormerError(
+                "Mel-Band RoFormer is not loaded. Call load() before separate(), "
+                "or use it as a context manager."
             )
         logger.info(
-            "Running BS-RoFormer model=%s device=%s stem=%s",
+            "Running Mel-Band RoFormer model=%s device=%s stem=%s",
             self.model,
             self.device,
             self.two_stems,
         )
         manifest = session.infer(str(input_dir), store_dir=str(output_dir))
 
-        for output in manifest.outputs:
-            if output.output_id == self.two_stems:
-                return Path(output.output_path)
+        available: list[str] = []
+        for output_id, output_path in _iter_manifest_outputs(manifest):
+            available.append(output_id)
+            if output_id == self.two_stems:
+                return output_path
 
-        available = sorted({output.output_id for output in manifest.outputs})
-        raise BSRoFormerError(
-            f"BS-RoFormer did not produce stem {self.two_stems!r}. Available: {available}"
+        raise MelRoFormerError(
+            f"Mel-Band RoFormer did not produce stem {self.two_stems!r}. "
+            f"Available: {sorted(set(available))}"
         )
 
     def separate(self, audio: Audio) -> Audio:
         """Separate ``audio`` and return a cleaned ``Audio`` object."""
         if not self.is_loaded:
-            raise BSRoFormerError(
-                "BS-RoFormer is not loaded. Call load() before separate(), or use it as a context manager."
+            raise MelRoFormerError(
+                "Mel-Band RoFormer is not loaded. Call load() before separate(), "
+                "or use it as a context manager."
             )
 
         src_path = Path(audio.path)
         if not src_path.is_file():
-            raise BSRoFormerError(f"audio not found: {src_path}")
+            raise MelRoFormerError(f"audio not found: {src_path}")
 
         self.work_dir.mkdir(parents=True, exist_ok=True)
         separated = self._separate_stem(src_path)

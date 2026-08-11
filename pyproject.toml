@@ -14,12 +14,14 @@ dependencies = [
     "ipywidgets>=8.1.8",
     "librosa>=0.11.0",
     "matplotlib>=3.11.1",
+    "melband-roformer-infer",
     "numpy>=2.4.6",
     "pip>=26.2.1",
     "pyannote.audio",
+    "soundfile>=0.14.0",
     "torch>=2.13.0",
     "torchaudio>=2.11.0",
-    "yt-dlp>=2026.7.4",
+    "yt-dlp>=2026.8.4.234419.dev0",
 ]
 
 [dependency-groups]
@@ -39,3 +41,4 @@ build-backend = "uv_build"
 
 [tool.uv.sources]
 bs-roformer-infer = { git = "https://github.com/openmirlab/bs-roformer-infer.git" }
+melband-roformer-infer = { git = "https://github.com/openmirlab/melband-roformer-infer.git" }

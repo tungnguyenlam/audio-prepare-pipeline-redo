@@ -28,7 +28,7 @@ class HTDemucs(BaseSeparator):
     """Live Demucs backend: separates via the ``demucs`` CLI (vocals by default).
 
     Usage:
-        separator = HTDemucs(output_dir="./data/separated")
+        separator = HTDemucs(output_dir=".data/demucs/out")
         cleaned = separator.separate(audio)
     """
 
@@ -37,8 +37,8 @@ class HTDemucs(BaseSeparator):
         model: str = "htdemucs",
         device: str = "cpu",
         two_stems: str = "vocals",
-        output_dir: str | Path = ".data/demucsed",
-        work_dir: str | Path = "./temp_demucs",
+        output_dir: str | Path = ".data/demucs/out",
+        work_dir: str | Path = ".data/demucs/work",
         sample_rate: int = 16000,
         channels: int = 1,
         demucs_bin: Optional[str] = None,
