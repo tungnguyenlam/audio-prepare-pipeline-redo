@@ -20,11 +20,8 @@ class MusicCategory(str, Enum):
     """Music category used to organize and stratify benchmark samples."""
 
     ACOUSTIC = "acoustic"
-    ROCK = "rock"
-    ELECTRONIC = "electronic"
     ORCHESTRAL = "orchestral"
     TRADITIONAL = "traditional"
-    BEAT_DRIVEN = "beat_driven"
 
 
 @dataclass
