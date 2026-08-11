@@ -28,33 +28,12 @@ class MusicCategory(str, Enum):
 
 
 @dataclass
-class SpeechSource:
-    """An original manually selected speech source file."""
-
-    speech_id: str
-    audio: Audio
-    language: str
-    speaker_id: str | None = None
-    notes: str | None = None
-
-
-@dataclass
-class MusicSource:
-    """An original manually selected music source file."""
-
-    music_id: str
-    audio: Audio
-    category: MusicCategory
-    notes: str | None = None
-
-
-@dataclass
 class BenchmarkDefinition:
     """One planned mixture before it is rendered."""
 
     sample_id: str
-    speech_id: str
-    music_id: str
+    speech_path: str
+    music_path: str
     music_category: MusicCategory
     difficulty: Difficulty
     target_smr_db: float
