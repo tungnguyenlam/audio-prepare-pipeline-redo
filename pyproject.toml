@@ -16,6 +16,7 @@ dependencies = [
     "matplotlib>=3.11.1",
     "melband-roformer-infer",
     "numpy>=2.4.6",
+    "onnxruntime>=1.20.0",
     "pip>=26.2.1",
     "pyannote.audio",
     "soundfile>=0.14.0",
