@@ -2,6 +2,7 @@
 
 from src.diarization.BaseDiarizer import BaseDiarizer
 from src.diarization.PyannoteDiarizer import PyannoteDiarizer
+from src.diarization.SortformerDiarizer import SortformerDiarizer
 
 from src.diarization.schemas import (
     DiarizationModelInfo,
@@ -17,4 +18,5 @@ __all__ = [
     "PyannoteDiarizer",
     "Speaker",
     "SpeakerTurn",
+    "SortformerDiarizer",
 ]
