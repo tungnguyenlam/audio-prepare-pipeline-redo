@@ -15,7 +15,7 @@ import wave
 from pathlib import Path
 from typing import Optional
 
-from src.utils.AudioClass import Audio
+from src.utils.AudioClass import DEFAULT_SAMPLE_RATE, Audio
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ class YtCrawler:
         output_dir: str | Path = ".data/yt_crawler/downloads",
         work_dir: str | Path = ".data/yt_crawler/work",
         audio_format: str = "wav",
-        sample_rate: int = 16000,
+        sample_rate: int = DEFAULT_SAMPLE_RATE,
         channels: int = 1,
         retries: int = 3,
         yt_dlp_bin: Optional[str] = None,
@@ -73,7 +73,7 @@ class YtCrawler:
         output_dir: str | Path = ".data/yt_crawler/downloads",
         work_dir: str | Path = ".data/yt_crawler/work",
         audio_format: str = "wav",
-        sample_rate: int = 16000,
+        sample_rate: int = DEFAULT_SAMPLE_RATE,
         channels: int = 1,
         **kwargs,
     ) -> Audio:
@@ -188,6 +188,7 @@ class YtCrawler:
                 p for p in audio_candidates if p.suffix.lower() == f".{self.audio_format}"
             ]
             src_audio = preferred[0] if preferred else audio_candidates[0]
+            native_sample_rate = _native_sample_rate(src_audio, info)
 
             final_dest = self.output_dir / f"{source_id}.{self.audio_format}"
 
@@ -205,6 +206,9 @@ class YtCrawler:
                 except Exception:
                     pass
 
+            if native_sample_rate is None:
+                native_sample_rate = sample_rate
+
             for path in self.output_dir.glob(f"{source_id}.*"):
                 if path.suffix.lower() in _VIDEO_SUFFIXES:
                     path.unlink(missing_ok=True)
@@ -217,6 +221,7 @@ class YtCrawler:
                 duration_s=float(duration_s) if duration_s is not None else None,
                 channels=channels,
                 format=self.audio_format,
+                native_sample_rate=native_sample_rate,
             )
         finally:
             shutil.rmtree(session_dir, ignore_errors=True)
@@ -258,3 +263,25 @@ class YtCrawler:
             raise DownloadError(
                 f"ffmpeg conversion failed (exit code {completed.returncode}): {detail[:1000] or 'No error output'}"
             )
+
+
+def _native_sample_rate(src_audio: Path, info: dict) -> Optional[int]:
+    """Best-effort original rate: pre-normalize WAV, else yt-dlp ``asr``."""
+    if src_audio.suffix.lower() == ".wav":
+        try:
+            rate, _, _ = probe_wav(src_audio)
+            if rate:
+                return rate
+        except Exception:
+            pass
+
+    asr = info.get("asr")
+    if asr:
+        return int(asr)
+
+    downloads = info.get("requested_downloads") or []
+    if downloads:
+        download_asr = downloads[0].get("asr")
+        if download_asr:
+            return int(download_asr)
+    return None

@@ -15,7 +15,7 @@ from typing import Optional
 
 from src.separation.audio_utils import normalize_wav, probe_wav
 from src.separation.BaseSeparator import BaseSeparator
-from src.utils.AudioClass import Audio
+from src.utils.AudioClass import DEFAULT_SAMPLE_RATE, Audio
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class HTDemucs(BaseSeparator):
         two_stems: str = "vocals",
         output_dir: str | Path = ".data/demucs/out",
         work_dir: str | Path = ".data/demucs/work",
-        sample_rate: int = 16000,
+        sample_rate: int = DEFAULT_SAMPLE_RATE,
         channels: int = 1,
         demucs_bin: Optional[str] = None,
         ffmpeg_bin: Optional[str] = None,
@@ -125,12 +125,9 @@ class HTDemucs(BaseSeparator):
         )
 
         sample_rate, duration_s, channels = probe_wav(dest)
-        return Audio(
-            path=dest.resolve(),
-            source_id=audio.source_id,
-            title=audio.title,
+        return audio.with_file(
+            dest,
             sample_rate=sample_rate,
             duration_s=duration_s,
             channels=channels,
-            format="wav",
         )

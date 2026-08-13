@@ -84,9 +84,24 @@ Creates an `Audio` object for an existing file.
 - Uses the file stem as the default `source_id` and `title`.
 - Detects the extension as `format`.
 - Probes WAV files for sample rate, duration, and channel count.
+- Sets `native_sample_rate` to the probed file rate unless the caller passes
+  the original source rate.
 - Uses class defaults for metadata that cannot be probed.
 
 **Raises:** `FileNotFoundError` if the path does not identify a file.
+
+### `Audio.metadata(*, target_sample_rate=None) -> dict`
+
+Returns a serializable snapshot of the `Audio` fields. `path` is a string.
+When `target_sample_rate` is given, the dict also includes that rate and
+`resample_action` (`upscale`, `downscale`, or `keep`).
+
+### `Audio.resample_action(target_sample_rate) -> "upscale" | "downscale" | "keep"`
+
+Compares the current file `sample_rate` with a model's expected rate so the
+caller can decide whether to resample. This uses the current file rate, not
+`native_sample_rate`. `native_sample_rate` is still useful to detect that the
+file was already resampled from the original source.
 
 ### `Audio.save_to(dest) -> Audio`
 
@@ -109,7 +124,7 @@ It does not modify the `Audio` object and returns `None`.
 ### `repr(audio) -> str`
 
 Returns a human-readable representation containing the source ID, title, path,
-sample rate, duration, channel count, and format.
+sample rate, native sample rate, duration, channel count, and format.
 
 ## 3. Source-separation API
 
@@ -118,7 +133,7 @@ sample rate, duration, channel count, and format.
 **Defined in:** `src/separation/BaseSeparator.py`
 
 Every separator consumes one `Audio` object and returns one separated `Audio`
-object. The returned object has the same seven-field class contract, while its
+object. The returned object has the same eight-field class contract, while its
 `path` points to the normalized separated output.
 
 ### Concrete implementations
@@ -136,7 +151,7 @@ object. The returned object has the same seven-field class contract, while its
 - Runs the backend-specific separation process.
 - Normalizes the selected stem to the configured sample rate and channel count.
 - Probes the output WAV.
-- Preserves the input `source_id` and `title`.
+- Preserves the input `source_id`, `title`, and `native_sample_rate`.
 - Returns a new `Audio` instance with `format="wav"`.
 
 **Common failure behavior:** Each backend raises its own runtime error type

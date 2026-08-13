@@ -3,9 +3,9 @@
 ```mermaid
 flowchart TD
     URL[YouTube URL] --> INGEST[YtCrawler.ingest or download]
-    INGEST --> AUDIO1[Audio: 7 fields]
+    INGEST --> AUDIO1[Audio: 8 fields]
     AUDIO1 --> SEPARATE[BaseSeparator.separate]
-    SEPARATE --> AUDIO2[Separated Audio: 7 fields]
+    SEPARATE --> AUDIO2[Separated Audio: 8 fields]
     AUDIO2 --> DIARIZE[Optional BaseDiarizer.diarize]
     DIARIZE --> DIARIZATION[DiarizationResult: 5 fields]
 
@@ -54,21 +54,23 @@ BenchmarkDefinition + speech Audio + music Audio
 
 ### Return class: `src.utils.AudioClass.Audio`
 
-**Field count: 7**
+**Field count: 8**
 
 | Field | Type | Meaning |
 |---|---|---|
 | `path` | `Path` | Resolved path to the downloaded or referenced audio file. |
 | `source_id` | `str` | Stable source identifier, normally the YouTube ID. |
 | `title` | `str \| None` | Source title, when available. |
-| `sample_rate` | `int \| None` | Sample rate in Hz. The crawler normalizes this to its configured rate and probes WAV output. |
+| `sample_rate` | `int \| None` | Current file sample rate in Hz. The crawler normalizes this to its configured rate (default 44,100 Hz) and probes WAV output. |
 | `duration_s` | `float \| None` | Duration in seconds. |
 | `channels` | `int \| None` | Number of audio channels. |
 | `format` | `str` | File format/extension without the leading dot, normally `wav`. |
+| `native_sample_rate` | `int \| None` | Original source rate before pipeline resampling (yt-dlp `asr` or pre-normalize WAV). Downstream models compare this and `sample_rate` with their expected rate to decide whether to upscale, downscale, or keep the file. |
 
 The crawler returns a fully populated `Audio` instance. Its default
-configuration targets WAV, 16,000 Hz, and mono, but the configured values are
-the contract for a particular crawler instance.
+configuration targets WAV, 44,100 Hz, and mono, but the configured values are
+the contract for a particular crawler instance. Call `audio.metadata(target_sample_rate=...)`
+or `audio.resample_action(target_sample_rate)` to get the resample decision.
 
 ## 2. Load an existing audio file
 
@@ -78,12 +80,13 @@ the contract for a particular crawler instance.
 
 ### Return class
 
-`src.utils.AudioClass.Audio` — **7 fields**, exactly the same fields listed in
+`src.utils.AudioClass.Audio` — **8 fields**, exactly the same fields listed in
 Step 1.
 
 For WAV files, `sample_rate`, `duration_s`, and `channels` are probed from the
-file. For non-WAV files, those values retain the class defaults unless the
-caller supplies another construction path.
+file. `native_sample_rate` defaults to that probed rate unless the caller
+passes the original source rate. For non-WAV files, those values retain the
+class defaults unless the caller supplies another construction path.
 
 ## 3. Source separation
 
@@ -100,7 +103,7 @@ The following concrete implementations use this same return contract:
 
 ### Return class: `src.utils.AudioClass.Audio`
 
-**Field count: 7**
+**Field count: 8**
 
 | Field | Return behavior |
 |---|---|
@@ -111,6 +114,7 @@ The following concrete implementations use this same return contract:
 | `duration_s` | Probed from the separated output. |
 | `channels` | Probed from the separated output. |
 | `format` | Set to `"wav"` by the concrete separator implementations. |
+| `native_sample_rate` | Preserved from the input `Audio`. |
 
 The model backend is not exposed as a field on the returned object. Backend
 configuration remains on the separator instance (`model`, `device`, output
@@ -220,7 +224,7 @@ These enums have no instance fields; they are constrained values:
 | `mixture` | `Audio` | Sum of the speech and music references. |
 | `parameters` | `MixingParameters` | Parameters and realized values needed to reproduce the mix. |
 
-Each of the three audio fields is an `Audio` object with **7 fields** as
+Each of the three audio fields is an `Audio` object with **8 fields** as
 defined in Step 1. The mixer writes three WAV files before constructing the
 returned `AudioMixResult`:
 

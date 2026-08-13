@@ -9,16 +9,20 @@ from __future__ import annotations
 
 import logging
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Any, Optional
 
 from mel_band_roformer import MelBandRoformerSession
 
 from src.base.model import ManagedModel
-from src.separation.audio_utils import normalize_wav, probe_wav
+from src.separation.audio_utils import (
+    AudioConvertError,
+    normalize_wav,
+    prepare_separator_wav,
+    probe_wav,
+)
 from src.separation.BaseSeparator import BaseSeparator
-from src.utils.AudioClass import Audio
+from src.utils.AudioClass import DEFAULT_SAMPLE_RATE, Audio
 
 logger = logging.getLogger(__name__)
 
@@ -60,10 +64,11 @@ class MelRoFormer(BaseSeparator, ManagedModel):
         two_stems: str = "vocals",
         output_dir: str | Path = ".data/mel_roformer/out",
         work_dir: str | Path = ".data/mel_roformer/work",
-        sample_rate: int = 16000,
+        sample_rate: int = DEFAULT_SAMPLE_RATE,
         channels: int = 1,
         ffmpeg_bin: Optional[str] = None,
         backend: Optional[str] = None,
+        model_sample_rate: int = 44100,
     ) -> None:
         super().__init__(
             model=model,
@@ -77,6 +82,7 @@ class MelRoFormer(BaseSeparator, ManagedModel):
         )
         ManagedModel.__init__(self)
         self.backend = backend
+        self.model_sample_rate = model_sample_rate
         self._session: MelBandRoformerSession | None = None
 
     def _load(self) -> None:
@@ -98,7 +104,7 @@ class MelRoFormer(BaseSeparator, ManagedModel):
             self._session = None
 
     def _prepare_input(self, src: Path) -> tuple[Path, Path]:
-        """Convert source to a working stereo WAV without corpus downsampling.
+        """Convert source to 44.1 kHz stereo WAV for the checkpoint STFT.
 
         ``MelBandRoformerSession.infer`` processes a folder, so the input
         directory is wiped and rebuilt to contain only this sample.
@@ -109,23 +115,16 @@ class MelRoFormer(BaseSeparator, ManagedModel):
         input_dir.mkdir(parents=True)
 
         working_wav = input_dir / f"{src.stem}.wav"
-        cmd = [
-            self.ffmpeg_bin,
-            "-y",
-            "-i",
-            str(src),
-            "-ac",
-            "2",
-            "-c:a",
-            "pcm_f32le",
-            str(working_wav),
-        ]
-        completed = subprocess.run(cmd, capture_output=True, text=True, check=False)
-        if completed.returncode != 0:
-            detail = (completed.stderr or completed.stdout or "").strip()
-            raise MelRoFormerError(
-                f"ffmpeg input conversion failed: {detail[-2000:] or 'no output'}"
+        try:
+            prepare_separator_wav(
+                src,
+                working_wav,
+                sample_rate=self.model_sample_rate,
+                channels=2,
+                ffmpeg_bin=self.ffmpeg_bin,
             )
+        except AudioConvertError as exc:
+            raise MelRoFormerError(f"ffmpeg input conversion failed: {exc}") from exc
         return working_wav, input_dir
 
     def _separate_stem(self, src: Path) -> Path:
@@ -186,14 +185,11 @@ class MelRoFormer(BaseSeparator, ManagedModel):
         )
 
         sample_rate, duration_s, channels = probe_wav(dest)
-        return Audio(
-            path=dest.resolve(),
-            source_id=audio.source_id,
-            title=audio.title,
+        return audio.with_file(
+            dest,
             sample_rate=sample_rate,
             duration_s=duration_s,
             channels=channels,
-            format="wav",
         )
 
     def close(self) -> None:

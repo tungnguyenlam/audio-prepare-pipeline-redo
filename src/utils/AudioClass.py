@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import shutil
 import wave
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Optional
+from typing import Any, Literal, Optional
+
+DEFAULT_SAMPLE_RATE = 44100
+ResampleAction = Literal["upscale", "downscale", "keep"]
 
 
 def _probe_wav(path: Path) -> tuple[int, float, int]:
@@ -26,10 +29,11 @@ class Audio:
     path: Path
     source_id: str
     title: Optional[str] = None
-    sample_rate: Optional[int] = 16000
+    sample_rate: Optional[int] = DEFAULT_SAMPLE_RATE
     duration_s: Optional[float] = None
     channels: Optional[int] = 1
     format: str = "wav"
+    native_sample_rate: Optional[int] = None
 
     def __repr__(self) -> str:
         duration = (
@@ -38,6 +42,7 @@ class Audio:
         return (
             f"Audio(source_id={self.source_id!r}, title={self.title!r}, "
             f"path={str(self.path)!r}, sample_rate={self.sample_rate}, "
+            f"native_sample_rate={self.native_sample_rate}, "
             f"duration_s={duration}, "
             f"channels={self.channels}, format={self.format!r})"
         )
@@ -49,6 +54,7 @@ class Audio:
         *,
         source_id: Optional[str] = None,
         title: Optional[str] = None,
+        native_sample_rate: Optional[int] = None,
     ) -> Audio:
         """Load an audio file from disk and return an ``Audio`` instance.
 
@@ -59,6 +65,8 @@ class Audio:
             path: Path to an existing audio file.
             source_id: Optional identifier; defaults to the file stem.
             title: Optional display title; defaults to the file stem.
+            native_sample_rate: Original capture/source rate before pipeline
+                resampling. Defaults to the probed file rate.
 
         Returns:
             Audio: Instance pointing at the resolved file path.
@@ -71,7 +79,7 @@ class Audio:
             raise FileNotFoundError(f"Audio file does not exist: {file_path}")
 
         fmt = file_path.suffix.lstrip(".").lower() or "wav"
-        sample_rate: Optional[int] = 16000
+        sample_rate: Optional[int] = DEFAULT_SAMPLE_RATE
         duration_s: Optional[float] = None
         channels: Optional[int] = 1
 
@@ -89,6 +97,60 @@ class Audio:
             duration_s=duration_s,
             channels=channels,
             format=fmt,
+            native_sample_rate=(
+                native_sample_rate if native_sample_rate is not None else sample_rate
+            ),
+        )
+
+    def metadata(self, *, target_sample_rate: Optional[int] = None) -> dict[str, Any]:
+        """Return a serializable snapshot of identity and rate metadata.
+
+        When ``target_sample_rate`` is given, include ``resample_action`` so a
+        downstream model can decide whether to upscale, downscale, or keep the
+        current file rate.
+        """
+        payload = asdict(self)
+        payload["path"] = str(self.path)
+        if target_sample_rate is not None:
+            payload["target_sample_rate"] = target_sample_rate
+            payload["resample_action"] = self.resample_action(target_sample_rate)
+        return payload
+
+    def resample_action(self, target_sample_rate: int) -> ResampleAction:
+        """Return how this file's rate compares to a model's expected rate."""
+        if target_sample_rate <= 0:
+            raise ValueError(
+                f"target_sample_rate must be positive, got {target_sample_rate}"
+            )
+        if self.sample_rate is None:
+            raise ValueError("sample_rate is unknown; cannot choose a resample action")
+        if target_sample_rate > self.sample_rate:
+            return "upscale"
+        if target_sample_rate < self.sample_rate:
+            return "downscale"
+        return "keep"
+
+    def with_file(
+        self,
+        path: str | Path,
+        *,
+        sample_rate: Optional[int],
+        duration_s: Optional[float],
+        channels: Optional[int],
+        format: str = "wav",
+        source_id: Optional[str] = None,
+        title: Optional[str] = None,
+    ) -> Audio:
+        """Return a new ``Audio`` at ``path``, keeping ``native_sample_rate``."""
+        return replace(
+            self,
+            path=Path(path).resolve(),
+            sample_rate=sample_rate,
+            duration_s=duration_s,
+            channels=channels,
+            format=format,
+            source_id=self.source_id if source_id is None else source_id,
+            title=self.title if title is None else title,
         )
 
     def show_mel_spectrogram(

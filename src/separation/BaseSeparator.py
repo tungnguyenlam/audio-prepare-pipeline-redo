@@ -11,7 +11,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
-from src.utils.AudioClass import Audio
+from src.utils.AudioClass import DEFAULT_SAMPLE_RATE, Audio
 
 
 class BaseSeparator(abc.ABC):
@@ -28,7 +28,7 @@ class BaseSeparator(abc.ABC):
         two_stems: str = "vocals",
         output_dir: str | Path = ".data/separated/out",
         work_dir: str | Path = ".data/separated/work",
-        sample_rate: int = 16000,
+        sample_rate: int = DEFAULT_SAMPLE_RATE,
         channels: int = 1,
         ffmpeg_bin: Optional[str] = None,
     ) -> None:
