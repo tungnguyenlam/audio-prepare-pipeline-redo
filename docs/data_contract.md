@@ -287,8 +287,9 @@ class:
 | Separator `_separate_stem(...)` methods | `Path` | Internal path to an intermediate model output. |
 | Separator `_prepare_input(...)` methods | `Path` or `tuple[Path, Path]` | Internal working-file paths. |
 | `Audio.save_to(...)` | `Audio` | Returns the same `Audio` object after mutating its `path`. |
+| `Audio.quick_save(...)` | `Audio` | Prints destination path and returns the same `Audio` object after mutating its `path`. |
 | `Audio.show_mel_spectrogram(...)` | `None` | Display/visualization side effect only. |
-| `display_audio(...)` | `None` | Playback/display side effect only. |
+| `Audio.notebook_display(...)` | `None` | Interactive notebook playback side effect only. |
 
 ## Contract summary
 

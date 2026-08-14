@@ -114,6 +114,28 @@ when the source and destination differ.
 
 **Raises:** `FileNotFoundError` if the current source file does not exist.
 
+### `Audio.quick_save(output_dir=None, *, name=None, prefix=None, suffix=None, tag=None) -> Audio`
+
+Copies the represented audio file to a quick-save temporary directory (defaulting to
+`<project_root>/temp/`) with an informative filename generated from the `Audio` object's
+metadata (`source_id`, `duration_s`, `sample_rate`, `channels`), prints
+`Quick saved to: <destination>` to standard output, and updates the same object's
+`path` to the destination. It returns the same `Audio` instance.
+
+**Side effects:** Creates the destination directory, copies the file when source
+and destination differ, and prints the destination path to stdout.
+
+**Raises:** `FileNotFoundError` if the current source file does not exist.
+
+
+### `Audio.notebook_display(dest=None) -> None`
+
+Optionally copies the audio file to `dest` via `save_to` and displays it using
+an interactive IPython audio player. It returns `None` and is intended for notebooks.
+`Audio.display` is provided as an alias.
+
+**Raises:** `FileNotFoundError` if the represented audio path does not exist.
+
 ### `Audio.show_mel_spectrogram(...) -> None`
 
 Loads the audio, computes a mel spectrogram, and displays it with Matplotlib.
@@ -307,18 +329,7 @@ be initialized. Audio conversion and file errors are propagated.
 **Raises:** `ValueError` for invalid mixer settings, effectively silent input,
 or an output directory that would overwrite an input audio file.
 
-## 7. Display helper API
-
-### `display_audio(audio: Audio, dest=None) -> None`
-
-**Defined in:** `src/utils/display_audio.py`
-
-Optionally calls `audio.save_to(dest)`, then displays the file using an
-IPython audio player. It returns `None` and is intended for notebooks.
-
-**Raises:** `FileNotFoundError` if the final audio path does not exist.
-
-## 8. Shared audio utility API
+## 7. Shared audio utility API
 
 These functions support the public pipeline methods but return no pipeline
 classes.
@@ -330,7 +341,7 @@ classes.
 
 `normalize_wav` raises `AudioConvertError` when `ffmpeg` conversion fails.
 
-## 9. Dataclass method note
+## 8. Dataclass method note
 
 `Speaker`, `SpeakerTurn`, `DiarizationModelInfo`, `DiarizationResult`,
 `BenchmarkDefinition`, `MixingParameters`, `AudioMixResult`, and

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import wave
 from dataclasses import asdict, dataclass, replace
@@ -10,6 +11,13 @@ from typing import Any, Literal, Optional
 
 DEFAULT_SAMPLE_RATE = 44100
 ResampleAction = Literal["upscale", "downscale", "keep"]
+
+
+def _sanitize_filename_component(name: str) -> str:
+    """Sanitize a string for safe inclusion in filenames across filesystems."""
+    cleaned = re.sub(r'[\\/*?:"<>|\s]+', "_", name)
+    return cleaned.strip("._")
+
 
 
 def _probe_wav(path: Path) -> tuple[int, float, int]:
@@ -198,6 +206,37 @@ class Audio:
         if show:
             plt.show()
 
+    def notebook_display(
+        self,
+        dest: Optional[str | Path] = None,
+    ) -> None:
+        """Display this audio file in an interactive Jupyter / IPython player.
+
+        Optionally saves (copies) the audio to ``dest`` before playback.
+
+        Args:
+            dest: Optional destination file or directory path. When provided, the
+                audio is copied there via ``save_to`` before playback.
+
+        Raises:
+            FileNotFoundError: If the audio file does not exist.
+        """
+        from IPython.display import Audio as IPythonAudio
+        from IPython.display import display
+
+        if dest is not None:
+            self.save_to(dest)
+
+        path = Path(self.path)
+        if not path.is_file():
+            raise FileNotFoundError(f"Audio file does not exist: {path}")
+
+        # display() only — do not return the player, or Jupyter renders it twice
+        display(IPythonAudio(filename=str(path), rate=self.sample_rate))
+
+    display = notebook_display
+
+
     def save_to(self, dest: str | Path) -> Audio:
         """Save (copy) the audio file to a destination file path or directory.
 
@@ -225,3 +264,78 @@ class Audio:
 
         self.path = target.resolve()
         return self
+
+    def quick_save(
+        self,
+        output_dir: Optional[str | Path] = None,
+        *,
+        name: Optional[str] = None,
+        prefix: Optional[str] = None,
+        suffix: Optional[str] = None,
+        tag: Optional[str] = None,
+    ) -> Audio:
+        """Quickly save (copy) the audio file to a temp directory with metadata in the filename.
+
+        By default, saves into ``<project_root>/temp/`` and generates a filename
+        incorporating metadata (such as ``source_id``, duration, sample rate, and
+        channel count) so it can be quickly identified. Prints the destination path.
+
+        Args:
+            output_dir: Target directory. Defaults to ``<project_root>/temp``.
+            name: Optional explicit filename to override metadata-based naming.
+            prefix: Optional prefix prepended to the generated filename.
+            suffix: Optional suffix appended to the generated filename before extension.
+            tag: Optional tag appended to the metadata components.
+
+        Returns:
+            Audio: This Audio instance with path updated to the destination file location.
+
+        Raises:
+            FileNotFoundError: If the source audio file does not exist.
+        """
+        src_path = Path(self.path)
+        if not src_path.exists():
+            raise FileNotFoundError(f"Audio file does not exist: {src_path}")
+
+        fmt = (self.format or src_path.suffix.lstrip(".") or "wav").lower()
+
+        if name is not None:
+            filename = name if "." in name else f"{name}.{fmt}"
+        else:
+            parts: list[str] = []
+            if prefix:
+                parts.append(_sanitize_filename_component(str(prefix)))
+
+            base_id = _sanitize_filename_component(self.source_id or src_path.stem or "audio")
+            parts.append(base_id or "audio")
+
+            if tag:
+                parts.append(_sanitize_filename_component(str(tag)))
+
+            if self.duration_s is not None:
+                parts.append(f"{self.duration_s:.2f}s")
+            if self.sample_rate is not None:
+                parts.append(f"{self.sample_rate}Hz")
+            if self.channels is not None:
+                parts.append(f"{self.channels}ch")
+
+            if suffix:
+                parts.append(_sanitize_filename_component(str(suffix)))
+
+            filename = f"{'_'.join(p for p in parts if p)}.{fmt}"
+
+        target_dir = (
+            Path(output_dir)
+            if output_dir is not None
+            else Path(__file__).resolve().parents[2] / "temp"
+        )
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_file = (target_dir / filename).resolve()
+
+        if src_path.resolve() != target_file:
+            shutil.copy2(src_path, target_file)
+
+        self.path = target_file
+        print(f"Quick saved to: {self.path}")
+        return self
+

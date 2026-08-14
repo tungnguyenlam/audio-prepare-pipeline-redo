@@ -37,7 +37,7 @@ BenchmarkDefinition + speech Audio + music Audio
 
 | Path | Role |
 |---|---|
-| `src/utils/` | File-backed `Audio` plus notebook helpers (`AudioCutter`, comparers, `display_audio`) |
+| `src/utils/` | File-backed `Audio` plus notebook helpers (`AudioCutter`, comparers) |
 | `src/yt_crawler/` | `YtCrawler` ingest/download |
 | `src/separation/` | `BaseSeparator` and backends (`HTDemucs`, `BSRoFormer`, `MelRoFormer`, `MVSepMDX23`) |
 | `src/diarization/` | `BaseDiarizer`, schemas, Pyannote/Sortformer backends |
@@ -75,9 +75,9 @@ Match neighboring files rather than introducing a new style.
 - `from __future__ import annotations` at the top of modules.
 - Google-style docstrings on public classes and methods (Args / Returns / Raises).
 - Type hints on public signatures. Prefer `str | Path`, `X | None`, and `Optional` only where the file already uses it.
-- File names: class modules are PascalCase (`AudioCutter.py`, `HTDemucs.py`); shared helpers are snake_case (`audio_utils.py`, `display_audio.py`, `schemas.py`).
+- File names: class modules are PascalCase (`AudioCutter.py`, `HTDemucs.py`); shared helpers are snake_case (`audio_utils.py`, `schemas.py`).
 - Lazy-import heavy optional-at-call-time deps (`librosa`, `matplotlib`, IPython) inside the method that needs them.
-- Notebook display helpers must not return objects that Jupyter will render a second time. If `show=True`, call `plt.show()`, close the figure, and return `None`. Same for `display_audio`: `display(...)` only.
+- Notebook display helpers must not return objects that Jupyter will render a second time. If `show=True`, call `plt.show()`, close the figure, and return `None`. Same for `Audio.notebook_display`: `display(...)` only.
 - Keep changes scoped. Do not refactor unrelated modules or add files the user did not ask for.
 - Do not write markdown docs the user did not ask for. If you change a **public** method or return shape, update `docs/api_contract.md` and/or `docs/data_contract.md` in the same change.
 

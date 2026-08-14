@@ -160,6 +160,8 @@ venv.bak/
 # Local data artifacts
 /data/
 .data/
+/temp/
+.temp/
 /demucsed/
 *.wav
 *.mp3
