@@ -293,4 +293,5 @@ class MVSepMDX23(BaseSeparator):
             sample_rate=sample_rate,
             duration_s=duration_s,
             channels=channels,
+            step=f"mvsep_mdx23_{self.two_stems}",
         )

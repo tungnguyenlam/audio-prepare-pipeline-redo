@@ -74,7 +74,7 @@ list of command-line tokens, not a data-contract class.
 `Audio` is a file-backed dataclass. Its fields are documented in
 [`data_contract.md`](data_contract.md).
 
-### `Audio.from_file(path, *, source_id=None, title=None) -> Audio`
+### `Audio.from_file(path, *, source_id=None, title=None, native_sample_rate=None, history=None) -> Audio`
 
 Creates an `Audio` object for an existing file.
 
@@ -87,12 +87,13 @@ Creates an `Audio` object for an existing file.
 - Sets `native_sample_rate` to the probed file rate unless the caller passes
   the original source rate.
 - Uses class defaults for metadata that cannot be probed.
+- Initializes `history` to the provided sequence of step tags or an empty tuple.
 
 **Raises:** `FileNotFoundError` if the path does not identify a file.
 
 ### `Audio.metadata(*, target_sample_rate=None) -> dict`
 
-Returns a serializable snapshot of the `Audio` fields. `path` is a string.
+Returns a serializable snapshot of the `Audio` fields (including `history` as a list). `path` is a string.
 When `target_sample_rate` is given, the dict also includes that rate and
 `resample_action` (`upscale`, `downscale`, or `keep`).
 
@@ -102,6 +103,16 @@ Compares the current file `sample_rate` with a model's expected rate so the
 caller can decide whether to resample. This uses the current file rate, not
 `native_sample_rate`. `native_sample_rate` is still useful to detect that the
 file was already resampled from the original source.
+
+### `Audio.add_step(step_tag) -> Audio`
+
+Returns a new `Audio` object with the sanitized `step_tag` appended to `history`.
+
+### `Audio.fingerprint -> str`
+
+Returns a formatted string representing the audio's processing fingerprint, combining
+the source identifier, step history, and audio specs (`duration_s`, `sample_rate`, `channels`)
+using `__` as segment separators.
 
 ### `Audio.save_to(dest) -> Audio`
 
@@ -118,9 +129,8 @@ when the source and destination differ.
 
 Copies the represented audio file to a quick-save temporary directory (defaulting to
 `<project_root>/temp/`) with an informative filename generated from the `Audio` object's
-metadata (`source_id`, `duration_s`, `sample_rate`, `channels`), prints
-`Quick saved to: <destination>` to standard output, and updates the same object's
-`path` to the destination. It returns the same `Audio` instance.
+`fingerprint` (or explicit `name`), prints `Quick saved to: <destination>` to standard output,
+and updates the same object's `path` to the destination. It returns the same `Audio` instance.
 
 **Side effects:** Creates the destination directory, copies the file when source
 and destination differ, and prints the destination path to stdout.
@@ -146,7 +156,7 @@ It does not modify the `Audio` object and returns `None`.
 ### `repr(audio) -> str`
 
 Returns a human-readable representation containing the source ID, title, path,
-sample rate, native sample rate, duration, channel count, and format.
+sample rate, native sample rate, duration, channel count, format, and history (if non-empty).
 
 ## 3. Source-separation API
 
@@ -155,8 +165,8 @@ sample rate, native sample rate, duration, channel count, and format.
 **Defined in:** `src/separation/BaseSeparator.py`
 
 Every separator consumes one `Audio` object and returns one separated `Audio`
-object. The returned object has the same eight-field class contract, while its
-`path` points to the normalized separated output.
+object. The returned object has the same nine-field class contract, while its
+`path` points to the normalized separated output and its `history` records the separation step.
 
 ### Concrete implementations
 

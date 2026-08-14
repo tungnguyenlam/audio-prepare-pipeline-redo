@@ -42,17 +42,20 @@ class Audio:
     channels: Optional[int] = 1
     format: str = "wav"
     native_sample_rate: Optional[int] = None
+    history: tuple[str, ...] = ()
 
     def __repr__(self) -> str:
         duration = (
             f"{self.duration_s:.2f}s" if self.duration_s is not None else "None"
         )
+        history_repr = f", history={list(self.history)!r}" if self.history else ""
         return (
             f"Audio(source_id={self.source_id!r}, title={self.title!r}, "
             f"path={str(self.path)!r}, sample_rate={self.sample_rate}, "
             f"native_sample_rate={self.native_sample_rate}, "
             f"duration_s={duration}, "
-            f"channels={self.channels}, format={self.format!r})"
+            f"channels={self.channels}, format={self.format!r}"
+            f"{history_repr})"
         )
 
     @classmethod
@@ -63,6 +66,7 @@ class Audio:
         source_id: Optional[str] = None,
         title: Optional[str] = None,
         native_sample_rate: Optional[int] = None,
+        history: Optional[tuple[str, ...] | list[str]] = None,
     ) -> Audio:
         """Load an audio file from disk and return an ``Audio`` instance.
 
@@ -75,6 +79,7 @@ class Audio:
             title: Optional display title; defaults to the file stem.
             native_sample_rate: Original capture/source rate before pipeline
                 resampling. Defaults to the probed file rate.
+            history: Optional list or tuple of step fingerprint strings.
 
         Returns:
             Audio: Instance pointing at the resolved file path.
@@ -108,6 +113,7 @@ class Audio:
             native_sample_rate=(
                 native_sample_rate if native_sample_rate is not None else sample_rate
             ),
+            history=tuple(history) if history is not None else (),
         )
 
     def metadata(self, *, target_sample_rate: Optional[int] = None) -> dict[str, Any]:
@@ -119,6 +125,7 @@ class Audio:
         """
         payload = asdict(self)
         payload["path"] = str(self.path)
+        payload["history"] = list(self.history)
         if target_sample_rate is not None:
             payload["target_sample_rate"] = target_sample_rate
             payload["resample_action"] = self.resample_action(target_sample_rate)
@@ -138,6 +145,46 @@ class Audio:
             return "downscale"
         return "keep"
 
+    def add_step(self, step_tag: str) -> Audio:
+        """Return a new ``Audio`` instance with ``step_tag`` appended to its history.
+
+        Args:
+            step_tag: Short descriptor of the transformation (e.g. ``'htdemucs_vocals'``).
+
+        Returns:
+            Audio: A new ``Audio`` instance with updated history.
+        """
+        clean_tag = _sanitize_filename_component(step_tag)
+        if not clean_tag:
+            return self
+        return replace(self, history=(*self.history, clean_tag))
+
+    @property
+    def fingerprint(self) -> str:
+        """Return a formatted string representing the audio's processing fingerprint.
+
+        Combines the source identifier, step history, and audio specs (sample rate,
+        channels) using double underscores ``__`` as segment separators.
+        """
+        parts: list[str] = []
+        base_id = _sanitize_filename_component(self.source_id or self.path.stem or "audio")
+        parts.append(base_id or "audio")
+
+        if self.history:
+            parts.extend(self.history)
+
+        specs: list[str] = []
+        if self.duration_s is not None:
+            specs.append(f"{self.duration_s:.2f}s")
+        if self.sample_rate is not None:
+            specs.append(f"{self.sample_rate}Hz")
+        if self.channels is not None:
+            specs.append(f"{self.channels}ch")
+        if specs:
+            parts.append("_".join(specs))
+
+        return "__".join(p for p in parts if p)
+
     def with_file(
         self,
         path: str | Path,
@@ -148,8 +195,20 @@ class Audio:
         format: str = "wav",
         source_id: Optional[str] = None,
         title: Optional[str] = None,
+        step: Optional[str] = None,
+        history: Optional[tuple[str, ...] | list[str]] = None,
     ) -> Audio:
-        """Return a new ``Audio`` at ``path``, keeping ``native_sample_rate``."""
+        """Return a new ``Audio`` at ``path``, keeping ``native_sample_rate`` and history."""
+        if history is not None:
+            new_history = tuple(history)
+        else:
+            new_history = self.history
+
+        if step is not None:
+            clean_step = _sanitize_filename_component(step)
+            if clean_step:
+                new_history = (*new_history, clean_step)
+
         return replace(
             self,
             path=Path(path).resolve(),
@@ -159,6 +218,7 @@ class Audio:
             format=format,
             source_id=self.source_id if source_id is None else source_id,
             title=self.title if title is None else title,
+            history=new_history,
         )
 
     def show_mel_spectrogram(
@@ -236,7 +296,6 @@ class Audio:
 
     display = notebook_display
 
-
     def save_to(self, dest: str | Path) -> Audio:
         """Save (copy) the audio file to a destination file path or directory.
 
@@ -274,18 +333,19 @@ class Audio:
         suffix: Optional[str] = None,
         tag: Optional[str] = None,
     ) -> Audio:
-        """Quickly save (copy) the audio file to a temp directory with metadata in the filename.
+        """Quickly save (copy) the audio file to a temp directory with fingerprint in the filename.
 
         By default, saves into ``<project_root>/temp/`` and generates a filename
-        incorporating metadata (such as ``source_id``, duration, sample rate, and
-        channel count) so it can be quickly identified. Prints the destination path.
+        incorporating the step fingerprint (``source_id``, history steps, duration,
+        sample rate, channels) so it can be immediately recognized. Prints the
+        destination path.
 
         Args:
             output_dir: Target directory. Defaults to ``<project_root>/temp``.
-            name: Optional explicit filename to override metadata-based naming.
+            name: Optional explicit filename to override metadata/fingerprint-based naming.
             prefix: Optional prefix prepended to the generated filename.
             suffix: Optional suffix appended to the generated filename before extension.
-            tag: Optional tag appended to the metadata components.
+            tag: Optional tag appended to the fingerprint components.
 
         Returns:
             Audio: This Audio instance with path updated to the destination file location.
@@ -306,23 +366,23 @@ class Audio:
             if prefix:
                 parts.append(_sanitize_filename_component(str(prefix)))
 
-            base_id = _sanitize_filename_component(self.source_id or src_path.stem or "audio")
-            parts.append(base_id or "audio")
+            parts.append(self.fingerprint)
 
             if tag:
                 parts.append(_sanitize_filename_component(str(tag)))
-
-            if self.duration_s is not None:
-                parts.append(f"{self.duration_s:.2f}s")
-            if self.sample_rate is not None:
-                parts.append(f"{self.sample_rate}Hz")
-            if self.channels is not None:
-                parts.append(f"{self.channels}ch")
-
             if suffix:
                 parts.append(_sanitize_filename_component(str(suffix)))
 
-            filename = f"{'_'.join(p for p in parts if p)}.{fmt}"
+            filename = f"{'__'.join(p for p in parts if p)}.{fmt}"
+
+            # If filename is excessively long (> 200 chars), add a short hash and truncate safely
+            if len(filename) > 200:
+                import hashlib
+
+                h = hashlib.sha256(filename.encode("utf-8")).hexdigest()[:8]
+                ext_len = len(fmt) + 1
+                cutoff = 190 - ext_len - 10
+                filename = f"{filename[:cutoff]}__h{h}.{fmt}"
 
         target_dir = (
             Path(output_dir)

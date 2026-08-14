@@ -183,14 +183,17 @@ class AudioMixer:
             speech_reference=Audio.from_file(
                 speech_path,
                 source_id=f"{speech.source_id}__speech_reference",
+                history=(*speech.history, "speech_ref"),
             ),
             music_reference=Audio.from_file(
                 music_path,
                 source_id=f"{music.source_id}__music_reference",
+                history=(*music.history, "music_ref"),
             ),
             mixture=Audio.from_file(
                 mixture_path,
                 source_id=f"{speech.source_id}__{music.source_id}__mixture",
+                history=("mixed_speech_music", f"smr_{target_smr_db:.1f}dB"),
             ),
             parameters=parameters,
         )

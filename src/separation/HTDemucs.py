@@ -130,4 +130,5 @@ class HTDemucs(BaseSeparator):
             sample_rate=sample_rate,
             duration_s=duration_s,
             channels=channels,
+            step=f"{self.model}_{self.two_stems}",
         )

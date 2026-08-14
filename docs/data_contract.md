@@ -3,9 +3,9 @@
 ```mermaid
 flowchart TD
     URL[YouTube URL] --> INGEST[YtCrawler.ingest or download]
-    INGEST --> AUDIO1[Audio: 8 fields]
+    INGEST --> AUDIO1[Audio: 9 fields]
     AUDIO1 --> SEPARATE[BaseSeparator.separate]
-    SEPARATE --> AUDIO2[Separated Audio: 8 fields]
+    SEPARATE --> AUDIO2[Separated Audio: 9 fields]
     AUDIO2 --> DIARIZE[Optional BaseDiarizer.diarize]
     DIARIZE --> DIARIZATION[DiarizationResult: 5 fields]
 
@@ -54,7 +54,7 @@ BenchmarkDefinition + speech Audio + music Audio
 
 ### Return class: `src.utils.AudioClass.Audio`
 
-**Field count: 8**
+**Field count: 9**
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -66,6 +66,7 @@ BenchmarkDefinition + speech Audio + music Audio
 | `channels` | `int \| None` | Number of audio channels. |
 | `format` | `str` | File format/extension without the leading dot, normally `wav`. |
 | `native_sample_rate` | `int \| None` | Original source rate before pipeline resampling (yt-dlp `asr` or pre-normalize WAV). Downstream models compare this and `sample_rate` with their expected rate to decide whether to upscale, downscale, or keep the file. |
+| `history` | `tuple[str, ...]` | Processing step tags recording the transformations the audio has undergone. |
 
 The crawler returns a fully populated `Audio` instance. Its default
 configuration targets WAV, 44,100 Hz, and mono, but the configured values are
@@ -80,7 +81,7 @@ or `audio.resample_action(target_sample_rate)` to get the resample decision.
 
 ### Return class
 
-`src.utils.AudioClass.Audio` — **8 fields**, exactly the same fields listed in
+`src.utils.AudioClass.Audio` — **9 fields**, exactly the same fields listed in
 Step 1.
 
 For WAV files, `sample_rate`, `duration_s`, and `channels` are probed from the
@@ -224,7 +225,7 @@ These enums have no instance fields; they are constrained values:
 | `mixture` | `Audio` | Sum of the speech and music references. |
 | `parameters` | `MixingParameters` | Parameters and realized values needed to reproduce the mix. |
 
-Each of the three audio fields is an `Audio` object with **8 fields** as
+Each of the three audio fields is an `Audio` object with **9 fields** as
 defined in Step 1. The mixer writes three WAV files before constructing the
 returned `AudioMixResult`:
 

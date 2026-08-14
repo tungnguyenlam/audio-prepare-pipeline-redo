@@ -190,6 +190,7 @@ class MelRoFormer(BaseSeparator, ManagedModel):
             sample_rate=sample_rate,
             duration_s=duration_s,
             channels=channels,
+            step=f"mel_roformer_{self.two_stems}",
         )
 
     def close(self) -> None:
