@@ -36,6 +36,7 @@ A convenience class method that creates a crawler and delegates to
 
 - `link: str` — YouTube URL.
 - Optional output/work directories and normalization settings.
+  Default channel count is 1 (mono).
 - Additional crawler options through `**kwargs`, such as cookies or proxy.
 
 **Returns:** One `Audio` instance representing the normalized downloaded file.
@@ -55,7 +56,7 @@ Downloads one URL and returns an `Audio` object.
 3. Reads the generated `.info.json` metadata.
 4. Selects an audio file rather than a video artifact.
 5. Normalizes the file to the crawler's configured format, sample rate, and
-   channel count.
+   channel count (default 1 / mono).
 6. Returns an `Audio` object whose `path` points to the final output.
 7. Removes the temporary session directory even if processing fails.
 
@@ -65,7 +66,9 @@ or `ffmpeg` processing fails.
 ### `YtCrawler.build_command(url: str, target_work_dir: Path) -> list[str]`
 
 Builds, but does not execute, the `yt-dlp` command. The returned value is a
-list of command-line tokens, not a data-contract class.
+list of command-line tokens, not a data-contract class. The command includes
+`--postprocessor-args ExtractAudio:-ac N` so extraction matches the crawler's
+channel count (default 1).
 
 ## 2. `Audio` API
 

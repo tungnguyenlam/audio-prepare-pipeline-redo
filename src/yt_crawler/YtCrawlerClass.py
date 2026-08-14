@@ -38,7 +38,10 @@ def probe_wav(path: Path) -> tuple[int, float, int]:
 
 
 class YtCrawler:
-    """Crawls YouTube audio using yt-dlp and normalizes audio output using ffmpeg."""
+    """Crawls YouTube audio using yt-dlp and normalizes audio output using ffmpeg.
+
+    Default output is WAV, 44,100 Hz, mono (1 channel).
+    """
 
     def __init__(
         self,
@@ -117,6 +120,8 @@ class YtCrawler:
             str(self.retries),
             "--fragment-retries",
             str(self.retries),
+            "--postprocessor-args",
+            f"ExtractAudio:-ac {self.channels}",
         ]
         if self.proxy:
             cmd.extend(["--proxy", self.proxy])
