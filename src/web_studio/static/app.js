@@ -273,8 +273,25 @@ const el = {
   tabLibraryCategories: document.getElementById('tab-library-categories'),
   modalShortcuts: document.getElementById('modal-shortcuts'),
   btnCloseShortcutsModal: document.getElementById('btn-close-shortcuts-modal'),
+  queueBadge: document.getElementById('queue-badge'),
+  modalTaskQueue: document.getElementById('modal-task-queue'),
+  btnCloseQueueModal: document.getElementById('btn-close-queue-modal'),
+  btnCancelQueueModal: document.getElementById('btn-cancel-queue-modal'),
+  btnRefreshQueueModal: document.getElementById('btn-refresh-queue-modal'),
+  btnClearQueueFinished: document.getElementById('btn-clear-queue-finished'),
+  studioQueueTaskList: document.getElementById('studio-queue-task-list'),
+  queueStatRunning: document.getElementById('queue-stat-running'),
+  queueStatQueued: document.getElementById('queue-stat-queued'),
+  queueStatCompleted: document.getElementById('queue-stat-completed'),
+  queueStatFailed: document.getElementById('queue-stat-failed'),
+  queueModalFilters: document.getElementById('queue-modal-filters'),
+  queueModalSubtitle: document.getElementById('queue-modal-subtitle'),
   toastContainer: document.getElementById('toast-container'),
 };
+
+// Queue Modal state
+state.queueModalFilter = 'all';
+state.queuePollingInterval = null;
 
 // ==================== UTILITY FUNCTIONS ====================
 
@@ -599,6 +616,20 @@ function handleGlobalKeydown(e) {
     if (el.tabs[tabIndex]) {
       switchTab(el.tabs[tabIndex].dataset.tab);
     }
+    return;
+  }
+
+  // Q: Toggle Task Queue Inspector Modal
+  if ((e.key === 'q' || e.key === 'Q') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    e.preventDefault();
+    toggleQueueModal();
+    return;
+  }
+
+  // Alt+P: Quick switch to SonicPipeline
+  if (e.altKey && (e.key === 'p' || e.key === 'P')) {
+    e.preventDefault();
+    window.location.href = '/pipeline/';
     return;
   }
 
@@ -994,6 +1025,7 @@ function initWaveformInteractions() {
           clearSelection();
         } else {
           if (el.selectionActionsBar) el.selectionActionsBar.style.display = 'flex';
+          populateCutBoundsFromSelection();
         }
       }
     });
@@ -1070,30 +1102,38 @@ async function loadSpectrogramImage() {
 
 // ==================== AUDIO CUTTER ACTIONS ====================
 
+function populateCutBoundsFromSelection(showFeedback = false) {
+  if (!state.activeAudio || !state.selection.active) return false;
+
+  const unit = document.querySelector('input[name="cut_unit"]:checked').value;
+  const dur = state.activeAudio.duration_s || 1;
+
+  if (unit === 'seconds') {
+    el.cutStartInput.value = state.selection.start.toFixed(2);
+    el.cutEndInput.value = state.selection.end.toFixed(2);
+  } else if (unit === 'minutes') {
+    el.cutStartInput.value = (state.selection.start / 60).toFixed(3);
+    el.cutEndInput.value = (state.selection.end / 60).toFixed(3);
+  } else if (unit === 'percent') {
+    el.cutStartInput.value = ((state.selection.start / dur) * 100).toFixed(1);
+    el.cutEndInput.value = ((state.selection.end / dur) * 100).toFixed(1);
+  } else if (unit === 'timestamp') {
+    el.cutStartInput.value = formatTime(state.selection.start);
+    el.cutEndInput.value = formatTime(state.selection.end);
+  }
+
+  if (showFeedback) {
+    showToast("Using the selected waveform range", "success");
+  }
+  return true;
+}
+
 function initAudioCutter() {
   // Use Selection bounds
   el.btnUseSelection.addEventListener('click', () => {
-    if (!state.selection.active) {
+    if (!populateCutBoundsFromSelection(true)) {
       showToast("Select a region on the waveform first", "info");
-      return;
     }
-    const unit = document.querySelector('input[name="cut_unit"]:checked').value;
-    const dur = state.activeAudio.duration_s || 1;
-
-    if (unit === 'seconds') {
-      el.cutStartInput.value = state.selection.start.toFixed(2);
-      el.cutEndInput.value = state.selection.end.toFixed(2);
-    } else if (unit === 'minutes') {
-      el.cutStartInput.value = (state.selection.start / 60).toFixed(3);
-      el.cutEndInput.value = (state.selection.end / 60).toFixed(3);
-    } else if (unit === 'percent') {
-      el.cutStartInput.value = ((state.selection.start / dur) * 100).toFixed(1);
-      el.cutEndInput.value = ((state.selection.end / dur) * 100).toFixed(1);
-    } else if (unit === 'timestamp') {
-      el.cutStartInput.value = formatTime(state.selection.start);
-      el.cutEndInput.value = formatTime(state.selection.end);
-    }
-    showToast("Populated bounds from waveform selection", "success");
   });
 
   // Unit radio change styling
@@ -1101,6 +1141,7 @@ function initAudioCutter() {
     radio.addEventListener('change', () => {
       document.querySelectorAll('.radio-pill').forEach(p => p.classList.remove('active'));
       radio.closest('.radio-pill').classList.add('active');
+      populateCutBoundsFromSelection();
     });
   });
 
@@ -1142,7 +1183,7 @@ function initAudioCutter() {
       showToast(err.message, "error");
     } finally {
       el.btnApplyCut.disabled = false;
-      el.btnApplyCut.innerHTML = `<span>Apply Cut (Session)</span>`;
+      el.btnApplyCut.innerHTML = `<span>Open in Workspace</span>`;
     }
   });
 
@@ -1153,6 +1194,7 @@ function initAudioCutter() {
         showToast("Please load an audio file first", "warning");
         return;
       }
+      populateCutBoundsFromSelection();
       const start = el.cutStartInput.value.trim();
       const end = el.cutEndInput.value.trim();
       const unit = document.querySelector('input[name="cut_unit"]:checked').value;
@@ -1177,7 +1219,7 @@ function initAudioCutter() {
         showToast(err.message, "error");
       } finally {
         el.btnCutAndAudition.disabled = false;
-        el.btnCutAndAudition.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><line x1="20" y1="4" x2="8.12" y2="15.88"></line><line x1="14.47" y1="14.48" x2="20" y2="20"></line><line x1="8.12" y1="8.12" x2="12" y2="12"></line></svg> <span>✂️ Cut & Send to Audition</span>`;
+        el.btnCutAndAudition.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><line x1="20" y1="4" x2="8.12" y2="15.88"></line><line x1="14.47" y1="14.48" x2="20" y2="20"></line><line x1="8.12" y1="8.12" x2="12" y2="12"></line></svg> <span>Open in Audition</span>`;
       }
     });
   }
@@ -1212,7 +1254,7 @@ function initAudioCutter() {
         showToast(err.message, "error");
       } finally {
         el.btnCutAndRunModels.disabled = false;
-        el.btnCutAndRunModels.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> <span>🚀 Cut & Run All Demucs Models</span>`;
+        el.btnCutAndRunModels.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> <span>Run Separation Models</span>`;
       }
     });
   }
@@ -1941,7 +1983,7 @@ function renderCutsTable() {
   }
 
   if (cuts.length === 0) {
-    el.cutsTableBody.innerHTML = `<tr><td colspan="5" class="empty-table-msg">No cuts generated yet. Set start/end bounds above and click "✂️ Cut & Send to Audition".</td></tr>`;
+    el.cutsTableBody.innerHTML = `<tr><td colspan="5" class="empty-table-msg">No clips yet. Select a waveform range, confirm the boundaries, then choose where to open the new clip.</td></tr>`;
     return;
   }
 
@@ -3351,13 +3393,299 @@ function toggleShortcutsModal() {
   }
 }
 
+// ==================== STUDIO TASK QUEUE MODAL LOGIC ====================
+
+function openQueueModal() {
+  if (!el.modalTaskQueue) return;
+  closeAllModals();
+  el.modalTaskQueue.classList.remove('hidden');
+  loadAndRenderQueueModal();
+
+  if (state.queuePollingInterval) clearInterval(state.queuePollingInterval);
+  state.queuePollingInterval = setInterval(() => {
+    if (el.modalTaskQueue && !el.modalTaskQueue.classList.contains('hidden')) {
+      loadAndRenderQueueModal();
+    } else {
+      clearInterval(state.queuePollingInterval);
+      state.queuePollingInterval = null;
+    }
+  }, 1200);
+}
+
+function closeQueueModal() {
+  if (el.modalTaskQueue) {
+    el.modalTaskQueue.classList.add('hidden');
+  }
+  if (state.queuePollingInterval) {
+    clearInterval(state.queuePollingInterval);
+    state.queuePollingInterval = null;
+  }
+}
+
+function toggleQueueModal() {
+  if (el.modalTaskQueue && !el.modalTaskQueue.classList.contains('hidden')) {
+    closeQueueModal();
+  } else {
+    openQueueModal();
+  }
+}
+
+function formatTaskType(type) {
+  switch (type) {
+    case 'youtube_crawl': return 'YouTube Ingest';
+    case 'separation': return 'Stem Separation';
+    case 'multi_model_separation': return 'Multi-Model Separation';
+    case 'diarization': return 'Speaker Diarization';
+    case 'benchmark_mix': return 'Benchmark Mix';
+    case 'batch_process': return 'Batch Processor';
+    default: return (type || 'Task').replace(/_/g, ' ').toUpperCase();
+  }
+}
+
+function formatTaskDuration(sec) {
+  if (sec == null || isNaN(sec) || sec < 0) return '0s';
+  if (sec < 60) return `${sec.toFixed(1)}s`;
+  const mins = Math.floor(sec / 60);
+  const remSec = Math.floor(sec % 60);
+  return `${mins}m ${remSec}s`;
+}
+
+function formatTaskTime(task) {
+  const now = Date.now() / 1000;
+  if (task.status === 'running' && task.start_time) {
+    return `Running for ${formatTaskDuration(now - task.start_time)}`;
+  }
+  if (task.end_time && task.start_time) {
+    return `Finished in ${formatTaskDuration(task.end_time - task.start_time)}`;
+  }
+  if (task.created_at) {
+    const elapsed = Math.max(0, now - task.created_at);
+    return `Queued ${formatTaskDuration(elapsed)} ago`;
+  }
+  return '';
+}
+
+async function loadAndRenderQueueModal() {
+  if (!el.studioQueueTaskList) return;
+  try {
+    const res = await fetch('/api/tasks');
+    if (!res.ok) throw new Error("Failed to load tasks");
+    const data = await res.json();
+    const tasks = data.tasks || [];
+    const queueStatus = data.queue || { running: 0, queued: 0 };
+
+    // Update stat numbers
+    const runningCount = tasks.filter(t => t.status === 'running').length;
+    const queuedCount = tasks.filter(t => t.status === 'pending').length;
+    const completedCount = tasks.filter(t => t.status === 'completed').length;
+    const failedCount = tasks.filter(t => t.status === 'failed' || t.status === 'cancelled').length;
+
+    if (el.queueStatRunning) el.queueStatRunning.textContent = runningCount;
+    if (el.queueStatQueued) el.queueStatQueued.textContent = queuedCount;
+    if (el.queueStatCompleted) el.queueStatCompleted.textContent = completedCount;
+    if (el.queueStatFailed) el.queueStatFailed.textContent = failedCount;
+
+    if (el.queueModalSubtitle) {
+      el.queueModalSubtitle.textContent = `Active Concurrency: ${queueStatus.max_concurrency || 1} slots • ${runningCount} active, ${queuedCount} in queue`;
+    }
+
+    // Filter tasks according to state.queueModalFilter
+    const filter = state.queueModalFilter || 'all';
+    let filteredTasks = tasks;
+    if (filter === 'active') {
+      filteredTasks = tasks.filter(t => t.status === 'running' || t.status === 'pending');
+    } else if (filter === 'completed') {
+      filteredTasks = tasks.filter(t => t.status === 'completed');
+    } else if (filter === 'failed') {
+      filteredTasks = tasks.filter(t => t.status === 'failed' || t.status === 'cancelled');
+    }
+
+    if (filteredTasks.length === 0) {
+      el.studioQueueTaskList.innerHTML = `
+        <div class="queue-empty-state">
+          <div class="queue-empty-icon">☕</div>
+          <div class="queue-empty-title">${filter === 'all' ? 'Task Queue is Idle' : 'No tasks in this view'}</div>
+          <div class="queue-empty-sub">${filter === 'all' ? 'Any background separations, YouTube downloads, or diarizations will appear here in real-time.' : 'No background tasks match the selected filter.'}</div>
+        </div>
+      `;
+      return;
+    }
+
+    el.studioQueueTaskList.innerHTML = '';
+    filteredTasks.forEach(task => {
+      const card = document.createElement('div');
+      const isRunning = task.status === 'running';
+      const isPending = task.status === 'pending';
+      const isFailed = task.status === 'failed';
+      const isCancelled = task.status === 'cancelled';
+      const isCompleted = task.status === 'completed';
+
+      let cardClass = 'queue-task-card';
+      if (isRunning) cardClass += ' task-running';
+      if (isFailed) cardClass += ' task-failed';
+      card.className = cardClass;
+
+      const progressPct = Math.round(Math.min(100, Math.max(0, (task.progress || 0) * 100)));
+      const typeLabel = formatTaskType(task.type);
+      const timeStr = formatTaskTime(task);
+
+      let statusBadgeHtml = '';
+      if (isRunning) {
+        statusBadgeHtml = `<span class="task-status-pill task-status-running"><span class="dot dot-pulse"></span> Running (${progressPct}%)</span>`;
+      } else if (isPending) {
+        const posText = task.queue_position ? ` #${task.queue_position}` : '';
+        statusBadgeHtml = `<span class="task-status-pill task-status-pending">⏳ Queued${posText}</span>`;
+      } else if (isCompleted) {
+        statusBadgeHtml = `<span class="task-status-pill task-status-completed">✓ Completed</span>`;
+      } else if (isFailed) {
+        statusBadgeHtml = `<span class="task-status-pill task-status-failed">⚠ Failed</span>`;
+      } else if (isCancelled) {
+        statusBadgeHtml = `<span class="task-status-pill task-status-cancelled">⊘ Cancelled</span>`;
+      }
+
+      let errorHtml = '';
+      if (task.error) {
+        errorHtml = `<div class="task-card-error">${escapeHtml(task.error)}</div>`;
+      }
+
+      let cancelBtnHtml = '';
+      if (isPending) {
+        cancelBtnHtml = `<button class="btn btn-sm btn-danger btn-cancel-task" data-task-id="${task.id}" title="Cancel queued task">Cancel</button>`;
+      }
+
+      // Metadata summary (e.g. model name, url, duration)
+      const meta = task.metadata || {};
+      let metaSummary = [];
+      if (meta.model) metaSummary.push(`Model: ${meta.model}`);
+      if (meta.backend) metaSummary.push(`Backend: ${meta.backend}`);
+      if (meta.url) metaSummary.push(`URL: ${meta.url.length > 35 ? meta.url.substring(0, 35) + '...' : meta.url}`);
+      if (meta.sample_rate) metaSummary.push(`${meta.sample_rate} Hz`);
+      const metaLine = metaSummary.length > 0 ? metaSummary.join(' • ') : '';
+
+      card.innerHTML = `
+        <div class="task-card-header">
+          <div class="task-card-meta">
+            <span class="task-type-badge">${typeLabel}</span>
+            <span class="task-id-label">${task.id}</span>
+          </div>
+          <div class="task-card-status-wrap">
+            <span class="task-time-label">${timeStr}</span>
+            ${statusBadgeHtml}
+          </div>
+        </div>
+
+        <div class="task-card-msg">${escapeHtml(task.message || (isRunning ? 'Processing audio task...' : ''))}</div>
+        ${errorHtml}
+
+        ${isRunning || isPending ? `
+          <div class="task-card-progress">
+            <div class="task-card-progress-fill" style="width: ${isRunning ? progressPct : 100}%; ${isPending ? 'opacity: 0.5;' : ''}"></div>
+          </div>
+        ` : ''}
+
+        <div class="task-card-footer">
+          <span class="task-details-hint font-mono">${escapeHtml(metaLine)}</span>
+          ${cancelBtnHtml}
+        </div>
+      `;
+
+      el.studioQueueTaskList.appendChild(card);
+    });
+
+    // Wire cancel buttons
+    el.studioQueueTaskList.querySelectorAll('.btn-cancel-task').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        cancelQueueTask(btn.dataset.taskId);
+      });
+    });
+
+  } catch (err) {
+    if (el.studioQueueTaskList) {
+      el.studioQueueTaskList.innerHTML = `
+        <div class="queue-empty-state">
+          <div class="queue-empty-icon">⚠</div>
+          <div class="queue-empty-title">Could not reach Studio Queue</div>
+          <div class="queue-empty-sub">${escapeHtml(err.message)}</div>
+        </div>
+      `;
+    }
+  }
+}
+
+async function cancelQueueTask(taskId) {
+  try {
+    const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (res.ok) {
+      showToast("Task cancelled successfully", "info");
+      loadAndRenderQueueModal();
+      fetchSystemStatus();
+    } else {
+      showToast(data.error || "Failed to cancel task", "error");
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, "error");
+  }
+}
+
+async function clearQueueFinished() {
+  try {
+    const res = await fetch('/api/tasks/clear', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(`Cleared ${data.cleared || 0} finished task(s)`, "success");
+      loadAndRenderQueueModal();
+    } else {
+      showToast("Failed to clear tasks", "error");
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, "error");
+  }
+}
+
 function closeAllModals() {
   if (el.modalSaveTo) el.modalSaveTo.classList.add('hidden');
   if (el.modalLibrary) el.modalLibrary.classList.add('hidden');
   if (el.modalShortcuts) el.modalShortcuts.classList.add('hidden');
+  if (el.modalTaskQueue) el.modalTaskQueue.classList.add('hidden');
+  if (state.queuePollingInterval) {
+    clearInterval(state.queuePollingInterval);
+    state.queuePollingInterval = null;
+  }
 }
 
 function initModals() {
+  // Queue Modal triggers
+  if (el.queueBadge) {
+    el.queueBadge.addEventListener('click', (e) => {
+      e.preventDefault();
+      toggleQueueModal();
+    });
+  }
+  if (el.btnCloseQueueModal) {
+    el.btnCloseQueueModal.addEventListener('click', closeQueueModal);
+  }
+  if (el.btnCancelQueueModal) {
+    el.btnCancelQueueModal.addEventListener('click', closeQueueModal);
+  }
+  if (el.btnRefreshQueueModal) {
+    el.btnRefreshQueueModal.addEventListener('click', loadAndRenderQueueModal);
+  }
+  if (el.btnClearQueueFinished) {
+    el.btnClearQueueFinished.addEventListener('click', clearQueueFinished);
+  }
+  if (el.queueModalFilters) {
+    el.queueModalFilters.addEventListener('click', (e) => {
+      const btn = e.target.closest('.pill-btn');
+      if (!btn) return;
+      el.queueModalFilters.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.queueModalFilter = btn.dataset.filter || 'all';
+      loadAndRenderQueueModal();
+    });
+  }
+
   // Close buttons
   if (el.btnCloseLibraryModal) {
     el.btnCloseLibraryModal.addEventListener('click', () => {
@@ -3389,7 +3717,7 @@ function initModals() {
   document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
     backdrop.addEventListener('click', (e) => {
       if (e.target === backdrop) {
-        backdrop.classList.add('hidden');
+        closeAllModals();
       }
     });
   });

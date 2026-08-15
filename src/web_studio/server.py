@@ -353,6 +353,16 @@ class TaskManager:
         self._refresh_queue_messages()
         return True
 
+    def clear_finished(self) -> int:
+        """Remove completed, failed, or cancelled tasks from task memory."""
+        to_delete = [
+            tid for tid, task in self._tasks.items()
+            if task.get("status") in ("completed", "failed", "cancelled")
+        ]
+        for tid in to_delete:
+            del self._tasks[tid]
+        return len(to_delete)
+
     def status(self) -> Dict[str, Any]:
         """Return a compact queue status summary."""
         return {
@@ -1589,7 +1599,10 @@ async def handle_cancel_task(request: web.Request) -> web.Response:
             {"error": "Only queued tasks can be cancelled safely", "task": task},
             status=409,
         )
-    return web.json_response({"task": task_manager.get_task(task_id)})
+async def handle_clear_tasks(request: web.Request) -> web.Response:
+    """Clear completed, failed, and cancelled tasks from Studio queue memory."""
+    cleared = task_manager.clear_finished()
+    return web.json_response({"cleared": cleared, "tasks": task_manager.list_tasks(), "queue": task_manager.status()})
 
 
 # ==================== HUMAN EVALUATION & SCORING API ====================
@@ -1961,6 +1974,7 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_post("/api/compare/spectrogram", handle_compare_spectrogram)
     app.router.add_post("/api/compare/waveform", handle_compare_waveform)
     app.router.add_get("/api/tasks", handle_list_tasks)
+    app.router.add_post("/api/tasks/clear", handle_clear_tasks)
     app.router.add_get("/api/tasks/{id}", handle_get_task)
     app.router.add_delete("/api/tasks/{id}", handle_cancel_task)
     app.router.add_get("/api/live-reload", handle_live_reload_sse)

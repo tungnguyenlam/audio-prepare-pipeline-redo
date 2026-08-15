@@ -40,6 +40,8 @@
     tabPanes: document.querySelectorAll('.tab-pane'),
     activeBreadcrumbTitle: document.getElementById('active-breadcrumb-title'),
     activeJobsCounter: document.getElementById('active-jobs-counter'),
+    btnTopbarQueue: document.getElementById('btn-topbar-queue'),
+    topbarJobsCounter: document.getElementById('topbar-jobs-counter'),
     btnThemeToggle: document.getElementById('btn-theme-toggle'),
     iconThemeSun: document.getElementById('icon-theme-sun'),
     iconThemeMoon: document.getElementById('icon-theme-moon'),
@@ -522,6 +524,10 @@
     if (els.activeJobsCounter) {
       els.activeJobsCounter.textContent = activeJobs + queuedJobs;
       els.activeJobsCounter.style.display = (activeJobs + queuedJobs) > 0 ? 'inline-flex' : 'none';
+    }
+    if (els.topbarJobsCounter) {
+      els.topbarJobsCounter.textContent = activeJobs + queuedJobs;
+      els.topbarJobsCounter.style.display = (activeJobs + queuedJobs) > 0 ? 'inline-block' : 'none';
     }
 
     // Update filter counts
@@ -1611,6 +1617,32 @@
         } catch (_) {}
       });
     }
+
+    // Topbar Queue Quick Jump Button
+    if (els.btnTopbarQueue) {
+      els.btnTopbarQueue.addEventListener('click', () => {
+        switchTab('tab-queue');
+      });
+    }
+
+    // Global keyboard shortcuts (Q to view queue, Alt+S to switch to Studio)
+    window.addEventListener('keydown', (e) => {
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+
+      // Q: Jump to Batch Job Queue Tab
+      if ((e.key === 'q' || e.key === 'Q') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        switchTab('tab-queue');
+        return;
+      }
+
+      // Alt+S: Quick Switch to SonicStudio
+      if (e.altKey && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        window.location.href = '/studio/';
+        return;
+      }
+    });
 
     // Initial load
     loadDatasets();

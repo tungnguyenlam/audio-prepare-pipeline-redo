@@ -496,6 +496,106 @@ html, body {
   gap: 8px;
 }
 
+.btn-app-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  background: linear-gradient(135deg, hsla(217, 91%, 60%, 0.14), hsla(188, 86%, 53%, 0.12));
+  border: 1px solid hsla(217, 91%, 60%, 0.35);
+  border-radius: var(--radius-full, 9999px);
+  color: var(--text-main);
+  text-decoration: none;
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.3);
+}
+
+.btn-app-switcher:hover {
+  background: linear-gradient(135deg, hsla(217, 91%, 60%, 0.25), hsla(188, 86%, 53%, 0.22));
+  border-color: var(--color-primary-hover);
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px -2px hsla(217, 91%, 60%, 0.25);
+}
+
+.switcher-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--color-primary);
+  box-shadow: 0 0 6px var(--color-primary);
+}
+
+.switcher-icon {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.switcher-name {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.switcher-badge {
+  font-size: 0.65rem;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  text-transform: uppercase;
+  background-color: hsla(217, 91%, 60%, 0.25);
+  color: var(--color-primary-hover);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.switcher-arrow {
+  color: var(--text-subtle);
+  transition: transform var(--transition-fast);
+}
+
+.btn-app-switcher:hover .switcher-arrow {
+  color: #fff;
+  transform: translateX(2px);
+}
+
+.btn-topbar-queue {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  font-weight: 600;
+  font-size: 0.78rem;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-topbar-queue:hover {
+  background-color: var(--bg-hover);
+  border-color: var(--border-medium);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.topbar-queue-counter {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  background-color: hsla(217, 91%, 60%, 0.22);
+  color: var(--color-primary-hover);
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  min-width: 16px;
+  text-align: center;
+}
+
 .concurrency-pill-wrap {
   display: inline-flex;
   align-items: center;

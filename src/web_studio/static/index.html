@@ -70,10 +70,13 @@
       </nav>
 
       <div class="header-status">
-        <!-- Cross-link to SonicPipeline Batch Engine -->
-        <a href="/pipeline/" class="badge badge-link" title="Open SonicPipeline Batch Engine">
-          <span>⚡ SonicPipeline</span>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+        <!-- Quick Switcher to SonicPipeline Batch Suite -->
+        <a href="/pipeline/" class="btn-app-switcher" id="btn-switch-to-pipeline" title="Switch to SonicPipeline Batch Engine (Alt+P)">
+          <span class="switcher-dot"></span>
+          <span class="switcher-icon">⚡</span>
+          <span class="switcher-name">SonicPipeline</span>
+          <span class="switcher-badge">Batch</span>
+          <svg class="switcher-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
         </a>
 
         <div id="device-badge" class="badge badge-device" title="Hardware accelerator">
@@ -81,10 +84,12 @@
           <span id="device-label">Detecting...</span>
         </div>
 
-        <div id="queue-badge" class="badge badge-device" title="Studio background task queue">
+        <!-- Clickable Task Queue Badge / Inspector Trigger -->
+        <button class="badge badge-device badge-queue-btn" id="queue-badge" title="View Background Task Queue (Q)" aria-label="Open Studio Task Queue">
           <span class="dot" id="queue-dot"></span>
           <span id="queue-label">Queue 0</span>
-        </div>
+          <svg class="queue-btn-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </button>
 
         <div id="live-reload-badge" class="badge badge-reload" title="Hot reload status">
           <span class="reload-dot"></span>
@@ -112,9 +117,10 @@
         <!-- Ingestion Bar -->
         <div class="card ingest-card">
           <div class="card-header">
-            <div>
+            <div class="section-heading">
+              <span class="workflow-step">1 · Choose source</span>
               <h2 class="card-title">Load Audio Source</h2>
-              <p class="card-subtitle">Drop local audio or ingest YouTube URL into the high-precision workspace.</p>
+              <p class="card-subtitle">Start with a local file, a library item, or a YouTube URL.</p>
             </div>
             <div class="card-actions">
               <button class="btn btn-sm btn-secondary" id="btn-browse-library-modal">
@@ -164,10 +170,13 @@
           <!-- Audio Metadata & Quick Actions Card -->
           <div class="card active-audio-card">
             <div class="audio-header-row">
-              <div class="audio-main-meta">
-                <div class="audio-source-badge" id="meta-source-type">Local</div>
-                <h3 class="audio-title" id="meta-title">ready_or_not.wav</h3>
-                <span class="audio-id-chip" id="meta-id" title="Click to copy Audio ID">aud_000000</span>
+              <div class="audio-identity-block">
+                <span class="workflow-step">2 · Current audio</span>
+                <div class="audio-main-meta">
+                  <div class="audio-source-badge" id="meta-source-type">Local</div>
+                  <h3 class="audio-title" id="meta-title">ready_or_not.wav</h3>
+                  <span class="audio-id-chip" id="meta-id" title="Click to copy Audio ID">aud_000000</span>
+                </div>
               </div>
 
               <!-- Model Provenance Banner (Shows which Demucs model or cut produced this file) -->
@@ -179,23 +188,25 @@
                 </div>
               </div>
 
-              <div class="audio-quick-actions">
-                <button class="btn btn-secondary" id="btn-quick-save" title="Quick save with standardized fingerprint to temp/">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-                  <span>Quick Save</span>
-                </button>
-                <button class="btn btn-secondary" id="btn-save-to-dialog">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                  <span>Save To...</span>
-                </button>
-                <button class="btn btn-secondary" id="btn-download-audio">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4M17 9l-5 5-5-5M12 12.8V2.5"/></svg>
-                  <span>Download</span>
-                </button>
+              <div class="audio-action-stack">
                 <button class="btn btn-accent" id="btn-send-to-separation">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
                   <span>Separate Stems</span>
                 </button>
+                <div class="audio-quick-actions" aria-label="File actions">
+                  <button class="btn btn-sm btn-secondary" id="btn-quick-save" title="Quick save with standardized fingerprint to temp/">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                    <span>Quick Save</span>
+                  </button>
+                  <button class="btn btn-sm btn-secondary" id="btn-save-to-dialog">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    <span>Save As</span>
+                  </button>
+                  <button class="btn btn-sm btn-secondary" id="btn-download-audio">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4M17 9l-5 5-5-5M12 12.8V2.5"/></svg>
+                    <span>Download</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -246,15 +257,16 @@
           <div class="card waveform-card">
             <div class="card-header">
               <div class="waveform-header-left">
-                <h3 class="card-title">Interactive Waveform & Precision Cutter</h3>
-                <span class="waveform-sub">Click/drag on waveform to scrub or select a region. Press <kbd>Space</kbd> to play/pause.</span>
+                <span class="workflow-step">3 · Select a range</span>
+                <h3 class="card-title">Waveform</h3>
+                <span class="waveform-sub">Drag across the waveform to select audio. Click once to move the playhead.</span>
               </div>
 
               <!-- Selection Quick Bar (appears when region is selected) -->
               <div class="selection-actions-bar" id="selection-actions-bar" style="display: none;">
                 <button class="btn btn-sm btn-primary" id="btn-audition-selection" title="Loop play selected range">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                  <span>Audition Selection</span>
+                  <span>Preview Selection</span>
                 </button>
                 <button class="btn btn-sm btn-secondary" id="btn-clear-selection" title="Clear selection">
                   <span>Clear</span>
@@ -306,46 +318,60 @@
 
             <!-- Audio Cutter Controls -->
             <div class="cutter-toolbar">
-              <div class="cutter-unit-group">
-                <label class="cutter-label">Cut Unit:</label>
-                <div class="radio-pills">
-                  <label class="radio-pill active"><input type="radio" name="cut_unit" value="seconds" checked> Seconds (s)</label>
-                  <label class="radio-pill"><input type="radio" name="cut_unit" value="minutes"> Minutes (m)</label>
-                  <label class="radio-pill"><input type="radio" name="cut_unit" value="percent"> Percent (%)</label>
-                  <label class="radio-pill"><input type="radio" name="cut_unit" value="timestamp"> Timestamp (MM:SS)</label>
+              <div class="cutter-heading">
+                <div>
+                  <span class="workflow-step">4 · Create a clip</span>
+                  <h3 class="cutter-title">Confirm clip boundaries</h3>
+                  <p class="card-subtitle">Use the waveform selection or enter exact start and end values.</p>
                 </div>
-              </div>
-
-              <div class="cutter-inputs-group">
-                <div class="cut-input-wrap">
-                  <label for="cut-start-input">Start Bound:</label>
-                  <input type="text" id="cut-start-input" class="text-input cut-input" value="0.0">
-                </div>
-                <div class="cut-input-wrap">
-                  <label for="cut-end-input">End Bound:</label>
-                  <input type="text" id="cut-end-input" class="text-input cut-input" value="10.0">
-                </div>
-                <button class="btn btn-sm btn-secondary" id="btn-use-selection" title="Populate bounds from waveform selection">
-                  From Selection
+                <button class="btn btn-sm btn-secondary" id="btn-use-selection" title="Copy the waveform selection into the start and end fields">
+                  Use Waveform Selection
                 </button>
               </div>
 
-              <div class="cutter-actions-group">
+              <div class="cutter-config-grid">
+                <div class="cutter-unit-group">
+                  <label class="cutter-label">Value format</label>
+                  <div class="radio-pills">
+                    <label class="radio-pill active"><input type="radio" name="cut_unit" value="seconds" checked> Seconds</label>
+                    <label class="radio-pill"><input type="radio" name="cut_unit" value="minutes"> Minutes</label>
+                    <label class="radio-pill"><input type="radio" name="cut_unit" value="percent"> Percent</label>
+                    <label class="radio-pill"><input type="radio" name="cut_unit" value="timestamp"> Timestamp</label>
+                  </div>
+                </div>
+
+                <div class="cutter-inputs-group">
+                  <div class="cut-input-wrap">
+                    <label for="cut-start-input">Start</label>
+                    <input type="text" id="cut-start-input" class="text-input cut-input" value="0.0">
+                  </div>
+                  <span class="range-arrow" aria-hidden="true">→</span>
+                  <div class="cut-input-wrap">
+                    <label for="cut-end-input">End</label>
+                    <input type="text" id="cut-end-input" class="text-input cut-input" value="10.0">
+                  </div>
+                </div>
+              </div>
+
+              <div class="cutter-actions-row">
                 <button class="btn btn-secondary" id="btn-preview-cut" title="Preview audio segment playback">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                  <span>Preview Cut</span>
+                  <span>Preview Range</span>
                 </button>
-                <button class="btn btn-primary" id="btn-cut-and-audition" title="Cut segment and jump directly to Audition & Scoring">
+                <div class="cutter-destination-actions">
+                  <span class="cutter-action-label">Create clip and</span>
+                  <button class="btn btn-primary" id="btn-apply-cut" title="Create the clip and open it in this workspace">
+                    <span>Open in Workspace</span>
+                  </button>
+                  <button class="btn btn-secondary" id="btn-cut-and-audition" title="Create the clip and open Audition & Scoring">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><line x1="20" y1="4" x2="8.12" y2="15.88"></line><line x1="14.47" y1="14.48" x2="20" y2="20"></line><line x1="8.12" y1="8.12" x2="12" y2="12"></line></svg>
-                  <span>✂️ Cut & Send to Audition</span>
-                </button>
-                <button class="btn btn-accent" id="btn-cut-and-run-models" title="Cut segment and run all Demucs models in batch for scoring">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-                  <span>🚀 Cut & Run All Demucs Models</span>
-                </button>
-                <button class="btn btn-secondary" id="btn-apply-cut" title="Execute AudioCutter.cut() into active session">
-                  <span>Apply Cut (Session)</span>
-                </button>
+                    <span>Open in Audition</span>
+                  </button>
+                  <button class="btn btn-accent" id="btn-cut-and-run-models" title="Create the clip and run all Demucs models for scoring">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                    <span>Run Separation Models</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -373,7 +399,7 @@
                 </thead>
                 <tbody id="cuts-table-body">
                   <tr>
-                    <td colspan="5" class="empty-table-msg">No cuts generated yet. Set start/end bounds above and click "Cut & Send to Audition".</td>
+                    <td colspan="5" class="empty-table-msg">No clips yet. Select a waveform range, confirm the boundaries, then choose where to open the new clip.</td>
                   </tr>
                 </tbody>
               </table>
@@ -1280,6 +1306,73 @@
       </div>
     </div>
 
+    <!-- Studio Task Queue Inspector Modal -->
+    <div id="modal-task-queue" class="modal-backdrop hidden">
+      <div class="modal-card modal-lg queue-modal-card">
+        <div class="modal-header">
+          <div class="modal-title-wrap">
+            <span class="modal-badge-icon">📋</span>
+            <div>
+              <h3 class="modal-title">Studio Task Queue</h3>
+              <p class="modal-subtitle" id="queue-modal-subtitle">Background audio tasks, model separations, crawl downloads & diarizations</p>
+            </div>
+          </div>
+          <div class="modal-header-actions">
+            <button class="btn btn-sm btn-secondary" id="btn-refresh-queue-modal" title="Refresh task status">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+              <span>Refresh</span>
+            </button>
+            <button class="btn btn-sm btn-secondary" id="btn-clear-queue-finished" title="Clear finished and cancelled tasks">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+              <span>Clear Done</span>
+            </button>
+            <button class="btn-close-modal" id="btn-close-queue-modal" title="Close (Esc)">&times;</button>
+          </div>
+        </div>
+
+        <div class="queue-modal-stats-bar">
+          <div class="queue-stat-pill" id="stat-pill-running">
+            <span class="stat-dot dot-pulse"></span>
+            <span class="stat-num" id="queue-stat-running">0</span>
+            <span class="stat-name">Running</span>
+          </div>
+          <div class="queue-stat-pill" id="stat-pill-queued">
+            <span class="stat-num" id="queue-stat-queued">0</span>
+            <span class="stat-name">Queued</span>
+          </div>
+          <div class="queue-stat-pill" id="stat-pill-completed">
+            <span class="stat-num" id="queue-stat-completed">0</span>
+            <span class="stat-name">Completed</span>
+          </div>
+          <div class="queue-stat-pill" id="stat-pill-failed">
+            <span class="stat-num" id="queue-stat-failed">0</span>
+            <span class="stat-name">Failed</span>
+          </div>
+          <div class="queue-stat-divider"></div>
+          <div class="queue-modal-filters" id="queue-modal-filters">
+            <button class="pill-btn active" data-filter="all">All</button>
+            <button class="pill-btn" data-filter="active">Active & Queued</button>
+            <button class="pill-btn" data-filter="completed">Completed</button>
+            <button class="pill-btn" data-filter="failed">Failed / Cancelled</button>
+          </div>
+        </div>
+
+        <div class="modal-body queue-modal-body">
+          <div id="studio-queue-task-list" class="queue-task-list">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <div class="modal-footer queue-modal-footer">
+          <a href="/pipeline/#tab-queue" class="btn btn-secondary btn-sm queue-switch-link" title="Open SonicPipeline Batch Job Queue">
+            <span>⚡ Open SonicPipeline Batch Queue</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+          </a>
+          <button class="btn btn-secondary" id="btn-cancel-queue-modal">Close</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Keyboard Shortcuts Modal -->
     <div id="modal-shortcuts" class="modal-backdrop hidden">
       <div class="modal-card modal-md">
@@ -1315,6 +1408,14 @@
             <div class="shortcut-item">
               <span class="shortcut-desc">Toggle Mute</span>
               <kbd class="kbd">M</kbd>
+            </div>
+            <div class="shortcut-item">
+              <span class="shortcut-desc">Toggle Task Queue Inspector</span>
+              <kbd class="kbd">Q</kbd>
+            </div>
+            <div class="shortcut-item">
+              <span class="shortcut-desc">Quick Switch to SonicPipeline</span>
+              <div class="kbd-combo"><kbd class="kbd">Alt</kbd> + <kbd class="kbd">P</kbd></div>
             </div>
             <div class="shortcut-item">
               <span class="shortcut-desc">Zoom In / Zoom Out</span>

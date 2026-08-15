@@ -7,7 +7,7 @@ from typing import Literal, Optional, Union
 
 import soundfile as sf
 
-from src.utils.AudioClass import Audio
+from src.utils.AudioClass import Audio, _sanitize_filename_component
 
 TimeUnit = Literal["seconds", "minutes", "hours", "percent", "timestamp"]
 TimeValue = Union[int, float, str]
@@ -286,18 +286,23 @@ class AudioCutter:
         end_s: float,
         output_path: Optional[str | Path],
     ) -> Path:
+        sanitized_title = _sanitize_filename_component(
+            audio.title or audio.source_id or audio.path.stem
+        )
+        if len(sanitized_title) > 100:
+            sanitized_title = sanitized_title[:100].rstrip("._")
+        file_stem = sanitized_title or "audio"
+        filename = (
+            f"{file_stem}_{start_s:.3f}-{end_s:.3f}."
+            f"{audio.format or 'wav'}"
+        )
+
         if output_path is not None:
             path = Path(output_path)
             if path.suffix:
                 return path
             path.mkdir(parents=True, exist_ok=True)
-            return path / (
-                f"{audio.source_id}_{start_s:.3f}-{end_s:.3f}."
-                f"{audio.format or 'wav'}"
-            )
+            return path / filename
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        return self.output_dir / (
-            f"{audio.source_id}_{start_s:.3f}-{end_s:.3f}."
-            f"{audio.format or 'wav'}"
-        )
+        return self.output_dir / filename
