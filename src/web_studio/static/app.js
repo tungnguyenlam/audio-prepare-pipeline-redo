@@ -334,68 +334,83 @@ function showToast(message, type = "info") {
 // ==================== MASTER AUDIO PLAYER ENGINE ====================
 
 function initPlayer() {
-  el.btnPlayPause.addEventListener('click', togglePlayPause);
-  el.btnSkipBack.addEventListener('click', () => seekRelative(-5));
-  el.btnSkipFwd.addEventListener('click', () => seekRelative(5));
+  if (el.btnPlayPause) el.btnPlayPause.addEventListener('click', togglePlayPause);
+  if (el.btnSkipBack) el.btnSkipBack.addEventListener('click', () => seekRelative(-5));
+  if (el.btnSkipFwd) el.btnSkipFwd.addEventListener('click', () => seekRelative(5));
 
-  el.btnLoop.addEventListener('click', () => {
-    state.player.loop = !state.player.loop;
-    el.audio.loop = state.player.loop;
-    el.btnLoop.classList.toggle('active', state.player.loop);
-    showToast(state.player.loop ? "Loop playback enabled" : "Loop playback disabled", "info");
-  });
+  if (el.btnLoop) {
+    el.btnLoop.addEventListener('click', () => {
+      state.player.loop = !state.player.loop;
+      if (el.audio) el.audio.loop = state.player.loop;
+      el.btnLoop.classList.toggle('active', state.player.loop);
+      showToast(state.player.loop ? "Loop playback enabled" : "Loop playback disabled", "info");
+    });
+  }
 
-  el.speedSelect.addEventListener('change', (e) => {
-    state.player.playbackRate = parseFloat(e.target.value);
-    el.audio.playbackRate = state.player.playbackRate;
-  });
+  if (el.speedSelect) {
+    el.speedSelect.addEventListener('change', (e) => {
+      state.player.playbackRate = parseFloat(e.target.value);
+      if (el.audio) el.audio.playbackRate = state.player.playbackRate;
+    });
+  }
 
-  el.volumeSlider.addEventListener('input', (e) => {
-    state.player.volume = parseFloat(e.target.value);
-    el.audio.volume = state.player.volume;
-    updateVolumeIcon();
-  });
+  if (el.volumeSlider) {
+    el.volumeSlider.addEventListener('input', (e) => {
+      state.player.volume = parseFloat(e.target.value);
+      if (el.audio) el.audio.volume = state.player.volume;
+      updateVolumeIcon();
+    });
+  }
 
-  el.btnMute.addEventListener('click', () => {
-    if (el.audio.volume > 0) {
-      el.audio.volume = 0;
-      el.volumeSlider.value = 0;
-    } else {
-      el.audio.volume = state.player.volume || 1.0;
-      el.volumeSlider.value = el.audio.volume;
-    }
-    updateVolumeIcon();
-  });
+  if (el.btnMute) {
+    el.btnMute.addEventListener('click', () => {
+      if (!el.audio) return;
+      if (el.audio.volume > 0) {
+        el.audio.volume = 0;
+        if (el.volumeSlider) el.volumeSlider.value = 0;
+      } else {
+        el.audio.volume = state.player.volume || 1.0;
+        if (el.volumeSlider) el.volumeSlider.value = el.audio.volume;
+      }
+      updateVolumeIcon();
+    });
+  }
 
   // Toggle remaining time vs total duration on click
-  el.timeTotal.addEventListener('click', () => {
-    state.player.showRemainingTime = !state.player.showRemainingTime;
-    onTimeUpdate();
-  });
+  if (el.timeTotal) {
+    el.timeTotal.addEventListener('click', () => {
+      state.player.showRemainingTime = !state.player.showRemainingTime;
+      onTimeUpdate();
+    });
+  }
 
   // Scrub bar interaction
-  el.scrubWrapper.addEventListener('click', (e) => {
-    if (!state.player.duration) return;
-    const rect = el.scrubWrapper.getBoundingClientRect();
-    const pos = (e.clientX - rect.left) / rect.width;
-    const seekTime = Math.max(0, Math.min(pos * state.player.duration, state.player.duration));
-    seekTo(seekTime);
-  });
+  if (el.scrubWrapper) {
+    el.scrubWrapper.addEventListener('click', (e) => {
+      if (!state.player.duration) return;
+      const rect = el.scrubWrapper.getBoundingClientRect();
+      const pos = (e.clientX - rect.left) / rect.width;
+      const seekTime = Math.max(0, Math.min(pos * state.player.duration, state.player.duration));
+      seekTo(seekTime);
+    });
+  }
 
   // Audio element events
-  el.audio.addEventListener('timeupdate', onTimeUpdate);
-  el.audio.addEventListener('loadedmetadata', onLoadedMetadata);
-  el.audio.addEventListener('ended', onEnded);
-  el.audio.addEventListener('play', () => setPlayingUI(true));
-  el.audio.addEventListener('pause', () => setPlayingUI(false));
-  el.audio.addEventListener('error', () => {
-    const mediaError = el.audio.error;
-    const message = mediaError?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
-      ? "This audio format is not supported by your browser"
-      : "The audio stream could not be loaded";
-    showToast(message, "error");
-    setPlayingUI(false);
-  });
+  if (el.audio) {
+    el.audio.addEventListener('timeupdate', onTimeUpdate);
+    el.audio.addEventListener('loadedmetadata', onLoadedMetadata);
+    el.audio.addEventListener('ended', onEnded);
+    el.audio.addEventListener('play', () => setPlayingUI(true));
+    el.audio.addEventListener('pause', () => setPlayingUI(false));
+    el.audio.addEventListener('error', () => {
+      const mediaError = el.audio.error;
+      const message = mediaError?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
+        ? "This audio format is not supported by your browser"
+        : "The audio stream could not be loaded";
+      showToast(message, "error");
+      setPlayingUI(false);
+    });
+  }
 
   // Global keyboard shortcuts engine (DAW Style)
   window.addEventListener('keydown', handleGlobalKeydown);
@@ -784,59 +799,63 @@ function initWaveformInteractions() {
 
   const viewport = el.waveformViewport;
 
-  viewport.addEventListener('mousedown', (e) => {
-    if (!state.activeAudio) return;
-    const rect = viewport.getBoundingClientRect();
-    dragStartX = e.clientX - rect.left;
-    isDragging = true;
+  if (viewport) {
+    viewport.addEventListener('mousedown', (e) => {
+      if (!state.activeAudio) return;
+      const rect = viewport.getBoundingClientRect();
+      dragStartX = e.clientX - rect.left;
+      isDragging = true;
 
-    const time = (dragStartX / rect.width) * (state.activeAudio.duration_s || 1);
-    seekTo(time);
+      const time = (dragStartX / rect.width) * (state.activeAudio.duration_s || 1);
+      seekTo(time);
 
-    state.selection.start = time;
-    state.selection.end = time;
-    state.selection.active = true;
-    updateSelectionOverlay(dragStartX, dragStartX, rect.width);
-  });
+      state.selection.start = time;
+      state.selection.end = time;
+      state.selection.active = true;
+      updateSelectionOverlay(dragStartX, dragStartX, rect.width);
+    });
 
-  window.addEventListener('mousemove', (e) => {
-    if (!state.activeAudio) return;
-    const rect = viewport.getBoundingClientRect();
-    const currentX = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+    window.addEventListener('mousemove', (e) => {
+      if (!state.activeAudio) return;
+      const rect = viewport.getBoundingClientRect();
+      const currentX = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
 
-    // Show hover time tooltip
-    if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) {
-      const hoverTime = (currentX / rect.width) * (state.activeAudio.duration_s || 1);
-      el.timeTooltip.classList.remove('hidden');
-      el.timeTooltip.textContent = formatTimePrecise(hoverTime);
-      el.timeTooltip.style.left = `${Math.min(currentX, rect.width - 60)}px`;
-    } else {
-      el.timeTooltip.classList.add('hidden');
-    }
-
-    if (!isDragging) return;
-
-    const minX = Math.min(dragStartX, currentX);
-    const maxX = Math.max(dragStartX, currentX);
-
-    updateSelectionOverlay(minX, maxX, rect.width);
-
-    const dur = state.activeAudio.duration_s || 1;
-    state.selection.start = (minX / rect.width) * dur;
-    state.selection.end = (maxX / rect.width) * dur;
-  });
-
-  window.addEventListener('mouseup', () => {
-    if (isDragging) {
-      isDragging = false;
-      // If minimal drag, clear selection
-      if (Math.abs(state.selection.end - state.selection.start) < 0.05) {
-        clearSelection();
-      } else {
-        if (el.selectionActionsBar) el.selectionActionsBar.style.display = 'flex';
+      // Show hover time tooltip
+      if (el.timeTooltip) {
+        if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) {
+          const hoverTime = (currentX / rect.width) * (state.activeAudio.duration_s || 1);
+          el.timeTooltip.classList.remove('hidden');
+          el.timeTooltip.textContent = formatTimePrecise(hoverTime);
+          el.timeTooltip.style.left = `${Math.min(currentX, rect.width - 60)}px`;
+        } else {
+          el.timeTooltip.classList.add('hidden');
+        }
       }
-    }
-  });
+
+      if (!isDragging) return;
+
+      const minX = Math.min(dragStartX, currentX);
+      const maxX = Math.max(dragStartX, currentX);
+
+      updateSelectionOverlay(minX, maxX, rect.width);
+
+      const dur = state.activeAudio.duration_s || 1;
+      state.selection.start = (minX / rect.width) * dur;
+      state.selection.end = (maxX / rect.width) * dur;
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        // If minimal drag, clear selection
+        if (Math.abs(state.selection.end - state.selection.start) < 0.05) {
+          clearSelection();
+        } else {
+          if (el.selectionActionsBar) el.selectionActionsBar.style.display = 'flex';
+        }
+      }
+    });
+  }
 
   // Audition Selection button
   if (el.btnAuditionSelection) {
@@ -844,7 +863,7 @@ function initWaveformInteractions() {
       if (!state.activeAudio || !state.selection.active) return;
       seekTo(state.selection.start);
       state.player.previewEnd = state.selection.end;
-      el.audio.play();
+      if (el.audio) el.audio.play();
       showToast(`Auditioning selection: ${state.selection.start.toFixed(2)}s to ${state.selection.end.toFixed(2)}s`, "info");
     });
   }
@@ -855,13 +874,13 @@ function initWaveformInteractions() {
   }
 
   // Zoom controls
-  el.btnZoomIn.addEventListener('click', () => setZoom(state.zoom * 1.5));
-  el.btnZoomOut.addEventListener('click', () => setZoom(Math.max(1.0, state.zoom / 1.5)));
-  el.btnResetZoom.addEventListener('click', () => setZoom(1.0));
+  if (el.btnZoomIn) el.btnZoomIn.addEventListener('click', () => setZoom(state.zoom * 1.5));
+  if (el.btnZoomOut) el.btnZoomOut.addEventListener('click', () => setZoom(Math.max(1.0, state.zoom / 1.5)));
+  if (el.btnResetZoom) el.btnResetZoom.addEventListener('click', () => setZoom(1.0));
 
   // Spectrogram Toggle
-  el.btnToggleSpec.addEventListener('click', toggleSpectrogramPanel);
-  el.btnRefreshSpec.addEventListener('click', loadSpectrogramImage);
+  if (el.btnToggleSpec) el.btnToggleSpec.addEventListener('click', toggleSpectrogramPanel);
+  if (el.btnRefreshSpec) el.btnRefreshSpec.addEventListener('click', loadSpectrogramImage);
 
   window.addEventListener('resize', renderWaveform);
 }
@@ -2878,29 +2897,33 @@ function applyTheme(theme) {
 // ==================== APP INITIALIZATION ====================
 
 async function initApp() {
-  initTheme();
-  initPlayer();
-  initWaveformInteractions();
-  initAudioCutter();
-  initCutsManager();
-  initIngestAndSaves();
-  initYouTubeCrawler();
-  initSeparationStudio();
-  initDiarizationStudio();
-  initAuditionHub();
-  initEvaluationMatrix();
-  initKeyboardShortcuts();
-  initNavigation();
-  initModals();
-  initLiveReload();
+  console.log("SonicStudio initializing frontend...");
 
-  el.btnRefreshLibrary.addEventListener('click', fetchServerFiles);
+  try { initTheme(); } catch (e) { console.error("initTheme error:", e); }
+  try { initPlayer(); } catch (e) { console.error("initPlayer error:", e); }
+  try { initWaveformInteractions(); } catch (e) { console.error("initWaveformInteractions error:", e); }
+  try { initAudioCutter(); } catch (e) { console.error("initAudioCutter error:", e); }
+  try { initCutsManager(); } catch (e) { console.error("initCutsManager error:", e); }
+  try { initIngestAndSaves(); } catch (e) { console.error("initIngestAndSaves error:", e); }
+  try { initYouTubeCrawler(); } catch (e) { console.error("initYouTubeCrawler error:", e); }
+  try { initSeparationStudio(); } catch (e) { console.error("initSeparationStudio error:", e); }
+  try { initDiarizationStudio(); } catch (e) { console.error("initDiarizationStudio error:", e); }
+  try { initAuditionHub(); } catch (e) { console.error("initAuditionHub error:", e); }
+  try { initEvaluationMatrix(); } catch (e) { console.error("initEvaluationMatrix error:", e); }
+  try { initKeyboardShortcuts(); } catch (e) { console.error("initKeyboardShortcuts error:", e); }
+  try { initNavigation(); } catch (e) { console.error("initNavigation error:", e); }
+  try { initModals(); } catch (e) { console.error("initModals error:", e); }
+  try { initLiveReload(); } catch (e) { console.error("initLiveReload error:", e); }
 
-  await fetchSystemStatus();
-  await fetchServerFiles();
-  await fetchAudioList();
-  await fetchYouTubeVault();
-  await fetchEvaluations();
+  if (el.btnRefreshLibrary) {
+    el.btnRefreshLibrary.addEventListener('click', fetchServerFiles);
+  }
+
+  try { await fetchSystemStatus(); } catch (e) { console.error("fetchSystemStatus error:", e); }
+  try { await fetchServerFiles(); } catch (e) { console.error("fetchServerFiles error:", e); }
+  try { await fetchAudioList(); } catch (e) { console.error("fetchAudioList error:", e); }
+  try { await fetchYouTubeVault(); } catch (e) { console.error("fetchYouTubeVault error:", e); }
+  try { await fetchEvaluations(); } catch (e) { console.error("fetchEvaluations error:", e); }
 
   // Restore saved active tab
   try {
@@ -2919,16 +2942,26 @@ async function initApp() {
     }
   } catch (_) {}
 
-  if (targetAudioId) {
-    await setActiveAudio(targetAudioId);
-  } else if (state.audioList.length > 0) {
-    await setActiveAudio(state.audioList[0].id);
-  } else if (state.serverFiles.length > 0) {
-    const firstSample = state.serverFiles.find(f => f.category === "Benchmark Speech") || state.serverFiles[0];
-    if (firstSample) {
-      await loadServerFile(firstSample.path);
+  try {
+    if (targetAudioId) {
+      await setActiveAudio(targetAudioId);
+    } else if (state.audioList.length > 0) {
+      await setActiveAudio(state.audioList[0].id);
+    } else if (state.serverFiles.length > 0) {
+      const firstSample = state.serverFiles.find(f => f.category === "Benchmark Speech") || state.serverFiles[0];
+      if (firstSample) {
+        await loadServerFile(firstSample.path);
+      }
     }
+  } catch (e) {
+    console.error("Audio auto-load error:", e);
   }
+
+  console.log("SonicStudio initialized successfully!");
 }
 
-document.addEventListener('DOMContentLoaded', initApp);
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  initApp();
+}
