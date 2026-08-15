@@ -44,9 +44,9 @@ BenchmarkDefinition + speech Audio + music Audio
 | `src/benchmark/separation/` | `AudioMixer` and mix/benchmark schemas |
 | `src/base/model.py` | `ManagedModel` load/unload lifecycle |
 | `src/notebooks/` | Interactive callers (`pipeline1.ipynb`, mixer, benchmark) |
-| `src/web_studio/` | **SonicStudio** — Interactive audio exploration, cutting, spectrogram comparison, and model testing UI (port `8080`) |
-| `src/web_pipeline/` | **SonicPipeline** — Large-scale, high-throughput batch processing, task queue, dataset management, bulk separation & diarization web engine (port `8081`) |
-| `scripts/` | Runner scripts (`start_pipeline.sh`, `start_studio.sh`, `start_web.sh`, `sync_*.sh`) |
+| `src/web_studio/` | **SonicStudio** — Interactive audio exploration, cutting, spectrogram comparison, and model testing UI (port `8765`) |
+| `src/web_pipeline/` | **SonicPipeline** — Large-scale, high-throughput batch processing, task queue, dataset management, bulk separation & diarization web engine (port `8766`) |
+| `scripts/` | Runner scripts (`start_pipeline.sh`, `start_studio.sh`, `sync_*.sh`) |
 | `docs/api_contract.md` | Public method behavior |
 | `docs/data_contract.md` | Return-object field contracts |
 
@@ -62,25 +62,18 @@ uv sync
 
 ### Starting the Web Applications
 
-- **Start SonicPipeline (Large-Scale Batch Engine, port 8081):**
+- **Start SonicPipeline (Large-Scale Batch Engine, port 8766):**
   ```bash
   ./scripts/start_pipeline.sh [port] [host]
   # or
-  uv run python scripts/start_pipeline.py --host 127.0.0.1 --port 8081
+  uv run python scripts/start_pipeline.py --host 127.0.0.1 --port 8766
   ```
 
-- **Start SonicStudio (Interactive Exploration Studio, port 8080):**
+- **Start SonicStudio (Interactive Exploration Studio, port 8765):**
   ```bash
   ./scripts/start_studio.sh [port] [host]
   # or
-  uv run python scripts/start_studio.py --host 127.0.0.1 --port 8080
-  ```
-
-- **Unified Web Starter:**
-  ```bash
-  ./scripts/start_web.sh [pipeline|studio] [port] [host]
-  # or
-  uv run python scripts/start_web.py --mode pipeline|studio --port <PORT>
+  uv run python scripts/start_studio.py --host 127.0.0.1 --port 8765
   ```
 
 Notebooks run from `src/notebooks/` so `os.getcwd()` ends with `notebooks`. Keep that assumption if you edit notebook setup cells.

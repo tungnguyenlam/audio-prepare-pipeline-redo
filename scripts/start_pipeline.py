@@ -17,33 +17,80 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 
-def free_port(port: int) -> None:
-    """Kill any existing process occupying the target port."""
+def free_port(port: int, host: str = "127.0.0.1") -> None:
+    """Kill any existing process occupying the target port across Linux/macOS."""
+    import re
+    import signal
+    import socket
+
     current_pid = os.getpid()
-    try:
-        if shutil.which("lsof"):
+    pids: set[int] = set()
+
+    # 1. Try lsof
+    if shutil.which("lsof"):
+        try:
             out = subprocess.check_output(
                 ["lsof", "-ti", f":{port}"],
                 text=True,
                 stderr=subprocess.DEVNULL,
             ).strip()
-            if out:
-                for pid_str in out.split():
-                    try:
-                        pid = int(pid_str)
-                        if pid != current_pid:
-                            print(f"⚠️  Port {port} is occupied by PID {pid}. Releasing...")
-                            os.kill(pid, 9)
-                    except (ValueError, ProcessLookupError, PermissionError):
-                        pass
-                time.sleep(0.5)
-        elif shutil.which("fuser"):
-            subprocess.run(
-                ["fuser", "-k", f"{port}/tcp"],
-                capture_output=True,
-                check=False,
-            )
-            time.sleep(0.5)
+            for pid_str in out.split():
+                if pid_str.isdigit():
+                    pids.add(int(pid_str))
+        except Exception:
+            pass
+
+    # 2. Try ss (standard on all modern Linux installations)
+    if not pids and shutil.which("ss"):
+        try:
+            out = subprocess.check_output(
+                ["ss", "-lptn", f"sport = :{port}"],
+                text=True,
+                stderr=subprocess.DEVNULL,
+            ).strip()
+            for match in re.finditer(r"pid=(\d+)", out):
+                pids.add(int(match.group(1)))
+        except Exception:
+            pass
+
+    # 3. Try fuser
+    if not pids and shutil.which("fuser"):
+        try:
+            out = subprocess.check_output(
+                ["fuser", f"{port}/tcp"],
+                text=True,
+                stderr=subprocess.DEVNULL,
+            ).strip()
+            for pid_str in out.split():
+                if pid_str.isdigit():
+                    pids.add(int(pid_str))
+        except Exception:
+            pass
+
+    pids.discard(current_pid)
+
+    if pids:
+        pid_list = ", ".join(str(p) for p in sorted(pids))
+        print(f"⚠️  Port {port} is occupied by PID(s): {pid_list}. Releasing...")
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                pass
+        time.sleep(0.3)
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+        time.sleep(0.3)
+
+    # Validate if port was freed
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.4)
+            if s.connect_ex((host, port)) == 0:
+                print(f"⚠️  Notice: Port {port} appears to still be busy. If binding fails, pass a different port with --port <PORT>.")
     except Exception:
         pass
 
@@ -51,10 +98,10 @@ def free_port(port: int) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="SonicPipeline - Large-Scale Audio Processing & Separation Engine")
     parser.add_argument("--host", default="127.0.0.1", help="Host address (default: 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=8081, help="Port number (default: 8081)")
+    parser.add_argument("--port", type=int, default=8766, help="Port number (default: 8766)")
     args = parser.parse_args()
 
-    free_port(args.port)
+    free_port(args.port, host=args.host)
 
     from src.web_pipeline.server import create_app
     from aiohttp import web

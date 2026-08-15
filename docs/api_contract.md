@@ -379,9 +379,9 @@ The repository provides two specialized web platforms:
 
 ### `src/web_studio/` (SonicStudio)
 - **Role:** Interactive audio editor, single-sample inspection, waveform/spectrogram comparer, model stem tester.
-- **Entrypoint:** `scripts/start_studio.py` / `scripts/start_studio.sh` (default port `8080`).
+- **Entrypoint:** `scripts/start_studio.py` / `scripts/start_studio.sh` (default port `8765`).
 
 ### `src/web_pipeline/` (SonicPipeline)
 - **Role:** Large-scale batch engine for high-throughput ingestion, task queue orchestration, dataset curation, bulk separation, batch diarization, separation benchmark matrix evaluation, and ML manifest generation (JSONL/CSV).
-- **Entrypoint:** `scripts/start_pipeline.py` / `scripts/start_pipeline.sh` (default port `8081`).
+- **Entrypoint:** `scripts/start_pipeline.py` / `scripts/start_pipeline.sh` (default port `8766`).
 

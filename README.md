@@ -26,28 +26,19 @@ uv sync
 ## Running the Web Applications
 
 ### 1. SonicPipeline (Large-Scale Batch Engine)
-Starts the batch processing and dataset engineering center on port `8081`:
+Starts the batch processing and dataset engineering center on port `8766`:
 ```bash
 ./scripts/start_pipeline.sh
 # or
-uv run python scripts/start_pipeline.py --port 8081
+uv run python scripts/start_pipeline.py --port 8766
 ```
 
 ### 2. SonicStudio (Interactive Exploration Studio)
-Starts the interactive audio editor and spectrogram comparer on port `8080`:
+Starts the interactive audio editor and spectrogram comparer on port `8765`:
 ```bash
 ./scripts/start_studio.sh
 # or
-uv run python scripts/start_studio.py --port 8080
-```
-
-### 3. Unified Web Starter
-```bash
-# Start large-scale pipeline (default)
-./scripts/start_web.sh pipeline
-
-# Start interactive studio
-./scripts/start_web.sh studio
+uv run python scripts/start_studio.py --port 8765
 ```
 
 ---
@@ -67,12 +58,10 @@ uv run python scripts/start_studio.py --port 8080
 │   ├── web_studio/         # SonicStudio (Interactive exploration server, UI)
 │   └── yt_crawler/         # YtCrawler YouTube ingestion
 ├── scripts/
-│   ├── start_pipeline.sh   # Launch SonicPipeline (port 8081)
+│   ├── start_pipeline.sh   # Launch SonicPipeline (port 8766)
 │   ├── start_pipeline.py
-│   ├── start_studio.sh     # Launch SonicStudio (port 8080)
-│   ├── start_studio.py
-│   ├── start_web.sh        # Unified runner
-│   └── start_web.py
+│   ├── start_studio.sh     # Launch SonicStudio (port 8765)
+│   └── start_studio.py
 └── docs/
     ├── api_contract.md     # Public API documentation
     └── data_contract.md    # Return-object schemas and contracts

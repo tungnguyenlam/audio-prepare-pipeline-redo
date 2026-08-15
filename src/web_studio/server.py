@@ -1077,8 +1077,13 @@ async def start_background_tasks(app: web.Application):
 
 
 async def cleanup_background_tasks(app: web.Application):
-    app["watcher"].cancel()
-    await app["watcher"]
+    watcher = app.get("watcher")
+    if watcher and not watcher.done():
+        watcher.cancel()
+        try:
+            await watcher
+        except (asyncio.CancelledError, Exception):
+            pass
 
 
 # ==================== STATIC FILE HANDLERS ====================
@@ -1138,7 +1143,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description="Audio Prepare Pipeline Web Studio")
     parser.add_argument("--host", default="127.0.0.1", help="Host address (default: 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=8080, help="Port number (default: 8080)")
+    parser.add_argument("--port", type=int, default=8765, help="Port number (default: 8765)")
     args = parser.parse_args()
 
     app = create_app()

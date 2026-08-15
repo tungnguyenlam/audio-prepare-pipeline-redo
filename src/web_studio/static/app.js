@@ -320,6 +320,14 @@ function initPlayer() {
   el.audio.addEventListener('ended', onEnded);
   el.audio.addEventListener('play', () => setPlayingUI(true));
   el.audio.addEventListener('pause', () => setPlayingUI(false));
+  el.audio.addEventListener('error', () => {
+    const mediaError = el.audio.error;
+    const message = mediaError?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
+      ? "This audio format is not supported by your browser"
+      : "The audio stream could not be loaded";
+    showToast(message, "error");
+    setPlayingUI(false);
+  });
 
   // Global keyboard shortcuts engine (DAW Style)
   window.addEventListener('keydown', handleGlobalKeydown);
@@ -456,10 +464,21 @@ function togglePlayPause() {
     return;
   }
   if (el.audio.paused) {
-    el.audio.play().catch(e => console.error("Play error:", e));
+    playCurrentAudio();
   } else {
     el.audio.pause();
   }
+}
+
+function playCurrentAudio() {
+  return el.audio.play().catch(err => {
+    console.error("Play error:", err);
+    if (err.name === "NotAllowedError") {
+      showToast("Your browser blocked autoplay. Press Play to start audio.", "warning");
+    } else {
+      showToast(`Unable to play audio: ${err.message || "unknown playback error"}`, "error");
+    }
+  });
 }
 
 function seekTo(time) {
@@ -513,16 +532,18 @@ function onEnded() {
 }
 
 function loadAudioIntoPlayer(audioId, autoplay = false) {
-  const item = state.audioList.find(a => a.id === audioId);
-  if (!item) return;
+  const item = state.audioList.find(a => a.id === audioId)
+    || (state.activeAudio?.id === audioId ? state.activeAudio : null);
 
   el.audio.src = `/api/audio/${audioId}/stream`;
   el.audio.load();
-  el.playerTitle.textContent = item.title || item.source_id;
-  el.playerSub.textContent = `${item.format.toUpperCase()} • ${item.sample_rate.toLocaleString()}Hz • ${item.channels === 1 ? 'Mono' : 'Stereo'} • ID: ${item.id}`;
+  el.playerTitle.textContent = item?.title || item?.source_id || audioId;
+  el.playerSub.textContent = item
+    ? `${(item.format || "audio").toUpperCase()} • ${(item.sample_rate || 0).toLocaleString()}Hz • ${item.channels === 1 ? 'Mono' : 'Stereo'} • ID: ${audioId}`
+    : `Audio ID: ${audioId}`;
 
   if (autoplay) {
-    el.audio.play().catch(e => console.error("Autoplay prevented:", e));
+    playCurrentAudio();
   }
 }
 
@@ -973,10 +994,10 @@ function initIngestAndSaves() {
       if (!res.ok) throw new Error(data.error || "Failed to start YouTube crawl");
 
       showToast("YouTube crawl initiated in background...", "info");
-      pollTask(data.task_id, (result) => {
+      pollTask(data.task_id, async (result) => {
         showToast("YouTube download complete!", "success");
-        fetchAudioList();
-        setActiveAudio(result.audio_id, { play: true });
+        await fetchAudioList();
+        await setActiveAudio(result.audio_id, { play: true });
         el.ytUrlInput.value = "";
       });
     } catch (err) {
