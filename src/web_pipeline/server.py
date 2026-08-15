@@ -768,24 +768,23 @@ async def handle_index(request: web.Request) -> web.Response:
     )
 
 
-def create_app() -> web.Application:
-    """Create and configure aiohttp web application."""
-    app = web.Application(
-        client_max_size=2048 * 1024 * 1024,  # 2GB upload limit
-        middlewares=[no_cache_middleware],
-    )
+def register_lifecycle(app: web.Application) -> None:
+    """Register SonicPipeline background services on an application.
 
+    Args:
+        app: Aiohttp application that owns the shared backend.
+    """
     # Register batch job execution handlers
     register_all_handlers(queue_manager)
 
     # Lifecycle hooks
     async def on_startup(app: web.Application) -> None:
         await queue_manager.start()
-        app["watcher"] = asyncio.create_task(file_watcher_loop(app))
+        app["pipeline_watcher"] = asyncio.create_task(file_watcher_loop(app))
         logger.info("SonicPipeline server initialized and queue manager active.")
 
     async def on_shutdown(app: web.Application) -> None:
-        watcher = app.get("watcher")
+        watcher = app.get("pipeline_watcher")
         if watcher and not watcher.done():
             watcher.cancel()
             try:
@@ -798,7 +797,13 @@ def create_app() -> web.Application:
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
 
-    # API routes
+
+def register_api_routes(app: web.Application) -> None:
+    """Register SonicPipeline API routes on an application.
+
+    Args:
+        app: Aiohttp application that owns the shared backend.
+    """
     app.router.add_get("/api/telemetry", handle_telemetry)
     app.router.add_get("/api/events", handle_events_sse)
 
@@ -840,6 +845,17 @@ def create_app() -> web.Application:
     # Benchmark reports
     app.router.add_get("/api/benchmarks", handle_list_benchmarks)
     app.router.add_get("/api/benchmarks/{id}", handle_get_benchmark)
+
+
+def create_app() -> web.Application:
+    """Create a standalone SonicPipeline application for compatibility."""
+    app = web.Application(
+        client_max_size=2048 * 1024 * 1024,  # 2GB upload limit
+        middlewares=[no_cache_middleware],
+    )
+
+    register_lifecycle(app)
+    register_api_routes(app)
 
     # Static files and root route
     app.router.add_get("/", handle_index)
