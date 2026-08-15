@@ -84,13 +84,19 @@ Creates an `Audio` object for an existing file.
 **Behavior contract:**
 
 - Resolves `path` to an absolute path.
-- Uses the file stem as the default `source_id` and `title`.
+- If `{stem}.json` exists next to the audio (written by `save_to` /
+  `quick_save`), restores `source_id`, `title`, `native_sample_rate`, and
+  `history` from it. Explicit keyword arguments override the sidecar.
+- Uses the file stem as the default `source_id` and `title` when no sidecar
+  is present.
 - Detects the extension as `format`.
-- Probes WAV files for sample rate, duration, and channel count.
-- Sets `native_sample_rate` to the probed file rate unless the caller passes
-  the original source rate.
+- Probes WAV files for sample rate, duration, and channel count (these
+  probed values win over sidecar snapshots).
+- Sets `native_sample_rate` to the sidecar value, else the probed file rate,
+  unless the caller passes the original source rate.
 - Uses class defaults for metadata that cannot be probed.
-- Initializes `history` to the provided sequence of step tags or an empty tuple.
+- Initializes `history` to the provided sequence, else sidecar history, else
+  an empty tuple.
 
 **Raises:** `FileNotFoundError` if the path does not identify a file.
 
@@ -121,22 +127,26 @@ using `__` as segment separators.
 
 Copies the represented audio file to `dest` and updates the same object's
 `path` to the destination. It returns the same `Audio` instance, not a new
-independent object.
+independent object. Destinations without a suffix default to `.wav`.
 
-**Side effects:** Creates destination parent directories and copies the file
-when the source and destination differ.
+**Side effects:** Creates destination parent directories, copies the file
+when the source and destination differ, and writes `{stem}.json` next to
+the audio with identity metadata (`source_id`, `title`, `native_sample_rate`,
+`history`, and last-known audio specs).
 
 **Raises:** `FileNotFoundError` if the current source file does not exist.
 
 ### `Audio.quick_save(output_dir=None, *, name=None, prefix=None, suffix=None, tag=None) -> Audio`
 
 Copies the represented audio file to a quick-save temporary directory (defaulting to
-`<project_root>/temp/`) with an informative filename generated from the `Audio` object's
-`fingerprint` (or explicit `name`), prints `Quick saved to: <destination>` to standard output,
-and updates the same object's `path` to the destination. It returns the same `Audio` instance.
+`<project_root>/temp/`) as WAV unless `name` includes another extension, with an
+informative filename generated from the `Audio` object's `fingerprint` (or explicit
+`name`), prints `Quick saved to: <destination>` to standard output, and updates the
+same object's `path` to the destination. It returns the same `Audio` instance.
 
 **Side effects:** Creates the destination directory, copies the file when source
-and destination differ, and prints the destination path to stdout.
+and destination differ, writes `{stem}.json` next to the audio, and prints the
+destination path to stdout.
 
 **Raises:** `FileNotFoundError` if the current source file does not exist.
 
@@ -362,3 +372,16 @@ classes.
 `Speaker*`, `DiarizationModelInfo`, and `DiarizationResult` constructors, they
 do not define additional business methods. Python supplies standard dataclass
 methods such as `__init__`, `__repr__`, and `__eq__`.
+
+## 9. Web application platforms
+
+The repository provides two specialized web platforms:
+
+### `src/web_studio/` (SonicStudio)
+- **Role:** Interactive audio editor, single-sample inspection, waveform/spectrogram comparer, model stem tester.
+- **Entrypoint:** `scripts/start_studio.py` / `scripts/start_studio.sh` (default port `8080`).
+
+### `src/web_pipeline/` (SonicPipeline)
+- **Role:** Large-scale batch engine for high-throughput ingestion, task queue orchestration, dataset curation, bulk separation, batch diarization, separation benchmark matrix evaluation, and ML manifest generation (JSONL/CSV).
+- **Entrypoint:** `scripts/start_pipeline.py` / `scripts/start_pipeline.sh` (default port `8081`).
+

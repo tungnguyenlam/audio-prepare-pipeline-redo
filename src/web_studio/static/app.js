@@ -30,6 +30,7 @@ const state = {
     playbackRate: 1.0,
     loop: false,
     previewEnd: null,      // Used for previewing cuts
+    showRemainingTime: false,
   },
 };
 
@@ -42,6 +43,7 @@ const el = {
   btnThemeToggle: document.getElementById('btn-theme-toggle'),
   iconThemeSun: document.getElementById('icon-theme-sun'),
   iconThemeMoon: document.getElementById('icon-theme-moon'),
+  btnOpenShortcutsModal: document.getElementById('btn-open-shortcuts-modal'),
 
   // Master Player
   audio: document.getElementById('global-audio-element'),
@@ -69,6 +71,7 @@ const el = {
   fileInput: document.getElementById('file-input'),
   ytUrlInput: document.getElementById('yt-url-input'),
   btnYtDownload: document.getElementById('btn-yt-download'),
+  btnYtPasteWorkspace: document.getElementById('btn-yt-paste-workspace'),
   btnBrowseLibrary: document.getElementById('btn-browse-library-modal'),
   activeSection: document.getElementById('active-audio-section'),
   metaSourceType: document.getElementById('meta-source-type'),
@@ -93,6 +96,9 @@ const el = {
   playheadLine: document.getElementById('playhead-line'),
   selectionOverlay: document.getElementById('selection-overlay'),
   selectionRangeLabel: document.getElementById('selection-range-label'),
+  selectionActionsBar: document.getElementById('selection-actions-bar'),
+  btnAuditionSelection: document.getElementById('btn-audition-selection'),
+  btnClearSelection: document.getElementById('btn-clear-selection'),
   timeTooltip: document.getElementById('waveform-time-tooltip'),
   rulerMid: document.getElementById('ruler-mid'),
   rulerEnd: document.getElementById('ruler-end'),
@@ -116,6 +122,7 @@ const el = {
 
   // YouTube Crawler Studio
   ytTabUrlInput: document.getElementById('yt-tab-url-input'),
+  btnYtPasteTab: document.getElementById('btn-yt-paste-tab'),
   btnYtTabInspect: document.getElementById('btn-yt-tab-inspect'),
   btnYtTabDownload: document.getElementById('btn-yt-tab-download'),
   ytSampleRateSelect: document.getElementById('yt-sample-rate-select'),
@@ -208,6 +215,8 @@ const el = {
   modalLibrary: document.getElementById('modal-library'),
   modalLibraryItems: document.getElementById('modal-library-items'),
   btnCloseLibraryModal: document.getElementById('btn-close-library-modal'),
+  modalShortcuts: document.getElementById('modal-shortcuts'),
+  btnCloseShortcutsModal: document.getElementById('btn-close-shortcuts-modal'),
   toastContainer: document.getElementById('toast-container'),
 };
 
@@ -223,7 +232,6 @@ function formatTime(seconds) {
 function formatTimePrecise(seconds) {
   if (isNaN(seconds) || seconds < 0) return "00:00.00";
   const m = Math.floor(seconds / 60);
-  const s = (seconds % 60).toFixed(2);
   const sInt = Math.floor(seconds % 60).toString().padStart(2, '0');
   const sFrac = (seconds % 1).toFixed(2).substring(2);
   return `${m.toString().padStart(2, '0')}:${sInt}.${sFrac}`;
@@ -240,13 +248,19 @@ function formatBytes(bytes) {
 function showToast(message, type = "info") {
   const toast = document.createElement("div");
   toast.className = `toast toast-${type}`;
-  toast.innerHTML = `<span>${message}</span>`;
+  
+  let icon = 'ℹ️';
+  if (type === 'success') icon = '✓';
+  if (type === 'error') icon = '✕';
+  if (type === 'warning') icon = '⚠️';
+
+  toast.innerHTML = `<span style="font-weight: 700;">${icon}</span><span>${message}</span>`;
   el.toastContainer.appendChild(toast);
   setTimeout(() => {
     toast.style.opacity = "0";
     toast.style.transform = "translateX(100%)";
-    setTimeout(() => toast.remove(), 300);
-  }, 4000);
+    setTimeout(() => toast.remove(), 250);
+  }, 3800);
 }
 
 // ==================== MASTER AUDIO PLAYER ENGINE ====================
@@ -260,6 +274,7 @@ function initPlayer() {
     state.player.loop = !state.player.loop;
     el.audio.loop = state.player.loop;
     el.btnLoop.classList.toggle('active', state.player.loop);
+    showToast(state.player.loop ? "Loop playback enabled" : "Loop playback disabled", "info");
   });
 
   el.speedSelect.addEventListener('change', (e) => {
@@ -284,6 +299,12 @@ function initPlayer() {
     updateVolumeIcon();
   });
 
+  // Toggle remaining time vs total duration on click
+  el.timeTotal.addEventListener('click', () => {
+    state.player.showRemainingTime = !state.player.showRemainingTime;
+    onTimeUpdate();
+  });
+
   // Scrub bar interaction
   el.scrubWrapper.addEventListener('click', (e) => {
     if (!state.player.duration) return;
@@ -300,20 +321,121 @@ function initPlayer() {
   el.audio.addEventListener('play', () => setPlayingUI(true));
   el.audio.addEventListener('pause', () => setPlayingUI(false));
 
-  // Global keyboard shortcuts
-  window.addEventListener('keydown', (e) => {
-    if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
-    if (e.code === 'Space') {
-      e.preventDefault();
-      // If on comparison tab and playing, toggle A/B switch
-      const activeTab = document.querySelector('.nav-tab.active')?.dataset.tab;
-      if (activeTab === 'tab-comparison' && state.ab.trackAId && state.ab.trackBId) {
-        toggleABInstant();
-      } else {
-        togglePlayPause();
-      }
+  // Global keyboard shortcuts engine (DAW Style)
+  window.addEventListener('keydown', handleGlobalKeydown);
+}
+
+function handleGlobalKeydown(e) {
+  // If typing inside an input, textarea or select, ignore hotkeys
+  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+
+  // Space: Play / Pause (or A/B switch if on comparison tab)
+  if (e.code === 'Space') {
+    e.preventDefault();
+    const activeTab = document.querySelector('.nav-tab.active')?.dataset.tab;
+    if (activeTab === 'tab-comparison' && state.ab.trackAId && state.ab.trackBId) {
+      toggleABInstant();
+    } else {
+      togglePlayPause();
     }
-  });
+    return;
+  }
+
+  // Arrow Left / Right Seek
+  if (e.code === 'ArrowLeft') {
+    e.preventDefault();
+    seekRelative(e.shiftKey ? -5 : -2);
+    return;
+  }
+  if (e.code === 'ArrowRight') {
+    e.preventDefault();
+    seekRelative(e.shiftKey ? 5 : 2);
+    return;
+  }
+
+  // J / K / L Seek & Pause
+  if (e.key === 'j' || e.key === 'J') {
+    seekRelative(-2);
+    return;
+  }
+  if (e.key === 'k' || e.key === 'K') {
+    if (!el.audio.paused) el.audio.pause();
+    return;
+  }
+  if (e.key === 'l' || e.key === 'L') {
+    seekRelative(2);
+    return;
+  }
+
+  // [ and ]: Set Cut Start / End to current playhead
+  if (e.key === '[') {
+    if (state.activeAudio) {
+      el.cutStartInput.value = (el.audio.currentTime || 0).toFixed(2);
+      showToast(`Set Cut Start bound to ${el.cutStartInput.value}s`, "info");
+    }
+    return;
+  }
+  if (e.key === ']') {
+    if (state.activeAudio) {
+      el.cutEndInput.value = (el.audio.currentTime || 0).toFixed(2);
+      showToast(`Set Cut End bound to ${el.cutEndInput.value}s`, "info");
+    }
+    return;
+  }
+
+  // C: Apply Cut
+  if (e.key === 'c' || e.key === 'C') {
+    if (!e.metaKey && !e.ctrlKey && state.activeAudio && !el.btnApplyCut.disabled) {
+      el.btnApplyCut.click();
+    }
+    return;
+  }
+
+  // M: Toggle Mute
+  if (e.key === 'm' || e.key === 'M') {
+    if (!e.metaKey && !e.ctrlKey) {
+      el.btnMute.click();
+    }
+    return;
+  }
+
+  // Z / Shift+Z / 0: Zoom
+  if (e.key === 'z' || e.key === 'Z') {
+    if (e.shiftKey) {
+      setZoom(Math.max(1.0, state.zoom / 1.5));
+    } else {
+      setZoom(state.zoom * 1.5);
+    }
+    return;
+  }
+  if (e.key === '0') {
+    setZoom(1.0);
+    return;
+  }
+
+  // 1 through 7: Tab navigation
+  if (e.key >= '1' && e.key <= '7') {
+    const tabIndex = parseInt(e.key) - 1;
+    if (el.tabs[tabIndex]) {
+      switchTab(el.tabs[tabIndex].dataset.tab);
+    }
+    return;
+  }
+
+  // ?: Toggle Shortcuts Modal
+  if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+    toggleShortcutsModal();
+    return;
+  }
+
+  // Escape: Close open modals / clear selection
+  if (e.code === 'Escape') {
+    closeAllModals();
+    if (state.selection.active) {
+      clearSelection();
+    }
+    return;
+  }
 }
 
 function updateVolumeIcon() {
@@ -329,7 +451,10 @@ function setPlayingUI(isPlaying) {
 }
 
 function togglePlayPause() {
-  if (!el.audio.src) return;
+  if (!el.audio.src) {
+    showToast("Load an audio track first", "info");
+    return;
+  }
   if (el.audio.paused) {
     el.audio.play().catch(e => console.error("Play error:", e));
   } else {
@@ -367,6 +492,14 @@ function onTimeUpdate() {
   }
 
   el.timeCurrent.textContent = formatTime(cur);
+
+  if (state.player.showRemainingTime) {
+    const rem = Math.max(0, dur - cur);
+    el.timeTotal.textContent = `-${formatTime(rem)}`;
+  } else {
+    el.timeTotal.textContent = formatTime(dur);
+  }
+
   const pct = Math.min(100, Math.max(0, (cur / dur) * 100));
   el.scrubProgress.style.width = `${pct}%`;
   updatePlayheadPosition(cur);
@@ -386,7 +519,7 @@ function loadAudioIntoPlayer(audioId, autoplay = false) {
   el.audio.src = `/api/audio/${audioId}/stream`;
   el.audio.load();
   el.playerTitle.textContent = item.title || item.source_id;
-  el.playerSub.textContent = `${item.format.toUpperCase()} • ${item.sample_rate}Hz • ${item.channels === 1 ? 'Mono' : 'Stereo'} • ${item.fingerprint}`;
+  el.playerSub.textContent = `${item.format.toUpperCase()} • ${item.sample_rate.toLocaleString()}Hz • ${item.channels === 1 ? 'Mono' : 'Stereo'} • ID: ${item.id}`;
 
   if (autoplay) {
     el.audio.play().catch(e => console.error("Autoplay prevented:", e));
@@ -421,7 +554,7 @@ async function setActiveAudio(audioId, options = { play: false }) {
     el.metaSize.textContent = formatBytes(fullItem.file_size || 0);
     el.metaFingerprint.textContent = meta.fingerprint || "none";
 
-    // Step history
+    // Step history tags
     el.historyTagsList.innerHTML = "";
     const history = meta.history || [];
     if (history.length === 0) {
@@ -435,11 +568,11 @@ async function setActiveAudio(audioId, options = { play: false }) {
       });
     }
 
-    // Set default cut end to total duration
+    // Set default cut bounds
     el.cutEndInput.value = (meta.duration_s || 10).toFixed(1);
     el.cutStartInput.value = "0.0";
 
-    // Load into player
+    // Load into master player
     loadAudioIntoPlayer(audioId, options.play);
 
     // Fetch Waveform Peaks
@@ -452,6 +585,9 @@ async function setActiveAudio(audioId, options = { play: false }) {
     el.specImage.classList.add('hidden');
     el.specLoader.classList.remove('hidden');
     el.spectrogramPanel.classList.add('hidden');
+
+    // Clear any previous selection
+    clearSelection();
 
   } catch (err) {
     console.error("Error setting active audio:", err);
@@ -475,49 +611,52 @@ async function loadWaveform(audioId) {
 
 function renderWaveform() {
   const canvas = el.waveformCanvas;
+  if (!canvas) return;
+
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
-  const width = canvas.parentElement.clientWidth;
-  const height = canvas.parentElement.clientHeight;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const width = rect.width || 1200;
+  const height = rect.height || 180;
 
-  canvas.width = width * dpr;
-  canvas.height = height * dpr;
+  canvas.width = Math.floor(width * dpr);
+  canvas.height = Math.floor(height * dpr);
   ctx.scale(dpr, dpr);
 
   ctx.clearRect(0, 0, width, height);
 
   const peaks = state.activePeaks;
   if (!peaks || peaks.length === 0) {
-    ctx.fillStyle = "#64748b";
+    ctx.fillStyle = "rgba(148, 163, 184, 0.6)";
     ctx.font = "12px JetBrains Mono";
     ctx.textAlign = "center";
-    ctx.fillText("No waveform data", width / 2, height / 2);
+    ctx.fillText("No waveform data loaded", width / 2, height / 2);
     return;
   }
 
   const numBars = peaks.length;
-  const barWidth = Math.max(1, (width / numBars) * state.zoom);
+  const barWidth = Math.max(1.2, (width / numBars) * state.zoom);
   const centerY = height / 2;
 
   const isLight = document.documentElement.getAttribute('data-theme') === 'light';
 
-  // Background subtle grid
-  ctx.strokeStyle = isLight ? "rgba(203, 213, 225, 0.8)" : "rgba(51, 65, 85, 0.4)";
+  // Zero-crossing baseline
+  ctx.strokeStyle = isLight ? "rgba(148, 163, 184, 0.4)" : "rgba(255, 255, 255, 0.1)";
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(0, centerY);
   ctx.lineTo(width, centerY);
   ctx.stroke();
 
-  // Waveform gradient
+  // Waveform vertical gradient
   const grad = ctx.createLinearGradient(0, 0, 0, height);
   if (isLight) {
     grad.addColorStop(0, "hsl(217, 91%, 50%)");
     grad.addColorStop(0.5, "hsl(190, 90%, 42%)");
     grad.addColorStop(1, "hsl(217, 91%, 50%)");
   } else {
-    grad.addColorStop(0, "hsl(188, 86%, 60%)");
-    grad.addColorStop(0.5, "hsl(217, 91%, 65%)");
+    grad.addColorStop(0, "hsl(188, 86%, 56%)");
+    grad.addColorStop(0.5, "hsl(217, 91%, 64%)");
     grad.addColorStop(1, "hsl(188, 86%, 50%)");
   }
 
@@ -529,16 +668,25 @@ function renderWaveform() {
     const amp = peaks[i] || 0.01;
     const barHeight = Math.max(2, amp * (centerY - 10));
 
+    // Draw symmetrical waveform bar
     ctx.fillRect(x, centerY - barHeight, Math.max(1, barWidth - 0.5), barHeight * 2);
   }
 }
 
 function updatePlayheadPosition(currentTime) {
-  if (!state.player.duration) return;
+  if (!state.player.duration || !el.waveformViewport) return;
   const pct = currentTime / state.player.duration;
   const width = el.waveformViewport.clientWidth;
   const pos = pct * width;
   el.playheadLine.style.transform = `translateX(${pos}px)`;
+}
+
+function clearSelection() {
+  state.selection.active = false;
+  state.selection.start = 0;
+  state.selection.end = 0;
+  if (el.selectionOverlay) el.selectionOverlay.classList.add('hidden');
+  if (el.selectionActionsBar) el.selectionActionsBar.style.display = 'none';
 }
 
 function initWaveformInteractions() {
@@ -594,11 +742,28 @@ function initWaveformInteractions() {
       isDragging = false;
       // If minimal drag, clear selection
       if (Math.abs(state.selection.end - state.selection.start) < 0.05) {
-        state.selection.active = false;
-        el.selectionOverlay.classList.add('hidden');
+        clearSelection();
+      } else {
+        if (el.selectionActionsBar) el.selectionActionsBar.style.display = 'flex';
       }
     }
   });
+
+  // Audition Selection button
+  if (el.btnAuditionSelection) {
+    el.btnAuditionSelection.addEventListener('click', () => {
+      if (!state.activeAudio || !state.selection.active) return;
+      seekTo(state.selection.start);
+      state.player.previewEnd = state.selection.end;
+      el.audio.play();
+      showToast(`Auditioning selection: ${state.selection.start.toFixed(2)}s to ${state.selection.end.toFixed(2)}s`, "info");
+    });
+  }
+
+  // Clear Selection button
+  if (el.btnClearSelection) {
+    el.btnClearSelection.addEventListener('click', clearSelection);
+  }
 
   // Zoom controls
   el.btnZoomIn.addEventListener('click', () => setZoom(state.zoom * 1.5));
@@ -727,7 +892,7 @@ function initAudioCutter() {
       showToast(err.message, "error");
     } finally {
       el.btnApplyCut.disabled = false;
-      el.btnApplyCut.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><line x1="20" y1="4" x2="8.12" y2="15.88"></line><line x1="14.47" y1="14.48" x2="20" y2="20"></line><line x1="8.12" y1="8.12" x2="12" y2="12"></line></svg> Apply Cut (AudioCutter)`;
+      el.btnApplyCut.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><line x1="20" y1="4" x2="8.12" y2="15.88"></line><line x1="14.47" y1="14.48" x2="20" y2="20"></line><line x1="8.12" y1="8.12" x2="12" y2="12"></line></svg> <span>Apply Cut (AudioCutter)</span>`;
     }
   });
 }
@@ -753,6 +918,40 @@ function initIngestAndSaves() {
       uploadFile(e.target.files[0]);
     }
   });
+
+  // Paste from clipboard in workspace
+  if (el.btnYtPasteWorkspace) {
+    el.btnYtPasteWorkspace.addEventListener('click', async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text) {
+          el.ytUrlInput.value = text.trim();
+          showToast("Pasted link from clipboard", "info");
+        }
+      } catch (_) {
+        showToast("Clipboard access denied or empty", "warning");
+      }
+    });
+  }
+
+  // Copy Audio ID and Fingerprint
+  if (el.metaId) {
+    el.metaId.addEventListener('click', () => {
+      if (state.activeAudio) {
+        navigator.clipboard.writeText(state.activeAudio.id);
+        showToast(`Copied Audio ID '${state.activeAudio.id}' to clipboard`, "success");
+      }
+    });
+  }
+
+  if (el.metaFingerprint) {
+    el.metaFingerprint.addEventListener('click', () => {
+      if (state.activeAudio && state.activeAudio.fingerprint) {
+        navigator.clipboard.writeText(state.activeAudio.fingerprint);
+        showToast(`Copied fingerprint to clipboard`, "success");
+      }
+    });
+  }
 
   // YouTube Ingest
   el.btnYtDownload.addEventListener('click', async () => {
@@ -801,7 +1000,7 @@ function initIngestAndSaves() {
       if (!res.ok) throw new Error(data.error || "Quick save failed");
 
       navigator.clipboard.writeText(data.saved_path);
-      showToast(`Quick saved to: ${data.saved_path} (Copied to clipboard!)`, "success");
+      showToast(`Quick saved to: ${data.saved_path} (Path copied!)`, "success");
       await fetchAudioList();
     } catch (err) {
       showToast(err.message, "error");
@@ -859,6 +1058,21 @@ function initIngestAndSaves() {
 // ==================== YOUTUBE CRAWLER STUDIO ====================
 
 function initYouTubeCrawler() {
+  // Paste button in tab
+  if (el.btnYtPasteTab) {
+    el.btnYtPasteTab.addEventListener('click', async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text) {
+          el.ytTabUrlInput.value = text.trim();
+          showToast("Pasted link from clipboard", "info");
+        }
+      } catch (_) {
+        showToast("Clipboard access denied or empty", "warning");
+      }
+    });
+  }
+
   // Inspect URL
   el.btnYtTabInspect.addEventListener('click', async () => {
     const url = el.ytTabUrlInput.value.trim();
@@ -987,11 +1201,11 @@ function renderYouTubeVault(items) {
     card.innerHTML = `
       <div class="file-details">
         <span class="file-name">${item.name}</span>
-        <span class="file-path">${item.sample_rate}Hz • ${item.channels === 1 ? 'Mono' : 'Stereo'} • ${(item.duration_s || 0).toFixed(1)}s • ${formatBytes(item.size)}</span>
+        <span class="file-path">${item.sample_rate.toLocaleString()}Hz • ${item.channels === 1 ? 'Mono' : 'Stereo'} • ${(item.duration_s || 0).toFixed(1)}s • ${formatBytes(item.size)}</span>
       </div>
       <div class="stem-actions">
         <button class="btn btn-sm btn-secondary btn-load-yt-workspace">🎛️ Workspace</button>
-        <button class="btn btn-sm btn-secondary btn-yt-sep">🧪 Demucs</button>
+        <button class="btn btn-sm btn-secondary btn-yt-sep">🧪 Separate</button>
         <button class="btn btn-sm btn-secondary btn-yt-diar">👥 Diarize</button>
       </div>
     `;
@@ -1123,7 +1337,7 @@ function renderSeparationResultCard(result) {
   card.innerHTML = `
     <div class="stem-info">
       <span class="stem-title">${meta.title} (${result.model_type})</span>
-      <span class="stem-meta">${meta.format.toUpperCase()} • ${meta.sample_rate}Hz • ${(meta.duration_s || 0).toFixed(2)}s • ${result.elapsed_s}s exec</span>
+      <span class="stem-meta">${meta.format.toUpperCase()} • ${meta.sample_rate.toLocaleString()}Hz • ${(meta.duration_s || 0).toFixed(2)}s • ${result.elapsed_s}s exec</span>
     </div>
     <div class="stem-actions">
       <button class="btn btn-sm btn-secondary btn-play-stem" data-id="${audioId}">▶ Play</button>
@@ -1347,7 +1561,7 @@ function initComparisonStudio() {
       showToast(err.message, "error");
     } finally {
       el.btnGenerateComparison.disabled = false;
-      el.btnGenerateComparison.textContent = "Generate Aligned Spectrograms & Waveforms";
+      el.btnGenerateComparison.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg> <span>Generate Aligned Visuals</span>`;
     }
   });
 }
@@ -1415,7 +1629,7 @@ function initBenchmarkMixer() {
       showToast(err.message, "error");
     } finally {
       el.btnRunMixer.disabled = false;
-      el.btnRunMixer.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg> Synthesize Mixture (AudioMixer.mix)`;
+      el.btnRunMixer.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg> <span>Synthesize Benchmark Mixture (AudioMixer.mix)</span>`;
     }
   });
 }
@@ -1482,7 +1696,7 @@ function renderSessionHistory() {
     card.innerHTML = `
       <div class="file-details">
         <span class="file-name">${item.title}</span>
-        <span class="file-path">${item.format.toUpperCase()} • ${item.sample_rate}Hz • ${(item.duration_s || 0).toFixed(2)}s • ${item.source_type}</span>
+        <span class="file-path">${item.format.toUpperCase()} • ${item.sample_rate.toLocaleString()}Hz • ${(item.duration_s || 0).toFixed(2)}s • ${item.source_type}</span>
       </div>
       <div class="file-actions">
         <button class="btn btn-sm btn-secondary btn-load-session" data-id="${item.id}">Load</button>
@@ -1525,7 +1739,7 @@ function renderServerFiles() {
         <span class="file-path">${file.category} • ${formatBytes(file.size)}</span>
       </div>
       <div class="file-actions">
-        <button class="btn btn-sm btn-secondary btn-load-file" data-path="${file.path}">Load to Session</button>
+        <button class="btn btn-sm btn-secondary btn-load-file" data-path="${file.path}">Load</button>
       </div>
     `;
     card.querySelector('.btn-load-file').addEventListener('click', () => loadServerFile(file.path));
@@ -1571,6 +1785,18 @@ function openLibraryModal() {
     item.querySelector('.btn-modal-load').addEventListener('click', () => loadServerFile(file.path));
     el.modalLibraryItems.appendChild(item);
   });
+}
+
+function toggleShortcutsModal() {
+  if (el.modalShortcuts) {
+    el.modalShortcuts.classList.toggle('hidden');
+  }
+}
+
+function closeAllModals() {
+  if (el.modalSaveTo) el.modalSaveTo.classList.add('hidden');
+  if (el.modalLibrary) el.modalLibrary.classList.add('hidden');
+  if (el.modalShortcuts) el.modalShortcuts.classList.add('hidden');
 }
 
 function populateAllAudioSelects() {
@@ -1637,7 +1863,8 @@ function initLiveReload() {
     }
   };
   evtSource.onerror = () => {
-    document.getElementById('live-reload-badge').style.opacity = '0.5';
+    const badge = document.getElementById('live-reload-badge');
+    if (badge) badge.style.opacity = '0.5';
   };
 }
 
@@ -1660,6 +1887,13 @@ function initNavigation() {
   el.tabs.forEach(tab => {
     tab.addEventListener('click', () => switchTab(tab.dataset.tab));
   });
+
+  if (el.btnOpenShortcutsModal) {
+    el.btnOpenShortcutsModal.addEventListener('click', toggleShortcutsModal);
+  }
+  if (el.btnCloseShortcutsModal) {
+    el.btnCloseShortcutsModal.addEventListener('click', () => el.modalShortcuts.classList.add('hidden'));
+  }
 }
 
 function switchTab(tabId) {

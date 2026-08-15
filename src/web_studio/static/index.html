@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SonicStudio — Audio Prepare & Separation Pipeline</title>
+  <title>SonicStudio — Audio Prepare, Separation & Diarization Workbench</title>
   <meta name="description" content="Interactive Audio Preparation, Separation, Diarization, and Benchmark Studio">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,7 +16,7 @@
     <header class="top-header">
       <div class="brand">
         <div class="brand-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
             <path d="M2 10v3"></path>
             <path d="M6 6v11"></path>
             <path d="M10 3v18"></path>
@@ -31,39 +31,67 @@
         </div>
       </div>
 
-      <nav class="nav-tabs">
-        <button class="nav-tab active" data-tab="tab-workspace" id="btn-tab-workspace">
-          <span class="tab-icon">🎛️</span> Workspace & Cutter
+      <nav class="nav-tabs" aria-label="Studio navigation">
+        <button class="nav-tab active" data-tab="tab-workspace" id="btn-tab-workspace" title="Key: 1">
+          <span class="tab-icon">🎛️</span>
+          <span>Workspace & Cutter</span>
+          <span class="tab-shortcut">1</span>
         </button>
-        <button class="nav-tab" data-tab="tab-crawler" id="btn-tab-crawler">
-          <span class="tab-icon">📥</span> YouTube Crawler
+        <button class="nav-tab" data-tab="tab-crawler" id="btn-tab-crawler" title="Key: 2">
+          <span class="tab-icon">📥</span>
+          <span>YouTube Crawler</span>
+          <span class="tab-shortcut">2</span>
         </button>
-        <button class="nav-tab" data-tab="tab-separation" id="btn-tab-separation">
-          <span class="tab-icon">🧪</span> Model Separation
+        <button class="nav-tab" data-tab="tab-separation" id="btn-tab-separation" title="Key: 3">
+          <span class="tab-icon">🧪</span>
+          <span>Model Separation</span>
+          <span class="tab-shortcut">3</span>
         </button>
-        <button class="nav-tab" data-tab="tab-diarization" id="btn-tab-diarization">
-          <span class="tab-icon">👥</span> Diarization
+        <button class="nav-tab" data-tab="tab-diarization" id="btn-tab-diarization" title="Key: 4">
+          <span class="tab-icon">👥</span>
+          <span>Diarization</span>
+          <span class="tab-shortcut">4</span>
         </button>
-        <button class="nav-tab" data-tab="tab-comparison" id="btn-tab-comparison">
-          <span class="tab-icon">⚖️</span> Compare Studio
+        <button class="nav-tab" data-tab="tab-comparison" id="btn-tab-comparison" title="Key: 5">
+          <span class="tab-icon">⚖️</span>
+          <span>Compare Studio</span>
+          <span class="tab-shortcut">5</span>
         </button>
-        <button class="nav-tab" data-tab="tab-mixer" id="btn-tab-mixer">
-          <span class="tab-icon">🎚️</span> Benchmark Mixer
+        <button class="nav-tab" data-tab="tab-mixer" id="btn-tab-mixer" title="Key: 6">
+          <span class="tab-icon">🎚️</span>
+          <span>Benchmark Mixer</span>
+          <span class="tab-shortcut">6</span>
         </button>
-        <button class="nav-tab" data-tab="tab-library" id="btn-tab-library">
-          <span class="tab-icon">📁</span> Library & History
+        <button class="nav-tab" data-tab="tab-library" id="btn-tab-library" title="Key: 7">
+          <span class="tab-icon">📁</span>
+          <span>Library & History</span>
+          <span class="tab-shortcut">7</span>
         </button>
       </nav>
 
       <div class="header-status">
+        <!-- Cross-link to SonicPipeline Batch Engine -->
+        <a href="http://127.0.0.1:8081" target="_blank" rel="noopener noreferrer" class="badge badge-link" title="Open SonicPipeline Batch Engine on port 8081">
+          <span>⚡ SonicPipeline</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+        </a>
+
         <div id="device-badge" class="badge badge-device" title="Hardware accelerator">
           <span class="dot dot-pulse"></span>
           <span id="device-label">Detecting...</span>
         </div>
+
         <div id="live-reload-badge" class="badge badge-reload" title="Hot reload status">
           <span class="reload-dot"></span>
           <span>Live</span>
         </div>
+
+        <!-- Shortcuts Modal Trigger -->
+        <button class="btn btn-ctrl btn-icon-round" id="btn-open-shortcuts-modal" title="Keyboard Shortcuts (?)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+        </button>
+
+        <!-- Theme Toggle -->
         <button class="btn btn-ctrl btn-theme-toggle" id="btn-theme-toggle" title="Toggle Light/Dark Theme">
           <svg id="icon-theme-sun" class="hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
           <svg id="icon-theme-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
@@ -79,11 +107,14 @@
         <!-- Ingestion Bar -->
         <div class="card ingest-card">
           <div class="card-header">
-            <h2 class="card-title">Load Audio Source</h2>
+            <div>
+              <h2 class="card-title">Load Audio Source</h2>
+              <p class="card-subtitle">Drop local audio or ingest YouTube URL into the high-precision workspace.</p>
+            </div>
             <div class="card-actions">
-              <button class="btn btn-sm btn-ghost" id="btn-browse-library-modal">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></button>
-                Sample Library
+              <button class="btn btn-sm btn-secondary" id="btn-browse-library-modal">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                <span>Sample Library</span>
               </button>
             </div>
           </div>
@@ -94,23 +125,26 @@
               <input type="file" id="file-input" accept="audio/*,.wav,.mp3,.flac,.ogg,.m4a" class="file-input-hidden">
               <div class="dropzone-content">
                 <div class="dropzone-icon">
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                 </div>
                 <div class="dropzone-text">
-                  <span class="dropzone-title">Drop audio file here, or <span class="accent-text">browse</span></span>
-                  <span class="dropzone-desc">WAV, MP3, FLAC, M4A up to 500MB</span>
+                  <span class="dropzone-title">Drop audio file here, or <span class="accent-text">browse files</span></span>
+                  <span class="dropzone-desc">WAV, MP3, FLAC, M4A, OGG up to 500MB</span>
                 </div>
               </div>
             </div>
 
             <!-- YouTube Ingest Box -->
             <div class="yt-ingest-box">
-              <label class="input-label" for="yt-url-input">YouTube Ingestion (via YtCrawler)</label>
+              <label class="input-label" for="yt-url-input">Direct YouTube Ingestion (via YtCrawler)</label>
               <div class="input-group">
                 <div class="input-icon-prefix">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"></path><polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon></svg>
                 </div>
                 <input type="text" id="yt-url-input" class="text-input" placeholder="https://www.youtube.com/watch?v=...">
+                <button class="btn btn-sm btn-ghost btn-paste-url" id="btn-yt-paste-workspace" title="Paste from clipboard">
+                  <span>Paste</span>
+                </button>
                 <button class="btn btn-primary" id="btn-yt-download">
                   <span>Fetch & Normalize</span>
                 </button>
@@ -128,25 +162,25 @@
               <div class="audio-main-meta">
                 <div class="audio-source-badge" id="meta-source-type">Local</div>
                 <h3 class="audio-title" id="meta-title">ready_or_not.wav</h3>
-                <span class="audio-id-chip" id="meta-id" title="Click to copy ID">aud_000000</span>
+                <span class="audio-id-chip" id="meta-id" title="Click to copy Audio ID">aud_000000</span>
               </div>
 
               <div class="audio-quick-actions">
                 <button class="btn btn-secondary" id="btn-quick-save" title="Quick save with standardized fingerprint to temp/">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-                  Quick Save
+                  <span>Quick Save</span>
                 </button>
                 <button class="btn btn-secondary" id="btn-save-to-dialog">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                  Save To...
+                  <span>Save To...</span>
                 </button>
                 <button class="btn btn-secondary" id="btn-download-audio">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4M17 9l-5 5-5-5M12 12.8V2.5"/></svg>
-                  Download
+                  <span>Download</span>
                 </button>
                 <button class="btn btn-accent" id="btn-send-to-separation">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
-                  Separate Stems
+                  <span>Separate Stems</span>
                 </button>
               </div>
             </div>
@@ -182,7 +216,7 @@
             <!-- Fingerprint Line -->
             <div class="fingerprint-bar">
               <span class="fp-title">Fingerprint:</span>
-              <code class="fp-code" id="meta-fingerprint">none</code>
+              <code class="fp-code" id="meta-fingerprint" title="Click to copy fingerprint">none</code>
             </div>
 
             <!-- History Steps -->
@@ -194,18 +228,30 @@
             </div>
           </div>
 
-          <!-- Interactive Waveform & Cutting Studio -->
+          <!-- Interactive Waveform & Precision Cutting Studio -->
           <div class="card waveform-card">
             <div class="card-header">
               <div class="waveform-header-left">
                 <h3 class="card-title">Interactive Waveform & Precision Cutter</h3>
-                <span class="waveform-sub">Drag on waveform to select a segment to cut or preview</span>
+                <span class="waveform-sub">Click/drag on waveform to scrub or select a region. Press <kbd>Space</kbd> to play/pause.</span>
               </div>
+
+              <!-- Selection Quick Bar (appears when region is selected) -->
+              <div class="selection-actions-bar" id="selection-actions-bar" style="display: none;">
+                <button class="btn btn-sm btn-primary" id="btn-audition-selection" title="Loop play selected range">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                  <span>Audition Selection</span>
+                </button>
+                <button class="btn btn-sm btn-secondary" id="btn-clear-selection" title="Clear selection">
+                  <span>Clear</span>
+                </button>
+              </div>
+
               <div class="waveform-controls-top">
-                <button class="btn btn-sm btn-ghost" id="btn-zoom-out" title="Zoom Out">−</button>
+                <button class="btn btn-sm btn-ghost" id="btn-zoom-out" title="Zoom Out (Z+Shift)">−</button>
                 <span class="zoom-label" id="zoom-level-label">100%</span>
-                <button class="btn btn-sm btn-ghost" id="btn-zoom-in" title="Zoom In">+</button>
-                <button class="btn btn-sm btn-ghost" id="btn-reset-zoom" title="Reset Zoom">Reset</button>
+                <button class="btn btn-sm btn-ghost" id="btn-zoom-in" title="Zoom In (Z)">+</button>
+                <button class="btn btn-sm btn-ghost" id="btn-reset-zoom" title="Reset Zoom (0)">Fit</button>
                 <div class="divider-v"></div>
                 <button class="btn btn-sm btn-ghost" id="btn-toggle-spectrogram">
                   <span>📊 Spectrogram</span>
@@ -217,9 +263,9 @@
             <div class="waveform-viewport" id="waveform-viewport">
               <canvas id="waveform-canvas" width="1200" height="180"></canvas>
               <div id="selection-overlay" class="selection-overlay hidden">
-                <div class="selection-handle handle-left"></div>
+                <div class="selection-handle handle-left" title="Drag to adjust start"></div>
                 <div class="selection-range-label" id="selection-range-label">0.0s - 0.0s</div>
-                <div class="selection-handle handle-right"></div>
+                <div class="selection-handle handle-right" title="Drag to adjust end"></div>
               </div>
               <div id="playhead-line" class="playhead-line"></div>
               <div id="waveform-time-tooltip" class="time-tooltip hidden">00:00.00</div>
@@ -273,11 +319,11 @@
               <div class="cutter-actions-group">
                 <button class="btn btn-secondary" id="btn-preview-cut">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                  Preview Cut
+                  <span>Preview Cut</span>
                 </button>
                 <button class="btn btn-primary" id="btn-apply-cut">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><line x1="20" y1="4" x2="8.12" y2="15.88"></line><line x1="14.47" y1="14.48" x2="20" y2="20"></line><line x1="8.12" y1="8.12" x2="12" y2="12"></line></svg>
-                  Apply Cut (AudioCutter)
+                  <span>Apply Cut (AudioCutter)</span>
                 </button>
               </div>
             </div>
@@ -285,13 +331,16 @@
         </div>
       </section>
 
-      <!-- ==================== TAB: YOUTUBE CRAWLER STUDIO ==================== -->
+      <!-- ==================== TAB 2: YOUTUBE CRAWLER STUDIO ==================== -->
       <section id="tab-crawler" class="tab-pane">
         <div class="grid-2col">
           <!-- Crawler Setup -->
           <div class="card">
             <div class="card-header">
-              <h2 class="card-title">YouTube Ingestion & Extraction</h2>
+              <div>
+                <h2 class="card-title">YouTube Ingestion & Extraction</h2>
+                <p class="card-subtitle">Crawl and standardize audio via yt-dlp & FFmpeg.</p>
+              </div>
               <span class="badge badge-accent">yt-dlp + ffmpeg</span>
             </div>
 
@@ -302,6 +351,9 @@
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"></path><polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon></svg>
                 </div>
                 <input type="text" id="yt-tab-url-input" class="text-input" placeholder="https://www.youtube.com/watch?v=...">
+                <button class="btn btn-sm btn-ghost btn-paste-url" id="btn-yt-paste-tab" title="Paste from clipboard">
+                  <span>Paste</span>
+                </button>
                 <button class="btn btn-secondary" id="btn-yt-tab-inspect" title="Fetch video metadata preview">
                   <span>Inspect</span>
                 </button>
@@ -329,9 +381,9 @@
             </div>
 
             <div class="yt-actions">
-              <button class="btn btn-primary btn-lg" id="btn-yt-tab-download">
+              <button class="btn btn-primary btn-lg w-full" id="btn-yt-tab-download">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                Download & Standardize Audio
+                <span>Download & Standardize Audio</span>
               </button>
             </div>
           </div>
@@ -384,8 +436,13 @@
         <!-- Downloaded YouTube Audio Vault -->
         <div class="card" style="margin-top: 1.25rem;">
           <div class="card-header">
-            <h2 class="card-title">YouTube Downloads Vault (.data/yt_crawler/downloads)</h2>
-            <button class="btn btn-sm btn-ghost" id="btn-refresh-yt-history">Refresh Vault</button>
+            <div>
+              <h2 class="card-title">YouTube Downloads Vault</h2>
+              <span class="card-subtitle">Cached downloads in <code>.data/yt_crawler/downloads</code></span>
+            </div>
+            <button class="btn btn-sm btn-ghost" id="btn-refresh-yt-history">
+              <span>↻ Refresh Vault</span>
+            </button>
           </div>
           <div class="yt-vault-list" id="yt-vault-list">
             <div class="empty-placeholder">Loading crawled YouTube tracks...</div>
@@ -399,27 +456,30 @@
           <!-- Separation Config -->
           <div class="card">
             <div class="card-header">
-              <h2 class="card-title">Source Separation Engine</h2>
+              <div>
+                <h2 class="card-title">Source Separation Engine</h2>
+                <p class="card-subtitle">Separate vocals, speech, drums, bass, and accompaniment.</p>
+              </div>
               <span class="badge badge-accent">Modular Backends</span>
             </div>
 
             <div class="form-group">
-              <label class="form-label" for="sep-input-select">Input Audio:</label>
+              <label class="form-label" for="sep-input-select">Input Audio Track:</label>
               <select id="sep-input-select" class="select-input">
                 <option value="">-- Select Loaded Audio --</option>
               </select>
             </div>
 
             <div class="form-group">
-              <label class="form-label">Separation Backend:</label>
+              <label class="form-label">Separation Backend Model:</label>
               <div class="model-cards-grid">
                 <!-- HTDemucs Card -->
                 <div class="model-card active" data-model="htdemucs">
                   <div class="model-card-header">
                     <span class="model-name">HTDemucs (v4)</span>
-                    <span class="badge badge-sm badge-success">Ready</span>
+                    <span class="badge badge-sm badge-success">4-Stem</span>
                   </div>
-                  <p class="model-desc">Hybrid Transformer Demucs. Fast & reliable vocals/music separation.</p>
+                  <p class="model-desc">Hybrid Transformer Demucs. Vocals, drums, bass & other.</p>
                 </div>
 
                 <!-- BS-RoFormer Card -->
@@ -428,7 +488,7 @@
                     <span class="model-name">BS-RoFormer</span>
                     <span class="badge badge-sm badge-info">SOTA</span>
                   </div>
-                  <p class="model-desc">Band-Split RoFormer via bs-roformer-infer. High vocal clarity.</p>
+                  <p class="model-desc">Band-Split RoFormer via bs-roformer-infer. Pristine vocal isolation.</p>
                 </div>
 
                 <!-- Mel-RoFormer Card -->
@@ -437,14 +497,14 @@
                     <span class="model-name">Mel-RoFormer</span>
                     <span class="badge badge-sm">MelBand</span>
                   </div>
-                  <p class="model-desc">Mel-Band RoFormer architecture for speech/vocal isolation.</p>
+                  <p class="model-desc">Mel-Band RoFormer architecture for speech/vocal separation.</p>
                 </div>
 
                 <!-- MVSep MDX23 Card -->
                 <div class="model-card" data-model="mvsep_mdx23">
                   <div class="model-card-header">
                     <span class="model-name">MVSep MDX23</span>
-                    <span class="badge badge-sm">MDX23</span>
+                    <span class="badge badge-sm">Ensemble</span>
                   </div>
                   <p class="model-desc">Multi-model MDX23 ensemble separator.</p>
                 </div>
@@ -462,7 +522,7 @@
                 </select>
               </div>
               <div class="form-group col-half">
-                <label class="form-label" for="sep-stems-select">Target Stem:</label>
+                <label class="form-label" for="sep-stems-select">Target Stem Filter:</label>
                 <select id="sep-stems-select" class="select-input">
                   <option value="vocals">Vocals / Speech</option>
                   <option value="no_vocals">Accompaniment / Music</option>
@@ -476,9 +536,9 @@
             </div>
 
             <div class="sep-actions">
-              <button class="btn btn-primary btn-lg" id="btn-run-separation">
+              <button class="btn btn-primary btn-lg w-full" id="btn-run-separation">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                Run Separation
+                <span>Run Separation Model</span>
               </button>
             </div>
           </div>
@@ -510,13 +570,16 @@
         </div>
       </section>
 
-      <!-- ==================== TAB 3: DIARIZATION (SPEAKER SEPARATION) ==================== -->
+      <!-- ==================== TAB 4: DIARIZATION (SPEAKER SEPARATION) ==================== -->
       <section id="tab-diarization" class="tab-pane">
         <div class="grid-2col">
           <!-- Diarization Controls -->
           <div class="card">
             <div class="card-header">
-              <h2 class="card-title">Speaker Diarization Pipeline</h2>
+              <div>
+                <h2 class="card-title">Speaker Diarization Pipeline</h2>
+                <p class="card-subtitle">Detect "who spoke when" with temporal boundary intervals.</p>
+              </div>
               <span class="badge badge-accent">Speaker Awareness</span>
             </div>
 
@@ -564,9 +627,9 @@
             </div>
 
             <div class="diar-actions">
-              <button class="btn btn-primary btn-lg" id="btn-run-diarization">
+              <button class="btn btn-primary btn-lg w-full" id="btn-run-diarization">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-                Run Speaker Diarization
+                <span>Run Speaker Diarization</span>
               </button>
             </div>
           </div>
@@ -626,15 +689,18 @@
         </div>
       </section>
 
-      <!-- ==================== TAB 4: MODEL & AUDIO COMPARISON STUDIO ==================== -->
+      <!-- ==================== TAB 5: MODEL & AUDIO COMPARISON STUDIO ==================== -->
       <section id="tab-comparison" class="tab-pane">
         <div class="card comparison-setup-card">
           <div class="card-header">
-            <h2 class="card-title">Audio & Model Comparison Studio</h2>
+            <div>
+              <h2 class="card-title">Audio & Model Comparison Studio</h2>
+              <p class="card-subtitle">Synchronized waveform & mel-spectrogram visual analysis.</p>
+            </div>
             <div class="card-actions">
               <button class="btn btn-primary" id="btn-generate-comparison">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
-                Generate Aligned Spectrograms & Waveforms
+                <span>Generate Aligned Visuals</span>
               </button>
             </div>
           </div>
@@ -642,7 +708,7 @@
           <div class="compare-selector-row">
             <!-- Track A -->
             <div class="compare-col">
-              <div class="track-tag tag-a">Track A (e.g. Mixture / Before)</div>
+              <div class="track-tag tag-a">Track A (e.g. Mixture / Ground Truth)</div>
               <select id="compare-track-a-select" class="select-input"></select>
             </div>
 
@@ -651,7 +717,7 @@
 
             <!-- Track B -->
             <div class="compare-col">
-              <div class="track-tag tag-b">Track B (e.g. Separated Vocals / After)</div>
+              <div class="track-tag tag-b">Track B (e.g. Separated Vocals / Model Estimate)</div>
               <select id="compare-track-b-select" class="select-input"></select>
             </div>
           </div>
@@ -659,15 +725,15 @@
           <!-- Instant A/B Live Toggle Bar -->
           <div class="ab-live-bar">
             <div class="ab-status">
-              <span class="ab-label">Live A/B Player (Instant Synchronized Switching):</span>
+              <span class="ab-label">Live A/B Player:</span>
               <span class="ab-current" id="ab-active-label">Playing Track A</span>
             </div>
             <div class="ab-buttons">
               <button class="btn btn-ab active" id="btn-ab-switch-a">Track A</button>
               <button class="btn btn-ab" id="btn-ab-switch-b">Track B</button>
-              <button class="btn btn-ab-toggle" id="btn-ab-toggle-instant">
+              <button class="btn btn-ab-toggle" id="btn-ab-toggle-instant" title="Instant toggle between A and B">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>
-                Switch (Space / Click)
+                <span>Switch A / B</span>
               </button>
             </div>
           </div>
@@ -683,7 +749,7 @@
             </div>
             <div class="comparison-img-box" id="spectrogram-compare-box">
               <div class="empty-placeholder">
-                <span>Click "Generate Aligned Spectrograms" to render Mixture vs Estimate vs Residual mel spectrograms.</span>
+                <span>Click "Generate Aligned Visuals" to render Mixture vs Estimate vs Residual mel spectrograms.</span>
               </div>
               <img id="img-compare-spectrogram" class="compare-rendered-img hidden" alt="Mel Spectrogram Comparison">
             </div>
@@ -697,7 +763,7 @@
             </div>
             <div class="comparison-img-box" id="waveform-compare-box">
               <div class="empty-placeholder">
-                <span>Click "Generate Aligned Spectrograms" to render aligned time-domain waveforms.</span>
+                <span>Click "Generate Aligned Visuals" to render aligned time-domain waveforms.</span>
               </div>
               <img id="img-compare-waveform" class="compare-rendered-img hidden" alt="Waveform Comparison">
             </div>
@@ -705,17 +771,16 @@
         </div>
       </section>
 
-      <!-- ==================== TAB 5: BENCHMARK MIXER ==================== -->
+      <!-- ==================== TAB 6: BENCHMARK MIXER ==================== -->
       <section id="tab-mixer" class="tab-pane">
         <div class="card">
           <div class="card-header">
-            <h2 class="card-title">AudioMixer — Benchmark Mixture Generator</h2>
-            <span class="badge badge-accent">Speech + Music Mix</span>
+            <div>
+              <h2 class="card-title">AudioMixer — Benchmark Mixture Generator</h2>
+              <p class="card-subtitle">Synthesize clean speech with background music at target SNR/SMR.</p>
+            </div>
+            <span class="badge badge-accent">AudioMixer.mix</span>
           </div>
-
-          <p class="card-desc">
-            Mix clean speech with background music at a target Speech-to-Music Ratio (SMR in dB) with automated cropping/looping and ceiling control.
-          </p>
 
           <div class="grid-2col" style="margin-top: 1rem;">
             <div class="form-group">
@@ -732,7 +797,7 @@
           <div class="mixer-controls-row">
             <div class="mixer-slider-group">
               <div class="slider-header">
-                <label class="form-label" for="mixer-smr-slider">Target SMR (Speech-to-Music Ratio):</label>
+                <label class="form-label" for="mixer-smr-slider">Target SMR (Speech-to-Music Ratio in dB):</label>
                 <span class="slider-val-badge" id="mixer-smr-val">0.0 dB</span>
               </div>
               <input type="range" id="mixer-smr-slider" class="range-slider" min="-18" max="18" step="0.5" value="0.0">
@@ -745,9 +810,9 @@
           </div>
 
           <div class="mixer-actions">
-            <button class="btn btn-primary btn-lg" id="btn-run-mixer">
+            <button class="btn btn-primary btn-lg w-full" id="btn-run-mixer">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
-              Synthesize Mixture (AudioMixer.mix)
+              <span>Synthesize Benchmark Mixture (AudioMixer.mix)</span>
             </button>
           </div>
 
@@ -758,14 +823,19 @@
         </div>
       </section>
 
-      <!-- ==================== TAB 6: LIBRARY & HISTORY ==================== -->
+      <!-- ==================== TAB 7: LIBRARY & HISTORY ==================== -->
       <section id="tab-library" class="tab-pane">
         <div class="grid-2col">
           <!-- Project Audio Files Explorer -->
           <div class="card">
             <div class="card-header">
-              <h2 class="card-title">Project File Explorer</h2>
-              <button class="btn btn-sm btn-ghost" id="btn-refresh-library">Refresh</button>
+              <div>
+                <h2 class="card-title">Project File Explorer</h2>
+                <span class="card-subtitle">Scanned from <code>.data/</code> and project directories</span>
+              </div>
+              <button class="btn btn-sm btn-ghost" id="btn-refresh-library">
+                <span>↻ Refresh</span>
+              </button>
             </div>
             <div class="library-list-wrapper" id="server-files-list">
               <div class="empty-placeholder">Loading project files...</div>
@@ -775,7 +845,10 @@
           <!-- Active Session History Stack -->
           <div class="card">
             <div class="card-header">
-              <h2 class="card-title">Active Session Audio Objects</h2>
+              <div>
+                <h2 class="card-title">Active Session Audio Objects</h2>
+                <span class="card-subtitle">In-memory registered Audio instances</span>
+              </div>
               <span class="badge badge-ghost" id="session-count-badge">0 items</span>
             </div>
             <div class="session-history-list" id="session-history-list">
@@ -801,7 +874,7 @@
 
       <div class="player-center">
         <div class="player-controls">
-          <button class="btn-ctrl" id="btn-player-skip-back" title="Replay 5s">
+          <button class="btn-ctrl" id="btn-player-skip-back" title="Replay 5s (Shift+Left)">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path><text x="9" y="16" font-size="8" font-family="sans-serif">5</text></svg>
           </button>
           
@@ -810,7 +883,7 @@
             <svg id="icon-pause" class="hidden" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
           </button>
 
-          <button class="btn-ctrl" id="btn-player-skip-fwd" title="Forward 5s">
+          <button class="btn-ctrl" id="btn-player-skip-fwd" title="Forward 5s (Shift+Right)">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path><text x="9" y="16" font-size="8" font-family="sans-serif">5</text></svg>
           </button>
 
@@ -827,7 +900,7 @@
               <div class="scrub-handle" id="player-scrub-handle"></div>
             </div>
           </div>
-          <span class="time-label" id="player-time-total">00:00</span>
+          <span class="time-label" id="player-time-total" title="Click to toggle remaining time">00:00</span>
         </div>
       </div>
 
@@ -846,7 +919,7 @@
 
         <!-- Volume control -->
         <div class="volume-group">
-          <button class="btn-ctrl-sm" id="btn-player-mute" title="Mute/Unmute">
+          <button class="btn-ctrl-sm" id="btn-player-mute" title="Mute/Unmute (M)">
             <svg id="icon-vol" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
             <svg id="icon-vol-mute" class="hidden" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
           </button>
@@ -860,7 +933,7 @@
       <div class="modal-card">
         <div class="modal-header">
           <h3 class="modal-title">Save Audio Object To Disk</h3>
-          <button class="btn-close-modal" id="btn-close-save-modal">×</button>
+          <button class="btn-close-modal" id="btn-close-save-modal">&times;</button>
         </div>
         <div class="modal-body">
           <div class="form-group">
@@ -881,10 +954,71 @@
       <div class="modal-card modal-lg">
         <div class="modal-header">
           <h3 class="modal-title">Load Sample Audio from Project</h3>
-          <button class="btn-close-modal" id="btn-close-library-modal">×</button>
+          <button class="btn-close-modal" id="btn-close-library-modal">&times;</button>
         </div>
         <div class="modal-body">
           <div class="library-modal-list" id="modal-library-items"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Keyboard Shortcuts Modal -->
+    <div id="modal-shortcuts" class="modal-backdrop hidden">
+      <div class="modal-card modal-md">
+        <div class="modal-header">
+          <div class="modal-title-wrap">
+            <span class="modal-badge-icon">⌨️</span>
+            <h3 class="modal-title">Studio Keyboard Shortcuts</h3>
+          </div>
+          <button class="btn-close-modal" id="btn-close-shortcuts-modal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="shortcuts-grid">
+            <div class="shortcut-item">
+              <span class="shortcut-desc">Play / Pause Master Audio</span>
+              <kbd class="kbd">Space</kbd>
+            </div>
+            <div class="shortcut-item">
+              <span class="shortcut-desc">Seek -2s / +2s</span>
+              <div class="kbd-combo"><kbd class="kbd">←</kbd> <kbd class="kbd">→</kbd></div>
+            </div>
+            <div class="shortcut-item">
+              <span class="shortcut-desc">Seek -5s / +5s</span>
+              <div class="kbd-combo"><kbd class="kbd">Shift</kbd> + <kbd class="kbd">←</kbd> <kbd class="kbd">→</kbd></div>
+            </div>
+            <div class="shortcut-item">
+              <span class="shortcut-desc">Set Cut Start / End to Playhead</span>
+              <div class="kbd-combo"><kbd class="kbd">[</kbd> <kbd class="kbd">]</kbd></div>
+            </div>
+            <div class="shortcut-item">
+              <span class="shortcut-desc">Apply Audio Cut</span>
+              <kbd class="kbd">C</kbd>
+            </div>
+            <div class="shortcut-item">
+              <span class="shortcut-desc">Toggle Mute</span>
+              <kbd class="kbd">M</kbd>
+            </div>
+            <div class="shortcut-item">
+              <span class="shortcut-desc">Zoom In / Zoom Out</span>
+              <div class="kbd-combo"><kbd class="kbd">Z</kbd> / <kbd class="kbd">Shift+Z</kbd></div>
+            </div>
+            <div class="shortcut-item">
+              <span class="shortcut-desc">Fit Waveform Zoom</span>
+              <kbd class="kbd">0</kbd>
+            </div>
+            <div class="shortcut-item">
+              <span class="shortcut-desc">Switch Tabs (1–7)</span>
+              <div class="kbd-combo"><kbd class="kbd">1</kbd> ... <kbd class="kbd">7</kbd></div>
+            </div>
+            <div class="shortcut-item">
+              <span class="shortcut-desc">Toggle Shortcuts Cheatsheet</span>
+              <kbd class="kbd">?</kbd>
+            </div>
+            <div class="shortcut-item">
+              <span class="shortcut-desc">Close Modals / Clear Selection</span>
+              <kbd class="kbd">Esc</kbd>
+            </div>
+          </div>
         </div>
       </div>
     </div>

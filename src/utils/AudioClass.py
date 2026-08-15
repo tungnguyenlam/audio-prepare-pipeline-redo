@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import wave
@@ -10,14 +11,25 @@ from pathlib import Path
 from typing import Any, Literal, Optional
 
 DEFAULT_SAMPLE_RATE = 44100
+DEFAULT_AUDIO_FORMAT = "wav"
 ResampleAction = Literal["upscale", "downscale", "keep"]
+_SIDECAR_KIND = "audio.sidecar"
+_SIDECAR_FIELDS = (
+    "source_id",
+    "title",
+    "sample_rate",
+    "duration_s",
+    "channels",
+    "format",
+    "native_sample_rate",
+    "history",
+)
 
 
 def _sanitize_filename_component(name: str) -> str:
     """Sanitize a string for safe inclusion in filenames across filesystems."""
     cleaned = re.sub(r'[\\/*?:"<>|\s]+', "_", name)
     return cleaned.strip("._")
-
 
 
 def _probe_wav(path: Path) -> tuple[int, float, int]:
@@ -30,6 +42,48 @@ def _probe_wav(path: Path) -> tuple[int, float, int]:
     return rate, duration, channels
 
 
+def _sidecar_path(audio_path: Path) -> Path:
+    """Return the JSON sidecar path sharing the audio file's stem."""
+    return Path(audio_path).with_suffix(".json")
+
+
+def _write_sidecar(audio: Audio) -> None:
+    """Write identity metadata next to ``audio.path`` as ``{stem}.json``."""
+    payload: dict[str, Any] = {"kind": _SIDECAR_KIND}
+    for field in _SIDECAR_FIELDS:
+        value = getattr(audio, field)
+        if field == "history":
+            value = list(value)
+        payload[field] = value
+    _sidecar_path(audio.path).write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _read_sidecar(audio_path: Path) -> dict[str, Any] | None:
+    """Load a sidecar JSON next to ``audio_path``, or ``None`` if absent/invalid."""
+    path = _sidecar_path(audio_path)
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict) or data.get("kind") != _SIDECAR_KIND:
+        return None
+    return data
+
+
+def _with_default_audio_suffix(
+    path: Path, fmt: str = DEFAULT_AUDIO_FORMAT
+) -> Path:
+    """Append ``.{fmt}`` when ``path`` has no suffix. Default format is WAV."""
+    if path.suffix:
+        return path
+    return path.with_suffix(f".{fmt.lstrip('.')}")
+
+
 @dataclass
 class Audio:
     """Represents a downloaded and standardized audio file."""
@@ -40,7 +94,7 @@ class Audio:
     sample_rate: Optional[int] = DEFAULT_SAMPLE_RATE
     duration_s: Optional[float] = None
     channels: Optional[int] = 1
-    format: str = "wav"
+    format: str = DEFAULT_AUDIO_FORMAT
     native_sample_rate: Optional[int] = None
     history: tuple[str, ...] = ()
 
@@ -70,16 +124,19 @@ class Audio:
     ) -> Audio:
         """Load an audio file from disk and return an ``Audio`` instance.
 
-        For WAV files, sample rate, duration, and channel count are probed from
-        the file. Other formats keep the class defaults for those fields.
+        If ``{stem}.json`` sits next to the audio file (written by ``save_to`` /
+        ``quick_save``), identity fields are restored from it. WAV probe values
+        still win for ``sample_rate``, ``duration_s``, and ``channels``. Explicit
+        keyword arguments override the sidecar.
 
         Args:
             path: Path to an existing audio file.
-            source_id: Optional identifier; defaults to the file stem.
-            title: Optional display title; defaults to the file stem.
+            source_id: Optional identifier; defaults to sidecar or the file stem.
+            title: Optional display title; defaults to sidecar or the file stem.
             native_sample_rate: Original capture/source rate before pipeline
-                resampling. Defaults to the probed file rate.
+                resampling. Defaults to sidecar, else the probed file rate.
             history: Optional list or tuple of step fingerprint strings.
+                Defaults to sidecar history or an empty tuple.
 
         Returns:
             Audio: Instance pointing at the resolved file path.
@@ -91,10 +148,18 @@ class Audio:
         if not file_path.is_file():
             raise FileNotFoundError(f"Audio file does not exist: {file_path}")
 
-        fmt = file_path.suffix.lstrip(".").lower() or "wav"
+        sidecar = _read_sidecar(file_path)
+        fmt = file_path.suffix.lstrip(".").lower() or DEFAULT_AUDIO_FORMAT
         sample_rate: Optional[int] = DEFAULT_SAMPLE_RATE
         duration_s: Optional[float] = None
         channels: Optional[int] = 1
+        if sidecar is not None:
+            if sidecar.get("sample_rate") is not None:
+                sample_rate = int(sidecar["sample_rate"])
+            if sidecar.get("duration_s") is not None:
+                duration_s = float(sidecar["duration_s"])
+            if sidecar.get("channels") is not None:
+                channels = int(sidecar["channels"])
 
         if fmt == "wav":
             try:
@@ -102,18 +167,45 @@ class Audio:
             except wave.Error:
                 pass
 
+        if source_id is not None:
+            resolved_source_id = source_id
+        elif sidecar is not None and sidecar.get("source_id"):
+            resolved_source_id = str(sidecar["source_id"])
+        else:
+            resolved_source_id = file_path.stem
+
+        if title is not None:
+            resolved_title = title
+        elif sidecar is not None and "title" in sidecar:
+            sidecar_title = sidecar.get("title")
+            resolved_title = str(sidecar_title) if sidecar_title is not None else None
+        else:
+            resolved_title = file_path.stem
+
+        if native_sample_rate is not None:
+            resolved_native = native_sample_rate
+        elif sidecar is not None and sidecar.get("native_sample_rate") is not None:
+            resolved_native = int(sidecar["native_sample_rate"])
+        else:
+            resolved_native = sample_rate
+
+        if history is not None:
+            resolved_history = tuple(history)
+        elif sidecar is not None and sidecar.get("history") is not None:
+            resolved_history = tuple(str(step) for step in sidecar["history"])
+        else:
+            resolved_history = ()
+
         return cls(
             path=file_path,
-            source_id=source_id if source_id is not None else file_path.stem,
-            title=title if title is not None else file_path.stem,
+            source_id=resolved_source_id,
+            title=resolved_title,
             sample_rate=sample_rate,
             duration_s=duration_s,
             channels=channels,
             format=fmt,
-            native_sample_rate=(
-                native_sample_rate if native_sample_rate is not None else sample_rate
-            ),
-            history=tuple(history) if history is not None else (),
+            native_sample_rate=resolved_native,
+            history=resolved_history,
         )
 
     def metadata(self, *, target_sample_rate: Optional[int] = None) -> dict[str, Any]:
@@ -192,7 +284,7 @@ class Audio:
         sample_rate: Optional[int],
         duration_s: Optional[float],
         channels: Optional[int],
-        format: str = "wav",
+        format: str = DEFAULT_AUDIO_FORMAT,
         source_id: Optional[str] = None,
         title: Optional[str] = None,
         step: Optional[str] = None,
@@ -299,6 +391,10 @@ class Audio:
     def save_to(self, dest: str | Path) -> Audio:
         """Save (copy) the audio file to a destination file path or directory.
 
+        Destinations without a suffix default to ``.wav``. A JSON sidecar
+        ``{stem}.json`` is written next to the audio with identity metadata
+        (``source_id``, ``title``, ``native_sample_rate``, ``history``, …).
+
         Args:
             dest: Target file path or directory path.
 
@@ -313,15 +409,17 @@ class Audio:
 
         if dest_path.is_dir() or str(dest).endswith(("/", "\\")):
             dest_path.mkdir(parents=True, exist_ok=True)
-            target = dest_path / src_path.name
+            target = _with_default_audio_suffix(dest_path / src_path.name)
         else:
             dest_path.parent.mkdir(parents=True, exist_ok=True)
-            target = dest_path
+            target = _with_default_audio_suffix(dest_path)
 
         if src_path.resolve() != target.resolve():
             shutil.copy2(src_path, target)
 
         self.path = target.resolve()
+        self.format = target.suffix.lstrip(".").lower() or DEFAULT_AUDIO_FORMAT
+        _write_sidecar(self)
         return self
 
     def quick_save(
@@ -335,10 +433,9 @@ class Audio:
     ) -> Audio:
         """Quickly save (copy) the audio file to a temp directory with fingerprint in the filename.
 
-        By default, saves into ``<project_root>/temp/`` and generates a filename
-        incorporating the step fingerprint (``source_id``, history steps, duration,
-        sample rate, channels) so it can be immediately recognized. Prints the
-        destination path.
+        By default, saves as WAV into ``<project_root>/temp/`` and generates a
+        filename from the step fingerprint. A JSON sidecar ``{stem}.json`` is
+        written next to the audio. Prints the destination path.
 
         Args:
             output_dir: Target directory. Defaults to ``<project_root>/temp``.
@@ -357,10 +454,14 @@ class Audio:
         if not src_path.exists():
             raise FileNotFoundError(f"Audio file does not exist: {src_path}")
 
-        fmt = (self.format or src_path.suffix.lstrip(".") or "wav").lower()
-
+        fmt = DEFAULT_AUDIO_FORMAT
         if name is not None:
-            filename = name if "." in name else f"{name}.{fmt}"
+            name_path = Path(name)
+            if name_path.suffix:
+                fmt = name_path.suffix.lstrip(".").lower() or DEFAULT_AUDIO_FORMAT
+                filename = name_path.name
+            else:
+                filename = f"{name}.{fmt}"
         else:
             parts: list[str] = []
             if prefix:
@@ -396,6 +497,8 @@ class Audio:
             shutil.copy2(src_path, target_file)
 
         self.path = target_file
+        self.format = fmt
+        _write_sidecar(self)
         print(f"Quick saved to: {self.path}")
         return self
 
