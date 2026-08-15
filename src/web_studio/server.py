@@ -358,36 +358,70 @@ async def handle_status(request: web.Request) -> web.Response:
 
 
 async def handle_list_library(request: web.Request) -> web.Response:
-    """Scan and list audio files available in project directories."""
+    """Scan and list audio files available in project directories with precise categorization."""
     # Ensure benchmark and output directories exist
     (ROOT_DIR / "benchmarks/separation/sources/speech").mkdir(parents=True, exist_ok=True)
     (ROOT_DIR / "benchmarks/separation/sources/music").mkdir(parents=True, exist_ok=True)
     (ROOT_DIR / "benchmarks/separation/sources/cuts").mkdir(parents=True, exist_ok=True)
+    (ROOT_DIR / "temp").mkdir(parents=True, exist_ok=True)
+    (ROOT_DIR / "data").mkdir(parents=True, exist_ok=True)
 
     scan_dirs = [
-        ("Benchmark Speech", ROOT_DIR / "benchmarks/separation/sources/speech"),
-        ("Benchmark Music", ROOT_DIR / "benchmarks/separation/sources/music"),
-        ("Benchmark Cuts", ROOT_DIR / "benchmarks/separation/sources/cuts"),
-        ("Data Directory", ROOT_DIR / "data"),
-        ("Quick Saves (temp)", ROOT_DIR / "temp"),
-        ("Runtime Outputs (.data)", ROOT_DIR / ".data"),
+        ROOT_DIR / "benchmarks",
+        ROOT_DIR / "data",
+        ROOT_DIR / "temp",
+        ROOT_DIR / ".data",
     ]
 
     extensions = {".wav", ".mp3", ".flac", ".ogg", ".m4a"}
     files = []
+    seen_paths = set()
 
-    for category, directory in scan_dirs:
+    for directory in scan_dirs:
         if directory.is_dir():
             for p in directory.rglob("*"):
+                # Ignore intermediate work directories
+                if any(part in ("work", ".cache", "checkpoints", "venv", ".git") for part in p.parts):
+                    continue
                 if p.is_file() and p.suffix.lower() in extensions:
                     try:
+                        resolved_str = str(p.resolve())
+                        if resolved_str in seen_paths:
+                            continue
+                        seen_paths.add(resolved_str)
+
                         stat = p.stat()
+                        # Zero byte files are unusable / corrupted downloads
+                        if stat.st_size == 0:
+                            continue
+
+                        rel_path = str(p.relative_to(ROOT_DIR))
+                        p_lower = rel_path.lower()
+
+                        # Determine clean, accurate category
+                        if "yt_crawler/downloads" in p_lower or "downloads" in p_lower:
+                            category = "YouTube Downloads"
+                        elif "demucs/out" in p_lower or "bs_roformer/out" in p_lower or "mel_roformer/out" in p_lower or "mvsep" in p_lower:
+                            category = "Separated Stems"
+                        elif "audio_cutter/out" in p_lower or "sources/cuts" in p_lower or "_cut_" in p_lower:
+                            category = "Audio Cuts"
+                        elif "sources/speech" in p_lower or "speech" in p_lower:
+                            category = "Benchmark Speech"
+                        elif "sources/music" in p_lower or "music" in p_lower:
+                            category = "Benchmark Music"
+                        elif "temp" in p_lower:
+                            category = "Quick Saves (temp)"
+                        elif "data" in p_lower:
+                            category = "Data Directory"
+                        else:
+                            category = "Audio"
+
                         files.append(
                             {
                                 "category": category,
                                 "name": p.name,
-                                "path": str(p.relative_to(ROOT_DIR)),
-                                "absolute_path": str(p.resolve()),
+                                "path": rel_path,
+                                "absolute_path": resolved_str,
                                 "size": stat.st_size,
                                 "modified": stat.st_mtime,
                                 "format": p.suffix.lstrip(".").lower(),

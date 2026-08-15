@@ -2745,23 +2745,43 @@ async function fetchServerFiles() {
   }
 }
 
+function filterServerFiles(files, query, category) {
+  const q = (query || "").toLowerCase().trim();
+  const cat = (category || "all").toLowerCase().trim();
+
+  return (files || []).filter(file => {
+    const fileCat = (file.category || "").toLowerCase();
+    const filePath = (file.path || "").toLowerCase();
+    const fileName = (file.name || "").toLowerCase();
+
+    let matchesCat = cat === "all";
+    if (!matchesCat) {
+      if (cat === "speech") matchesCat = fileCat.includes("speech") || filePath.includes("speech");
+      else if (cat === "music") matchesCat = fileCat.includes("music") || filePath.includes("music");
+      else if (cat === "separated") matchesCat = fileCat.includes("separated") || filePath.includes("demucs") || filePath.includes("roformer") || filePath.includes("mvsep");
+      else if (cat === "downloads") matchesCat = fileCat.includes("downloads") || filePath.includes("yt_crawler") || filePath.includes("downloads");
+      else if (cat === "cuts") matchesCat = fileCat.includes("cuts") || filePath.includes("cuts") || fileName.includes("_cut_");
+      else if (cat === "temp") matchesCat = fileCat.includes("temp") || filePath.includes("temp");
+      else matchesCat = fileCat.includes(cat) || filePath.includes(cat);
+    }
+
+    const matchesQ = !q ||
+      fileName.includes(q) ||
+      filePath.includes(q) ||
+      fileCat.includes(q);
+
+    return matchesCat && matchesQ;
+  });
+}
+
 function renderServerFiles() {
   const container = el.serverFilesList;
   if (!container) return;
   container.innerHTML = "";
 
-  const query = (state.tabLibrarySearch || "").toLowerCase().trim();
-  const category = (state.tabLibraryCategory || "all").toLowerCase();
-
-  let filtered = (state.serverFiles || []).filter(file => {
-    const fileCat = (file.category || "").toLowerCase();
-    const matchesCategory = category === "all" || fileCat.includes(category);
-    const matchesQuery = !query ||
-      (file.name || "").toLowerCase().includes(query) ||
-      (file.path || "").toLowerCase().includes(query) ||
-      fileCat.includes(query);
-    return matchesCategory && matchesQuery;
-  });
+  const query = state.tabLibrarySearch || "";
+  const category = state.tabLibraryCategory || "all";
+  const filtered = filterServerFiles(state.serverFiles, query, category);
 
   if (filtered.length === 0) {
     container.innerHTML = `<div class="empty-placeholder">No project audio files found matching filter.</div>`;
@@ -2863,18 +2883,9 @@ function renderLibraryModalItems() {
   if (!el.modalLibraryItems) return;
   el.modalLibraryItems.innerHTML = "";
 
-  const query = (state.libraryModalSearch || "").toLowerCase().trim();
-  const category = (state.libraryModalCategory || "all").toLowerCase();
-
-  let filtered = (state.serverFiles || []).filter(file => {
-    const fileCat = (file.category || "").toLowerCase();
-    const matchesCategory = category === "all" || fileCat.includes(category);
-    const matchesQuery = !query ||
-      (file.name || "").toLowerCase().includes(query) ||
-      (file.path || "").toLowerCase().includes(query) ||
-      fileCat.includes(query);
-    return matchesCategory && matchesQuery;
-  });
+  const query = state.libraryModalSearch || "";
+  const category = state.libraryModalCategory || "all";
+  const filtered = filterServerFiles(state.serverFiles, query, category);
 
   if (el.libraryModalCount) {
     el.libraryModalCount.textContent = `${filtered.length} of ${(state.serverFiles || []).length} sample files`;
