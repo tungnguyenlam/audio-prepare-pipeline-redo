@@ -1055,22 +1055,6 @@ function initAudioCutter() {
       }
     });
   }
-    } catch (err) {
-      showToast(err.message, "error");
-    } finally {
-      if (targetBtn) {
-        targetBtn.disabled = false;
-        targetBtn.innerHTML = origHtml;
-      }
-    }
-  }
-
-  if (el.btnCutSaveSpeech) {
-    el.btnCutSaveSpeech.addEventListener('click', () => cutAndSaveBenchmark('speech'));
-  }
-  if (el.btnCutSaveMusic) {
-    el.btnCutSaveMusic.addEventListener('click', () => cutAndSaveBenchmark('music'));
-  }
 }
 
 // ==================== INGEST & SAVE ACTIONS ====================
@@ -1715,7 +1699,13 @@ function renderDiarizationResults(diarization, audioId) {
     tr.querySelector('.btn-play-turn').addEventListener('click', () => {
       loadAudioIntoPlayer(audioId);
       seekTo(turn.start_s);
-      el.au// ==================== CUTS MANAGER ====================
+      el.audio.play();
+    });
+    el.turnsTableBody.appendChild(tr);
+  });
+}
+
+// ==================== CUTS MANAGER ====================
 
 function initCutsManager() {
   renderCutsTable();
