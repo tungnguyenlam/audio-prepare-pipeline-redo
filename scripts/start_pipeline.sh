@@ -4,7 +4,7 @@ set -e
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-PORT="${1:-8766}"
+PORT="${1:-8765}"
 HOST="${2:-127.0.0.1}"
 
 # Kill any existing process occupying the target port
@@ -25,5 +25,5 @@ if [ -n "$OCCUPIED_PIDS" ]; then
     sleep 0.5
 fi
 
-echo "🚀 Starting SonicPipeline (Large-Scale Batch Engine) on http://${HOST}:${PORT}..."
-exec uv run python scripts/start_pipeline.py --host "$HOST" --port "$PORT"
+echo "🚀 Starting the shared Sonic backend on http://${HOST}:${PORT}..."
+exec uv run python scripts/start_web.py --host "$HOST" --port "$PORT"

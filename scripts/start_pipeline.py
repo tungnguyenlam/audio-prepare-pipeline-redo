@@ -98,12 +98,12 @@ def free_port(port: int, host: str = "127.0.0.1") -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="SonicPipeline - Large-Scale Audio Processing & Separation Engine")
     parser.add_argument("--host", default="127.0.0.1", help="Host address (default: 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=8766, help="Port number (default: 8766)")
+    parser.add_argument("--port", type=int, default=8765, help="Port number (default: 8765)")
     args = parser.parse_args()
 
     free_port(args.port, host=args.host)
 
-    from src.web_pipeline.server import create_app
+    from src.web_backend.server import create_app
     from aiohttp import web
     import torch
 
@@ -116,8 +116,9 @@ def main() -> None:
 
     app = create_app()
     print("=" * 65)
-    print("   ⚡ SONICPIPELINE — Large-Scale Audio Processing Engine")
-    print(f"   🚀 Running at: http://{args.host}:{args.port}")
+    print("   ⚡ SONIC WEB — Shared Backend")
+    print(f"   🚀 SonicPipeline: http://{args.host}:{args.port}/pipeline/")
+    print(f"   🎙️  SonicStudio: http://{args.host}:{args.port}/studio/")
     print(f"   ⚡ Compute Device: {get_device()}")
     print("=" * 65)
     web.run_app(app, host=args.host, port=args.port)

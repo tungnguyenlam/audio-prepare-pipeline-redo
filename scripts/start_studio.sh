@@ -25,5 +25,5 @@ if [ -n "$OCCUPIED_PIDS" ]; then
     sleep 0.5
 fi
 
-echo "🚀 Starting SonicStudio (Interactive Exploration) on http://${HOST}:${PORT}..."
-exec uv run python scripts/start_studio.py --host "$HOST" --port "$PORT"
+echo "🚀 Starting the shared Sonic backend on http://${HOST}:${PORT}..."
+exec uv run python scripts/start_web.py --host "$HOST" --port "$PORT"

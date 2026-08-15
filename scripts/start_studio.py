@@ -103,7 +103,7 @@ def main() -> None:
 
     free_port(args.port, host=args.host)
 
-    from src.web_studio.server import create_app
+    from src.web_backend.server import create_app
     from aiohttp import web
     import torch
 
@@ -116,8 +116,9 @@ def main() -> None:
 
     app = create_app()
     print("=" * 60)
-    print("   🎙️  SONICSTUDIO — Interactive Exploration Studio")
-    print(f"   🚀 Running at: http://{args.host}:{args.port}")
+    print("   🎙️  SONIC WEB — Shared Backend")
+    print(f"   🚀 SonicStudio: http://{args.host}:{args.port}/studio/")
+    print(f"   ⚡ SonicPipeline: http://{args.host}:{args.port}/pipeline/")
     print(f"   ⚡ Compute Device: {get_device()}")
     print("=" * 60)
     web.run_app(app, host=args.host, port=args.port)
