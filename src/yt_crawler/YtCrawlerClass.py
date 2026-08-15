@@ -15,7 +15,12 @@ import wave
 from pathlib import Path
 from typing import Optional
 
-from src.utils.AudioClass import DEFAULT_SAMPLE_RATE, Audio
+from src.utils.AudioClass import (
+    DEFAULT_SAMPLE_RATE,
+    Audio,
+    _sanitize_filename_component,
+    _write_sidecar,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -195,7 +200,16 @@ class YtCrawler:
             src_audio = preferred[0] if preferred else audio_candidates[0]
             native_sample_rate = _native_sample_rate(src_audio, info)
 
-            final_dest = self.output_dir / f"{source_id}.{self.audio_format}"
+            # Construct output filename: <sanitized_title>__<source_id>.<format>
+            sanitized_title = _sanitize_filename_component(title) if title else ""
+            if sanitized_title:
+                if len(sanitized_title) > 100:
+                    sanitized_title = sanitized_title[:100].rstrip("._")
+                file_stem = f"{sanitized_title}__{source_id}"
+            else:
+                file_stem = source_id
+
+            final_dest = self.output_dir / f"{file_stem}.{self.audio_format}"
 
             self._ensure_standard_audio(src_audio, final_dest)
 
@@ -214,11 +228,11 @@ class YtCrawler:
             if native_sample_rate is None:
                 native_sample_rate = sample_rate
 
-            for path in self.output_dir.glob(f"{source_id}.*"):
+            for path in self.output_dir.glob(f"*{source_id}.*"):
                 if path.suffix.lower() in _VIDEO_SUFFIXES:
                     path.unlink(missing_ok=True)
 
-            return Audio(
+            audio_obj = Audio(
                 path=final_dest.resolve(),
                 source_id=source_id,
                 title=title,
@@ -228,6 +242,11 @@ class YtCrawler:
                 format=self.audio_format,
                 native_sample_rate=native_sample_rate,
             )
+
+            # Write standard identity sidecar JSON next to the audio file
+            _write_sidecar(audio_obj)
+
+            return audio_obj
         finally:
             shutil.rmtree(session_dir, ignore_errors=True)
 

@@ -953,11 +953,34 @@
     <div id="modal-library" class="modal-backdrop hidden">
       <div class="modal-card modal-lg">
         <div class="modal-header">
-          <h3 class="modal-title">Load Sample Audio from Project</h3>
-          <button class="btn-close-modal" id="btn-close-library-modal">&times;</button>
+          <div class="modal-title-wrap">
+            <span class="modal-badge-icon">📁</span>
+            <div>
+              <h3 class="modal-title">Project Sample Library</h3>
+              <p class="modal-subtitle">Browse, preview, and load audio files from data/ and .data/ directories</p>
+            </div>
+          </div>
+          <button class="btn-close-modal" id="btn-close-library-modal" title="Close (Esc)" aria-label="Close modal">&times;</button>
         </div>
+        
+        <div class="modal-filter-bar">
+          <input type="text" id="library-modal-search" class="input-text library-search-input" placeholder="🔍 Search samples by name, folder, format...">
+          <div class="category-pills" id="library-modal-categories">
+            <button class="pill-btn active" data-category="all">All</button>
+            <button class="pill-btn" data-category="speech">Speech</button>
+            <button class="pill-btn" data-category="music">Music</button>
+            <button class="pill-btn" data-category="separated">Separated</button>
+            <button class="pill-btn" data-category="downloads">Downloads</button>
+          </div>
+        </div>
+
         <div class="modal-body">
           <div class="library-modal-list" id="modal-library-items"></div>
+        </div>
+
+        <div class="modal-footer">
+          <span class="modal-footer-hint font-mono text-muted" id="library-modal-count">0 files available</span>
+          <button class="btn btn-secondary" id="btn-cancel-library-modal">Close</button>
         </div>
       </div>
     </div>

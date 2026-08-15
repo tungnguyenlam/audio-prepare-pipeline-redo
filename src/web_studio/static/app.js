@@ -30,8 +30,9 @@ const state = {
     playbackRate: 1.0,
     loop: false,
     previewEnd: null,      // Used for previewing cuts
-    showRemainingTime: false,
-  },
+  // Sample Library Modal Filter State
+  libraryModalSearch: "",
+  libraryModalCategory: "all",
 };
 
 // DOM Elements Cache
@@ -215,12 +216,26 @@ const el = {
   modalLibrary: document.getElementById('modal-library'),
   modalLibraryItems: document.getElementById('modal-library-items'),
   btnCloseLibraryModal: document.getElementById('btn-close-library-modal'),
+  btnCancelLibraryModal: document.getElementById('btn-cancel-library-modal'),
+  libraryModalSearch: document.getElementById('library-modal-search'),
+  libraryModalCategories: document.getElementById('library-modal-categories'),
+  libraryModalCount: document.getElementById('library-modal-count'),
   modalShortcuts: document.getElementById('modal-shortcuts'),
   btnCloseShortcutsModal: document.getElementById('btn-close-shortcuts-modal'),
   toastContainer: document.getElementById('toast-container'),
 };
 
 // ==================== UTILITY FUNCTIONS ====================
+
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
 
 function formatTime(seconds) {
   if (isNaN(seconds) || seconds < 0) return "00:00";
@@ -1789,19 +1804,76 @@ async function loadServerFile(filePath) {
   }
 }
 
-function openLibraryModal() {
-  el.modalLibrary.classList.remove('hidden');
+async function openLibraryModal() {
+  if (el.modalLibrary) el.modalLibrary.classList.remove('hidden');
+  if (el.libraryModalSearch) {
+    el.libraryModalSearch.value = "";
+    state.libraryModalSearch = "";
+    setTimeout(() => el.libraryModalSearch.focus(), 60);
+  }
+  state.libraryModalCategory = "all";
+  if (el.libraryModalCategories) {
+    el.libraryModalCategories.querySelectorAll('.pill-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.category === 'all');
+    });
+  }
+
+  if (!state.serverFiles || state.serverFiles.length === 0) {
+    if (el.modalLibraryItems) {
+      el.modalLibraryItems.innerHTML = '<div class="empty-placeholder">Scanning project directories for sample audio files...</div>';
+    }
+    await fetchServerFiles();
+  }
+  renderLibraryModalItems();
+}
+
+function renderLibraryModalItems() {
+  if (!el.modalLibraryItems) return;
   el.modalLibraryItems.innerHTML = "";
 
-  state.serverFiles.forEach(file => {
+  const query = (state.libraryModalSearch || "").toLowerCase().trim();
+  const category = (state.libraryModalCategory || "all").toLowerCase();
+
+  let filtered = (state.serverFiles || []).filter(file => {
+    const fileCat = (file.category || "").toLowerCase();
+    const matchesCategory = category === "all" || fileCat.includes(category);
+    const matchesQuery = !query ||
+      (file.name || "").toLowerCase().includes(query) ||
+      (file.path || "").toLowerCase().includes(query) ||
+      fileCat.includes(query);
+    return matchesCategory && matchesQuery;
+  });
+
+  if (el.libraryModalCount) {
+    el.libraryModalCount.textContent = `${filtered.length} of ${(state.serverFiles || []).length} sample files`;
+  }
+
+  if (filtered.length === 0) {
+    el.modalLibraryItems.innerHTML = `
+      <div class="empty-placeholder" style="padding: 2.5rem 1rem; text-align: center;">
+        <span style="font-size: 2rem; display: block; margin-bottom: 0.5rem;">📂</span>
+        <span>No sample audio files match your search filter.</span>
+      </div>
+    `;
+    return;
+  }
+
+  filtered.forEach(file => {
     const item = document.createElement("div");
     item.className = "file-item-card";
     item.innerHTML = `
       <div class="file-details">
-        <span class="file-name">${file.name}</span>
-        <span class="file-path">${file.category} • ${file.path}</span>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="file-name">${escapeHtml(file.name)}</span>
+          <span class="badge badge-subtle font-mono" style="font-size: 0.68rem; text-transform: uppercase;">${escapeHtml(file.category || 'Audio')}</span>
+        </div>
+        <span class="file-path">${escapeHtml(file.path)} • ${formatBytes(file.size || 0)}</span>
       </div>
-      <button class="btn btn-sm btn-primary btn-modal-load" data-path="${file.path}">Load</button>
+      <div class="file-actions">
+        <button class="btn btn-sm btn-primary btn-modal-load" data-path="${escapeHtml(file.path)}" title="Load audio into studio workspace">
+          <span>Load</span>
+        </button>
+      </div>
     `;
     item.querySelector('.btn-modal-load').addEventListener('click', () => loadServerFile(file.path));
     el.modalLibraryItems.appendChild(item);
@@ -1818,6 +1890,64 @@ function closeAllModals() {
   if (el.modalSaveTo) el.modalSaveTo.classList.add('hidden');
   if (el.modalLibrary) el.modalLibrary.classList.add('hidden');
   if (el.modalShortcuts) el.modalShortcuts.classList.add('hidden');
+}
+
+function initModals() {
+  // Close buttons
+  if (el.btnCloseLibraryModal) {
+    el.btnCloseLibraryModal.addEventListener('click', () => {
+      if (el.modalLibrary) el.modalLibrary.classList.add('hidden');
+    });
+  }
+  if (el.btnCancelLibraryModal) {
+    el.btnCancelLibraryModal.addEventListener('click', () => {
+      if (el.modalLibrary) el.modalLibrary.classList.add('hidden');
+    });
+  }
+  if (el.btnCloseSaveModal) {
+    el.btnCloseSaveModal.addEventListener('click', () => {
+      if (el.modalSaveTo) el.modalSaveTo.classList.add('hidden');
+    });
+  }
+  if (el.btnCancelSave) {
+    el.btnCancelSave.addEventListener('click', () => {
+      if (el.modalSaveTo) el.modalSaveTo.classList.add('hidden');
+    });
+  }
+  if (el.btnCloseShortcutsModal) {
+    el.btnCloseShortcutsModal.addEventListener('click', () => {
+      if (el.modalShortcuts) el.modalShortcuts.classList.add('hidden');
+    });
+  }
+
+  // Close modals when clicking directly on backdrop outside modal card
+  document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop) {
+        backdrop.classList.add('hidden');
+      }
+    });
+  });
+
+  // Modal search input listener
+  if (el.libraryModalSearch) {
+    el.libraryModalSearch.addEventListener('input', (e) => {
+      state.libraryModalSearch = e.target.value;
+      renderLibraryModalItems();
+    });
+  }
+
+  // Modal category pills listener
+  if (el.libraryModalCategories) {
+    el.libraryModalCategories.addEventListener('click', (e) => {
+      const btn = e.target.closest('.pill-btn');
+      if (!btn) return;
+      el.libraryModalCategories.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.libraryModalCategory = btn.dataset.category || 'all';
+      renderLibraryModalItems();
+    });
+  }
 }
 
 function populateAllAudioSelects() {
@@ -1970,6 +2100,7 @@ async function initApp() {
   initComparisonStudio();
   initBenchmarkMixer();
   initNavigation();
+  initModals();
   initLiveReload();
 
   el.btnRefreshLibrary.addEventListener('click', fetchServerFiles);

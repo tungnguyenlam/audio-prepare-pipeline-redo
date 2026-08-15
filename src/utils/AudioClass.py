@@ -422,6 +422,11 @@ class Audio:
         _write_sidecar(self)
         return self
 
+    def write_sidecar(self) -> Audio:
+        """Write identity metadata next to ``self.path`` as ``{stem}.json``."""
+        _write_sidecar(self)
+        return self
+
     def quick_save(
         self,
         output_dir: Optional[str | Path] = None,

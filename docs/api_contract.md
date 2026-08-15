@@ -56,9 +56,10 @@ Downloads one URL and returns an `Audio` object.
 3. Reads the generated `.info.json` metadata.
 4. Selects an audio file rather than a video artifact.
 5. Normalizes the file to the crawler's configured format, sample rate, and
-   channel count (default 1 / mono).
-6. Returns an `Audio` object whose `path` points to the final output.
-7. Removes the temporary session directory even if processing fails.
+   channel count (default 1 / mono), saved as `<sanitized_title>__<source_id>.<format>`.
+6. Generates companion identity metadata sidecar JSON (`<stem>.json`) alongside the audio file.
+7. Returns an `Audio` object whose `path` points to the final output.
+8. Removes the temporary session directory even if processing fails.
 
 **Raises:** `DownloadError` when `yt-dlp`, metadata parsing, audio discovery,
 or `ffmpeg` processing fails.
