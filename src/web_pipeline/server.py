@@ -657,20 +657,79 @@ async def handle_get_benchmark(request: web.Request) -> web.Response:
 
 
 # -------------------------------------------------------------------------
+# -------------------------------------------------------------------------
 # Static File & Single-Page App
 # -------------------------------------------------------------------------
 
+@web.middleware
+async def no_cache_middleware(request: web.Request, handler):
+    """Ensure static assets and HTML are never cached stale during development."""
+    response = await handler(request)
+    if request.path.startswith("/static/") or request.path == "/":
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
+
+async def file_watcher_loop(app: web.Application):
+    """Background task to watch pipeline frontend & backend files and trigger live reload."""
+    mtimes: Dict[str, float] = {}
+
+    def scan() -> bool:
+        changed = False
+        # Watch static frontend files
+        for p in STATIC_DIR.rglob("*"):
+            if p.is_file() and p.suffix in (".html", ".css", ".js"):
+                try:
+                    mt = p.stat().st_mtime
+                    if str(p) in mtimes and mtimes[str(p)] != mt:
+                        changed = True
+                    mtimes[str(p)] = mt
+                except Exception:
+                    pass
+
+        # Watch Python backend files
+        for p in (ROOT_DIR / "src" / "web_pipeline").rglob("*.py"):
+            if p.is_file():
+                try:
+                    mt = p.stat().st_mtime
+                    if str(p) in mtimes and mtimes[str(p)] != mt:
+                        changed = True
+                    mtimes[str(p)] = mt
+                except Exception:
+                    pass
+
+        return changed
+
+    scan()
+    while True:
+        await asyncio.sleep(0.5)
+        if scan():
+            logger.info("Pipeline file modification detected! Broadcasting hot reload...")
+            queue_manager.broadcast({"event": "reload", "data": {}})
+
+
 async def handle_index(request: web.Request) -> web.Response:
-    """Serve index.html for Single-Page Application."""
+    """Serve index.html for Single-Page Application with no-cache headers."""
     index_path = STATIC_DIR / "index.html"
     if not index_path.exists():
         return web.Response(status=404, text="Static frontend not found")
-    return web.FileResponse(index_path)
+    with open(index_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    return web.Response(
+        text=content,
+        content_type="text/html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate, max-age=0"},
+    )
 
 
 def create_app() -> web.Application:
     """Create and configure aiohttp web application."""
-    app = web.Application(client_max_size=2048 * 1024 * 1024)  # 2GB upload limit
+    app = web.Application(
+        client_max_size=2048 * 1024 * 1024,  # 2GB upload limit
+        middlewares=[no_cache_middleware],
+    )
 
     # Register batch job execution handlers
     register_all_handlers(queue_manager)
@@ -678,9 +737,17 @@ def create_app() -> web.Application:
     # Lifecycle hooks
     async def on_startup(app: web.Application) -> None:
         await queue_manager.start()
+        app["watcher"] = asyncio.create_task(file_watcher_loop(app))
         logger.info("SonicPipeline server initialized and queue manager active.")
 
     async def on_shutdown(app: web.Application) -> None:
+        watcher = app.get("watcher")
+        if watcher and not watcher.done():
+            watcher.cancel()
+            try:
+                await watcher
+            except (asyncio.CancelledError, Exception):
+                pass
         await queue_manager.stop()
         logger.info("SonicPipeline server stopped.")
 

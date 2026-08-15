@@ -30,9 +30,17 @@ const state = {
     playbackRate: 1.0,
     loop: false,
     previewEnd: null,      // Used for previewing cuts
+    showRemainingTime: false,
+  },
+
   // Sample Library Modal Filter State
   libraryModalSearch: "",
   libraryModalCategory: "all",
+
+  // Tab 7 Project Explorer Filter State
+  tabLibrarySearch: "",
+  tabLibraryCategory: "all",
+  activeSavePreset: "speech",
 };
 
 // DOM Elements Cache
@@ -119,6 +127,8 @@ const el = {
   btnUseSelection: document.getElementById('btn-use-selection'),
   btnPreviewCut: document.getElementById('btn-preview-cut'),
   btnApplyCut: document.getElementById('btn-apply-cut'),
+  btnCutSaveSpeech: document.getElementById('btn-cut-save-speech'),
+  btnCutSaveMusic: document.getElementById('btn-cut-save-music'),
   cutUnitRadios: document.querySelectorAll('input[name="cut_unit"]'),
 
   // YouTube Crawler Studio
@@ -210,6 +220,7 @@ const el = {
   // Modals & Toasts
   modalSaveTo: document.getElementById('modal-save-to'),
   inputSavePath: document.getElementById('input-save-path'),
+  saveTargetPresets: document.getElementById('save-target-presets'),
   btnCancelSave: document.getElementById('btn-cancel-save'),
   btnConfirmSave: document.getElementById('btn-confirm-save'),
   btnCloseSaveModal: document.getElementById('btn-close-save-modal'),
@@ -220,6 +231,8 @@ const el = {
   libraryModalSearch: document.getElementById('library-modal-search'),
   libraryModalCategories: document.getElementById('library-modal-categories'),
   libraryModalCount: document.getElementById('library-modal-count'),
+  tabLibrarySearch: document.getElementById('tab-library-search'),
+  tabLibraryCategories: document.getElementById('tab-library-categories'),
   modalShortcuts: document.getElementById('modal-shortcuts'),
   btnCloseShortcutsModal: document.getElementById('btn-close-shortcuts-modal'),
   toastContainer: document.getElementById('toast-container'),
@@ -928,9 +941,74 @@ function initAudioCutter() {
       showToast(err.message, "error");
     } finally {
       el.btnApplyCut.disabled = false;
-      el.btnApplyCut.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><line x1="20" y1="4" x2="8.12" y2="15.88"></line><line x1="14.47" y1="14.48" x2="20" y2="20"></line><line x1="8.12" y1="8.12" x2="12" y2="12"></line></svg> <span>Apply Cut (AudioCutter)</span>`;
+      el.btnApplyCut.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><line x1="20" y1="4" x2="8.12" y2="15.88"></line><line x1="14.47" y1="14.48" x2="20" y2="20"></line><line x1="8.12" y1="8.12" x2="12" y2="12"></line></svg> <span>Apply Cut (Session)</span>`;
     }
   });
+
+  // Direct Cut & Save to Benchmark Sources
+  async function cutAndSaveBenchmark(category) {
+    if (!state.activeAudio) {
+      showToast("Please select or load an audio file first", "warning");
+      return;
+    }
+    const start = el.cutStartInput.value.trim();
+    const end = el.cutEndInput.value.trim();
+    const unit = document.querySelector('input[name="cut_unit"]:checked').value;
+
+    const folder = category === "music" ? "benchmarks/separation/sources/music" : "benchmarks/separation/sources/speech";
+    const label = category === "music" ? "Benchmark Music" : "Benchmark Speech";
+
+    const targetBtn = category === "music" ? el.btnCutSaveMusic : el.btnCutSaveSpeech;
+    const origHtml = targetBtn ? targetBtn.innerHTML : "";
+    if (targetBtn) {
+      targetBtn.disabled = true;
+      targetBtn.textContent = `Saving to ${label}...`;
+    }
+
+    try {
+      // 1. Cut the audio segment
+      const cutRes = await fetch(`/api/audio/${state.activeAudio.id}/cut`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ start, end, unit }),
+      });
+      const cutData = await cutRes.json();
+      if (!cutRes.ok) throw new Error(cutData.error || "Cut operation failed");
+
+      // 2. Format benchmark destination file path
+      const baseTitle = state.activeAudio.title || state.activeAudio.source_id || "sample";
+      const cleanTitle = baseTitle.replace(/[^a-zA-Z0-9_\-\.]+/g, "_").replace(/^_+|_+$/g, "").substring(0, 80);
+      const destPath = `${folder}/${cleanTitle}__cut_${start}_${end}.${state.activeAudio.format || 'wav'}`;
+
+      // 3. Save to benchmark folder with companion sidecar metadata
+      const saveRes = await fetch(`/api/audio/${cutData.audio_id}/save-to`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dest: destPath }),
+      });
+      const saveData = await saveRes.json();
+      if (!saveRes.ok) throw new Error(saveData.error || "Failed saving to benchmark folder");
+
+      showToast(`Saved to ${label}: ${saveData.saved_path}`, "success");
+      await fetchAudioList();
+      await fetchServerFiles();
+      await setActiveAudio(cutData.audio_id, { play: true });
+    } catch (err) {
+      showToast(err.message, "error");
+    } finally {
+      if (targetBtn) {
+        targetBtn.disabled = false;
+        targetBtn.innerHTML = origHtml;
+      }
+    }
+  }
+
+  if (el.btnCutSaveSpeech) {
+    el.btnCutSaveSpeech.addEventListener('click', () => cutAndSaveBenchmark('speech'));
+  }
+  if (el.btnCutSaveMusic) {
+    el.btnCutSaveMusic.addEventListener('click', () => cutAndSaveBenchmark('music'));
+  }
 }
 
 // ==================== INGEST & SAVE ACTIONS ====================
@@ -1044,11 +1122,41 @@ function initIngestAndSaves() {
   });
 
   // Save To Modal
-  el.btnSaveToDialog.addEventListener('click', () => {
+  function updateSavePresetPath(folder) {
     if (!state.activeAudio) return;
-    el.inputSavePath.value = `benchmarks/separation/sources/speech/${state.activeAudio.title}.wav`;
+    const baseTitle = state.activeAudio.title || state.activeAudio.source_id || "audio";
+    const cleanTitle = baseTitle.replace(/[^a-zA-Z0-9_\-\.]+/g, "_").replace(/^_+|_+$/g, "").substring(0, 80);
+    const fmt = state.activeAudio.format || "wav";
+    if (el.inputSavePath) {
+      el.inputSavePath.value = `${folder}/${cleanTitle}.${fmt}`;
+    }
+  }
+
+  el.btnSaveToDialog.addEventListener('click', () => {
+    if (!state.activeAudio) {
+      showToast("Please load an audio file first", "warning");
+      return;
+    }
+    updateSavePresetPath("benchmarks/separation/sources/speech");
     el.modalSaveTo.classList.remove('hidden');
+    if (el.saveTargetPresets) {
+      el.saveTargetPresets.querySelectorAll('.save-preset-chip').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.folder === 'benchmarks/separation/sources/speech');
+      });
+    }
   });
+
+  if (el.saveTargetPresets) {
+    el.saveTargetPresets.addEventListener('click', (e) => {
+      const chip = e.target.closest('.save-preset-chip');
+      if (!chip) return;
+      el.saveTargetPresets.querySelectorAll('.save-preset-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      const folder = chip.dataset.folder || "benchmarks/separation/sources/speech";
+      updateSavePresetPath(folder);
+    });
+  }
+
   el.btnCancelSave.addEventListener('click', () => el.modalSaveTo.classList.add('hidden'));
   el.btnCloseSaveModal.addEventListener('click', () => el.modalSaveTo.classList.add('hidden'));
   el.btnConfirmSave.addEventListener('click', async () => {
@@ -1063,9 +1171,10 @@ function initIngestAndSaves() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Save failed");
 
-      showToast(`Saved to: ${data.saved_path}`, "success");
+      showToast(`Saved file & metadata to: ${data.saved_path}`, "success");
       el.modalSaveTo.classList.add('hidden');
       await fetchAudioList();
+      await fetchServerFiles();
     } catch (err) {
       showToast(err.message, "error");
     }
@@ -1759,28 +1868,72 @@ async function fetchServerFiles() {
 
 function renderServerFiles() {
   const container = el.serverFilesList;
+  if (!container) return;
   container.innerHTML = "";
 
-  if (state.serverFiles.length === 0) {
-    container.innerHTML = `<div class="empty-placeholder">No project audio files discovered.</div>`;
+  const query = (state.tabLibrarySearch || "").toLowerCase().trim();
+  const category = (state.tabLibraryCategory || "all").toLowerCase();
+
+  let filtered = (state.serverFiles || []).filter(file => {
+    const fileCat = (file.category || "").toLowerCase();
+    const matchesCategory = category === "all" || fileCat.includes(category);
+    const matchesQuery = !query ||
+      (file.name || "").toLowerCase().includes(query) ||
+      (file.path || "").toLowerCase().includes(query) ||
+      fileCat.includes(query);
+    return matchesCategory && matchesQuery;
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = `<div class="empty-placeholder">No project audio files found matching filter.</div>`;
     return;
   }
 
-  state.serverFiles.forEach(file => {
+  filtered.forEach(file => {
     const card = document.createElement("div");
     card.className = "file-item-card";
     card.innerHTML = `
       <div class="file-details">
-        <span class="file-name">${file.name}</span>
-        <span class="file-path">${file.category} • ${formatBytes(file.size)}</span>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="file-name">${escapeHtml(file.name)}</span>
+          <span class="badge badge-subtle font-mono" style="font-size: 0.68rem; text-transform: uppercase;">${escapeHtml(file.category || 'Audio')}</span>
+        </div>
+        <span class="file-path">${escapeHtml(file.path)} • ${formatBytes(file.size || 0)}</span>
       </div>
-      <div class="file-actions">
-        <button class="btn btn-sm btn-secondary btn-load-file" data-path="${file.path}">Load</button>
+      <div class="file-actions" style="display: flex; align-items: center; gap: 6px;">
+        <button class="btn btn-sm btn-primary btn-load-file" data-path="${escapeHtml(file.path)}" title="Load into Studio Workspace">Load</button>
+        <button class="btn btn-sm btn-ghost btn-delete-file" data-path="${escapeHtml(file.path)}" title="Delete file from disk">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+        </button>
       </div>
     `;
     card.querySelector('.btn-load-file').addEventListener('click', () => loadServerFile(file.path));
+    card.querySelector('.btn-delete-file').addEventListener('click', () => deleteServerFile(file.path, file.name));
     container.appendChild(card);
   });
+}
+
+async function deleteServerFile(filePath, fileName) {
+  const displayName = fileName || filePath.split('/').pop();
+  if (!confirm(`Are you sure you want to permanently delete "${displayName}" from disk?\n(Matching .json metadata sidecar will also be removed)`)) {
+    return;
+  }
+  try {
+    showToast(`Deleting ${displayName}...`, "info");
+    const res = await fetch("/api/library/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: filePath }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to delete file");
+
+    showToast(`Deleted ${displayName} successfully!`, "success");
+    await fetchServerFiles();
+    renderLibraryModalItems();
+  } catch (err) {
+    showToast(`Delete failed: ${err.message}`, "error");
+  }
 }
 
 async function loadServerFile(filePath) {
@@ -1869,13 +2022,17 @@ function renderLibraryModalItems() {
         </div>
         <span class="file-path">${escapeHtml(file.path)} • ${formatBytes(file.size || 0)}</span>
       </div>
-      <div class="file-actions">
+      <div class="file-actions" style="display: flex; align-items: center; gap: 6px;">
         <button class="btn btn-sm btn-primary btn-modal-load" data-path="${escapeHtml(file.path)}" title="Load audio into studio workspace">
           <span>Load</span>
+        </button>
+        <button class="btn btn-sm btn-ghost btn-delete-file" data-path="${escapeHtml(file.path)}" title="Delete file from disk">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
         </button>
       </div>
     `;
     item.querySelector('.btn-modal-load').addEventListener('click', () => loadServerFile(file.path));
+    item.querySelector('.btn-delete-file').addEventListener('click', () => deleteServerFile(file.path, file.name));
     el.modalLibraryItems.appendChild(item);
   });
 }
@@ -2044,6 +2201,24 @@ function initNavigation() {
   }
   if (el.btnCloseShortcutsModal) {
     el.btnCloseShortcutsModal.addEventListener('click', () => el.modalShortcuts.classList.add('hidden'));
+  }
+
+  // Tab 7 Project Explorer Search & Filters
+  if (el.tabLibrarySearch) {
+    el.tabLibrarySearch.addEventListener('input', (e) => {
+      state.tabLibrarySearch = e.target.value;
+      renderServerFiles();
+    });
+  }
+  if (el.tabLibraryCategories) {
+    el.tabLibraryCategories.addEventListener('click', (e) => {
+      const btn = e.target.closest('.pill-btn');
+      if (!btn) return;
+      el.tabLibraryCategories.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.tabLibraryCategory = btn.dataset.category || 'all';
+      renderServerFiles();
+    });
   }
 }
 

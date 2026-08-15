@@ -317,13 +317,19 @@
               </div>
 
               <div class="cutter-actions-group">
-                <button class="btn btn-secondary" id="btn-preview-cut">
+                <button class="btn btn-secondary" id="btn-preview-cut" title="Preview audio segment playback">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                   <span>Preview Cut</span>
                 </button>
-                <button class="btn btn-primary" id="btn-apply-cut">
+                <button class="btn btn-primary" id="btn-apply-cut" title="Execute AudioCutter.cut() into active session">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><line x1="20" y1="4" x2="8.12" y2="15.88"></line><line x1="14.47" y1="14.48" x2="20" y2="20"></line><line x1="8.12" y1="8.12" x2="12" y2="12"></line></svg>
-                  <span>Apply Cut (AudioCutter)</span>
+                  <span>Apply Cut (Session)</span>
+                </button>
+                <button class="btn btn-secondary" id="btn-cut-save-speech" title="Cut and save directly to benchmarks/separation/sources/speech/">
+                  <span>🎯 Save as Benchmark Speech</span>
+                </button>
+                <button class="btn btn-secondary" id="btn-cut-save-music" title="Cut and save directly to benchmarks/separation/sources/music/">
+                  <span>🎵 Save as Benchmark Music</span>
                 </button>
               </div>
             </div>
@@ -831,12 +837,25 @@
             <div class="card-header">
               <div>
                 <h2 class="card-title">Project File Explorer</h2>
-                <span class="card-subtitle">Scanned from <code>.data/</code> and project directories</span>
+                <span class="card-subtitle">Scanned from <code>benchmarks/</code>, <code>data/</code>, <code>temp/</code>, and <code>.data/</code></span>
               </div>
               <button class="btn btn-sm btn-ghost" id="btn-refresh-library">
                 <span>↻ Refresh</span>
               </button>
             </div>
+            
+            <div class="modal-filter-bar" style="margin-bottom: 0.75rem;">
+              <input type="text" id="tab-library-search" class="input-text library-search-input" placeholder="🔍 Filter project audio files...">
+              <div class="category-pills" id="tab-library-categories">
+                <button class="pill-btn active" data-category="all">All</button>
+                <button class="pill-btn" data-category="speech">Speech</button>
+                <button class="pill-btn" data-category="music">Music</button>
+                <button class="pill-btn" data-category="cuts">Cuts</button>
+                <button class="pill-btn" data-category="temp">Temp</button>
+                <button class="pill-btn" data-category="separated">Separated</button>
+              </div>
+            </div>
+
             <div class="library-list-wrapper" id="server-files-list">
               <div class="empty-placeholder">Loading project files...</div>
             </div>
@@ -930,21 +949,58 @@
 
     <!-- Save To Modal -->
     <div id="modal-save-to" class="modal-backdrop hidden">
-      <div class="modal-card">
+      <div class="modal-card modal-md">
         <div class="modal-header">
-          <h3 class="modal-title">Save Audio Object To Disk</h3>
-          <button class="btn-close-modal" id="btn-close-save-modal">&times;</button>
+          <div class="modal-title-wrap">
+            <span class="modal-badge-icon">💾</span>
+            <div>
+              <h3 class="modal-title">Save Audio Object To Disk</h3>
+              <p class="modal-subtitle">Writes audio artifact and companion <code>{stem}.json</code> sidecar metadata</p>
+            </div>
+          </div>
+          <button class="btn-close-modal" id="btn-close-save-modal" title="Close (Esc)">&times;</button>
         </div>
         <div class="modal-body">
           <div class="form-group">
+            <label class="form-label">Target Directory Presets:</label>
+            <div class="save-presets-list" id="save-target-presets">
+              <button type="button" class="save-preset-chip active" data-folder="benchmarks/separation/sources/speech">
+                <span class="preset-chip-icon">🎯</span>
+                <span class="preset-chip-title">Benchmark Speech</span>
+                <span class="preset-chip-sub">benchmarks/separation/sources/speech/</span>
+              </button>
+              <button type="button" class="save-preset-chip" data-folder="benchmarks/separation/sources/music">
+                <span class="preset-chip-icon">🎵</span>
+                <span class="preset-chip-title">Benchmark Music</span>
+                <span class="preset-chip-sub">benchmarks/separation/sources/music/</span>
+              </button>
+              <button type="button" class="save-preset-chip" data-folder="benchmarks/separation/sources/cuts">
+                <span class="preset-chip-icon">✂️</span>
+                <span class="preset-chip-title">Benchmark Cuts</span>
+                <span class="preset-chip-sub">benchmarks/separation/sources/cuts/</span>
+              </button>
+              <button type="button" class="save-preset-chip" data-folder="data">
+                <span class="preset-chip-icon">📁</span>
+                <span class="preset-chip-title">Data Directory</span>
+                <span class="preset-chip-sub">data/</span>
+              </button>
+              <button type="button" class="save-preset-chip" data-folder="temp">
+                <span class="preset-chip-icon">⚡</span>
+                <span class="preset-chip-title">Temp Directory</span>
+                <span class="preset-chip-sub">temp/</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 1rem;">
             <label class="form-label" for="input-save-path">Destination File Path:</label>
-            <input type="text" id="input-save-path" class="text-input" placeholder="e.g. benchmarks/separation/sources/speech/my_audio.wav">
-            <p class="input-hint">Will call Audio.save_to() to copy file and update identity.</p>
+            <input type="text" id="input-save-path" class="text-input font-mono" placeholder="e.g. benchmarks/separation/sources/speech/my_audio.wav">
+            <p class="input-hint">Calls <code>Audio.save_to()</code> — copies file, updates path identity, and writes sidecar JSON.</p>
           </div>
         </div>
         <div class="modal-footer">
           <button class="btn btn-secondary" id="btn-cancel-save">Cancel</button>
-          <button class="btn btn-primary" id="btn-confirm-save">Save File</button>
+          <button class="btn btn-primary" id="btn-confirm-save">Save File & Metadata</button>
         </div>
       </div>
     </div>

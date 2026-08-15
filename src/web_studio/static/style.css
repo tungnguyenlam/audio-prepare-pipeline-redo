@@ -1998,6 +1998,79 @@ html, body {
   font-size: 0.78rem;
 }
 
+/* Save Presets Grid & Chips */
+.save-presets-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.save-preset-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.85rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  width: 100%;
+}
+
+.save-preset-chip:hover {
+  background: var(--bg-surface-elevated);
+  border-color: var(--border-focus);
+  transform: translateY(-1px);
+}
+
+.save-preset-chip.active {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: var(--accent-primary, #6366f1);
+}
+
+.preset-chip-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.preset-chip-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.preset-chip-sub {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* File Actions & Delete Button */
+.btn-delete-file {
+  color: var(--text-muted);
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+}
+
+.btn-delete-file:hover {
+  color: #ef4444 !important;
+  background: rgba(239, 68, 68, 0.12) !important;
+}
+
+.text-danger {
+  color: #ef4444;
+}
+
 /* Shortcuts Grid */
 .shortcuts-grid {
   display: grid;

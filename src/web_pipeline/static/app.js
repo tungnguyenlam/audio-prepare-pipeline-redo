@@ -340,6 +340,11 @@
 
   function handleStreamEvent(eventPayload) {
     const { event, data } = eventPayload;
+    if (event === 'reload') {
+      console.log('Hot reload event received from server!');
+      window.location.reload();
+      return;
+    }
     if (event === 'telemetry') {
       updateTelemetryUI(data);
     } else if (event === 'job_created' || event === 'job_updated') {

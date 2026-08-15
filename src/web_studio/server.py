@@ -260,8 +260,15 @@ async def handle_status(request: web.Request) -> web.Response:
 
 async def handle_list_library(request: web.Request) -> web.Response:
     """Scan and list audio files available in project directories."""
+    # Ensure benchmark and output directories exist
+    (ROOT_DIR / "benchmarks/separation/sources/speech").mkdir(parents=True, exist_ok=True)
+    (ROOT_DIR / "benchmarks/separation/sources/music").mkdir(parents=True, exist_ok=True)
+    (ROOT_DIR / "benchmarks/separation/sources/cuts").mkdir(parents=True, exist_ok=True)
+
     scan_dirs = [
         ("Benchmark Speech", ROOT_DIR / "benchmarks/separation/sources/speech"),
+        ("Benchmark Music", ROOT_DIR / "benchmarks/separation/sources/music"),
+        ("Benchmark Cuts", ROOT_DIR / "benchmarks/separation/sources/cuts"),
         ("Data Directory", ROOT_DIR / "data"),
         ("Quick Saves (temp)", ROOT_DIR / "temp"),
         ("Runtime Outputs (.data)", ROOT_DIR / ".data"),
@@ -292,6 +299,57 @@ async def handle_list_library(request: web.Request) -> web.Response:
 
     files.sort(key=lambda x: x["modified"], reverse=True)
     return web.json_response({"files": files})
+
+
+async def handle_delete_library_file(request: web.Request) -> web.Response:
+    """Delete an audio file and its matching sidecar JSON from disk."""
+    data = await request.json()
+    rel_or_abs_path = data.get("path")
+    if not rel_or_abs_path:
+        return web.json_response({"error": "File path is required"}, status=400)
+
+    target_path = Path(rel_or_abs_path)
+    if not target_path.is_absolute():
+        target_path = (ROOT_DIR / rel_or_abs_path).resolve()
+    else:
+        target_path = target_path.resolve()
+
+    # Security check: Ensure target path is inside ROOT_DIR and within permitted directories
+    try:
+        target_path.relative_to(ROOT_DIR)
+    except ValueError:
+        return web.json_response({"error": "Cannot delete files outside project workspace"}, status=403)
+
+    allowed_roots = [
+        ROOT_DIR / ".data",
+        ROOT_DIR / "data",
+        ROOT_DIR / "temp",
+        ROOT_DIR / "benchmarks",
+    ]
+    if not any(target_path.is_relative_to(ar) for ar in allowed_roots):
+        return web.json_response({"error": "Path is outside permissible data/benchmark folders"}, status=403)
+
+    if not target_path.is_file():
+        return web.json_response({"error": f"File not found: {target_path.name}"}, status=404)
+
+    try:
+        # Delete the media file
+        target_path.unlink()
+
+        # Delete matching sidecar JSON if present
+        sidecar = target_path.with_suffix(".json")
+        if sidecar.is_file():
+            sidecar.unlink()
+
+        logger.info("Deleted library file and sidecar: %s", target_path)
+        return web.json_response({
+            "status": "success",
+            "deleted_file": str(target_path.name),
+            "path": str(target_path.relative_to(ROOT_DIR)),
+        })
+    except Exception as e:
+        logger.exception("Failed to delete file: %s", target_path)
+        return web.json_response({"error": str(e)}, status=500)
 
 
 async def handle_load_library_file(request: web.Request) -> web.Response:
@@ -1046,12 +1104,24 @@ async def handle_live_reload_sse(request: web.Request) -> web.StreamResponse:
     return response
 
 
+@web.middleware
+async def no_cache_middleware(request: web.Request, handler):
+    """Ensure static files and HTML are never served from browser stale cache in development."""
+    response = await handler(request)
+    if request.path.startswith("/static/") or request.path == "/":
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
+
 async def file_watcher_loop(app: web.Application):
-    """Background task to watch frontend files and trigger live reload."""
+    """Background task to watch frontend and studio backend files and trigger live reload."""
     mtimes: Dict[str, float] = {}
 
     def scan():
         changed = False
+        # Watch static frontend files
         for p in STATIC_DIR.rglob("*"):
             if p.is_file() and p.suffix in (".html", ".css", ".js"):
                 try:
@@ -1061,13 +1131,25 @@ async def file_watcher_loop(app: web.Application):
                     mtimes[str(p)] = mt
                 except Exception:
                     pass
+
+        # Watch Python server/router files
+        for p in (ROOT_DIR / "src" / "web_studio").rglob("*.py"):
+            if p.is_file():
+                try:
+                    mt = p.stat().st_mtime
+                    if str(p) in mtimes and mtimes[str(p)] != mt:
+                        changed = True
+                    mtimes[str(p)] = mt
+                except Exception:
+                    pass
+
         return changed
 
     scan()
     while True:
         await asyncio.sleep(0.5)
         if scan():
-            logger.info("Static file modification detected! Broadcasting reload to %d clients...", len(live_reload_subscribers))
+            logger.info("Modification detected! Broadcasting hot reload to %d client(s)...", len(live_reload_subscribers))
             for q in list(live_reload_subscribers):
                 await q.put("reload")
 
@@ -1096,18 +1178,26 @@ async def handle_index(request: web.Request) -> web.Response:
         return web.Response(text="index.html not found", status=404)
     with open(index_file, "r", encoding="utf-8") as f:
         content = f.read()
-    return web.Response(text=content, content_type="text/html", headers={"Cache-Control": "no-cache"})
+    return web.Response(
+        text=content,
+        content_type="text/html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate, max-age=0"},
+    )
 
 
 def create_app() -> web.Application:
     """Create and configure the aiohttp web application."""
-    app = web.Application(client_max_size=1024 * 1024 * 500)  # 500 MB max upload
+    app = web.Application(
+        client_max_size=1024 * 1024 * 500,  # 500 MB max upload
+        middlewares=[no_cache_middleware],
+    )
 
     # Routes
     app.router.add_get("/", handle_index)
     app.router.add_get("/api/system/status", handle_status)
     app.router.add_get("/api/library", handle_list_library)
     app.router.add_post("/api/library/load", handle_load_library_file)
+    app.router.add_post("/api/library/delete", handle_delete_library_file)
     app.router.add_post("/api/audio/upload", handle_upload_audio)
     app.router.add_post("/api/audio/youtube", handle_youtube_ingest)
     app.router.add_post("/api/crawler/inspect", handle_youtube_inspect)
