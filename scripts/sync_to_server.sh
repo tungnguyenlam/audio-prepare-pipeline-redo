@@ -6,9 +6,7 @@ REMOTE="vsf@10.148.21.12:~/Documents/tts-data-pipeline/audio-prepare-pipeline-re
 
 cd "$REPO_ROOT"
 
-mkdir -p data .data benchmarks temp
-
-rsync -avzP data/ "${REMOTE}/data/"
-rsync -avzP .data/ "${REMOTE}/.data/"
-rsync -avzP benchmarks/ "${REMOTE}/benchmarks/"
-rsync -avzP temp/ "${REMOTE}/temp/"
+rsync -avzP \
+  --exclude='.git/' \
+  --exclude='.venv/' \
+  ./ "${REMOTE}/"
