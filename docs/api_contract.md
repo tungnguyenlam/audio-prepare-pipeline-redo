@@ -381,9 +381,19 @@ methods such as `__init__`, `__repr__`, and `__eq__`.
 
 The repository provides two specialized web platforms:
 
-### `src/web_studio/` (SonicStudio)
+### Shared web backend
+
+- **Entrypoint:** `scripts/start_web.py` / `scripts/start_web.sh` (default port
+  `8765`).
+- **Frontend mounts:** SonicStudio is served at `/studio/`; SonicPipeline is
+  served at `/pipeline/`.
+- **Health endpoint:** `GET /api/health` reports backend status and both
+  frontend mount points.
+- **Compatibility:** The former `start_studio.*` and `start_pipeline.*`
+  launchers start the same unified backend.
+
+### `src/web_studio/` (SonicStudio API domain and frontend)
 - **Role:** Interactive audio editor, single-sample inspection, waveform/spectrogram comparer, model stem tester.
-- **Entrypoint:** `scripts/start_studio.py` / `scripts/start_studio.sh` (default port `8765`).
 - **Background task queue:** YouTube ingestion, single-model separation,
   diarization, and multi-model comparison use a bounded-concurrency in-memory queue. The
   default concurrency is `1`; `STUDIO_QUEUE_CONCURRENCY` can set it from 1–4.
@@ -391,9 +401,8 @@ The repository provides two specialized web platforms:
   `GET /api/tasks/{id}` returns one task, and `DELETE /api/tasks/{id}` cancels
   a task that is still queued. Running native model work is not force-cancelled.
 
-### `src/web_pipeline/` (SonicPipeline)
+### `src/web_pipeline/` (SonicPipeline API domain and frontend)
 - **Role:** Large-scale batch engine for high-throughput ingestion, task queue orchestration, dataset curation, bulk separation, batch diarization, separation benchmark matrix evaluation, and ML manifest generation (JSONL/CSV).
-- **Entrypoint:** `scripts/start_pipeline.py` / `scripts/start_pipeline.sh` (default port `8766`).
 
 **Telemetry endpoint:** `GET /api/telemetry` returns the current host and
 pipeline metrics. The `gpu` object includes `load_percent`, host-level

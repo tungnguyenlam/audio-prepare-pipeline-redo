@@ -44,9 +44,10 @@ BenchmarkDefinition + speech Audio + music Audio
 | `src/benchmark/separation/` | `AudioMixer` and mix/benchmark schemas |
 | `src/base/model.py` | `ManagedModel` load/unload lifecycle |
 | `src/notebooks/` | Interactive callers (`pipeline1.ipynb`, mixer, benchmark) |
-| `src/web_studio/` | **SonicStudio** — Interactive audio exploration, cutting, spectrogram comparison, and model testing UI (port `8765`) |
-| `src/web_pipeline/` | **SonicPipeline** — Large-scale, high-throughput batch processing, task queue, dataset management, bulk separation & diarization web engine (port `8766`) |
-| `scripts/` | Runner scripts (`start_pipeline.sh`, `start_studio.sh`, `sync_*.sh`) |
+| `src/web_backend/` | Shared REST backend and frontend mounts (port `8765`) |
+| `src/web_studio/` | **SonicStudio** — Interactive audio exploration API domain and frontend |
+| `src/web_pipeline/` | **SonicPipeline** — Large-scale task queue, dataset management API domain and frontend |
+| `scripts/` | Runner scripts (`start_pipeline.sh`, `start_studio.sh`, `sync/` scripts) |
 | `docs/api_contract.md` | Public method behavior |
 | `docs/data_contract.md` | Return-object field contracts |
 
@@ -62,19 +63,16 @@ uv sync
 
 ### Starting the Web Applications
 
-- **Start SonicPipeline (Large-Scale Batch Engine, port 8766):**
+- **Start the shared backend (both frontends, port 8765):**
   ```bash
-  ./scripts/start_pipeline.sh [port] [host]
+  ./scripts/start_web.sh [port] [host]
   # or
-  uv run python scripts/start_pipeline.py --host 127.0.0.1 --port 8766
+  uv run python scripts/start_web.py --host 127.0.0.1 --port 8765
   ```
 
-- **Start SonicStudio (Interactive Exploration Studio, port 8765):**
-  ```bash
-  ./scripts/start_studio.sh [port] [host]
-  # or
-  uv run python scripts/start_studio.py --host 127.0.0.1 --port 8765
-  ```
+  SonicStudio is at `/studio/` and SonicPipeline is at `/pipeline/`.
+  The `start_studio.*` and `start_pipeline.*` launchers are compatibility
+  aliases for the same backend.
 
 Notebooks run from `src/notebooks/` so `os.getcwd()` ends with `notebooks`. Keep that assumption if you edit notebook setup cells.
 
@@ -88,6 +86,9 @@ Notebooks run from `src/notebooks/` so `os.getcwd()` ends with `notebooks`. Keep
 - **Custom errors** per backend (`DownloadError`, `DemucsError`, `AudioCutterError`, …), not generic `Exception`.
 
 ## Web Architectures
+
+- **`src/web_backend/`:** One aiohttp application owns both API domains and
+  serves the independent frontends at `/studio/` and `/pipeline/`.
 
 - **`src/web_studio/` (SonicStudio):** Designed for single-sample inspection, visual waveform/spectrogram comparer, manual cutting, fast preview, and ad-hoc mixing.
 - **`src/web_pipeline/` (SonicPipeline):** Designed for large-scale operations:

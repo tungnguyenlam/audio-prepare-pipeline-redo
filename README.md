@@ -4,7 +4,8 @@ High-throughput audio preparation, YouTube crawling, stem separation, speaker di
 
 ## Overview
 
-This repository provides modular, file-backed audio processing utilities and two dedicated web platforms:
+This repository provides modular, file-backed audio processing utilities, one
+shared web backend, and two dedicated frontends:
 
 1. **⚡ SonicPipeline (Large-Scale Processing Engine):** High-throughput batch audio ingestion (playlists, multi-URLs, folder scans), asynchronous worker task queue, dataset management, bulk stem separation (`BS-RoFormer`, `Mel-RoFormer`, `HTDemucs`, `MVSep-MDX23`), batch speaker diarization (`Sortformer`, `Pyannote`), separation benchmark matrix evaluation, hardware telemetry monitoring, and JSONL/CSV manifest exports.
 2. **🎙️ SonicStudio (Interactive Exploration Studio):** Single-track audio workstation for manual audio cutting, waveform and spectrogram side-by-side visual comparison, model stem auditioning, and quick parameter exploration.
@@ -25,21 +26,18 @@ uv sync
 
 ## Running the Web Applications
 
-### 1. SonicPipeline (Large-Scale Batch Engine)
-Starts the batch processing and dataset engineering center on port `8766`:
+Start the single backend that serves both frontends on port `8765`:
+
 ```bash
-./scripts/start_pipeline.sh
+./scripts/start_web.sh
 # or
-uv run python scripts/start_pipeline.py --port 8766
+uv run python scripts/start_web.py --port 8765
 ```
 
-### 2. SonicStudio (Interactive Exploration Studio)
-Starts the interactive audio editor and spectrogram comparer on port `8765`:
-```bash
-./scripts/start_studio.sh
-# or
-uv run python scripts/start_studio.py --port 8765
-```
+Open SonicStudio at `http://127.0.0.1:8765/studio/` and SonicPipeline at
+`http://127.0.0.1:8765/pipeline/`. Both frontends call the same `/api/*`
+backend. The existing `start_studio.*` and `start_pipeline.*` commands remain
+compatibility aliases and also start this unified service.
 
 Long-running Studio work is serialized by default to avoid overlapping model
 loads and running out of memory. Advanced users can raise the bounded worker
@@ -58,14 +56,18 @@ count with `STUDIO_QUEUE_CONCURRENCY=2` (supported range: 1–4).
 │   ├── notebooks/          # Interactive Jupyter callers (pipeline1, benchmark, mixer)
 │   ├── separation/         # BaseSeparator, BSRoFormer, MelRoFormer, HTDemucs, MVSepMDX23
 │   ├── utils/              # File-backed Audio class, AudioCutter, Comparers
-│   ├── web_pipeline/       # SonicPipeline (Batch queue, dataset manager, server, UI)
-│   ├── web_studio/         # SonicStudio (Interactive exploration server, UI)
+│   ├── web_backend/        # Shared API backend and frontend mounts
+│   ├── web_pipeline/       # SonicPipeline API domain, queue, dataset manager, frontend
+│   ├── web_studio/         # SonicStudio API domain and frontend
 │   └── yt_crawler/         # YtCrawler YouTube ingestion
 ├── scripts/
-│   ├── start_pipeline.sh   # Launch SonicPipeline (port 8766)
+│   ├── start_web.sh        # Launch the shared backend (port 8765)
+│   ├── start_web.py
+│   ├── start_pipeline.sh   # Compatibility alias for the shared backend
 │   ├── start_pipeline.py
-│   ├── start_studio.sh     # Launch SonicStudio (port 8765)
-│   └── start_studio.py
+│   ├── start_studio.sh     # Compatibility alias for the shared backend
+│   ├── start_studio.py
+│   └── sync/               # Server synchronization scripts (code & data)
 └── docs/
     ├── api_contract.md     # Public API documentation
     └── data_contract.md    # Return-object schemas and contracts
