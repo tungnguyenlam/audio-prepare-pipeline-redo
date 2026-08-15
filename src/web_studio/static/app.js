@@ -173,6 +173,10 @@ const el = {
 
   // Separation Studio
   sepInputSelect: document.getElementById('sep-input-select'),
+  sepChildrenBox: document.getElementById('sep-children-box'),
+  sepChildrenTitle: document.getElementById('sep-children-title'),
+  sepChildrenCount: document.getElementById('sep-children-count'),
+  sepChildrenList: document.getElementById('sep-children-list'),
   modelCards: document.querySelectorAll('.model-card[data-model]'),
   sepDeviceSelect: document.getElementById('sep-device-select'),
   sepStemsSelect: document.getElementById('sep-stems-select'),
@@ -189,6 +193,10 @@ const el = {
 
   // Diarization Studio
   diarInputSelect: document.getElementById('diar-input-select'),
+  diarChildrenBox: document.getElementById('diar-children-box'),
+  diarChildrenTitle: document.getElementById('diar-children-title'),
+  diarChildrenCount: document.getElementById('diar-children-count'),
+  diarChildrenList: document.getElementById('diar-children-list'),
   diarModelCards: document.querySelectorAll('.model-card[data-diar-model]'),
   hfTokenInput: document.getElementById('hf-token-input'),
   diarDeviceSelect: document.getElementById('diar-device-select'),
@@ -1812,7 +1820,223 @@ async function uploadFile(file) {
 
 // ==================== MODEL SEPARATION STUDIO ====================
 
+function findChildAudios(parentAudioId) {
+  if (!parentAudioId) return [];
+  const parentItem = state.audioList.find(a => a.id === parentAudioId);
+  if (!parentItem) return [];
+
+  return state.audioList.filter(item => {
+    if (item.id === parentAudioId) return false;
+    if (item.parent_id === parentAudioId) return true;
+    if (item.model_info && item.model_info.parent_title && parentItem.title && item.model_info.parent_title === parentItem.title) return true;
+    if (item.source_id && parentItem.source_id && item.source_id.startsWith(parentItem.source_id + "_") && item.source_id !== parentItem.source_id) return true;
+    return false;
+  });
+}
+
+function renderSeparationChildren(selectedAudioId) {
+  if (!el.sepChildrenBox || !el.sepChildrenList) return;
+  if (!selectedAudioId) {
+    el.sepChildrenBox.style.display = 'none';
+    return;
+  }
+
+  const selectedItem = state.audioList.find(a => a.id === selectedAudioId);
+  if (!selectedItem) {
+    el.sepChildrenBox.style.display = 'none';
+    return;
+  }
+
+  const children = findChildAudios(selectedAudioId);
+  const sepStems = children.filter(c => c.source_type === 'separation' || c.tags?.includes('separated'));
+  const cutClips = children.filter(c => c.source_type === 'cut' || c.tags?.includes('cut'));
+
+  if (children.length === 0) {
+    el.sepChildrenBox.style.display = 'none';
+    return;
+  }
+
+  el.sepChildrenBox.style.display = 'block';
+  if (el.sepChildrenCount) el.sepChildrenCount.textContent = `${children.length} derivative${children.length === 1 ? '' : 's'}`;
+
+  let warningHtml = '';
+  if (sepStems.length > 0) {
+    el.sepChildrenBox.classList.add('has-warning');
+    const modelNames = sepStems.map(s => s.model_info?.model_label || s.tags?.find(t => t.includes('demucs') || t.includes('roformer') || t.includes('mdx23')) || 'Separated Stem').filter(Boolean);
+    const uniqueModels = [...new Set(modelNames)].join(', ');
+    warningHtml = `
+      <div class="child-warning-banner">
+        <span>⚠️ <strong>Already Separated:</strong> ${escapeHtml(uniqueModels)} output${sepStems.length === 1 ? '' : 's'} exist for this track.</span>
+      </div>
+    `;
+  } else {
+    el.sepChildrenBox.classList.remove('has-warning');
+  }
+
+  let listHtml = warningHtml;
+  listHtml += children.map(c => {
+    const isStem = c.source_type === 'separation' || c.tags?.includes('separated');
+    const isCut = c.source_type === 'cut' || c.tags?.includes('cut');
+    let badgeClass = 'badge-primary';
+    let badgeText = 'Child';
+    if (isStem) {
+      badgeClass = 'badge-accent';
+      badgeText = c.model_info?.model_label || 'Stem';
+    } else if (isCut) {
+      badgeClass = 'badge-warning';
+      badgeText = 'Cut';
+    }
+
+    return `
+      <div class="child-chip-item">
+        <div class="child-chip-left" title="${escapeHtml(c.title)}">
+          <span class="child-chip-badge badge ${badgeClass}">${escapeHtml(badgeText)}</span>
+          <span class="child-chip-title">${escapeHtml(c.title)}</span>
+          <span class="text-muted font-mono" style="font-size: 0.65rem;">(${(c.duration_s || 0).toFixed(1)}s)</span>
+        </div>
+        <div class="child-chip-actions">
+          <button class="child-chip-btn btn-play-child" data-id="${c.id}" title="Play audio snippet">▶ Play</button>
+          <button class="child-chip-btn child-chip-btn-primary btn-select-child-sep" data-id="${c.id}" title="Select this child file as input">Use This</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  el.sepChildrenList.innerHTML = listHtml;
+
+  // Event handlers
+  el.sepChildrenList.querySelectorAll('.btn-play-child').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      loadAudioIntoPlayer(btn.dataset.id, true);
+    });
+  });
+
+  el.sepChildrenList.querySelectorAll('.btn-select-child-sep').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      el.sepInputSelect.value = btn.dataset.id;
+      renderSeparationChildren(btn.dataset.id);
+    });
+  });
+
+  // Also populate right-hand results panel with existing stems if results panel is currently empty or has placeholder
+  if (sepStems.length > 0 && el.sepResultsList && el.sepResultsList.querySelector('.empty-placeholder')) {
+    el.sepResultsList.innerHTML = '';
+    sepStems.forEach(stem => {
+      const modelLabel = stem.model_info?.model_label || stem.tags?.find(t => t.includes('demucs') || t.includes('roformer') || t.includes('mdx23')) || 'Separated Stem';
+      renderSeparationResultCard({
+        separated_audio_id: stem.id,
+        metadata: stem,
+        model_label: modelLabel,
+        elapsed_s: stem.model_info?.elapsed_s || 0,
+      });
+    });
+  }
+}
+
+function renderDiarizationChildren(selectedAudioId) {
+  if (!el.diarChildrenBox || !el.diarChildrenList) return;
+  if (!selectedAudioId) {
+    el.diarChildrenBox.style.display = 'none';
+    return;
+  }
+
+  const selectedItem = state.audioList.find(a => a.id === selectedAudioId);
+  if (!selectedItem) {
+    el.diarChildrenBox.style.display = 'none';
+    return;
+  }
+
+  const children = findChildAudios(selectedAudioId);
+  const vocalStems = children.filter(c => c.source_type === 'separation' || c.tags?.includes('separated') || c.tags?.includes('vocals'));
+  const isVocalStem = selectedItem.source_type === 'separation' || selectedItem.tags?.includes('separated') || selectedItem.tags?.includes('vocals');
+
+  if (children.length === 0 && !isVocalStem) {
+    el.diarChildrenBox.style.display = 'none';
+    return;
+  }
+
+  el.diarChildrenBox.style.display = 'block';
+  if (el.diarChildrenCount) el.diarChildrenCount.textContent = `${children.length} derivative${children.length === 1 ? '' : 's'}`;
+
+  let bannerHtml = '';
+  if (vocalStems.length > 0) {
+    el.diarChildrenBox.classList.add('has-warning');
+    bannerHtml = `
+      <div class="child-warning-banner">
+        <span>💡 <strong>Clean Vocal Stems Available:</strong> Diarizing isolated vocals yields higher accuracy than noisy mixture audio.</span>
+      </div>
+    `;
+  } else if (isVocalStem) {
+    el.diarChildrenBox.classList.remove('has-warning');
+    bannerHtml = `
+      <div class="child-warning-banner" style="color: var(--accent-cyan); background: hsla(188, 86%, 53%, 0.1); border-left-color: var(--accent-cyan);">
+        <span>✨ <strong>Separated Vocal Stem Selected:</strong> Ready for high-precision speaker diarization.</span>
+      </div>
+    `;
+  } else {
+    el.diarChildrenBox.classList.remove('has-warning');
+  }
+
+  let listHtml = bannerHtml;
+  if (children.length > 0) {
+    listHtml += children.map(c => {
+      const isStem = c.source_type === 'separation' || c.tags?.includes('separated');
+      const isCut = c.source_type === 'cut' || c.tags?.includes('cut');
+      let badgeClass = 'badge-primary';
+      let badgeText = 'Child';
+      if (isStem) {
+        badgeClass = 'badge-accent';
+        badgeText = c.model_info?.model_label || 'Vocal Stem';
+      } else if (isCut) {
+        badgeClass = 'badge-warning';
+        badgeText = 'Cut';
+      }
+
+      return `
+        <div class="child-chip-item">
+          <div class="child-chip-left" title="${escapeHtml(c.title)}">
+            <span class="child-chip-badge badge ${badgeClass}">${escapeHtml(badgeText)}</span>
+            <span class="child-chip-title">${escapeHtml(c.title)}</span>
+            <span class="text-muted font-mono" style="font-size: 0.65rem;">(${(c.duration_s || 0).toFixed(1)}s)</span>
+          </div>
+          <div class="child-chip-actions">
+            <button class="child-chip-btn btn-play-child" data-id="${c.id}" title="Play snippet">▶ Play</button>
+            <button class="child-chip-btn child-chip-btn-primary btn-select-child-diar" data-id="${c.id}" title="Use this vocal stem for diarization">⚡ Diarize This</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  el.diarChildrenList.innerHTML = listHtml;
+
+  // Event handlers
+  el.diarChildrenList.querySelectorAll('.btn-play-child').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      loadAudioIntoPlayer(btn.dataset.id, true);
+    });
+  });
+
+  el.diarChildrenList.querySelectorAll('.btn-select-child-diar').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      el.diarInputSelect.value = btn.dataset.id;
+      renderDiarizationChildren(btn.dataset.id);
+    });
+  });
+}
+
 function initSeparationStudio() {
+  // Input track change listener
+  if (el.sepInputSelect) {
+    el.sepInputSelect.addEventListener('change', () => {
+      renderSeparationChildren(el.sepInputSelect.value);
+    });
+  }
+
   // Model Card Selection
   el.modelCards.forEach(card => {
     card.addEventListener('click', () => {
@@ -1944,6 +2168,13 @@ function renderSeparationResultCard(result) {
 // ==================== SPEAKER DIARIZATION STUDIO ====================
 
 function initDiarizationStudio() {
+  // Input track change listener
+  if (el.diarInputSelect) {
+    el.diarInputSelect.addEventListener('change', () => {
+      renderDiarizationChildren(el.diarInputSelect.value);
+    });
+  }
+
   // Model selection
   el.diarModelCards.forEach(card => {
     card.addEventListener('click', () => {
@@ -4093,6 +4324,10 @@ function populateAllAudioSelects() {
       }
     }
   }
+
+  // Update derivative lineage displays
+  if (el.sepInputSelect) renderSeparationChildren(el.sepInputSelect.value);
+  if (el.diarInputSelect) renderDiarizationChildren(el.diarInputSelect.value);
 }
 
 // ==================== KEYBOARD SHORTCUTS ====================
