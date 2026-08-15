@@ -1890,12 +1890,12 @@ async def file_watcher_loop(app: web.Application):
 
 async def start_background_tasks(app: web.Application):
     await task_manager.start()
-    app["watcher"] = asyncio.create_task(file_watcher_loop(app))
+    app["studio_watcher"] = asyncio.create_task(file_watcher_loop(app))
 
 
 async def cleanup_background_tasks(app: web.Application):
     await task_manager.stop()
-    watcher = app.get("watcher")
+    watcher = app.get("studio_watcher")
     if watcher and not watcher.done():
         watcher.cancel()
         try:
@@ -1921,15 +1921,12 @@ async def handle_index(request: web.Request) -> web.Response:
     )
 
 
-def create_app() -> web.Application:
-    """Create and configure the aiohttp web application."""
-    app = web.Application(
-        client_max_size=1024 * 1024 * 500,  # 500 MB max upload
-        middlewares=[no_cache_middleware],
-    )
+def register_api_routes(app: web.Application) -> None:
+    """Register SonicStudio API routes on an application.
 
-    # Routes
-    app.router.add_get("/", handle_index)
+    Args:
+        app: Aiohttp application that owns the shared backend.
+    """
     app.router.add_get("/api/system/status", handle_status)
     app.router.add_get("/api/library", handle_list_library)
     app.router.add_get("/api/library/stream", handle_stream_library_file)
@@ -1968,11 +1965,32 @@ def create_app() -> web.Application:
     app.router.add_delete("/api/tasks/{id}", handle_cancel_task)
     app.router.add_get("/api/live-reload", handle_live_reload_sse)
 
+
+def register_lifecycle(app: web.Application) -> None:
+    """Register SonicStudio background services on an application.
+
+    Args:
+        app: Aiohttp application that owns the shared backend.
+    """
+    app.on_startup.append(start_background_tasks)
+    app.on_cleanup.append(cleanup_background_tasks)
+
+
+def create_app() -> web.Application:
+    """Create a standalone SonicStudio application for compatibility."""
+    app = web.Application(
+        client_max_size=1024 * 1024 * 500,  # 500 MB max upload
+        middlewares=[no_cache_middleware],
+    )
+
+    register_api_routes(app)
+
+    app.router.add_get("/", handle_index)
+
     # Static assets
     app.router.add_static("/static/", path=str(STATIC_DIR), name="static")
 
-    app.on_startup.append(start_background_tasks)
-    app.on_cleanup.append(cleanup_background_tasks)
+    register_lifecycle(app)
 
     return app
 

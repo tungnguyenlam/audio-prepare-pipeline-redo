@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="static/style.css">
 </head>
 <body>
   <div id="app" class="app-container">
@@ -71,7 +71,7 @@
 
       <div class="header-status">
         <!-- Cross-link to SonicPipeline Batch Engine -->
-        <a href="http://127.0.0.1:8766" onclick="this.href='http://'+(window.location.hostname || '127.0.0.1')+':8766'" target="_blank" rel="noopener noreferrer" class="badge badge-link" title="Open SonicPipeline Batch Engine on port 8766">
+        <a href="/pipeline/" class="badge badge-link" title="Open SonicPipeline Batch Engine">
           <span>⚡ SonicPipeline</span>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
         </a>
@@ -1345,6 +1345,6 @@
     <div id="toast-container" class="toast-container"></div>
   </div>
 
-  <script src="/static/app.js" defer></script>
+  <script src="static/app.js" defer></script>
 </body>
 </html>
