@@ -2380,3 +2380,350 @@ html, body {
     padding-bottom: 160px;
   }
 }
+
+/* ==================== AUDITION & SCORING HUB ==================== */
+.multi-track-switcher-card {
+  background: var(--bg-surface-elevated, #1a1e2d);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  margin-top: 1rem;
+}
+
+.switcher-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.switcher-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.switcher-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.active-track-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--accent-primary, #38bdf8);
+  background: rgba(56, 189, 248, 0.1);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.switcher-time-display {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.audition-scrubber-wrap {
+  margin-bottom: 0.85rem;
+}
+
+.audition-scrubber {
+  width: 100%;
+  accent-color: var(--accent-primary, #38bdf8);
+  cursor: pointer;
+}
+
+.switcher-controls-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.transport-buttons {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.track-pills-list {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.track-pill-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  font-size: 0.82rem;
+  font-weight: 600;
+  background: var(--bg-surface, #141722);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.track-pill-btn:hover {
+  border-color: var(--accent-primary, #38bdf8);
+  color: var(--text-primary);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.track-pill-btn.active {
+  background: var(--accent-primary, #38bdf8);
+  color: #000;
+  border-color: var(--accent-primary, #38bdf8);
+  font-weight: 700;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
+}
+
+.track-pill-key {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-family: var(--font-mono, monospace);
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.track-pill-btn.active .track-pill-key {
+  background: rgba(0, 0, 0, 0.2);
+  color: #000;
+}
+
+/* Human Evaluation Card */
+.human-evaluation-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.eval-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.eval-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.star-rating-widget {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.star-btn {
+  background: none;
+  border: none;
+  font-size: 1.8rem;
+  color: #475569;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  transition: transform 0.1s ease, color 0.15s ease;
+}
+
+.star-btn:hover, .star-btn.hovered {
+  transform: scale(1.15);
+  color: #fbbf24;
+}
+
+.star-btn.active {
+  color: #fbbf24;
+  text-shadow: 0 0 8px rgba(251, 191, 36, 0.5);
+}
+
+.star-score-text {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-left: 0.75rem;
+  color: #fbbf24;
+  font-family: var(--font-mono, monospace);
+}
+
+.score-badge {
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.eval-submetrics-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+  background: var(--bg-surface, #141722);
+  padding: 0.85rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+
+.submetric-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.submetric-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.submetric-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.submetric-val {
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  color: var(--accent-primary, #38bdf8);
+}
+
+.submetric-hint {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.eval-tag-chips {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.tag-chip {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface, #141722);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tag-chip:hover {
+  border-color: var(--accent-primary, #38bdf8);
+  color: var(--text-primary);
+}
+
+.tag-chip.selected {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: var(--accent-primary, #38bdf8);
+  color: var(--accent-primary, #38bdf8);
+}
+
+.eval-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+/* Evaluation Matrix KPI Grid */
+.matrix-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.kpi-card {
+  background: var(--bg-surface, #141722);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.kpi-label {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.kpi-val {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  font-family: var(--font-mono, monospace);
+}
+
+.matrix-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.filter-pills {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.filter-pill {
+  padding: 5px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface, #141722);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.filter-pill:hover {
+  border-color: var(--accent-primary, #38bdf8);
+  color: var(--text-primary);
+}
+
+.filter-pill.active {
+  background: var(--accent-primary, #38bdf8);
+  border-color: var(--accent-primary, #38bdf8);
+  color: #000;
+  font-weight: 700;
+}
+
+.sep-actions-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+@media (max-width: 900px) {
+  .sep-actions-grid {
+    grid-template-columns: 1fr;
+  }
+}

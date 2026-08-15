@@ -47,19 +47,19 @@
           <span>Model Separation</span>
           <span class="tab-shortcut">3</span>
         </button>
-        <button class="nav-tab" data-tab="tab-diarization" id="btn-tab-diarization" title="Key: 4">
-          <span class="tab-icon">👥</span>
-          <span>Diarization</span>
+        <button class="nav-tab" data-tab="tab-comparison" id="btn-tab-comparison" title="Key: 4">
+          <span class="tab-icon">⚖️</span>
+          <span>Audition & Scoring</span>
           <span class="tab-shortcut">4</span>
         </button>
-        <button class="nav-tab" data-tab="tab-comparison" id="btn-tab-comparison" title="Key: 5">
-          <span class="tab-icon">⚖️</span>
-          <span>Compare Studio</span>
+        <button class="nav-tab" data-tab="tab-matrix" id="btn-tab-matrix" title="Key: 5">
+          <span class="tab-icon">📊</span>
+          <span>Evaluation Matrix</span>
           <span class="tab-shortcut">5</span>
         </button>
-        <button class="nav-tab" data-tab="tab-mixer" id="btn-tab-mixer" title="Key: 6">
-          <span class="tab-icon">🎚️</span>
-          <span>Benchmark Mixer</span>
+        <button class="nav-tab" data-tab="tab-diarization" id="btn-tab-diarization" title="Key: 6">
+          <span class="tab-icon">👥</span>
+          <span>Diarization</span>
           <span class="tab-shortcut">6</span>
         </button>
         <button class="nav-tab" data-tab="tab-library" id="btn-tab-library" title="Key: 7">
@@ -321,17 +321,48 @@
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                   <span>Preview Cut</span>
                 </button>
-                <button class="btn btn-primary" id="btn-apply-cut" title="Execute AudioCutter.cut() into active session">
+                <button class="btn btn-primary" id="btn-cut-and-audition" title="Cut segment and jump directly to Audition & Scoring">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><line x1="20" y1="4" x2="8.12" y2="15.88"></line><line x1="14.47" y1="14.48" x2="20" y2="20"></line><line x1="8.12" y1="8.12" x2="12" y2="12"></line></svg>
+                  <span>✂️ Cut & Send to Audition</span>
+                </button>
+                <button class="btn btn-accent" id="btn-cut-and-run-models" title="Cut segment and run all Demucs models in batch for scoring">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                  <span>🚀 Cut & Run All Demucs Models</span>
+                </button>
+                <button class="btn btn-secondary" id="btn-apply-cut" title="Execute AudioCutter.cut() into active session">
                   <span>Apply Cut (Session)</span>
                 </button>
-                <button class="btn btn-secondary" id="btn-cut-save-speech" title="Cut and save directly to benchmarks/separation/sources/speech/">
-                  <span>🎯 Save as Benchmark Speech</span>
-                </button>
-                <button class="btn btn-secondary" id="btn-cut-save-music" title="Cut and save directly to benchmarks/separation/sources/music/">
-                  <span>🎵 Save as Benchmark Music</span>
-                </button>
               </div>
+            </div>
+          </div>
+
+          <!-- Cut Snippets Vault for Active Audio -->
+          <div class="card cuts-vault-card" style="margin-top: 1.25rem;">
+            <div class="card-header">
+              <div>
+                <h3 class="card-title">Generated Audio Cuts & Snippets</h3>
+                <p class="card-subtitle">Snippets sliced from this track with background music, ready for multi-model separation and human evaluation.</p>
+              </div>
+              <span class="badge badge-sm" id="cuts-counter-badge">0 Cuts</span>
+            </div>
+
+            <div class="table-responsive">
+              <table class="data-table" id="cuts-table">
+                <thead>
+                  <tr>
+                    <th>Clip Title</th>
+                    <th>Time Range</th>
+                    <th>Duration</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="cuts-table-body">
+                  <tr>
+                    <td colspan="5" class="empty-table-msg">No cuts generated yet. Set start/end bounds above and click "Cut & Send to Audition".</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -480,12 +511,21 @@
               <label class="form-label">Separation Backend Model:</label>
               <div class="model-cards-grid">
                 <!-- HTDemucs Card -->
-                <div class="model-card active" data-model="htdemucs">
+                <div class="model-card active" data-model="htdemucs" data-variant="htdemucs">
                   <div class="model-card-header">
-                    <span class="model-name">HTDemucs (v4)</span>
+                    <span class="model-name">HTDemucs (Default)</span>
                     <span class="badge badge-sm badge-success">4-Stem</span>
                   </div>
-                  <p class="model-desc">Hybrid Transformer Demucs. Vocals, drums, bass & other.</p>
+                  <p class="model-desc">Hybrid Transformer Demucs v4. Fast balanced separation.</p>
+                </div>
+
+                <!-- HTDemucs Fine-Tuned Card -->
+                <div class="model-card" data-model="htdemucs" data-variant="htdemucs_ft">
+                  <div class="model-card-header">
+                    <span class="model-name">HTDemucs (Fine-Tuned)</span>
+                    <span class="badge badge-sm badge-accent">Vocals FT</span>
+                  </div>
+                  <p class="model-desc">Fine-tuned HTDemucs specialized for clean vocal isolation.</p>
                 </div>
 
                 <!-- BS-RoFormer Card -->
@@ -541,10 +581,14 @@
               <input type="text" id="roformer-checkpoint-input" class="text-input" placeholder="e.g. roformer-model-bs-roformer-sw-by-jarredou">
             </div>
 
-            <div class="sep-actions">
-              <button class="btn btn-primary btn-lg w-full" id="btn-run-separation">
+            <div class="sep-actions-grid">
+              <button class="btn btn-primary btn-lg" id="btn-run-separation">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                <span>Run Separation Model</span>
+                <span>Run Selected Model</span>
+              </button>
+              <button class="btn btn-accent btn-lg" id="btn-run-multi-separation" title="Run HTDemucs, HTDemucs FT, BS-RoFormer, Mel-RoFormer in batch">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                <span>⚡ Run Multi-Model Comparison Suite</span>
               </button>
             </div>
           </div>
@@ -695,136 +739,267 @@
         </div>
       </section>
 
-      <!-- ==================== TAB 5: MODEL & AUDIO COMPARISON STUDIO ==================== -->
+      <!-- ==================== TAB 4: MULTI-MODEL AUDITION & HUMAN SCORING HUB ==================== -->
       <section id="tab-comparison" class="tab-pane">
-        <div class="card comparison-setup-card">
+        <!-- Master Audition Setup Card -->
+        <div class="card audition-setup-card">
           <div class="card-header">
             <div>
-              <h2 class="card-title">Audio & Model Comparison Studio</h2>
-              <p class="card-subtitle">Synchronized waveform & mel-spectrogram visual analysis.</p>
+              <h2 class="card-title">Audition, Compare & Human Scoring Hub</h2>
+              <p class="card-subtitle">Seamless continuous playback switching between original cut (with background music) and Demucs separation models.</p>
             </div>
             <div class="card-actions">
+              <button class="btn btn-secondary" id="btn-batch-separate-active-clip" title="Run all models on this cut clip">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                <span>⚡ Run All Models on Clip</span>
+              </button>
               <button class="btn btn-primary" id="btn-generate-comparison">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
-                <span>Generate Aligned Visuals</span>
+                <span>Render Mel Spectrograms</span>
               </button>
             </div>
           </div>
 
-          <div class="compare-selector-row">
-            <!-- Track A -->
-            <div class="compare-col">
-              <div class="track-tag tag-a">Track A (e.g. Mixture / Ground Truth)</div>
-              <select id="compare-track-a-select" class="select-input"></select>
-            </div>
-
-            <!-- VS Badge -->
-            <div class="compare-vs-badge">VS</div>
-
-            <!-- Track B -->
-            <div class="compare-col">
-              <div class="track-tag tag-b">Track B (e.g. Separated Vocals / Model Estimate)</div>
-              <select id="compare-track-b-select" class="select-input"></select>
+          <!-- Clip & Track Selection Row -->
+          <div class="audition-selection-row">
+            <div class="form-group flex-1">
+              <label class="form-label" for="audition-clip-select">Audio Cut / Snippet to Evaluate (with BG Music):</label>
+              <select id="audition-clip-select" class="select-input"></select>
             </div>
           </div>
 
-          <!-- Instant A/B Live Toggle Bar -->
-          <div class="ab-live-bar">
-            <div class="ab-status">
-              <span class="ab-label">Live A/B Player:</span>
-              <span class="ab-current" id="ab-active-label">Playing Track A</span>
+          <!-- Multi-Track Live Switcher Bar -->
+          <div class="multi-track-switcher-card">
+            <div class="switcher-header">
+              <div class="switcher-title-wrap">
+                <span class="pulse-indicator"></span>
+                <span class="switcher-title">Continuous Live Track Switcher:</span>
+                <span class="active-track-name" id="active-audition-track-name">Original Audio Cut (with BG Music)</span>
+              </div>
+              <div class="switcher-time-display">
+                <span id="audition-time-current">00:00.00</span> / <span id="audition-time-total">00:00.00</span>
+              </div>
             </div>
-            <div class="ab-buttons">
-              <button class="btn btn-ab active" id="btn-ab-switch-a">Track A</button>
-              <button class="btn btn-ab" id="btn-ab-switch-b">Track B</button>
-              <button class="btn btn-ab-toggle" id="btn-ab-toggle-instant" title="Instant toggle between A and B">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>
-                <span>Switch A / B</span>
-              </button>
+
+            <!-- Master Playback Scrubber -->
+            <div class="audition-scrubber-wrap">
+              <input type="range" id="audition-scrubber" class="audition-scrubber" min="0" max="100" step="0.1" value="0">
+            </div>
+
+            <!-- Master Transport Controls & Track Selectors -->
+            <div class="switcher-controls-row">
+              <div class="transport-buttons">
+                <button class="btn btn-ctrl btn-play-main" id="btn-audition-play" title="Play/Pause (Space)">
+                  <svg id="icon-audition-play" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                  <svg id="icon-audition-pause" class="hidden" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+                </button>
+                <button class="btn btn-ctrl" id="btn-audition-loop" title="Toggle Loop (L)">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
+                </button>
+                <div class="volume-slider-wrap">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+                  <input type="range" id="audition-volume-slider" class="range-slider range-sm" min="0" max="1" step="0.05" value="1">
+                </div>
+              </div>
+
+              <!-- Track Selectors (Instant Switch Pills) -->
+              <div class="track-pills-list" id="audition-track-pills">
+                <!-- Populated dynamically: Original, HTDemucs, HTDemucs FT, BS-RoFormer, Mel-RoFormer -->
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- Comparison Visualizers -->
-        <div class="grid-2col" style="margin-top: 1.5rem;">
-          <!-- Spectrogram Comparison Card -->
+        <!-- Two Column Layout: Visual Comparer (Left) & Human Evaluation Card (Right) -->
+        <div class="grid-2col audition-workbench-grid" style="margin-top: 1.25rem;">
+          
+          <!-- Left: Aligned Visual Analysis -->
           <div class="card">
             <div class="card-header">
-              <h3 class="card-title">Aligned Mel Spectrograms</h3>
-              <span class="badge badge-sm">SpectrogramComparer</span>
+              <div>
+                <h3 class="card-title">Aligned Spectrogram & Residual Analysis</h3>
+                <p class="card-subtitle">Mixture (Original) vs Estimated Stem vs Residual</p>
+              </div>
+              <span class="badge badge-sm badge-accent">SpectrogramComparer</span>
             </div>
             <div class="comparison-img-box" id="spectrogram-compare-box">
               <div class="empty-placeholder">
-                <span>Click "Generate Aligned Visuals" to render Mixture vs Estimate vs Residual mel spectrograms.</span>
+                <span>Click "Render Mel Spectrograms" to generate aligned visual difference plots.</span>
               </div>
               <img id="img-compare-spectrogram" class="compare-rendered-img hidden" alt="Mel Spectrogram Comparison">
             </div>
           </div>
 
-          <!-- Waveform Comparison Card -->
-          <div class="card">
+          <!-- Right: Human Scoring & Observations Card -->
+          <div class="card human-evaluation-card">
             <div class="card-header">
-              <h3 class="card-title">Aligned Waveforms & Residual</h3>
-              <span class="badge badge-sm">WaveformComparer</span>
-            </div>
-            <div class="comparison-img-box" id="waveform-compare-box">
-              <div class="empty-placeholder">
-                <span>Click "Generate Aligned Visuals" to render aligned time-domain waveforms.</span>
+              <div>
+                <h3 class="card-title">Human Evaluation & Scoring Card</h3>
+                <p class="card-subtitle" id="scoring-active-model-label">Evaluating: HTDemucs (Default) — Vocals</p>
               </div>
-              <img id="img-compare-waveform" class="compare-rendered-img hidden" alt="Waveform Comparison">
+              <span class="score-badge" id="current-eval-score-badge">Unrated</span>
+            </div>
+
+            <!-- Overall Quality Rating Stars -->
+            <div class="eval-section">
+              <label class="eval-label">⭐ Overall Separation Score (1 to 5 Stars):</label>
+              <div class="star-rating-widget" id="star-rating-widget">
+                <button class="star-btn" data-value="1" title="1 Star - Poor">★</button>
+                <button class="star-btn" data-value="2" title="2 Stars - Fair">★</button>
+                <button class="star-btn" data-value="3" title="3 Stars - Good">★</button>
+                <button class="star-btn" data-value="4" title="4 Stars - Very Good">★</button>
+                <button class="star-btn" data-value="5" title="5 Stars - Excellent">★</button>
+                <span class="star-score-text" id="star-score-text">5.0 / 5.0</span>
+              </div>
+            </div>
+
+            <!-- Sub-Metrics Matrix -->
+            <div class="eval-submetrics-grid">
+              <div class="submetric-box">
+                <div class="submetric-header">
+                  <span class="submetric-title">🗣️ Vocal Clarity & Timbre</span>
+                  <span class="submetric-val" id="val-submetric-clarity">5 / 5</span>
+                </div>
+                <input type="range" id="slider-submetric-clarity" class="range-slider range-sm" min="1" max="5" step="1" value="5">
+                <span class="submetric-hint">Natural timbre, preserved high frequencies</span>
+              </div>
+
+              <div class="submetric-box">
+                <div class="submetric-header">
+                  <span class="submetric-title">🔇 BG Music Suppression (Zero Bleed)</span>
+                  <span class="submetric-val" id="val-submetric-bleed">5 / 5</span>
+                </div>
+                <input type="range" id="slider-submetric-bleed" class="range-slider range-sm" min="1" max="5" step="1" value="5">
+                <span class="submetric-hint">5 = zero music leak, 1 = heavy background music bleed</span>
+              </div>
+
+              <div class="submetric-box">
+                <div class="submetric-header">
+                  <span class="submetric-title">⚡ Artifacts & Distortion</span>
+                  <span class="submetric-val" id="val-submetric-artifacts">5 / 5</span>
+                </div>
+                <input type="range" id="slider-submetric-artifacts" class="range-slider range-sm" min="1" max="5" step="1" value="5">
+                <span class="submetric-hint">5 = zero artifacts, 1 = metallic/robotic phase warping</span>
+              </div>
+            </div>
+
+            <!-- Quick Observation Tags -->
+            <div class="eval-section">
+              <label class="eval-label">Quick Observation Tags:</label>
+              <div class="eval-tag-chips" id="eval-tag-chips">
+                <button type="button" class="tag-chip" data-tag="clean_vocals">+ Clean Vocals</button>
+                <button type="button" class="tag-chip" data-tag="snare_bleed">+ Snare/Percussion Bleed</button>
+                <button type="button" class="tag-chip" data-tag="bass_bleed">+ Bass Bleed</button>
+                <button type="button" class="tag-chip" data-tag="robotic_artifacts">+ Robotic Artifacts</button>
+                <button type="button" class="tag-chip" data-tag="muffled_highs">+ Muffled Highs</button>
+                <button type="button" class="tag-chip" data-tag="reverb_tail">+ Background Reverb Residual</button>
+                <button type="button" class="tag-chip" data-tag="excellent_isolation">+ Excellent Isolation</button>
+              </div>
+            </div>
+
+            <!-- Detailed Notes Textarea -->
+            <div class="eval-section">
+              <label class="eval-label" for="eval-notes-input">Detailed Notes & Observations:</label>
+              <textarea id="eval-notes-input" class="textarea-input" rows="4" placeholder="e.g. At 0:04 background drums leak into speech; vocal timbre remains natural and clear. HTDemucs FT suppressed synth melody better than default HTDemucs."></textarea>
+            </div>
+
+            <!-- Scoring Actions -->
+            <div class="eval-actions-row">
+              <button class="btn btn-primary btn-lg flex-1" id="btn-save-evaluation">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                <span>Save Evaluation & Notes</span>
+              </button>
+              <button class="btn btn-secondary" id="btn-copy-eval-note" title="Copy note text to clipboard">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                <span>Copy Note</span>
+              </button>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- ==================== TAB 6: BENCHMARK MIXER ==================== -->
-      <section id="tab-mixer" class="tab-pane">
-        <div class="card">
+      <!-- ==================== TAB 5: EVALUATION MATRIX & NOTES REVIEW ==================== -->
+      <section id="tab-matrix" class="tab-pane">
+        <!-- Matrix Summary Stats Card -->
+        <div class="card matrix-stats-card">
           <div class="card-header">
             <div>
-              <h2 class="card-title">AudioMixer — Benchmark Mixture Generator</h2>
-              <p class="card-subtitle">Synthesize clean speech with background music at target SNR/SMR.</p>
+              <h2 class="card-title">Human Evaluation Matrix & Scoring Records</h2>
+              <p class="card-subtitle">Comprehensive scoring, comparative analysis, and notes repository for separated audio clips.</p>
             </div>
-            <span class="badge badge-accent">AudioMixer.mix</span>
-          </div>
-
-          <div class="grid-2col" style="margin-top: 1rem;">
-            <div class="form-group">
-              <label class="form-label" for="mixer-speech-select">Speech Reference Track:</label>
-              <select id="mixer-speech-select" class="select-input"></select>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" for="mixer-music-select">Music / Noise Background Track:</label>
-              <select id="mixer-music-select" class="select-input"></select>
-            </div>
-          </div>
-
-          <div class="mixer-controls-row">
-            <div class="mixer-slider-group">
-              <div class="slider-header">
-                <label class="form-label" for="mixer-smr-slider">Target SMR (Speech-to-Music Ratio in dB):</label>
-                <span class="slider-val-badge" id="mixer-smr-val">0.0 dB</span>
-              </div>
-              <input type="range" id="mixer-smr-slider" class="range-slider" min="-18" max="18" step="0.5" value="0.0">
-            </div>
-
-            <div class="mixer-seed-group">
-              <label class="form-label" for="mixer-seed-input">Random Seed:</label>
-              <input type="number" id="mixer-seed-input" class="text-input" value="42">
+            <div class="card-actions">
+              <button class="btn btn-secondary" id="btn-export-eval-csv">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                <span>Export CSV</span>
+              </button>
+              <button class="btn btn-secondary" id="btn-export-eval-json">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                <span>Export JSON</span>
+              </button>
+              <button class="btn btn-ghost btn-sm" id="btn-refresh-eval-matrix">
+                <span>↻ Refresh</span>
+              </button>
             </div>
           </div>
 
-          <div class="mixer-actions">
-            <button class="btn btn-primary btn-lg w-full" id="btn-run-mixer">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
-              <span>Synthesize Benchmark Mixture (AudioMixer.mix)</span>
-            </button>
+          <!-- Summary KPI stats -->
+          <div class="matrix-kpi-grid">
+            <div class="kpi-card">
+              <span class="kpi-label">Total Rated Evaluations</span>
+              <span class="kpi-val" id="kpi-total-evals">0</span>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Evaluated Audio Clips</span>
+              <span class="kpi-val" id="kpi-total-clips">0</span>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Top Ranked Model</span>
+              <span class="kpi-val text-accent" id="kpi-top-model">—</span>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-label">Average Score</span>
+              <span class="kpi-val text-success" id="kpi-avg-score">0.0 ★</span>
+            </div>
           </div>
+        </div>
 
-          <div id="mixer-result-box" class="mixer-result-box hidden">
-            <h3 class="result-title">Generated Mix Artifacts:</h3>
-            <div class="mix-stems-grid" id="mix-stems-grid"></div>
+        <!-- Filter & Search Toolbar -->
+        <div class="matrix-filter-bar">
+          <div class="search-input-wrap flex-1">
+            <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <input type="text" id="eval-search-input" class="text-input" placeholder="Search by audio clip title, model, note keywords, or tags...">
+          </div>
+          <div class="filter-pills" id="eval-model-filter-pills">
+            <button class="filter-pill active" data-filter="all">All Models</button>
+            <button class="filter-pill" data-filter="htdemucs">HTDemucs</button>
+            <button class="filter-pill" data-filter="bs_roformer">BS-RoFormer</button>
+            <button class="filter-pill" data-filter="mel_roformer">Mel-RoFormer</button>
+          </div>
+        </div>
+
+        <!-- Evaluations Table Card -->
+        <div class="card matrix-table-card">
+          <div class="table-responsive">
+            <table class="data-table" id="evaluations-table">
+              <thead>
+                <tr>
+                  <th>Audio Cut / Snippet</th>
+                  <th>Model</th>
+                  <th>Overall Score</th>
+                  <th>Clarity</th>
+                  <th>BG Suppression</th>
+                  <th>Artifacts</th>
+                  <th>Human Notes & Tags</th>
+                  <th>Date</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="evaluations-table-body">
+                <tr>
+                  <td colspan="9" class="empty-table-msg">No evaluations recorded yet. Cut an audio with background music, run Demucs models, and score them in the Audition tab!</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </section>
@@ -1086,8 +1261,8 @@
               <kbd class="kbd">0</kbd>
             </div>
             <div class="shortcut-item">
-              <span class="shortcut-desc">Switch Tabs (1–7)</span>
-              <div class="kbd-combo"><kbd class="kbd">1</kbd> ... <kbd class="kbd">7</kbd></div>
+              <span class="shortcut-desc">Audition Track Switch (Tab 4)</span>
+              <div class="kbd-combo"><kbd class="kbd">1</kbd> <kbd class="kbd">2</kbd> <kbd class="kbd">3</kbd> <kbd class="kbd">4</kbd> <kbd class="kbd">5</kbd></div>
             </div>
             <div class="shortcut-item">
               <span class="shortcut-desc">Toggle Shortcuts Cheatsheet</span>

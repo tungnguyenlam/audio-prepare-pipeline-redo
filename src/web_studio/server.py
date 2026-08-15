@@ -217,9 +217,81 @@ class TaskManager:
         return self._tasks.get(task_id)
 
 
+class EvaluationManager:
+    """Persistent storage manager for human separation scoring & notes."""
+    def __init__(self, file_path: Path):
+        self.file_path = file_path
+        self.file_path.parent.mkdir(parents=True, exist_ok=True)
+        self.evaluations: Dict[str, Dict[str, Any]] = {}
+        self._load()
+
+    def _load(self):
+        if self.file_path.is_file():
+            try:
+                data = json.loads(self.file_path.read_text(encoding="utf-8"))
+                if isinstance(data, list):
+                    self.evaluations = {item["id"]: item for item in data if isinstance(item, dict) and "id" in item}
+                elif isinstance(data, dict):
+                    self.evaluations = data
+            except Exception as e:
+                logger.error("Failed to load evaluations: %s", e)
+                self.evaluations = {}
+
+    def _save(self):
+        try:
+            self.file_path.write_text(
+                json.dumps(list(self.evaluations.values()), indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+        except Exception as e:
+            logger.error("Failed to save evaluations: %s", e)
+
+    def get_all(self) -> List[Dict[str, Any]]:
+        evals = list(self.evaluations.values())
+        evals.sort(key=lambda x: x.get("updated_at", x.get("created_at", 0)), reverse=True)
+        return evals
+
+    def get_by_clip(self, clip_id: str) -> List[Dict[str, Any]]:
+        return [e for e in self.get_all() if e.get("clip_id") == clip_id]
+
+    def save_evaluation(self, eval_data: Dict[str, Any]) -> Dict[str, Any]:
+        eval_id = eval_data.get("id") or f"eval-{uuid.uuid4().hex[:10]}"
+        now = time.time()
+        record = {
+            "id": eval_id,
+            "clip_id": str(eval_data.get("clip_id", "")),
+            "clip_title": str(eval_data.get("clip_title", "")),
+            "clip_path": str(eval_data.get("clip_path", "")),
+            "model_id": str(eval_data.get("model_id", "")),
+            "model_name": str(eval_data.get("model_name", "")),
+            "stem": str(eval_data.get("stem", "vocals")),
+            "separated_audio_id": str(eval_data.get("separated_audio_id", "")),
+            "separated_audio_path": str(eval_data.get("separated_audio_path", "")),
+            "score_overall": float(eval_data.get("score_overall", 5.0)),
+            "score_vocal_clarity": int(eval_data.get("score_vocal_clarity", 5)),
+            "score_bleed": int(eval_data.get("score_bleed", 5)),
+            "score_artifacts": int(eval_data.get("score_artifacts", 5)),
+            "notes": str(eval_data.get("notes", "")),
+            "tags": list(eval_data.get("tags", [])),
+            "created_at": float(eval_data.get("created_at", now)),
+            "updated_at": now,
+        }
+        self.evaluations[eval_id] = record
+        self._save()
+        return record
+
+    def delete_evaluation(self, eval_id: str) -> bool:
+        if eval_id in self.evaluations:
+            del self.evaluations[eval_id]
+            self._save()
+            return True
+        return False
+
+
 # Global instances
 registry = AudioRegistry()
 task_manager = TaskManager()
+evaluation_manager = EvaluationManager(DATA_DIR / "studio" / "evaluations.json")
 live_reload_subscribers: List[asyncio.Queue] = []
 
 
@@ -1066,6 +1138,206 @@ async def handle_get_task(request: web.Request) -> web.Response:
     return web.json_response(task)
 
 
+# ==================== HUMAN EVALUATION & SCORING API ====================
+
+
+async def handle_list_evaluations(request: web.Request) -> web.Response:
+    """List all human evaluation records or filter by clip_id."""
+    clip_id = request.query.get("clip_id")
+    if clip_id:
+        records = evaluation_manager.get_by_clip(clip_id)
+    else:
+        records = evaluation_manager.get_all()
+    return web.json_response({"evaluations": records})
+
+
+async def handle_save_evaluation(request: web.Request) -> web.Response:
+    """Save or update human scoring and notes for an audio separation."""
+    data = await request.json()
+    if not data:
+        return web.json_response({"error": "Payload required"}, status=400)
+    saved = evaluation_manager.save_evaluation(data)
+    return web.json_response({"evaluation": saved, "status": "success"})
+
+
+async def handle_delete_evaluation(request: web.Request) -> web.Response:
+    """Delete an evaluation record."""
+    eval_id = request.match_info["id"]
+    success = evaluation_manager.delete_evaluation(eval_id)
+    if not success:
+        return web.json_response({"error": "Evaluation not found"}, status=404)
+    return web.json_response({"status": "success", "deleted_id": eval_id})
+
+
+async def handle_export_evaluations(request: web.Request) -> web.Response:
+    """Export human evaluations as JSON or CSV."""
+    fmt = request.query.get("format", "csv").lower()
+    evals = evaluation_manager.get_all()
+
+    if fmt == "json":
+        return web.Response(
+            text=json.dumps(evals, indent=2, ensure_ascii=False),
+            content_type="application/json",
+            headers={"Content-Disposition": 'attachment; filename="separation_evaluations.json"'},
+        )
+
+    # CSV export
+    output = io.StringIO()
+    import csv
+    fieldnames = [
+        "id", "clip_title", "clip_id", "model_name", "model_id", "stem",
+        "score_overall", "score_vocal_clarity", "score_bleed", "score_artifacts",
+        "notes", "tags", "created_at", "updated_at", "clip_path", "separated_audio_path"
+    ]
+    writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
+    writer.writeheader()
+    for row in evals:
+        row_copy = dict(row)
+        if isinstance(row_copy.get("tags"), list):
+            row_copy["tags"] = ";".join(str(t) for t in row_copy["tags"])
+        writer.writerow(row_copy)
+
+    return web.Response(
+        text=output.getvalue(),
+        content_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="separation_evaluations.csv"'},
+    )
+
+
+async def handle_batch_separation_compare(request: web.Request) -> web.Response:
+    """Run multiple separation models sequentially on the same cut audio clip for side-by-side evaluation."""
+    data = await request.json()
+    audio_id = data.get("audio_id")
+    models = data.get("models", [])
+    device = data.get("device", "auto")
+    two_stems = data.get("two_stems", "vocals")
+
+    audio = registry.get_audio(audio_id)
+    if not audio:
+        return web.json_response({"error": "Audio not found"}, status=404)
+
+    if not models:
+        models = [
+            {"model_type": "htdemucs", "model_name": "htdemucs", "label": "HTDemucs (Default)"},
+            {"model_type": "htdemucs", "model_name": "htdemucs_ft", "label": "HTDemucs (Fine-Tuned)"},
+            {"model_type": "bs_roformer", "model_name": None, "label": "BS-RoFormer"},
+            {"model_type": "mel_roformer", "model_name": None, "label": "Mel-RoFormer"},
+        ]
+
+    task_id = task_manager.create_task(
+        "multi_model_separation",
+        {"audio_id": audio_id, "models_count": len(models), "clip_title": audio.title},
+    )
+
+    async def run_batch():
+        results = []
+        target_device = get_default_device() if device == "auto" else device
+        total = len(models)
+        
+        for idx, m_spec in enumerate(models, start=1):
+            m_type = m_spec.get("model_type", "htdemucs")
+            m_name = m_spec.get("model_name")
+            m_label = m_spec.get("label") or f"{m_type}_{m_name or 'default'}"
+            
+            task_manager.update_task(
+                task_id,
+                status="running",
+                progress=round((idx - 1) / total, 2),
+                message=f"[{idx}/{total}] Separating with {m_label} on {target_device}...",
+            )
+
+            try:
+                loop = asyncio.get_running_loop()
+                def do_sep(curr_type=m_type, curr_name=m_name):
+                    if curr_type == "htdemucs":
+                        sep = HTDemucs(
+                            model=curr_name or "htdemucs",
+                            device=target_device,
+                            two_stems=two_stems,
+                            output_dir=DATA_DIR / "demucs" / "out",
+                            work_dir=DATA_DIR / "demucs" / "work",
+                        )
+                        return sep.separate(audio)
+                    elif curr_type == "bs_roformer":
+                        kwargs = {
+                            "device": target_device,
+                            "output_dir": DATA_DIR / "bs_roformer" / "out",
+                            "work_dir": DATA_DIR / "bs_roformer" / "work",
+                        }
+                        if curr_name:
+                            kwargs["model"] = curr_name
+                        sep = BSRoFormer(**kwargs)
+                        with sep:
+                            return sep.separate(audio)
+                    elif curr_type == "mel_roformer":
+                        kwargs = {
+                            "device": target_device,
+                            "output_dir": DATA_DIR / "mel_roformer" / "out",
+                            "work_dir": DATA_DIR / "mel_roformer" / "work",
+                        }
+                        if curr_name:
+                            kwargs["model"] = curr_name
+                        sep = MelRoFormer(**kwargs)
+                        with sep:
+                            return sep.separate(audio)
+                    elif curr_type == "mvsep_mdx23":
+                        sep = MVSepMDX23(
+                            device=target_device,
+                            output_dir=DATA_DIR / "mvsep_mdx23" / "out",
+                            work_dir=DATA_DIR / "mvsep_mdx23" / "work",
+                            repo_dir=DATA_DIR / "mvsep_mdx23" / "repo",
+                        )
+                        return sep.separate(audio)
+                    else:
+                        raise ValueError(f"Unknown model type: {curr_type}")
+
+                t0 = time.time()
+                sep_audio = await loop.run_in_executor(None, do_sep)
+                elapsed = time.time() - t0
+
+                new_id = registry.register(
+                    sep_audio,
+                    source_type="separation",
+                    parent_id=audio_id,
+                    tags=["separated", m_type, m_name or "default", two_stems],
+                )
+                results.append({
+                    "model_id": f"{m_type}_{m_name or 'default'}",
+                    "model_type": m_type,
+                    "model_name": m_name,
+                    "label": m_label,
+                    "stem": two_stems,
+                    "audio_id": new_id,
+                    "title": sep_audio.title,
+                    "path": str(sep_audio.path),
+                    "elapsed_s": round(elapsed, 2),
+                    "metadata": sep_audio.metadata(),
+                })
+            except Exception as e:
+                logger.exception("Failed model separation: %s", m_label)
+                results.append({
+                    "model_id": f"{m_type}_{m_name or 'default'}",
+                    "label": m_label,
+                    "error": str(e),
+                })
+
+        task_manager.update_task(
+            task_id,
+            status="completed",
+            progress=1.0,
+            message=f"Completed {len(results)} model separations for '{audio.title}'!",
+            result={
+                "clip_id": audio_id,
+                "clip_title": audio.title,
+                "clip_path": str(audio.path),
+                "results": results,
+            },
+        )
+
+    asyncio.create_task(run_batch())
+    return web.json_response({"task_id": task_id})
+
+
 # ==================== LIVE RELOAD SSE ====================
 
 
@@ -1212,6 +1484,11 @@ def create_app() -> web.Application:
     app.router.add_post("/api/audio/{id}/save-to", handle_save_to)
     
     app.router.add_post("/api/separation/run", handle_run_separation)
+    app.router.add_post("/api/separation/batch-compare", handle_batch_separation_compare)
+    app.router.add_get("/api/evaluations", handle_list_evaluations)
+    app.router.add_post("/api/evaluations", handle_save_evaluation)
+    app.router.add_delete("/api/evaluations/{id}", handle_delete_evaluation)
+    app.router.add_get("/api/evaluations/export", handle_export_evaluations)
     app.router.add_post("/api/diarization/run", handle_run_diarization)
     app.router.add_post("/api/benchmark/mix", handle_mix_audio)
     app.router.add_post("/api/compare/spectrogram", handle_compare_spectrogram)

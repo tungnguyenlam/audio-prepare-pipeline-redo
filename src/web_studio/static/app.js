@@ -127,8 +127,10 @@ const el = {
   btnUseSelection: document.getElementById('btn-use-selection'),
   btnPreviewCut: document.getElementById('btn-preview-cut'),
   btnApplyCut: document.getElementById('btn-apply-cut'),
-  btnCutSaveSpeech: document.getElementById('btn-cut-save-speech'),
-  btnCutSaveMusic: document.getElementById('btn-cut-save-music'),
+  btnCutAndAudition: document.getElementById('btn-cut-and-audition'),
+  btnCutAndRunModels: document.getElementById('btn-cut-and-run-models'),
+  cutsTableBody: document.getElementById('cuts-table-body'),
+  cutsCounterBadge: document.getElementById('cuts-counter-badge'),
   cutUnitRadios: document.querySelectorAll('input[name="cut_unit"]'),
 
   // YouTube Crawler Studio
@@ -164,6 +166,7 @@ const el = {
   roformerPresetGroup: document.getElementById('roformer-preset-group'),
   roformerCheckpointInput: document.getElementById('roformer-checkpoint-input'),
   btnRunSeparation: document.getElementById('btn-run-separation'),
+  btnRunMultiSeparation: document.getElementById('btn-run-multi-separation'),
   sepTaskProgressBox: document.getElementById('sep-task-progress-box'),
   sepTaskTitle: document.getElementById('sep-task-title'),
   sepTaskTimer: document.getElementById('sep-task-timer'),
@@ -188,28 +191,48 @@ const el = {
   turnsTableBody: document.getElementById('turns-table-body'),
   diarModelBadge: document.getElementById('diar-model-badge'),
 
-  // Comparison Studio
-  compareTrackASelect: document.getElementById('compare-track-a-select'),
-  compareTrackBSelect: document.getElementById('compare-track-b-select'),
+  // Audition & Scoring Hub
+  auditionClipSelect: document.getElementById('audition-clip-select'),
+  activeAuditionTrackName: document.getElementById('active-audition-track-name'),
+  auditionTimeCurrent: document.getElementById('audition-time-current'),
+  auditionTimeTotal: document.getElementById('audition-time-total'),
+  auditionScrubber: document.getElementById('audition-scrubber'),
+  btnAuditionPlay: document.getElementById('btn-audition-play'),
+  iconAuditionPlay: document.getElementById('icon-audition-play'),
+  iconAuditionPause: document.getElementById('icon-audition-pause'),
+  btnAuditionLoop: document.getElementById('btn-audition-loop'),
+  auditionVolumeSlider: document.getElementById('audition-volume-slider'),
+  auditionTrackPills: document.getElementById('audition-track-pills'),
+  btnBatchSeparateActiveClip: document.getElementById('btn-batch-separate-active-clip'),
   btnGenerateComparison: document.getElementById('btn-generate-comparison'),
-  abActiveLabel: document.getElementById('ab-active-label'),
-  btnAbSwitchA: document.getElementById('btn-ab-switch-a'),
-  btnAbSwitchB: document.getElementById('btn-ab-switch-b'),
-  btnAbToggleInstant: document.getElementById('btn-ab-toggle-instant'),
   imgCompareSpectrogram: document.getElementById('img-compare-spectrogram'),
-  imgCompareWaveform: document.getElementById('img-compare-waveform'),
   spectrogramCompareBox: document.getElementById('spectrogram-compare-box'),
-  waveformCompareBox: document.getElementById('waveform-compare-box'),
+  scoringActiveModelLabel: document.getElementById('scoring-active-model-label'),
+  currentEvalScoreBadge: document.getElementById('current-eval-score-badge'),
+  starRatingWidget: document.getElementById('star-rating-widget'),
+  starScoreText: document.getElementById('star-score-text'),
+  sliderSubmetricClarity: document.getElementById('slider-submetric-clarity'),
+  valSubmetricClarity: document.getElementById('val-submetric-clarity'),
+  sliderSubmetricBleed: document.getElementById('slider-submetric-bleed'),
+  valSubmetricBleed: document.getElementById('val-submetric-bleed'),
+  sliderSubmetricArtifacts: document.getElementById('slider-submetric-artifacts'),
+  valSubmetricArtifacts: document.getElementById('val-submetric-artifacts'),
+  evalTagChips: document.getElementById('eval-tag-chips'),
+  evalNotesInput: document.getElementById('eval-notes-input'),
+  btnSaveEvaluation: document.getElementById('btn-save-evaluation'),
+  btnCopyEvalNote: document.getElementById('btn-copy-eval-note'),
 
-  // Benchmark Mixer
-  mixerSpeechSelect: document.getElementById('mixer-speech-select'),
-  mixerMusicSelect: document.getElementById('mixer-music-select'),
-  mixerSmrSlider: document.getElementById('mixer-smr-slider'),
-  mixerSmrVal: document.getElementById('mixer-smr-val'),
-  mixerSeedInput: document.getElementById('mixer-seed-input'),
-  btnRunMixer: document.getElementById('btn-run-mixer'),
-  mixerResultBox: document.getElementById('mixer-result-box'),
-  mixStemsGrid: document.getElementById('mix-stems-grid'),
+  // Evaluation Matrix & Notes Review
+  btnExportEvalCsv: document.getElementById('btn-export-eval-csv'),
+  btnExportEvalJson: document.getElementById('btn-export-eval-json'),
+  btnRefreshEvalMatrix: document.getElementById('btn-refresh-eval-matrix'),
+  kpiTotalEvals: document.getElementById('kpi-total-evals'),
+  kpiTotalClips: document.getElementById('kpi-total-clips'),
+  kpiTopModel: document.getElementById('kpi-top-model'),
+  kpiAvgScore: document.getElementById('kpi-avg-score'),
+  evalSearchInput: document.getElementById('eval-search-input'),
+  evalModelFilterPills: document.getElementById('eval-model-filter-pills'),
+  evaluationsTableBody: document.getElementById('evaluations-table-body'),
 
   // Library & History
   serverFilesList: document.getElementById('server-files-list'),
@@ -948,68 +971,90 @@ function initAudioCutter() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ start, end, unit }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Cut operation failed");
+      const data = await parseJsonResponse(res);
 
       showToast(`Audio cut successful! Created new clip ${data.audio_id}`, "success");
       await fetchAudioList();
+      addCutToRegistry(data.audio_id, start, end);
       await setActiveAudio(data.audio_id, { play: true });
     } catch (err) {
       showToast(err.message, "error");
     } finally {
       el.btnApplyCut.disabled = false;
-      el.btnApplyCut.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><line x1="20" y1="4" x2="8.12" y2="15.88"></line><line x1="14.47" y1="14.48" x2="20" y2="20"></line><line x1="8.12" y1="8.12" x2="12" y2="12"></line></svg> <span>Apply Cut (Session)</span>`;
+      el.btnApplyCut.innerHTML = `<span>Apply Cut (Session)</span>`;
     }
   });
 
-  // Direct Cut & Save to Benchmark Sources
-  async function cutAndSaveBenchmark(category) {
-    if (!state.activeAudio) {
-      showToast("Please select or load an audio file first", "warning");
-      return;
-    }
-    const start = el.cutStartInput.value.trim();
-    const end = el.cutEndInput.value.trim();
-    const unit = document.querySelector('input[name="cut_unit"]:checked').value;
+  // Cut & Send to Audition Hub
+  if (el.btnCutAndAudition) {
+    el.btnCutAndAudition.addEventListener('click', async () => {
+      if (!state.activeAudio) {
+        showToast("Please load an audio file first", "warning");
+        return;
+      }
+      const start = el.cutStartInput.value.trim();
+      const end = el.cutEndInput.value.trim();
+      const unit = document.querySelector('input[name="cut_unit"]:checked').value;
 
-    const folder = category === "music" ? "benchmarks/separation/sources/music" : "benchmarks/separation/sources/speech";
-    const label = category === "music" ? "Benchmark Music" : "Benchmark Speech";
+      el.btnCutAndAudition.disabled = true;
+      el.btnCutAndAudition.textContent = "Cutting...";
 
-    const targetBtn = category === "music" ? el.btnCutSaveMusic : el.btnCutSaveSpeech;
-    const origHtml = targetBtn ? targetBtn.innerHTML : "";
-    if (targetBtn) {
-      targetBtn.disabled = true;
-      targetBtn.textContent = `Saving to ${label}...`;
-    }
+      try {
+        const res = await fetch(`/api/audio/${state.activeAudio.id}/cut`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ start, end, unit }),
+        });
+        const data = await parseJsonResponse(res);
 
-    try {
-      // 1. Cut the audio segment
-      const cutRes = await fetch(`/api/audio/${state.activeAudio.id}/cut`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ start, end, unit }),
-      });
-      const cutData = await cutRes.json();
-      if (!cutRes.ok) throw new Error(cutData.error || "Cut operation failed");
+        showToast(`Snippet created! Switching to Audition & Scoring Hub...`, "success");
+        await fetchAudioList();
+        addCutToRegistry(data.audio_id, start, end);
+        switchTab('tab-comparison');
+        await loadClipForAudition(data.audio_id);
+      } catch (err) {
+        showToast(err.message, "error");
+      } finally {
+        el.btnCutAndAudition.disabled = false;
+        el.btnCutAndAudition.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><line x1="20" y1="4" x2="8.12" y2="15.88"></line><line x1="14.47" y1="14.48" x2="20" y2="20"></line><line x1="8.12" y1="8.12" x2="12" y2="12"></line></svg> <span>✂️ Cut & Send to Audition</span>`;
+      }
+    });
+  }
 
-      // 2. Format benchmark destination file path
-      const baseTitle = state.activeAudio.title || state.activeAudio.source_id || "sample";
-      const cleanTitle = baseTitle.replace(/[^a-zA-Z0-9_\-\.]+/g, "_").replace(/^_+|_+$/g, "").substring(0, 80);
-      const destPath = `${folder}/${cleanTitle}__cut_${start}_${end}.${state.activeAudio.format || 'wav'}`;
+  // Cut & Run All Demucs Models Suite
+  if (el.btnCutAndRunModels) {
+    el.btnCutAndRunModels.addEventListener('click', async () => {
+      if (!state.activeAudio) {
+        showToast("Please load an audio file first", "warning");
+        return;
+      }
+      const start = el.cutStartInput.value.trim();
+      const end = el.cutEndInput.value.trim();
+      const unit = document.querySelector('input[name="cut_unit"]:checked').value;
 
-      // 3. Save to benchmark folder with companion sidecar metadata
-      const saveRes = await fetch(`/api/audio/${cutData.audio_id}/save-to`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dest: destPath }),
-      });
-      const saveData = await saveRes.json();
-      if (!saveRes.ok) throw new Error(saveData.error || "Failed saving to benchmark folder");
+      el.btnCutAndRunModels.disabled = true;
+      el.btnCutAndRunModels.textContent = "Cutting & Queuing Models...";
 
-      showToast(`Saved to ${label}: ${saveData.saved_path}`, "success");
-      await fetchAudioList();
-      await fetchServerFiles();
-      await setActiveAudio(cutData.audio_id, { play: true });
+      try {
+        const res = await fetch(`/api/audio/${state.activeAudio.id}/cut`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ start, end, unit }),
+        });
+        const data = await parseJsonResponse(res);
+        addCutToRegistry(data.audio_id, start, end);
+        await fetchAudioList();
+
+        showToast(`Running batch separation models on snippet...`, "info");
+        await runBatchMultiModelSeparation(data.audio_id, true);
+      } catch (err) {
+        showToast(err.message, "error");
+      } finally {
+        el.btnCutAndRunModels.disabled = false;
+        el.btnCutAndRunModels.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> <span>🚀 Cut & Run All Demucs Models</span>`;
+      }
+    });
+  }
     } catch (err) {
       showToast(err.message, "error");
     } finally {
@@ -1422,7 +1467,7 @@ function initSeparationStudio() {
     });
   });
 
-  // Run Separation Button
+  // Run Single Separation Button
   el.btnRunSeparation.addEventListener('click', async () => {
     const audioId = el.sepInputSelect.value;
     if (!audioId) {
@@ -1432,13 +1477,14 @@ function initSeparationStudio() {
 
     const activeCard = document.querySelector('.model-card[data-model].active');
     const modelType = activeCard ? activeCard.dataset.model : "htdemucs";
+    const variant = activeCard ? activeCard.dataset.variant : undefined;
     const device = el.sepDeviceSelect.value;
     const twoStems = el.sepStemsSelect.value;
-    const modelName = el.roformerCheckpointInput.value.trim() || undefined;
+    const modelName = variant || el.roformerCheckpointInput.value.trim() || undefined;
 
     el.btnRunSeparation.disabled = true;
     el.sepTaskProgressBox.classList.remove('hidden');
-    el.sepTaskTitle.textContent = `Running ${modelType.toUpperCase()} separation...`;
+    el.sepTaskTitle.textContent = `Running ${modelType.toUpperCase()} (${modelName || 'default'}) separation...`;
 
     let startTime = Date.now();
     const timerInterval = setInterval(() => {
@@ -1457,8 +1503,7 @@ function initSeparationStudio() {
           model_name: modelName,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Separation request failed");
+      const data = await parseJsonResponse(res);
 
       pollTask(data.task_id, (result) => {
         clearInterval(timerInterval);
@@ -1481,6 +1526,18 @@ function initSeparationStudio() {
       showToast(err.message, "error");
     }
   });
+
+  // Run Multi-Model Comparison Suite Button
+  if (el.btnRunMultiSeparation) {
+    el.btnRunMultiSeparation.addEventListener('click', async () => {
+      const audioId = el.sepInputSelect.value;
+      if (!audioId) {
+        showToast("Please select an input audio to benchmark", "error");
+        return;
+      }
+      await runBatchMultiModelSeparation(audioId, true);
+    });
+  }
 }
 
 function renderSeparationResultCard(result) {
@@ -1658,171 +1715,687 @@ function renderDiarizationResults(diarization, audioId) {
     tr.querySelector('.btn-play-turn').addEventListener('click', () => {
       loadAudioIntoPlayer(audioId);
       seekTo(turn.start_s);
-      el.audio.play();
+      el.au// ==================== CUTS MANAGER ====================
+
+function initCutsManager() {
+  renderCutsTable();
+}
+
+function addCutToRegistry(audioId, start, end) {
+  const audio = state.audioList.find(a => a.id === audioId) || {
+    id: audioId,
+    title: state.activeAudio ? `${state.activeAudio.title}_cut_${start}_${end}` : audioId,
+    duration_s: parseFloat(end) - parseFloat(start),
+  };
+  if (!state.cuts) state.cuts = [];
+  state.cuts.unshift({
+    id: audioId,
+    title: audio.title || audioId,
+    parentId: state.activeAudio ? state.activeAudio.id : null,
+    start: parseFloat(start),
+    end: parseFloat(end),
+    duration: Math.max(0, parseFloat(end) - parseFloat(start)),
+    created: Date.now(),
+  });
+  renderCutsTable();
+}
+
+function renderCutsTable() {
+  if (!el.cutsTableBody) return;
+  const parentId = state.activeAudio ? state.activeAudio.id : null;
+  const cuts = (state.cuts || []).filter(c => !parentId || c.parentId === parentId || c.id === parentId);
+
+  if (el.cutsCounterBadge) {
+    el.cutsCounterBadge.textContent = `${cuts.length} Cut${cuts.length === 1 ? '' : 's'}`;
+  }
+
+  if (cuts.length === 0) {
+    el.cutsTableBody.innerHTML = `<tr><td colspan="5" class="empty-table-msg">No cuts generated yet. Set start/end bounds above and click "✂️ Cut & Send to Audition".</td></tr>`;
+    return;
+  }
+
+  el.cutsTableBody.innerHTML = "";
+  cuts.forEach(cut => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><span class="file-name-text">${escapeHtml(cut.title)}</span></td>
+      <td><code>${cut.start.toFixed(2)}s – ${cut.end.toFixed(2)}s</code></td>
+      <td>${cut.duration.toFixed(2)}s</td>
+      <td><span class="badge badge-sm badge-success">Ready</span></td>
+      <td class="table-actions">
+        <button class="btn btn-sm btn-ghost btn-play-cut" title="Play Cut">▶ Play</button>
+        <button class="btn btn-sm btn-primary btn-audition-cut" title="Audition & Score Models">⚖️ Audition</button>
+        <button class="btn btn-sm btn-accent btn-batch-cut" title="Run Demucs Models">🚀 Run Models</button>
+      </td>
+    `;
+    tr.querySelector('.btn-play-cut').addEventListener('click', () => loadAudioIntoPlayer(cut.id, true));
+    tr.querySelector('.btn-audition-cut').addEventListener('click', async () => {
+      switchTab('tab-comparison');
+      await loadClipForAudition(cut.id);
     });
-    el.turnsTableBody.appendChild(tr);
+    tr.querySelector('.btn-batch-cut').addEventListener('click', async () => {
+      await runBatchMultiModelSeparation(cut.id, true);
+    });
+    el.cutsTableBody.appendChild(tr);
   });
 }
 
-// ==================== COMPARISON STUDIO ====================
+// ==================== MULTI-MODEL AUDITION & SCORING HUB ====================
 
-function initComparisonStudio() {
-  el.btnAbSwitchA.addEventListener('click', () => switchAB('A'));
-  el.btnAbSwitchB.addEventListener('click', () => switchAB('B'));
-  el.btnAbToggleInstant.addEventListener('click', toggleABInstant);
+const auditionAudio = new Audio();
+let auditionTracks = [];
+let activeAuditionIndex = 0;
+let activeScoreOverall = 5.0;
+let activeScoreClarity = 5;
+let activeScoreBleed = 5;
+let activeScoreArtifacts = 5;
+let activeSelectedTags = new Set();
 
-  el.compareTrackASelect.addEventListener('change', (e) => {
-    state.ab.trackAId = e.target.value;
-  });
-  el.compareTrackBSelect.addEventListener('change', (e) => {
-    state.ab.trackBId = e.target.value;
-  });
+function initAuditionHub() {
+  auditionAudio.loop = true;
+  auditionAudio.volume = 1.0;
 
-  // Generate Comparison Visualizers
-  el.btnGenerateComparison.addEventListener('click', async () => {
-    const beforeId = el.compareTrackASelect.value;
-    const afterId = el.compareTrackBSelect.value;
+  if (el.auditionClipSelect) {
+    el.auditionClipSelect.addEventListener('change', (e) => {
+      if (e.target.value) {
+        loadClipForAudition(e.target.value);
+      }
+    });
+  }
 
-    if (!beforeId || !afterId) {
-      showToast("Please select both Track A and Track B to compare", "error");
-      return;
+  if (el.btnAuditionPlay) {
+    el.btnAuditionPlay.addEventListener('click', toggleAuditionPlay);
+  }
+
+  if (el.btnAuditionLoop) {
+    el.btnAuditionLoop.addEventListener('click', () => {
+      auditionAudio.loop = !auditionAudio.loop;
+      el.btnAuditionLoop.classList.toggle('active', auditionAudio.loop);
+      showToast(auditionAudio.loop ? "Loop playback enabled" : "Loop disabled", "info");
+    });
+    el.btnAuditionLoop.classList.add('active');
+  }
+
+  if (el.auditionVolumeSlider) {
+    el.auditionVolumeSlider.addEventListener('input', (e) => {
+      auditionAudio.volume = parseFloat(e.target.value);
+    });
+  }
+
+  if (el.auditionScrubber) {
+    el.auditionScrubber.addEventListener('input', (e) => {
+      const pct = parseFloat(e.target.value);
+      if (auditionAudio.duration) {
+        auditionAudio.currentTime = (pct / 100) * auditionAudio.duration;
+      }
+    });
+  }
+
+  auditionAudio.addEventListener('timeupdate', () => {
+    if (el.auditionTimeCurrent) {
+      el.auditionTimeCurrent.textContent = formatTimePrecise(auditionAudio.currentTime);
     }
+    if (el.auditionScrubber && auditionAudio.duration) {
+      el.auditionScrubber.value = (auditionAudio.currentTime / auditionAudio.duration) * 100;
+    }
+  });
 
-    el.btnGenerateComparison.disabled = true;
-    el.btnGenerateComparison.textContent = "Rendering Visualizers...";
+  auditionAudio.addEventListener('loadedmetadata', () => {
+    if (el.auditionTimeTotal) {
+      el.auditionTimeTotal.textContent = formatTimePrecise(auditionAudio.duration);
+    }
+  });
 
-    try {
-      // Spectrogram Comparison
-      const specRes = await fetch("/api/compare/spectrogram", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ before_id: beforeId, after_id: afterId }),
+  auditionAudio.addEventListener('play', () => {
+    if (el.iconAuditionPlay) el.iconAuditionPlay.classList.add('hidden');
+    if (el.iconAuditionPause) el.iconAuditionPause.classList.remove('hidden');
+  });
+
+  auditionAudio.addEventListener('pause', () => {
+    if (el.iconAuditionPlay) el.iconAuditionPlay.classList.remove('hidden');
+    if (el.iconAuditionPause) el.iconAuditionPause.classList.add('hidden');
+  });
+
+  if (el.btnBatchSeparateActiveClip) {
+    el.btnBatchSeparateActiveClip.addEventListener('click', async () => {
+      const clipId = el.auditionClipSelect.value;
+      if (!clipId) {
+        showToast("Please select an audio clip first", "warning");
+        return;
+      }
+      await runBatchMultiModelSeparation(clipId, false);
+    });
+  }
+
+  if (el.btnGenerateComparison) {
+    el.btnGenerateComparison.addEventListener('click', async () => {
+      if (auditionTracks.length < 2) {
+        showToast("Need at least original clip and 1 separated model stem to render comparison", "warning");
+        return;
+      }
+      const origTrack = auditionTracks[0];
+      const modelTrack = auditionTracks[activeAuditionIndex] || auditionTracks[1];
+
+      el.btnGenerateComparison.disabled = true;
+      el.btnGenerateComparison.textContent = "Rendering Mel Spectrograms...";
+
+      try {
+        const specRes = await fetch("/api/compare/spectrogram", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ before_id: origTrack.id, after_id: modelTrack.id }),
+        });
+        if (!specRes.ok) throw new Error("Spectrogram render failed");
+        const specBlob = await specRes.blob();
+        el.imgCompareSpectrogram.src = URL.createObjectURL(specBlob);
+        el.imgCompareSpectrogram.classList.remove('hidden');
+        el.spectrogramCompareBox.querySelector('.empty-placeholder')?.remove();
+        showToast("Aligned Mel Spectrograms rendered!", "success");
+      } catch (err) {
+        showToast(err.message, "error");
+      } finally {
+        el.btnGenerateComparison.disabled = false;
+        el.btnGenerateComparison.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg> <span>Render Mel Spectrograms</span>`;
+      }
+    });
+  }
+
+  if (el.starRatingWidget) {
+    const starBtns = el.starRatingWidget.querySelectorAll('.star-btn');
+    starBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const val = parseFloat(btn.dataset.value);
+        setStarRating(val);
       });
-      if (!specRes.ok) throw new Error("Spectrogram comparison failed");
-      const specBlob = await specRes.blob();
-      el.imgCompareSpectrogram.src = URL.createObjectURL(specBlob);
-      el.imgCompareSpectrogram.classList.remove('hidden');
-      el.spectrogramCompareBox.querySelector('.empty-placeholder')?.remove();
-
-      // Waveform Comparison
-      const waveRes = await fetch("/api/compare/waveform", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ before_id: beforeId, after_id: afterId }),
+      btn.addEventListener('mouseenter', () => {
+        const val = parseFloat(btn.dataset.value);
+        highlightStars(val);
       });
-      if (!waveRes.ok) throw new Error("Waveform comparison failed");
-      const waveBlob = await waveRes.blob();
-      el.imgCompareWaveform.src = URL.createObjectURL(waveBlob);
-      el.imgCompareWaveform.classList.remove('hidden');
-      el.waveformCompareBox.querySelector('.empty-placeholder')?.remove();
+    });
+    el.starRatingWidget.addEventListener('mouseleave', () => {
+      highlightStars(activeScoreOverall);
+    });
+  }
 
-      showToast("Aligned Spectrograms & Waveforms generated!", "success");
-    } catch (err) {
-      showToast(err.message, "error");
-    } finally {
-      el.btnGenerateComparison.disabled = false;
-      el.btnGenerateComparison.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg> <span>Generate Aligned Visuals</span>`;
-    }
+  if (el.sliderSubmetricClarity) {
+    el.sliderSubmetricClarity.addEventListener('input', (e) => {
+      activeScoreClarity = parseInt(e.target.value);
+      if (el.valSubmetricClarity) el.valSubmetricClarity.textContent = `${activeScoreClarity} / 5`;
+    });
+  }
+  if (el.sliderSubmetricBleed) {
+    el.sliderSubmetricBleed.addEventListener('input', (e) => {
+      activeScoreBleed = parseInt(e.target.value);
+      if (el.valSubmetricBleed) el.valSubmetricBleed.textContent = `${activeScoreBleed} / 5`;
+    });
+  }
+  if (el.sliderSubmetricArtifacts) {
+    el.sliderSubmetricArtifacts.addEventListener('input', (e) => {
+      activeScoreArtifacts = parseInt(e.target.value);
+      if (el.valSubmetricArtifacts) el.valSubmetricArtifacts.textContent = `${activeScoreArtifacts} / 5`;
+    });
+  }
+
+  if (el.evalTagChips) {
+    el.evalTagChips.addEventListener('click', (e) => {
+      const chip = e.target.closest('.tag-chip');
+      if (!chip) return;
+      const tag = chip.dataset.tag;
+      if (activeSelectedTags.has(tag)) {
+        activeSelectedTags.delete(tag);
+        chip.classList.remove('selected');
+      } else {
+        activeSelectedTags.add(tag);
+        chip.classList.add('selected');
+      }
+    });
+  }
+
+  if (el.btnSaveEvaluation) {
+    el.btnSaveEvaluation.addEventListener('click', saveCurrentEvaluation);
+  }
+
+  if (el.btnCopyEvalNote) {
+    el.btnCopyEvalNote.addEventListener('click', () => {
+      const note = el.evalNotesInput ? el.evalNotesInput.value : "";
+      if (!note) {
+        showToast("Note is empty", "warning");
+        return;
+      }
+      navigator.clipboard.writeText(note);
+      showToast("Evaluation notes copied to clipboard!", "success");
+    });
+  }
+}
+
+function setStarRating(score) {
+  activeScoreOverall = score;
+  highlightStars(score);
+  if (el.starScoreText) {
+    el.starScoreText.textContent = `${score.toFixed(1)} / 5.0`;
+  }
+}
+
+function highlightStars(score) {
+  if (!el.starRatingWidget) return;
+  const btns = el.starRatingWidget.querySelectorAll('.star-btn');
+  btns.forEach(btn => {
+    const val = parseFloat(btn.dataset.value);
+    btn.classList.toggle('active', val <= score);
   });
 }
 
-function switchAB(track) {
-  state.ab.currentTrack = track;
-  const targetId = track === 'A' ? el.compareTrackASelect.value : el.compareTrackBSelect.value;
-  if (!targetId) return;
-
-  const curTime = el.audio.currentTime;
-  const wasPlaying = !el.audio.paused;
-
-  el.btnAbSwitchA.classList.toggle('active', track === 'A');
-  el.btnAbSwitchB.classList.toggle('active', track === 'B');
-  el.abActiveLabel.textContent = `Playing Track ${track}`;
-
-  loadAudioIntoPlayer(targetId, false);
-  el.audio.currentTime = curTime;
-  if (wasPlaying) el.audio.play();
-}
-
-function toggleABInstant() {
-  switchAB(state.ab.currentTrack === 'A' ? 'B' : 'A');
-}
-
-// ==================== BENCHMARK MIXER ====================
-
-function initBenchmarkMixer() {
-  el.mixerSmrSlider.addEventListener('input', (e) => {
-    el.mixerSmrVal.textContent = `${parseFloat(e.target.value).toFixed(1)} dB`;
-  });
-
-  el.btnRunMixer.addEventListener('click', async () => {
-    const speechId = el.mixerSpeechSelect.value;
-    const musicId = el.mixerMusicSelect.value;
-    const targetSmrDb = parseFloat(el.mixerSmrSlider.value);
-    const seed = parseInt(el.mixerSeedInput.value) || 42;
-
-    if (!speechId || !musicId) {
-      showToast("Please select both Speech and Music tracks", "error");
-      return;
+function toggleAuditionPlay() {
+  if (auditionAudio.paused) {
+    if (!auditionAudio.src || auditionAudio.src === window.location.href) {
+      if (auditionTracks.length > 0) {
+        switchAuditionTrack(activeAuditionIndex);
+      }
     }
-
-    el.btnRunMixer.disabled = true;
-    el.btnRunMixer.textContent = "Synthesizing Mixture...";
-
-    try {
-      const res = await fetch("/api/benchmark/mix", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          speech_id: speechId,
-          music_id: musicId,
-          target_smr_db: targetSmrDb,
-          seed: seed,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Mixing failed");
-
-      showToast("Mixture generated successfully!", "success");
-      await fetchAudioList();
-      renderMixerResults(data);
-    } catch (err) {
-      showToast(err.message, "error");
-    } finally {
-      el.btnRunMixer.disabled = false;
-      el.btnRunMixer.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg> <span>Synthesize Benchmark Mixture (AudioMixer.mix)</span>`;
-    }
-  });
+    el.audio.pause();
+    auditionAudio.play().catch(e => console.error("Audition playback error:", e));
+  } else {
+    auditionAudio.pause();
+  }
 }
 
-function renderMixerResults(data) {
-  el.mixerResultBox.classList.remove('hidden');
-  el.mixStemsGrid.innerHTML = "";
+async function loadClipForAudition(clipId) {
+  if (!clipId) return;
+  if (el.auditionClipSelect) el.auditionClipSelect.value = clipId;
 
-  const items = [
-    { title: "Synthetic Mixture", id: data.mixture_id, type: "Mixture" },
-    { title: "Speech Reference", id: data.speech_ref_id, type: "Speech" },
-    { title: "Music Reference", id: data.music_ref_id, type: "Music" },
+  const clipAudio = state.audioList.find(a => a.id === clipId);
+  if (!clipAudio) return;
+
+  auditionTracks = [
+    {
+      id: clipAudio.id,
+      title: clipAudio.title,
+      label: "Original Cut (with BG Music)",
+      modelId: "original",
+      modelName: "Original Mixture",
+      stem: "mixture",
+      isOriginal: true,
+      path: clipAudio.path,
+    }
   ];
 
-  items.forEach(item => {
-    const card = document.createElement("div");
-    card.className = "stem-result-card";
-    card.innerHTML = `
-      <div class="stem-info">
-        <span class="stem-title">${item.title}</span>
-        <span class="stem-meta">ID: ${item.id}</span>
-      </div>
-      <div class="stem-actions">
-        <button class="btn btn-sm btn-secondary btn-play-mix">▶ Play</button>
-        <button class="btn btn-sm btn-secondary btn-load-mix">🎛️ Workspace</button>
-      </div>
-    `;
-    card.querySelector('.btn-play-mix').addEventListener('click', () => loadAudioIntoPlayer(item.id, true));
-    card.querySelector('.btn-load-mix').addEventListener('click', () => {
-      switchTab('tab-workspace');
-      setActiveAudio(item.id, { play: true });
+  const childTracks = state.audioList.filter(a => a.parent_id === clipId || (a.tags && a.tags.includes("separated") && a.title.includes(clipAudio.source_id || clipAudio.title)));
+  childTracks.forEach(ct => {
+    let modelName = "Demucs Separated";
+    let modelId = "demucs";
+    if (ct.tags) {
+      if (ct.tags.includes("htdemucs_ft")) { modelName = "HTDemucs (Fine-Tuned)"; modelId = "htdemucs_ft"; }
+      else if (ct.tags.includes("htdemucs")) { modelName = "HTDemucs (Default)"; modelId = "htdemucs"; }
+      else if (ct.tags.includes("bs_roformer")) { modelName = "BS-RoFormer"; modelId = "bs_roformer"; }
+      else if (ct.tags.includes("mel_roformer")) { modelName = "Mel-RoFormer"; modelId = "mel_roformer"; }
+      else if (ct.tags.includes("mvsep_mdx23")) { modelName = "MVSep MDX23"; modelId = "mvsep_mdx23"; }
+    }
+    auditionTracks.push({
+      id: ct.id,
+      title: ct.title,
+      label: modelName,
+      modelId: modelId,
+      modelName: modelName,
+      stem: "vocals",
+      isOriginal: false,
+      path: ct.path,
     });
-    el.mixStemsGrid.appendChild(card);
+  });
+
+  renderAuditionTrackPills();
+  const defaultIdx = auditionTracks.length > 1 ? 1 : 0;
+  switchAuditionTrack(defaultIdx);
+}
+
+function renderAuditionTrackPills() {
+  if (!el.auditionTrackPills) return;
+  el.auditionTrackPills.innerHTML = "";
+
+  auditionTracks.forEach((track, idx) => {
+    const btn = document.createElement("button");
+    btn.className = `track-pill-btn ${idx === activeAuditionIndex ? 'active' : ''}`;
+    btn.dataset.index = idx;
+    
+    const existing = (state.evaluations || []).find(e => e.clip_id === (auditionTracks[0]?.id) && e.model_id === track.modelId);
+    const scoreBadgeHtml = existing ? ` <span style="color:#fbbf24; font-weight:700;">★ ${existing.score_overall}</span>` : "";
+
+    btn.innerHTML = `
+      <span class="track-pill-key">${idx + 1}</span>
+      <span>${escapeHtml(track.label)}${scoreBadgeHtml}</span>
+    `;
+
+    btn.addEventListener('click', () => switchAuditionTrack(idx));
+    el.auditionTrackPills.appendChild(btn);
+  });
+}
+
+function switchAuditionTrack(idx) {
+  if (idx < 0 || idx >= auditionTracks.length) return;
+  activeAuditionIndex = idx;
+  const track = auditionTracks[idx];
+
+  const wasPlaying = !auditionAudio.paused;
+  const curTime = auditionAudio.currentTime;
+
+  auditionAudio.src = `/api/audio/${track.id}/stream`;
+  auditionAudio.currentTime = curTime;
+  if (wasPlaying) {
+    auditionAudio.play().catch(e => console.error("Playback switch error:", e));
+  }
+
+  if (el.activeAuditionTrackName) {
+    el.activeAuditionTrackName.textContent = track.label;
+  }
+  if (el.scoringActiveModelLabel) {
+    el.scoringActiveModelLabel.textContent = `Evaluating: ${track.label} — ${track.stem || 'vocals'}`;
+  }
+
+  if (el.auditionTrackPills) {
+    el.auditionTrackPills.querySelectorAll('.track-pill-btn').forEach((btn, i) => {
+      btn.classList.toggle('active', i === idx);
+    });
+  }
+
+  const clipId = auditionTracks[0]?.id;
+  const existing = (state.evaluations || []).find(e => e.clip_id === clipId && e.model_id === track.modelId);
+  if (existing) {
+    setStarRating(existing.score_overall);
+    if (el.sliderSubmetricClarity) {
+      el.sliderSubmetricClarity.value = existing.score_vocal_clarity;
+      if (el.valSubmetricClarity) el.valSubmetricClarity.textContent = `${existing.score_vocal_clarity} / 5`;
+    }
+    if (el.sliderSubmetricBleed) {
+      el.sliderSubmetricBleed.value = existing.score_bleed;
+      if (el.valSubmetricBleed) el.valSubmetricBleed.textContent = `${existing.score_bleed} / 5`;
+    }
+    if (el.sliderSubmetricArtifacts) {
+      el.sliderSubmetricArtifacts.value = existing.score_artifacts;
+      if (el.valSubmetricArtifacts) el.valSubmetricArtifacts.textContent = `${existing.score_artifacts} / 5`;
+    }
+    if (el.evalNotesInput) el.evalNotesInput.value = existing.notes || "";
+    activeSelectedTags = new Set(existing.tags || []);
+    if (el.evalTagChips) {
+      el.evalTagChips.querySelectorAll('.tag-chip').forEach(c => {
+        c.classList.toggle('selected', activeSelectedTags.has(c.dataset.tag));
+      });
+    }
+    if (el.currentEvalScoreBadge) {
+      el.currentEvalScoreBadge.textContent = `★ ${existing.score_overall.toFixed(1)} Saved`;
+      el.currentEvalScoreBadge.style.color = "#4ade80";
+    }
+  } else {
+    setStarRating(5.0);
+    if (el.sliderSubmetricClarity) {
+      el.sliderSubmetricClarity.value = 5;
+      if (el.valSubmetricClarity) el.valSubmetricClarity.textContent = "5 / 5";
+    }
+    if (el.sliderSubmetricBleed) {
+      el.sliderSubmetricBleed.value = 5;
+      if (el.valSubmetricBleed) el.valSubmetricBleed.textContent = "5 / 5";
+    }
+    if (el.sliderSubmetricArtifacts) {
+      el.sliderSubmetricArtifacts.value = 5;
+      if (el.valSubmetricArtifacts) el.valSubmetricArtifacts.textContent = "5 / 5";
+    }
+    if (el.evalNotesInput) el.evalNotesInput.value = "";
+    activeSelectedTags.clear();
+    if (el.evalTagChips) {
+      el.evalTagChips.querySelectorAll('.tag-chip').forEach(c => c.classList.remove('selected'));
+    }
+    if (el.currentEvalScoreBadge) {
+      el.currentEvalScoreBadge.textContent = "Unrated";
+      el.currentEvalScoreBadge.style.color = "#fbbf24";
+    }
+  }
+}
+
+async function saveCurrentEvaluation() {
+  if (auditionTracks.length === 0) {
+    showToast("No track selected for evaluation", "error");
+    return;
+  }
+  const origClip = auditionTracks[0];
+  const activeTrack = auditionTracks[activeAuditionIndex];
+
+  if (!activeTrack) return;
+
+  const payload = {
+    clip_id: origClip.id,
+    clip_title: origClip.title,
+    clip_path: origClip.path,
+    model_id: activeTrack.modelId,
+    model_name: activeTrack.modelName,
+    stem: activeTrack.stem || "vocals",
+    separated_audio_id: activeTrack.id,
+    separated_audio_path: activeTrack.path,
+    score_overall: activeScoreOverall,
+    score_vocal_clarity: activeScoreClarity,
+    score_bleed: activeScoreBleed,
+    score_artifacts: activeScoreArtifacts,
+    notes: el.evalNotesInput ? el.evalNotesInput.value.trim() : "",
+    tags: Array.from(activeSelectedTags),
+  };
+
+  try {
+    const res = await fetch("/api/evaluations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await parseJsonResponse(res);
+
+    showToast(`Saved score (${activeScoreOverall.toFixed(1)} ★) and notes for ${activeTrack.label}!`, "success");
+    if (el.currentEvalScoreBadge) {
+      el.currentEvalScoreBadge.textContent = `★ ${activeScoreOverall.toFixed(1)} Saved`;
+      el.currentEvalScoreBadge.style.color = "#4ade80";
+    }
+    await fetchEvaluations();
+    renderAuditionTrackPills();
+  } catch (err) {
+    showToast(err.message, "error");
+  }
+}
+
+async function runBatchMultiModelSeparation(audioId, jumpToAudition = false) {
+  if (!audioId) return;
+
+  const models = [
+    { model_type: "htdemucs", model_name: "htdemucs", label: "HTDemucs (Default)" },
+    { model_type: "htdemucs", model_name: "htdemucs_ft", label: "HTDemucs (Fine-Tuned)" },
+    { model_type: "bs_roformer", model_name: null, label: "BS-RoFormer" },
+    { model_type: "mel_roformer", model_name: null, label: "Mel-RoFormer" },
+  ];
+
+  showToast(`Initiated batch separation on models...`, "info");
+
+  try {
+    const res = await fetch("/api/separation/batch-compare", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        audio_id: audioId,
+        models: models,
+        two_stems: "vocals",
+      }),
+    });
+    const data = await parseJsonResponse(res);
+
+    pollTask(data.task_id, async (result) => {
+      showToast(`Batch separation complete for '${result.clip_title}'!`, "success");
+      await fetchAudioList();
+      if (jumpToAudition) {
+        switchTab('tab-comparison');
+      }
+      await loadClipForAudition(audioId);
+    }, (err) => {
+      showToast(`Batch separation error: ${err}`, "error");
+    });
+  } catch (err) {
+    showToast(err.message, "error");
+  }
+}
+
+// ==================== EVALUATION MATRIX & EXPORTS ====================
+
+function initEvaluationMatrix() {
+  if (el.btnExportEvalCsv) {
+    el.btnExportEvalCsv.addEventListener('click', () => {
+      window.location.href = "/api/evaluations/export?format=csv";
+      showToast("Downloading evaluations CSV...", "info");
+    });
+  }
+
+  if (el.btnExportEvalJson) {
+    el.btnExportEvalJson.addEventListener('click', () => {
+      window.location.href = "/api/evaluations/export?format=json";
+      showToast("Downloading evaluations JSON...", "info");
+    });
+  }
+
+  if (el.btnRefreshEvalMatrix) {
+    el.btnRefreshEvalMatrix.addEventListener('click', fetchEvaluations);
+  }
+
+  if (el.evalSearchInput) {
+    el.evalSearchInput.addEventListener('input', renderEvaluationsTable);
+  }
+
+  if (el.evalModelFilterPills) {
+    el.evalModelFilterPills.addEventListener('click', (e) => {
+      const pill = e.target.closest('.filter-pill');
+      if (!pill) return;
+      el.evalModelFilterPills.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+      renderEvaluationsTable();
+    });
+  }
+}
+
+async function fetchEvaluations() {
+  try {
+    const res = await fetch("/api/evaluations");
+    const data = await parseJsonResponse(res);
+    state.evaluations = data.evaluations || [];
+    updateMatrixKPIs();
+    renderEvaluationsTable();
+  } catch (err) {
+    console.error("Failed to fetch evaluations:", err);
+  }
+}
+
+function updateMatrixKPIs() {
+  const evals = state.evaluations || [];
+  if (el.kpiTotalEvals) el.kpiTotalEvals.textContent = evals.length;
+
+  const uniqueClips = new Set(evals.map(e => e.clip_id)).size;
+  if (el.kpiTotalClips) el.kpiTotalClips.textContent = uniqueClips;
+
+  if (evals.length > 0) {
+    const avg = evals.reduce((sum, e) => sum + (e.score_overall || 0), 0) / evals.length;
+    if (el.kpiAvgScore) el.kpiAvgScore.textContent = `${avg.toFixed(2)} ★`;
+
+    const modelScores = {};
+    evals.forEach(e => {
+      if (!modelScores[e.model_name]) modelScores[e.model_name] = [];
+      modelScores[e.model_name].push(e.score_overall || 0);
+    });
+
+    let bestModel = "—";
+    let bestAvg = -1;
+    for (const [mName, scores] of Object.entries(modelScores)) {
+      const mAvg = scores.reduce((a, b) => a + b, 0) / scores.length;
+      if (mAvg > bestAvg) {
+        bestAvg = mAvg;
+        bestModel = `${mName} (${bestAvg.toFixed(1)}★)`;
+      }
+    }
+    if (el.kpiTopModel) el.kpiTopModel.textContent = bestModel;
+  } else {
+    if (el.kpiAvgScore) el.kpiAvgScore.textContent = "0.0 ★";
+    if (el.kpiTopModel) el.kpiTopModel.textContent = "—";
+  }
+}
+
+function renderEvaluationsTable() {
+  if (!el.evaluationsTableBody) return;
+  const evals = state.evaluations || [];
+  const query = el.evalSearchInput ? el.evalSearchInput.value.toLowerCase().trim() : "";
+  const activePill = el.evalModelFilterPills ? el.evalModelFilterPills.querySelector('.filter-pill.active') : null;
+  const filter = activePill ? activePill.dataset.filter : "all";
+
+  const filtered = evals.filter(e => {
+    const matchesQuery = !query ||
+      (e.clip_title || "").toLowerCase().includes(query) ||
+      (e.model_name || "").toLowerCase().includes(query) ||
+      (e.notes || "").toLowerCase().includes(query) ||
+      (e.tags || []).some(t => String(t).toLowerCase().includes(query));
+
+    const matchesModel = filter === "all" || (e.model_id || "").toLowerCase().includes(filter);
+    return matchesQuery && matchesModel;
+  });
+
+  if (filtered.length === 0) {
+    el.evaluationsTableBody.innerHTML = `<tr><td colspan="9" class="empty-table-msg">No evaluations match your search filter.</td></tr>`;
+    return;
+  }
+
+  el.evaluationsTableBody.innerHTML = "";
+  filtered.forEach(item => {
+    const tr = document.createElement("tr");
+    const dateStr = item.updated_at ? new Date(item.updated_at * 1000).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : "—";
+    const tagsHtml = (item.tags || []).map(t => `<span class="history-tag" style="margin-right:3px;">#${escapeHtml(t)}</span>`).join("");
+
+    tr.innerHTML = `
+      <td>
+        <div style="font-weight:600; color:var(--text-primary);">${escapeHtml(item.clip_title || item.clip_id)}</div>
+      </td>
+      <td>
+        <span class="badge badge-accent">${escapeHtml(item.model_name || item.model_id)}</span>
+      </td>
+      <td>
+        <span style="color:#fbbf24; font-weight:800; font-size:1rem;">★ ${Number(item.score_overall).toFixed(1)}</span>
+      </td>
+      <td><code>${item.score_vocal_clarity}/5</code></td>
+      <td><code>${item.score_bleed}/5</code></td>
+      <td><code>${item.score_artifacts}/5</code></td>
+      <td>
+        <div style="max-width:280px; font-size:0.82rem; color:var(--text-secondary); line-height:1.3;">
+          ${escapeHtml(item.notes || "—")}
+          <div style="margin-top:4px;">${tagsHtml}</div>
+        </div>
+      </td>
+      <td><span style="font-size:0.75rem; color:var(--text-muted);">${dateStr}</span></td>
+      <td class="table-actions">
+        <button class="btn btn-sm btn-ghost btn-play-stem" title="Play Stem">▶</button>
+        <button class="btn btn-sm btn-secondary btn-rescore" title="Open in Audition Hub">⚖️</button>
+        <button class="btn btn-sm btn-danger btn-delete-eval" title="Delete record">🗑️</button>
+      </td>
+    `;
+
+    tr.querySelector('.btn-play-stem').addEventListener('click', () => {
+      if (item.separated_audio_id) {
+        loadAudioIntoPlayer(item.separated_audio_id, true);
+      }
+    });
+
+    tr.querySelector('.btn-rescore').addEventListener('click', async () => {
+      switchTab('tab-comparison');
+      await loadClipForAudition(item.clip_id);
+    });
+
+    tr.querySelector('.btn-delete-eval').addEventListener('click', async () => {
+      if (!confirm(`Delete evaluation for "${item.clip_title}" (${item.model_name})?`)) return;
+      try {
+        const res = await fetch(`/api/evaluations/${item.id}`, { method: "DELETE" });
+        await parseJsonResponse(res);
+        showToast("Deleted evaluation record", "info");
+        await fetchEvaluations();
+      } catch (err) {
+        showToast(err.message, "error");
+      }
+    });
+
+    el.evaluationsTableBody.appendChild(tr);
   });
 }
 
@@ -2124,10 +2697,7 @@ function populateAllAudioSelects() {
   const selects = [
     el.sepInputSelect,
     el.diarInputSelect,
-    el.compareTrackASelect,
-    el.compareTrackBSelect,
-    el.mixerSpeechSelect,
-    el.mixerMusicSelect,
+    el.auditionClipSelect,
   ];
 
   selects.forEach(select => {
@@ -2144,8 +2714,36 @@ function populateAllAudioSelects() {
 
     if (currentVal && state.audioList.some(a => a.id === currentVal)) {
       select.value = currentVal;
-    } else if (state.activeAudio && (select === el.sepInputSelect || select === el.diarInputSelect)) {
+    } else if (state.activeAudio && (select === el.sepInputSelect || select === el.diarInputSelect || select === el.auditionClipSelect)) {
       select.value = state.activeAudio.id;
+    }
+  });
+}
+
+// ==================== KEYBOARD SHORTCUTS ====================
+
+function initKeyboardShortcuts() {
+  document.addEventListener('keydown', (e) => {
+    const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+    if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') {
+      return;
+    }
+
+    const currentTab = document.querySelector('.nav-tab.active')?.dataset.tab;
+
+    // Number keys 1-9 on Audition Hub
+    if (currentTab === 'tab-comparison' && e.key >= '1' && e.key <= '9') {
+      const trackIdx = parseInt(e.key, 10) - 1;
+      if (trackIdx < auditionTracks.length) {
+        e.preventDefault();
+        switchAuditionTrack(trackIdx);
+      }
+    }
+
+    // Space on Audition Hub
+    if (currentTab === 'tab-comparison' && e.code === 'Space') {
+      e.preventDefault();
+      toggleAuditionPlay();
     }
   });
 }
@@ -2238,18 +2836,31 @@ function initNavigation() {
 function switchTab(tabId) {
   el.tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
   el.tabPanes.forEach(pane => pane.classList.toggle('active', pane.id === tabId));
+
   try {
     localStorage.setItem('sonic_active_tab', tabId);
   } catch (_) {}
+
   if (tabId === 'tab-workspace') {
-    setTimeout(renderWaveform, 50);
+    renderWaveform();
+    renderCutsTable();
+  } else if (tabId === 'tab-comparison') {
+    if (state.activeAudio && (!auditionTracks || auditionTracks.length === 0)) {
+      loadClipForAudition(state.activeAudio.id);
+    }
+  } else if (tabId === 'tab-matrix') {
+    fetchEvaluations();
   }
+}
+
+function toggleShortcutsModal() {
+  el.modalShortcuts.classList.toggle('hidden');
 }
 
 // ==================== THEME MANAGEMENT ====================
 
 function initTheme() {
-  const savedTheme = localStorage.getItem('sonic_theme') || (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+  const savedTheme = localStorage.getItem('sonic_theme') || 'dark';
   applyTheme(savedTheme);
 
   if (el.btnThemeToggle) {
@@ -2281,12 +2892,14 @@ async function initApp() {
   initPlayer();
   initWaveformInteractions();
   initAudioCutter();
+  initCutsManager();
   initIngestAndSaves();
   initYouTubeCrawler();
   initSeparationStudio();
   initDiarizationStudio();
-  initComparisonStudio();
-  initBenchmarkMixer();
+  initAuditionHub();
+  initEvaluationMatrix();
+  initKeyboardShortcuts();
   initNavigation();
   initModals();
   initLiveReload();
@@ -2297,6 +2910,7 @@ async function initApp() {
   await fetchServerFiles();
   await fetchAudioList();
   await fetchYouTubeVault();
+  await fetchEvaluations();
 
   // Restore saved active tab
   try {
