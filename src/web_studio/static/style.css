@@ -2727,3 +2727,223 @@ html, body {
     grid-template-columns: 1fr;
   }
 }
+
+/* ==================== MODEL PROVENANCE BANNER ==================== */
+.model-provenance-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 1rem;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: var(--radius-md);
+  margin-top: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.prov-icon {
+  font-size: 1.25rem;
+}
+
+.prov-content {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.prov-badge {
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-primary, #38bdf8);
+  color: #000;
+}
+
+.prov-text {
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* ==================== SIDE-BY-SIDE MULTI-MODEL DECK ==================== */
+.sbs-columns-deck {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+  overflow-x: auto;
+}
+
+.sbs-model-card {
+  background: var(--bg-surface, #141722);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.sbs-model-card:hover {
+  border-color: var(--border-hover, #475569);
+  transform: translateY(-2px);
+}
+
+.sbs-model-card.active-audition {
+  border-color: var(--accent-primary, #38bdf8);
+  background: rgba(56, 189, 248, 0.05);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.2);
+}
+
+.sbs-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.sbs-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.sbs-model-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.sbs-model-desc {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.sbs-solo-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  font-weight: 700;
+  font-size: 0.85rem;
+  background: var(--bg-surface-elevated, #1a1e2d);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sbs-solo-btn:hover {
+  background: var(--accent-primary, #38bdf8);
+  color: #000;
+  border-color: var(--accent-primary, #38bdf8);
+}
+
+.sbs-solo-btn.active {
+  background: var(--accent-primary, #38bdf8);
+  color: #000;
+  border-color: var(--accent-primary, #38bdf8);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+}
+
+.sbs-meta-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.74rem;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-secondary);
+  background: var(--bg-surface-elevated, #1a1e2d);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.sbs-score-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  background: var(--bg-surface-elevated, #1a1e2d);
+  padding: 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+
+.sbs-score-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sbs-score-title {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.sbs-score-val {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #fbbf24;
+  font-family: var(--font-mono, monospace);
+}
+
+.sbs-stars-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.sbs-star-btn {
+  background: none;
+  border: none;
+  color: #475569;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s ease, color 0.15s ease;
+}
+
+.sbs-star-btn:hover, .sbs-star-btn.active {
+  color: #fbbf24;
+}
+
+.sbs-notes-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 48px;
+  font-size: 0.78rem;
+  padding: 6px 8px;
+  background: var(--bg-surface, #141722);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+}
+
+.sbs-notes-input:focus {
+  outline: none;
+  border-color: var(--accent-primary, #38bdf8);
+}
+
+.sbs-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+}
+
+.sbs-card-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+}

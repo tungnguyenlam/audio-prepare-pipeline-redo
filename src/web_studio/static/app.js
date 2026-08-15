@@ -234,6 +234,13 @@ const el = {
   evalModelFilterPills: document.getElementById('eval-model-filter-pills'),
   evaluationsTableBody: document.getElementById('evaluations-table-body'),
 
+  // Side-by-Side Model Comparison Deck & Provenance
+  activeModelProvenanceBanner: document.getElementById('active-model-provenance-banner'),
+  provModelBadge: document.getElementById('prov-model-badge'),
+  provDetailsText: document.getElementById('prov-details-text'),
+  sbsColumnsDeck: document.getElementById('sbs-columns-deck'),
+  sbsModelsCountBadge: document.getElementById('sbs-models-count-badge'),
+
   // Library & History
   serverFilesList: document.getElementById('server-files-list'),
   btnRefreshLibrary: document.getElementById('btn-refresh-library'),
@@ -657,6 +664,35 @@ async function setActiveAudio(audioId, options = { play: false }) {
     el.metaFormat.textContent = (meta.format || "WAV").toUpperCase();
     el.metaSize.textContent = formatBytes(fullItem.file_size || 0);
     el.metaFingerprint.textContent = meta.fingerprint || "none";
+
+    // Update Model Provenance Banner
+    if (el.activeModelProvenanceBanner) {
+      const modelInfo = fullItem.model_info || meta.model_info;
+      const tags = fullItem.tags || meta.tags || [];
+      const isSeparated = fullItem.source_type === "separation" || tags.includes("separated") || (modelInfo && modelInfo.model_type);
+      const isCut = fullItem.source_type === "cut" || tags.includes("cut");
+
+      if (isSeparated) {
+        el.activeModelProvenanceBanner.classList.remove('hidden');
+        const modelLabel = modelInfo?.model_label || (
+          tags.includes('htdemucs_ft') ? 'HTDemucs (Fine-Tuned)' :
+          tags.includes('htdemucs') ? 'HTDemucs (Default v4)' :
+          tags.includes('bs_roformer') ? 'BS-RoFormer (SOTA)' :
+          tags.includes('mel_roformer') ? 'Mel-RoFormer (Mel-Band)' :
+          tags.includes('mvsep_mdx23') ? 'MVSep MDX23' : 'Separation Model'
+        );
+        const stem = modelInfo?.stem ? modelInfo.stem.toUpperCase() : 'VOCALS';
+        const parentTitle = modelInfo?.parent_title || (fullItem.parent_id ? `Parent Audio ${fullItem.parent_id}` : 'source clip');
+        if (el.provModelBadge) el.provModelBadge.textContent = modelLabel;
+        if (el.provDetailsText) el.provDetailsText.textContent = `${stem} Stem separated from "${parentTitle}"`;
+      } else if (isCut) {
+        el.activeModelProvenanceBanner.classList.remove('hidden');
+        if (el.provModelBadge) el.provModelBadge.textContent = 'Audio Cut / Snippet';
+        if (el.provDetailsText) el.provDetailsText.textContent = `Prepared snippet with background music`;
+      } else {
+        el.activeModelProvenanceBanner.classList.add('hidden');
+      }
+    }
 
     // Step history tags
     el.historyTagsList.innerHTML = "";
@@ -1545,24 +1581,29 @@ function initSeparationStudio() {
 
 function renderSeparationResultCard(result) {
   const list = el.sepResultsList;
+  if (!list) return;
   if (list.querySelector('.empty-placeholder')) {
     list.innerHTML = "";
   }
 
-  const meta = result.metadata;
+  const meta = result.metadata || {};
   const audioId = result.separated_audio_id;
+  const modelLabel = result.model_label || result.model_type || "Demucs";
 
   const card = document.createElement("div");
   card.className = "stem-result-card";
   card.innerHTML = `
     <div class="stem-info">
-      <span class="stem-title">${meta.title} (${result.model_type})</span>
-      <span class="stem-meta">${meta.format.toUpperCase()} • ${meta.sample_rate.toLocaleString()}Hz • ${(meta.duration_s || 0).toFixed(2)}s • ${result.elapsed_s}s exec</span>
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <span class="badge badge-accent">${escapeHtml(modelLabel)}</span>
+        <span class="stem-title">${escapeHtml(meta.title || audioId)}</span>
+      </div>
+      <span class="stem-meta">${(meta.format || "WAV").toUpperCase()} • ${(meta.sample_rate || 44100).toLocaleString()}Hz • ${(meta.duration_s || 0).toFixed(2)}s • ${result.elapsed_s || 0}s separation</span>
     </div>
     <div class="stem-actions">
       <button class="btn btn-sm btn-secondary btn-play-stem" data-id="${audioId}">▶ Play</button>
       <button class="btn btn-sm btn-secondary btn-load-workspace" data-id="${audioId}">🎛️ Workspace</button>
-      <button class="btn btn-sm btn-accent btn-send-compare" data-id="${audioId}">⚖️ Compare</button>
+      <button class="btn btn-sm btn-primary btn-send-compare" data-id="${audioId}">⚖️ Side-by-Side Deck</button>
     </div>
   `;
 
@@ -1571,11 +1612,12 @@ function renderSeparationResultCard(result) {
     switchTab('tab-workspace');
     setActiveAudio(audioId, { play: true });
   });
-  card.querySelector('.btn-send-compare').addEventListener('click', () => {
+  card.querySelector('.btn-send-compare').addEventListener('click', async () => {
     switchTab('tab-comparison');
-    el.compareTrackBSelect.value = audioId;
-    if (state.activeAudio) {
-      el.compareTrackASelect.value = state.activeAudio.id;
+    const audioItem = state.audioList.find(a => a.id === audioId);
+    const parentId = audioItem?.parent_id || state.activeAudio?.id;
+    if (parentId) {
+      await loadClipForAudition(parentId);
     }
   });
 
@@ -2028,15 +2070,20 @@ async function loadClipForAudition(clipId) {
     }
   ];
 
-  const childTracks = state.audioList.filter(a => a.parent_id === clipId || (a.tags && a.tags.includes("separated") && a.title.includes(clipAudio.source_id || clipAudio.title)));
+  const childTracks = state.audioList.filter(a => 
+    a.parent_id === clipId || 
+    (a.tags && a.tags.includes("separated") && (a.title.includes(clipAudio.source_id || "") || a.title.includes(clipAudio.title || ""))) ||
+    (a.model_info && (a.model_info.parent_title === clipAudio.title || a.parent_id === clipId))
+  );
+
   childTracks.forEach(ct => {
-    let modelName = "Demucs Separated";
-    let modelId = "demucs";
+    let modelName = ct.model_info?.model_label || "Demucs Separated";
+    let modelId = ct.model_info?.model_name || ct.model_info?.model_type || "demucs";
     if (ct.tags) {
       if (ct.tags.includes("htdemucs_ft")) { modelName = "HTDemucs (Fine-Tuned)"; modelId = "htdemucs_ft"; }
-      else if (ct.tags.includes("htdemucs")) { modelName = "HTDemucs (Default)"; modelId = "htdemucs"; }
-      else if (ct.tags.includes("bs_roformer")) { modelName = "BS-RoFormer"; modelId = "bs_roformer"; }
-      else if (ct.tags.includes("mel_roformer")) { modelName = "Mel-RoFormer"; modelId = "mel_roformer"; }
+      else if (ct.tags.includes("htdemucs")) { modelName = "HTDemucs (Default v4)"; modelId = "htdemucs"; }
+      else if (ct.tags.includes("bs_roformer")) { modelName = "BS-RoFormer (SOTA)"; modelId = "bs_roformer"; }
+      else if (ct.tags.includes("mel_roformer")) { modelName = "Mel-RoFormer (Mel-Band)"; modelId = "mel_roformer"; }
       else if (ct.tags.includes("mvsep_mdx23")) { modelName = "MVSep MDX23"; modelId = "mvsep_mdx23"; }
     }
     auditionTracks.push({
@@ -2045,13 +2092,14 @@ async function loadClipForAudition(clipId) {
       label: modelName,
       modelId: modelId,
       modelName: modelName,
-      stem: "vocals",
+      stem: ct.model_info?.stem || "vocals",
       isOriginal: false,
       path: ct.path,
     });
   });
 
   renderAuditionTrackPills();
+  renderSideBySideDeck();
   const defaultIdx = auditionTracks.length > 1 ? 1 : 0;
   switchAuditionTrack(defaultIdx);
 }
@@ -2075,6 +2123,163 @@ function renderAuditionTrackPills() {
 
     btn.addEventListener('click', () => switchAuditionTrack(idx));
     el.auditionTrackPills.appendChild(btn);
+  });
+}
+
+function renderSideBySideDeck() {
+  if (!el.sbsColumnsDeck) return;
+  el.sbsColumnsDeck.innerHTML = "";
+
+  if (!auditionTracks || auditionTracks.length === 0) {
+    el.sbsColumnsDeck.innerHTML = `
+      <div class="empty-placeholder">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>Select an audio cut snippet above to view model outputs side-by-side.</span>
+      </div>
+    `;
+    if (el.sbsModelsCountBadge) el.sbsModelsCountBadge.textContent = "0 Stems";
+    return;
+  }
+
+  if (el.sbsModelsCountBadge) {
+    el.sbsModelsCountBadge.textContent = `${auditionTracks.length} Stems Aligned`;
+  }
+
+  const clipId = auditionTracks[0]?.id;
+
+  auditionTracks.forEach((track, idx) => {
+    const card = document.createElement("div");
+    card.className = `sbs-model-card ${idx === activeAuditionIndex ? 'active-audition' : ''}`;
+    card.dataset.index = idx;
+
+    const existing = (state.evaluations || []).find(e => e.clip_id === clipId && e.model_id === track.modelId);
+    const audioObj = state.audioList.find(a => a.id === track.id) || {};
+    const sampleRate = audioObj.sample_rate ? `${audioObj.sample_rate.toLocaleString()}Hz` : '44.1kHz';
+    const dur = audioObj.duration_s ? `${audioObj.duration_s.toFixed(2)}s` : '--';
+    const elapsed = audioObj.model_info?.elapsed_s ? `⏱️ ${audioObj.model_info.elapsed_s}s` : (track.isOriginal ? 'Input Clip' : 'Separated');
+
+    const score = existing ? existing.score_overall : 5.0;
+    const notes = existing ? (existing.notes || "") : "";
+
+    let badgeClass = "badge-ghost";
+    if (track.modelId === "htdemucs_ft") badgeClass = "badge-accent";
+    else if (track.modelId === "htdemucs") badgeClass = "badge-primary";
+    else if (track.modelId === "bs_roformer") badgeClass = "badge-info";
+    else if (track.modelId === "mel_roformer") badgeClass = "badge-secondary";
+    else if (track.isOriginal) badgeClass = "badge-warning";
+
+    card.innerHTML = `
+      <div class="sbs-card-header">
+        <div class="sbs-title-group">
+          <div class="sbs-model-name">${escapeHtml(track.label)}</div>
+          <div class="sbs-model-desc">${track.isOriginal ? 'Original Mixture (with BG Music)' : (track.stem ? `Stem: ${track.stem}` : 'Estimated Stem')}</div>
+        </div>
+        <span class="badge ${badgeClass}">${track.isOriginal ? 'Reference' : (track.modelName || 'Model')}</span>
+      </div>
+
+      <button class="sbs-solo-btn ${idx === activeAuditionIndex ? 'active' : ''}" data-index="${idx}" title="Listen solo at current position (Shortcut: ${idx + 1})">
+        <span>${idx === activeAuditionIndex ? '🔊 Active / Auditioning' : '▶ Solo / Audition'}</span>
+        <kbd class="kbd" style="font-size: 0.7rem;">${idx + 1}</kbd>
+      </button>
+
+      <div class="sbs-meta-strip">
+        <span>${sampleRate} • Mono</span>
+        <span>${dur}</span>
+        <span>${elapsed}</span>
+      </div>
+
+      ${!track.isOriginal ? `
+        <div class="sbs-score-section">
+          <div class="sbs-score-header">
+            <span class="sbs-score-title">Human Quality Score:</span>
+            <span class="sbs-score-val" id="sbs-score-val-${idx}">${score.toFixed(1)} / 5</span>
+          </div>
+          <div class="sbs-stars-row" data-index="${idx}">
+            ${[1, 2, 3, 4, 5].map(v => `<button class="sbs-star-btn ${v <= score ? 'active' : ''}" data-val="${v}" data-index="${idx}">★</button>`).join('')}
+          </div>
+          <textarea class="sbs-notes-input" id="sbs-notes-${idx}" placeholder="Observation on vocal clarity, BG suppression, artifacts..." rows="2">${escapeHtml(notes)}</textarea>
+          <div style="display: flex; justify-content: flex-end; margin-top: 4px;">
+            <button class="btn btn-xs btn-primary sbs-btn-save" data-index="${idx}">💾 Save Score</button>
+          </div>
+        </div>
+      ` : `
+        <div class="sbs-score-section" style="opacity: 0.8; text-align: center; font-size: 0.78rem; padding: 1.2rem 0.5rem;">
+          <span>🎯 <strong>Ground Reference</strong><br>Use this to compare suppression against original audio.</span>
+        </div>
+      `}
+
+      <div class="sbs-card-footer">
+        <span class="sbs-card-badge">${escapeHtml(track.title || track.id)}</span>
+        <button class="btn btn-xs btn-ghost sbs-load-workspace" data-audio-id="${track.id}" title="Open in Workspace Studio">🎛️ Open</button>
+      </div>
+    `;
+
+    // Solo button listener
+    card.querySelector('.sbs-solo-btn').addEventListener('click', () => {
+      switchAuditionTrack(idx);
+    });
+
+    // Star rating buttons listener
+    card.querySelectorAll('.sbs-star-btn').forEach(starBtn => {
+      starBtn.addEventListener('click', (e) => {
+        const val = parseFloat(e.target.dataset.val);
+        card.querySelectorAll('.sbs-star-btn').forEach(b => {
+          b.classList.toggle('active', parseFloat(b.dataset.val) <= val);
+        });
+        const valEl = card.querySelector(`#sbs-score-val-${idx}`);
+        if (valEl) valEl.textContent = `${val.toFixed(1)} / 5`;
+        if (idx === activeAuditionIndex) {
+          setStarRating(val);
+        }
+      });
+    });
+
+    // Save score listener
+    const saveBtn = card.querySelector('.sbs-btn-save');
+    if (saveBtn) {
+      saveBtn.addEventListener('click', async () => {
+        const activeStars = card.querySelectorAll('.sbs-star-btn.active');
+        const scoreVal = activeStars.length > 0 ? parseFloat(activeStars[activeStars.length - 1].dataset.val) : 5.0;
+        const notesText = card.querySelector(`#sbs-notes-${idx}`)?.value || "";
+
+        const payload = {
+          clip_id: clipId,
+          model_id: track.modelId,
+          model_name: track.modelName || track.label,
+          stem_type: track.stem || "vocals",
+          score_overall: scoreVal,
+          score_vocal_clarity: scoreVal,
+          score_bleed: scoreVal,
+          score_artifacts: scoreVal,
+          tags: Array.from(activeSelectedTags),
+          notes: notesText,
+          stem_audio_id: track.id,
+        };
+
+        try {
+          const res = await fetch('/api/evaluations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) throw new Error("Failed to save evaluation");
+          showToast(`Score saved for ${track.label}!`, "success");
+          await fetchEvaluations();
+          renderAuditionTrackPills();
+          renderSideBySideDeck();
+        } catch (err) {
+          showToast(err.message, "error");
+        }
+      });
+    }
+
+    // Open in workspace listener
+    card.querySelector('.sbs-load-workspace')?.addEventListener('click', () => {
+      setActiveAudio(track.id);
+      switchTab('tab-workspace');
+    });
+
+    el.sbsColumnsDeck.appendChild(card);
   });
 }
 
@@ -2102,6 +2307,18 @@ function switchAuditionTrack(idx) {
   if (el.auditionTrackPills) {
     el.auditionTrackPills.querySelectorAll('.track-pill-btn').forEach((btn, i) => {
       btn.classList.toggle('active', i === idx);
+    });
+  }
+
+  if (el.sbsColumnsDeck) {
+    el.sbsColumnsDeck.querySelectorAll('.sbs-model-card').forEach((card, i) => {
+      const isCurrent = i === idx;
+      card.classList.toggle('active-audition', isCurrent);
+      const soloBtn = card.querySelector('.sbs-solo-btn');
+      if (soloBtn) {
+        soloBtn.classList.toggle('active', isCurrent);
+        soloBtn.querySelector('span').textContent = isCurrent ? '🔊 Active / Auditioning' : '▶ Solo / Audition';
+      }
     });
   }
 
@@ -2487,13 +2704,14 @@ function renderServerFiles() {
   }
 
   filtered.forEach(file => {
+    const badgeInfo = getFileModelBadge(file);
     const card = document.createElement("div");
     card.className = "file-item-card";
     card.innerHTML = `
       <div class="file-details">
         <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="badge ${badgeInfo.class}" style="font-size: 0.72rem; font-weight: 700;">${escapeHtml(badgeInfo.label)}</span>
           <span class="file-name">${escapeHtml(file.name)}</span>
-          <span class="badge badge-subtle font-mono" style="font-size: 0.68rem; text-transform: uppercase;">${escapeHtml(file.category || 'Audio')}</span>
         </div>
         <span class="file-path">${escapeHtml(file.path)} • ${formatBytes(file.size || 0)}</span>
       </div>
@@ -2542,13 +2760,14 @@ async function loadServerFile(filePath) {
     });
     const data = await parseJsonResponse(res);
 
-    showToast(`Loaded ${filePath} successfully!`, "success");
-    await fetchAudioList();
-    switchTab('tab-workspace');
-    await setActiveAudio(data.audio_id, { play: true });
-    el.modalLibrary.classList.add('hidden');
+    if (data.audio_id) {
+      await fetchAudioList();
+      await setActiveAudio(data.audio_id, { play: true });
+      showToast(`Loaded ${data.metadata?.title || filePath} into workspace!`, "success");
+      closeAllModals();
+    }
   } catch (err) {
-    showToast(err.message, "error");
+    showToast(`Failed to load file: ${err.message}`, "error");
   }
 }
 
@@ -2607,13 +2826,14 @@ function renderLibraryModalItems() {
   }
 
   filtered.forEach(file => {
+    const badgeInfo = getFileModelBadge(file);
     const item = document.createElement("div");
     item.className = "file-item-card";
     item.innerHTML = `
       <div class="file-details">
         <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="badge ${badgeInfo.class}" style="font-size: 0.72rem; font-weight: 700;">${escapeHtml(badgeInfo.label)}</span>
           <span class="file-name">${escapeHtml(file.name)}</span>
-          <span class="badge badge-subtle font-mono" style="font-size: 0.68rem; text-transform: uppercase;">${escapeHtml(file.category || 'Audio')}</span>
         </div>
         <span class="file-path">${escapeHtml(file.path)} • ${formatBytes(file.size || 0)}</span>
       </div>
@@ -2717,7 +2937,21 @@ function populateAllAudioSelects() {
     state.audioList.forEach(item => {
       const opt = document.createElement("option");
       opt.value = item.id;
-      opt.textContent = `${item.title} (${item.format.toUpperCase()}, ${(item.duration_s || 0).toFixed(1)}s, ${item.source_type})`;
+      let prefix = "";
+      if (item.model_info?.model_label) {
+        prefix = `[${item.model_info.model_label}] `;
+      } else if (item.tags?.includes("htdemucs_ft")) {
+        prefix = "[HTDemucs FT] ";
+      } else if (item.tags?.includes("htdemucs")) {
+        prefix = "[HTDemucs] ";
+      } else if (item.tags?.includes("bs_roformer")) {
+        prefix = "[BS-RoFormer] ";
+      } else if (item.tags?.includes("mel_roformer")) {
+        prefix = "[Mel-RoFormer] ";
+      } else if (item.source_type === "cut" || item.tags?.includes("cut")) {
+        prefix = "[Cut Snippet] ";
+      }
+      opt.textContent = `${prefix}${item.title} (${(item.duration_s || 0).toFixed(1)}s, ${item.format.toUpperCase()})`;
       select.appendChild(opt);
     });
 

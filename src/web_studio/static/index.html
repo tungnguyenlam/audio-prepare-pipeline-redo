@@ -165,6 +165,15 @@
                 <span class="audio-id-chip" id="meta-id" title="Click to copy Audio ID">aud_000000</span>
               </div>
 
+              <!-- Model Provenance Banner (Shows which Demucs model or cut produced this file) -->
+              <div id="active-model-provenance-banner" class="model-provenance-banner hidden">
+                <span class="prov-icon">✨</span>
+                <div class="prov-content">
+                  <span class="prov-badge" id="prov-model-badge">HTDemucs (Fine-Tuned)</span>
+                  <span class="prov-text" id="prov-details-text">Vocals Stem separated from parent audio</span>
+                </div>
+              </div>
+
               <div class="audio-quick-actions">
                 <button class="btn btn-secondary" id="btn-quick-save" title="Quick save with standardized fingerprint to temp/">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
@@ -806,6 +815,27 @@
               <div class="track-pills-list" id="audition-track-pills">
                 <!-- Populated dynamically: Original, HTDemucs, HTDemucs FT, BS-RoFormer, Mel-RoFormer -->
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== SIDE-BY-SIDE MULTI-MODEL DECK ==================== -->
+        <div class="card sbs-deck-card" style="margin-top: 1.25rem;">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">🎛️ Side-by-Side Demucs & Separation Model Matrix</h3>
+              <p class="card-subtitle">Direct multi-model comparison deck. Inspect outputs, audio specifications, inline ratings, and notes side-by-side.</p>
+            </div>
+            <div class="sbs-deck-actions">
+              <span class="badge badge-accent" id="sbs-models-count-badge">5 Stems Aligned</span>
+            </div>
+          </div>
+
+          <div class="sbs-columns-deck" id="sbs-columns-deck">
+            <!-- Dynamically populated with comparison cards for Original, HTDemucs, HTDemucs FT, BS-RoFormer, Mel-RoFormer -->
+            <div class="empty-placeholder">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              <span>Select an audio cut snippet above to view model outputs side-by-side.</span>
             </div>
           </div>
         </div>

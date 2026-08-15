@@ -107,6 +107,7 @@ class AudioRegistry:
         source_type: str = "local",
         parent_id: Optional[str] = None,
         tags: Optional[List[str]] = None,
+        model_info: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Register an Audio object and return a unique ID."""
         audio_id = f"aud_{uuid.uuid4().hex[:10]}"
@@ -116,6 +117,7 @@ class AudioRegistry:
             "source_type": source_type,
             "parent_id": parent_id,
             "tags": tags or [],
+            "model_info": model_info or {},
             "created_at": time.time(),
         }
         return audio_id
@@ -153,6 +155,7 @@ class AudioRegistry:
                     "source_type": item["source_type"],
                     "parent_id": item["parent_id"],
                     "tags": item["tags"],
+                    "model_info": item.get("model_info", {}),
                     "created_at": item["created_at"],
                     "file_size": audio.path.stat().st_size if audio.path.is_file() else 0,
                 }
@@ -874,11 +877,29 @@ async def handle_run_separation(request: web.Request) -> web.Response:
             separated_audio = await loop.run_in_executor(None, do_separation)
             elapsed = time.time() - start_time
             
+            model_label = "HTDemucs (Fine-Tuned)" if (model_type == "htdemucs" and model_name == "htdemucs_ft") else (
+                "HTDemucs (Default)" if model_type == "htdemucs" else (
+                    "BS-RoFormer" if model_type == "bs_roformer" else (
+                        "Mel-RoFormer" if model_type == "mel_roformer" else (
+                            "MVSep MDX23" if model_type == "mvsep_mdx23" else model_type.upper()
+                        )
+                    )
+                )
+            )
+
             new_id = registry.register(
                 separated_audio,
                 source_type="separation",
                 parent_id=audio_id,
-                tags=["separated", model_type, two_stems],
+                tags=["separated", model_type, model_name or "default", two_stems],
+                model_info={
+                    "model_type": model_type,
+                    "model_name": model_name or "default",
+                    "model_label": model_label,
+                    "stem": two_stems,
+                    "parent_title": audio.title,
+                    "elapsed_s": round(elapsed, 2),
+                },
             )
             task_manager.update_task(
                 task_id,
@@ -890,6 +911,7 @@ async def handle_run_separation(request: web.Request) -> web.Response:
                     "metadata": separated_audio.metadata(),
                     "elapsed_s": round(elapsed, 2),
                     "model_type": model_type,
+                    "model_label": model_label,
                 },
             )
         except Exception as e:
@@ -1300,6 +1322,14 @@ async def handle_batch_separation_compare(request: web.Request) -> web.Response:
                     source_type="separation",
                     parent_id=audio_id,
                     tags=["separated", m_type, m_name or "default", two_stems],
+                    model_info={
+                        "model_type": m_type,
+                        "model_name": m_name or "default",
+                        "model_label": m_label,
+                        "stem": two_stems,
+                        "parent_title": audio.title,
+                        "elapsed_s": round(elapsed, 2),
+                    },
                 )
                 results.append({
                     "model_id": f"{m_type}_{m_name or 'default'}",
