@@ -21,7 +21,7 @@ import uuid
 import wave
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 import aiohttp
 from aiohttp import web
@@ -201,23 +201,105 @@ class AudioRegistry:
 
 
 class TaskManager:
-    """Manages asynchronous background jobs (Separation, Crawl, Diarization)."""
+    """Run Studio background jobs through a bounded asynchronous queue."""
 
-    def __init__(self) -> None:
+    def __init__(self, max_concurrency: int = 1) -> None:
         self._tasks: Dict[str, Dict[str, Any]] = {}
+        self._queue: asyncio.Queue[tuple[str, Callable[[], Awaitable[None]]]] = asyncio.Queue()
+        self._queued_ids: List[str] = []
+        self._workers: List[asyncio.Task[None]] = []
+        self._running_ids: set[str] = set()
+        self.max_concurrency = max(1, min(4, max_concurrency))
+
+    async def start(self) -> None:
+        """Start the fixed-size worker pool."""
+        if self._workers:
+            return
+        self._workers = [
+            asyncio.create_task(self._worker_loop(), name=f"studio-task-worker-{index + 1}")
+            for index in range(self.max_concurrency)
+        ]
+        logger.info("Studio task queue started with concurrency %d", self.max_concurrency)
+
+    async def stop(self) -> None:
+        """Stop queue workers during application shutdown."""
+        workers = list(self._workers)
+        self._workers.clear()
+        for worker in workers:
+            worker.cancel()
+        if workers:
+            await asyncio.gather(*workers, return_exceptions=True)
+
+    def enqueue(self, task_id: str, runner: Callable[[], Awaitable[None]]) -> None:
+        """Add a previously created task to the worker queue."""
+        if task_id not in self._tasks:
+            raise KeyError(f"Unknown task: {task_id}")
+        self._queued_ids.append(task_id)
+        self._queue.put_nowait((task_id, runner))
+        self._refresh_queue_messages()
+
+    async def _worker_loop(self) -> None:
+        while True:
+            task_id, runner = await self._queue.get()
+            try:
+                if task_id in self._queued_ids:
+                    self._queued_ids.remove(task_id)
+                task = self._tasks.get(task_id)
+                if not task or task["status"] == "cancelled":
+                    continue
+
+                self._running_ids.add(task_id)
+                self.update_task(task_id, status="running", message="Starting task...")
+                await runner()
+                task = self._tasks.get(task_id)
+                if task and task["status"] == "running":
+                    self.update_task(task_id, status="completed", progress=1.0)
+            except asyncio.CancelledError:
+                task = self._tasks.get(task_id)
+                if task and task["status"] == "running":
+                    self.update_task(
+                        task_id,
+                        status="cancelled",
+                        message="Task interrupted by server shutdown.",
+                    )
+                raise
+            except Exception as exc:
+                logger.exception("Unhandled Studio task failure: %s", task_id)
+                self.update_task(
+                    task_id,
+                    status="failed",
+                    error=str(exc),
+                    message=f"Task failed: {exc}",
+                )
+            finally:
+                self._running_ids.discard(task_id)
+                self._queue.task_done()
+                self._refresh_queue_messages()
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
+    def _refresh_queue_messages(self) -> None:
+        for position, task_id in enumerate(self._queued_ids, start=1):
+            task = self._tasks.get(task_id)
+            if task and task["status"] == "pending":
+                task["queue_position"] = position
+                task["message"] = f"Queued — position {position}"
 
     def create_task(self, task_type: str, metadata: Optional[Dict[str, Any]] = None) -> str:
         task_id = f"task_{uuid.uuid4().hex[:10]}"
         self._tasks[task_id] = {
             "id": task_id,
             "type": task_type,
-            "status": "pending",  # pending, running, completed, failed
+            "status": "pending",  # pending, running, completed, failed, cancelled
             "progress": 0.0,
             "message": "Task queued...",
             "error": None,
             "result": None,
-            "start_time": time.time(),
+            "created_at": time.time(),
+            "start_time": None,
             "end_time": None,
+            "queue_position": None,
             "metadata": metadata or {},
         }
         return task_id
@@ -236,6 +318,10 @@ class TaskManager:
             t = self._tasks[task_id]
             if status:
                 t["status"] = status
+                if status == "running" and t["start_time"] is None:
+                    t["start_time"] = time.time()
+                if status != "pending":
+                    t["queue_position"] = None
             if progress is not None:
                 t["progress"] = progress
             if message:
@@ -244,11 +330,36 @@ class TaskManager:
                 t["error"] = error
             if result is not None:
                 t["result"] = result
-            if status in ("completed", "failed"):
+            if status in ("completed", "failed", "cancelled"):
                 t["end_time"] = time.time()
 
     def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
-        return self._tasks.get(task_id)
+        task = self._tasks.get(task_id)
+        return dict(task) if task else None
+
+    def list_tasks(self) -> List[Dict[str, Any]]:
+        """Return newest tasks first."""
+        tasks = sorted(self._tasks.values(), key=lambda task: task["created_at"], reverse=True)
+        return [dict(task) for task in tasks]
+
+    def cancel_task(self, task_id: str) -> bool:
+        """Cancel a pending task without interrupting unsafe native model work."""
+        task = self._tasks.get(task_id)
+        if not task or task["status"] != "pending":
+            return False
+        if task_id in self._queued_ids:
+            self._queued_ids.remove(task_id)
+        self.update_task(task_id, status="cancelled", message="Cancelled while queued.")
+        self._refresh_queue_messages()
+        return True
+
+    def status(self) -> Dict[str, Any]:
+        """Return a compact queue status summary."""
+        return {
+            "max_concurrency": self.max_concurrency,
+            "running": len(self._running_ids),
+            "queued": len(self._queued_ids),
+        }
 
 
 class EvaluationManager:
@@ -324,7 +435,12 @@ class EvaluationManager:
 
 # Global instances
 registry = AudioRegistry()
-task_manager = TaskManager()
+try:
+    STUDIO_QUEUE_CONCURRENCY = int(os.getenv("STUDIO_QUEUE_CONCURRENCY", "1"))
+except ValueError:
+    logger.warning("Invalid STUDIO_QUEUE_CONCURRENCY; falling back to 1")
+    STUDIO_QUEUE_CONCURRENCY = 1
+task_manager = TaskManager(max_concurrency=STUDIO_QUEUE_CONCURRENCY)
 evaluation_manager = EvaluationManager(DATA_DIR / "studio" / "evaluations.json")
 live_reload_subscribers: List[asyncio.Queue] = []
 
@@ -361,6 +477,7 @@ async def handle_status(request: web.Request) -> web.Response:
     """Return system information and device status."""
     info = get_system_device_info()
     info["registered_audios"] = len(registry.list_all())
+    info["task_queue"] = task_manager.status()
     return web.json_response(info)
 
 
@@ -882,8 +999,8 @@ async def handle_youtube_ingest(request: web.Request) -> web.Response:
                 message=f"YouTube ingestion error: {e}",
             )
 
-    asyncio.create_task(run_crawler())
-    return web.json_response({"task_id": task_id})
+    task_manager.enqueue(task_id, run_crawler)
+    return web.json_response({"task_id": task_id, "task": task_manager.get_task(task_id)}, status=202)
 
 
 async def handle_list_audios(request: web.Request) -> web.Response:
@@ -1219,8 +1336,8 @@ async def handle_run_separation(request: web.Request) -> web.Response:
                 message=f"Separation failed: {e}",
             )
 
-    asyncio.create_task(run_sep())
-    return web.json_response({"task_id": task_id})
+    task_manager.enqueue(task_id, run_sep)
+    return web.json_response({"task_id": task_id, "task": task_manager.get_task(task_id)}, status=202)
 
 
 async def handle_run_diarization(request: web.Request) -> web.Response:
@@ -1290,8 +1407,8 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
                 message=f"Diarization failed: {e}",
             )
 
-    asyncio.create_task(run_diar())
-    return web.json_response({"task_id": task_id})
+    task_manager.enqueue(task_id, run_diar)
+    return web.json_response({"task_id": task_id, "task": task_manager.get_task(task_id)}, status=202)
 
 
 async def handle_mix_audio(request: web.Request) -> web.Response:
@@ -1454,6 +1571,25 @@ async def handle_get_task(request: web.Request) -> web.Response:
     if not task:
         return web.json_response({"error": "Task not found"}, status=404)
     return web.json_response(task)
+
+
+async def handle_list_tasks(request: web.Request) -> web.Response:
+    """List Studio tasks and the current queue state."""
+    return web.json_response({"tasks": task_manager.list_tasks(), "queue": task_manager.status()})
+
+
+async def handle_cancel_task(request: web.Request) -> web.Response:
+    """Cancel a task that has not started yet."""
+    task_id = request.match_info["id"]
+    task = task_manager.get_task(task_id)
+    if not task:
+        return web.json_response({"error": "Task not found"}, status=404)
+    if not task_manager.cancel_task(task_id):
+        return web.json_response(
+            {"error": "Only queued tasks can be cancelled safely", "task": task},
+            status=409,
+        )
+    return web.json_response({"task": task_manager.get_task(task_id)})
 
 
 # ==================== HUMAN EVALUATION & SCORING API ====================
@@ -1660,8 +1796,8 @@ async def handle_batch_separation_compare(request: web.Request) -> web.Response:
             },
         )
 
-    asyncio.create_task(run_batch())
-    return web.json_response({"task_id": task_id})
+    task_manager.enqueue(task_id, run_batch)
+    return web.json_response({"task_id": task_id, "task": task_manager.get_task(task_id)}, status=202)
 
 
 # ==================== LIVE RELOAD SSE ====================
@@ -1753,10 +1889,12 @@ async def file_watcher_loop(app: web.Application):
 
 
 async def start_background_tasks(app: web.Application):
+    await task_manager.start()
     app["watcher"] = asyncio.create_task(file_watcher_loop(app))
 
 
 async def cleanup_background_tasks(app: web.Application):
+    await task_manager.stop()
     watcher = app.get("watcher")
     if watcher and not watcher.done():
         watcher.cancel()
@@ -1825,7 +1963,9 @@ def create_app() -> web.Application:
     app.router.add_post("/api/benchmark/mix", handle_mix_audio)
     app.router.add_post("/api/compare/spectrogram", handle_compare_spectrogram)
     app.router.add_post("/api/compare/waveform", handle_compare_waveform)
+    app.router.add_get("/api/tasks", handle_list_tasks)
     app.router.add_get("/api/tasks/{id}", handle_get_task)
+    app.router.add_delete("/api/tasks/{id}", handle_cancel_task)
     app.router.add_get("/api/live-reload", handle_live_reload_sse)
 
     # Static assets

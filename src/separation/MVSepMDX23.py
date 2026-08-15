@@ -48,8 +48,9 @@ class MVSepMDX23(BaseSeparator):
 
     Notes:
         - CUDA + ``onnxruntime-gpu`` is the intended fast path.
-        - On Apple Silicon / machines without CUDA ONNX, inference falls back
-          to ``--cpu`` (slow, but functional).
+        - On Apple Silicon / machines without CUDA ONNX, ``auto`` device
+          falls back to ``--cpu`` (slow, but functional). Explicit ``device="cuda"``
+          raises :exc:`MVSepMDX23Error` if CUDA or ONNX CUDA provider is missing.
         - First run clones the upstream repo and downloads multi-GB weights.
     """
 
@@ -109,12 +110,35 @@ class MVSepMDX23(BaseSeparator):
         return _STEM_OUTPUT_IDS[stem]
 
     def _should_use_cpu(self) -> bool:
-        """Prefer CPU unless Torch CUDA and ONNX CUDA provider are both ready."""
+        """Determine whether to append ``--cpu`` or run on CUDA.
+
+        Raises:
+            MVSepMDX23Error: If a CUDA device was explicitly requested but
+                either PyTorch CUDA or ONNX Runtime ``CUDAExecutionProvider``
+                is unavailable.
+        """
         device = str(self.device).lower()
         if device in ("cpu", "mps") or device.startswith("mps"):
             return True
         if device.startswith("cuda"):
-            return not self._onnx_cuda_available()
+            try:
+                import torch
+
+                if not torch.cuda.is_available():
+                    raise MVSepMDX23Error(
+                        f"Device {self.device!r} requested but PyTorch CUDA is not available."
+                    )
+            except ImportError as exc:
+                raise MVSepMDX23Error(
+                    f"Device {self.device!r} requested but torch is not installed."
+                ) from exc
+
+            if not self._onnx_cuda_available():
+                raise MVSepMDX23Error(
+                    f"Device {self.device!r} requested but onnxruntime "
+                    "CUDAExecutionProvider is not available; ensure onnxruntime-gpu is installed."
+                )
+            return False
 
         # auto / unknown: only skip --cpu when both stacks can use CUDA.
         try:
@@ -274,8 +298,8 @@ class MVSepMDX23(BaseSeparator):
             separated = self._separate_stem(src_path)
         except FileNotFoundError as exc:  # pragma: no cover
             raise MVSepMDX23Error(
-                "MVSEP-MDX23 requires git, ffmpeg, demucs, and onnxruntime; "
-                "install onnxruntime with: uv pip install onnxruntime"
+                "MVSEP-MDX23 requires git, ffmpeg, demucs, and onnxruntime-gpu; "
+                "install onnxruntime-gpu with: uv pip install onnxruntime-gpu"
             ) from exc
 
         dest = self.output_dir / f"{src_path.stem}.wav"

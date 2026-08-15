@@ -41,6 +41,10 @@ Starts the interactive audio editor and spectrogram comparer on port `8765`:
 uv run python scripts/start_studio.py --port 8765
 ```
 
+Long-running Studio work is serialized by default to avoid overlapping model
+loads and running out of memory. Advanced users can raise the bounded worker
+count with `STUDIO_QUEUE_CONCURRENCY=2` (supported range: 1–4).
+
 ---
 
 ## Repository Layout

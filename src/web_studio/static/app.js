@@ -49,6 +49,8 @@ const el = {
   tabs: document.querySelectorAll('.nav-tab'),
   tabPanes: document.querySelectorAll('.tab-pane'),
   deviceLabel: document.getElementById('device-label'),
+  queueLabel: document.getElementById('queue-label'),
+  queueDot: document.getElementById('queue-dot'),
   btnThemeToggle: document.getElementById('btn-theme-toggle'),
   iconThemeSun: document.getElementById('icon-theme-sun'),
   iconThemeMoon: document.getElementById('icon-theme-moon'),
@@ -3536,17 +3538,46 @@ function initKeyboardShortcuts() {
 
 // ==================== TASK POLLING HELPER ====================
 
+function updateTaskProgressUI(task) {
+  let statusText = null;
+  let progressBar = null;
+  if (task.type === "youtube_crawl") {
+    statusText = el.ytTaskStatusText;
+    progressBar = el.ytProgressBar;
+  } else if (task.type === "separation" || task.type === "multi_model_separation") {
+    statusText = el.sepTaskStatusText;
+    progressBar = el.sepProgressBar;
+  } else if (task.type === "diarization") {
+    statusText = el.diarTaskStatusText;
+    progressBar = el.diarProgressBar;
+  }
+
+  if (statusText) statusText.textContent = task.message || task.status;
+  if (progressBar) {
+    if (task.status === "pending") {
+      progressBar.classList.add("progress-animated");
+      progressBar.style.removeProperty("width");
+      progressBar.style.removeProperty("transform");
+    } else if (task.progress > 0) {
+      progressBar.classList.remove("progress-animated");
+      progressBar.style.width = `${Math.min(100, task.progress * 100)}%`;
+      progressBar.style.transform = "none";
+    }
+  }
+}
+
 function pollTask(taskId, onComplete, onError) {
   const poll = async () => {
     try {
       const res = await fetch(`/api/tasks/${taskId}`);
       if (!res.ok) throw new Error("Task polling error");
       const task = await res.json();
+      updateTaskProgressUI(task);
 
       if (task.status === "completed") {
         if (onComplete) onComplete(task.result);
-      } else if (task.status === "failed") {
-        if (onError) onError(task.error);
+      } else if (task.status === "failed" || task.status === "cancelled") {
+        if (onError) onError(task.error || task.message || "Task cancelled");
       } else {
         setTimeout(poll, 600);
       }
@@ -3581,8 +3612,15 @@ async function fetchSystemStatus() {
     const data = await res.json();
     state.systemStatus = data;
     el.deviceLabel.textContent = `${data.device_name.split(':')[0]}`;
+    if (el.queueLabel && data.task_queue) {
+      const active = data.task_queue.running;
+      const queued = data.task_queue.queued;
+      el.queueLabel.textContent = active ? `Running ${active} • Queued ${queued}` : `Queue ${queued}`;
+      if (el.queueDot) el.queueDot.classList.toggle('dot-pulse', active > 0);
+    }
   } catch (err) {
     el.deviceLabel.textContent = "Offline";
+    if (el.queueLabel) el.queueLabel.textContent = "Queue offline";
   }
 }
 
@@ -3730,6 +3768,7 @@ async function initApp() {
   });
 
   try { await fetchSystemStatus(); } catch (e) { console.error("fetchSystemStatus error:", e); }
+  window.setInterval(fetchSystemStatus, 2000);
   try { await fetchServerFiles(); } catch (e) { console.error("fetchServerFiles error:", e); }
   try { await fetchAudioList(); } catch (e) { console.error("fetchAudioList error:", e); }
   try { await fetchYouTubeVault(); } catch (e) { console.error("fetchYouTubeVault error:", e); }

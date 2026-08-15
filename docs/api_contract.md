@@ -192,7 +192,7 @@ object. The returned object has the same nine-field class contract, while its
 | `HTDemucs` | `separate(audio) -> Audio` | No explicit `load()` required. |
 | `BSRoFormer` | `separate(audio) -> Audio` | Call `load()` first, or use a context manager. |
 | `MelRoFormer` | `separate(audio) -> Audio` | Call `load()` first, or use a context manager. |
-| `MVSepMDX23` | `separate(audio) -> Audio` | No `ManagedModel` load step; dependencies/checkpoints may be fetched on first use. |
+| `MVSepMDX23` | `separate(audio) -> Audio` | No `ManagedModel` load step; dependencies/checkpoints may be fetched on first use. Requires `onnxruntime-gpu` for CUDA execution; explicit `device="cuda"` raises `MVSepMDX23Error` if CUDA or ONNX CUDA execution provider is unavailable. |
 
 **Common behavior:**
 
@@ -384,6 +384,12 @@ The repository provides two specialized web platforms:
 ### `src/web_studio/` (SonicStudio)
 - **Role:** Interactive audio editor, single-sample inspection, waveform/spectrogram comparer, model stem tester.
 - **Entrypoint:** `scripts/start_studio.py` / `scripts/start_studio.sh` (default port `8765`).
+- **Background task queue:** YouTube ingestion, single-model separation,
+  diarization, and multi-model comparison use a bounded-concurrency in-memory queue. The
+  default concurrency is `1`; `STUDIO_QUEUE_CONCURRENCY` can set it from 1–4.
+- **Task endpoints:** `GET /api/tasks` lists tasks and queue counts,
+  `GET /api/tasks/{id}` returns one task, and `DELETE /api/tasks/{id}` cancels
+  a task that is still queued. Running native model work is not force-cancelled.
 
 ### `src/web_pipeline/` (SonicPipeline)
 - **Role:** Large-scale batch engine for high-throughput ingestion, task queue orchestration, dataset curation, bulk separation, batch diarization, separation benchmark matrix evaluation, and ML manifest generation (JSONL/CSV).
