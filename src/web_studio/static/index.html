@@ -11,36 +11,37 @@
   <link rel="stylesheet" href="static/style.css">
 </head>
 <body>
-  <div id="app" class="app-container">
-    <!-- Top Header -->
-    <!-- Include Header Component -->
-    <!-- include: components/header.html -->
+  <div id="app" class="app-layout">
+    <!-- Left Navigation & Telemetry Sidebar -->
+    <!-- include: components/sidebar.html -->
 
-    <!-- Main Content Area -->
-    <main class="main-content">
-      
-      <!-- ==================== TAB 1: WORKSPACE & CUTTER ==================== -->
-      <!-- ==================== WORKSPACE & TABS ==================== -->
-      <!-- include: tabs/tab1_workspace.html -->
-      <!-- include: tabs/tab2_crawler.html -->
-      <!-- include: tabs/tab3_separation.html -->
-      <!-- include: tabs/tab4_diarization.html -->
-      <!-- include: tabs/tab5_comparison.html -->
-      <!-- include: tabs/tab6_matrix.html -->
-      <!-- include: tabs/tab7_library.html -->
+    <!-- Main Viewport Area -->
+    <div class="app-main-viewport">
+      <!-- Top Header -->
+      <!-- include: components/header.html -->
 
-    </main>
+      <!-- Main Content Area -->
+      <main class="main-content">
+        <!-- ==================== TABS ==================== -->
+        <!-- include: tabs/tab1_workspace.html -->
+        <!-- include: tabs/tab2_crawler.html -->
+        <!-- include: tabs/tab3_separation.html -->
+        <!-- include: tabs/tab4_diarization.html -->
+        <!-- include: tabs/tab5_comparison.html -->
+        <!-- include: tabs/tab6_matrix.html -->
+        <!-- include: tabs/tab7_library.html -->
+      </main>
+    </div>
 
     <!-- Master Bottom Audio Player -->
-    <!-- Include Global Master Player -->
     <!-- include: components/player_bar.html -->
 
-    <!-- Save To Modal -->
     <!-- ==================== MODALS ==================== -->
     <!-- include: modals/save_modal.html -->
     <!-- include: modals/library_modal.html -->
     <!-- include: modals/queue_modal.html -->
     <!-- include: modals/shortcuts_modal.html -->
+  </div>
 
   <script src="static/app.js" defer></script>
 </body>

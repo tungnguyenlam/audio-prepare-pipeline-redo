@@ -854,6 +854,8 @@ async function setActiveAudio(audioId, options = { play: false }) {
     // Update Workspace UI
     el.activeSection.classList.remove('hidden');
     el.metaTitle.textContent = meta.title || meta.source_id;
+    const headerTrackEl = document.getElementById('header-active-track-name');
+    if (headerTrackEl) headerTrackEl.textContent = `Active Track: ${meta.title || meta.source_id}`;
     el.metaId.textContent = audioId;
     el.metaSourceType.textContent = fullItem.source_type || "Audio";
     el.metaDuration.textContent = `${(meta.duration_s || 0).toFixed(2)}s`;
@@ -1600,6 +1602,8 @@ function initIngestAndSaves() {
 
   // Sample Library Modal
   el.btnBrowseLibrary.addEventListener('click', openLibraryModal);
+  const btnBrowseTop = document.getElementById('btn-browse-library-top');
+  if (btnBrowseTop) btnBrowseTop.addEventListener('click', openLibraryModal);
   el.btnCloseLibraryModal.addEventListener('click', () => el.modalLibrary.classList.add('hidden'));
 }
 
@@ -4446,6 +4450,15 @@ function updateTelemetryDisplay(telemetry) {
         el.gpuLoadLabel.textContent = Number.isFinite(load) ? `GPU: ${Math.round(load)}%` : 'GPU: Active';
       }
     }
+    const vramTextEl = document.getElementById('sidebar-gpu-vram-text');
+    if (vramTextEl) {
+      if (gpu.used_vram_mb !== undefined && gpu.total_vram_mb !== undefined) {
+        vramTextEl.textContent = `${gpu.used_vram_mb} / ${gpu.total_vram_mb} MB (${Math.round(vramPct || 0)}%)`;
+      } else {
+        vramTextEl.textContent = `${Math.round(loadPct)}%`;
+      }
+    }
+
     if (el.headerGpuMeter) {
       el.headerGpuMeter.style.width = `${loadPct}%`;
     }
@@ -4458,10 +4471,14 @@ function updateTelemetryDisplay(telemetry) {
   } else if (gpu.type === 'mps') {
     if (el.gpuLoadLabel) el.gpuLoadLabel.textContent = 'MPS';
     if (el.headerGpuMeter) el.headerGpuMeter.style.width = '0%';
+    const vramTextEl = document.getElementById('sidebar-gpu-vram-text');
+    if (vramTextEl) vramTextEl.textContent = 'Unified Memory';
     if (el.gpuLoadBadge) el.gpuLoadBadge.title = 'Apple Silicon (MPS Accelerator)';
   } else {
     if (el.gpuLoadLabel) el.gpuLoadLabel.textContent = 'CPU';
     if (el.headerGpuMeter) el.headerGpuMeter.style.width = '0%';
+    const vramTextEl = document.getElementById('sidebar-gpu-vram-text');
+    if (vramTextEl) vramTextEl.textContent = 'Host RAM';
     if (el.gpuLoadBadge) el.gpuLoadBadge.title = 'CPU Mode (No GPU accelerator detected)';
   }
 }
