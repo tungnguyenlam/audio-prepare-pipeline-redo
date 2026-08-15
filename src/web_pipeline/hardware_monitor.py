@@ -34,8 +34,8 @@ class HardwareMonitor:
         self.total_processing_wall_time += max(0.001, wall_time_seconds)
 
     @staticmethod
-    def _query_nvidia_smi(device_index: int) -> Dict[str, Optional[float]]:
-        """Read host-level GPU load and VRAM counters for one CUDA device."""
+    def _query_all_nvidia_gpus() -> Dict[int, Dict[str, Any]]:
+        """Read host-level GPU load and VRAM counters for all CUDA devices."""
         if not shutil.which("nvidia-smi"):
             return {}
 
@@ -43,82 +43,132 @@ class HardwareMonitor:
             result = subprocess.run(
                 [
                     "nvidia-smi",
-                    f"--id={device_index}",
-                    "--query-gpu=utilization.gpu,memory.used,memory.total,memory.free,temperature.gpu",
+                    "--query-gpu=index,name,utilization.gpu,memory.used,memory.total,memory.free,temperature.gpu",
                     "--format=csv,noheader,nounits",
                 ],
                 capture_output=True,
                 text=True,
-                timeout=1.0,
+                timeout=1.5,
             )
             if result.returncode != 0 or not result.stdout.strip():
                 return {}
 
-            values = [value.strip() for value in result.stdout.splitlines()[0].split(",")]
-
-            def parse(value: str) -> Optional[float]:
+            def parse_num(value: str) -> Optional[float]:
                 try:
                     return float(value)
                 except ValueError:
                     return None
 
-            if len(values) < 5:
-                return {}
-            return {
-                "utilization_percent": parse(values[0]),
-                "used_vram_mb": parse(values[1]),
-                "total_vram_mb": parse(values[2]),
-                "free_vram_mb": parse(values[3]),
-                "temperature_c": parse(values[4]),
-            }
+            smi_data: Dict[int, Dict[str, Any]] = {}
+            for line in result.stdout.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) < 7:
+                    continue
+                try:
+                    idx = int(parts[0])
+                except ValueError:
+                    continue
+                smi_data[idx] = {
+                    "index": idx,
+                    "name": parts[1],
+                    "utilization_percent": parse_num(parts[2]),
+                    "used_vram_mb": parse_num(parts[3]),
+                    "total_vram_mb": parse_num(parts[4]),
+                    "free_vram_mb": parse_num(parts[5]),
+                    "temperature_c": parse_num(parts[6]),
+                }
+            return smi_data
         except Exception:
             return {}
 
+    @classmethod
+    def _query_nvidia_smi(cls, device_index: int) -> Dict[str, Optional[float]]:
+        """Read host-level GPU load and VRAM counters for one CUDA device."""
+        smi_all = cls._query_all_nvidia_gpus()
+        return smi_all.get(device_index, {})
+
     def get_gpu_info(self) -> Dict[str, Any]:
         """Query GPU telemetry via PyTorch and nvidia-smi if present."""
+        smi_devices = self._query_all_nvidia_gpus()
+
         if torch.cuda.is_available():
             device_count = torch.cuda.device_count()
-            current_device = torch.cuda.current_device()
-            props = torch.cuda.get_device_properties(current_device)
-            smi_info = self._query_nvidia_smi(current_device)
-            total_vram_mb = round(
-                smi_info["total_vram_mb"]
-                if smi_info.get("total_vram_mb") is not None
-                else props.total_memory / (1024 * 1024),
-                1,
-            )
-            allocated_vram_mb = round(torch.cuda.memory_allocated(current_device) / (1024 * 1024), 1)
-            reserved_vram_mb = round(torch.cuda.memory_reserved(current_device) / (1024 * 1024), 1)
-            used_vram_mb = round(
-                smi_info["used_vram_mb"]
-                if smi_info.get("used_vram_mb") is not None
-                else reserved_vram_mb,
-                1,
-            )
-            free_vram_mb = round(
-                smi_info.get("free_vram_mb")
-                if smi_info.get("free_vram_mb") is not None
-                else max(0.0, total_vram_mb - used_vram_mb),
-                1,
-            )
-            vram_percent = round((used_vram_mb / total_vram_mb) * 100, 1) if total_vram_mb > 0 else 0.0
-            gpu_util_percent = smi_info.get("utilization_percent")
-            gpu_temp_c = smi_info.get("temperature_c")
+            devices: List[Dict[str, Any]] = []
+
+            for i in range(device_count):
+                props = torch.cuda.get_device_properties(i)
+                smi_info = smi_devices.get(i, {})
+
+                total_vram_mb = round(
+                    smi_info.get("total_vram_mb")
+                    if smi_info.get("total_vram_mb") is not None
+                    else props.total_memory / (1024 * 1024),
+                    1,
+                )
+                allocated_vram_mb = round(torch.cuda.memory_allocated(i) / (1024 * 1024), 1)
+                reserved_vram_mb = round(torch.cuda.memory_reserved(i) / (1024 * 1024), 1)
+                used_vram_mb = round(
+                    smi_info.get("used_vram_mb")
+                    if smi_info.get("used_vram_mb") is not None
+                    else reserved_vram_mb,
+                    1,
+                )
+                free_vram_mb = round(
+                    smi_info.get("free_vram_mb")
+                    if smi_info.get("free_vram_mb") is not None
+                    else max(0.0, total_vram_mb - used_vram_mb),
+                    1,
+                )
+                vram_percent = round((used_vram_mb / total_vram_mb) * 100, 1) if total_vram_mb > 0 else 0.0
+                gpu_util_percent = smi_info.get("utilization_percent")
+                gpu_temp_c = smi_info.get("temperature_c")
+
+                devices.append({
+                    "index": i,
+                    "id": f"cuda:{i}",
+                    "name": props.name,
+                    "total_vram_mb": total_vram_mb,
+                    "used_vram_mb": used_vram_mb,
+                    "allocated_vram_mb": allocated_vram_mb,
+                    "reserved_vram_mb": reserved_vram_mb,
+                    "free_vram_mb": free_vram_mb,
+                    "vram_percent": vram_percent,
+                    "load_percent": gpu_util_percent,
+                    "utilization_percent": gpu_util_percent,
+                    "temperature_c": gpu_temp_c,
+                })
+
+            primary = devices[0] if devices else {}
+            tot_vram = round(sum(d["total_vram_mb"] for d in devices), 1) if devices else 0.0
+            tot_used_vram = round(sum(d["used_vram_mb"] for d in devices), 1) if devices else 0.0
+            tot_vram_pct = round((tot_used_vram / tot_vram) * 100, 1) if tot_vram > 0 else 0.0
+            valid_loads = [d["load_percent"] for d in devices if d.get("load_percent") is not None]
+            avg_load = round(sum(valid_loads) / len(valid_loads), 1) if valid_loads else primary.get("load_percent")
 
             return {
                 "available": True,
                 "type": "cuda",
-                "name": props.name,
+                "name": primary.get("name", "CUDA GPU"),
                 "device_count": device_count,
-                "total_vram_mb": total_vram_mb,
-                "used_vram_mb": used_vram_mb,
-                "allocated_vram_mb": allocated_vram_mb,
-                "reserved_vram_mb": reserved_vram_mb,
-                "free_vram_mb": free_vram_mb,
-                "vram_percent": vram_percent,
-                "load_percent": gpu_util_percent,
-                "utilization_percent": gpu_util_percent,
-                "temperature_c": gpu_temp_c,
+                "devices": devices,
+                "total_vram_mb": primary.get("total_vram_mb", 0.0),
+                "used_vram_mb": primary.get("used_vram_mb", 0.0),
+                "allocated_vram_mb": primary.get("allocated_vram_mb", 0.0),
+                "reserved_vram_mb": primary.get("reserved_vram_mb", 0.0),
+                "free_vram_mb": primary.get("free_vram_mb", 0.0),
+                "vram_percent": primary.get("vram_percent", 0.0),
+                "load_percent": primary.get("load_percent"),
+                "utilization_percent": primary.get("utilization_percent"),
+                "temperature_c": primary.get("temperature_c"),
+                "aggregate": {
+                    "total_vram_mb": tot_vram,
+                    "used_vram_mb": tot_used_vram,
+                    "vram_percent": tot_vram_pct,
+                    "avg_load_percent": avg_load,
+                },
             }
 
         if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
@@ -127,6 +177,20 @@ class HardwareMonitor:
                 "type": "mps",
                 "name": "Apple Silicon (MPS)",
                 "device_count": 1,
+                "devices": [{
+                    "index": 0,
+                    "id": "mps",
+                    "name": "Apple Silicon (MPS)",
+                    "total_vram_mb": None,
+                    "used_vram_mb": None,
+                    "allocated_vram_mb": None,
+                    "reserved_vram_mb": None,
+                    "free_vram_mb": None,
+                    "vram_percent": None,
+                    "load_percent": None,
+                    "utilization_percent": None,
+                    "temperature_c": None,
+                }],
                 "total_vram_mb": None,
                 "used_vram_mb": None,
                 "allocated_vram_mb": None,
@@ -138,11 +202,33 @@ class HardwareMonitor:
                 "temperature_c": None,
             }
 
+        # If smi found standalone GPUs even if torch is CPU build
+        if smi_devices:
+            dev_list = list(smi_devices.values())
+            primary = dev_list[0]
+            return {
+                "available": True,
+                "type": "cuda",
+                "name": primary.get("name", "NVIDIA GPU"),
+                "device_count": len(dev_list),
+                "devices": dev_list,
+                "total_vram_mb": primary.get("total_vram_mb", 0.0),
+                "used_vram_mb": primary.get("used_vram_mb", 0.0),
+                "allocated_vram_mb": 0.0,
+                "reserved_vram_mb": 0.0,
+                "free_vram_mb": primary.get("free_vram_mb", 0.0),
+                "vram_percent": round((primary.get("used_vram_mb", 0.0) / primary.get("total_vram_mb", 1.0)) * 100, 1) if primary.get("total_vram_mb") else 0.0,
+                "load_percent": primary.get("utilization_percent"),
+                "utilization_percent": primary.get("utilization_percent"),
+                "temperature_c": primary.get("temperature_c"),
+            }
+
         return {
             "available": False,
             "type": "cpu",
             "name": "No GPU (CPU Mode)",
             "device_count": 0,
+            "devices": [],
             "total_vram_mb": 0,
             "used_vram_mb": 0,
             "allocated_vram_mb": 0,
@@ -235,6 +321,10 @@ class HardwareMonitor:
                 "pid": os.getpid(),
             },
         }
+
+    def get_telemetry(self) -> Dict[str, Any]:
+        """Alias for get_system_telemetry."""
+        return self.get_system_telemetry()
 
 
 # Singleton instance

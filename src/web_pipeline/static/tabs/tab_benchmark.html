@@ -1,0 +1,86 @@
+        <section id="tab-benchmark" class="tab-pane">
+          <div class="view-header">
+            <div>
+              <h1 class="view-title">Separation Benchmark Matrix & Evaluation</h1>
+              <p class="view-subtitle">Generate synthetic mixtures and calculate objective SI-SDR / SI-SDRi metrics across neural backends.</p>
+            </div>
+          </div>
+
+          <div class="benchmark-grid">
+            <!-- Setup Panel -->
+            <div class="glass-panel">
+              <div class="panel-header">
+                <h3 class="panel-title">Configure Benchmark Matrix</h3>
+              </div>
+              <form id="form-batch-benchmark" class="form-vertical">
+                <div class="form-row">
+                  <div class="form-item flex-1">
+                    <label class="form-label" for="bench-speech-ds">Speech Reference Dataset</label>
+                    <select id="bench-speech-ds" class="form-select select-dataset-list">
+                      <option value="Speech Corpus">Speech Corpus</option>
+                      <option value="Default">Default</option>
+                    </select>
+                  </div>
+                  <div class="form-item flex-1">
+                    <label class="form-label" for="bench-music-ds">Music / BGM Dataset</label>
+                    <select id="bench-music-ds" class="form-select select-dataset-list">
+                      <option value="Music BGM">Music BGM</option>
+                      <option value="Default">Default</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="form-item">
+                  <label class="form-label">Models Under Benchmark Evaluation</label>
+                  <div class="checkbox-pill-grid">
+                    <label class="checkbox-pill"><input type="checkbox" name="bench-models" value="BSRoFormer" checked> BS-RoFormer (SOTA)</label>
+                    <label class="checkbox-pill"><input type="checkbox" name="bench-models" value="MelRoFormer" checked> Mel-RoFormer</label>
+                    <label class="checkbox-pill"><input type="checkbox" name="bench-models" value="HTDemucs" checked> HTDemucs</label>
+                    <label class="checkbox-pill"><input type="checkbox" name="bench-models" value="MVSepMDX23"> MVSep-MDX23</label>
+                  </div>
+                </div>
+
+                <div class="form-item">
+                  <label class="form-label" for="bench-snrs">Signal-to-Music Ratio Levels (SNR in dB)</label>
+                  <input type="text" id="bench-snrs" class="form-input font-mono" value="0.0, 6.0, 12.0" placeholder="0.0, 6.0, 12.0">
+                  <span class="form-hint">Comma separated test SNRs (e.g. -6.0, 0.0, 6.0, 12.0).</span>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-full btn-lg" id="btn-submit-benchmark">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                  <span>Execute Matrix Benchmark</span>
+                </button>
+              </form>
+            </div>
+
+            <!-- Leaderboard Table -->
+            <div class="glass-panel flex-1">
+              <div class="panel-header">
+                <div>
+                  <h3 class="panel-title">Model Separation Leaderboard</h3>
+                  <span class="panel-desc">Scale-Invariant Signal-to-Distortion Ratio Improvement (SI-SDRi)</span>
+                </div>
+                <select id="benchmark-history-select" class="form-select form-select-sm">
+                  <option value="latest">Latest Benchmark Run</option>
+                </select>
+              </div>
+              <div class="modern-table-wrap">
+                <table class="modern-table" id="leaderboard-table">
+                  <thead>
+                    <tr>
+                      <th>Model Architecture</th>
+                      <th>Samples</th>
+                      <th>Mean SI-SDRi (dB)</th>
+                      <th>Median SI-SDRi</th>
+                      <th>Vocals SI-SDR</th>
+                      <th>Avg Speed</th>
+                    </tr>
+                  </thead>
+                  <tbody id="leaderboard-tbody">
+                    <tr><td colspan="6" class="text-center text-muted">No benchmark runs recorded yet.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>

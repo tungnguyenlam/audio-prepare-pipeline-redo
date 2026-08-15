@@ -1,0 +1,44 @@
+      <header class="workspace-topbar">
+        <div class="topbar-breadcrumb">
+          <span class="crumb-root">Pipeline Cluster</span>
+          <span class="crumb-separator">/</span>
+          <span class="crumb-active" id="active-breadcrumb-title">Overview & Metrics</span>
+        </div>
+
+        <div class="topbar-actions">
+          <!-- Quick Switcher to SonicStudio Interactive Workbench -->
+          <a href="/studio/" class="btn-app-switcher" id="btn-switch-to-studio" title="Switch to SonicStudio Audio Workbench (Alt+S)">
+            <span class="switcher-dot"></span>
+            <span class="switcher-icon">🎙️</span>
+            <span class="switcher-name">SonicStudio</span>
+            <span class="switcher-badge">Studio</span>
+            <svg class="switcher-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </a>
+
+          <!-- Quick Jump / View Queue Button -->
+          <button class="btn btn-secondary btn-sm btn-topbar-queue" id="btn-topbar-queue" title="View Batch Job Queue (Q)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+            <span>Queue</span>
+            <span class="topbar-queue-counter" id="topbar-jobs-counter">0</span>
+          </button>
+
+          <div class="concurrency-pill-wrap">
+            <span class="concurrency-pill-label">Workers</span>
+            <select id="queue-concurrency" class="topbar-select">
+              <option value="1">1 Slot</option>
+              <option value="2" selected>2 Slots</option>
+              <option value="4">4 Slots</option>
+              <option value="8">8 Slots</option>
+            </select>
+          </div>
+
+          <button class="btn btn-secondary btn-sm" id="btn-pause-queue">
+            <span id="label-pause-queue">⏸ Pause Queue</span>
+          </button>
+
+          <button class="btn btn-primary btn-sm" onclick="document.getElementById('btn-tab-ingest').click()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            <span>New Batch Job</span>
+          </button>
+        </div>
+      </header>

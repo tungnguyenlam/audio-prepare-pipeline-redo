@@ -1,0 +1,319 @@
+      <section id="tab-workspace" class="tab-pane active">
+        <!-- Ingestion Bar -->
+        <div class="card ingest-card">
+          <div class="card-header">
+            <div class="section-heading">
+              <span class="workflow-step">1 · Choose source</span>
+              <h2 class="card-title">Load Audio Source</h2>
+              <p class="card-subtitle">Start with a local file, a library item, or a YouTube URL.</p>
+            </div>
+            <div class="card-actions">
+              <button class="btn btn-sm btn-secondary" id="btn-browse-library-modal">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                <span>Sample Library</span>
+              </button>
+            </div>
+          </div>
+          
+          <div class="ingest-grid">
+            <!-- Upload Box -->
+            <div class="dropzone" id="audio-dropzone">
+              <input type="file" id="file-input" accept="audio/*,.wav,.mp3,.flac,.ogg,.m4a" class="file-input-hidden">
+              <div class="dropzone-content">
+                <div class="dropzone-icon">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                </div>
+                <div class="dropzone-text">
+                  <span class="dropzone-title">Drop audio file here, or <span class="accent-text">browse files</span></span>
+                  <span class="dropzone-desc">WAV, MP3, FLAC, M4A, OGG up to 500MB</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- YouTube Ingest Box -->
+            <div class="yt-ingest-box">
+              <label class="input-label" for="yt-url-input">Direct YouTube Ingestion (via YtCrawler)</label>
+              <div class="input-group">
+                <div class="input-icon-prefix">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"></path><polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon></svg>
+                </div>
+                <input type="text" id="yt-url-input" class="text-input" placeholder="https://www.youtube.com/watch?v=...">
+                <button class="btn btn-sm btn-ghost btn-paste-url" id="btn-yt-paste-workspace" title="Paste from clipboard">
+                  <span>Paste</span>
+                </button>
+                <button class="btn btn-primary" id="btn-yt-download">
+                  <span>Fetch & Normalize</span>
+                </button>
+              </div>
+              <p class="input-hint">Downloads, extracts audio & standardizes to 44.1kHz mono WAV.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Active Audio Workspace -->
+        <div id="active-audio-section" class="workspace-section hidden">
+          <!-- Audio Metadata & Quick Actions Card -->
+          <div class="card active-audio-card">
+            <div class="audio-header-row">
+              <div class="audio-identity-block">
+                <span class="workflow-step">2 · Current audio</span>
+                <div class="audio-main-meta">
+                  <div class="audio-source-badge" id="meta-source-type">Local</div>
+                  <h3 class="audio-title" id="meta-title">ready_or_not.wav</h3>
+                  <span class="audio-id-chip" id="meta-id" title="Click to copy Audio ID">aud_000000</span>
+                </div>
+              </div>
+
+              <!-- Model Provenance Banner (Shows which Demucs model or cut produced this file) -->
+              <div id="active-model-provenance-banner" class="model-provenance-banner hidden">
+                <span class="prov-icon">✨</span>
+                <div class="prov-content">
+                  <span class="prov-badge" id="prov-model-badge">HTDemucs (Fine-Tuned)</span>
+                  <span class="prov-text" id="prov-details-text">Vocals Stem separated from parent audio</span>
+                </div>
+              </div>
+
+              <div class="audio-action-stack">
+                <button class="btn btn-accent" id="btn-send-to-separation">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
+                  <span>Separate Stems</span>
+                </button>
+                <div class="audio-quick-actions" aria-label="File actions">
+                  <button class="btn btn-sm btn-secondary" id="btn-quick-save" title="Quick save with standardized fingerprint to temp/">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                    <span>Quick Save</span>
+                  </button>
+                  <button class="btn btn-sm btn-secondary" id="btn-save-to-dialog">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    <span>Save As</span>
+                  </button>
+                  <button class="btn btn-sm btn-secondary" id="btn-download-audio">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4M17 9l-5 5-5-5M12 12.8V2.5"/></svg>
+                    <span>Download</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Metadata Pills Row -->
+            <div class="meta-pills-row">
+              <div class="meta-pill">
+                <span class="pill-label">Duration</span>
+                <span class="pill-val" id="meta-duration">0.00s</span>
+              </div>
+              <div class="meta-pill">
+                <span class="pill-label">Sample Rate</span>
+                <span class="pill-val" id="meta-sample-rate">44,100 Hz</span>
+              </div>
+              <div class="meta-pill">
+                <span class="pill-label">Native Rate</span>
+                <span class="pill-val" id="meta-native-rate">44,100 Hz</span>
+              </div>
+              <div class="meta-pill">
+                <span class="pill-label">Channels</span>
+                <span class="pill-val" id="meta-channels">1 (Mono)</span>
+              </div>
+              <div class="meta-pill">
+                <span class="pill-label">Format</span>
+                <span class="pill-val" id="meta-format">WAV</span>
+              </div>
+              <div class="meta-pill">
+                <span class="pill-label">File Size</span>
+                <span class="pill-val" id="meta-size">0.0 MB</span>
+              </div>
+            </div>
+
+            <!-- Fingerprint Line -->
+            <div class="fingerprint-bar">
+              <span class="fp-title">Fingerprint:</span>
+              <code class="fp-code" id="meta-fingerprint" title="Click to copy fingerprint">none</code>
+            </div>
+
+            <!-- History Steps -->
+            <div class="history-bar" id="history-container">
+              <span class="fp-title">Step History:</span>
+              <div class="history-tags" id="history-tags-list">
+                <span class="history-tag base">raw_audio</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Interactive Waveform & Precision Cutting Studio -->
+          <div class="card waveform-card clip-editor-card">
+            <div class="card-header">
+              <div class="waveform-header-left">
+                <span class="workflow-step">3 · Select a range</span>
+                <h3 class="card-title">Waveform</h3>
+                <span class="waveform-sub">Drag to select · drag either edge to refine · click to move the playhead</span>
+              </div>
+
+              <!-- Selection Quick Bar (appears when region is selected) -->
+              <div class="selection-actions-bar" id="selection-actions-bar" style="display: none;">
+                <button class="btn btn-sm btn-primary" id="btn-audition-selection" title="Loop play selected range">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                  <span>Preview Selection</span>
+                </button>
+                <button class="btn btn-sm btn-secondary" id="btn-clear-selection" title="Clear selection">
+                  <span>Clear</span>
+                </button>
+              </div>
+
+              <div class="waveform-controls-top">
+                <button class="btn btn-sm btn-ghost" id="btn-zoom-out" title="Zoom Out (Z+Shift)">−</button>
+                <span class="zoom-label" id="zoom-level-label">100%</span>
+                <button class="btn btn-sm btn-ghost" id="btn-zoom-in" title="Zoom In (Z)">+</button>
+                <button class="btn btn-sm btn-ghost" id="btn-reset-zoom" title="Reset Zoom (0)">Fit</button>
+                <div class="divider-v"></div>
+                <button class="btn btn-sm btn-ghost" id="btn-toggle-spectrogram">
+                  <span>📊 Spectrogram</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="clip-editor-grid">
+              <div class="timeline-column">
+                <!-- Canvas Waveform Container -->
+                <div class="waveform-viewport" id="waveform-viewport">
+                  <canvas id="waveform-canvas" width="1200" height="180"></canvas>
+                  <div id="selection-overlay" class="selection-overlay hidden">
+                    <div class="selection-handle handle-left" data-handle="start" title="Drag to adjust start"></div>
+                    <div class="selection-range-label" id="selection-range-label">0.0s - 0.0s</div>
+                    <div class="selection-handle handle-right" data-handle="end" title="Drag to adjust end"></div>
+                  </div>
+                  <div id="playhead-line" class="playhead-line"></div>
+                  <div id="waveform-time-tooltip" class="time-tooltip hidden">00:00.00</div>
+                </div>
+
+                <!-- Time Axis Ruler -->
+                <div class="time-ruler" id="time-ruler">
+                  <span class="ruler-tick">00:00</span>
+                  <span class="ruler-tick" id="ruler-mid">--:--</span>
+                  <span class="ruler-tick" id="ruler-end">--:--</span>
+                </div>
+
+                <div class="selection-helper" id="selection-helper">
+                  <span class="selection-helper-icon">↔</span>
+                  <span><strong>Select the useful moment.</strong> You can fine-tune its boundaries in the range panel.</span>
+                </div>
+
+                <!-- Mel Spectrogram View (Collapsible) -->
+                <div id="spectrogram-panel" class="spectrogram-panel hidden">
+                  <div class="spec-header">
+                    <span class="spec-title">Mel-Frequency Spectrogram (16kHz Aligned)</span>
+                    <button class="btn btn-sm btn-ghost" id="btn-refresh-spec">Refresh</button>
+                  </div>
+                  <div class="spec-img-wrapper" id="spec-img-wrapper">
+                    <div class="skeleton-loader" id="spec-loader">Generating spectrogram...</div>
+                    <img id="spec-image" class="spec-image hidden" alt="Mel Spectrogram">
+                  </div>
+                </div>
+              </div>
+
+              <!-- Audio Cutter Controls -->
+              <aside class="cutter-toolbar" aria-label="Clip range controls">
+                <div class="cutter-heading">
+                  <div>
+                    <span class="workflow-step">4 · Refine & create</span>
+                    <h3 class="cutter-title">Clip range</h3>
+                    <p class="card-subtitle">Precise controls, when you need them.</p>
+                  </div>
+                  <div class="clip-duration-badge" id="cut-duration-display">Full track</div>
+                </div>
+
+                <div class="cutter-config-grid">
+                  <div class="cutter-inputs-group">
+                    <div class="cut-input-wrap">
+                      <label for="cut-start-input">Start</label>
+                      <input type="text" id="cut-start-input" class="text-input cut-input" value="0.0" inputmode="decimal">
+                      <button class="inline-time-action" id="btn-set-start-playhead" type="button" title="Set start to current playhead ([)">Use playhead</button>
+                    </div>
+                    <span class="range-arrow" aria-hidden="true">→</span>
+                    <div class="cut-input-wrap">
+                      <label for="cut-end-input">End</label>
+                      <input type="text" id="cut-end-input" class="text-input cut-input" value="10.0" inputmode="decimal">
+                      <button class="inline-time-action" id="btn-set-end-playhead" type="button" title="Set end to current playhead (])">Use playhead</button>
+                    </div>
+                  </div>
+
+                  <div class="cutter-unit-group">
+                    <label class="cutter-label">Format</label>
+                    <div class="radio-pills">
+                      <label class="radio-pill active"><input type="radio" name="cut_unit" value="seconds" checked> Seconds</label>
+                      <label class="radio-pill"><input type="radio" name="cut_unit" value="timestamp"> Timecode</label>
+                      <label class="radio-pill"><input type="radio" name="cut_unit" value="minutes"> Minutes</label>
+                      <label class="radio-pill"><input type="radio" name="cut_unit" value="percent"> Percent</label>
+                    </div>
+                  </div>
+
+                  <div class="range-presets" aria-label="Quick range presets">
+                    <span class="cutter-label">Quick range from playhead</span>
+                    <div class="preset-button-row">
+                      <button class="range-preset" type="button" data-duration="15">15s</button>
+                      <button class="range-preset" type="button" data-duration="30">30s</button>
+                      <button class="range-preset" type="button" data-duration="60">1m</button>
+                      <button class="range-preset" type="button" data-duration="all">All</button>
+                    </div>
+                  </div>
+
+                  <button class="btn btn-sm btn-secondary btn-use-selection" id="btn-use-selection" title="Copy the waveform selection into the start and end fields">
+                    Use waveform selection
+                  </button>
+                  <p class="cut-validation" id="cut-validation" role="status">Ready to create a clip.</p>
+                </div>
+
+                <div class="cutter-actions-row">
+                  <button class="btn btn-secondary" id="btn-preview-cut" title="Preview this range without creating a file">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                    <span>Preview</span>
+                  </button>
+                  <button class="btn btn-primary" id="btn-apply-cut" title="Create the clip and open it in this workspace">
+                    <span>Create Clip</span>
+                  </button>
+                </div>
+
+                <details class="advanced-cut-actions">
+                  <summary>More create workflows</summary>
+                  <div class="cutter-destination-actions">
+                    <button class="btn btn-secondary" id="btn-cut-and-audition" title="Create the clip and open Audition & Scoring">
+                      <span>Create &amp; open Audition</span>
+                    </button>
+                    <button class="btn btn-accent" id="btn-cut-and-run-models" title="Create the clip and run all separation models for scoring">
+                      <span>Create &amp; run models</span>
+                    </button>
+                  </div>
+                </details>
+              </aside>
+            </div>
+          </div>
+
+          <!-- Cut Snippets Vault for Active Audio -->
+          <div class="card cuts-vault-card" style="margin-top: 1.25rem;">
+            <div class="card-header">
+              <div>
+                <h3 class="card-title">Recent Clips</h3>
+                <p class="card-subtitle">Replay a clip or continue with audition and separation.</p>
+              </div>
+              <span class="badge badge-sm" id="cuts-counter-badge">0 Cuts</span>
+            </div>
+
+            <div class="table-responsive">
+              <table class="data-table" id="cuts-table">
+                <thead>
+                  <tr>
+                    <th>Clip Title</th>
+                    <th>Time Range</th>
+                    <th>Duration</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="cuts-table-body">
+                  <tr>
+                    <td colspan="5" class="empty-table-msg">No clips yet. Select a waveform range, confirm the boundaries, then choose where to open the new clip.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>

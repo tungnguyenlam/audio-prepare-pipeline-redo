@@ -9,6 +9,7 @@ const state = {
   activeAudio: null,       // Currently selected Audio metadata
   activePeaks: [],         // Downsampled waveform peaks
   selection: { start: 0, end: 0, active: false },
+  cutUnit: 'seconds',
   zoom: 1.0,
   audioList: [],           // All registered Audio items
   serverFiles: [],         // Files on disk from /api/library
@@ -49,6 +50,9 @@ const el = {
   tabs: document.querySelectorAll('.nav-tab'),
   tabPanes: document.querySelectorAll('.tab-pane'),
   deviceLabel: document.getElementById('device-label'),
+  gpuLoadBadge: document.getElementById('gpu-load-badge'),
+  gpuLoadLabel: document.getElementById('gpu-load-label'),
+  headerGpuMeter: document.getElementById('header-gpu-meter'),
   queueLabel: document.getElementById('queue-label'),
   queueDot: document.getElementById('queue-dot'),
   btnThemeToggle: document.getElementById('btn-theme-toggle'),
@@ -111,6 +115,7 @@ const el = {
   selectionActionsBar: document.getElementById('selection-actions-bar'),
   btnAuditionSelection: document.getElementById('btn-audition-selection'),
   btnClearSelection: document.getElementById('btn-clear-selection'),
+  selectionHelper: document.getElementById('selection-helper'),
   timeTooltip: document.getElementById('waveform-time-tooltip'),
   rulerMid: document.getElementById('ruler-mid'),
   rulerEnd: document.getElementById('ruler-end'),
@@ -127,6 +132,11 @@ const el = {
   // Audio Cutter
   cutStartInput: document.getElementById('cut-start-input'),
   cutEndInput: document.getElementById('cut-end-input'),
+  cutDurationDisplay: document.getElementById('cut-duration-display'),
+  cutValidation: document.getElementById('cut-validation'),
+  btnSetStartPlayhead: document.getElementById('btn-set-start-playhead'),
+  btnSetEndPlayhead: document.getElementById('btn-set-end-playhead'),
+  rangePresets: document.querySelectorAll('.range-preset'),
   btnUseSelection: document.getElementById('btn-use-selection'),
   btnPreviewCut: document.getElementById('btn-preview-cut'),
   btnApplyCut: document.getElementById('btn-apply-cut'),
@@ -286,6 +296,11 @@ const el = {
   queueStatFailed: document.getElementById('queue-stat-failed'),
   queueModalFilters: document.getElementById('queue-modal-filters'),
   queueModalSubtitle: document.getElementById('queue-modal-subtitle'),
+  queueGpuName: document.getElementById('queue-gpu-name'),
+  queueGpuLoad: document.getElementById('queue-gpu-load'),
+  queueGpuVram: document.getElementById('queue-gpu-vram'),
+  queueActiveSplit: document.getElementById('queue-active-split'),
+  queueGpuDevicesGrid: document.getElementById('queue-gpu-devices-grid'),
   toastContainer: document.getElementById('toast-container'),
 };
 
@@ -314,10 +329,47 @@ function formatTime(seconds) {
 
 function formatTimePrecise(seconds) {
   if (isNaN(seconds) || seconds < 0) return "00:00.00";
-  const m = Math.floor(seconds / 60);
-  const sInt = Math.floor(seconds % 60).toString().padStart(2, '0');
-  const sFrac = (seconds % 1).toFixed(2).substring(2);
-  return `${m.toString().padStart(2, '0')}:${sInt}.${sFrac}`;
+  const hundredths = Math.round(seconds * 100);
+  const m = Math.floor(hundredths / 6000);
+  const s = Math.floor((hundredths % 6000) / 100);
+  const fraction = hundredths % 100;
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${fraction.toString().padStart(2, '0')}`;
+}
+
+function parseTimestampToSeconds(value) {
+  const text = String(value).trim();
+  if (!text) return NaN;
+  if (text.includes(':')) {
+    const parts = text.split(':').map(Number);
+    if (parts.length < 2 || parts.length > 3 || parts.some(n => !Number.isFinite(n) || n < 0)) return NaN;
+    if (parts.slice(1).some(n => n >= 60)) return NaN;
+    return parts.length === 2
+      ? parts[0] * 60 + parts[1]
+      : parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+  if (!/^\d+$/.test(text)) return NaN;
+  if (text.length <= 2) return Number(text);
+  const seconds = Number(text.slice(-2));
+  const minutes = Number(text.slice(-4, -2) || text.slice(0, -2));
+  const hours = text.length > 4 ? Number(text.slice(0, -4)) : 0;
+  if (seconds >= 60 || minutes >= 60) return NaN;
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+function cutValueToSeconds(value, unit, duration) {
+  if (unit === 'timestamp') return parseTimestampToSeconds(value);
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return NaN;
+  if (unit === 'minutes') return numeric * 60;
+  if (unit === 'percent') return duration * numeric / 100;
+  return numeric;
+}
+
+function secondsToCutValue(seconds, unit, duration) {
+  if (unit === 'timestamp') return formatTimePrecise(seconds);
+  if (unit === 'minutes') return (seconds / 60).toFixed(3);
+  if (unit === 'percent') return duration ? (seconds / duration * 100).toFixed(1) : '0.0';
+  return seconds.toFixed(2);
 }
 
 function formatBytes(bytes) {
@@ -567,15 +619,17 @@ function handleGlobalKeydown(e) {
   // [ and ]: Set Cut Start / End to current playhead
   if (e.key === '[') {
     if (state.activeAudio) {
-      el.cutStartInput.value = (el.audio.currentTime || 0).toFixed(2);
-      showToast(`Set Cut Start bound to ${el.cutStartInput.value}s`, "info");
+      const range = readCutRange();
+      writeCutRange(el.audio.currentTime || 0, range.error ? state.activeAudio.duration_s : range.effectiveEnd);
+      showToast(`Set clip start to ${formatTimePrecise(el.audio.currentTime || 0)}`, "info");
     }
     return;
   }
   if (e.key === ']') {
     if (state.activeAudio) {
-      el.cutEndInput.value = (el.audio.currentTime || 0).toFixed(2);
-      showToast(`Set Cut End bound to ${el.cutEndInput.value}s`, "info");
+      const range = readCutRange();
+      writeCutRange(range.error ? 0 : range.start, el.audio.currentTime || 0);
+      showToast(`Set clip end to ${formatTimePrecise(el.audio.currentTime || 0)}`, "info");
     }
     return;
   }
@@ -845,9 +899,8 @@ async function setActiveAudio(audioId, options = { play: false }) {
       });
     }
 
-    // Set default cut bounds
-    el.cutEndInput.value = (meta.duration_s || 10).toFixed(1);
-    el.cutStartInput.value = "0.0";
+    // Set default cut bounds in the currently selected display format.
+    writeCutRange(0, meta.duration_s || 10);
 
     // Load into master player
     loadAudioIntoPlayer(audioId, options.play);
@@ -964,11 +1017,16 @@ function clearSelection() {
   state.selection.end = 0;
   if (el.selectionOverlay) el.selectionOverlay.classList.add('hidden');
   if (el.selectionActionsBar) el.selectionActionsBar.style.display = 'none';
+  if (el.selectionHelper) {
+    el.selectionHelper.classList.remove('has-selection');
+    el.selectionHelper.innerHTML = '<span class="selection-helper-icon">↔</span><span><strong>Select the useful moment.</strong> You can fine-tune its boundaries in the range panel.</span>';
+  }
 }
 
 function initWaveformInteractions() {
   let isDragging = false;
   let dragStartX = 0;
+  let dragMode = 'new';
 
   const viewport = el.waveformViewport;
 
@@ -976,16 +1034,20 @@ function initWaveformInteractions() {
     viewport.addEventListener('mousedown', (e) => {
       if (!state.activeAudio) return;
       const rect = viewport.getBoundingClientRect();
-      dragStartX = e.clientX - rect.left;
+      const handle = e.target.closest('.selection-handle');
+      dragMode = handle?.dataset.handle || 'new';
+      dragStartX = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
       isDragging = true;
 
-      const time = (dragStartX / rect.width) * (state.activeAudio.duration_s || 1);
-      seekTo(time);
-
-      state.selection.start = time;
-      state.selection.end = time;
-      state.selection.active = true;
-      updateSelectionOverlay(dragStartX, dragStartX, rect.width);
+      if (dragMode === 'new') {
+        const time = (dragStartX / rect.width) * (state.activeAudio.duration_s || 1);
+        seekTo(time);
+        state.selection.start = time;
+        state.selection.end = time;
+        state.selection.active = true;
+        updateSelectionOverlay(dragStartX, dragStartX, rect.width);
+      }
+      e.preventDefault();
     });
 
     window.addEventListener('mousemove', (e) => {
@@ -1007,8 +1069,18 @@ function initWaveformInteractions() {
 
       if (!isDragging) return;
 
-      const minX = Math.min(dragStartX, currentX);
-      const maxX = Math.max(dragStartX, currentX);
+      let minX;
+      let maxX;
+      if (dragMode === 'start') {
+        minX = Math.min(currentX, (state.selection.end / (state.activeAudio.duration_s || 1)) * rect.width - 1);
+        maxX = (state.selection.end / (state.activeAudio.duration_s || 1)) * rect.width;
+      } else if (dragMode === 'end') {
+        minX = (state.selection.start / (state.activeAudio.duration_s || 1)) * rect.width;
+        maxX = Math.max(currentX, minX + 1);
+      } else {
+        minX = Math.min(dragStartX, currentX);
+        maxX = Math.max(dragStartX, currentX);
+      }
 
       updateSelectionOverlay(minX, maxX, rect.width);
 
@@ -1026,6 +1098,10 @@ function initWaveformInteractions() {
         } else {
           if (el.selectionActionsBar) el.selectionActionsBar.style.display = 'flex';
           populateCutBoundsFromSelection();
+          if (el.selectionHelper) {
+            el.selectionHelper.classList.add('has-selection');
+            el.selectionHelper.innerHTML = `<span class="selection-helper-icon">✓</span><span><strong>${formatTimePrecise(state.selection.end - state.selection.start)} selected.</strong> Drag the blue edges or edit the values to refine it.</span>`;
+          }
         }
       }
     });
@@ -1102,25 +1178,63 @@ async function loadSpectrogramImage() {
 
 // ==================== AUDIO CUTTER ACTIONS ====================
 
+function readCutRange(unit = state.cutUnit) {
+  const duration = state.activeAudio?.duration_s || 0;
+  const start = cutValueToSeconds(el.cutStartInput.value, unit, duration);
+  const end = cutValueToSeconds(el.cutEndInput.value, unit, duration);
+  let error = '';
+  if (!Number.isFinite(start) || !Number.isFinite(end)) error = 'Enter a valid start and end value.';
+  else if (start < 0 || end < 0) error = 'Range values cannot be negative.';
+  else if (start >= end) error = 'End must be later than start.';
+  else if (start >= duration) error = 'Start is outside this track.';
+  return { start, end, effectiveEnd: Math.min(end, duration), duration, error };
+}
+
+function writeCutRange(start, end, unit = state.cutUnit) {
+  const duration = state.activeAudio?.duration_s || 0;
+  el.cutStartInput.value = secondsToCutValue(start, unit, duration);
+  el.cutEndInput.value = secondsToCutValue(end, unit, duration);
+  updateCutRangeUI();
+}
+
+function updateCutRangeUI(syncWaveform = false) {
+  if (!state.activeAudio) return false;
+  const range = readCutRange();
+  const invalid = Boolean(range.error);
+  el.cutStartInput.classList.toggle('is-invalid', invalid);
+  el.cutEndInput.classList.toggle('is-invalid', invalid);
+  el.btnPreviewCut.disabled = invalid;
+  el.btnApplyCut.disabled = invalid;
+  if (el.btnCutAndAudition) el.btnCutAndAudition.disabled = invalid;
+  if (el.btnCutAndRunModels) el.btnCutAndRunModels.disabled = invalid;
+
+  if (invalid) {
+    el.cutValidation.textContent = range.error;
+    el.cutValidation.classList.add('is-error');
+    el.cutDurationDisplay.textContent = 'Invalid range';
+    return false;
+  }
+
+  const clipDuration = Math.max(0, range.effectiveEnd - range.start);
+  el.cutDurationDisplay.textContent = `${formatTimePrecise(clipDuration)} clip`;
+  el.cutValidation.textContent = range.end > range.duration
+    ? `Ends at track boundary (${formatTimePrecise(range.duration)}).`
+    : `${formatTimePrecise(range.start)} → ${formatTimePrecise(range.effectiveEnd)}`;
+  el.cutValidation.classList.remove('is-error');
+
+  if (syncWaveform && el.waveformViewport) {
+    state.selection = { start: range.start, end: range.effectiveEnd, active: true };
+    const width = el.waveformViewport.clientWidth;
+    updateSelectionOverlay(range.start / range.duration * width, range.effectiveEnd / range.duration * width, width);
+    if (el.selectionActionsBar) el.selectionActionsBar.style.display = 'flex';
+  }
+  return true;
+}
+
 function populateCutBoundsFromSelection(showFeedback = false) {
   if (!state.activeAudio || !state.selection.active) return false;
 
-  const unit = document.querySelector('input[name="cut_unit"]:checked').value;
-  const dur = state.activeAudio.duration_s || 1;
-
-  if (unit === 'seconds') {
-    el.cutStartInput.value = state.selection.start.toFixed(2);
-    el.cutEndInput.value = state.selection.end.toFixed(2);
-  } else if (unit === 'minutes') {
-    el.cutStartInput.value = (state.selection.start / 60).toFixed(3);
-    el.cutEndInput.value = (state.selection.end / 60).toFixed(3);
-  } else if (unit === 'percent') {
-    el.cutStartInput.value = ((state.selection.start / dur) * 100).toFixed(1);
-    el.cutEndInput.value = ((state.selection.end / dur) * 100).toFixed(1);
-  } else if (unit === 'timestamp') {
-    el.cutStartInput.value = formatTime(state.selection.start);
-    el.cutEndInput.value = formatTime(state.selection.end);
-  }
+  writeCutRange(state.selection.start, state.selection.end);
 
   if (showFeedback) {
     showToast("Using the selected waveform range", "success");
@@ -1139,27 +1253,57 @@ function initAudioCutter() {
   // Unit radio change styling
   el.cutUnitRadios.forEach(radio => {
     radio.addEventListener('change', () => {
+      const previousRange = readCutRange(state.cutUnit);
+      state.cutUnit = radio.value;
       document.querySelectorAll('.radio-pill').forEach(p => p.classList.remove('active'));
       radio.closest('.radio-pill').classList.add('active');
-      populateCutBoundsFromSelection();
+      if (!previousRange.error) writeCutRange(previousRange.start, previousRange.effectiveEnd, state.cutUnit);
+      else if (state.selection.active) populateCutBoundsFromSelection();
+      else updateCutRangeUI();
+    });
+  });
+
+  [el.cutStartInput, el.cutEndInput].forEach(input => {
+    input.addEventListener('input', () => updateCutRangeUI(true));
+  });
+
+  el.btnSetStartPlayhead?.addEventListener('click', () => {
+    const range = readCutRange();
+    writeCutRange(state.player.currentTime || 0, range.error ? (state.activeAudio.duration_s || 0) : range.effectiveEnd);
+  });
+
+  el.btnSetEndPlayhead?.addEventListener('click', () => {
+    const range = readCutRange();
+    writeCutRange(range.error ? 0 : range.start, state.player.currentTime || 0);
+  });
+
+  el.rangePresets.forEach(button => {
+    button.addEventListener('click', () => {
+      const duration = state.activeAudio?.duration_s || 0;
+      const preset = button.dataset.duration;
+      const start = preset === 'all' ? 0 : Math.min(state.player.currentTime || 0, duration);
+      const end = preset === 'all' ? duration : Math.min(duration, start + Number(preset));
+      writeCutRange(start, end);
+      updateCutRangeUI(true);
     });
   });
 
   // Preview Cut
   el.btnPreviewCut.addEventListener('click', () => {
     if (!state.activeAudio) return;
-    const startVal = parseFloat(el.cutStartInput.value) || 0;
-    const endVal = parseFloat(el.cutEndInput.value) || (state.activeAudio.duration_s || 10);
+    const range = readCutRange();
+    if (range.error) return updateCutRangeUI();
 
-    seekTo(startVal);
-    state.player.previewEnd = endVal;
+    seekTo(range.start);
+    state.player.previewEnd = range.effectiveEnd;
     el.audio.play();
-    showToast(`Previewing cut: ${startVal}s to ${endVal}s`, "info");
+    showToast(`Previewing ${formatTimePrecise(range.effectiveEnd - range.start)} clip`, "info");
   });
 
   // Apply Cut (AudioCutter API)
   el.btnApplyCut.addEventListener('click', async () => {
     if (!state.activeAudio) return;
+    if (!updateCutRangeUI()) return;
     const start = el.cutStartInput.value.trim();
     const end = el.cutEndInput.value.trim();
     const unit = document.querySelector('input[name="cut_unit"]:checked').value;
@@ -1177,13 +1321,14 @@ function initAudioCutter() {
 
       showToast(`Audio cut successful! Created new clip ${data.audio_id}`, "success");
       await fetchAudioList();
-      addCutToRegistry(data.audio_id, start, end);
+      addCutToRegistry(data.audio_id, start, end, unit);
       await setActiveAudio(data.audio_id, { play: true });
     } catch (err) {
       showToast(err.message, "error");
     } finally {
       el.btnApplyCut.disabled = false;
-      el.btnApplyCut.innerHTML = `<span>Open in Workspace</span>`;
+      el.btnApplyCut.innerHTML = `<span>Create Clip</span>`;
+      updateCutRangeUI();
     }
   });
 
@@ -1194,7 +1339,7 @@ function initAudioCutter() {
         showToast("Please load an audio file first", "warning");
         return;
       }
-      populateCutBoundsFromSelection();
+      if (!updateCutRangeUI()) return;
       const start = el.cutStartInput.value.trim();
       const end = el.cutEndInput.value.trim();
       const unit = document.querySelector('input[name="cut_unit"]:checked').value;
@@ -1212,14 +1357,15 @@ function initAudioCutter() {
 
         showToast(`Snippet created! Switching to Audition & Scoring Hub...`, "success");
         await fetchAudioList();
-        addCutToRegistry(data.audio_id, start, end);
+        addCutToRegistry(data.audio_id, start, end, unit);
         switchTab('tab-comparison');
         await loadClipForAudition(data.audio_id);
       } catch (err) {
         showToast(err.message, "error");
       } finally {
         el.btnCutAndAudition.disabled = false;
-        el.btnCutAndAudition.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><line x1="20" y1="4" x2="8.12" y2="15.88"></line><line x1="14.47" y1="14.48" x2="20" y2="20"></line><line x1="8.12" y1="8.12" x2="12" y2="12"></line></svg> <span>Open in Audition</span>`;
+        el.btnCutAndAudition.innerHTML = `<span>Create &amp; open Audition</span>`;
+        updateCutRangeUI();
       }
     });
   }
@@ -1231,6 +1377,7 @@ function initAudioCutter() {
         showToast("Please load an audio file first", "warning");
         return;
       }
+      if (!updateCutRangeUI()) return;
       const start = el.cutStartInput.value.trim();
       const end = el.cutEndInput.value.trim();
       const unit = document.querySelector('input[name="cut_unit"]:checked').value;
@@ -1245,7 +1392,7 @@ function initAudioCutter() {
           body: JSON.stringify({ start, end, unit }),
         });
         const data = await parseJsonResponse(res);
-        addCutToRegistry(data.audio_id, start, end);
+        addCutToRegistry(data.audio_id, start, end, unit);
         await fetchAudioList();
 
         showToast(`Running batch separation models on snippet...`, "info");
@@ -1254,7 +1401,8 @@ function initAudioCutter() {
         showToast(err.message, "error");
       } finally {
         el.btnCutAndRunModels.disabled = false;
-        el.btnCutAndRunModels.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> <span>Run Separation Models</span>`;
+        el.btnCutAndRunModels.innerHTML = `<span>Create &amp; run models</span>`;
+        updateCutRangeUI();
       }
     });
   }
@@ -1954,20 +2102,23 @@ function initCutsManager() {
   renderCutsTable();
 }
 
-function addCutToRegistry(audioId, start, end) {
+function addCutToRegistry(audioId, start, end, unit = state.cutUnit) {
+  const sourceDuration = state.activeAudio?.duration_s || 0;
+  const startSeconds = cutValueToSeconds(start, unit, sourceDuration);
+  const endSeconds = Math.min(cutValueToSeconds(end, unit, sourceDuration), sourceDuration);
   const audio = state.audioList.find(a => a.id === audioId) || {
     id: audioId,
     title: state.activeAudio ? `${state.activeAudio.title}_cut_${start}_${end}` : audioId,
-    duration_s: parseFloat(end) - parseFloat(start),
+    duration_s: endSeconds - startSeconds,
   };
   if (!state.cuts) state.cuts = [];
   state.cuts.unshift({
     id: audioId,
     title: audio.title || audioId,
     parentId: state.activeAudio ? state.activeAudio.id : null,
-    start: parseFloat(start),
-    end: parseFloat(end),
-    duration: Math.max(0, parseFloat(end) - parseFloat(start)),
+    start: startSeconds,
+    end: endSeconds,
+    duration: Math.max(0, endSeconds - startSeconds),
     created: Date.now(),
   });
   renderCutsTable();
@@ -3468,72 +3619,162 @@ function formatTaskTime(task) {
 async function loadAndRenderQueueModal() {
   if (!el.studioQueueTaskList) return;
   try {
-    const res = await fetch('/api/tasks');
-    if (!res.ok) throw new Error("Failed to load tasks");
-    const data = await res.json();
-    const tasks = data.tasks || [];
-    const queueStatus = data.queue || { running: 0, queued: 0 };
+    let data;
+    try {
+      const res = await fetch('/api/queue/shared');
+      if (res.ok) {
+        data = await res.json();
+      }
+    } catch (_) {}
+
+    if (!data) {
+      const res = await fetch('/api/tasks');
+      if (!res.ok) throw new Error("Failed to load tasks");
+      const localData = await res.json();
+      data = {
+        device: { name: (state.systemStatus?.device_name || "Compute Node").split(':')[0], gpu_load_pct: null, vram_used_mb: null, vram_total_mb: null, vram_pct: null },
+        summary: {
+          total_running: (localData.tasks || []).filter(t => t.status === 'running').length,
+          total_queued: (localData.tasks || []).filter(t => t.status === 'pending').length,
+          studio_running: (localData.tasks || []).filter(t => t.status === 'running').length,
+          studio_queued: (localData.tasks || []).filter(t => t.status === 'pending').length,
+          pipeline_running: 0,
+          pipeline_queued: 0,
+        },
+        items: (localData.tasks || []).map(t => ({
+          id: t.id,
+          source: 'studio',
+          source_label: 'SonicStudio',
+          title: t.metadata?.title || t.metadata?.model || t.type,
+          type: t.type,
+          status: t.status,
+          progress: t.progress || 0.0,
+          message: t.message || "",
+          error: t.error,
+          created_at: t.created_at,
+          start_time: t.start_time,
+          end_time: t.end_time,
+          queue_position: t.queue_position,
+          metadata: t.metadata || {},
+        })),
+      };
+    }
+
+    const items = data.items || [];
+    const summary = data.summary || { total_running: 0, total_queued: 0, studio_running: 0, studio_queued: 0, pipeline_running: 0, pipeline_queued: 0 };
+    const device = data.device || {};
+
+    // Update GPU Ribbon
+    if (el.queueGpuName) el.queueGpuName.textContent = device.name || "Compute Device";
+    if (el.queueGpuLoad) el.queueGpuLoad.textContent = Number.isFinite(device.gpu_load_pct) ? `${Math.round(device.gpu_load_pct)}%` : 'Active';
+    if (el.queueGpuVram) {
+      if (device.vram_used_mb != null && device.vram_total_mb != null) {
+        el.queueGpuVram.textContent = `${device.vram_used_mb} / ${device.vram_total_mb} MB (${Math.round(device.vram_pct || 0)}%)`;
+      } else {
+        el.queueGpuVram.textContent = "Shared Memory";
+      }
+    }
+    if (el.queueActiveSplit) {
+      el.queueActiveSplit.textContent = `Studio: ${summary.studio_running} active • Pipeline: ${summary.pipeline_running} active`;
+    }
+
+    // Render multi-GPU cards if 2+ GPUs detected
+    if (el.queueGpuDevicesGrid) {
+      const devList = device.devices || (data.telemetry && data.telemetry.gpu && data.telemetry.gpu.devices) || [];
+      if (devList.length > 1) {
+        el.queueGpuDevicesGrid.style.display = 'grid';
+        el.queueGpuDevicesGrid.innerHTML = devList.map((d, i) => {
+          const dLoad = Number.isFinite(d.load_percent) ? Math.round(d.load_percent) : (Number.isFinite(d.utilization_percent) ? Math.round(d.utilization_percent) : 0);
+          const dVram = (d.used_vram_mb != null && d.total_vram_mb != null) ? `${d.used_vram_mb} / ${d.total_vram_mb} MB (${Math.round(d.vram_percent || 0)}%)` : '-- MB';
+          const dTemp = d.temperature_c != null ? `${Math.round(d.temperature_c)}°C` : '';
+          return `
+            <div class="gpu-device-card">
+              <div class="gpu-device-card-header">
+                <span class="gpu-device-card-title">⚡ GPU ${i}: ${escapeHtml(d.name)}</span>
+                <span class="gpu-device-card-temp font-mono">${dTemp}</span>
+              </div>
+              <div class="gpu-device-card-bar-wrap">
+                <div class="gpu-device-card-bar-fill" style="width: ${dLoad}%;"></div>
+              </div>
+              <div class="gpu-device-card-sub font-mono">
+                <span>Load: <strong>${dLoad}%</strong></span>
+                <span>VRAM: ${dVram}</span>
+              </div>
+            </div>
+          `;
+        }).join('');
+      } else {
+        el.queueGpuDevicesGrid.style.display = 'none';
+      }
+    }
+
+    if (data.telemetry) {
+      updateTelemetryDisplay(data.telemetry);
+    }
 
     // Update stat numbers
-    const runningCount = tasks.filter(t => t.status === 'running').length;
-    const queuedCount = tasks.filter(t => t.status === 'pending').length;
-    const completedCount = tasks.filter(t => t.status === 'completed').length;
-    const failedCount = tasks.filter(t => t.status === 'failed' || t.status === 'cancelled').length;
+    const completedCount = items.filter(t => t.status === 'completed').length;
+    const failedCount = items.filter(t => t.status === 'failed' || t.status === 'cancelled').length;
 
-    if (el.queueStatRunning) el.queueStatRunning.textContent = runningCount;
-    if (el.queueStatQueued) el.queueStatQueued.textContent = queuedCount;
+    if (el.queueStatRunning) el.queueStatRunning.textContent = summary.total_running;
+    if (el.queueStatQueued) el.queueStatQueued.textContent = summary.total_queued;
     if (el.queueStatCompleted) el.queueStatCompleted.textContent = completedCount;
     if (el.queueStatFailed) el.queueStatFailed.textContent = failedCount;
 
     if (el.queueModalSubtitle) {
-      el.queueModalSubtitle.textContent = `Active Concurrency: ${queueStatus.max_concurrency || 1} slots • ${runningCount} active, ${queuedCount} in queue`;
+      el.queueModalSubtitle.textContent = `Shared GPU Queue: ${summary.total_running} running, ${summary.total_queued} queued across Studio & Pipeline`;
     }
 
-    // Filter tasks according to state.queueModalFilter
+    // Filter items according to state.queueModalFilter
     const filter = state.queueModalFilter || 'all';
-    let filteredTasks = tasks;
+    let filteredItems = items;
     if (filter === 'active') {
-      filteredTasks = tasks.filter(t => t.status === 'running' || t.status === 'pending');
+      filteredItems = items.filter(t => t.status === 'running' || t.status === 'pending');
+    } else if (filter === 'studio') {
+      filteredItems = items.filter(t => t.source === 'studio');
+    } else if (filter === 'pipeline') {
+      filteredItems = items.filter(t => t.source === 'pipeline');
     } else if (filter === 'completed') {
-      filteredTasks = tasks.filter(t => t.status === 'completed');
+      filteredItems = items.filter(t => t.status === 'completed');
     } else if (filter === 'failed') {
-      filteredTasks = tasks.filter(t => t.status === 'failed' || t.status === 'cancelled');
+      filteredItems = items.filter(t => t.status === 'failed' || t.status === 'cancelled');
     }
 
-    if (filteredTasks.length === 0) {
+    if (filteredItems.length === 0) {
       el.studioQueueTaskList.innerHTML = `
         <div class="queue-empty-state">
           <div class="queue-empty-icon">☕</div>
-          <div class="queue-empty-title">${filter === 'all' ? 'Task Queue is Idle' : 'No tasks in this view'}</div>
-          <div class="queue-empty-sub">${filter === 'all' ? 'Any background separations, YouTube downloads, or diarizations will appear here in real-time.' : 'No background tasks match the selected filter.'}</div>
+          <div class="queue-empty-title">${filter === 'all' ? 'Shared GPU Queue is Idle' : 'No workloads in this view'}</div>
+          <div class="queue-empty-sub">${filter === 'all' ? 'All model separations, YouTube downloads, diarizations, and batch jobs across Studio & Pipeline will appear here in real-time.' : 'No workloads match the selected filter.'}</div>
         </div>
       `;
       return;
     }
 
     el.studioQueueTaskList.innerHTML = '';
-    filteredTasks.forEach(task => {
+    filteredItems.forEach(item => {
       const card = document.createElement('div');
-      const isRunning = task.status === 'running';
-      const isPending = task.status === 'pending';
-      const isFailed = task.status === 'failed';
-      const isCancelled = task.status === 'cancelled';
-      const isCompleted = task.status === 'completed';
+      const isRunning = item.status === 'running';
+      const isPending = item.status === 'pending';
+      const isFailed = item.status === 'failed';
+      const isCancelled = item.status === 'cancelled';
+      const isCompleted = item.status === 'completed';
+      const isStudio = item.source === 'studio';
 
       let cardClass = 'queue-task-card';
       if (isRunning) cardClass += ' task-running';
       if (isFailed) cardClass += ' task-failed';
       card.className = cardClass;
 
-      const progressPct = Math.round(Math.min(100, Math.max(0, (task.progress || 0) * 100)));
-      const typeLabel = formatTaskType(task.type);
-      const timeStr = formatTaskTime(task);
+      const progressPct = Math.round(Math.min(100, Math.max(0, (item.progress || 0) * 100)));
+      const typeLabel = formatTaskType(item.type);
+      const timeStr = formatTaskTime(item);
 
       let statusBadgeHtml = '';
       if (isRunning) {
         statusBadgeHtml = `<span class="task-status-pill task-status-running"><span class="dot dot-pulse"></span> Running (${progressPct}%)</span>`;
       } else if (isPending) {
-        const posText = task.queue_position ? ` #${task.queue_position}` : '';
+        const posText = item.queue_position ? ` #${item.queue_position}` : '';
         statusBadgeHtml = `<span class="task-status-pill task-status-pending">⏳ Queued${posText}</span>`;
       } else if (isCompleted) {
         statusBadgeHtml = `<span class="task-status-pill task-status-completed">✓ Completed</span>`;
@@ -3543,30 +3784,36 @@ async function loadAndRenderQueueModal() {
         statusBadgeHtml = `<span class="task-status-pill task-status-cancelled">⊘ Cancelled</span>`;
       }
 
+      const sourceBadgeHtml = isStudio
+        ? `<span class="workload-source-badge source-studio">🎙️ Studio</span>`
+        : `<span class="workload-source-badge source-pipeline">⚡ Pipeline</span>`;
+
       let errorHtml = '';
-      if (task.error) {
-        errorHtml = `<div class="task-card-error">${escapeHtml(task.error)}</div>`;
+      if (item.error) {
+        errorHtml = `<div class="task-card-error">${escapeHtml(item.error)}</div>`;
       }
 
       let cancelBtnHtml = '';
       if (isPending) {
-        cancelBtnHtml = `<button class="btn btn-sm btn-danger btn-cancel-task" data-task-id="${task.id}" title="Cancel queued task">Cancel</button>`;
+        cancelBtnHtml = `<button class="btn btn-sm btn-danger btn-cancel-task" data-item-id="${item.id}" title="Cancel queued workload">Cancel</button>`;
       }
 
-      // Metadata summary (e.g. model name, url, duration)
-      const meta = task.metadata || {};
+      // Metadata summary
+      const meta = item.metadata || {};
       let metaSummary = [];
+      if (item.title && item.title !== typeLabel) metaSummary.push(item.title);
       if (meta.model) metaSummary.push(`Model: ${meta.model}`);
       if (meta.backend) metaSummary.push(`Backend: ${meta.backend}`);
-      if (meta.url) metaSummary.push(`URL: ${meta.url.length > 35 ? meta.url.substring(0, 35) + '...' : meta.url}`);
-      if (meta.sample_rate) metaSummary.push(`${meta.sample_rate} Hz`);
+      if (meta.url) metaSummary.push(`URL: ${meta.url.length > 30 ? meta.url.substring(0, 30) + '...' : meta.url}`);
+      if (item.total_items && item.total_items > 1) metaSummary.push(`${item.processed_items || 0}/${item.total_items} items`);
       const metaLine = metaSummary.length > 0 ? metaSummary.join(' • ') : '';
 
       card.innerHTML = `
         <div class="task-card-header">
           <div class="task-card-meta">
+            ${sourceBadgeHtml}
             <span class="task-type-badge">${typeLabel}</span>
-            <span class="task-id-label">${task.id}</span>
+            <span class="task-id-label">${item.id}</span>
           </div>
           <div class="task-card-status-wrap">
             <span class="task-time-label">${timeStr}</span>
@@ -3574,7 +3821,7 @@ async function loadAndRenderQueueModal() {
           </div>
         </div>
 
-        <div class="task-card-msg">${escapeHtml(task.message || (isRunning ? 'Processing audio task...' : ''))}</div>
+        <div class="task-card-msg">${escapeHtml(item.message || (isRunning ? 'Processing on compute device...' : ''))}</div>
         ${errorHtml}
 
         ${isRunning || isPending ? `
@@ -3596,7 +3843,7 @@ async function loadAndRenderQueueModal() {
     el.studioQueueTaskList.querySelectorAll('.btn-cancel-task').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        cancelQueueTask(btn.dataset.taskId);
+        cancelSharedQueueItem(btn.dataset.itemId);
       });
     });
 
@@ -3605,7 +3852,7 @@ async function loadAndRenderQueueModal() {
       el.studioQueueTaskList.innerHTML = `
         <div class="queue-empty-state">
           <div class="queue-empty-icon">⚠</div>
-          <div class="queue-empty-title">Could not reach Studio Queue</div>
+          <div class="queue-empty-title">Could not reach Shared Queue</div>
           <div class="queue-empty-sub">${escapeHtml(err.message)}</div>
         </div>
       `;
@@ -3613,16 +3860,19 @@ async function loadAndRenderQueueModal() {
   }
 }
 
-async function cancelQueueTask(taskId) {
+async function cancelSharedQueueItem(itemId) {
   try {
-    const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+    let res = await fetch(`/api/queue/shared/${itemId}`, { method: 'DELETE' });
+    if (!res.ok) {
+      res = await fetch(`/api/tasks/${itemId}`, { method: 'DELETE' });
+    }
     const data = await res.json();
     if (res.ok) {
-      showToast("Task cancelled successfully", "info");
+      showToast("Workload cancelled successfully", "info");
       loadAndRenderQueueModal();
       fetchSystemStatus();
     } else {
-      showToast(data.error || "Failed to cancel task", "error");
+      showToast(data.error || "Failed to cancel workload", "error");
     }
   } catch (err) {
     showToast(`Error: ${err.message}`, "error");
@@ -3634,7 +3884,7 @@ async function clearQueueFinished() {
     const res = await fetch('/api/tasks/clear', { method: 'POST' });
     const data = await res.json();
     if (res.ok) {
-      showToast(`Cleared ${data.cleared || 0} finished task(s)`, "success");
+      showToast(`Cleared ${data.cleared || 0} finished Studio task(s)`, "success");
       loadAndRenderQueueModal();
     } else {
       showToast("Failed to clear tasks", "error");
@@ -3656,9 +3906,15 @@ function closeAllModals() {
 }
 
 function initModals() {
-  // Queue Modal triggers
+  // Queue & Telemetry Modal triggers
   if (el.queueBadge) {
     el.queueBadge.addEventListener('click', (e) => {
+      e.preventDefault();
+      toggleQueueModal();
+    });
+  }
+  if (el.gpuLoadBadge) {
+    el.gpuLoadBadge.addEventListener('click', (e) => {
       e.preventDefault();
       toggleQueueModal();
     });
@@ -3932,7 +4188,48 @@ function initLiveReload() {
   };
 }
 
-// ==================== SYSTEM STATUS ====================
+// ==================== SYSTEM STATUS & TELEMETRY ====================
+
+function updateTelemetryDisplay(telemetry) {
+  if (!telemetry) return;
+  const gpu = telemetry.gpu;
+  if (!gpu) return;
+
+  if (gpu.available && gpu.type === 'cuda') {
+    const load = gpu.load_percent ?? gpu.utilization_percent;
+    const vramPct = gpu.vram_percent;
+    const loadPct = Number.isFinite(load) ? Math.max(0, Math.min(100, load)) : 0;
+
+    if (el.gpuLoadLabel) {
+      if (gpu.device_count > 1 && gpu.devices && gpu.devices.length > 1) {
+        const devLoads = gpu.devices.map(d => {
+          const l = d.load_percent ?? d.utilization_percent;
+          return Number.isFinite(l) ? `${Math.round(l)}%` : '--';
+        }).join(' | ');
+        el.gpuLoadLabel.textContent = `GPU: ${devLoads}`;
+      } else {
+        el.gpuLoadLabel.textContent = Number.isFinite(load) ? `GPU: ${Math.round(load)}%` : 'GPU: Active';
+      }
+    }
+    if (el.headerGpuMeter) {
+      el.headerGpuMeter.style.width = `${loadPct}%`;
+    }
+    if (el.gpuLoadBadge) {
+      const tip = (gpu.device_count > 1 && gpu.devices && gpu.devices.length > 1)
+        ? `${gpu.device_count} GPUs Active\n${gpu.devices.map((d, i) => `GPU ${i} (${d.name}): ${d.load_percent ?? 0}% load · ${d.used_vram_mb}/${d.total_vram_mb} MB · ${d.temperature_c ?? '--'}°C`).join('\n')}`
+        : `${gpu.name}: ${Math.round(loadPct)}% load · ${gpu.used_vram_mb}/${gpu.total_vram_mb} MB (${Math.round(vramPct || 0)}%) · ${gpu.temperature_c ?? '--'}°C`;
+      el.gpuLoadBadge.title = `${tip}\n(Click to view full Telemetry & Queue)`;
+    }
+  } else if (gpu.type === 'mps') {
+    if (el.gpuLoadLabel) el.gpuLoadLabel.textContent = 'MPS';
+    if (el.headerGpuMeter) el.headerGpuMeter.style.width = '0%';
+    if (el.gpuLoadBadge) el.gpuLoadBadge.title = 'Apple Silicon (MPS Accelerator)';
+  } else {
+    if (el.gpuLoadLabel) el.gpuLoadLabel.textContent = 'CPU';
+    if (el.headerGpuMeter) el.headerGpuMeter.style.width = '0%';
+    if (el.gpuLoadBadge) el.gpuLoadBadge.title = 'CPU Mode (No GPU accelerator detected)';
+  }
+}
 
 async function fetchSystemStatus() {
   try {
@@ -3940,11 +4237,43 @@ async function fetchSystemStatus() {
     const data = await res.json();
     state.systemStatus = data;
     el.deviceLabel.textContent = `${data.device_name.split(':')[0]}`;
-    if (el.queueLabel && data.task_queue) {
-      const active = data.task_queue.running;
-      const queued = data.task_queue.queued;
-      el.queueLabel.textContent = active ? `Running ${active} • Queued ${queued}` : `Queue ${queued}`;
-      if (el.queueDot) el.queueDot.classList.toggle('dot-pulse', active > 0);
+
+    // Dynamically populate device selection dropdowns if multiple GPUs exist
+    if (data.devices && data.devices.length > 0 && !state._devicesPopulated) {
+      state._devicesPopulated = true;
+      const populateSelect = (selectEl) => {
+        if (!selectEl) return;
+        const currentVal = selectEl.value;
+        let html = '<option value="auto">Auto (Best Available)</option>';
+        data.devices.forEach(d => {
+          html += `<option value="${d.id}">${d.id} (${d.name})</option>`;
+        });
+        html += '<option value="cpu">CPU</option>';
+        selectEl.innerHTML = html;
+        if (currentVal && Array.from(selectEl.options).some(o => o.value === currentVal)) {
+          selectEl.value = currentVal;
+        }
+      };
+      populateSelect(el.sepDeviceSelect);
+      populateSelect(el.diarDeviceSelect);
+    }
+
+    if (el.queueLabel) {
+      if (data.shared_queue) {
+        const totalActive = data.shared_queue.total_running;
+        const totalQueued = data.shared_queue.total_queued;
+        el.queueLabel.textContent = totalActive > 0 ? `GPU Active ${totalActive} • Queued ${totalQueued}` : `GPU Queue ${totalQueued}`;
+        if (el.queueDot) el.queueDot.classList.toggle('dot-pulse', totalActive > 0);
+      } else if (data.task_queue) {
+        const active = data.task_queue.running;
+        const queued = data.task_queue.queued;
+        el.queueLabel.textContent = active ? `Running ${active} • Queued ${queued}` : `Queue ${queued}`;
+        if (el.queueDot) el.queueDot.classList.toggle('dot-pulse', active > 0);
+      }
+    }
+
+    if (data.telemetry) {
+      updateTelemetryDisplay(data.telemetry);
     }
   } catch (err) {
     el.deviceLabel.textContent = "Offline";

@@ -1,0 +1,21 @@
+<div class="modal-overlay" id="modal-inspector" style="display: none;">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <h3 class="modal-title" id="inspector-title">Audio Asset Inspector</h3>
+            <span class="tag-chip">Asset Metadata</span>
+          </div>
+          <button class="btn-close" id="btn-close-inspector" aria-label="Close modal">&times;</button>
+        </div>
+        <div class="modal-body" id="inspector-body">
+          <!-- Populated dynamically by JS -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Hidden global audio element for inline auditioning in datasets table -->
+    <audio id="pipeline-audition-audio" preload="none"></audio>
+
+    <!-- Toast Notification Container -->
+    <div class="toast-container" id="toast-container"></div>
+  </div>

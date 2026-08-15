@@ -91,9 +91,15 @@
     btnClearCompleted: document.getElementById('btn-clear-completed'),
     filterPills: document.querySelectorAll('.filter-pill'),
     jobsList: document.getElementById('jobs-list'),
+    pipelineGpuSharedName: document.getElementById('pipeline-gpu-shared-name'),
+    pipelineGpuSharedLoad: document.getElementById('pipeline-gpu-shared-load'),
+    pipelineGpuSharedVram: document.getElementById('pipeline-gpu-shared-vram'),
+    pipelineGpuSharedSplit: document.getElementById('pipeline-gpu-shared-split'),
     countAll: document.getElementById('count-all'),
     countRunning: document.getElementById('count-running'),
     countPending: document.getElementById('count-pending'),
+    countStudio: document.getElementById('count-studio'),
+    countPipeline: document.getElementById('count-pipeline'),
     countCompleted: document.getElementById('count-completed'),
     countFailed: document.getElementById('count-failed'),
 
@@ -388,24 +394,67 @@
     // Header pills & sidebar meters
     const gpu = telemetry.gpu;
     if (gpu && gpu.available && gpu.type === 'cuda') {
+      const isMultiGpu = gpu.device_count > 1 && gpu.devices && gpu.devices.length > 1;
       const vramPct = Number.isFinite(gpu.vram_percent) ? Math.max(0, Math.min(100, gpu.vram_percent)) : 0;
       const vramUsed = gpu.used_vram_mb ?? gpu.reserved_vram_mb;
       const vramTotal = gpu.total_vram_mb;
-      const gpuLoad = gpu.load_percent ?? gpu.utilization_percent;
+      const gpuLoad = isMultiGpu
+        ? (gpu.aggregate?.avg_load_percent ?? gpu.load_percent ?? gpu.utilization_percent)
+        : (gpu.load_percent ?? gpu.utilization_percent);
       const gpuLoadPct = Number.isFinite(gpuLoad) ? Math.max(0, Math.min(100, gpuLoad)) : 0;
+
+      const multiLoadText = isMultiGpu
+        ? gpu.devices.map((d, i) => `GPU ${i}: ${Number.isFinite(d.load_percent ?? d.utilization_percent) ? Math.round(d.load_percent ?? d.utilization_percent) + '%' : '--'}`).join(' · ')
+        : (Number.isFinite(gpuLoad) ? `${Math.round(gpuLoad)}%` : 'N/A');
+
       const vramSummary = vramTotal !== null && vramTotal !== undefined
         ? `${vramUsed} / ${vramTotal} MB (${vramPct}%)`
         : 'VRAM unavailable';
 
-      if (els.valGpuLoad) els.valGpuLoad.textContent = Number.isFinite(gpuLoad) ? `${Math.round(gpuLoad)}%` : 'N/A';
+      if (els.valGpuLoad) els.valGpuLoad.textContent = multiLoadText;
       if (els.meterGpuLoad) els.meterGpuLoad.style.width = `${gpuLoadPct}%`;
-      if (els.dashGpuLoadText) els.dashGpuLoadText.textContent = Number.isFinite(gpuLoad) ? `${Math.round(gpuLoad)}%` : 'N/A';
+      if (els.dashGpuLoadText) els.dashGpuLoadText.textContent = multiLoadText;
       if (els.meterGpuLoadDash) els.meterGpuLoadDash.style.width = `${gpuLoadPct}%`;
       if (els.valGpuVram) els.valGpuVram.textContent = vramTotal !== null && vramTotal !== undefined ? `${vramUsed} / ${vramTotal} MB` : 'N/A';
       if (els.meterVram) els.meterVram.style.width = `${vramPct}%`;
       if (els.meterVramDash) els.meterVramDash.style.width = `${vramPct}%`;
-      if (els.dashVramText) els.dashVramText.textContent = vramSummary;
-      if (els.dashVramDetail) els.dashVramDetail.textContent = `Process: ${gpu.allocated_vram_mb} MB allocated / ${gpu.reserved_vram_mb} MB reserved · ${gpu.free_vram_mb} MB free`;
+      if (els.dashVramText) els.dashVramText.textContent = isMultiGpu && gpu.aggregate
+        ? `Total VRAM: ${gpu.aggregate.used_vram_mb} / ${gpu.aggregate.total_vram_mb} MB (${gpu.aggregate.vram_percent}%)`
+        : vramSummary;
+
+      if (els.dashVramDetail) {
+        if (isMultiGpu) {
+          els.dashVramDetail.textContent = gpu.devices.map((d, i) => `GPU ${i}: ${d.used_vram_mb}/${d.total_vram_mb} MB · ${d.temperature_c ?? '--'}°C`).join(' | ');
+        } else {
+          els.dashVramDetail.textContent = `Process: ${gpu.allocated_vram_mb} MB allocated / ${gpu.reserved_vram_mb} MB reserved · ${gpu.free_vram_mb} MB free`;
+        }
+      }
+
+      if (els.dashDeviceName) {
+        els.dashDeviceName.textContent = isMultiGpu
+          ? `${gpu.device_count}x GPUs (${gpu.name})`
+          : (gpu.name || 'CUDA GPU');
+      }
+
+      // Populate pipeline compute device selectors if multi-GPU
+      if (isMultiGpu && !state._pipelineDevicesPopulated) {
+        state._pipelineDevicesPopulated = true;
+        const popSelect = (sel) => {
+          if (!sel) return;
+          const cur = sel.value;
+          let opts = '<option value="cuda">CUDA (Auto / Primary)</option>';
+          gpu.devices.forEach(d => {
+            opts += `<option value="${d.id}">${d.id} (${d.name})</option>`;
+          });
+          opts += '<option value="cpu">CPU (Fallback)</option>';
+          sel.innerHTML = opts;
+          if (cur && Array.from(sel.options).some(o => o.value === cur)) {
+            sel.value = cur;
+          }
+        };
+        popSelect(els.sepDevice);
+        popSelect(els.diarDevice);
+      }
     } else if (gpu && gpu.type === 'mps') {
       if (els.valGpuLoad) els.valGpuLoad.textContent = 'N/A';
       if (els.meterGpuLoad) els.meterGpuLoad.style.width = '0%';
@@ -516,8 +565,9 @@
     const totalItems = state.datasets.reduce((acc, d) => acc + (d.item_count || 0), 0);
     if (els.dashDatasetItems) els.dashDatasetItems.innerHTML = `${totalItems} <span class="kpi-unit">files</span>`;
 
-    const activeJobs = state.jobs.filter((j) => j.status === 'running').length;
-    const queuedJobs = state.jobs.filter((j) => j.status === 'pending').length;
+    const allItems = state.sharedItems || state.jobs || [];
+    const activeJobs = allItems.filter((j) => j.status === 'running').length;
+    const queuedJobs = allItems.filter((j) => j.status === 'pending').length;
 
     if (els.dashActiveJobs) els.dashActiveJobs.innerHTML = `${activeJobs} <span class="kpi-unit">running</span>`;
     if (els.dashQueuedJobs) els.dashQueuedJobs.textContent = `${queuedJobs} pending in queue`;
@@ -531,20 +581,53 @@
     }
 
     // Update filter counts
-    if (els.countAll) els.countAll.textContent = state.jobs.length;
-    if (els.countRunning) els.countRunning.textContent = state.jobs.filter(j => j.status === 'running').length;
-    if (els.countPending) els.countPending.textContent = state.jobs.filter(j => j.status === 'pending').length;
-    if (els.countCompleted) els.countCompleted.textContent = state.jobs.filter(j => j.status === 'completed').length;
-    if (els.countFailed) els.countFailed.textContent = state.jobs.filter(j => j.status === 'failed').length;
+    if (els.countAll) els.countAll.textContent = allItems.length;
+    if (els.countRunning) els.countRunning.textContent = allItems.filter(j => j.status === 'running').length;
+    if (els.countPending) els.countPending.textContent = allItems.filter(j => j.status === 'pending').length;
+    if (els.countStudio) els.countStudio.textContent = allItems.filter(j => j.source === 'studio').length;
+    if (els.countPipeline) els.countPipeline.textContent = allItems.filter(j => j.source === 'pipeline' || !j.source).length;
+    if (els.countCompleted) els.countCompleted.textContent = allItems.filter(j => j.status === 'completed').length;
+    if (els.countFailed) els.countFailed.textContent = allItems.filter(j => j.status === 'failed' || j.status === 'cancelled').length;
   }
 
   // -----------------------------------------------------------------------
-  // Batch Queue & Jobs Management
+  // Batch Queue & Jobs Management (Shared GPU Workloads)
   // -----------------------------------------------------------------------
   async function loadJobs() {
     try {
-      const res = await fetch('/api/jobs');
-      state.jobs = await res.json();
+      let data = null;
+      try {
+        const sharedRes = await fetch('/api/queue/shared');
+        if (sharedRes.ok) {
+          data = await sharedRes.json();
+        }
+      } catch (_) {}
+
+      if (data) {
+        state.sharedData = data;
+        state.jobs = data.pipeline?.jobs || [];
+        state.sharedItems = data.items || [];
+
+        // Update Shared GPU Ribbon
+        const dev = data.device || {};
+        if (els.pipelineGpuSharedName) els.pipelineGpuSharedName.textContent = dev.name || 'GPU Node';
+        if (els.pipelineGpuSharedLoad) els.pipelineGpuSharedLoad.textContent = Number.isFinite(dev.gpu_load_pct) ? `${Math.round(dev.gpu_load_pct)}%` : 'Active';
+        if (els.pipelineGpuSharedVram) {
+          if (dev.vram_used_mb != null && dev.vram_total_mb != null) {
+            els.pipelineGpuSharedVram.textContent = `${dev.vram_used_mb} / ${dev.vram_total_mb} MB (${Math.round(dev.vram_pct || 0)}%)`;
+          } else {
+            els.pipelineGpuSharedVram.textContent = 'Shared Memory';
+          }
+        }
+        if (els.pipelineGpuSharedSplit) {
+          els.pipelineGpuSharedSplit.textContent = `Studio: ${data.summary?.studio_running || 0} active • Pipeline: ${data.summary?.pipeline_running || 0} active`;
+        }
+      } else {
+        const res = await fetch('/api/jobs');
+        state.jobs = await res.json();
+        state.sharedItems = state.jobs.map(j => ({ ...j, source: 'pipeline' }));
+      }
+
       renderJobs();
       updateDashboardCards();
     } catch (err) {
@@ -574,17 +657,29 @@
   }
 
   function renderJobs() {
-    let filtered = state.jobs;
-    if (state.jobFilter !== 'all') {
-      filtered = state.jobs.filter((j) => j.status === state.jobFilter);
+    const allItems = state.sharedItems && state.sharedItems.length > 0 ? state.sharedItems : state.jobs.map(j => ({ ...j, source: 'pipeline' }));
+    let filtered = allItems;
+
+    if (state.jobFilter === 'running') {
+      filtered = allItems.filter(j => j.status === 'running');
+    } else if (state.jobFilter === 'pending') {
+      filtered = allItems.filter(j => j.status === 'pending');
+    } else if (state.jobFilter === 'studio') {
+      filtered = allItems.filter(j => j.source === 'studio');
+    } else if (state.jobFilter === 'pipeline') {
+      filtered = allItems.filter(j => j.source === 'pipeline' || !j.source);
+    } else if (state.jobFilter === 'completed') {
+      filtered = allItems.filter(j => j.status === 'completed');
+    } else if (state.jobFilter === 'failed') {
+      filtered = allItems.filter(j => j.status === 'failed' || j.status === 'cancelled');
     }
 
     if (filtered.length === 0) {
       els.jobsList.innerHTML = `
         <div class="empty-state-box">
           <div class="empty-state-icon">⚡</div>
-          <p class="empty-state-text">No jobs matching the current filter.</p>
-          <p class="empty-state-sub">Launch an ingest, stem separation, or diarization batch job to populate.</p>
+          <p class="empty-state-text">No workloads matching the current filter.</p>
+          <p class="empty-state-sub">Launch an interactive Studio task or Pipeline batch job to populate.</p>
         </div>
       `;
       return;
@@ -596,8 +691,9 @@
 
   function createJobCardHTML(job) {
     const statusClass = `job-status-${job.status}`;
-    const percent = Math.round(job.progress || 0);
+    const percent = Math.round((job.progress || 0) * (job.progress > 1 ? 1 : 100));
     const isRunning = job.status === 'running';
+    const isStudio = job.source === 'studio';
 
     let etaText = '';
     if (isRunning && percent > 0 && percent < 100) {
@@ -607,11 +703,18 @@
       etaText = ` • ETA: ${Math.round(remaining)}s`;
     }
 
+    const sourceBadge = isStudio
+      ? `<span class="workload-source-badge source-studio">🎙️ Studio</span>`
+      : `<span class="workload-source-badge source-pipeline">⚡ Pipeline</span>`;
+
+    const typeDisplay = (job.type || 'TASK').replace('batch_', '').replace(/_/g, ' ').toUpperCase();
+
     return `
       <div class="job-card" id="card-${job.id}">
         <div class="job-header">
           <div class="job-title-group">
-            <span class="badge badge-accent">${escapeHtml(job.type.replace('batch_', '').toUpperCase())}</span>
+            ${sourceBadge}
+            <span class="badge badge-accent">${escapeHtml(typeDisplay)}</span>
             <span class="job-name">${escapeHtml(job.title)}</span>
             <span class="job-id">${escapeHtml(job.id)}</span>
           </div>
@@ -620,22 +723,24 @@
 
         <div class="job-progress-row">
           <div class="job-progress-meta">
-            <span>${escapeHtml(job.current_step || 'Processing...')}</span>
-            <span><strong>${percent}%</strong> (${job.processed_items || 0}/${job.total_items || 0} items${etaText})</span>
+            <span>${escapeHtml(job.current_step || job.message || 'Processing...')}</span>
+            <span><strong>${percent}%</strong> ${job.total_items ? `(${job.processed_items || 0}/${job.total_items} items${etaText})` : ''}</span>
           </div>
           <div class="job-progress-bar">
             <div class="job-progress-fill ${isRunning ? 'running' : ''}" style="width: ${percent}%;"></div>
           </div>
         </div>
 
+        ${job.error ? `<div class="job-error-box" style="font-size: 0.8rem; color: var(--color-danger); background: hsla(0,84%,60%,0.08); padding: 6px 10px; border-radius: var(--radius-sm); border-left: 3px solid var(--color-danger); font-family: var(--font-mono);">${escapeHtml(job.error)}</div>` : ''}
+
         <div class="job-footer">
           <div class="job-stats-pills">
-            <span>Started ${new Date(job.created_at * 1000).toLocaleTimeString()}</span>
+            <span>${job.created_at ? 'Started ' + new Date(job.created_at * 1000).toLocaleTimeString() : ''}</span>
             ${job.failed_items > 0 ? `<span style="color: var(--color-danger); font-weight: 700;">${job.failed_items} errors</span>` : ''}
           </div>
           <div class="job-actions">
             ${isRunning || job.status === 'pending' ? `<button class="btn btn-secondary btn-xs btn-cancel-job" data-id="${job.id}">Cancel</button>` : ''}
-            <button class="btn btn-secondary btn-xs btn-delete-job" data-id="${job.id}">Delete</button>
+            ${!isStudio && (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') ? `<button class="btn btn-secondary btn-xs btn-delete-job" data-id="${job.id}">Delete</button>` : ''}
           </div>
         </div>
       </div>
@@ -647,10 +752,14 @@
       b.addEventListener('click', async () => {
         const id = b.getAttribute('data-id');
         try {
-          await fetch(`/api/jobs/${id}/cancel`, { method: 'POST' });
-          showToast('Job cancellation requested', 'warning');
+          let res = await fetch(`/api/queue/shared/${id}/cancel`, { method: 'POST' });
+          if (!res.ok) {
+            res = await fetch(`/api/jobs/${id}/cancel`, { method: 'POST' });
+          }
+          showToast('Cancellation requested', 'warning');
+          loadJobs();
         } catch (err) {
-          showToast('Failed to cancel job', 'danger');
+          showToast('Failed to cancel workload', 'danger');
         }
       });
     });
@@ -661,6 +770,7 @@
         try {
           await fetch(`/api/jobs/${id}`, { method: 'DELETE' });
           showToast('Job record deleted', 'info');
+          loadJobs();
         } catch (err) {
           showToast('Failed to delete job', 'danger');
         }

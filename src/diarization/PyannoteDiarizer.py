@@ -54,9 +54,7 @@ class PyannoteDiarizer(BaseDiarizer, ManagedModel):
             )
         else:
             target_device = torch.device(self.device)
-        if target_device.type == "cuda":
-            pipeline.to(torch.device("cuda"))
-        elif self.device not in {"auto", "cpu"}:
+        if target_device.type != "cpu" or self.device not in {"auto", "cpu"}:
             pipeline.to(target_device)
 
         # Assign only after the complete load, including device placement,

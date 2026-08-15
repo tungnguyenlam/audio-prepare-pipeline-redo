@@ -75,17 +75,33 @@ def get_system_device_info() -> dict[str, Any]:
     
     device_name = "CPU"
     device_type = "cpu"
+    device_count = 0
+    devices = []
     
     if cuda_available:
         device_type = "cuda"
-        device_name = f"CUDA: {torch.cuda.get_device_name(0)}"
+        device_count = torch.cuda.device_count()
+        if device_count > 1:
+            device_name = f"CUDA ({device_count} GPUs: {torch.cuda.get_device_name(0)})"
+        else:
+            device_name = f"CUDA: {torch.cuda.get_device_name(0)}"
+        for i in range(device_count):
+            devices.append({
+                "index": i,
+                "id": f"cuda:{i}",
+                "name": torch.cuda.get_device_name(i),
+            })
     elif mps_available:
         device_type = "mps"
         device_name = "Apple Silicon (MPS)"
+        device_count = 1
+        devices.append({"index": 0, "id": "mps", "name": "Apple Silicon (MPS)"})
         
     return {
         "device_type": device_type,
         "device_name": device_name,
+        "device_count": device_count,
+        "devices": devices,
         "cuda_available": cuda_available,
         "mps_available": mps_available,
         "torch_version": torch.__version__,
@@ -484,11 +500,44 @@ def extract_waveform_peaks(audio_path: Path, num_points: int = 1200) -> List[flo
 
 
 async def handle_status(request: web.Request) -> web.Response:
-    """Return system information and device status."""
+    """Return system information and device status with shared GPU queue metrics."""
     info = get_system_device_info()
     info["registered_audios"] = len(registry.list_all())
-    info["task_queue"] = task_manager.status()
+    studio_q = task_manager.status()
+    info["task_queue"] = studio_q
+    try:
+        from src.web_pipeline.queue_manager import queue_manager
+        p_running = len(queue_manager.running_jobs)
+        p_pending = len(queue_manager.pending_jobs)
+        info["shared_queue"] = {
+            "total_running": studio_q["running"] + p_running,
+            "total_queued": studio_q["queued"] + p_pending,
+            "studio_running": studio_q["running"],
+            "studio_queued": studio_q["queued"],
+            "pipeline_running": p_running,
+            "pipeline_queued": p_pending,
+        }
+    except Exception:
+        info["shared_queue"] = {
+            "total_running": studio_q["running"],
+            "total_queued": studio_q["queued"],
+            "studio_running": studio_q["running"],
+            "studio_queued": studio_q["queued"],
+            "pipeline_running": 0,
+            "pipeline_queued": 0,
+        }
+    try:
+        from src.web_pipeline.hardware_monitor import hardware_monitor
+        info["telemetry"] = hardware_monitor.get_system_telemetry()
+    except Exception:
+        info["telemetry"] = None
     return web.json_response(info)
+
+
+async def handle_telemetry(request: web.Request) -> web.Response:
+    """Return live system hardware telemetry."""
+    from src.web_pipeline.hardware_monitor import hardware_monitor
+    return web.json_response(hardware_monitor.get_system_telemetry())
 
 
 def probe_audio_file_info(path: Path) -> dict[str, Any]:
@@ -1605,6 +1654,133 @@ async def handle_clear_tasks(request: web.Request) -> web.Response:
     return web.json_response({"cleared": cleared, "tasks": task_manager.list_tasks(), "queue": task_manager.status()})
 
 
+def get_shared_queue_data() -> Dict[str, Any]:
+    """Aggregate shared GPU and task queue status across SonicStudio and SonicPipeline."""
+    import torch
+    telemetry: Dict[str, Any] = {}
+    try:
+        from src.web_pipeline.hardware_monitor import hardware_monitor
+        telemetry = hardware_monitor.get_telemetry()
+    except Exception:
+        pass
+
+    device_name = "CUDA GPU" if torch.cuda.is_available() else "CPU"
+    if torch.cuda.is_available():
+        try:
+            device_name = torch.cuda.get_device_name(0)
+        except Exception:
+            pass
+
+    studio_tasks = task_manager.list_tasks()
+    studio_status = task_manager.status()
+
+    pipeline_jobs: List[Dict[str, Any]] = []
+    pipeline_status = {"running": 0, "pending": 0, "is_paused": False, "max_concurrency": 2}
+    try:
+        from src.web_pipeline.queue_manager import queue_manager
+        pipeline_jobs = queue_manager.list_jobs(limit=50)
+        pipeline_status = {
+            "running": len(queue_manager.running_jobs),
+            "pending": len(queue_manager.pending_jobs),
+            "is_paused": queue_manager.is_paused,
+            "max_concurrency": queue_manager.max_concurrency,
+        }
+    except Exception:
+        pass
+
+    unified_items = []
+
+    for t in studio_tasks:
+        unified_items.append({
+            "id": t["id"],
+            "source": "studio",
+            "source_label": "SonicStudio",
+            "title": t.get("metadata", {}).get("title") or t.get("metadata", {}).get("model") or t.get("type", "Studio Task"),
+            "type": t.get("type", "studio_task"),
+            "status": t.get("status", "pending"),
+            "progress": t.get("progress", 0.0),
+            "message": t.get("message", ""),
+            "error": t.get("error"),
+            "created_at": t.get("created_at"),
+            "start_time": t.get("start_time"),
+            "end_time": t.get("end_time"),
+            "queue_position": t.get("queue_position"),
+            "metadata": t.get("metadata", {}),
+        })
+
+    for j in pipeline_jobs:
+        unified_items.append({
+            "id": j["id"],
+            "source": "pipeline",
+            "source_label": "SonicPipeline",
+            "title": j.get("title", "Batch Job"),
+            "type": j.get("type", "batch_job"),
+            "status": j.get("status", "pending"),
+            "progress": j.get("progress", 0.0),
+            "message": j.get("current_step", ""),
+            "error": j.get("error"),
+            "created_at": j.get("created_at"),
+            "start_time": j.get("started_at"),
+            "end_time": j.get("finished_at"),
+            "processed_items": j.get("processed_items", 0),
+            "total_items": j.get("total_items", 0),
+            "metadata": j.get("params", {}),
+        })
+
+    unified_items.sort(key=lambda x: x.get("created_at") or 0, reverse=True)
+
+    total_running = studio_status["running"] + pipeline_status["running"]
+    total_queued = studio_status["queued"] + pipeline_status["pending"]
+
+    return {
+        "device": {
+            "name": device_name,
+            "cuda_available": torch.cuda.is_available(),
+            "gpu_load_pct": telemetry.get("gpu", {}).get("load_percent") if telemetry.get("gpu") else None,
+            "vram_used_mb": telemetry.get("gpu", {}).get("vram_used_mb") if telemetry.get("gpu") else None,
+            "vram_total_mb": telemetry.get("gpu", {}).get("vram_total_mb") if telemetry.get("gpu") else None,
+            "vram_pct": telemetry.get("gpu", {}).get("vram_percent") if telemetry.get("gpu") else None,
+            "devices": telemetry.get("gpu", {}).get("devices", []),
+        },
+        "telemetry": telemetry,
+        "summary": {
+            "total_running": total_running,
+            "total_queued": total_queued,
+            "studio_running": studio_status["running"],
+            "studio_queued": studio_status["queued"],
+            "pipeline_running": pipeline_status["running"],
+            "pipeline_queued": pipeline_status["pending"],
+            "pipeline_paused": pipeline_status["is_paused"],
+        },
+        "items": unified_items,
+        "studio": {"tasks": studio_tasks, "queue": studio_status},
+        "pipeline": {"jobs": pipeline_jobs, "queue": pipeline_status},
+    }
+
+
+async def handle_shared_queue(request: web.Request) -> web.Response:
+    """Return unified GPU workload queue across Studio and Pipeline."""
+    return web.json_response(get_shared_queue_data())
+
+
+async def handle_shared_queue_cancel(request: web.Request) -> web.Response:
+    """Cancel a task or job across either SonicStudio or SonicPipeline."""
+    item_id = request.match_info["id"]
+    if item_id.startswith("task_") or task_manager.get_task(item_id):
+        if not task_manager.cancel_task(item_id):
+            return web.json_response({"error": "Only queued studio tasks can be cancelled"}, status=409)
+        return web.json_response({"id": item_id, "source": "studio", "status": "cancelled"})
+    else:
+        try:
+            from src.web_pipeline.queue_manager import queue_manager
+            success = queue_manager.cancel_job(item_id)
+            if not success:
+                return web.json_response({"error": "Could not cancel pipeline job"}, status=409)
+            return web.json_response({"id": item_id, "source": "pipeline", "status": "cancelled"})
+        except Exception as exc:
+            return web.json_response({"error": str(exc)}, status=500)
+
+
 # ==================== HUMAN EVALUATION & SCORING API ====================
 
 
@@ -1921,12 +2097,12 @@ async def cleanup_background_tasks(app: web.Application):
 
 
 async def handle_index(request: web.Request) -> web.Response:
-    """Serve index.html with no-cache for instant development feedback."""
+    """Serve modular index.html with composed partials and no-cache for instant development feedback."""
+    from src.web_backend.html_composer import compose_html
     index_file = STATIC_DIR / "index.html"
     if not index_file.is_file():
         return web.Response(text="index.html not found", status=404)
-    with open(index_file, "r", encoding="utf-8") as f:
-        content = f.read()
+    content = compose_html(index_file)
     return web.Response(
         text=content,
         content_type="text/html",
@@ -1977,6 +2153,10 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_post("/api/tasks/clear", handle_clear_tasks)
     app.router.add_get("/api/tasks/{id}", handle_get_task)
     app.router.add_delete("/api/tasks/{id}", handle_cancel_task)
+    app.router.add_get("/api/queue/shared", handle_shared_queue)
+    app.router.add_delete("/api/queue/shared/{id}", handle_shared_queue_cancel)
+    app.router.add_post("/api/queue/shared/{id}/cancel", handle_shared_queue_cancel)
+    app.router.add_get("/api/telemetry", handle_telemetry)
     app.router.add_get("/api/live-reload", handle_live_reload_sse)
 
 

@@ -1,0 +1,151 @@
+    <aside class="app-sidebar">
+      <!-- Sidebar Brand Header -->
+      <div class="sidebar-brand">
+        <div class="brand-mark">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+        </div>
+        <div class="brand-info">
+          <div class="brand-title-wrap">
+            <span class="brand-title">SonicPipeline</span>
+            <span class="brand-version">v2.5 Pro</span>
+          </div>
+          <span class="brand-cluster-status">
+            <span class="pulse-indicator"></span>
+            <span>Cluster Engine Live</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- Navigation Section Links -->
+      <div class="sidebar-scroll">
+        <div class="nav-section-label">WORKSPACE</div>
+        <nav class="sidebar-nav">
+          <button class="sidebar-nav-item active" data-tab="tab-dashboard" id="btn-tab-dashboard">
+            <div class="nav-icon">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"></rect><rect x="14" y="3" width="7" height="5" rx="1"></rect><rect x="14" y="12" width="7" height="9" rx="1"></rect><rect x="3" y="16" width="7" height="5" rx="1"></rect></svg>
+            </div>
+            <span class="nav-text">Overview & Metrics</span>
+          </button>
+
+          <button class="sidebar-nav-item" data-tab="tab-queue" id="btn-tab-queue">
+            <div class="nav-icon">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+            </div>
+            <span class="nav-text">Batch Job Queue</span>
+            <span class="nav-badge" id="active-jobs-counter">0</span>
+          </button>
+
+          <button class="sidebar-nav-item" data-tab="tab-ingest" id="btn-tab-ingest">
+            <div class="nav-icon">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            </div>
+            <span class="nav-text">Batch Ingestion</span>
+          </button>
+        </nav>
+
+        <div class="nav-section-label">AI PROCESSING ENGINES</div>
+        <nav class="sidebar-nav">
+          <button class="sidebar-nav-item" data-tab="tab-separation" id="btn-tab-separation">
+            <div class="nav-icon">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 2v7.31"></path><path d="M14 9.3V1.99"></path><path d="M8.5 2h7"></path><path d="M14 9.3a6.5 6.5 0 1 1-4 0"></path><path d="M5.52 16h12.96"></path></svg>
+            </div>
+            <span class="nav-text">Bulk Stem Separation</span>
+            <span class="model-tag-sota">SOTA</span>
+          </button>
+
+          <button class="sidebar-nav-item" data-tab="tab-diarization" id="btn-tab-diarization">
+            <div class="nav-icon">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+            </div>
+            <span class="nav-text">Batch Diarization</span>
+          </button>
+
+          <button class="sidebar-nav-item" data-tab="tab-benchmark" id="btn-tab-benchmark">
+            <div class="nav-icon">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+            </div>
+            <span class="nav-text">Benchmark Matrix</span>
+          </button>
+        </nav>
+
+        <div class="nav-section-label">DATASET REPOSITORY</div>
+        <nav class="sidebar-nav">
+          <button class="sidebar-nav-item" data-tab="tab-datasets" id="btn-tab-datasets">
+            <div class="nav-icon">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+            </div>
+            <span class="nav-text">Datasets Hub & Manifests</span>
+          </button>
+        </nav>
+      </div>
+
+      <!-- Sidebar Bottom Telemetry Widget -->
+      <div class="sidebar-footer">
+        <div class="sidebar-telemetry-card">
+          <div class="telemetry-card-header">
+            <span class="telemetry-device-name" id="dash-device-name">GPU Node</span>
+            <span class="telemetry-sse-pill">
+              <span class="dot-pulse-green"></span>
+              <span id="val-sse-status">Live</span>
+            </span>
+          </div>
+          
+          <div class="sidebar-meter-list">
+            <div class="sidebar-meter-item">
+              <div class="meter-label-row">
+                <span>GPU Load</span>
+                <span class="meter-val-text" id="val-gpu-load">N/A</span>
+              </div>
+              <div class="mini-bar-track">
+                <div class="mini-bar-fill" id="meter-gpu-load" style="width: 0%;"></div>
+              </div>
+            </div>
+
+            <div class="sidebar-meter-item">
+              <div class="meter-label-row">
+                <span>GPU VRAM</span>
+                <span class="meter-val-text" id="val-gpu-vram">-- / -- MB</span>
+              </div>
+              <div class="mini-bar-track">
+                <div class="mini-bar-fill" id="meter-vram" style="width: 0%;"></div>
+              </div>
+            </div>
+
+            <div class="sidebar-meter-item">
+              <div class="meter-label-row">
+                <span>CPU Load</span>
+                <span class="meter-val-text" id="val-cpu-util">0%</span>
+              </div>
+              <div class="mini-bar-track">
+                <div class="mini-bar-fill" id="meter-cpu" style="width: 0%;"></div>
+              </div>
+            </div>
+
+            <div class="sidebar-meter-item">
+              <div class="meter-label-row">
+                <span>System RAM</span>
+                <span class="meter-val-text" id="val-ram-util">0%</span>
+              </div>
+              <div class="mini-bar-track">
+                <div class="mini-bar-fill" id="meter-ram" style="width: 0%;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Studio Quick Link & Theme Switcher -->
+        <div class="sidebar-bottom-actions">
+          <a href="/studio/" class="sidebar-studio-btn" title="Open Interactive SonicStudio">
+            <span>🎙️ SonicStudio</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+          </a>
+          
+          <button class="theme-toggle-btn" id="btn-theme-toggle" title="Toggle Theme" aria-label="Toggle Theme">
+            <svg id="icon-theme-sun" class="hidden" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+            <svg id="icon-theme-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+          </button>
+        </div>
+      </div>
+    </aside>

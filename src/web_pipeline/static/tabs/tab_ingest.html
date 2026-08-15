@@ -1,0 +1,123 @@
+        <section id="tab-ingest" class="tab-pane">
+          <div class="view-header">
+            <div>
+              <h1 class="view-title">Batch Audio Ingestion</h1>
+              <p class="view-subtitle">Ingest YouTube playlists, crawl multiple URLs in parallel, or bulk upload local audio files.</p>
+            </div>
+          </div>
+
+          <div class="ingest-two-col">
+            <!-- Card 1: YouTube Multi-URL & Playlist Ingestion -->
+            <div class="glass-panel">
+              <div class="panel-header">
+                <div class="header-with-icon">
+                  <div class="icon-avatar avatar-red">📥</div>
+                  <div>
+                    <h3 class="panel-title">YouTube Playlist & Multi-URL Crawler</h3>
+                    <span class="panel-desc">Parallel yt-dlp downloader with automated audio normalization</span>
+                  </div>
+                </div>
+                <span class="chip-count" id="yt-url-count-badge">0 URLs</span>
+              </div>
+
+              <form id="form-yt-ingest" class="form-vertical">
+                <div class="form-item">
+                  <label class="form-label" for="yt-urls">YouTube Video / Playlist URLs (One per line)</label>
+                  <textarea id="yt-urls" class="code-textarea" rows="6" placeholder="https://www.youtube.com/playlist?list=...&#10;https://www.youtube.com/watch?v=...&#10;https://youtu.be/..." required></textarea>
+                  <span class="form-hint">Supports full playlists, mix links, individual videos, music, and shorts.</span>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-item flex-1">
+                    <label class="form-label" for="yt-dataset">Target Dataset Collection</label>
+                    <select id="yt-dataset" class="form-select select-dataset-list">
+                      <option value="Default">Default</option>
+                      <option value="Speech Corpus">Speech Corpus</option>
+                      <option value="Music BGM">Music BGM</option>
+                    </select>
+                  </div>
+
+                  <div class="form-item flex-1">
+                    <label class="form-label" for="yt-sample-rate">Normalization Sample Rate</label>
+                    <select id="yt-sample-rate" class="form-select">
+                      <option value="44100" selected>44,100 Hz (Standard Production)</option>
+                      <option value="48000">48,000 Hz (Broadcast Quality)</option>
+                      <option value="16000">16,000 Hz (Speech / ASR Optimized)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="form-item">
+                  <label class="form-label" for="yt-tags">Dataset Tags (comma separated)</label>
+                  <input type="text" id="yt-tags" class="form-input" placeholder="e.g. podcast, clean_vocals, interview_2026">
+                </div>
+
+                <button type="submit" class="btn btn-primary w-full btn-lg" id="btn-submit-yt-ingest">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                  <span>Launch YouTube Batch Ingest</span>
+                </button>
+              </form>
+            </div>
+
+            <!-- Card 2: Local Audio Upload & Folder Scanner -->
+            <div class="glass-panel">
+              <div class="panel-header">
+                <div class="header-with-icon">
+                  <div class="icon-avatar avatar-blue">📂</div>
+                  <div>
+                    <h3 class="panel-title">Multi-File Upload & Server Folder Scan</h3>
+                    <span class="panel-desc">Direct browser upload or high-speed server disk directory traversal</span>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Drag & Drop Container -->
+              <div class="modern-dropzone" id="file-dropzone">
+                <div class="dropzone-sparkle">
+                  <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                </div>
+                <p class="dropzone-main-text">Drag & drop multiple audio tracks here, or <span class="dropzone-highlight">browse local files</span></p>
+                <p class="dropzone-sub-text">Accepts WAV, MP3, FLAC, OGG, M4A up to 2GB per batch</p>
+                <input type="file" id="file-input" multiple accept="audio/*,.wav,.mp3,.flac,.ogg,.m4a" class="hidden-input">
+              </div>
+
+              <!-- Queued Files Preview -->
+              <div id="batch-upload-files-preview" class="batch-upload-preview hidden">
+                <div class="preview-header">
+                  <span id="batch-files-count" class="font-mono">0 files selected (0 MB)</span>
+                  <button type="button" class="btn btn-xs btn-ghost" id="btn-clear-batch-files">Clear</button>
+                </div>
+                <button type="button" class="btn btn-primary btn-sm w-full" id="btn-submit-batch-upload">Upload Selected Files to Pipeline</button>
+              </div>
+
+              <div class="or-separator"><span>OR TRAVERSE SERVER DIRECTORY</span></div>
+
+              <form id="form-scan-dir" class="form-vertical">
+                <div class="form-item">
+                  <label class="form-label" for="scan-path">Server Directory Absolute Path</label>
+                  <input type="text" id="scan-path" class="form-input font-mono" placeholder="/path/to/raw_audio_dataset">
+                </div>
+
+                <div class="form-row">
+                  <div class="form-item flex-1">
+                    <label class="form-label" for="local-dataset">Target Dataset</label>
+                    <select id="local-dataset" class="form-select select-dataset-list">
+                      <option value="Default">Default</option>
+                      <option value="Speech Corpus">Speech Corpus</option>
+                      <option value="Music BGM">Music BGM</option>
+                    </select>
+                  </div>
+                  <div class="form-item flex-1">
+                    <label class="form-label" for="local-tags">Tags</label>
+                    <input type="text" id="local-tags" class="form-input" placeholder="local_scan, raw_v1">
+                  </div>
+                </div>
+
+                <button type="submit" class="btn btn-secondary w-full" id="btn-submit-scan">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                  <span>Scan and Ingest Directory</span>
+                </button>
+              </form>
+            </div>
+          </div>
+        </section>

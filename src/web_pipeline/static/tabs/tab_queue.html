@@ -1,0 +1,63 @@
+        <section id="tab-queue" class="tab-pane">
+          <div class="view-header">
+            <div>
+              <h1 class="view-title">Shared GPU &amp; Batch Job Queue</h1>
+              <p class="view-subtitle">Live unified execution monitoring, compute allocation, and task cancellation across SonicStudio &amp; SonicPipeline.</p>
+            </div>
+            <div class="action-row">
+              <a href="/studio/" class="btn btn-secondary btn-sm" title="Switch to SonicStudio">
+                <span>🎙️ Open SonicStudio</span>
+              </a>
+              <button class="btn btn-ghost btn-sm" id="btn-clear-completed">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                <span>Clear Completed</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Shared GPU Telemetry Ribbon -->
+          <div class="queue-gpu-ribbon" id="pipeline-gpu-shared-ribbon">
+            <div class="gpu-ribbon-item">
+              <span class="gpu-ribbon-icon">🖥️</span>
+              <span class="gpu-ribbon-label">Compute Device:</span>
+              <span class="gpu-ribbon-val" id="pipeline-gpu-shared-name">Detecting...</span>
+            </div>
+            <div class="gpu-ribbon-divider"></div>
+            <div class="gpu-ribbon-item">
+              <span class="gpu-ribbon-label">GPU Load:</span>
+              <span class="gpu-ribbon-val font-mono" id="pipeline-gpu-shared-load">--</span>
+            </div>
+            <div class="gpu-ribbon-divider"></div>
+            <div class="gpu-ribbon-item">
+              <span class="gpu-ribbon-label">VRAM:</span>
+              <span class="gpu-ribbon-val font-mono" id="pipeline-gpu-shared-vram">-- / -- MB</span>
+            </div>
+            <div class="gpu-ribbon-divider"></div>
+            <div class="gpu-ribbon-item">
+              <span class="gpu-ribbon-label">Shared Allocation:</span>
+              <span class="gpu-ribbon-val font-mono text-cyan" id="pipeline-gpu-shared-split">Studio: 0 • Pipeline: 0</span>
+            </div>
+          </div>
+
+          <!-- Queue Filter Tabs -->
+          <div class="queue-filter-row">
+            <div class="filter-pills">
+              <button class="filter-pill active" data-status="all">All Shared <span class="pill-badge" id="count-all">0</span></button>
+              <button class="filter-pill" data-status="running">Running <span class="pill-badge" id="count-running">0</span></button>
+              <button class="filter-pill" data-status="pending">Queued <span class="pill-badge" id="count-pending">0</span></button>
+              <button class="filter-pill" data-status="studio">🎙️ Studio <span class="pill-badge" id="count-studio">0</span></button>
+              <button class="filter-pill" data-status="pipeline">⚡ Pipeline <span class="pill-badge" id="count-pipeline">0</span></button>
+              <button class="filter-pill" data-status="completed">Completed <span class="pill-badge" id="count-completed">0</span></button>
+              <button class="filter-pill" data-status="failed">Failed <span class="pill-badge" id="count-failed">0</span></button>
+            </div>
+          </div>
+
+          <!-- Job Cards List -->
+          <div class="jobs-list-container" id="jobs-list">
+            <div class="empty-state-box">
+              <div class="empty-state-icon">⚡</div>
+              <p class="empty-state-text">No active or queued jobs.</p>
+              <p class="empty-state-sub">Launch an ingest, stem separation, or diarization batch job to populate.</p>
+            </div>
+          </div>
+        </section>

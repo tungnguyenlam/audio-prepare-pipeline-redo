@@ -1,0 +1,104 @@
+    <header class="top-header">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 10v3"></path>
+            <path d="M6 6v11"></path>
+            <path d="M10 3v18"></path>
+            <path d="M14 8v7"></path>
+            <path d="M18 5v13"></path>
+            <path d="M22 10v3"></path>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-title">SonicStudio</span>
+          <span class="brand-sub">Audio Prepare & Separation</span>
+        </div>
+      </div>
+
+      <nav class="nav-tabs" aria-label="Studio navigation">
+        <button class="nav-tab active" data-tab="tab-workspace" id="btn-tab-workspace" title="Key: 1">
+          <span class="tab-icon">🎛️</span>
+          <span>Workspace & Cutter</span>
+          <span class="tab-shortcut">1</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-crawler" id="btn-tab-crawler" title="Key: 2">
+          <span class="tab-icon">📥</span>
+          <span>YouTube Crawler</span>
+          <span class="tab-shortcut">2</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-separation" id="btn-tab-separation" title="Key: 3">
+          <span class="tab-icon">🧪</span>
+          <span>Model Separation</span>
+          <span class="tab-shortcut">3</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-comparison" id="btn-tab-comparison" title="Key: 4">
+          <span class="tab-icon">⚖️</span>
+          <span>Audition & Scoring</span>
+          <span class="tab-shortcut">4</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-matrix" id="btn-tab-matrix" title="Key: 5">
+          <span class="tab-icon">📊</span>
+          <span>Evaluation Matrix</span>
+          <span class="tab-shortcut">5</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-diarization" id="btn-tab-diarization" title="Key: 6">
+          <span class="tab-icon">👥</span>
+          <span>Diarization</span>
+          <span class="tab-shortcut">6</span>
+        </button>
+        <button class="nav-tab" data-tab="tab-library" id="btn-tab-library" title="Key: 7">
+          <span class="tab-icon">📁</span>
+          <span>Library & History</span>
+          <span class="tab-shortcut">7</span>
+        </button>
+      </nav>
+
+      <div class="header-status">
+        <!-- Quick Switcher to SonicPipeline Batch Suite -->
+        <a href="/pipeline/" class="btn-app-switcher" id="btn-switch-to-pipeline" title="Switch to SonicPipeline Batch Engine (Alt+P)">
+          <span class="switcher-dot"></span>
+          <span class="switcher-icon">⚡</span>
+          <span class="switcher-name">SonicPipeline</span>
+          <span class="switcher-badge">Batch</span>
+          <svg class="switcher-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </a>
+
+        <div id="device-badge" class="badge badge-device" title="Hardware accelerator">
+          <span class="dot dot-pulse"></span>
+          <span id="device-label">Detecting...</span>
+        </div>
+
+        <!-- Live GPU Load Monitor Badge (Click to open Queue/Telemetry Inspector) -->
+        <button class="badge badge-gpu-monitor" id="gpu-load-badge" title="Live GPU Compute Load (Click to view full Telemetry & Queue)" aria-label="Live GPU Compute Load">
+          <span class="gpu-icon">⚡</span>
+          <span id="gpu-load-label" class="font-mono">GPU: --</span>
+          <div class="header-gpu-mini-meter">
+            <div class="header-gpu-mini-fill" id="header-gpu-meter" style="width: 0%;"></div>
+          </div>
+        </button>
+
+        <!-- Clickable Task Queue Badge / Inspector Trigger -->
+        <button class="badge badge-device badge-queue-btn" id="queue-badge" title="View Background Task Queue (Q)" aria-label="Open Studio Task Queue">
+          <span class="dot" id="queue-dot"></span>
+          <span id="queue-label">Queue 0</span>
+          <svg class="queue-btn-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </button>
+
+        <div id="live-reload-badge" class="badge badge-reload" title="Hot reload status">
+          <span class="reload-dot"></span>
+          <span>Live</span>
+        </div>
+
+        <!-- Shortcuts Modal Trigger -->
+        <button class="btn btn-ctrl btn-icon-round" id="btn-open-shortcuts-modal" title="Keyboard Shortcuts (?)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+        </button>
+
+        <!-- Theme Toggle -->
+        <button class="btn btn-ctrl btn-theme-toggle" id="btn-theme-toggle" title="Toggle Light/Dark Theme">
+          <svg id="icon-theme-sun" class="hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+          <svg id="icon-theme-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+        </button>
+      </div>
+    </header>

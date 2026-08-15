@@ -400,6 +400,7 @@ The repository provides two specialized web platforms:
 - **Task endpoints:** `GET /api/tasks` lists tasks and queue counts,
   `GET /api/tasks/{id}` returns one task, and `DELETE /api/tasks/{id}` cancels
   a task that is still queued. Running native model work is not force-cancelled.
+- **Shared Queue endpoints:** `GET /api/queue/shared` aggregates hardware telemetry (GPU name, load %, VRAM) and active/queued workloads across both SonicStudio and SonicPipeline. `DELETE /api/queue/shared/{id}` and `POST /api/queue/shared/{id}/cancel` cancel a workload in either domain.
 
 ### `src/web_pipeline/` (SonicPipeline API domain and frontend)
 - **Role:** Large-scale batch engine for high-throughput ingestion, task queue orchestration, dataset curation, bulk separation, batch diarization, separation benchmark matrix evaluation, and ML manifest generation (JSONL/CSV).

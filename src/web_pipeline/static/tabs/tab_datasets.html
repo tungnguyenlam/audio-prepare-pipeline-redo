@@ -1,0 +1,83 @@
+        <section id="tab-datasets" class="tab-pane">
+          <div class="view-header">
+            <div>
+              <h1 class="view-title">Dataset Hub & Manifest Curation</h1>
+              <p class="view-subtitle">Search, filter, audition tracks inline, bulk tag, and export ML-ready JSONL/CSV manifests.</p>
+            </div>
+            <div class="action-row">
+              <button class="btn btn-secondary btn-sm" id="btn-create-dataset">
+                <span>➕ New Dataset</span>
+              </button>
+              <button class="btn btn-ghost btn-sm text-danger" id="btn-delete-dataset" title="Delete current selected dataset collection">
+                <span>🗑️ Delete Dataset</span>
+              </button>
+              <button class="btn btn-secondary btn-sm" id="btn-export-manifest">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                <span>Export Manifest (JSONL)</span>
+              </button>
+              <button class="btn btn-primary btn-sm" id="btn-export-zip">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                <span>Download ZIP Package</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Filter Controls Bar -->
+          <div class="dataset-filter-bar">
+            <div class="filter-group">
+              <label class="filter-label" for="item-filter-dataset">Dataset:</label>
+              <select id="item-filter-dataset" class="form-select form-select-sm select-dataset-list">
+                <option value="all">All Datasets</option>
+              </select>
+            </div>
+            <div class="filter-group flex-1">
+              <label class="filter-label" for="item-filter-query">Search:</label>
+              <input type="text" id="item-filter-query" class="form-input form-input-sm" placeholder="Filter title, source ID, or tags...">
+            </div>
+            <div class="filter-group">
+              <label class="filter-label" for="item-filter-stems">Stems:</label>
+              <select id="item-filter-stems" class="form-select form-select-sm">
+                <option value="">Any</option>
+                <option value="true">Has Stems</option>
+                <option value="false">No Stems</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Floating Bulk Action Bar -->
+          <div class="floating-dock-bar" id="bulk-bar" style="display: none;">
+            <div class="dock-left">
+              <span class="dock-count-badge" id="bulk-selected-count">0</span>
+              <span class="dock-text">items selected</span>
+            </div>
+            <div class="dock-actions">
+              <button class="btn btn-secondary btn-xs" id="btn-bulk-tag">Tag Items</button>
+              <button class="btn btn-secondary btn-xs" id="btn-bulk-move">Move Dataset</button>
+              <button class="btn btn-secondary btn-xs" id="btn-bulk-separate">Separate Stems</button>
+              <button class="btn btn-danger btn-xs" id="btn-bulk-delete">Delete Selected</button>
+            </div>
+          </div>
+
+          <!-- Audio Items Data Table -->
+          <div class="modern-table-wrap">
+            <table class="modern-table" id="items-table">
+              <thead>
+                <tr>
+                  <th width="38"><input type="checkbox" id="check-select-all" aria-label="Select all rows"></th>
+                  <th width="50">Audition</th>
+                  <th>Title / Source ID</th>
+                  <th>Dataset</th>
+                  <th>Duration</th>
+                  <th>Sample Rate</th>
+                  <th>Stems</th>
+                  <th>Diarization</th>
+                  <th>Tags</th>
+                  <th width="100">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="items-tbody">
+                <tr><td colspan="10" class="text-center text-muted">Loading dataset items...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>

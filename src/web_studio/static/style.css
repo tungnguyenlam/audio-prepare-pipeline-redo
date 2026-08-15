@@ -956,17 +956,32 @@ html, body {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 8px;
+  width: 16px;
   cursor: ew-resize;
   pointer-events: auto;
+  touch-action: none;
+}
+
+.selection-handle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 34px;
+  transform: translate(-50%, -50%);
+  background: var(--accent-primary);
+  border: 2px solid var(--bg-surface);
+  border-radius: var(--radius-pill);
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.35);
 }
 
 .handle-left {
-  left: -4px;
+  left: -8px;
 }
 
 .handle-right {
-  right: -4px;
+  right: -8px;
 }
 
 .selection-range-label {
@@ -1057,8 +1072,46 @@ html, body {
 }
 
 /* Precision Cutter Toolbar */
+.clip-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 1rem;
+  align-items: start;
+}
+
+.timeline-column {
+  min-width: 0;
+}
+
+.selection-helper {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  color: var(--text-muted);
+  background: var(--bg-input);
+  border: 1px dashed var(--border-muted);
+  border-radius: var(--radius-sm);
+  font-size: 0.76rem;
+}
+
+.selection-helper.has-selection {
+  color: var(--text-secondary);
+  border-style: solid;
+  border-color: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 7%, var(--bg-input));
+}
+
+.selection-helper-icon {
+  color: var(--accent-primary);
+  font-family: var(--font-mono);
+  font-size: 1rem;
+}
+
 .cutter-toolbar {
-  margin-top: 1.25rem;
+  position: sticky;
+  top: 0.75rem;
   padding: 1rem;
   background: var(--bg-input);
   border: 1px solid var(--border-subtle);
@@ -1085,13 +1138,24 @@ html, body {
   margin-top: 0.25rem;
 }
 
+.clip-duration-badge {
+  flex: 0 0 auto;
+  padding: 0.35rem 0.55rem;
+  color: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 10%, var(--bg-surface));
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 35%, var(--border-subtle));
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
 .cutter-config-grid {
   display: grid;
-  grid-template-columns: minmax(320px, 1fr) minmax(300px, auto);
-  gap: 1rem;
-  padding: 0.9rem;
+  gap: 0.9rem;
+  padding: 0;
   background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
+  border: 0;
   border-radius: var(--radius-sm);
 }
 
@@ -1105,7 +1169,7 @@ html, body {
 .cutter-inputs-group {
   display: flex;
   align-items: flex-end;
-  justify-content: flex-end;
+  justify-content: stretch;
   gap: 0.55rem;
 }
 
@@ -1153,10 +1217,11 @@ html, body {
   gap: 4px;
   font-size: 0.8rem;
   color: var(--text-muted);
+  flex: 1;
 }
 
 .cut-input {
-  width: 128px;
+  width: 100%;
   font-family: var(--font-mono);
   font-size: 0.84rem;
   padding: 5px 8px;
@@ -1166,22 +1231,100 @@ html, body {
   color: var(--text-primary);
 }
 
+.cut-input.is-invalid {
+  border-color: var(--danger, #ef4444);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger, #ef4444) 14%, transparent);
+}
+
+.inline-time-action {
+  padding: 0;
+  color: var(--accent-primary);
+  background: transparent;
+  border: 0;
+  font: inherit;
+  font-size: 0.68rem;
+  cursor: pointer;
+}
+
+.inline-time-action:hover {
+  text-decoration: underline;
+}
+
 .range-arrow {
   color: var(--text-muted);
-  padding-bottom: 0.45rem;
+  padding-bottom: 1.65rem;
+}
+
+.range-presets {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.preset-button-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.35rem;
+}
+
+.range-preset {
+  min-height: 30px;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.range-preset:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-primary);
+}
+
+.btn-use-selection {
+  width: 100%;
+}
+
+.cut-validation {
+  min-height: 1.1rem;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.cut-validation.is-error {
+  color: var(--danger, #ef4444);
 }
 
 .cutter-actions-row {
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 0.8fr 1.2fr;
   gap: 1rem;
   padding-top: 0.9rem;
   border-top: 1px solid var(--border-subtle);
 }
 
+.cutter-actions-row .btn {
+  justify-content: center;
+}
+
 .cutter-destination-actions {
-  justify-content: flex-end;
+  display: grid;
+  justify-content: stretch;
   gap: 0.55rem;
-  flex-wrap: wrap;
+  padding-top: 0.7rem;
+}
+
+.advanced-cut-actions {
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+}
+
+.advanced-cut-actions summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  user-select: none;
 }
 
 .cutter-action-label {
@@ -1196,22 +1339,19 @@ html, body {
     width: 100%;
   }
 
+  .clip-editor-grid,
   .cutter-config-grid {
     grid-template-columns: 1fr;
+  }
+
+  .cutter-toolbar {
+    position: static;
   }
 
   .cutter-inputs-group {
     justify-content: flex-start;
   }
 
-  .cutter-actions-row {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .cutter-destination-actions {
-    justify-content: flex-start;
-  }
 }
 
 @media (max-width: 600px) {
@@ -1229,6 +1369,10 @@ html, body {
   .cutter-destination-actions .btn,
   .cutter-actions-row > .btn {
     width: 100%;
+  }
+
+  .cutter-actions-row {
+    grid-template-columns: 1fr;
   }
 
   .cutter-action-label {
@@ -2463,6 +2607,175 @@ html, body {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* Shared GPU Telemetry Ribbon */
+.queue-gpu-ribbon {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.9rem;
+  background: linear-gradient(135deg, hsla(222, 28%, 10%, 0.95), hsla(217, 91%, 60%, 0.08));
+  border: 1px solid hsla(217, 91%, 60%, 0.25);
+  border-radius: var(--radius-md);
+  margin-bottom: 0.75rem;
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+
+.gpu-ribbon-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+
+.gpu-ribbon-icon {
+  font-size: 0.9rem;
+}
+
+.gpu-ribbon-label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.gpu-ribbon-val {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.gpu-ribbon-divider {
+  width: 1px;
+  height: 14px;
+  background-color: var(--border-muted);
+  flex-shrink: 0;
+}
+
+/* Header GPU Monitor Badge */
+.badge-gpu-monitor {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: hsla(222, 28%, 14%, 0.85);
+  border: 1px solid hsla(217, 91%, 60%, 0.3);
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  color: var(--accent-primary-hover);
+  transition: all var(--transition-fast);
+  cursor: pointer;
+  user-select: none;
+}
+
+.badge-gpu-monitor:hover {
+  background: hsla(217, 91%, 60%, 0.18);
+  border-color: var(--accent-primary-hover);
+  box-shadow: 0 0 12px hsla(217, 91%, 60%, 0.25);
+  transform: translateY(-1px);
+}
+
+.header-gpu-mini-meter {
+  width: 38px;
+  height: 5px;
+  background: hsla(222, 20%, 25%, 0.9);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  position: relative;
+  margin-left: 2px;
+}
+
+.header-gpu-mini-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-primary), var(--accent-cyan));
+  border-radius: var(--radius-full);
+  transition: width 0.4s ease;
+}
+
+/* Multi-GPU Devices Grid inside Queue Modal */
+.gpu-devices-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.5rem;
+  width: 100%;
+  margin-bottom: 0.75rem;
+}
+
+.gpu-device-card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 0.55rem 0.75rem;
+  background: hsla(222, 30%, 12%, 0.95);
+  border: 1px solid hsla(217, 91%, 60%, 0.25);
+  border-radius: var(--radius-md);
+  font-size: 0.74rem;
+}
+
+.gpu-device-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.gpu-device-card-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent-cyan);
+}
+
+.gpu-device-card-temp {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.gpu-device-card-bar-wrap {
+  width: 100%;
+  height: 6px;
+  background: hsla(222, 20%, 20%, 0.9);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  margin: 2px 0;
+}
+
+.gpu-device-card-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-primary), var(--accent-cyan));
+  border-radius: var(--radius-full);
+  transition: width 0.4s ease;
+}
+
+.gpu-device-card-sub {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.workload-source-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: var(--radius-xs);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  letter-spacing: 0.02em;
+}
+
+.source-studio {
+  background-color: hsla(188, 86%, 53%, 0.16);
+  color: var(--accent-cyan);
+  border: 1px solid hsla(188, 86%, 53%, 0.35);
+}
+
+.source-pipeline {
+  background-color: hsla(262, 83%, 65%, 0.16);
+  color: hsl(262, 83%, 75%);
+  border: 1px solid hsla(262, 83%, 65%, 0.35);
 }
 
 .queue-modal-stats-bar {

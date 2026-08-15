@@ -1,0 +1,111 @@
+        <section id="tab-separation" class="tab-pane">
+          <div class="view-header">
+            <div>
+              <h1 class="view-title">Bulk Neural Stem Separation Studio</h1>
+              <p class="view-subtitle">Execute state-of-the-art stem separation across dataset collections with automated VRAM memory eviction.</p>
+            </div>
+          </div>
+
+          <div class="form-panel-centered">
+            <form id="form-batch-separation" class="form-vertical">
+              <div class="form-item">
+                <label class="form-label" for="sep-dataset-select">1. Select Target Dataset Scope</label>
+                <select id="sep-dataset-select" class="form-select select-dataset-list">
+                  <option value="all">Entire Library (All Audio Assets)</option>
+                  <option value="Default">Default</option>
+                  <option value="Speech Corpus">Speech Corpus</option>
+                  <option value="Music BGM">Music BGM</option>
+                </select>
+                <div class="scope-alert" id="sep-target-count-hint">
+                  <span class="dot-pulse-green"></span>
+                  <span>Target Scope: Entire Library (Calculating item count...)</span>
+                </div>
+              </div>
+
+              <!-- Model Selector Cards -->
+              <div class="form-item">
+                <label class="form-label">2. Neural Separation Architecture</label>
+                <div class="model-cards-grid">
+                  <label class="model-pro-card active">
+                    <input type="radio" name="sep-model-radio" value="BSRoFormer" checked class="hidden-radio">
+                    <div class="pro-card-top">
+                      <span class="pro-card-title">BS-RoFormer</span>
+                      <span class="badge-sota-glow">SOTA S-Tier</span>
+                    </div>
+                    <p class="pro-card-desc">Band-Split RoFormer. Extreme vocal clarity with pristine high-frequency spectral retention.</p>
+                    <div class="pro-card-specs">
+                      <span class="spec-chip">2-Stem (Vocal/Music)</span>
+                      <span class="spec-chip">44.1 kHz</span>
+                      <span class="spec-chip">12.8 dB SI-SDR</span>
+                    </div>
+                  </label>
+
+                  <label class="model-pro-card">
+                    <input type="radio" name="sep-model-radio" value="MelRoFormer" class="hidden-radio">
+                    <div class="pro-card-top">
+                      <span class="pro-card-title">Mel-RoFormer</span>
+                      <span class="badge-spec-glow">Mel-Band</span>
+                    </div>
+                    <p class="pro-card-desc">Mel-frequency Band-Split RoFormer for ultra-sharp phase alignment and rapid inference.</p>
+                    <div class="pro-card-specs">
+                      <span class="spec-chip">2-Stem (Vocal/Music)</span>
+                      <span class="spec-chip">44.1 kHz</span>
+                      <span class="spec-chip">Low Latency</span>
+                    </div>
+                  </label>
+
+                  <label class="model-pro-card">
+                    <input type="radio" name="sep-model-radio" value="HTDemucs" class="hidden-radio">
+                    <div class="pro-card-top">
+                      <span class="pro-card-title">HTDemucs v4</span>
+                      <span class="badge-stems-glow">4-Stem</span>
+                    </div>
+                    <p class="pro-card-desc">Hybrid Transformer Demucs v4. Simultaneously isolates Vocals, Drums, Bass, and Other.</p>
+                    <div class="pro-card-specs">
+                      <span class="spec-chip">4 Full Stems</span>
+                      <span class="spec-chip">44.1 kHz</span>
+                      <span class="spec-chip">Multi-Instrument</span>
+                    </div>
+                  </label>
+
+                  <label class="model-pro-card">
+                    <input type="radio" name="sep-model-radio" value="MVSepMDX23" class="hidden-radio">
+                    <div class="pro-card-top">
+                      <span class="pro-card-title">MVSep-MDX23</span>
+                      <span class="badge-ens-glow">Ensemble</span>
+                    </div>
+                    <p class="pro-card-desc">Multi-model MDX23c ensemble architecture optimized for separation benchmarks.</p>
+                    <div class="pro-card-specs">
+                      <span class="spec-chip">MDX Ensemble</span>
+                      <span class="spec-chip">44.1 kHz</span>
+                      <span class="spec-chip">High Precision</span>
+                    </div>
+                  </label>
+                </div>
+                <input type="hidden" id="sep-model" value="BSRoFormer">
+              </div>
+
+              <div class="form-row">
+                <div class="form-item flex-1">
+                  <label class="form-label" for="sep-device">3. Accelerator Compute Device</label>
+                  <select id="sep-device" class="form-select">
+                    <option value="cuda">CUDA GPU Accelerator (FP16 High-Speed Tensor Cores)</option>
+                    <option value="cpu">CPU Compute Fallback (Multi-Core AVX-512)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="info-callout">
+                <div class="callout-sparkle">⚡</div>
+                <div class="callout-body">
+                  <strong>Zero-Leak Memory Management:</strong> Separated stems are saved under <code>.data/pipeline/stems/</code> and cataloged in the dataset registry. CUDA VRAM cache is automatically flushed between tracks.
+                </div>
+              </div>
+
+              <button type="submit" class="btn btn-primary btn-lg" id="btn-submit-separation">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                <span>Launch Bulk Separation Job</span>
+              </button>
+            </form>
+          </div>
+        </section>

@@ -1,0 +1,117 @@
+      <section id="tab-crawler" class="tab-pane">
+        <div class="grid-2col">
+          <!-- Crawler Setup -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">YouTube Ingestion & Extraction</h2>
+                <p class="card-subtitle">Crawl and standardize audio via yt-dlp & FFmpeg.</p>
+              </div>
+              <span class="badge badge-accent">yt-dlp + ffmpeg</span>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="yt-tab-url-input">YouTube Video URL:</label>
+              <div class="input-group">
+                <div class="input-icon-prefix">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"></path><polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon></svg>
+                </div>
+                <input type="text" id="yt-tab-url-input" class="text-input" placeholder="https://www.youtube.com/watch?v=...">
+                <button class="btn btn-sm btn-ghost btn-paste-url" id="btn-yt-paste-tab" title="Paste from clipboard">
+                  <span>Paste</span>
+                </button>
+                <button class="btn btn-secondary" id="btn-yt-tab-inspect" title="Fetch video metadata preview">
+                  <span>Inspect</span>
+                </button>
+              </div>
+              <p class="input-hint">Paste link (e.g. YouTube Video, Short, or Clip)</p>
+            </div>
+
+            <!-- Normalization & Ingest Settings -->
+            <div class="form-group">
+              <label class="form-label" for="yt-sample-rate-select">Target Sample Rate:</label>
+              <select id="yt-sample-rate-select" class="select-input">
+                <option value="44100" selected>44,100 Hz (Pipeline Standard)</option>
+                <option value="16000">16,000 Hz (Diarization Optimized)</option>
+                <option value="48000">48,000 Hz (Studio HD)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="yt-format-select">Audio Format:</label>
+              <select id="yt-format-select" class="select-input">
+                <option value="wav" selected>WAV (Lossless PCM)</option>
+                <option value="mp3">MP3</option>
+                <option value="flac">FLAC</option>
+              </select>
+            </div>
+
+            <div class="yt-actions">
+              <button class="btn btn-primary btn-lg w-full" id="btn-yt-tab-download">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                <span>Download & Standardize Audio</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Video Preview & Live Ingest Progress -->
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Metadata Inspector & Progress</h2>
+              <span id="yt-inspect-badge" class="badge badge-ghost hidden">Verified</span>
+            </div>
+
+            <!-- Task Progress Box -->
+            <div id="yt-task-progress-box" class="task-progress-box hidden">
+              <div class="task-header">
+                <span class="task-title" id="yt-task-title">Downloading YouTube audio...</span>
+                <span class="task-timer" id="yt-task-timer">0.0s</span>
+              </div>
+              <div class="progress-bar-track">
+                <div class="progress-bar-fill progress-animated" id="yt-progress-bar"></div>
+              </div>
+              <div class="task-status-text" id="yt-task-status-text">Fetching media streams and converting via FFmpeg...</div>
+            </div>
+
+            <!-- Video Preview Card -->
+            <div id="yt-preview-card" class="yt-preview-card hidden">
+              <div class="yt-preview-thumb-wrap">
+                <img id="yt-preview-thumb" class="yt-preview-thumb" alt="Video Thumbnail">
+                <span class="yt-preview-duration" id="yt-preview-duration">00:00</span>
+              </div>
+              <div class="yt-preview-info">
+                <h3 class="yt-preview-title" id="yt-preview-title">Video Title</h3>
+                <div class="yt-preview-meta-row">
+                  <span class="yt-preview-channel" id="yt-preview-channel">Channel</span>
+                  <span class="yt-preview-views" id="yt-preview-views">0 views</span>
+                </div>
+                <p class="yt-preview-desc" id="yt-preview-desc">Description</p>
+                <div class="yt-preview-actions">
+                  <a id="yt-preview-link" class="btn btn-sm btn-ghost" target="_blank" rel="noopener noreferrer">Watch on YouTube ↗</a>
+                </div>
+              </div>
+            </div>
+
+            <div id="yt-empty-placeholder" class="empty-placeholder">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"></path><polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon></svg>
+              <span>Enter a YouTube link and click "Inspect" or "Download" to ingest audio into the pipeline.</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Downloaded YouTube Audio Vault -->
+        <div class="card" style="margin-top: 1.25rem;">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">YouTube Downloads Vault</h2>
+              <span class="card-subtitle">Cached downloads in <code>.data/yt_crawler/downloads</code></span>
+            </div>
+            <button class="btn btn-sm btn-ghost" id="btn-refresh-yt-history">
+              <span>↻ Refresh Vault</span>
+            </button>
+          </div>
+          <div class="yt-vault-list" id="yt-vault-list">
+            <div class="empty-placeholder">Loading crawled YouTube tracks...</div>
+          </div>
+        </div>
+      </section>

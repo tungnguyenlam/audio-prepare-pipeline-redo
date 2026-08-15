@@ -1,0 +1,117 @@
+      <section id="tab-diarization" class="tab-pane">
+        <div class="grid-2col">
+          <!-- Diarization Controls -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">Speaker Diarization Pipeline</h2>
+                <p class="card-subtitle">Detect "who spoke when" with temporal boundary intervals.</p>
+              </div>
+              <span class="badge badge-accent">Speaker Awareness</span>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="diar-input-select">Select Audio:</label>
+              <select id="diar-input-select" class="select-input">
+                <option value="">-- Select Loaded Audio --</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Diarizer Backend:</label>
+              <div class="model-cards-grid">
+                <div class="model-card active" data-diar-model="pyannote">
+                  <div class="model-card-header">
+                    <span class="model-name">Pyannote 3.1</span>
+                    <span class="badge badge-sm badge-info">Community</span>
+                  </div>
+                  <p class="model-desc">pyannote/speaker-diarization-community-1 via Pyannote pipeline.</p>
+                </div>
+
+                <div class="model-card" data-diar-model="sortformer">
+                  <div class="model-card-header">
+                    <span class="model-name">NeMo Sortformer</span>
+                    <span class="badge badge-sm">Sortformer</span>
+                  </div>
+                  <p class="model-desc">nvidia/diar_sortformer_4spk-v1 4-speaker model.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-group" id="hf-token-group">
+              <label class="form-label" for="hf-token-input">HuggingFace Token (Optional if set in ENV):</label>
+              <input type="password" id="hf-token-input" class="text-input" placeholder="hf_xxxxxxxxxxxxxxxxxxxx">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="diar-device-select">Compute Device:</label>
+              <select id="diar-device-select" class="select-input">
+                <option value="auto">Auto (Best Available)</option>
+                <option value="cuda">CUDA (GPU)</option>
+                <option value="mps">MPS (Apple Silicon)</option>
+                <option value="cpu">CPU</option>
+              </select>
+            </div>
+
+            <div class="diar-actions">
+              <button class="btn btn-primary btn-lg w-full" id="btn-run-diarization">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                <span>Run Speaker Diarization</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Diarization Timeline & Turns View -->
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Speaker Turns & Timeline</h2>
+              <span id="diar-model-badge" class="badge badge-ghost hidden">Pyannote</span>
+            </div>
+
+            <div id="diar-task-progress-box" class="task-progress-box hidden">
+              <div class="task-header">
+                <span class="task-title">Diarization in progress...</span>
+                <span class="task-timer" id="diar-task-timer">0.0s</span>
+              </div>
+              <div class="progress-bar-track">
+                <div class="progress-bar-fill progress-animated" id="diar-progress-bar"></div>
+              </div>
+              <div class="task-status-text" id="diar-task-status-text">Detecting speaker turns...</div>
+            </div>
+
+            <div id="diar-results-wrapper" class="diar-results-wrapper hidden">
+              <!-- Speakers Overview Cards -->
+              <div class="speakers-summary-row" id="speakers-summary-row"></div>
+
+              <!-- Interactive Timeline -->
+              <div class="timeline-container">
+                <div class="timeline-header">
+                  <span class="timeline-title">Speaker Timeline (Click turn to seek & play)</span>
+                </div>
+                <div class="diar-timeline" id="diar-timeline"></div>
+              </div>
+
+              <!-- Turns Table -->
+              <div class="turns-table-wrapper">
+                <table class="turns-table">
+                  <thead>
+                    <tr>
+                      <th>Speaker</th>
+                      <th>Start (s)</th>
+                      <th>End (s)</th>
+                      <th>Duration</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="turns-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="diar-empty-placeholder" class="empty-placeholder">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>
+              <span>Select an audio and run Diarization to see speaker separation turns.</span>
+            </div>
+          </div>
+        </div>
+      </section>

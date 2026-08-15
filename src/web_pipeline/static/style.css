@@ -978,6 +978,71 @@ html, body {
   gap: 1rem;
 }
 
+/* Shared GPU Telemetry Ribbon */
+.queue-gpu-ribbon {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 1.1rem;
+  background: linear-gradient(135deg, hsl(224, 28%, 8%), hsla(217, 91%, 60%, 0.08));
+  border: 1px solid hsla(217, 91%, 60%, 0.25);
+  border-radius: var(--radius-md);
+  margin-bottom: 1.25rem;
+  overflow-x: auto;
+}
+
+.gpu-ribbon-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.gpu-ribbon-icon {
+  font-size: 0.95rem;
+}
+
+.gpu-ribbon-label {
+  color: var(--text-subtle);
+  font-weight: 600;
+}
+
+.gpu-ribbon-val {
+  color: var(--text-main);
+  font-weight: 700;
+}
+
+.gpu-ribbon-divider {
+  width: 1px;
+  height: 16px;
+  background-color: var(--border-medium);
+  flex-shrink: 0;
+}
+
+.workload-source-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: var(--radius-xs);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  letter-spacing: 0.02em;
+}
+
+.source-studio {
+  background-color: hsla(188, 86%, 53%, 0.16);
+  color: var(--color-cyan);
+  border: 1px solid hsla(188, 86%, 53%, 0.35);
+}
+
+.source-pipeline {
+  background-color: hsla(262, 83%, 65%, 0.16);
+  color: var(--color-violet);
+  border: 1px solid hsla(262, 83%, 65%, 0.35);
+}
+
 .filter-pills {
   display: flex;
   align-items: center;

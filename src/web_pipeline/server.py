@@ -594,6 +594,34 @@ async def handle_submit_benchmark(request: web.Request) -> web.Response:
         return json_error(str(e))
 
 
+async def handle_shared_queue(request: web.Request) -> web.Response:
+    """Return unified GPU workload queue across Studio and Pipeline."""
+    try:
+        from src.web_studio.server import get_shared_queue_data
+        return web.json_response(get_shared_queue_data())
+    except Exception as exc:
+        return web.json_response({"error": str(exc)}, status=500)
+
+
+async def handle_shared_queue_cancel(request: web.Request) -> web.Response:
+    """Cancel a task or job across either SonicStudio or SonicPipeline."""
+    item_id = request.match_info["id"]
+    if item_id.startswith("job_") or queue_manager.get_job(item_id):
+        success = queue_manager.cancel_job(item_id)
+        if not success:
+            return web.json_response({"error": "Could not cancel pipeline job"}, status=409)
+        return web.json_response({"id": item_id, "source": "pipeline", "status": "cancelled"})
+    else:
+        try:
+            from src.web_studio.server import task_manager
+            success = task_manager.cancel_task(item_id)
+            if not success:
+                return web.json_response({"error": "Only queued studio tasks can be cancelled"}, status=409)
+            return web.json_response({"id": item_id, "source": "studio", "status": "cancelled"})
+        except Exception as exc:
+            return web.json_response({"error": str(exc)}, status=500)
+
+
 # -------------------------------------------------------------------------
 # Manifest & Export Endpoints
 # -------------------------------------------------------------------------
@@ -755,12 +783,12 @@ async def file_watcher_loop(app: web.Application):
 
 
 async def handle_index(request: web.Request) -> web.Response:
-    """Serve index.html for Single-Page Application with no-cache headers."""
+    """Serve modular index.html with composed partials and no-cache headers."""
+    from src.web_backend.html_composer import compose_html
     index_path = STATIC_DIR / "index.html"
     if not index_path.exists():
         return web.Response(status=404, text="Static frontend not found")
-    with open(index_path, "r", encoding="utf-8") as f:
-        content = f.read()
+    content = compose_html(index_path)
     return web.Response(
         text=content,
         content_type="text/html",
@@ -828,6 +856,9 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_post("/api/jobs/{id}/cancel", handle_cancel_job)
     app.router.add_delete("/api/jobs/{id}", handle_delete_job)
     app.router.add_post("/api/queue/controls", handle_queue_controls)
+    app.router.add_get("/api/queue/shared", handle_shared_queue)
+    app.router.add_delete("/api/queue/shared/{id}", handle_shared_queue_cancel)
+    app.router.add_post("/api/queue/shared/{id}/cancel", handle_shared_queue_cancel)
 
     # Job submission routes
     app.router.add_post("/api/jobs/batch_ingest_yt", handle_submit_ingest_yt)

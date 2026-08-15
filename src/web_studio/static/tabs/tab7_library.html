@@ -1,0 +1,51 @@
+      <section id="tab-library" class="tab-pane">
+        <div class="grid-2col">
+          <!-- Project Audio Files Explorer -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">Project File Explorer</h2>
+                <span class="card-subtitle">Scanned from <code>benchmarks/</code>, <code>data/</code>, <code>temp/</code>, and <code>.data/</code></span>
+              </div>
+              <button class="btn btn-sm btn-ghost" id="btn-refresh-library">
+                <span>↻ Refresh</span>
+              </button>
+            </div>
+            
+            <div class="modal-filter-bar" style="margin-bottom: 0.75rem;">
+              <input type="text" id="tab-library-search" class="input-text library-search-input" placeholder="🔍 Search audio files by name, path, format...">
+              <div class="category-pills" id="tab-library-categories">
+                <button class="pill-btn active" data-category="all">All</button>
+                <button class="pill-btn" data-category="speech">Speech</button>
+                <button class="pill-btn" data-category="music">Music</button>
+                <button class="pill-btn" data-category="cuts">Cuts</button>
+                <button class="pill-btn" data-category="stems">Stems</button>
+                <button class="pill-btn" data-category="downloads">Ingest</button>
+                <button class="pill-btn" data-category="pipeline">Pipeline</button>
+                <button class="pill-btn" data-category="temp">Temp</button>
+              </div>
+            </div>
+
+            <div class="library-list-wrapper" id="server-files-list">
+              <div class="empty-placeholder">Loading project files...</div>
+            </div>
+          </div>
+
+          <!-- Active Session History Stack -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">Active Session Audio Objects</h2>
+                <span class="card-subtitle">In-memory registered Audio instances</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="badge badge-ghost" id="session-count-badge">0 items</span>
+                <button class="btn btn-xs btn-ghost text-muted" id="btn-clear-session" title="Clear all active session audios">Clear All</button>
+              </div>
+            </div>
+            <div class="session-history-list" id="session-history-list">
+              <div class="empty-placeholder">No active audio in this session.</div>
+            </div>
+          </div>
+        </div>
+      </section>
