@@ -1444,13 +1444,16 @@ function renderYouTubeVault(items) {
     card.className = "yt-vault-item";
     card.innerHTML = `
       <div class="file-details">
-        <span class="file-name">${item.name}</span>
+        <span class="file-name">${escapeHtml(item.name)}</span>
         <span class="file-path">${item.sample_rate.toLocaleString()}Hz • ${item.channels === 1 ? 'Mono' : 'Stereo'} • ${(item.duration_s || 0).toFixed(1)}s • ${formatBytes(item.size)}</span>
       </div>
-      <div class="stem-actions">
+      <div class="stem-actions" style="display: flex; align-items: center; gap: 6px;">
         <button class="btn btn-sm btn-secondary btn-load-yt-workspace">🎛️ Workspace</button>
         <button class="btn btn-sm btn-secondary btn-yt-sep">🧪 Separate</button>
         <button class="btn btn-sm btn-secondary btn-yt-diar">👥 Diarize</button>
+        <button class="btn btn-sm btn-ghost btn-delete-yt" title="Delete downloaded audio file">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+        </button>
       </div>
     `;
 
@@ -1466,6 +1469,24 @@ function renderYouTubeVault(items) {
     card.querySelector('.btn-yt-diar').addEventListener('click', async () => {
       await loadServerFile(item.path);
       switchTab('tab-diarization');
+    });
+
+    card.querySelector('.btn-delete-yt').addEventListener('click', async () => {
+      if (confirm(`Delete YouTube downloaded audio "${item.name}" from disk?`)) {
+        try {
+          const res = await fetch("/api/crawler/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: item.path }),
+          });
+          if (!res.ok) throw new Error("Failed to delete YouTube audio file");
+          showToast(`Deleted ${item.name}`, "info");
+          await fetchYouTubeVault();
+          await fetchServerFiles();
+        } catch (err) {
+          showToast(err.message, "error");
+        }
+      }
     });
 
     container.appendChild(card);
@@ -1698,6 +1719,17 @@ function renderDiarizationResults(diarization, audioId) {
 
   const audioItem = state.audioList.find(a => a.id === audioId);
   const totalAudioDuration = (audioItem ? audioItem.duration_s : 0) || 1;
+  const turns = diarization.turns || [];
+  const speakerStats = {};
+  turns.forEach(turn => {
+    const speakerId = turn.speaker_id;
+    const duration = Math.max(0, Number(turn.end_s) - Number(turn.start_s));
+    if (!speakerStats[speakerId]) {
+      speakerStats[speakerId] = { totalSpeechS: 0, turnsCount: 0 };
+    }
+    speakerStats[speakerId].totalSpeechS += duration;
+    speakerStats[speakerId].turnsCount += 1;
+  });
 
   // Speaker Palette map
   const colors = ["var(--spk-0)", "var(--spk-1)", "var(--spk-2)", "var(--spk-3)", "var(--spk-4)"];
@@ -1712,19 +1744,20 @@ function renderDiarizationResults(diarization, audioId) {
     const card = document.createElement("div");
     card.className = "speaker-badge-card";
     const color = spkColorMap[spk.speaker_id] || "var(--accent-cyan)";
-    const pct = ((spk.total_speech_s / totalAudioDuration) * 100).toFixed(1);
+    const stats = speakerStats[spk.speaker_id] || { totalSpeechS: 0, turnsCount: 0 };
+    const pct = ((stats.totalSpeechS / totalAudioDuration) * 100).toFixed(1);
 
     card.innerHTML = `
       <div class="spk-color-indicator" style="background-color: ${color};"></div>
       <span class="spk-id">${spk.speaker_id}</span>
-      <span class="spk-stats">${spk.total_speech_s.toFixed(2)}s (${pct}% • ${spk.turns_count} turns)</span>
+      <span class="spk-stats">${stats.totalSpeechS.toFixed(2)}s (${pct}% • ${stats.turnsCount} turns)</span>
     `;
     el.speakersSummaryRow.appendChild(card);
   });
 
   // 2. Interactive Timeline
   el.diarTimeline.innerHTML = "";
-  (diarization.turns || []).forEach(turn => {
+  turns.forEach(turn => {
     const block = document.createElement("div");
     block.className = "diar-turn-block";
     const color = spkColorMap[turn.speaker_id] || "var(--accent-cyan)";
@@ -1734,7 +1767,8 @@ function renderDiarizationResults(diarization, audioId) {
     block.style.left = `${leftPct}%`;
     block.style.width = `${widthPct}%`;
     block.style.backgroundColor = color;
-    block.title = `${turn.speaker_id}: ${turn.start_s.toFixed(2)}s – ${turn.end_s.toFixed(2)}s (${turn.duration_s.toFixed(2)}s)`;
+    const duration = Math.max(0, Number(turn.end_s) - Number(turn.start_s));
+    block.title = `${turn.speaker_id}: ${turn.start_s.toFixed(2)}s – ${turn.end_s.toFixed(2)}s (${duration.toFixed(2)}s)`;
 
     block.addEventListener('click', () => {
       loadAudioIntoPlayer(audioId);
@@ -1747,14 +1781,14 @@ function renderDiarizationResults(diarization, audioId) {
 
   // 3. Turns Table
   el.turnsTableBody.innerHTML = "";
-  (diarization.turns || []).forEach(turn => {
+  turns.forEach(turn => {
     const tr = document.createElement("tr");
     const color = spkColorMap[turn.speaker_id] || "var(--accent-cyan)";
     tr.innerHTML = `
       <td style="color: ${color}; font-weight: 700;">${turn.speaker_id}</td>
       <td>${turn.start_s.toFixed(2)}</td>
       <td>${turn.end_s.toFixed(2)}</td>
-      <td>${turn.duration_s.toFixed(2)}s</td>
+      <td>${Math.max(0, Number(turn.end_s) - Number(turn.start_s)).toFixed(2)}s</td>
       <td><button class="btn btn-sm btn-ghost btn-play-turn" data-start="${turn.start_s}">▶ Seek</button></td>
     `;
     tr.querySelector('.btn-play-turn').addEventListener('click', () => {
@@ -2666,16 +2700,35 @@ function renderSessionHistory() {
     card.className = "file-item-card";
     card.innerHTML = `
       <div class="file-details">
-        <span class="file-name">${item.title}</span>
+        <span class="file-name">${escapeHtml(item.title)}</span>
         <span class="file-path">${item.format.toUpperCase()} • ${item.sample_rate.toLocaleString()}Hz • ${(item.duration_s || 0).toFixed(2)}s • ${item.source_type}</span>
       </div>
-      <div class="file-actions">
+      <div class="file-actions" style="display: flex; align-items: center; gap: 6px;">
         <button class="btn btn-sm btn-secondary btn-load-session" data-id="${item.id}">Load</button>
+        <button class="btn btn-sm btn-ghost btn-delete-session" data-id="${item.id}" title="Remove from session">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+        </button>
       </div>
     `;
     card.querySelector('.btn-load-session').addEventListener('click', () => {
       switchTab('tab-workspace');
       setActiveAudio(item.id, { play: true });
+    });
+    card.querySelector('.btn-delete-session').addEventListener('click', async () => {
+      if (confirm(`Remove "${item.title}" from active session?`)) {
+        try {
+          const res = await fetch(`/api/audio/${item.id}`, { method: 'DELETE' });
+          if (!res.ok) throw new Error("Failed to delete audio from session");
+          showToast(`Removed "${item.title}" from session`, "info");
+          await fetchAudioList();
+          if (state.activeAudio && state.activeAudio.id === item.id) {
+            state.activeAudio = null;
+            el.activeSection.classList.add('hidden');
+          }
+        } catch (err) {
+          showToast(err.message, "error");
+        }
+      }
     });
     container.appendChild(card);
   });

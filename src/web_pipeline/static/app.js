@@ -956,9 +956,29 @@
     try {
       const res = await fetch('/api/benchmarks');
       const reports = await res.json();
+      if (!res.ok) throw new Error(reports.error || 'Failed to load benchmark history');
+
+      if (els.benchmarkHistorySelect) {
+        els.benchmarkHistorySelect.innerHTML = reports.length
+          ? reports.map((report, index) => `<option value="${escapeHtml(report.job_id || '')}">${index === 0 ? 'Latest: ' : ''}${new Date((report.timestamp || 0) * 1000).toLocaleString()}</option>`).join('')
+          : '<option value="">No benchmark runs</option>';
+        els.benchmarkHistorySelect.onchange = async () => {
+          const jobId = els.benchmarkHistorySelect.value;
+          if (!jobId) {
+            renderLeaderboard({});
+            return;
+          }
+          const detailRes = await fetch(`/api/benchmarks/${encodeURIComponent(jobId)}`);
+          const detail = await detailRes.json();
+          if (!detailRes.ok) throw new Error(detail.error || 'Failed to load benchmark report');
+          renderLeaderboard(detail.leaderboard);
+        };
+      }
+
       if (reports.length > 0) {
-        const latest = reports[0];
-        renderLeaderboard(latest.leaderboard);
+        renderLeaderboard(reports[0].leaderboard);
+      } else {
+        renderLeaderboard({});
       }
     } catch (err) {
       console.error('Failed loading benchmark history:', err);
@@ -1173,11 +1193,13 @@
         if (!tag) return;
         try {
           const itemIds = Array.from(state.selectedItemIds);
-          await fetch('/api/items/bulk_tag', {
+          const res = await fetch('/api/items/bulk_tag', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ item_ids: itemIds, tag }),
+            body: JSON.stringify({ item_ids: itemIds, add_tags: [tag], remove_tags: [] }),
           });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Bulk tag failed');
           showToast(`Tagged ${itemIds.length} items with '${tag}'`, 'success');
           loadItems();
         } catch (err) {

@@ -19,7 +19,6 @@ import soundfile as sf
 import torch
 
 from src.benchmark.separation.mixer import AudioMixer
-from src.benchmark.separation.schemas import BenchmarkDefinition, Difficulty, MusicCategory
 from src.diarization import PyannoteDiarizer, SortformerDiarizer
 from src.separation import BSRoFormer, HTDemucs, MelRoFormer, MVSepMDX23
 from src.utils.AudioClass import DEFAULT_SAMPLE_RATE, Audio
@@ -72,6 +71,23 @@ def load_mono_waveform(path: str | Path, target_sr: int = 44100) -> np.ndarray:
     return mono
 
 
+def normalize_ingested_audio(audio: Audio, target_sr: int) -> Audio:
+    """Resample a locally ingested file and return a new file-backed Audio."""
+    if not target_sr or audio.sample_rate == target_sr:
+        return audio
+
+    data, source_sr = sf.read(str(audio.path), dtype="float32", always_2d=True)
+    resampled = librosa.resample(data, orig_sr=source_sr, target_sr=target_sr, axis=0)
+    output_path = audio.path.with_name(f"{audio.path.stem}_{target_sr}hz.wav")
+    sf.write(output_path, resampled, target_sr)
+    return Audio.from_file(
+        output_path,
+        source_id=audio.source_id,
+        title=audio.title,
+        history=(*audio.history, f"resampled_{target_sr}hz"),
+    )
+
+
 async def process_batch_ingest_yt(job: PipelineJob, queue: JobQueueManager) -> None:
     """Ingest batch of YouTube videos or playlists."""
     urls = job.params.get("urls", [])
@@ -101,7 +117,8 @@ async def process_batch_ingest_yt(job: PipelineJob, queue: JobQueueManager) -> N
             # Check if playlist or single video
             if "playlist" in url or "list=" in url:
                 job.add_log(f"Crawling playlist: {url}", "info")
-                playlist_audios = crawler.crawl(
+                playlist_audios = await asyncio.to_thread(
+                    crawler.crawl,
                     url,
                     target_sample_rate=target_sr,
                     max_duration_seconds=max_duration_seconds,
@@ -138,7 +155,8 @@ async def process_batch_ingest_yt(job: PipelineJob, queue: JobQueueManager) -> N
             if entry["type"] == "audio":
                 audio = entry["audio"]
             else:
-                audio = crawler.ingest(
+                audio = await asyncio.to_thread(
+                    crawler.ingest,
                     entry["url"],
                     target_sample_rate=target_sr,
                     max_duration_seconds=max_duration_seconds,
@@ -218,13 +236,12 @@ async def process_batch_ingest_files(job: PipelineJob, queue: JobQueueManager) -
         t0 = time.time()
         try:
             # Copy to pipeline storage
-            out_name = f"{int(time.time())}_{fpath.name}"
+            out_name = f"{int(time.time())}_{uuid.uuid4().hex[:8]}_{fpath.name}"
             dest_path = INGEST_DIR / out_name
             shutil.copy2(fpath, dest_path)
 
-            audio = Audio(path=dest_path, title=fpath.stem)
-            if target_sr and audio.sample_rate != target_sr:
-                audio = audio.resample_action(target_sr)
+            audio = Audio.from_file(dest_path, source_id=fpath.stem, title=fpath.stem)
+            audio = await asyncio.to_thread(normalize_ingested_audio, audio, target_sr)
 
             item = dataset_manager.register_audio(
                 audio=audio,
@@ -284,7 +301,7 @@ async def process_batch_separation(job: PipelineJob, queue: JobQueueManager) -> 
 
         # Check if ManagedModel needs load
         if hasattr(separator, "load"):
-            separator.load()
+            await asyncio.to_thread(separator.load)
     except Exception as e:
         job.add_log(f"Failed to initialize separator {model_name}: {e}", "error")
         raise
@@ -308,7 +325,7 @@ async def process_batch_separation(job: PipelineJob, queue: JobQueueManager) -> 
             t0 = time.time()
             try:
                 audio = it.to_audio()
-                out_audio = separator.separate(audio)
+                out_audio = await asyncio.to_thread(separator.separate, audio)
 
                 # Collect separated stems
                 out_p = Path(out_audio.path)
@@ -366,7 +383,7 @@ async def process_batch_separation(job: PipelineJob, queue: JobQueueManager) -> 
 
     finally:
         if separator and hasattr(separator, "close"):
-            separator.close()
+            await asyncio.to_thread(separator.close)
 
 
 async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) -> None:
@@ -379,6 +396,12 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
     max_speakers: Optional[int] = job.params.get("max_speakers")
     hf_token: Optional[str] = job.params.get("hf_token")
 
+    if any(value is not None for value in (num_speakers, min_speakers, max_speakers)):
+        job.add_log(
+            "Speaker-count bounds are not supported by the configured diarizer API; using backend defaults.",
+            "warning",
+        )
+
     items = [dataset_manager.get_item(iid) for iid in item_ids if dataset_manager.get_item(iid)]
     job.total_items = len(items)
     job.add_log(f"Initializing Diarizer '{backend}' on device '{device}' for {len(items)} audio items", "info")
@@ -389,10 +412,10 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
         if backend.lower() == "sortformer":
             diarizer = SortformerDiarizer(device=device)
         else:
-            diarizer = PyannoteDiarizer(device=device, use_auth_token=hf_token)
+            diarizer = PyannoteDiarizer(device=device, token=hf_token)
 
         if hasattr(diarizer, "load"):
-            diarizer.load()
+            await asyncio.to_thread(diarizer.load)
     except Exception as e:
         job.add_log(f"Failed to initialize diarizer {backend}: {e}", "error")
         raise
@@ -415,12 +438,7 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
             t0 = time.time()
             try:
                 audio = it.to_audio()
-                res = diarizer.diarize(
-                    audio,
-                    num_speakers=num_speakers,
-                    min_speakers=min_speakers,
-                    max_speakers=max_speakers,
-                )
+                res = await asyncio.to_thread(diarizer.diarize, audio)
 
                 # Persist diarization RTTM and JSON
                 item_diar_dir = DIARIZATION_DIR / it.id
@@ -429,19 +447,19 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
 
                 turns_data = [
                     {
-                        "speaker": turn.speaker,
-                        "start": round(turn.start, 3),
-                        "end": round(turn.end, 3),
-                        "duration": round(turn.end - turn.start, 3),
+                        "speaker_id": turn.speaker_id,
+                        "start_s": round(turn.start_s, 3),
+                        "end_s": round(turn.end_s, 3),
+                        "duration_s": round(turn.end_s - turn.start_s, 3),
                     }
                     for turn in res.turns
                 ]
 
                 diar_summary = {
                     "backend": backend,
-                    "speaker_count": res.speaker_count,
+                    "speaker_count": len(res.speakers),
                     "num_turns": len(res.turns),
-                    "total_speech_duration": round(sum(t["duration"] for t in turns_data), 2),
+                    "total_speech_duration": round(sum(t["duration_s"] for t in turns_data), 2),
                     "turns": turns_data,
                 }
 
@@ -456,13 +474,13 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
                 job.item_results.append({
                     "item_id": it.id,
                     "title": it.title,
-                    "speaker_count": res.speaker_count,
+                    "speaker_count": len(res.speakers),
                     "num_turns": len(res.turns),
                     "wall_time": round(wall_time, 2),
                     "status": "success",
                 })
                 processed += 1
-                job.add_log(f"[{idx}/{job.total_items}] Diarized {it.title}: {res.speaker_count} speakers, {len(res.turns)} turns", "info")
+                job.add_log(f"[{idx}/{job.total_items}] Diarized {it.title}: {len(res.speakers)} speakers, {len(res.turns)} turns", "info")
 
             except Exception as e:
                 failed += 1
@@ -483,7 +501,7 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
 
     finally:
         if diarizer and hasattr(diarizer, "close"):
-            diarizer.close()
+            await asyncio.to_thread(diarizer.close)
 
 
 async def process_batch_benchmark(job: PipelineJob, queue: JobQueueManager) -> None:
@@ -509,7 +527,7 @@ async def process_batch_benchmark(job: PipelineJob, queue: JobQueueManager) -> N
                     "speech": spk,
                     "music": mus,
                     "snr": snr,
-                    "sample_id": f"bench_{spk.id}_{mus.id}_snr{int(snr)}",
+                    "sample_id": f"bench_{spk.id}_{mus.id}_snr{str(snr).replace('-', 'm').replace('.', 'p')}",
                 })
 
     job.total_items = len(benchmark_tasks) * len(models_to_test)
@@ -518,7 +536,7 @@ async def process_batch_benchmark(job: PipelineJob, queue: JobQueueManager) -> N
         "info",
     )
 
-    mixer = AudioMixer(output_dir=BENCHMARK_DIR / "mixtures")
+    mixer = AudioMixer(sample_rate=DEFAULT_SAMPLE_RATE, channels=1)
     evaluated_records: List[Dict[str, Any]] = []
 
     processed = 0
@@ -539,8 +557,10 @@ async def process_batch_benchmark(job: PipelineJob, queue: JobQueueManager) -> N
                 separator = HTDemucs(device=device)
             elif model_name == "MVSepMDX23":
                 separator = MVSepMDX23(device=device)
+            else:
+                raise ValueError(f"Unsupported separation backend: {model_name}")
             if hasattr(separator, "load"):
-                separator.load()
+                await asyncio.to_thread(separator.load)
         except Exception as e:
             job.add_log(f"Failed to load model {model_name}: {e}", "error")
             failed += len(benchmark_tasks)
@@ -566,19 +586,17 @@ async def process_batch_benchmark(job: PipelineJob, queue: JobQueueManager) -> N
                 t0 = time.time()
                 try:
                     # 1. Render mix
-                    b_def = BenchmarkDefinition(
-                        sample_id=sample_id,
-                        speech_path=spk.path,
-                        music_path=mus.path,
-                        music_category=MusicCategory.ACOUSTIC,
-                        difficulty=Difficulty.MEDIUM,
+                    mix_result = await asyncio.to_thread(
+                        mixer.mix,
+                        spk.to_audio(),
+                        mus.to_audio(),
                         target_smr_db=snr,
                         seed=42,
+                        output_dir=BENCHMARK_DIR / "mixtures" / sample_id,
                     )
-                    mix_result = mixer.mix(b_def)
 
                     # 2. Run model separation on mixture
-                    separated_audio = separator.separate(mix_result.mixture)
+                    separated_audio = await asyncio.to_thread(separator.separate, mix_result.mixture)
 
                     # Find vocals stem
                     sep_p = Path(separated_audio.path)
@@ -641,7 +659,7 @@ async def process_batch_benchmark(job: PipelineJob, queue: JobQueueManager) -> N
 
         finally:
             if separator and hasattr(separator, "close"):
-                separator.close()
+                await asyncio.to_thread(separator.close)
 
     # Aggregate Benchmark Leaderboard
     leaderboard: Dict[str, Any] = {}

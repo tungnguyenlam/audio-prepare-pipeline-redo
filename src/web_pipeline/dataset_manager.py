@@ -80,6 +80,10 @@ class AudioItem:
             path=self.path,
             source_id=self.source_id,
             title=self.title,
+            sample_rate=self.sample_rate,
+            duration_s=self.duration,
+            channels=self.channels,
+            format=self.format,
             native_sample_rate=self.native_sample_rate,
         )
 

@@ -131,6 +131,26 @@ class AudioRegistry:
         """Retrieve the full registered item dictionary."""
         return self._items.get(audio_id)
 
+    def unregister(self, audio_id: str) -> bool:
+        """Remove an audio object from the in-memory registry."""
+        if audio_id in self._items:
+            del self._items[audio_id]
+            self._waveform_cache.pop(audio_id, None)
+            return True
+        return False
+
+    def unregister_path(self, path: str | Path) -> int:
+        """Remove all registered audio objects that point at ``path``."""
+        target = Path(path).resolve()
+        matching_ids = [
+            audio_id
+            for audio_id, item in self._items.items()
+            if Path(item["audio"].path).resolve() == target
+        ]
+        for audio_id in matching_ids:
+            self.unregister(audio_id)
+        return len(matching_ids)
+
     def list_all(self) -> List[Dict[str, Any]]:
         """List all registered items formatted for the frontend."""
         result = []
@@ -139,6 +159,10 @@ class AudioRegistry:
         ):
             audio: Audio = item["audio"]
             meta = audio.metadata()
+            try:
+                file_size = audio.path.stat().st_size if audio.path.is_file() else 0
+            except OSError:
+                file_size = 0
             result.append(
                 {
                     "id": audio_id,
@@ -157,7 +181,7 @@ class AudioRegistry:
                     "tags": item["tags"],
                     "model_info": item.get("model_info", {}),
                     "created_at": item["created_at"],
-                    "file_size": audio.path.stat().st_size if audio.path.is_file() else 0,
+                    "file_size": file_size,
                 }
             )
         return result
@@ -416,6 +440,9 @@ async def handle_delete_library_file(request: web.Request) -> web.Response:
         if sidecar.is_file():
             sidecar.unlink()
 
+        # A deleted source must not remain in the in-memory session registry.
+        registry.unregister_path(target_path)
+
         logger.info("Deleted library file and sidecar: %s", target_path)
         return web.json_response({
             "status": "success",
@@ -436,7 +463,17 @@ async def handle_load_library_file(request: web.Request) -> web.Response:
 
     resolved = Path(file_path)
     if not resolved.is_absolute():
-        resolved = (ROOT_DIR / file_path).resolve()
+        resolved = ROOT_DIR / file_path
+    resolved = resolved.resolve()
+
+    allowed_roots = [
+        (ROOT_DIR / ".data").resolve(),
+        (ROOT_DIR / "data").resolve(),
+        (ROOT_DIR / "temp").resolve(),
+        (ROOT_DIR / "benchmarks").resolve(),
+    ]
+    if not any(resolved.is_relative_to(root) for root in allowed_roots):
+        return web.json_response({"error": "Path is outside permissible project audio folders"}, status=403)
 
     if not resolved.is_file():
         return web.json_response({"error": f"File not found: {resolved}"}, status=404)
@@ -459,7 +496,7 @@ async def handle_upload_audio(request: web.Request) -> web.Response:
 
     filename = field.filename or f"upload_{int(time.time())}.wav"
     clean_name = Path(filename).name
-    save_path = UPLOADS_DIR / f"{int(time.time())}_{clean_name}"
+    save_path = UPLOADS_DIR / f"{int(time.time())}_{uuid.uuid4().hex[:8]}_{clean_name}"
 
     with open(save_path, "wb") as f:
         while True:
@@ -523,18 +560,20 @@ async def handle_youtube_history(request: web.Request) -> web.Response:
     yt_dir = DATA_DIR / "yt_crawler" / "downloads"
     files = []
     if yt_dir.is_dir():
-        for p in yt_dir.glob("*.wav"):
+        for p in yt_dir.iterdir():
+            if not p.is_file() or p.suffix.lower() not in {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac", ".aiff"}:
+                continue
             try:
-                rate, dur, ch = _probe_wav(p)
+                audio = Audio.from_file(p)
                 stat = p.stat()
                 files.append({
                     "name": p.name,
                     "stem": p.stem,
                     "path": str(p.relative_to(ROOT_DIR)),
                     "absolute_path": str(p.resolve()),
-                    "sample_rate": rate,
-                    "duration_s": dur,
-                    "channels": ch,
+                    "sample_rate": audio.sample_rate or 0,
+                    "duration_s": audio.duration_s or 0,
+                    "channels": audio.channels or 0,
                     "size": stat.st_size,
                     "modified": stat.st_mtime,
                 })
@@ -542,6 +581,37 @@ async def handle_youtube_history(request: web.Request) -> web.Response:
                 pass
     files.sort(key=lambda x: x["modified"], reverse=True)
     return web.json_response({"downloads": files})
+
+
+async def handle_delete_youtube_file(request: web.Request) -> web.Response:
+    """Delete a crawled YouTube audio file from disk."""
+    data = await request.json()
+    file_path = data.get("path")
+    if not file_path:
+        return web.json_response({"error": "Path is required"}, status=400)
+    p = Path(file_path)
+    if not p.is_absolute():
+        p = ROOT_DIR / file_path
+    p = p.resolve()
+    if p.is_file() and p.is_relative_to((DATA_DIR / "yt_crawler").resolve()):
+        p.unlink()
+        sidecar = p.with_suffix(".json")
+        if sidecar.is_file():
+            sidecar.unlink()
+        return web.json_response({"status": "success", "file": str(p.name)})
+    return web.json_response({"error": "File not found or not in downloads directory"}, status=404)
+
+
+async def handle_delete_audio(request: web.Request) -> web.Response:
+    """Unregister an audio object from the in-memory registry."""
+    audio_id = request.match_info.get("id")
+    if not audio_id:
+        return web.json_response({"error": "Audio ID is required"}, status=400)
+
+    success = registry.unregister(audio_id)
+    if success:
+        return web.json_response({"status": "success", "audio_id": audio_id})
+    return web.json_response({"error": "Audio not found"}, status=404)
 
 
 async def handle_youtube_ingest(request: web.Request) -> web.Response:
@@ -1504,8 +1574,10 @@ def create_app() -> web.Application:
     app.router.add_post("/api/audio/youtube", handle_youtube_ingest)
     app.router.add_post("/api/crawler/inspect", handle_youtube_inspect)
     app.router.add_get("/api/crawler/history", handle_youtube_history)
+    app.router.add_post("/api/crawler/delete", handle_delete_youtube_file)
     app.router.add_get("/api/audio", handle_list_audios)
     app.router.add_get("/api/audio/{id}", handle_get_audio_metadata)
+    app.router.add_delete("/api/audio/{id}", handle_delete_audio)
     app.router.add_get("/api/audio/{id}/stream", handle_stream_audio)
     app.router.add_get("/api/audio/{id}/waveform", handle_get_waveform)
     app.router.add_get("/api/audio/{id}/spectrogram", handle_get_spectrogram)

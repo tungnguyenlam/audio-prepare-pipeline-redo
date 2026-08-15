@@ -101,7 +101,7 @@ async def handle_events_sse(request: web.Request) -> web.StreamResponse:
                     "timestamp": time.time(),
                 })
                 await response.write(f"data: {tele_payload}\n\n".encode("utf-8"))
-    except (asyncio.CancelledError, ConnectionResetError):
+    except (asyncio.CancelledError, ConnectionResetError, aiohttp.ClientConnectionResetError):
         pass
     finally:
         queue_manager.unsubscribe(q)
@@ -616,7 +616,11 @@ async def handle_create_export(request: web.Request) -> web.Response:
 async def handle_download_export(request: web.Request) -> web.StreamResponse:
     """Download export ZIP bundle."""
     filename = request.match_info["filename"]
-    target_file = EXPORTS_DIR / filename
+    target_file = (EXPORTS_DIR / filename).resolve()
+    try:
+        target_file.relative_to(EXPORTS_DIR.resolve())
+    except ValueError:
+        return web.Response(status=403, text="Invalid export path")
     if not target_file.exists():
         return web.Response(status=404, text="Export archive not found")
     return web.FileResponse(target_file)
@@ -649,7 +653,11 @@ async def handle_list_benchmarks(request: web.Request) -> web.Response:
 async def handle_get_benchmark(request: web.Request) -> web.Response:
     """Get single benchmark report."""
     job_id = request.match_info["id"]
-    report_file = BENCHMARK_DIR / f"{job_id}_report.json"
+    report_file = (BENCHMARK_DIR / f"{job_id}_report.json").resolve()
+    try:
+        report_file.relative_to(BENCHMARK_DIR.resolve())
+    except ValueError:
+        return json_error("Invalid benchmark ID", 400)
     if not report_file.exists():
         return json_error("Benchmark report not found", 404)
     with open(report_file, "r", encoding="utf-8") as f:
@@ -707,7 +715,7 @@ async def file_watcher_loop(app: web.Application):
         await asyncio.sleep(0.5)
         if scan():
             logger.info("Pipeline file modification detected! Broadcasting hot reload...")
-            queue_manager.broadcast({"event": "reload", "data": {}})
+            queue_manager.broadcast("reload", {})
 
 
 async def handle_index(request: web.Request) -> web.Response:

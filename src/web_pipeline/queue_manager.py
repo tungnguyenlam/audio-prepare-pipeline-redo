@@ -100,6 +100,7 @@ class JobQueueManager:
         self._handlers: Dict[str, Callable[..., Coroutine[Any, Any, None]]] = {}
         self._subscribers: Set[asyncio.Queue[Dict[str, Any]]] = set()
         self._worker_task: Optional[asyncio.Task[Any]] = None
+        self._dispatch_event = asyncio.Event()
         self._load_persisted_jobs()
 
     def _load_persisted_jobs(self) -> None:
@@ -115,7 +116,11 @@ class JobQueueManager:
                     if job.status == "running":
                         job.status = "failed"
                         job.error = "Interrupted by server restart"
+                        self._save_job(job)
                     self._jobs[job.id] = job
+                    if job.status == "pending":
+                        self._queue.put_nowait(job.id)
+                        self._dispatch_event.set()
             except Exception as e:
                 logger.warning(f"Failed to load job {file_path}: {e}")
 
@@ -133,8 +138,15 @@ class JobQueueManager:
         """Stop worker loop and cancel in-flight jobs gracefully."""
         if self._worker_task:
             self._worker_task.cancel()
-        for task in self._running_tasks.values():
+            try:
+                await self._worker_task
+            except asyncio.CancelledError:
+                pass
+        running_tasks = list(self._running_tasks.values())
+        for task in running_tasks:
             task.cancel()
+        if running_tasks:
+            await asyncio.gather(*running_tasks, return_exceptions=True)
 
     def subscribe(self) -> asyncio.Queue[Dict[str, Any]]:
         """Subscribe to real-time job and telemetry events via SSE."""
@@ -182,6 +194,7 @@ class JobQueueManager:
         self._jobs[job_id] = job
         self._save_job(job)
         self._queue.put_nowait(job_id)
+        self._dispatch_event.set()
         self.broadcast("job_created", job.to_dict())
         return job
 
@@ -244,14 +257,17 @@ class JobQueueManager:
 
     def pause_queue(self) -> None:
         self._is_paused = True
+        self._dispatch_event.set()
         self.broadcast("queue_state", {"is_paused": True, "max_concurrency": self.max_concurrency})
 
     def resume_queue(self) -> None:
         self._is_paused = False
+        self._dispatch_event.set()
         self.broadcast("queue_state", {"is_paused": False, "max_concurrency": self.max_concurrency})
 
     def set_concurrency(self, concurrency: int) -> None:
         self.max_concurrency = max(1, min(8, concurrency))
+        self._dispatch_event.set()
         self.broadcast("queue_state", {"is_paused": self._is_paused, "max_concurrency": self.max_concurrency})
 
     def is_cancelled(self, job_id: str) -> bool:
@@ -310,14 +326,24 @@ class JobQueueManager:
 
     async def _worker_loop(self) -> None:
         """Master dispatch loop allocating workers up to max_concurrency."""
-        semaphore = asyncio.Semaphore(self.max_concurrency)
-
         while True:
             try:
-                while self._is_paused:
-                    await asyncio.sleep(0.5)
+                while True:
+                    if self._is_paused or len(self._running_tasks) >= self.max_concurrency:
+                        self._dispatch_event.clear()
+                        if self._is_paused or len(self._running_tasks) >= self.max_concurrency:
+                            await self._dispatch_event.wait()
+                        continue
 
-                job_id = await self._queue.get()
+                    try:
+                        job_id = self._queue.get_nowait()
+                        break
+                    except asyncio.QueueEmpty:
+                        self._dispatch_event.clear()
+                        if not self._queue.empty():
+                            continue
+                        await self._dispatch_event.wait()
+
                 job = self._jobs.get(job_id)
                 if not job or job.status != "pending":
                     self._queue.task_done()
@@ -330,16 +356,14 @@ class JobQueueManager:
                     self._queue.task_done()
                     continue
 
-                # Adjust semaphore if concurrency setting changed
-                await semaphore.acquire()
-
-                task = asyncio.create_task(self._run_job_wrapper(job, semaphore))
+                task = asyncio.create_task(self._run_job_wrapper(job))
                 self._running_tasks[job_id] = task
 
                 def _cleanup(t: asyncio.Task[Any], jid: str = job_id) -> None:
                     self._running_tasks.pop(jid, None)
                     self._cancel_flags.discard(jid)
                     self._queue.task_done()
+                    self._dispatch_event.set()
 
                 task.add_done_callback(_cleanup)
 
@@ -349,7 +373,7 @@ class JobQueueManager:
                 logger.error(f"Error in queue worker loop: {e}", exc_info=True)
                 await asyncio.sleep(1.0)
 
-    async def _run_job_wrapper(self, job: PipelineJob, semaphore: asyncio.Semaphore) -> None:
+    async def _run_job_wrapper(self, job: PipelineJob) -> None:
         """Execute single job handler with exception handling and VRAM cleanup."""
         try:
             handler = self._handlers.get(job.type)
@@ -386,8 +410,6 @@ class JobQueueManager:
         finally:
             self._save_job(job)
             self.broadcast("job_updated", job.to_dict())
-            # Release worker slot
-            semaphore.release()
             # Clean VRAM and RAM
             gc.collect()
             if torch.cuda.is_available():
