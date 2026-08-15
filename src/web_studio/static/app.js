@@ -60,6 +60,7 @@ const el = {
   iconPlay: document.getElementById('icon-play'),
   iconPause: document.getElementById('icon-pause'),
   btnSkipBack: document.getElementById('btn-player-skip-back'),
+  btnPlayerStart: document.getElementById('btn-player-start'),
   btnSkipFwd: document.getElementById('btn-player-skip-fwd'),
   btnLoop: document.getElementById('btn-player-loop'),
   btnMute: document.getElementById('btn-player-mute'),
@@ -197,6 +198,10 @@ const el = {
   auditionTimeCurrent: document.getElementById('audition-time-current'),
   auditionTimeTotal: document.getElementById('audition-time-total'),
   auditionScrubber: document.getElementById('audition-scrubber'),
+  btnAuditionSkipBack: document.getElementById('btn-audition-skip-back'),
+  btnAuditionStart: document.getElementById('btn-audition-start'),
+  btnAuditionSkipFwd: document.getElementById('btn-audition-skip-fwd'),
+  auditionSpeedSelect: document.getElementById('audition-speed-select'),
   btnAuditionPlay: document.getElementById('btn-audition-play'),
   iconAuditionPlay: document.getElementById('icon-audition-play'),
   iconAuditionPause: document.getElementById('icon-audition-pause'),
@@ -246,6 +251,7 @@ const el = {
   btnRefreshLibrary: document.getElementById('btn-refresh-library'),
   sessionHistoryList: document.getElementById('session-history-list'),
   sessionCountBadge: document.getElementById('session-count-badge'),
+  btnClearSession: document.getElementById('btn-clear-session'),
 
   // Modals & Toasts
   modalSaveTo: document.getElementById('modal-save-to'),
@@ -340,46 +346,113 @@ function showToast(message, type = "info") {
 
 // ==================== MASTER AUDIO PLAYER ENGINE ====================
 
+function isAuditionPlaybackActive() {
+  return document.querySelector('.nav-tab.active')?.dataset.tab === 'tab-comparison'
+    && auditionTracks.length > 0;
+}
+
+function getPlaybackAudio() {
+  return isAuditionPlaybackActive() ? auditionAudio : el.audio;
+}
+
+function getPlaybackDuration(audio = getPlaybackAudio()) {
+  if (Number.isFinite(audio.duration) && audio.duration > 0) return audio.duration;
+  if (audio === auditionAudio) {
+    return state.audioList.find(item => item.id === auditionTracks[0]?.id)?.duration_s || 0;
+  }
+  return state.player.duration || state.activeAudio?.duration_s || 0;
+}
+
+function syncLoopControls(audio = getPlaybackAudio()) {
+  const isLooping = Boolean(audio?.loop);
+  el.btnLoop?.classList.toggle('active', isLooping && audio === getPlaybackAudio());
+  el.btnAuditionLoop?.classList.toggle('active', isLooping && isAuditionPlaybackActive());
+}
+
+function syncSpeedControls(rate = getPlaybackAudio()?.playbackRate || state.player.playbackRate) {
+  const numericRate = Number.parseFloat(rate) || 1;
+  const setSelectValue = (select) => {
+    if (!select) return;
+    const matchingOption = Array.from(select.options).find(
+      option => Number.parseFloat(option.value) === numericRate,
+    );
+    select.value = matchingOption?.value || String(numericRate);
+  };
+  setSelectValue(el.speedSelect);
+  setSelectValue(el.auditionSpeedSelect);
+}
+
+function syncVolumeControls(volume = getPlaybackAudio()?.volume ?? state.player.volume) {
+  const value = Number.isFinite(volume) ? volume : 1;
+  if (el.volumeSlider) el.volumeSlider.value = value;
+  if (el.auditionVolumeSlider) el.auditionVolumeSlider.value = value;
+  updateVolumeIcon(value);
+}
+
+function syncActivePlaybackControls() {
+  const audio = getPlaybackAudio();
+  syncLoopControls(audio);
+  syncSpeedControls(audio?.playbackRate || state.player.playbackRate);
+  syncVolumeControls(audio?.volume);
+  setPlayingUI(audio && !audio.paused);
+}
+
+function setPlaybackRate(rate) {
+  const parsedRate = Number.parseFloat(rate);
+  if (!Number.isFinite(parsedRate) || parsedRate <= 0) return;
+  state.player.playbackRate = parsedRate;
+  if (el.audio) el.audio.playbackRate = parsedRate;
+  if (auditionAudio) auditionAudio.playbackRate = parsedRate;
+  syncSpeedControls(parsedRate);
+}
+
+function togglePlaybackLoop() {
+  const audio = getPlaybackAudio();
+  if (!audio) return;
+  audio.loop = !audio.loop;
+  if (audio === el.audio) state.player.loop = audio.loop;
+  syncLoopControls(audio);
+  showToast(audio.loop ? "Loop playback enabled" : "Loop playback disabled", "info");
+}
+
 function initPlayer() {
   if (el.btnPlayPause) el.btnPlayPause.addEventListener('click', togglePlayPause);
   if (el.btnSkipBack) el.btnSkipBack.addEventListener('click', () => seekRelative(-5));
+  if (el.btnPlayerStart) el.btnPlayerStart.addEventListener('click', () => seekTo(0));
   if (el.btnSkipFwd) el.btnSkipFwd.addEventListener('click', () => seekRelative(5));
 
   if (el.btnLoop) {
-    el.btnLoop.addEventListener('click', () => {
-      state.player.loop = !state.player.loop;
-      if (el.audio) el.audio.loop = state.player.loop;
-      el.btnLoop.classList.toggle('active', state.player.loop);
-      showToast(state.player.loop ? "Loop playback enabled" : "Loop playback disabled", "info");
-    });
+    el.btnLoop.addEventListener('click', togglePlaybackLoop);
   }
 
   if (el.speedSelect) {
-    el.speedSelect.addEventListener('change', (e) => {
-      state.player.playbackRate = parseFloat(e.target.value);
-      if (el.audio) el.audio.playbackRate = state.player.playbackRate;
-    });
+    el.speedSelect.addEventListener('change', (e) => setPlaybackRate(e.target.value));
   }
 
   if (el.volumeSlider) {
     el.volumeSlider.addEventListener('input', (e) => {
       state.player.volume = parseFloat(e.target.value);
       if (el.audio) el.audio.volume = state.player.volume;
-      updateVolumeIcon();
+      if (auditionAudio) auditionAudio.volume = state.player.volume;
+      syncVolumeControls(state.player.volume);
     });
   }
 
   if (el.btnMute) {
     el.btnMute.addEventListener('click', () => {
-      if (!el.audio) return;
-      if (el.audio.volume > 0) {
-        el.audio.volume = 0;
+      const audio = getPlaybackAudio();
+      if (!audio) return;
+      if (audio.volume > 0) {
+        if (el.audio) el.audio.volume = 0;
+        if (auditionAudio) auditionAudio.volume = 0;
         if (el.volumeSlider) el.volumeSlider.value = 0;
       } else {
-        el.audio.volume = state.player.volume || 1.0;
-        if (el.volumeSlider) el.volumeSlider.value = el.audio.volume;
+        const restoredVolume = state.player.volume || 1.0;
+        if (el.audio) el.audio.volume = restoredVolume;
+        if (auditionAudio) auditionAudio.volume = restoredVolume;
+        if (el.volumeSlider) el.volumeSlider.value = restoredVolume;
       }
-      updateVolumeIcon();
+      syncVolumeControls(getPlaybackAudio().volume);
     });
   }
 
@@ -387,7 +460,8 @@ function initPlayer() {
   if (el.timeTotal) {
     el.timeTotal.addEventListener('click', () => {
       state.player.showRemainingTime = !state.player.showRemainingTime;
-      onTimeUpdate();
+      if (isAuditionPlaybackActive()) updateAuditionTimeDisplays();
+      else onTimeUpdate();
     });
   }
 
@@ -407,8 +481,12 @@ function initPlayer() {
     el.audio.addEventListener('timeupdate', onTimeUpdate);
     el.audio.addEventListener('loadedmetadata', onLoadedMetadata);
     el.audio.addEventListener('ended', onEnded);
-    el.audio.addEventListener('play', () => setPlayingUI(true));
-    el.audio.addEventListener('pause', () => setPlayingUI(false));
+    el.audio.addEventListener('play', () => {
+      if (!isAuditionPlaybackActive()) setPlayingUI(true);
+    });
+    el.audio.addEventListener('pause', () => {
+      if (!isAuditionPlaybackActive()) setPlayingUI(false);
+    });
     el.audio.addEventListener('error', () => {
       const mediaError = el.audio.error;
       const message = mediaError?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
@@ -427,15 +505,10 @@ function handleGlobalKeydown(e) {
   // If typing inside an input, textarea or select, ignore hotkeys
   if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
 
-  // Space: Play / Pause (or A/B switch if on comparison tab)
+  // Space: Play / Pause using whichever player is active.
   if (e.code === 'Space') {
     e.preventDefault();
-    const activeTab = document.querySelector('.nav-tab.active')?.dataset.tab;
-    if (activeTab === 'tab-comparison' && state.ab.trackAId && state.ab.trackBId) {
-      toggleABInstant();
-    } else {
-      togglePlayPause();
-    }
+    togglePlayPause();
     return;
   }
 
@@ -451,13 +524,20 @@ function handleGlobalKeydown(e) {
     return;
   }
 
+  if (e.key === 'Home') {
+    e.preventDefault();
+    seekTo(0);
+    return;
+  }
+
   // J / K / L Seek & Pause
   if (e.key === 'j' || e.key === 'J') {
     seekRelative(-2);
     return;
   }
   if (e.key === 'k' || e.key === 'K') {
-    if (!el.audio.paused) el.audio.pause();
+    const audio = getPlaybackAudio();
+    if (audio && !audio.paused) audio.pause();
     return;
   }
   if (e.key === 'l' || e.key === 'L') {
@@ -536,19 +616,25 @@ function handleGlobalKeydown(e) {
   }
 }
 
-function updateVolumeIcon() {
-  const isMuted = el.audio.volume === 0;
+function updateVolumeIcon(volume = getPlaybackAudio()?.volume ?? 0) {
+  const isMuted = volume === 0;
   el.iconVol.classList.toggle('hidden', isMuted);
   el.iconVolMute.classList.toggle('hidden', !isMuted);
 }
 
 function setPlayingUI(isPlaying) {
   state.player.isPlaying = isPlaying;
-  el.iconPlay.classList.toggle('hidden', isPlaying);
-  el.iconPause.classList.toggle('hidden', !isPlaying);
+  el.iconPlay?.classList.toggle('hidden', isPlaying);
+  el.iconPause?.classList.toggle('hidden', !isPlaying);
+  el.iconAuditionPlay?.classList.toggle('hidden', isPlaying);
+  el.iconAuditionPause?.classList.toggle('hidden', !isPlaying);
 }
 
 function togglePlayPause() {
+  if (isAuditionPlaybackActive()) {
+    toggleAuditionPlay();
+    return;
+  }
   if (!el.audio.src) {
     showToast("Load an audio track first", "info");
     return;
@@ -572,17 +658,30 @@ function playCurrentAudio() {
 }
 
 function seekTo(time) {
-  if (!state.player.duration) return;
-  el.audio.currentTime = time;
-  updatePlayheadPosition(time);
+  const audio = getPlaybackAudio();
+  const duration = getPlaybackDuration(audio);
+  if (!audio || !duration) return;
+  const targetTime = Math.max(0, Math.min(Number(time) || 0, duration));
+  if (audio.readyState === 0) {
+    audio.addEventListener('loadedmetadata', () => seekTo(targetTime), { once: true });
+    return;
+  }
+  audio.currentTime = targetTime;
+  if (audio === auditionAudio) {
+    updateAuditionTimeDisplays();
+  } else {
+    updatePlayheadPosition(targetTime);
+  }
 }
 
 function seekRelative(offset) {
-  if (!state.player.duration) return;
-  seekTo(Math.max(0, Math.min(el.audio.currentTime + offset, state.player.duration)));
+  const audio = getPlaybackAudio();
+  if (!audio) return;
+  seekTo(audio.currentTime + offset);
 }
 
 function onLoadedMetadata() {
+  if (isAuditionPlaybackActive()) return;
   state.player.duration = el.audio.duration || (state.activeAudio ? state.activeAudio.duration_s : 0);
   el.timeTotal.textContent = formatTime(state.player.duration);
   el.rulerEnd.textContent = formatTime(state.player.duration);
@@ -590,6 +689,7 @@ function onLoadedMetadata() {
 }
 
 function onTimeUpdate() {
+  if (isAuditionPlaybackActive()) return;
   const cur = el.audio.currentTime;
   const dur = state.player.duration || 1;
   state.player.currentTime = cur;
@@ -615,6 +715,7 @@ function onTimeUpdate() {
 }
 
 function onEnded() {
+  if (isAuditionPlaybackActive()) return;
   if (!state.player.loop) {
     setPlayingUI(false);
     seekTo(0);
@@ -626,6 +727,9 @@ function loadAudioIntoPlayer(audioId, autoplay = false) {
     || (state.activeAudio?.id === audioId ? state.activeAudio : null);
 
   el.audio.src = `/api/audio/${audioId}/stream`;
+  el.audio.playbackRate = state.player.playbackRate;
+  el.audio.volume = state.player.volume;
+  el.audio.loop = state.player.loop;
   el.audio.load();
   el.playerTitle.textContent = item?.title || item?.source_id || audioId;
   el.playerSub.textContent = item
@@ -1879,6 +1983,7 @@ let activeSelectedTags = new Set();
 function initAuditionHub() {
   auditionAudio.loop = true;
   auditionAudio.volume = 1.0;
+  auditionAudio.playbackRate = state.player.playbackRate;
 
   if (el.auditionClipSelect) {
     el.auditionClipSelect.addEventListener('change', (e) => {
@@ -1892,54 +1997,67 @@ function initAuditionHub() {
     el.btnAuditionPlay.addEventListener('click', toggleAuditionPlay);
   }
 
+  if (el.btnAuditionSkipBack) {
+    el.btnAuditionSkipBack.addEventListener('click', () => seekRelative(-5));
+  }
+  if (el.btnAuditionStart) {
+    el.btnAuditionStart.addEventListener('click', () => seekTo(0));
+  }
+  if (el.btnAuditionSkipFwd) {
+    el.btnAuditionSkipFwd.addEventListener('click', () => seekRelative(5));
+  }
+  if (el.auditionSpeedSelect) {
+    el.auditionSpeedSelect.addEventListener('change', (e) => setPlaybackRate(e.target.value));
+  }
+
   if (el.btnAuditionLoop) {
-    el.btnAuditionLoop.addEventListener('click', () => {
-      auditionAudio.loop = !auditionAudio.loop;
-      el.btnAuditionLoop.classList.toggle('active', auditionAudio.loop);
-      showToast(auditionAudio.loop ? "Loop playback enabled" : "Loop disabled", "info");
-    });
-    el.btnAuditionLoop.classList.add('active');
+    el.btnAuditionLoop.addEventListener('click', togglePlaybackLoop);
   }
 
   if (el.auditionVolumeSlider) {
     el.auditionVolumeSlider.addEventListener('input', (e) => {
-      auditionAudio.volume = parseFloat(e.target.value);
+      state.player.volume = parseFloat(e.target.value);
+      el.audio.volume = state.player.volume;
+      auditionAudio.volume = state.player.volume;
+      syncVolumeControls(state.player.volume);
     });
   }
 
   if (el.auditionScrubber) {
     el.auditionScrubber.addEventListener('input', (e) => {
       const pct = parseFloat(e.target.value);
-      if (auditionAudio.duration) {
-        auditionAudio.currentTime = (pct / 100) * auditionAudio.duration;
+      if (getPlaybackDuration(auditionAudio)) {
+        seekTo((pct / 100) * getPlaybackDuration(auditionAudio));
       }
     });
   }
 
   auditionAudio.addEventListener('timeupdate', () => {
-    if (el.auditionTimeCurrent) {
-      el.auditionTimeCurrent.textContent = formatTimePrecise(auditionAudio.currentTime);
-    }
-    if (el.auditionScrubber && auditionAudio.duration) {
-      el.auditionScrubber.value = (auditionAudio.currentTime / auditionAudio.duration) * 100;
-    }
+    updateAuditionTimeDisplays();
   });
 
   auditionAudio.addEventListener('loadedmetadata', () => {
-    if (el.auditionTimeTotal) {
-      el.auditionTimeTotal.textContent = formatTimePrecise(auditionAudio.duration);
-    }
+    state.player.duration = auditionAudio.duration || getPlaybackDuration(auditionAudio);
+    updateAuditionTimeDisplays();
+    syncActivePlaybackControls();
   });
 
   auditionAudio.addEventListener('play', () => {
-    if (el.iconAuditionPlay) el.iconAuditionPlay.classList.add('hidden');
-    if (el.iconAuditionPause) el.iconAuditionPause.classList.remove('hidden');
+    if (isAuditionPlaybackActive()) setPlayingUI(true);
   });
 
   auditionAudio.addEventListener('pause', () => {
-    if (el.iconAuditionPlay) el.iconAuditionPlay.classList.remove('hidden');
-    if (el.iconAuditionPause) el.iconAuditionPause.classList.add('hidden');
+    if (isAuditionPlaybackActive()) setPlayingUI(false);
   });
+
+  auditionAudio.addEventListener('ended', () => {
+    if (isAuditionPlaybackActive()) {
+      setPlayingUI(false);
+      seekTo(0);
+    }
+  });
+
+  syncActivePlaybackControls();
 
   if (el.btnBatchSeparateActiveClip) {
     el.btnBatchSeparateActiveClip.addEventListener('click', async () => {
@@ -2070,14 +2188,44 @@ function highlightStars(score) {
   });
 }
 
+function updateAuditionTimeDisplays() {
+  const duration = getPlaybackDuration(auditionAudio);
+  const currentTime = Math.min(auditionAudio.currentTime || 0, duration || Infinity);
+
+  if (el.auditionTimeCurrent) {
+    el.auditionTimeCurrent.textContent = formatTimePrecise(currentTime);
+  }
+  if (el.auditionTimeTotal) {
+    el.auditionTimeTotal.textContent = formatTimePrecise(duration);
+  }
+  if (el.auditionScrubber && duration) {
+    el.auditionScrubber.value = (currentTime / duration) * 100;
+  }
+
+  if (isAuditionPlaybackActive()) {
+    state.player.duration = duration;
+    state.player.currentTime = currentTime;
+    if (el.timeCurrent) el.timeCurrent.textContent = formatTime(currentTime);
+    if (el.timeTotal) {
+      el.timeTotal.textContent = state.player.showRemainingTime
+        ? `-${formatTime(Math.max(0, duration - currentTime))}`
+        : formatTime(duration);
+    }
+    const pct = duration ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0;
+    if (el.scrubProgress) el.scrubProgress.style.width = `${pct}%`;
+  }
+}
+
 function toggleAuditionPlay() {
   if (auditionAudio.paused) {
     if (!auditionAudio.src || auditionAudio.src === window.location.href) {
       if (auditionTracks.length > 0) {
-        switchAuditionTrack(activeAuditionIndex);
+        switchAuditionTrack(activeAuditionIndex, true);
       }
+      return;
     }
     el.audio.pause();
+    syncActivePlaybackControls();
     auditionAudio.play().catch(e => console.error("Audition playback error:", e));
   } else {
     auditionAudio.pause();
@@ -2329,22 +2477,41 @@ function renderSideBySideDeck() {
   });
 }
 
-function switchAuditionTrack(idx) {
+function switchAuditionTrack(idx, autoplay = false) {
   if (idx < 0 || idx >= auditionTracks.length) return;
   activeAuditionIndex = idx;
   const track = auditionTracks[idx];
 
-  const wasPlaying = !auditionAudio.paused;
+  const wasPlaying = !auditionAudio.paused || autoplay;
   const curTime = auditionAudio.currentTime;
 
+  auditionAudio.pause();
+  auditionAudio.playbackRate = state.player.playbackRate;
+  auditionAudio.volume = state.player.volume;
   auditionAudio.src = `/api/audio/${track.id}/stream`;
-  auditionAudio.currentTime = curTime;
-  if (wasPlaying) {
-    auditionAudio.play().catch(e => console.error("Playback switch error:", e));
+
+  const restorePositionAndPlay = () => {
+    const duration = getPlaybackDuration(auditionAudio);
+    auditionAudio.currentTime = Math.max(0, Math.min(curTime || 0, duration || curTime || 0));
+    updateAuditionTimeDisplays();
+    if (wasPlaying) {
+      el.audio.pause();
+      auditionAudio.play().catch(e => console.error("Playback switch error:", e));
+    }
+  };
+  if (auditionAudio.readyState >= 1) {
+    restorePositionAndPlay();
+  } else {
+    auditionAudio.addEventListener('loadedmetadata', restorePositionAndPlay, { once: true });
+    auditionAudio.load();
   }
 
   if (el.activeAuditionTrackName) {
     el.activeAuditionTrackName.textContent = track.label;
+  }
+  if (isAuditionPlaybackActive()) {
+    if (el.playerTitle) el.playerTitle.textContent = track.label;
+    if (el.playerSub) el.playerSub.textContent = `Audition track • ${track.stem || 'reference mix'} • ${track.id}`;
   }
   if (el.scoringActiveModelLabel) {
     el.scoringActiveModelLabel.textContent = `Evaluating: ${track.label} — ${track.stem || 'vocals'}`;
@@ -2419,6 +2586,8 @@ function switchAuditionTrack(idx) {
       el.currentEvalScoreBadge.style.color = "#fbbf24";
     }
   }
+
+  syncActivePlaybackControls();
 }
 
 async function saveCurrentEvaluation() {
@@ -2673,12 +2842,114 @@ function renderEvaluationsTable() {
 
 // ==================== LIBRARY & HISTORY ====================
 
+function getFileModelBadge(file) {
+  const cat = (file.category || "").toLowerCase();
+  const path = (file.path || "").toLowerCase();
+  const name = (file.name || "").toLowerCase();
+
+  if (cat.includes("speech") || path.includes("speech")) {
+    return { label: "Speech Source", class: "badge-success" };
+  }
+  if (cat.includes("music") || path.includes("music")) {
+    return { label: "Music BGM", class: "badge-accent" };
+  }
+  if (cat.includes("cuts") || path.includes("cut") || name.includes("_cut_")) {
+    return { label: "Audio Cut", class: "badge-warning" };
+  }
+  if (path.includes("bs_roformer") || name.includes("bs_roformer")) {
+    return { label: "BS-RoFormer", class: "badge-primary" };
+  }
+  if (path.includes("mel_roformer") || name.includes("mel_roformer")) {
+    return { label: "Mel-RoFormer", class: "badge-primary" };
+  }
+  if (path.includes("htdemucs") || name.includes("demucs")) {
+    return { label: "HTDemucs", class: "badge-primary" };
+  }
+  if (path.includes("mvsep") || name.includes("mdx")) {
+    return { label: "MVSep MDX", class: "badge-primary" };
+  }
+  if (cat.includes("stem") || cat.includes("separated")) {
+    return { label: "Separated Stem", class: "badge-primary" };
+  }
+  if (cat.includes("youtube") || path.includes("yt_crawler") || path.includes("download")) {
+    return { label: "YouTube Ingest", class: "badge-secondary" };
+  }
+  if (cat.includes("pipeline") || path.includes("pipeline")) {
+    return { label: "Pipeline Asset", class: "badge-info" };
+  }
+  if (cat.includes("temp") || path.includes("temp") || name.includes("quick_save")) {
+    return { label: "Quick Save", class: "badge-ghost" };
+  }
+  if (cat.includes("upload") || path.includes("upload")) {
+    return { label: "Upload", class: "badge-secondary" };
+  }
+  return { label: (file.format || "WAV").toUpperCase(), class: "badge-ghost" };
+}
+
+let previewAudioEl = null;
+let currentPreviewingPath = null;
+
+function toggleFilePreview(filePath, btn) {
+  if (!previewAudioEl) {
+    previewAudioEl = new Audio();
+    previewAudioEl.addEventListener('ended', () => {
+      currentPreviewingPath = null;
+      document.querySelectorAll('.btn-preview-file').forEach(b => {
+        b.classList.remove('playing');
+        b.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
+      });
+    });
+    previewAudioEl.addEventListener('pause', () => {
+      if (previewAudioEl.ended || previewAudioEl.paused) {
+        document.querySelectorAll('.btn-preview-file').forEach(b => {
+          b.classList.remove('playing');
+          b.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
+        });
+      }
+    });
+  }
+
+  if (currentPreviewingPath === filePath && !previewAudioEl.paused) {
+    previewAudioEl.pause();
+    currentPreviewingPath = null;
+    if (btn) {
+      btn.classList.remove('playing');
+      btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
+    }
+  } else {
+    // Pause main workspace player if playing
+    if (el.audio && !el.audio.paused) {
+      el.audio.pause();
+      state.isPlaying = false;
+      updatePlayPauseButton();
+    }
+
+    previewAudioEl.pause();
+    currentPreviewingPath = filePath;
+    previewAudioEl.src = `/api/library/stream?path=${encodeURIComponent(filePath)}`;
+    previewAudioEl.play().catch(e => {
+      console.warn("Audio preview failed:", e);
+      showToast("Audio preview error", "error");
+    });
+
+    document.querySelectorAll('.btn-preview-file').forEach(b => {
+      b.classList.remove('playing');
+      b.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
+    });
+
+    if (btn) {
+      btn.classList.add('playing');
+      btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>';
+    }
+  }
+}
+
 async function fetchAudioList() {
   try {
     const res = await fetch("/api/audio");
     const data = await res.json();
     state.audioList = data.audios || [];
-    el.sessionCountBadge.textContent = `${state.audioList.length} items`;
+    if (el.sessionCountBadge) el.sessionCountBadge.textContent = `${state.audioList.length} items`;
     renderSessionHistory();
     populateAllAudioSelects();
   } catch (err) {
@@ -2688,6 +2959,7 @@ async function fetchAudioList() {
 
 function renderSessionHistory() {
   const container = el.sessionHistoryList;
+  if (!container) return;
   container.innerHTML = "";
 
   if (state.audioList.length === 0) {
@@ -2699,21 +2971,89 @@ function renderSessionHistory() {
     const card = document.createElement("div");
     card.className = "file-item-card";
     card.innerHTML = `
-      <div class="file-details">
-        <span class="file-name">${escapeHtml(item.title)}</span>
-        <span class="file-path">${item.format.toUpperCase()} • ${item.sample_rate.toLocaleString()}Hz • ${(item.duration_s || 0).toFixed(2)}s • ${item.source_type}</span>
+      <div class="file-left-group">
+        <div class="file-details">
+          <div class="file-title-row">
+            <span class="badge badge-accent" style="font-size: 0.72rem; font-weight: 700;">${item.source_type.toUpperCase()}</span>
+            <span class="file-name" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</span>
+          </div>
+          <div class="file-meta-row">
+            <span class="file-path">${escapeHtml(item.path)}</span>
+            <span class="meta-chip">${(item.duration_s || 0).toFixed(1)}s</span>
+            <span class="meta-chip">${item.sample_rate.toLocaleString()} Hz</span>
+            <span class="meta-chip">${item.channels === 1 ? 'Mono' : 'Stereo'}</span>
+            <span class="meta-chip">${item.format.toUpperCase()}</span>
+          </div>
+        </div>
       </div>
-      <div class="file-actions" style="display: flex; align-items: center; gap: 6px;">
-        <button class="btn btn-sm btn-secondary btn-load-session" data-id="${item.id}">Load</button>
-        <button class="btn btn-sm btn-ghost btn-delete-session" data-id="${item.id}" title="Remove from session">
+      <div class="file-actions">
+        <button class="btn btn-sm btn-primary btn-load-session" data-id="${item.id}" title="Load into Studio Workspace & Player">Play</button>
+        <div class="dropdown-actions-wrap" style="position: relative; display: inline-block;">
+          <button class="btn btn-sm btn-secondary btn-more-session" title="More routing actions">
+            <span>⋯</span>
+          </button>
+          <div class="actions-popup-menu hidden" style="position: absolute; right: 0; top: 100%; margin-top: 4px; z-index: 50; background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); box-shadow: 0 8px 24px rgba(0,0,0,0.5); padding: 4px; min-width: 170px; display: flex; flex-direction: column; gap: 2px;">
+            <button class="menu-item-btn btn-session-cutter" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">✂️ Open in Cutter</button>
+            <button class="menu-item-btn btn-session-sep" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">🎛️ Send to Separation</button>
+            <button class="menu-item-btn btn-session-diar" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">👥 Send to Diarization</button>
+            <button class="menu-item-btn btn-session-speech" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">🗣️ Set as Speech (Mixer)</button>
+            <button class="menu-item-btn btn-session-music" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">🎵 Set as Music (Mixer)</button>
+            <a href="/api/audio/${item.id}/stream" download="${escapeHtml(item.title)}.${item.format}" class="menu-item-btn" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--accent-primary-hover); text-decoration: none; cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">⬇️ Download Audio</a>
+          </div>
+        </div>
+        <button class="btn btn-sm btn-ghost btn-delete-session" data-id="${item.id}" title="Remove from active session">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
         </button>
       </div>
     `;
+
     card.querySelector('.btn-load-session').addEventListener('click', () => {
       switchTab('tab-workspace');
       setActiveAudio(item.id, { play: true });
     });
+
+    const btnMore = card.querySelector('.btn-more-session');
+    const popupMenu = card.querySelector('.actions-popup-menu');
+    if (btnMore && popupMenu) {
+      btnMore.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.actions-popup-menu').forEach(m => {
+          if (m !== popupMenu) m.classList.add('hidden');
+        });
+        popupMenu.classList.toggle('hidden');
+      });
+    }
+
+    card.querySelector('.btn-session-cutter')?.addEventListener('click', () => {
+      popupMenu.classList.add('hidden');
+      switchTab('tab-cutter');
+      setActiveAudio(item.id, { play: false });
+    });
+    card.querySelector('.btn-session-sep')?.addEventListener('click', () => {
+      popupMenu.classList.add('hidden');
+      switchTab('tab-separation');
+      if (el.sepInputSelect) el.sepInputSelect.value = item.id;
+      showToast(`Selected "${item.title}" for Separation!`, "success");
+    });
+    card.querySelector('.btn-session-diar')?.addEventListener('click', () => {
+      popupMenu.classList.add('hidden');
+      switchTab('tab-diarization');
+      if (el.diarInputSelect) el.diarInputSelect.value = item.id;
+      showToast(`Selected "${item.title}" for Diarization!`, "success");
+    });
+    card.querySelector('.btn-session-speech')?.addEventListener('click', () => {
+      popupMenu.classList.add('hidden');
+      switchTab('tab-bench-mixer');
+      if (el.mixSpeechSelect) el.mixSpeechSelect.value = item.id;
+      showToast(`Set "${item.title}" as Speech source!`, "success");
+    });
+    card.querySelector('.btn-session-music')?.addEventListener('click', () => {
+      popupMenu.classList.add('hidden');
+      switchTab('tab-bench-mixer');
+      if (el.mixMusicSelect) el.mixMusicSelect.value = item.id;
+      showToast(`Set "${item.title}" as Music source!`, "success");
+    });
+
     card.querySelector('.btn-delete-session').addEventListener('click', async () => {
       if (confirm(`Remove "${item.title}" from active session?`)) {
         try {
@@ -2740,6 +3080,7 @@ async function fetchServerFiles() {
     const data = await res.json();
     state.serverFiles = data.files || [];
     renderServerFiles();
+    renderLibraryModalItems();
   } catch (err) {
     console.error("Failed to fetch library:", err);
   }
@@ -2753,25 +3094,112 @@ function filterServerFiles(files, query, category) {
     const fileCat = (file.category || "").toLowerCase();
     const filePath = (file.path || "").toLowerCase();
     const fileName = (file.name || "").toLowerCase();
+    const fileTitle = (file.title || "").toLowerCase();
 
     let matchesCat = cat === "all";
     if (!matchesCat) {
       if (cat === "speech") matchesCat = fileCat.includes("speech") || filePath.includes("speech");
       else if (cat === "music") matchesCat = fileCat.includes("music") || filePath.includes("music");
-      else if (cat === "separated") matchesCat = fileCat.includes("separated") || filePath.includes("demucs") || filePath.includes("roformer") || filePath.includes("mvsep");
-      else if (cat === "downloads") matchesCat = fileCat.includes("downloads") || filePath.includes("yt_crawler") || filePath.includes("downloads");
+      else if (cat === "separated" || cat === "stems") matchesCat = fileCat.includes("separated") || fileCat.includes("stem") || filePath.includes("demucs") || filePath.includes("roformer") || filePath.includes("mvsep") || filePath.includes("stems");
+      else if (cat === "downloads") matchesCat = fileCat.includes("download") || filePath.includes("yt_crawler") || filePath.includes("downloads");
       else if (cat === "cuts") matchesCat = fileCat.includes("cuts") || filePath.includes("cuts") || fileName.includes("_cut_");
-      else if (cat === "temp") matchesCat = fileCat.includes("temp") || filePath.includes("temp");
+      else if (cat === "temp") matchesCat = fileCat.includes("temp") || filePath.includes("temp") || fileName.includes("quick_save");
       else matchesCat = fileCat.includes(cat) || filePath.includes(cat);
     }
 
     const matchesQ = !q ||
       fileName.includes(q) ||
+      fileTitle.includes(q) ||
       filePath.includes(q) ||
       fileCat.includes(q);
 
     return matchesCat && matchesQ;
   });
+}
+
+function buildFileItemCard(file, { isModal = false } = {}) {
+  const badgeInfo = getFileModelBadge(file);
+  const isPlaying = currentPreviewingPath === file.path && previewAudioEl && !previewAudioEl.paused;
+  const durStr = (file.duration_s || 0) > 0 ? `${(file.duration_s).toFixed(1)}s` : '';
+  const srStr = file.sample_rate ? `${(file.sample_rate / 1000).toFixed(1)} kHz` : '';
+  const chStr = file.channels === 1 ? 'Mono' : (file.channels === 2 ? 'Stereo' : '');
+  const fmtStr = (file.format || 'wav').toUpperCase();
+
+  const card = document.createElement("div");
+  card.className = "file-item-card";
+  card.innerHTML = `
+    <div class="file-left-group">
+      <button class="btn-preview-file ${isPlaying ? 'playing' : ''}" data-path="${escapeHtml(file.path)}" title="${isPlaying ? 'Pause preview' : 'Play & Audition preview'}" aria-label="Preview track">
+        ${isPlaying
+          ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>'
+          : '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>'
+        }
+      </button>
+      <div class="file-details">
+        <div class="file-title-row">
+          <span class="badge ${badgeInfo.class}" style="font-size: 0.72rem; font-weight: 700;">${escapeHtml(badgeInfo.label)}</span>
+          <span class="file-name" title="${escapeHtml(file.name)}">${escapeHtml(file.title || file.name)}</span>
+        </div>
+        <div class="file-meta-row">
+          <span class="file-path" title="${escapeHtml(file.path)}">${escapeHtml(file.path)}</span>
+          ${durStr ? `<span class="meta-chip">${durStr}</span>` : ''}
+          ${srStr ? `<span class="meta-chip">${srStr}</span>` : ''}
+          ${chStr ? `<span class="meta-chip">${chStr}</span>` : ''}
+          <span class="meta-chip">${fmtStr}</span>
+          <span class="meta-chip">${formatBytes(file.size || 0)}</span>
+        </div>
+      </div>
+    </div>
+    <div class="file-actions">
+      <button class="btn btn-sm btn-primary btn-load-target" data-path="${escapeHtml(file.path)}" data-target="workspace" title="Load into Studio Workspace">
+        <span>Load</span>
+      </button>
+      <div class="dropdown-actions-wrap" style="position: relative; display: inline-block;">
+        <button class="btn btn-sm btn-secondary btn-more-actions" title="More routing actions">
+          <span>⋯</span>
+        </button>
+        <div class="actions-popup-menu hidden" style="position: absolute; right: 0; top: 100%; margin-top: 4px; z-index: 50; background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); box-shadow: 0 8px 24px rgba(0,0,0,0.5); padding: 4px; min-width: 170px; display: flex; flex-direction: column; gap: 2px;">
+          <button class="menu-item-btn btn-send-cutter" data-path="${escapeHtml(file.path)}" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">✂️ Open in Cutter</button>
+          <button class="menu-item-btn btn-send-sep" data-path="${escapeHtml(file.path)}" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">🎛️ Send to Separation</button>
+          <button class="menu-item-btn btn-send-diar" data-path="${escapeHtml(file.path)}" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">👥 Send to Diarization</button>
+          <button class="menu-item-btn btn-send-speech" data-path="${escapeHtml(file.path)}" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">🗣️ Set as Speech (Mixer)</button>
+          <button class="menu-item-btn btn-send-music" data-path="${escapeHtml(file.path)}" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">🎵 Set as Music (Mixer)</button>
+          <a href="/api/library/download?path=${encodeURIComponent(file.path)}" download="${escapeHtml(file.name)}" class="menu-item-btn" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--accent-primary-hover); text-decoration: none; cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">⬇️ Download File</a>
+        </div>
+      </div>
+      <button class="btn btn-sm btn-ghost btn-delete-file text-danger" data-path="${escapeHtml(file.path)}" title="Permanently delete from disk">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+      </button>
+    </div>
+  `;
+
+  // Attach event listeners
+  const btnPrev = card.querySelector('.btn-preview-file');
+  btnPrev.addEventListener('click', () => toggleFilePreview(file.path, btnPrev));
+
+  card.querySelector('.btn-load-target').addEventListener('click', () => loadLibraryFileTo(file.path, 'workspace'));
+
+  const btnMore = card.querySelector('.btn-more-actions');
+  const popupMenu = card.querySelector('.actions-popup-menu');
+  if (btnMore && popupMenu) {
+    btnMore.addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.querySelectorAll('.actions-popup-menu').forEach(m => {
+        if (m !== popupMenu) m.classList.add('hidden');
+      });
+      popupMenu.classList.toggle('hidden');
+    });
+  }
+
+  card.querySelector('.btn-send-cutter')?.addEventListener('click', () => { popupMenu.classList.add('hidden'); loadLibraryFileTo(file.path, 'cutter'); });
+  card.querySelector('.btn-send-sep')?.addEventListener('click', () => { popupMenu.classList.add('hidden'); loadLibraryFileTo(file.path, 'separation'); });
+  card.querySelector('.btn-send-diar')?.addEventListener('click', () => { popupMenu.classList.add('hidden'); loadLibraryFileTo(file.path, 'diarization'); });
+  card.querySelector('.btn-send-speech')?.addEventListener('click', () => { popupMenu.classList.add('hidden'); loadLibraryFileTo(file.path, 'speech'); });
+  card.querySelector('.btn-send-music')?.addEventListener('click', () => { popupMenu.classList.add('hidden'); loadLibraryFileTo(file.path, 'music'); });
+
+  card.querySelector('.btn-delete-file').addEventListener('click', () => deleteServerFile(file.path, file.name));
+
+  return card;
 }
 
 function renderServerFiles() {
@@ -2784,31 +3212,12 @@ function renderServerFiles() {
   const filtered = filterServerFiles(state.serverFiles, query, category);
 
   if (filtered.length === 0) {
-    container.innerHTML = `<div class="empty-placeholder">No project audio files found matching filter.</div>`;
+    container.innerHTML = `<div class="empty-placeholder" style="padding: 2.5rem 1rem; text-align: center;">No project audio files found matching filter.</div>`;
     return;
   }
 
   filtered.forEach(file => {
-    const badgeInfo = getFileModelBadge(file);
-    const card = document.createElement("div");
-    card.className = "file-item-card";
-    card.innerHTML = `
-      <div class="file-details">
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <span class="badge ${badgeInfo.class}" style="font-size: 0.72rem; font-weight: 700;">${escapeHtml(badgeInfo.label)}</span>
-          <span class="file-name">${escapeHtml(file.name)}</span>
-        </div>
-        <span class="file-path">${escapeHtml(file.path)} • ${formatBytes(file.size || 0)}</span>
-      </div>
-      <div class="file-actions" style="display: flex; align-items: center; gap: 6px;">
-        <button class="btn btn-sm btn-primary btn-load-file" data-path="${escapeHtml(file.path)}" title="Load into Studio Workspace">Load</button>
-        <button class="btn btn-sm btn-ghost btn-delete-file" data-path="${escapeHtml(file.path)}" title="Delete file from disk">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-        </button>
-      </div>
-    `;
-    card.querySelector('.btn-load-file').addEventListener('click', () => loadServerFile(file.path));
-    card.querySelector('.btn-delete-file').addEventListener('click', () => deleteServerFile(file.path, file.name));
+    const card = buildFileItemCard(file, { isModal: false });
     container.appendChild(card);
   });
 }
@@ -2829,13 +3238,12 @@ async function deleteServerFile(filePath, fileName) {
 
     showToast(`Deleted ${displayName} successfully!`, "success");
     await fetchServerFiles();
-    renderLibraryModalItems();
   } catch (err) {
     showToast(`Delete failed: ${err.message}`, "error");
   }
 }
 
-async function loadServerFile(filePath) {
+async function loadLibraryFileTo(filePath, target = 'workspace') {
   try {
     showToast(`Loading ${filePath}...`, "info");
     const res = await fetch("/api/library/load", {
@@ -2847,13 +3255,41 @@ async function loadServerFile(filePath) {
 
     if (data.audio_id) {
       await fetchAudioList();
-      await setActiveAudio(data.audio_id, { play: true });
-      showToast(`Loaded ${data.metadata?.title || filePath} into workspace!`, "success");
       closeAllModals();
+
+      if (target === 'workspace') {
+        switchTab('tab-workspace');
+        await setActiveAudio(data.audio_id, { play: true });
+        showToast(`Loaded "${data.metadata?.title || filePath}" into Studio Workspace!`, "success");
+      } else if (target === 'cutter') {
+        switchTab('tab-cutter');
+        await setActiveAudio(data.audio_id, { play: false });
+        showToast(`Loaded "${data.metadata?.title || filePath}" into Audio Cutter!`, "success");
+      } else if (target === 'separation') {
+        switchTab('tab-separation');
+        if (el.sepInputSelect) el.sepInputSelect.value = data.audio_id;
+        showToast(`Selected "${data.metadata?.title || filePath}" for Separation!`, "success");
+      } else if (target === 'diarization') {
+        switchTab('tab-diarization');
+        if (el.diarInputSelect) el.diarInputSelect.value = data.audio_id;
+        showToast(`Selected "${data.metadata?.title || filePath}" for Diarization!`, "success");
+      } else if (target === 'speech') {
+        switchTab('tab-bench-mixer');
+        if (el.mixSpeechSelect) el.mixSpeechSelect.value = data.audio_id;
+        showToast(`Set "${data.metadata?.title || filePath}" as Speech source!`, "success");
+      } else if (target === 'music') {
+        switchTab('tab-bench-mixer');
+        if (el.mixMusicSelect) el.mixMusicSelect.value = data.audio_id;
+        showToast(`Set "${data.metadata?.title || filePath}" as Music source!`, "success");
+      }
     }
   } catch (err) {
     showToast(`Failed to load file: ${err.message}`, "error");
   }
+}
+
+async function loadServerFile(filePath) {
+  return loadLibraryFileTo(filePath, 'workspace');
 }
 
 async function openLibraryModal() {
@@ -2902,29 +3338,8 @@ function renderLibraryModalItems() {
   }
 
   filtered.forEach(file => {
-    const badgeInfo = getFileModelBadge(file);
-    const item = document.createElement("div");
-    item.className = "file-item-card";
-    item.innerHTML = `
-      <div class="file-details">
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <span class="badge ${badgeInfo.class}" style="font-size: 0.72rem; font-weight: 700;">${escapeHtml(badgeInfo.label)}</span>
-          <span class="file-name">${escapeHtml(file.name)}</span>
-        </div>
-        <span class="file-path">${escapeHtml(file.path)} • ${formatBytes(file.size || 0)}</span>
-      </div>
-      <div class="file-actions" style="display: flex; align-items: center; gap: 6px;">
-        <button class="btn btn-sm btn-primary btn-modal-load" data-path="${escapeHtml(file.path)}" title="Load audio into studio workspace">
-          <span>Load</span>
-        </button>
-        <button class="btn btn-sm btn-ghost btn-delete-file" data-path="${escapeHtml(file.path)}" title="Delete file from disk">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-        </button>
-      </div>
-    `;
-    item.querySelector('.btn-modal-load').addEventListener('click', () => loadServerFile(file.path));
-    item.querySelector('.btn-delete-file').addEventListener('click', () => deleteServerFile(file.path, file.name));
-    el.modalLibraryItems.appendChild(item);
+    const card = buildFileItemCard(file, { isModal: true });
+    el.modalLibraryItems.appendChild(card);
   });
 }
 
@@ -3114,11 +3529,8 @@ function initKeyboardShortcuts() {
       }
     }
 
-    // Space on Audition Hub
-    if (currentTab === 'tab-comparison' && e.code === 'Space') {
-      e.preventDefault();
-      toggleAuditionPlay();
-    }
+    // Space is handled by the shared player shortcut above. Keeping one
+    // listener avoids toggling the audition player twice.
   });
 }
 
@@ -3208,6 +3620,14 @@ function initNavigation() {
 }
 
 function switchTab(tabId) {
+  if (tabId === 'tab-comparison') {
+    // Only one audio context should be audible at a time. The bottom player
+    // will now operate on the audition element while this tab is active.
+    el.audio.pause();
+  } else if (isAuditionPlaybackActive()) {
+    auditionAudio.pause();
+  }
+
   el.tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
   el.tabPanes.forEach(pane => pane.classList.toggle('active', pane.id === tabId));
 
@@ -3222,9 +3642,12 @@ function switchTab(tabId) {
     if (state.activeAudio && (!auditionTracks || auditionTracks.length === 0)) {
       loadClipForAudition(state.activeAudio.id);
     }
+    syncActivePlaybackControls();
   } else if (tabId === 'tab-matrix') {
     fetchEvaluations();
   }
+
+  if (tabId !== 'tab-comparison') syncActivePlaybackControls();
 }
 
 function toggleShortcutsModal() {
@@ -3283,6 +3706,28 @@ async function initApp() {
   if (el.btnRefreshLibrary) {
     el.btnRefreshLibrary.addEventListener('click', fetchServerFiles);
   }
+
+  if (el.btnClearSession) {
+    el.btnClearSession.addEventListener('click', async () => {
+      if (confirm("Are you sure you want to clear all active audio objects from the current session?")) {
+        try {
+          const res = await fetch("/api/audio/clear-all", { method: "POST" });
+          const data = await parseJsonResponse(res);
+          state.audioList = [];
+          state.activeAudio = null;
+          if (el.activeSection) el.activeSection.classList.add('hidden');
+          showToast(`Cleared ${data.cleared_count || 0} session items`, "info");
+          await fetchAudioList();
+        } catch (err) {
+          showToast(`Failed to clear session: ${err.message}`, "error");
+        }
+      }
+    });
+  }
+
+  window.addEventListener('click', () => {
+    document.querySelectorAll('.actions-popup-menu').forEach(m => m.classList.add('hidden'));
+  });
 
   try { await fetchSystemStatus(); } catch (e) { console.error("fetchSystemStatus error:", e); }
   try { await fetchServerFiles(); } catch (e) { console.error("fetchServerFiles error:", e); }

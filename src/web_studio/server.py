@@ -151,6 +151,13 @@ class AudioRegistry:
             self.unregister(audio_id)
         return len(matching_ids)
 
+    def clear_all(self) -> int:
+        """Clear all registered items from in-memory session registry."""
+        count = len(self._items)
+        self._items.clear()
+        self._waveform_cache.clear()
+        return count
+
     def list_all(self) -> List[Dict[str, Any]]:
         """List all registered items formatted for the frontend."""
         result = []
@@ -357,14 +364,103 @@ async def handle_status(request: web.Request) -> web.Response:
     return web.json_response(info)
 
 
+def probe_audio_file_info(path: Path) -> dict[str, Any]:
+    """Extract metadata (duration, sample rate, channels, title) from sidecar or audio headers."""
+    sidecar_path = path.with_suffix(".json")
+    if sidecar_path.is_file():
+        try:
+            sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+            if isinstance(sidecar, dict) and sidecar.get("kind") == "audio.sidecar":
+                return {
+                    "title": sidecar.get("title") or path.stem,
+                    "source_id": sidecar.get("source_id") or path.stem,
+                    "duration_s": float(sidecar.get("duration_s", 0.0)) if sidecar.get("duration_s") is not None else 0.0,
+                    "sample_rate": int(sidecar.get("sample_rate", DEFAULT_SAMPLE_RATE)) if sidecar.get("sample_rate") is not None else DEFAULT_SAMPLE_RATE,
+                    "channels": int(sidecar.get("channels", 1)) if sidecar.get("channels") is not None else 1,
+                    "native_sample_rate": int(sidecar.get("native_sample_rate", sidecar.get("sample_rate", DEFAULT_SAMPLE_RATE))) if sidecar.get("native_sample_rate") is not None else DEFAULT_SAMPLE_RATE,
+                    "history": sidecar.get("history", []),
+                }
+        except Exception:
+            pass
+
+    # Probe WAV with wave module (fast header read)
+    if path.suffix.lower() == ".wav":
+        try:
+            with wave.open(str(path), "rb") as wf:
+                sr = wf.getframerate()
+                nframes = wf.getnframes()
+                ch = wf.getnchannels()
+                dur = nframes / float(sr) if sr else 0.0
+                return {
+                    "title": path.stem,
+                    "source_id": path.stem,
+                    "duration_s": round(dur, 2),
+                    "sample_rate": sr,
+                    "channels": ch,
+                    "native_sample_rate": sr,
+                    "history": [],
+                }
+        except Exception:
+            pass
+
+    # Fallback to soundfile.info for other formats (mp3, flac, ogg, m4a)
+    try:
+        info = sf.info(str(path))
+        return {
+            "title": path.stem,
+            "source_id": path.stem,
+            "duration_s": round(info.duration, 2),
+            "sample_rate": info.samplerate,
+            "channels": info.channels,
+            "native_sample_rate": info.samplerate,
+            "history": [],
+        }
+    except Exception:
+        return {
+            "title": path.stem,
+            "source_id": path.stem,
+            "duration_s": 0.0,
+            "sample_rate": DEFAULT_SAMPLE_RATE,
+            "channels": 1,
+            "native_sample_rate": DEFAULT_SAMPLE_RATE,
+            "history": [],
+        }
+
+
+def categorize_library_path(rel_path: str) -> str:
+    """Determine clean, accurate library category based on relative project path."""
+    p_lower = rel_path.lower()
+    if "sources/speech" in p_lower or ("speech" in p_lower and "music" not in p_lower and "cuts" not in p_lower):
+        return "Benchmark Speech"
+    elif "sources/music" in p_lower or ("music" in p_lower and "speech" not in p_lower and "cuts" not in p_lower):
+        return "Benchmark Music"
+    elif "sources/cuts" in p_lower or "audio_cutter" in p_lower or "_cut_" in p_lower or "cuts" in p_lower:
+        return "Audio Cuts"
+    elif "stems" in p_lower or "separation" in p_lower or "demucs" in p_lower or "roformer" in p_lower or "mvsep" in p_lower:
+        return "Separated Stems"
+    elif "yt_crawler" in p_lower or "downloads" in p_lower:
+        return "YouTube Downloads"
+    elif "pipeline" in p_lower:
+        return "Pipeline Assets"
+    elif "temp" in p_lower or "quick_save" in p_lower:
+        return "Quick Saves (temp)"
+    elif "upload" in p_lower:
+        return "Uploads"
+    elif "data" in p_lower:
+        return "Data Directory"
+    else:
+        return "Project Audio"
+
+
 async def handle_list_library(request: web.Request) -> web.Response:
-    """Scan and list audio files available in project directories with precise categorization."""
+    """Scan and list audio files available in project directories with precise categorization and metadata."""
     # Ensure benchmark and output directories exist
     (ROOT_DIR / "benchmarks/separation/sources/speech").mkdir(parents=True, exist_ok=True)
     (ROOT_DIR / "benchmarks/separation/sources/music").mkdir(parents=True, exist_ok=True)
     (ROOT_DIR / "benchmarks/separation/sources/cuts").mkdir(parents=True, exist_ok=True)
     (ROOT_DIR / "temp").mkdir(parents=True, exist_ok=True)
     (ROOT_DIR / "data").mkdir(parents=True, exist_ok=True)
+    (ROOT_DIR / ".data").mkdir(parents=True, exist_ok=True)
 
     scan_dirs = [
         ROOT_DIR / "benchmarks",
@@ -373,15 +469,15 @@ async def handle_list_library(request: web.Request) -> web.Response:
         ROOT_DIR / ".data",
     ]
 
-    extensions = {".wav", ".mp3", ".flac", ".ogg", ".m4a"}
+    extensions = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac", ".aiff"}
     files = []
     seen_paths = set()
 
     for directory in scan_dirs:
         if directory.is_dir():
             for p in directory.rglob("*"):
-                # Ignore intermediate work directories
-                if any(part in ("work", ".cache", "checkpoints", "venv", ".git") for part in p.parts):
+                # Ignore intermediate work directories and caches
+                if any(part in ("work", ".cache", "checkpoints", "venv", ".git", "__pycache__") for part in p.parts):
                     continue
                 if p.is_file() and p.suffix.lower() in extensions:
                     try:
@@ -396,42 +492,89 @@ async def handle_list_library(request: web.Request) -> web.Response:
                             continue
 
                         rel_path = str(p.relative_to(ROOT_DIR))
-                        p_lower = rel_path.lower()
-
-                        # Determine clean, accurate category
-                        if "yt_crawler/downloads" in p_lower or "downloads" in p_lower:
-                            category = "YouTube Downloads"
-                        elif "demucs/out" in p_lower or "bs_roformer/out" in p_lower or "mel_roformer/out" in p_lower or "mvsep" in p_lower:
-                            category = "Separated Stems"
-                        elif "audio_cutter/out" in p_lower or "sources/cuts" in p_lower or "_cut_" in p_lower:
-                            category = "Audio Cuts"
-                        elif "sources/speech" in p_lower or "speech" in p_lower:
-                            category = "Benchmark Speech"
-                        elif "sources/music" in p_lower or "music" in p_lower:
-                            category = "Benchmark Music"
-                        elif "temp" in p_lower:
-                            category = "Quick Saves (temp)"
-                        elif "data" in p_lower:
-                            category = "Data Directory"
-                        else:
-                            category = "Audio"
+                        category = categorize_library_path(rel_path)
+                        probe_meta = probe_audio_file_info(p)
 
                         files.append(
                             {
                                 "category": category,
                                 "name": p.name,
+                                "title": probe_meta.get("title") or p.stem,
+                                "source_id": probe_meta.get("source_id") or p.stem,
                                 "path": rel_path,
                                 "absolute_path": resolved_str,
                                 "size": stat.st_size,
                                 "modified": stat.st_mtime,
                                 "format": p.suffix.lstrip(".").lower(),
+                                "duration_s": probe_meta.get("duration_s", 0.0),
+                                "sample_rate": probe_meta.get("sample_rate", DEFAULT_SAMPLE_RATE),
+                                "channels": probe_meta.get("channels", 1),
+                                "native_sample_rate": probe_meta.get("native_sample_rate", DEFAULT_SAMPLE_RATE),
                             }
                         )
                     except Exception:
                         pass
 
     files.sort(key=lambda x: x["modified"], reverse=True)
-    return web.json_response({"files": files})
+    return web.json_response({"files": files, "total": len(files)})
+
+
+async def handle_stream_library_file(request: web.Request) -> web.Response:
+    """Stream any permissible library audio file directly for preview/playback."""
+    rel_or_abs = request.query.get("path")
+    if not rel_or_abs:
+        return web.Response(text="Path is required", status=400)
+    target = Path(rel_or_abs)
+    if not target.is_absolute():
+        target = (ROOT_DIR / rel_or_abs).resolve()
+    else:
+        target = target.resolve()
+
+    allowed_roots = [
+        (ROOT_DIR / ".data").resolve(),
+        (ROOT_DIR / "data").resolve(),
+        (ROOT_DIR / "temp").resolve(),
+        (ROOT_DIR / "benchmarks").resolve(),
+    ]
+    if not any(target.is_relative_to(root) for root in allowed_roots) or not target.is_file():
+        return web.Response(text="Audio file not found or access denied", status=404)
+
+    return web.FileResponse(
+        target,
+        headers={
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "no-cache",
+            "Content-Disposition": f'inline; filename="{target.name}"',
+        },
+    )
+
+
+async def handle_download_library_file(request: web.Request) -> web.Response:
+    """Download any permissible library audio file."""
+    rel_or_abs = request.query.get("path")
+    if not rel_or_abs:
+        return web.Response(text="Path is required", status=400)
+    target = Path(rel_or_abs)
+    if not target.is_absolute():
+        target = (ROOT_DIR / rel_or_abs).resolve()
+    else:
+        target = target.resolve()
+
+    allowed_roots = [
+        (ROOT_DIR / ".data").resolve(),
+        (ROOT_DIR / "data").resolve(),
+        (ROOT_DIR / "temp").resolve(),
+        (ROOT_DIR / "benchmarks").resolve(),
+    ]
+    if not any(target.is_relative_to(root) for root in allowed_roots) or not target.is_file():
+        return web.Response(text="Audio file not found or access denied", status=404)
+
+    return web.FileResponse(
+        target,
+        headers={
+            "Content-Disposition": f'attachment; filename="{target.name}"',
+        },
+    )
 
 
 async def handle_delete_library_file(request: web.Request) -> web.Response:
@@ -454,10 +597,10 @@ async def handle_delete_library_file(request: web.Request) -> web.Response:
         return web.json_response({"error": "Cannot delete files outside project workspace"}, status=403)
 
     allowed_roots = [
-        ROOT_DIR / ".data",
-        ROOT_DIR / "data",
-        ROOT_DIR / "temp",
-        ROOT_DIR / "benchmarks",
+        (ROOT_DIR / ".data").resolve(),
+        (ROOT_DIR / "data").resolve(),
+        (ROOT_DIR / "temp").resolve(),
+        (ROOT_DIR / "benchmarks").resolve(),
     ]
     if not any(target_path.is_relative_to(ar) for ar in allowed_roots):
         return web.json_response({"error": "Path is outside permissible data/benchmark folders"}, status=403)
@@ -488,6 +631,48 @@ async def handle_delete_library_file(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=500)
 
 
+async def handle_bulk_delete_library_files(request: web.Request) -> web.Response:
+    """Delete multiple audio files and matching sidecar JSONs from disk."""
+    data = await request.json()
+    paths = data.get("paths", [])
+    if not paths:
+        return web.json_response({"error": "List of file paths is required"}, status=400)
+
+    allowed_roots = [
+        (ROOT_DIR / ".data").resolve(),
+        (ROOT_DIR / "data").resolve(),
+        (ROOT_DIR / "temp").resolve(),
+        (ROOT_DIR / "benchmarks").resolve(),
+    ]
+
+    deleted_count = 0
+    errors = []
+
+    for p_str in paths:
+        target = Path(p_str)
+        if not target.is_absolute():
+            target = (ROOT_DIR / p_str).resolve()
+        else:
+            target = target.resolve()
+
+        if any(target.is_relative_to(ar) for ar in allowed_roots) and target.is_file():
+            try:
+                target.unlink()
+                sidecar = target.with_suffix(".json")
+                if sidecar.is_file():
+                    sidecar.unlink()
+                registry.unregister_path(target)
+                deleted_count += 1
+            except Exception as e:
+                errors.append({"path": p_str, "error": str(e)})
+
+    return web.json_response({
+        "status": "success",
+        "deleted_count": deleted_count,
+        "errors": errors,
+    })
+
+
 async def handle_load_library_file(request: web.Request) -> web.Response:
     """Load a server file into active registry."""
     data = await request.json()
@@ -514,11 +699,18 @@ async def handle_load_library_file(request: web.Request) -> web.Response:
 
     try:
         audio = Audio.from_file(resolved)
-        audio_id = registry.register(audio, source_type="library", tags=["library"])
+        category = categorize_library_path(str(resolved.relative_to(ROOT_DIR)))
+        audio_id = registry.register(audio, source_type="library", tags=["library", category.lower().replace(" ", "_")])
         return web.json_response({"audio_id": audio_id, "metadata": audio.metadata()})
     except Exception as e:
         logger.exception("Error loading audio file")
         return web.json_response({"error": str(e)}, status=500)
+
+
+async def handle_clear_session_audios(request: web.Request) -> web.Response:
+    """Clear all active in-memory session registered audios."""
+    count = registry.clear_all()
+    return web.json_response({"status": "success", "cleared_count": count})
 
 
 async def handle_upload_audio(request: web.Request) -> web.Response:
@@ -1602,8 +1794,12 @@ def create_app() -> web.Application:
     app.router.add_get("/", handle_index)
     app.router.add_get("/api/system/status", handle_status)
     app.router.add_get("/api/library", handle_list_library)
+    app.router.add_get("/api/library/stream", handle_stream_library_file)
+    app.router.add_get("/api/library/download", handle_download_library_file)
     app.router.add_post("/api/library/load", handle_load_library_file)
     app.router.add_post("/api/library/delete", handle_delete_library_file)
+    app.router.add_post("/api/library/bulk-delete", handle_bulk_delete_library_files)
+    app.router.add_post("/api/audio/clear-all", handle_clear_session_audios)
     app.router.add_post("/api/audio/upload", handle_upload_audio)
     app.router.add_post("/api/audio/youtube", handle_youtube_ingest)
     app.router.add_post("/api/crawler/inspect", handle_youtube_inspect)

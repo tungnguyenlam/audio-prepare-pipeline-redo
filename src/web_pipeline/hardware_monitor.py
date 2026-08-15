@@ -33,36 +33,77 @@ class HardwareMonitor:
         self.total_processed_audio_seconds += max(0.0, audio_duration_seconds)
         self.total_processing_wall_time += max(0.001, wall_time_seconds)
 
+    @staticmethod
+    def _query_nvidia_smi(device_index: int) -> Dict[str, Optional[float]]:
+        """Read host-level GPU load and VRAM counters for one CUDA device."""
+        if not shutil.which("nvidia-smi"):
+            return {}
+
+        try:
+            result = subprocess.run(
+                [
+                    "nvidia-smi",
+                    f"--id={device_index}",
+                    "--query-gpu=utilization.gpu,memory.used,memory.total,memory.free,temperature.gpu",
+                    "--format=csv,noheader,nounits",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=1.0,
+            )
+            if result.returncode != 0 or not result.stdout.strip():
+                return {}
+
+            values = [value.strip() for value in result.stdout.splitlines()[0].split(",")]
+
+            def parse(value: str) -> Optional[float]:
+                try:
+                    return float(value)
+                except ValueError:
+                    return None
+
+            if len(values) < 5:
+                return {}
+            return {
+                "utilization_percent": parse(values[0]),
+                "used_vram_mb": parse(values[1]),
+                "total_vram_mb": parse(values[2]),
+                "free_vram_mb": parse(values[3]),
+                "temperature_c": parse(values[4]),
+            }
+        except Exception:
+            return {}
+
     def get_gpu_info(self) -> Dict[str, Any]:
         """Query GPU telemetry via PyTorch and nvidia-smi if present."""
         if torch.cuda.is_available():
             device_count = torch.cuda.device_count()
             current_device = torch.cuda.current_device()
             props = torch.cuda.get_device_properties(current_device)
-            total_vram_mb = round(props.total_memory / (1024 * 1024), 1)
+            smi_info = self._query_nvidia_smi(current_device)
+            total_vram_mb = round(
+                smi_info["total_vram_mb"]
+                if smi_info.get("total_vram_mb") is not None
+                else props.total_memory / (1024 * 1024),
+                1,
+            )
             allocated_vram_mb = round(torch.cuda.memory_allocated(current_device) / (1024 * 1024), 1)
             reserved_vram_mb = round(torch.cuda.memory_reserved(current_device) / (1024 * 1024), 1)
-            free_vram_mb = max(0.0, total_vram_mb - reserved_vram_mb)
-            vram_percent = round((reserved_vram_mb / total_vram_mb) * 100, 1) if total_vram_mb > 0 else 0.0
-
-            gpu_util_percent = None
-            gpu_temp_c = None
-            if shutil.which("nvidia-smi"):
-                try:
-                    res = subprocess.run(
-                        ["nvidia-smi", "--query-gpu=utilization.gpu,temperature.gpu", "--format=csv,noheader,nounits"],
-                        capture_output=True,
-                        text=True,
-                        timeout=1.0,
-                    )
-                    if res.returncode == 0 and res.stdout.strip():
-                        parts = [p.strip() for p in res.stdout.strip().split(",")]
-                        if len(parts) >= 1 and parts[0].isdigit():
-                            gpu_util_percent = int(parts[0])
-                        if len(parts) >= 2 and parts[1].isdigit():
-                            gpu_temp_c = int(parts[1])
-                except Exception:
-                    pass
+            used_vram_mb = round(
+                smi_info["used_vram_mb"]
+                if smi_info.get("used_vram_mb") is not None
+                else reserved_vram_mb,
+                1,
+            )
+            free_vram_mb = round(
+                smi_info.get("free_vram_mb")
+                if smi_info.get("free_vram_mb") is not None
+                else max(0.0, total_vram_mb - used_vram_mb),
+                1,
+            )
+            vram_percent = round((used_vram_mb / total_vram_mb) * 100, 1) if total_vram_mb > 0 else 0.0
+            gpu_util_percent = smi_info.get("utilization_percent")
+            gpu_temp_c = smi_info.get("temperature_c")
 
             return {
                 "available": True,
@@ -70,10 +111,12 @@ class HardwareMonitor:
                 "name": props.name,
                 "device_count": device_count,
                 "total_vram_mb": total_vram_mb,
+                "used_vram_mb": used_vram_mb,
                 "allocated_vram_mb": allocated_vram_mb,
                 "reserved_vram_mb": reserved_vram_mb,
                 "free_vram_mb": free_vram_mb,
                 "vram_percent": vram_percent,
+                "load_percent": gpu_util_percent,
                 "utilization_percent": gpu_util_percent,
                 "temperature_c": gpu_temp_c,
             }
@@ -85,10 +128,12 @@ class HardwareMonitor:
                 "name": "Apple Silicon (MPS)",
                 "device_count": 1,
                 "total_vram_mb": None,
+                "used_vram_mb": None,
                 "allocated_vram_mb": None,
                 "reserved_vram_mb": None,
                 "free_vram_mb": None,
                 "vram_percent": None,
+                "load_percent": None,
                 "utilization_percent": None,
                 "temperature_c": None,
             }
@@ -99,10 +144,12 @@ class HardwareMonitor:
             "name": "No GPU (CPU Mode)",
             "device_count": 0,
             "total_vram_mb": 0,
+            "used_vram_mb": 0,
             "allocated_vram_mb": 0,
             "reserved_vram_mb": 0,
             "free_vram_mb": 0,
             "vram_percent": 0,
+            "load_percent": None,
             "utilization_percent": None,
             "temperature_c": None,
         }

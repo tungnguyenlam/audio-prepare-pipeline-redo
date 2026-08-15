@@ -760,6 +760,12 @@ html, body {
   color: var(--text-main);
 }
 
+.meter-readout-detail {
+  display: block;
+  color: var(--text-subtle);
+  font-size: 0.68rem;
+}
+
 .meter-track {
   height: 8px;
   background-color: var(--bg-panel);

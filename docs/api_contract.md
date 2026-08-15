@@ -389,3 +389,8 @@ The repository provides two specialized web platforms:
 - **Role:** Large-scale batch engine for high-throughput ingestion, task queue orchestration, dataset curation, bulk separation, batch diarization, separation benchmark matrix evaluation, and ML manifest generation (JSONL/CSV).
 - **Entrypoint:** `scripts/start_pipeline.py` / `scripts/start_pipeline.sh` (default port `8766`).
 
+**Telemetry endpoint:** `GET /api/telemetry` returns the current host and
+pipeline metrics. The `gpu` object includes `load_percent`, host-level
+`used_vram_mb`, `free_vram_mb`, and `total_vram_mb`, plus the current process's
+`allocated_vram_mb` and `reserved_vram_mb`. GPU load and host VRAM counters are
+`null` when the active accelerator cannot provide them (for example, MPS).

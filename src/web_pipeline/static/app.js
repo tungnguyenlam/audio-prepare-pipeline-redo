@@ -45,11 +45,13 @@
     iconThemeMoon: document.getElementById('icon-theme-moon'),
     
     // Telemetry header & sidebar
+    valGpuLoad: document.getElementById('val-gpu-load'),
     valGpuVram: document.getElementById('val-gpu-vram'),
     valCpuUtil: document.getElementById('val-cpu-util'),
     valRamUtil: document.getElementById('val-ram-util'),
     valSseStatus: document.getElementById('val-sse-status'),
     meterVram: document.getElementById('meter-vram'),
+    meterGpuLoad: document.getElementById('meter-gpu-load'),
     meterCpu: document.getElementById('meter-cpu'),
     meterRam: document.getElementById('meter-ram'),
     
@@ -62,7 +64,10 @@
     dashDatasetItems: document.getElementById('dash-dataset-items'),
     dashDatasetSize: document.getElementById('dash-dataset-size'),
     dashDeviceName: document.getElementById('dash-device-name'),
+    dashGpuLoadText: document.getElementById('dash-gpu-load-text'),
+    meterGpuLoadDash: document.getElementById('meter-gpu-load-dash'),
     dashVramText: document.getElementById('dash-vram-text'),
+    dashVramDetail: document.getElementById('dash-vram-detail'),
     meterVramDash: document.getElementById('meter-vram-dash'),
     dashCpuText: document.getElementById('dash-cpu-text'),
     meterCpuDash: document.getElementById('meter-cpu-dash'),
@@ -143,6 +148,8 @@
     checkSelectAll: document.getElementById('check-select-all'),
     bulkBar: document.getElementById('bulk-bar'),
     bulkSelectedCount: document.getElementById('bulk-selected-count'),
+    btnCreateDataset: document.getElementById('btn-create-dataset'),
+    btnDeleteDataset: document.getElementById('btn-delete-dataset'),
     btnBulkTag: document.getElementById('btn-bulk-tag'),
     btnBulkMove: document.getElementById('btn-bulk-move'),
     btnBulkSeparate: document.getElementById('btn-bulk-separate'),
@@ -377,18 +384,46 @@
     if (!telemetry) return;
 
     // Header pills & sidebar meters
-    if (telemetry.gpu && telemetry.gpu.available && telemetry.gpu.vram_percent !== null) {
-      const vramPct = telemetry.gpu.vram_percent;
-      if (els.valGpuVram) els.valGpuVram.textContent = `${vramPct}%`;
+    const gpu = telemetry.gpu;
+    if (gpu && gpu.available && gpu.type === 'cuda') {
+      const vramPct = Number.isFinite(gpu.vram_percent) ? Math.max(0, Math.min(100, gpu.vram_percent)) : 0;
+      const vramUsed = gpu.used_vram_mb ?? gpu.reserved_vram_mb;
+      const vramTotal = gpu.total_vram_mb;
+      const gpuLoad = gpu.load_percent ?? gpu.utilization_percent;
+      const gpuLoadPct = Number.isFinite(gpuLoad) ? Math.max(0, Math.min(100, gpuLoad)) : 0;
+      const vramSummary = vramTotal !== null && vramTotal !== undefined
+        ? `${vramUsed} / ${vramTotal} MB (${vramPct}%)`
+        : 'VRAM unavailable';
+
+      if (els.valGpuLoad) els.valGpuLoad.textContent = Number.isFinite(gpuLoad) ? `${Math.round(gpuLoad)}%` : 'N/A';
+      if (els.meterGpuLoad) els.meterGpuLoad.style.width = `${gpuLoadPct}%`;
+      if (els.dashGpuLoadText) els.dashGpuLoadText.textContent = Number.isFinite(gpuLoad) ? `${Math.round(gpuLoad)}%` : 'N/A';
+      if (els.meterGpuLoadDash) els.meterGpuLoadDash.style.width = `${gpuLoadPct}%`;
+      if (els.valGpuVram) els.valGpuVram.textContent = vramTotal !== null && vramTotal !== undefined ? `${vramUsed} / ${vramTotal} MB` : 'N/A';
       if (els.meterVram) els.meterVram.style.width = `${vramPct}%`;
       if (els.meterVramDash) els.meterVramDash.style.width = `${vramPct}%`;
-      if (els.dashVramText) els.dashVramText.textContent = `${telemetry.gpu.reserved_vram_mb} / ${telemetry.gpu.total_vram_mb} MB (${vramPct}%)`;
-    } else if (telemetry.gpu && telemetry.gpu.type === 'mps') {
+      if (els.dashVramText) els.dashVramText.textContent = vramSummary;
+      if (els.dashVramDetail) els.dashVramDetail.textContent = `Process: ${gpu.allocated_vram_mb} MB allocated / ${gpu.reserved_vram_mb} MB reserved · ${gpu.free_vram_mb} MB free`;
+    } else if (gpu && gpu.type === 'mps') {
+      if (els.valGpuLoad) els.valGpuLoad.textContent = 'N/A';
+      if (els.meterGpuLoad) els.meterGpuLoad.style.width = '0%';
+      if (els.dashGpuLoadText) els.dashGpuLoadText.textContent = 'N/A';
+      if (els.meterGpuLoadDash) els.meterGpuLoadDash.style.width = '0%';
       if (els.valGpuVram) els.valGpuVram.textContent = 'MPS';
+      if (els.meterVram) els.meterVram.style.width = '0%';
       if (els.dashVramText) els.dashVramText.textContent = 'Apple MPS Accelerator';
+      if (els.meterVramDash) els.meterVramDash.style.width = '0%';
+      if (els.dashVramDetail) els.dashVramDetail.textContent = 'VRAM counters unavailable on MPS';
     } else {
+      if (els.valGpuLoad) els.valGpuLoad.textContent = 'CPU';
+      if (els.meterGpuLoad) els.meterGpuLoad.style.width = '0%';
+      if (els.dashGpuLoadText) els.dashGpuLoadText.textContent = 'CPU';
+      if (els.meterGpuLoadDash) els.meterGpuLoadDash.style.width = '0%';
       if (els.valGpuVram) els.valGpuVram.textContent = 'CPU';
+      if (els.meterVram) els.meterVram.style.width = '0%';
       if (els.dashVramText) els.dashVramText.textContent = 'CPU Mode (No CUDA VRAM)';
+      if (els.meterVramDash) els.meterVramDash.style.width = '0%';
+      if (els.dashVramDetail) els.dashVramDetail.textContent = 'No GPU VRAM counters available';
     }
 
     if (telemetry.cpu) {
@@ -1060,7 +1095,11 @@
           <td>${diarBadge}</td>
           <td>${tags}</td>
           <td>
-            <button class="btn btn-secondary btn-xs btn-inspect-item" data-id="${item.id}">Inspect</button>
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <button class="btn btn-secondary btn-xs btn-inspect-item" data-id="${item.id}" title="Inspect metadata and stems">Inspect</button>
+              <a href="/api/items/${item.id}/download" download="${escapeHtml(item.title)}.wav" class="btn btn-ghost btn-xs" title="Download master audio">⬇️</a>
+              <button class="btn btn-ghost btn-xs text-danger btn-delete-single-item" data-id="${item.id}" title="Delete audio item">🗑️</button>
+            </div>
           </td>
         </tr>
       `;
@@ -1098,6 +1137,28 @@
       b.addEventListener('click', () => {
         const id = b.getAttribute('data-id');
         openInspector(id);
+      });
+    });
+
+    // Single item delete buttons
+    document.querySelectorAll('.btn-delete-single-item').forEach((b) => {
+      b.addEventListener('click', async () => {
+        const id = b.getAttribute('data-id');
+        const item = state.items.find(i => i.id === id);
+        if (!confirm(`Delete asset "${item?.title || id}"?`)) return;
+        try {
+          await fetch('/api/items/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ item_ids: [id], delete_files: false }),
+          });
+          showToast(`Deleted "${item?.title || id}"`, "info");
+          state.selectedItemIds.delete(id);
+          loadDatasets();
+          loadItems();
+        } catch (err) {
+          showToast("Failed to delete item", "danger");
+        }
       });
     });
   }
@@ -1156,7 +1217,8 @@
               ${Object.entries(stems).map(([stemName, path]) => `
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
                   <span class="tag-pill">${escapeHtml(stemName)}</span>
-                  <audio controls src="/api/items/${item.id}/stems/${model}/${stemName}/stream" style="height: 32px; flex: 1; max-width: 340px;"></audio>
+                  <audio controls src="/api/items/${item.id}/stems/${model}/${stemName}/stream" style="height: 32px; flex: 1; max-width: 260px;"></audio>
+                  <a href="/api/items/${item.id}/stems/${model}/${stemName}/download" download class="btn btn-secondary btn-xs" title="Download stem">⬇️ Download</a>
                 </div>
               `).join('')}
             </div>
@@ -1168,19 +1230,95 @@
     els.inspectorBody.innerHTML = `
       <div style="display: flex; flex-direction: column; gap: 14px;">
         <div>
-          <label class="form-label">Master Source Stream</label>
-          <audio controls src="/api/items/${item.id}/stream" style="width: 100%; margin-top: 6px;"></audio>
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+            <label class="form-label" style="margin: 0;">Master Source Stream</label>
+            <a href="/api/items/${item.id}/download" download class="btn btn-secondary btn-xs">⬇️ Download Master</a>
+          </div>
+          <audio controls src="/api/items/${item.id}/stream" style="width: 100%;"></audio>
         </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px; background: var(--bg-panel); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+          <div class="form-row">
+            <div class="form-item flex-1">
+              <label class="form-label">Asset Title</label>
+              <input type="text" id="inspector-edit-title" class="form-input form-input-sm" value="${escapeHtml(item.title)}">
+            </div>
+            <div class="form-item flex-1">
+              <label class="form-label">Dataset</label>
+              <select id="inspector-edit-dataset" class="form-select form-select-sm select-dataset-list">
+                ${state.datasets.map(d => `<option value="${escapeHtml(d.name)}" ${d.name === item.dataset ? 'selected' : ''}>${escapeHtml(d.name)}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 8px;">
+            <button type="button" class="btn btn-primary btn-xs" id="btn-save-inspector-meta" data-id="${item.id}">Save Details</button>
+          </div>
+        </div>
+
         <div style="font-family: var(--font-mono); font-size: 12px; background: var(--bg-input); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
           <div><strong>Duration:</strong> ${(item.duration || 0).toFixed(2)}s</div>
           <div><strong>Sample Rate:</strong> ${item.sample_rate.toLocaleString()} Hz</div>
           <div><strong>Channels:</strong> ${item.channels === 1 ? 'Mono' : 'Stereo'}</div>
-          <div><strong>Dataset:</strong> ${escapeHtml(item.dataset)}</div>
+          <div><strong>Tags:</strong> ${(item.tags || []).join(', ') || 'none'}</div>
           <div style="grid-column: 1 / -1; word-break: break-all;"><strong>File Path:</strong> ${escapeHtml(item.path)}</div>
         </div>
         ${stemsHtml}
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; border-top: 1px solid var(--border-subtle); padding-top: 12px;">
+          <button type="button" class="btn btn-danger btn-sm" id="btn-inspector-delete" data-id="${item.id}">🗑️ Delete Asset</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-inspector-close">Close</button>
+        </div>
       </div>
     `;
+
+    // Attach inspector event listeners
+    const btnSave = document.getElementById('btn-save-inspector-meta');
+    if (btnSave) {
+      btnSave.addEventListener('click', async () => {
+        const newTitle = document.getElementById('inspector-edit-title')?.value.trim();
+        const newDs = document.getElementById('inspector-edit-dataset')?.value;
+        try {
+          const res = await fetch(`/api/items/${item.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: newTitle, dataset: newDs }),
+          });
+          if (!res.ok) throw new Error("Failed to update item");
+          showToast("Asset updated successfully", "success");
+          loadDatasets();
+          loadItems();
+        } catch (err) {
+          showToast(err.message, "danger");
+        }
+      });
+    }
+
+    const btnDelete = document.getElementById('btn-inspector-delete');
+    if (btnDelete) {
+      btnDelete.addEventListener('click', async () => {
+        if (confirm(`Permanently delete asset "${item.title}"?`)) {
+          try {
+            await fetch('/api/items/delete', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ item_ids: [item.id], delete_files: true }),
+            });
+            showToast(`Deleted "${item.title}"`, "info");
+            els.modalInspector.style.display = 'none';
+            loadDatasets();
+            loadItems();
+          } catch (err) {
+            showToast("Failed to delete asset", "danger");
+          }
+        }
+      });
+    }
+
+    const btnClose = document.getElementById('btn-inspector-close');
+    if (btnClose) {
+      btnClose.addEventListener('click', () => {
+        els.modalInspector.style.display = 'none';
+      });
+    }
 
     els.modalInspector.style.display = 'flex';
   }
@@ -1259,6 +1397,55 @@
     }
   }
 
+  function initDatasetActions() {
+    if (els.btnCreateDataset) {
+      els.btnCreateDataset.addEventListener('click', async () => {
+        const name = prompt("Enter new dataset collection name (e.g. 'Podcast Speech', 'Acapella Clean'):");
+        if (!name || !name.trim()) return;
+        const description = prompt("Enter short description (optional):", "") || "";
+        try {
+          const res = await fetch('/api/datasets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name.trim(), description: description.trim() }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to create dataset');
+          showToast(`Dataset '${name.trim()}' created!`, 'success');
+          await loadDatasets();
+          if (els.itemFilterDataset) {
+            els.itemFilterDataset.value = name.trim();
+            loadItems();
+          }
+        } catch (err) {
+          showToast(err.message, 'danger');
+        }
+      });
+    }
+
+    if (els.btnDeleteDataset) {
+      els.btnDeleteDataset.addEventListener('click', async () => {
+        const current = els.itemFilterDataset?.value;
+        if (!current || current === 'all' || current === 'Default') {
+          showToast("Please select a custom dataset to delete (Default cannot be deleted)", "warning");
+          return;
+        }
+        if (confirm(`Are you sure you want to delete dataset collection '${current}'?\n(Audio files will remain and move to Default dataset)`)) {
+          try {
+            const res = await fetch(`/api/datasets/${encodeURIComponent(current)}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error("Failed to delete dataset");
+            showToast(`Dataset '${current}' deleted`, 'info');
+            await loadDatasets();
+            if (els.itemFilterDataset) els.itemFilterDataset.value = 'all';
+            loadItems();
+          } catch (err) {
+            showToast(err.message, 'danger');
+          }
+        }
+      });
+    }
+  }
+
   function initManifestAndExport() {
     // Export manifest JSONL
     if (els.btnExportManifest) {
@@ -1332,6 +1519,7 @@
     initBenchmark();
     initManifestAndExport();
     initBulkActions();
+    initDatasetActions();
     initAuditionAudioElement();
 
     // Filters and search

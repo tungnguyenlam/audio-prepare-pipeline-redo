@@ -274,6 +274,42 @@ async def handle_stream_stem(request: web.Request) -> web.StreamResponse:
     return web.FileResponse(Path(stem_path_str))
 
 
+async def handle_download_audio(request: web.Request) -> web.StreamResponse:
+    """Download master audio file."""
+    item_id = request.match_info["id"]
+    item = dataset_manager.get_item(item_id)
+    if not item or not Path(item.path).exists():
+        return web.Response(status=404, text="Audio file not found")
+
+    file_path = Path(item.path)
+    return web.FileResponse(
+        file_path,
+        headers={"Content-Disposition": f'attachment; filename="{file_path.name}"'},
+    )
+
+
+async def handle_download_stem(request: web.Request) -> web.StreamResponse:
+    """Download separated stem audio file."""
+    item_id = request.match_info["id"]
+    model_name = request.match_info["model"]
+    stem_name = request.match_info["stem"]
+
+    item = dataset_manager.get_item(item_id)
+    if not item:
+        return web.Response(status=404, text="Audio item not found")
+
+    model_stems = item.stems.get(model_name, {})
+    stem_path_str = model_stems.get(stem_name)
+    if not stem_path_str or not Path(stem_path_str).exists():
+        return web.Response(status=404, text="Stem not found")
+
+    target_path = Path(stem_path_str)
+    return web.FileResponse(
+        target_path,
+        headers={"Content-Disposition": f'attachment; filename="{target_path.name}"'},
+    )
+
+
 # -------------------------------------------------------------------------
 # Job Queue Endpoints
 # -------------------------------------------------------------------------
@@ -777,7 +813,9 @@ def create_app() -> web.Application:
     app.router.add_post("/api/items/bulk_tag", handle_bulk_tag)
     app.router.add_post("/api/items/bulk_dataset", handle_bulk_dataset)
     app.router.add_get("/api/items/{id}/stream", handle_stream_audio)
+    app.router.add_get("/api/items/{id}/download", handle_download_audio)
     app.router.add_get("/api/items/{id}/stems/{model}/{stem}/stream", handle_stream_stem)
+    app.router.add_get("/api/items/{id}/stems/{model}/{stem}/download", handle_download_stem)
 
     # Job queue routes
     app.router.add_get("/api/jobs", handle_list_jobs)
