@@ -410,8 +410,9 @@
     }
 
     if (telemetry.disk) {
+      const diskPct = Math.round(telemetry.disk.percent);
       if (els.dashDatasetSize) els.dashDatasetSize.textContent = `${telemetry.disk.pipeline_data_mb} MB on disk`;
-      if (els.dashDiskText) els.dashDiskText.textContent = `${telemetry.disk.free_gb} / ${telemetry.disk.total_gb} GB (${telemetry.disk.percent}%)`;
+      if (els.dashDiskText) els.dashDiskText.textContent = `${telemetry.disk.used_gb} / ${telemetry.disk.total_gb} GB (${diskPct}%)`;
       if (els.meterDisk) els.meterDisk.style.width = `${telemetry.disk.percent}%`;
     }
 
