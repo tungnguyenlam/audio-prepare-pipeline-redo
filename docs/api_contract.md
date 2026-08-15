@@ -151,6 +151,9 @@ destination path to stdout.
 
 **Raises:** `FileNotFoundError` if the current source file does not exist.
 
+### `Audio.write_sidecar() -> Audio`
+
+Writes identity metadata next to `self.path` as `{stem}.json` without modifying or moving the underlying audio file. It returns the same `Audio` instance.
 
 ### `Audio.notebook_display(dest=None) -> None`
 

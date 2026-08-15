@@ -273,6 +273,23 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 }
 
+async function parseJsonResponse(res) {
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (_) {
+    if (res.status === 404) {
+      throw new Error(`Endpoint not found (HTTP 404). Please ensure the backend server was restarted with the latest routes!`);
+    }
+    throw new Error(`Server returned HTTP ${res.status}: ${text.substring(0, 120) || res.statusText}`);
+  }
+  if (!res.ok) {
+    throw new Error(data.error || `Request failed with status ${res.status}`);
+  }
+  return data;
+}
+
 function showToast(message, type = "info") {
   const toast = document.createElement("div");
   toast.className = `toast toast-${type}`;
@@ -1110,8 +1127,7 @@ function initIngestAndSaves() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Quick save failed");
+      const data = await parseJsonResponse(res);
 
       navigator.clipboard.writeText(data.saved_path);
       showToast(`Quick saved to: ${data.saved_path} (Path copied!)`, "success");
@@ -1168,8 +1184,7 @@ function initIngestAndSaves() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dest }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Save failed");
+      const data = await parseJsonResponse(res);
 
       showToast(`Saved file & metadata to: ${data.saved_path}`, "success");
       el.modalSaveTo.classList.add('hidden');
@@ -1925,8 +1940,7 @@ async function deleteServerFile(filePath, fileName) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path: filePath }),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to delete file");
+    const data = await parseJsonResponse(res);
 
     showToast(`Deleted ${displayName} successfully!`, "success");
     await fetchServerFiles();
@@ -1944,8 +1958,7 @@ async function loadServerFile(filePath) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path: filePath }),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to load file");
+    const data = await parseJsonResponse(res);
 
     showToast(`Loaded ${filePath} successfully!`, "success");
     await fetchAudioList();
