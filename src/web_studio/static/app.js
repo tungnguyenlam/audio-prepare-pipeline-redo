@@ -2052,10 +2052,21 @@ function toggleAuditionPlay() {
 
 async function loadClipForAudition(clipId) {
   if (!clipId) return;
-  if (el.auditionClipSelect) el.auditionClipSelect.value = clipId;
 
-  const clipAudio = state.audioList.find(a => a.id === clipId);
+  let clipAudio = state.audioList.find(a => a.id === clipId);
   if (!clipAudio) return;
+
+  // Auto-resolve to parent audio if user passed a separated stem!
+  const isSeparated = clipAudio.source_type === "separation" || (clipAudio.tags && clipAudio.tags.includes("separated"));
+  if (isSeparated && clipAudio.parent_id) {
+    const parent = state.audioList.find(a => a.id === clipAudio.parent_id);
+    if (parent) {
+      clipAudio = parent;
+      clipId = parent.id;
+    }
+  }
+
+  if (el.auditionClipSelect) el.auditionClipSelect.value = clipId;
 
   auditionTracks = [
     {
@@ -2071,9 +2082,11 @@ async function loadClipForAudition(clipId) {
   ];
 
   const childTracks = state.audioList.filter(a => 
-    a.parent_id === clipId || 
-    (a.tags && a.tags.includes("separated") && (a.title.includes(clipAudio.source_id || "") || a.title.includes(clipAudio.title || ""))) ||
-    (a.model_info && (a.model_info.parent_title === clipAudio.title || a.parent_id === clipId))
+    a.id !== clipId && (
+      a.parent_id === clipId || 
+      (a.tags && a.tags.includes("separated") && (a.title.includes(clipAudio.source_id || "") || a.title.includes(clipAudio.title || ""))) ||
+      (a.model_info && (a.model_info.parent_title === clipAudio.title || a.parent_id === clipId))
+    )
   );
 
   childTracks.forEach(ct => {
@@ -2100,8 +2113,7 @@ async function loadClipForAudition(clipId) {
 
   renderAuditionTrackPills();
   renderSideBySideDeck();
-  const defaultIdx = auditionTracks.length > 1 ? 1 : 0;
-  switchAuditionTrack(defaultIdx);
+  switchAuditionTrack(0);
 }
 
 function renderAuditionTrackPills() {
@@ -2923,13 +2935,12 @@ function initModals() {
 }
 
 function populateAllAudioSelects() {
-  const selects = [
+  const standardSelects = [
     el.sepInputSelect,
     el.diarInputSelect,
-    el.auditionClipSelect,
   ];
 
-  selects.forEach(select => {
+  standardSelects.forEach(select => {
     if (!select) return;
     const currentVal = select.value;
     select.innerHTML = '<option value="">-- Select Audio Track --</option>';
@@ -2957,10 +2968,66 @@ function populateAllAudioSelects() {
 
     if (currentVal && state.audioList.some(a => a.id === currentVal)) {
       select.value = currentVal;
-    } else if (state.activeAudio && (select === el.sepInputSelect || select === el.diarInputSelect || select === el.auditionClipSelect)) {
+    } else if (state.activeAudio) {
       select.value = state.activeAudio.id;
     }
   });
+
+  // Dedicated Audition Clip Select with categorized optgroups
+  if (el.auditionClipSelect) {
+    const curVal = el.auditionClipSelect.value;
+    el.auditionClipSelect.innerHTML = '<option value="">-- Select Cut Snippet to Evaluate (with BG Music) --</option>';
+
+    const cutsGroup = document.createElement("optgroup");
+    cutsGroup.label = "✂️ Audio Cuts & Snippets (with Background Music)";
+
+    const sourcesGroup = document.createElement("optgroup");
+    sourcesGroup.label = "📥 Full YouTube & Ingest Audio Sources";
+
+    const stemsGroup = document.createElement("optgroup");
+    stemsGroup.label = "✨ Separated Vocal Stems (Auto-resolves to parent mixture)";
+
+    state.audioList.forEach(item => {
+      const opt = document.createElement("option");
+      opt.value = item.id;
+      const isSep = item.source_type === "separation" || item.tags?.includes("separated");
+      const isCut = item.source_type === "cut" || item.tags?.includes("cut");
+
+      let prefix = "";
+      if (item.model_info?.model_label) prefix = `[${item.model_info.model_label}] `;
+      else if (item.tags?.includes("htdemucs_ft")) prefix = "[HTDemucs FT] ";
+      else if (item.tags?.includes("htdemucs")) prefix = "[HTDemucs] ";
+      else if (item.tags?.includes("bs_roformer")) prefix = "[BS-RoFormer] ";
+      else if (item.tags?.includes("mel_roformer")) prefix = "[Mel-RoFormer] ";
+      else if (isCut) prefix = "[Audio Cut] ";
+      else prefix = "[Raw Source] ";
+
+      opt.textContent = `${prefix}${item.title} (${(item.duration_s || 0).toFixed(1)}s)`;
+
+      if (isCut) {
+        cutsGroup.appendChild(opt);
+      } else if (isSep) {
+        stemsGroup.appendChild(opt);
+      } else {
+        sourcesGroup.appendChild(opt);
+      }
+    });
+
+    if (cutsGroup.children.length > 0) el.auditionClipSelect.appendChild(cutsGroup);
+    if (sourcesGroup.children.length > 0) el.auditionClipSelect.appendChild(sourcesGroup);
+    if (stemsGroup.children.length > 0) el.auditionClipSelect.appendChild(stemsGroup);
+
+    if (curVal && state.audioList.some(a => a.id === curVal)) {
+      el.auditionClipSelect.value = curVal;
+    } else if (state.activeAudio) {
+      const activeObj = state.audioList.find(a => a.id === state.activeAudio.id);
+      if (activeObj && activeObj.parent_id && (activeObj.source_type === "separation" || activeObj.tags?.includes("separated"))) {
+        el.auditionClipSelect.value = activeObj.parent_id;
+      } else {
+        el.auditionClipSelect.value = state.activeAudio.id;
+      }
+    }
+  }
 }
 
 // ==================== KEYBOARD SHORTCUTS ====================
