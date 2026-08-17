@@ -152,6 +152,21 @@
                 </div>
               </div>
 
+              <div class="diar-params-row" id="diar-speaker-bounds-group">
+                <div class="form-group flex-1">
+                  <label class="form-label" for="diar-min-speakers">Min Speakers</label>
+                  <input type="number" id="diar-min-speakers" class="text-input" min="1" max="32" placeholder="Auto" title="Optional lower bound on number of speakers">
+                </div>
+                <div class="form-group flex-1">
+                  <label class="form-label" for="diar-max-speakers">Max Speakers</label>
+                  <input type="number" id="diar-max-speakers" class="text-input" min="1" max="32" placeholder="Auto" title="Optional upper bound on number of speakers">
+                </div>
+                <div class="form-group flex-1">
+                  <label class="form-label" for="diar-num-speakers">Exact Speakers</label>
+                  <input type="number" id="diar-num-speakers" class="text-input" min="1" max="32" placeholder="Auto" title="Exact number of speakers if known in advance">
+                </div>
+              </div>
+
               <div class="diar-params-row" id="diar-3d-chunk-group" style="display: none;">
                 <div class="form-group flex-1">
                   <label class="form-label" for="diar-chunk-duration">Embedding Window (s)</label>
@@ -161,8 +176,25 @@
                   <label class="form-label" for="diar-chunk-step">Embedding Hop (s)</label>
                   <input type="number" id="diar-chunk-step" class="text-input" min="0.1" max="5" step="0.25" value="0.75" title="Hop between subsegments (upstream default 0.75s). Must be ≤ window.">
                 </div>
+                <div class="form-group flex-1 flex-col justify-center">
+                  <label class="checkbox-label flex-row items-center gap-2" style="margin-top: 1.6rem;" title="Refine overlapping speech using Pyannote segmentation model (requires HF token)">
+                    <input type="checkbox" id="diar-3d-overlap">
+                    <span class="text-sm">Pyannote Overlap Refine</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="diar-params-row" id="diar-clustering-params-group" style="display: none;">
+                <div class="form-group flex-1">
+                  <label class="form-label" for="diar-vad-onset">VAD Onset Threshold</label>
+                  <input type="number" id="diar-vad-onset" class="text-input" min="0.05" max="0.95" step="0.05" value="0.5" title="MarbleNet speech-onset probability threshold (default 0.5)">
+                </div>
+                <div class="form-group flex-1">
+                  <label class="form-label" for="diar-vad-offset">VAD Offset Threshold</label>
+                  <input type="number" id="diar-vad-offset" class="text-input" min="0.05" max="0.95" step="0.05" value="0.3" title="MarbleNet speech-offset probability threshold (default 0.3)">
+                </div>
                 <div class="form-group flex-2">
-                  <p class="text-sm text-secondary" style="margin: 1.6rem 0 0;">Shorter window/hop = finer boundaries, noisier embeddings. Official default is 1.5 / 0.75.</p>
+                  <p class="text-sm text-secondary" style="margin: 1.6rem 0 0;">Multi-scale TitaNet: [1.9s, 1.2s, 0.5s] with shifts [0.95s, 0.6s, 0.25s].</p>
                 </div>
               </div>
 

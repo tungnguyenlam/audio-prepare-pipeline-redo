@@ -460,6 +460,8 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
     max_speakers: Optional[int] = job.params.get("max_speakers")
     hf_token: Optional[str] = job.params.get("hf_token")
     include_overlap: bool = bool(job.params.get("include_overlap", False))
+    vad_onset = float(job.params.get("vad_onset", 0.5)) if job.params.get("vad_onset") is not None else 0.5
+    vad_offset = float(job.params.get("vad_offset", 0.3)) if job.params.get("vad_offset") is not None else 0.3
     chunk_duration_s = float(job.params.get("chunk_duration_s", 1.5))
     chunk_step_s = float(job.params.get("chunk_step_s", 0.75))
     backend_key = backend.lower()
@@ -495,6 +497,8 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
                 device=device,
                 num_speakers=oracle_speakers,
                 max_num_speakers=max_num_speakers,
+                vad_onset=vad_onset,
+                vad_offset=vad_offset,
             )
         elif backend_key in {"3d_speaker", "3d-speaker", "threed_speaker", "speakerlab"}:
             oracle_speakers = ThreeDSpeakerDiarizer.resolve_speaker_settings(

@@ -2472,15 +2472,23 @@ function diarizationModelLabel(modelTypeOrBackend) {
 }
 
 function syncDiarModelOptions(modelType) {
+  const isPyannote = modelType && modelType.startsWith("pyannote");
+  const is3d = modelType === "3d_speaker" || modelType === "3d-speaker" || modelType === "threed_speaker";
+  const isClustering = modelType === "clustering" || modelType === "nemo-clustering" || modelType === "nemo_clustering";
+  
   const hfGroup = document.getElementById("hf-token-group");
+  const overlapCheck = document.getElementById("diar-3d-overlap");
+  const needsHf = isPyannote || (is3d && overlapCheck && overlapCheck.checked);
   if (hfGroup) {
-    const isPyannote = modelType && modelType.startsWith("pyannote");
-    hfGroup.style.display = isPyannote ? "" : "none";
+    hfGroup.style.display = needsHf ? "" : "none";
   }
   const chunkGroup = document.getElementById("diar-3d-chunk-group");
   if (chunkGroup) {
-    const is3d = modelType === "3d_speaker" || modelType === "3d-speaker" || modelType === "threed_speaker";
     chunkGroup.style.display = is3d ? "" : "none";
+  }
+  const clusteringGroup = document.getElementById("diar-clustering-params-group");
+  if (clusteringGroup) {
+    clusteringGroup.style.display = isClustering ? "" : "none";
   }
 }
 
@@ -2538,6 +2546,14 @@ function initDiarizationStudio() {
   });
   const initiallyActive = document.querySelector('.model-card[data-diar-model].active');
   syncDiarModelOptions(initiallyActive ? initiallyActive.dataset.diarModel : "pyannote_community");
+
+  const overlapCheck = document.getElementById("diar-3d-overlap");
+  if (overlapCheck) {
+    overlapCheck.addEventListener('change', () => {
+      const activeCard = document.querySelector('.model-card[data-diar-model].active');
+      syncDiarModelOptions(activeCard ? activeCard.dataset.diarModel : "3d_speaker");
+    });
+  }
 
   // HuggingFace Token visibility & persistence
   if (el.hfTokenInput) {
@@ -2608,6 +2624,21 @@ function initDiarizationStudio() {
       const modelId = activeCard?.dataset.modelId || (modelType === "pyannote_31" ? "pyannote/speaker-diarization-3.1" : (modelType.startsWith("pyannote") ? "pyannote/speaker-diarization-community-1" : undefined));
       const device = state.selectedGpu || (el.diarDeviceSelect ? el.diarDeviceSelect.value : 'auto');
       const token = el.hfTokenInput.value.trim() || undefined;
+      const minSpkEl = document.getElementById('diar-min-speakers');
+      const maxSpkEl = document.getElementById('diar-max-speakers');
+      const numSpkEl = document.getElementById('diar-num-speakers');
+      const minSpeakers = minSpkEl && minSpkEl.value.trim() ? parseInt(minSpkEl.value, 10) : undefined;
+      const maxSpeakers = maxSpkEl && maxSpkEl.value.trim() ? parseInt(maxSpkEl.value, 10) : undefined;
+      const numSpeakers = numSpkEl && numSpkEl.value.trim() ? parseInt(numSpkEl.value, 10) : undefined;
+
+      const overlapEl = document.getElementById('diar-3d-overlap');
+      const includeOverlap = overlapEl ? overlapEl.checked : false;
+
+      const vadOnsetEl = document.getElementById('diar-vad-onset');
+      const vadOffsetEl = document.getElementById('diar-vad-offset');
+      const vadOnset = vadOnsetEl && vadOnsetEl.value.trim() ? parseFloat(vadOnsetEl.value) : 0.5;
+      const vadOffset = vadOffsetEl && vadOffsetEl.value.trim() ? parseFloat(vadOffsetEl.value) : 0.3;
+
       const chunkDurationEl = document.getElementById('diar-chunk-duration');
       const chunkStepEl = document.getElementById('diar-chunk-step');
       const chunkDuration = chunkDurationEl ? parseFloat(chunkDurationEl.value) : 1.5;
@@ -2636,6 +2667,12 @@ function initDiarizationStudio() {
             model_id: modelId,
             device: device,
             token: token,
+            min_speakers: Number.isFinite(minSpeakers) ? minSpeakers : undefined,
+            max_speakers: Number.isFinite(maxSpeakers) ? maxSpeakers : undefined,
+            num_speakers: Number.isFinite(numSpeakers) ? numSpeakers : undefined,
+            include_overlap: includeOverlap,
+            vad_onset: Number.isFinite(vadOnset) ? vadOnset : 0.5,
+            vad_offset: Number.isFinite(vadOffset) ? vadOffset : 0.3,
             chunk_duration_s: Number.isFinite(chunkDuration) ? chunkDuration : 1.5,
             chunk_step_s: Number.isFinite(chunkStep) ? chunkStep : 0.75,
           }),

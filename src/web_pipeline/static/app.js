@@ -146,12 +146,17 @@
     diarDevice: document.getElementById('diar-device'),
     diarMinSpk: document.getElementById('diar-min-spk'),
     diarMaxSpk: document.getElementById('diar-max-spk'),
+    diarNumSpk: document.getElementById('diar-num-spk'),
     diarHfToken: document.getElementById('diar-hf-token'),
     btnToggleTokenVis: document.getElementById('btn-toggle-token-vis'),
     diarBackendRadios: document.querySelectorAll('input[name="diar-backend-radio"]'),
     diar3dChunkGroup: document.getElementById('diar-3d-chunk-group'),
     diarChunkDuration: document.getElementById('diar-chunk-duration'),
     diarChunkStep: document.getElementById('diar-chunk-step'),
+    diar3dOverlap: document.getElementById('diar-3d-overlap'),
+    diarClusteringGroup: document.getElementById('diar-clustering-group'),
+    diarVadOnset: document.getElementById('diar-vad-onset'),
+    diarVadOffset: document.getElementById('diar-vad-offset'),
 
     // Benchmark
     formBatchBenchmark: document.getElementById('form-batch-benchmark'),
@@ -1341,6 +1346,10 @@
         const is3d = backend === '3d_speaker' || backend === '3d-speaker' || backend === 'threed_speaker';
         els.diar3dChunkGroup.style.display = is3d ? '' : 'none';
       }
+      if (els.diarClusteringGroup) {
+        const isClustering = backend === 'clustering' || backend === 'nemo-clustering' || backend === 'nemo_clustering';
+        els.diarClusteringGroup.style.display = isClustering ? '' : 'none';
+      }
     }
 
     els.diarBackendRadios.forEach(radio => {
@@ -1361,11 +1370,15 @@
         const dataset = els.diarDatasetSelect.value;
         const backend = els.diarBackend.value;
         const device = state.selectedGpu || (els.diarDevice ? els.diarDevice.value : 'cuda');
-        const minSpk = els.diarMinSpk.value ? parseInt(els.diarMinSpk.value, 10) : null;
-        const maxSpk = els.diarMaxSpk.value ? parseInt(els.diarMaxSpk.value, 10) : null;
-        const token = els.diarHfToken.value.trim() || null;
+        const minSpk = els.diarMinSpk && els.diarMinSpk.value ? parseInt(els.diarMinSpk.value, 10) : null;
+        const maxSpk = els.diarMaxSpk && els.diarMaxSpk.value ? parseInt(els.diarMaxSpk.value, 10) : null;
+        const numSpk = els.diarNumSpk && els.diarNumSpk.value ? parseInt(els.diarNumSpk.value, 10) : null;
+        const token = els.diarHfToken ? els.diarHfToken.value.trim() || null : null;
         const chunkDuration = els.diarChunkDuration ? parseFloat(els.diarChunkDuration.value) : 1.5;
         const chunkStep = els.diarChunkStep ? parseFloat(els.diarChunkStep.value) : 0.75;
+        const includeOverlap = els.diar3dOverlap ? els.diar3dOverlap.checked : false;
+        const vadOnset = els.diarVadOnset && els.diarVadOnset.value ? parseFloat(els.diarVadOnset.value) : 0.5;
+        const vadOffset = els.diarVadOffset && els.diarVadOffset.value ? parseFloat(els.diarVadOffset.value) : 0.3;
 
         try {
           const res = await fetch('/api/jobs/batch_diarization', {
@@ -1377,7 +1390,11 @@
               device,
               min_speakers: minSpk,
               max_speakers: maxSpk,
+              num_speakers: numSpk,
               hf_token: token,
+              include_overlap: includeOverlap,
+              vad_onset: Number.isFinite(vadOnset) ? vadOnset : 0.5,
+              vad_offset: Number.isFinite(vadOffset) ? vadOffset : 0.3,
               chunk_duration_s: Number.isFinite(chunkDuration) ? chunkDuration : 1.5,
               chunk_step_s: Number.isFinite(chunkStep) ? chunkStep : 0.75,
             }),

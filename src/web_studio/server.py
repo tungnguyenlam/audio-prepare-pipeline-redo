@@ -1642,6 +1642,11 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
     max_speakers = data.get("max_speakers")
     include_overlap = bool(data.get("include_overlap", False))
     try:
+        vad_onset = float(data.get("vad_onset", 0.5)) if data.get("vad_onset") is not None else 0.5
+        vad_offset = float(data.get("vad_offset", 0.3)) if data.get("vad_offset") is not None else 0.3
+    except (TypeError, ValueError):
+        vad_onset, vad_offset = 0.5, 0.3
+    try:
         chunk_duration_s = float(data.get("chunk_duration_s", 1.5))
         chunk_step_s = float(data.get("chunk_step_s", 0.75))
     except (TypeError, ValueError):
@@ -1721,6 +1726,8 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
                     device=target_device,
                     num_speakers=oracle_speakers,
                     max_num_speakers=max_num_speakers,
+                    vad_onset=vad_onset,
+                    vad_offset=vad_offset,
                 )
                 task_manager.set_cancel_callback(task_id, diarizer.cancel)
                 try:

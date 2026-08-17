@@ -531,6 +531,8 @@ async def handle_submit_diarization(request: web.Request) -> web.Response:
         max_speakers = body.get("max_speakers")
         hf_token = body.get("hf_token")
         include_overlap = bool(body.get("include_overlap", False))
+        vad_onset = body.get("vad_onset", 0.5)
+        vad_offset = body.get("vad_offset", 0.3)
         chunk_duration_s = body.get("chunk_duration_s", 1.5)
         chunk_step_s = body.get("chunk_step_s", 0.75)
 
@@ -555,6 +557,8 @@ async def handle_submit_diarization(request: web.Request) -> web.Response:
                 "max_speakers": max_speakers,
                 "hf_token": hf_token,
                 "include_overlap": include_overlap,
+                "vad_onset": vad_onset,
+                "vad_offset": vad_offset,
                 "chunk_duration_s": chunk_duration_s,
                 "chunk_step_s": chunk_step_s,
             },
