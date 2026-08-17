@@ -129,47 +129,35 @@ def normalize_ingested_audio(audio: Audio, target_sr: int) -> Audio:
 
 async def process_batch_ingest_yt(job: PipelineJob, queue: JobQueueManager) -> None:
     """Ingest batch of YouTube videos or playlists."""
+    event_loop = asyncio.get_running_loop()
     urls = job.params.get("urls", [])
     target_dataset = job.params.get("dataset", "Default")
     tags = list(job.params.get("tags", []))
     target_sr = int(job.params.get("sample_rate", DEFAULT_SAMPLE_RATE))
-    max_duration_seconds = job.params.get("max_duration_seconds")
 
     if isinstance(urls, str):
         urls = [u.strip() for u in urls.replace(",", "\n").splitlines() if u.strip()]
 
-    # If playlist URLs are present, expand them
-    resolved_entries: List[Dict[str, Any]] = []
+    resolved_entries: List[Dict[str, Any]] = [{"type": "url", "url": url} for url in urls]
     job.add_log(f"Resolving {len(urls)} input URL(s)...", "info")
-    queue.update_job_progress(job.id, current_step="Resolving URLs and playlists...")
+    queue.update_job_progress(job.id, current_step="Preparing YouTube ingest...")
+
+    def report_yt_progress(message: str) -> None:
+        event_loop.call_soon_threadsafe(
+            lambda current_message=message: queue.update_job_progress(
+                job.id,
+                current_step=current_message[:180],
+                log_message=current_message,
+            )
+        )
 
     crawler = YtCrawler(
-        download_dir=str(INGEST_DIR / "downloads"),
+        output_dir=str(INGEST_DIR / "downloads"),
         work_dir=str(INGEST_DIR / "work"),
-        out_dir=str(INGEST_DIR / "out"),
+        sample_rate=target_sr,
+        progress_callback=report_yt_progress,
     )
     _bind_job_cancel(queue, job.id, crawler)
-
-    for url in urls:
-        if queue.is_cancelled(job.id):
-            return
-        try:
-            # Check if playlist or single video
-            if "playlist" in url or "list=" in url:
-                job.add_log(f"Crawling playlist: {url}", "info")
-                playlist_audios = await asyncio.to_thread(
-                    crawler.crawl,
-                    url,
-                    target_sample_rate=target_sr,
-                    max_duration_seconds=max_duration_seconds,
-                )
-                for aud in playlist_audios:
-                    resolved_entries.append({"type": "audio", "audio": aud, "title": aud.title})
-            else:
-                resolved_entries.append({"type": "url", "url": url})
-        except Exception as e:
-            job.add_log(f"Error resolving {url}: {e}", "error")
-            job.failed_items += 1
 
     job.total_items = len(resolved_entries)
     job.add_log(f"Total resolved items to download and ingest: {job.total_items}", "info")
@@ -192,15 +180,7 @@ async def process_batch_ingest_yt(job: PipelineJob, queue: JobQueueManager) -> N
 
         t0 = time.time()
         try:
-            if entry["type"] == "audio":
-                audio = entry["audio"]
-            else:
-                audio = await asyncio.to_thread(
-                    crawler.ingest,
-                    entry["url"],
-                    target_sample_rate=target_sr,
-                    max_duration_seconds=max_duration_seconds,
-                )
+            audio = await asyncio.to_thread(crawler.download, entry["url"])
 
             item = dataset_manager.register_audio(
                 audio=audio,
@@ -586,7 +566,11 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
 
     finally:
         queue.set_job_cancel_callback(job.id, None)
-        if diarizer and hasattr(diarizer, "close"):
+        if (
+            diarizer
+            and hasattr(diarizer, "close")
+            and not queue.is_cancelled(job.id)
+        ):
             await asyncio.to_thread(diarizer.close)
 
 

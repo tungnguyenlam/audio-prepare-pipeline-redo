@@ -6013,7 +6013,6 @@ async function loadAndRenderQueueModal() {
 
       const progressKnown = item.progress_known === true || isCompleted;
       let progressPct = Number(item.progress || 0);
-      if (progressPct > 0 && progressPct <= 1) progressPct = progressPct * 100;
       progressPct = Math.round(Math.min(100, Math.max(0, progressPct)));
       if (isCompleted) progressPct = 100;
       const typeLabel = formatTaskType(item.type);
@@ -6120,13 +6119,16 @@ async function loadAndRenderQueueModal() {
 
 async function cancelSharedQueueItem(itemId) {
   try {
-    let res = await fetch(`/api/queue/shared/${itemId}`, { method: 'DELETE' });
+    let res = await fetch(`/api/queue/shared/${itemId}/cancel`, { method: 'POST' });
+    if (!res.ok) {
+      res = await fetch(`/api/queue/shared/${itemId}`, { method: 'DELETE' });
+    }
     if (!res.ok) {
       res = await fetch(`/api/tasks/${itemId}`, { method: 'DELETE' });
     }
     const data = await res.json();
     if (res.ok) {
-      showToast("Workload cancelled successfully", "info");
+      showToast("Stopping workload...", "info");
       loadAndRenderQueueModal();
       fetchSystemStatus();
     } else {

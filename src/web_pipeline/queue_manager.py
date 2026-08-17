@@ -509,6 +509,7 @@ class JobQueueManager:
             if not self.is_cancelled(job.id) and not self._shutting_down:
                 job.status = "completed"
                 job.progress = 100.0
+                job.progress_known = True
                 job.finished_at = time.time()
                 job.current_step = f"Completed successfully ({job.processed_items}/{job.total_items} items)"
                 job.add_log(f"Job completed successfully in {round(job.finished_at - job.started_at, 2)}s", "info")
@@ -529,11 +530,15 @@ class JobQueueManager:
             if self.is_cancelled(job.id) or self._shutting_down:
                 job.status = "cancelled"
                 job.finished_at = time.time()
-                job.current_step = "Cancelled by server shutdown"
-                job.add_log(
-                    "Job cancelled because the server is shutting down",
-                    "warning",
-                )
+                if self._shutting_down:
+                    job.current_step = "Cancelled by server shutdown"
+                    job.add_log(
+                        "Job cancelled because the server is shutting down",
+                        "warning",
+                    )
+                else:
+                    job.current_step = "Cancelled by user"
+                    job.add_log("Job cancelled by user", "warning")
             else:
                 logger.error(f"Job {job.id} failed: {e}", exc_info=True)
                 job.status = "failed"

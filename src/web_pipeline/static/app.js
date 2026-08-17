@@ -387,6 +387,9 @@
       }
     } else if (event === 'job_deleted') {
       state.jobs = state.jobs.filter((j) => j.id !== data.id);
+      if (Array.isArray(state.sharedItems)) {
+        state.sharedItems = state.sharedItems.filter((j) => j.id !== data.id);
+      }
       renderJobs();
       updateDashboardCards();
     } else if (event === 'datasets_updated' || event === 'items_deleted' || event === 'items_tagged' || event === 'items_moved') {
@@ -903,19 +906,32 @@
     } else {
       state.jobs.unshift(jobData);
     }
+    if (Array.isArray(state.sharedItems)) {
+      const sharedIdx = state.sharedItems.findIndex((j) => j.id === jobData.id);
+      if (sharedIdx >= 0) {
+        state.sharedItems[sharedIdx] = { ...state.sharedItems[sharedIdx], ...jobData };
+      } else {
+        state.sharedItems.unshift({ ...jobData, source: jobData.source || 'pipeline' });
+      }
+    }
   }
 
   function updateJobProgressInState(progressData) {
-    const job = state.jobs.find((j) => j.id === progressData.id);
-    if (job) {
+    const applyProgress = (job) => {
+      if (!job) return;
       job.progress = progressData.progress;
       job.progress_known = progressData.progress_known;
       job.current_step = progressData.current_step;
+      job.message = progressData.current_step;
       job.processed_items = progressData.processed_items;
       job.failed_items = progressData.failed_items;
       job.status = progressData.status;
-      renderJobs();
+    };
+    applyProgress(state.jobs.find((j) => j.id === progressData.id));
+    if (Array.isArray(state.sharedItems)) {
+      applyProgress(state.sharedItems.find((j) => j.id === progressData.id));
     }
+    renderJobs();
   }
 
   function renderJobs() {
@@ -958,7 +974,6 @@
     const isStudio = job.source === 'studio';
     const progressKnown = job.progress_known === true || job.status === 'completed';
     let percent = Number(job.progress || 0);
-    if (percent > 0 && percent <= 1) percent = percent * 100;
     percent = Math.round(Math.min(100, Math.max(0, percent)));
     if (job.status === 'completed') percent = 100;
 
@@ -1043,7 +1058,12 @@
           if (!res.ok) {
             res = await fetch(`/api/jobs/${id}/cancel`, { method: 'POST' });
           }
-          showToast('Cancellation requested', 'warning');
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            showToast(data.error || 'Failed to cancel workload', 'danger');
+            return;
+          }
+          showToast('Stopping workload...', 'warning');
           loadJobs();
         } catch (err) {
           showToast('Failed to cancel workload', 'danger');

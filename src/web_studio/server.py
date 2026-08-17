@@ -2158,7 +2158,7 @@ def get_shared_queue_data() -> Dict[str, Any]:
             "title": t.get("metadata", {}).get("title") or t.get("metadata", {}).get("model") or t.get("type", "Studio Task"),
             "type": t.get("type", "studio_task"),
             "status": t.get("status", "pending"),
-            "progress": round(float(t.get("progress", 0.0)) * 100.0, 1) if float(t.get("progress", 0.0)) <= 1.0 else float(t.get("progress", 0.0)),
+            "progress": round(min(100.0, max(0.0, float(t.get("progress") or 0.0) * 100.0)), 1),
             "progress_known": bool(t.get("progress_known")) or t.get("status") == "completed",
             "message": t.get("message", ""),
             "error": t.get("error"),
