@@ -7,11 +7,14 @@ target sample rate / channel count.
 from __future__ import annotations
 
 import logging
+import os
+import signal
 import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from src.separation.audio_utils import normalize_wav, probe_wav
 from src.separation.BaseSeparator import BaseSeparator
@@ -43,6 +46,7 @@ class HTDemucs(BaseSeparator):
         channels: int = 1,
         demucs_bin: Optional[str] = None,
         ffmpeg_bin: Optional[str] = None,
+        progress_callback: Callable[[str], None] | None = None,
     ) -> None:
         super().__init__(
             model=model,
@@ -55,6 +59,10 @@ class HTDemucs(BaseSeparator):
             ffmpeg_bin=ffmpeg_bin,
         )
         self.demucs_bin = demucs_bin
+        self.progress_callback = progress_callback
+        self._process: subprocess.Popen[str] | None = None
+        self._process_lock = threading.Lock()
+        self._cancel_requested = False
 
     def _demucs_prefix(self) -> list[str]:
         """Binary prefix: configured binary, PATH binary, or ``python -m demucs.separate``."""
@@ -67,6 +75,79 @@ class HTDemucs(BaseSeparator):
         if venv_bin.is_file():
             return [str(venv_bin)]
         return [sys.executable, "-m", "demucs.separate"]
+
+    def _emit_progress(self, message: str) -> None:
+        if not message:
+            return
+        logger.info("Demucs: %s", message)
+        if self.progress_callback is None:
+            return
+        try:
+            self.progress_callback(message)
+        except Exception:
+            logger.warning("Demucs progress callback failed", exc_info=True)
+
+    def _run_demucs(self, cmd: list[str]) -> None:
+        """Run Demucs while streaming logs and supporting cancellation."""
+        with self._process_lock:
+            if self._cancel_requested:
+                raise DemucsError("Demucs separation was cancelled")
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                start_new_session=True,
+            )
+            self._process = process
+
+        output_tail: list[str] = []
+        try:
+            if process.stdout is not None:
+                for line in process.stdout:
+                    message = line.rstrip()
+                    if not message:
+                        continue
+                    output_tail.append(message)
+                    if len(output_tail) > 80:
+                        output_tail = output_tail[-80:]
+                    self._emit_progress(message)
+            returncode = process.wait()
+        finally:
+            if process.stdout is not None:
+                process.stdout.close()
+            with self._process_lock:
+                if self._process is process:
+                    self._process = None
+
+        if returncode != 0:
+            with self._process_lock:
+                cancelled = self._cancel_requested
+            if cancelled:
+                raise DemucsError("Demucs separation was cancelled")
+            detail = "\n".join(output_tail).strip()
+            raise DemucsError(
+                f"demucs failed (exit {returncode}): {detail[-2000:] or 'no output'}"
+            )
+
+    def cancel(self) -> None:
+        """Request non-blocking cancellation of active Demucs inference."""
+        with self._process_lock:
+            self._cancel_requested = True
+            process = self._process
+        if process is None or process.poll() is not None:
+            return
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        except OSError:
+            process.terminate()
+
+    def close(self) -> None:
+        """Cancel any active Demucs process."""
+        self.cancel()
 
     def _separate_stem(self, audio_path: Path) -> Path:
         """Run Demucs and return the extracted stem WAV path."""
@@ -84,12 +165,7 @@ class HTDemucs(BaseSeparator):
             str(audio_path),
         ]
         logger.info("Running demucs: %s", " ".join(cmd))
-        completed = subprocess.run(cmd, capture_output=True, text=True, check=False)
-        if completed.returncode != 0:
-            detail = (completed.stderr or completed.stdout or "").strip()
-            raise DemucsError(
-                f"demucs failed (exit {completed.returncode}): {detail[:2000] or 'no output'}"
-            )
+        self._run_demucs(cmd)
 
         separated = out_root / self.model / audio_path.stem / f"{self.two_stems}.wav"
         if not separated.is_file():
@@ -108,6 +184,8 @@ class HTDemucs(BaseSeparator):
             raise DemucsError(f"audio not found: {src_path}")
 
         self.work_dir.mkdir(parents=True, exist_ok=True)
+        with self._process_lock:
+            self._cancel_requested = False
         try:
             separated = self._separate_stem(src_path)
         except FileNotFoundError as exc:  # pragma: no cover

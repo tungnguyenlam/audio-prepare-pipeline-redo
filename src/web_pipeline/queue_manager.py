@@ -7,6 +7,7 @@ import gc
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -21,6 +22,35 @@ ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = ROOT_DIR / ".data" / "pipeline"
 JOBS_DIR = DATA_DIR / "jobs"
 JOBS_DIR.mkdir(parents=True, exist_ok=True)
+
+_PROGRESS_PERCENT_RE = re.compile(r"(?:progress:\s*)?(\d{1,3}(?:\.\d+)?)\s*%", re.IGNORECASE)
+_PROGRESS_FRACTION_RE = re.compile(r"(?:^|[^\d])(\d+)\s*/\s*(\d+)(?:\s|$)")
+
+
+def parse_progress_text(message: str) -> Optional[float]:
+    """Return 0-100 if ``message`` contains a detectable progress value.
+
+    Args:
+        message: A backend log line, tqdm bar, or ``PROGRESS: N%`` marker.
+
+    Returns:
+        A percentage in ``[0, 100]``, or ``None`` when no numeric progress is
+        present.
+    """
+    if not message:
+        return None
+    match = _PROGRESS_PERCENT_RE.search(message)
+    if match:
+        value = float(match.group(1))
+        if 0.0 <= value <= 100.0:
+            return value
+    match = _PROGRESS_FRACTION_RE.search(message)
+    if match:
+        done = float(match.group(1))
+        total = float(match.group(2))
+        if total > 0:
+            return min(100.0, round(100.0 * done / total, 1))
+    return None
 
 
 @dataclass
@@ -42,6 +72,7 @@ class PipelineJob:
     started_at: Optional[float] = None
     finished_at: Optional[float] = None
     progress: float = 0.0
+    progress_known: bool = False
     current_step: str = "Initialized"
     total_items: int = 0
     processed_items: int = 0
@@ -65,6 +96,7 @@ class PipelineJob:
             started_at=data.get("started_at"),
             finished_at=data.get("finished_at"),
             progress=float(data.get("progress", 0.0)),
+            progress_known=bool(data.get("progress_known", False)),
             current_step=data.get("current_step", "Initialized"),
             total_items=int(data.get("total_items", 0)),
             processed_items=int(data.get("processed_items", 0)),
@@ -102,6 +134,7 @@ class JobQueueManager:
         self._worker_task: Optional[asyncio.Task[Any]] = None
         self._dispatch_event = asyncio.Event()
         self._shutting_down = False
+        self._cancel_callbacks: Dict[str, Callable[[], None]] = {}
         self._load_persisted_jobs()
 
     def _load_persisted_jobs(self) -> None:
@@ -138,18 +171,41 @@ class JobQueueManager:
             self._worker_task = asyncio.create_task(self._worker_loop())
             logger.info("JobQueueManager worker loop started")
 
+    def set_job_cancel_callback(
+        self,
+        job_id: str,
+        callback: Callable[[], None] | None,
+    ) -> None:
+        """Register or clear a backend cancel hook for an active job."""
+        if callback is None:
+            self._cancel_callbacks.pop(job_id, None)
+        else:
+            self._cancel_callbacks[job_id] = callback
+
+    def _invoke_cancel_callback(self, job_id: str) -> None:
+        callback = self._cancel_callbacks.pop(job_id, None)
+        if callback is None:
+            return
+        try:
+            callback()
+        except Exception:
+            logger.warning("Job cancel callback failed for %s", job_id, exc_info=True)
+
     def _cancel_unfinished_jobs(self, reason: str) -> None:
         """Mark every pending or running job cancelled and persist the result."""
         for job in list(self._jobs.values()):
             if job.status not in ("pending", "running"):
                 continue
             self._cancel_flags.add(job.id)
+            self._invoke_cancel_callback(job.id)
             job.status = "cancelled"
             job.finished_at = time.time()
             job.current_step = "Cancelled by server shutdown"
             job.add_log(reason, "warning")
             self._save_job(job)
             self.broadcast("job_updated", job.to_dict())
+        for job_id in list(self._cancel_callbacks):
+            self._invoke_cancel_callback(job_id)
 
     def _drain_pending_queue(self) -> None:
         """Drop queued job ids so shutdown cannot dispatch more work."""
@@ -260,6 +316,7 @@ class JobQueueManager:
             self.broadcast("job_updated", job.to_dict())
             return True
 
+        self._invoke_cancel_callback(job_id)
         if job_id in self._running_tasks:
             self._running_tasks[job_id].cancel()
         job.status = "cancelled"
@@ -306,6 +363,18 @@ class JobQueueManager:
     def is_cancelled(self, job_id: str) -> bool:
         return job_id in self._cancel_flags
 
+    @property
+    def is_paused(self) -> bool:
+        return self._is_paused
+
+    @property
+    def running_jobs(self) -> List[PipelineJob]:
+        return [job for job in self._jobs.values() if job.status == "running"]
+
+    @property
+    def pending_jobs(self) -> List[PipelineJob]:
+        return [job for job in self._jobs.values() if job.status == "pending"]
+
     def update_job_progress(
         self,
         job_id: str,
@@ -330,16 +399,32 @@ class JobQueueManager:
 
         if progress is not None:
             job.progress = min(100.0, max(0.0, progress))
-        elif job.total_items > 0:
-            job.progress = min(100.0, max(0.0, round(((job.processed_items + job.failed_items) / job.total_items) * 100, 1)))
+            job.progress_known = True
+        elif processed_items is not None or failed_items is not None:
+            if job.total_items > 1:
+                finished = job.processed_items + job.failed_items
+                job.progress = min(100.0, max(0.0, round((finished / job.total_items) * 100, 1)))
+                job.progress_known = True
 
         if log_message:
+            parsed = parse_progress_text(log_message)
+            if parsed is not None and progress is None:
+                if job.total_items > 1:
+                    finished = job.processed_items + job.failed_items
+                    job.progress = min(
+                        100.0,
+                        round(((finished + parsed / 100.0) / job.total_items) * 100, 1),
+                    )
+                else:
+                    job.progress = parsed
+                job.progress_known = True
             job.add_log(log_message, log_level)
 
         self._save_job(job)
         self.broadcast("job_progress", {
             "id": job.id,
             "progress": job.progress,
+            "progress_known": job.progress_known,
             "current_step": job.current_step,
             "processed_items": job.processed_items,
             "failed_items": job.failed_items,
@@ -457,6 +542,7 @@ class JobQueueManager:
                 job.current_step = f"Failed: {e}"
                 job.add_log(f"Job failed with error: {e}", "error")
         finally:
+            self._cancel_callbacks.pop(job.id, None)
             if self._shutting_down or self.is_cancelled(job.id):
                 job.status = "cancelled"
                 if not job.finished_at:

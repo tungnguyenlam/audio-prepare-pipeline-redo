@@ -338,6 +338,19 @@ raises `RuntimeError`.
 is unavailable, output is in an unknown format, or the selected device cannot
 be initialized. Audio conversion and file errors are propagated.
 
+### `SortformerWorkerDiarizer`
+
+The web applications use `SortformerWorkerDiarizer` from the primary `.venv`.
+Its public lifecycle and `diarize(audio) -> DiarizationResult` contract match
+`SortformerDiarizer`, but `load()` starts
+`.venv-sortformer/bin/python -m src.diarization.sortformer_worker`. The worker
+loads NeMo once and is reused across all `diarize()` calls until `unload()` or
+`close()`. This keeps NeMo's dependency pins out of the web server process and
+allows the unified UI to switch between Sortformer and other utilities without
+a server restart. `SORTFORMER_PYTHON` or the `worker_python` constructor option
+can point to a non-default isolated interpreter. `cancel()` terminates active
+worker inference.
+
 ### `SortformerDiarizer._load() -> None` and `_unload() -> None`
 
 - `_load()` downloads the exact `.nemo` artifact (unless `checkpoint_path` is
@@ -422,7 +435,12 @@ The repository provides two specialized web platforms:
 - **Task endpoints:** `GET /api/tasks` lists tasks and queue counts,
   `GET /api/tasks/{id}` returns one task, and `DELETE /api/tasks/{id}` cancels
   a task that is still queued. Running native model work is not force-cancelled.
-- **Shared Queue endpoints:** `GET /api/queue/shared` aggregates hardware telemetry (GPU name, load %, VRAM) and active/queued workloads across both SonicStudio and SonicPipeline. `DELETE /api/queue/shared/{id}` and `POST /api/queue/shared/{id}/cancel` cancel a workload in either domain.
+- **Shared Queue endpoints:** `GET /api/queue/shared` aggregates hardware
+  telemetry (GPU name, load %, VRAM, current power draw, and power limit) and
+  active/queued workloads across both SonicStudio and SonicPipeline. On
+  multi-GPU hosts, the summary device values aggregate all visible GPUs.
+  `DELETE /api/queue/shared/{id}` and `POST /api/queue/shared/{id}/cancel`
+  cancel a workload in either domain.
 
 ### `src/web_pipeline/` (SonicPipeline API domain and frontend)
 - **Role:** Large-scale batch engine for high-throughput ingestion, task queue orchestration, dataset curation, bulk separation, batch diarization, separation benchmark matrix evaluation, and ML manifest generation (JSONL/CSV).
@@ -430,5 +448,10 @@ The repository provides two specialized web platforms:
 **Telemetry endpoint:** `GET /api/telemetry` returns the current host and
 pipeline metrics. The `gpu` object includes `load_percent`, host-level
 `used_vram_mb`, `free_vram_mb`, and `total_vram_mb`, plus the current process's
-`allocated_vram_mb` and `reserved_vram_mb`. GPU load and host VRAM counters are
-`null` when the active accelerator cannot provide them (for example, MPS).
+`allocated_vram_mb` and `reserved_vram_mb`. NVIDIA telemetry also includes
+`power_w`, `power_limit_w`, and `power_percent`; each entry in `devices` includes
+its CUDA logical `index`, NVIDIA `physical_index`, and stable `uuid`. Logical
+CUDA devices are matched to NVIDIA sensor readings by UUID because CUDA and
+`nvidia-smi` can enumerate the same GPUs in different orders. GPU load, power,
+and host VRAM counters are `null` when the active accelerator cannot provide
+them (for example, MPS).

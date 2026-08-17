@@ -41,6 +41,13 @@ _UPSTREAM_DEVICE_PATCH = """if __name__ == '__main__':
     # Device visibility is supplied by the MVSepMDX23 wrapper.
     print('GPU visibility: {}'.format(os.environ.get('CUDA_VISIBLE_DEVICES', 'default')))
 """
+_UPSTREAM_PROGRESS_ORIGINAL = "    options = m.parse_args().__dict__\n"
+_UPSTREAM_PROGRESS_PATCH = """    options = m.parse_args().__dict__
+    def _print_mvsep_progress(percent):
+        print('PROGRESS: {}%'.format(int(percent)), flush=True)
+    options['update_percent_func'] = _print_mvsep_progress
+"""
+_UPSTREAM_PROGRESS_MARKER = "options['update_percent_func'] = _print_mvsep_progress"
 
 # Upstream writes ``{stem}_instrum.wav`` for the residual instrumental.
 _STEM_OUTPUT_IDS = {
@@ -243,27 +250,40 @@ class MVSepMDX23(BaseSeparator):
 
     @staticmethod
     def _patch_upstream_device_override(inference_py: Path) -> None:
-        """Make the cloned CLI preserve the wrapper's CUDA device isolation."""
+        """Patch the cloned CLI for device isolation and numeric progress output."""
         source = inference_py.read_text(encoding="utf-8")
-        if _UPSTREAM_DEVICE_PATCH in source:
-            return
-        if _UPSTREAM_DEVICE_OVERRIDE not in source:
+        original = source
+        if _UPSTREAM_DEVICE_OVERRIDE in source:
+            source = source.replace(
+                _UPSTREAM_DEVICE_OVERRIDE,
+                _UPSTREAM_DEVICE_PATCH,
+                1,
+            )
+        elif _UPSTREAM_DEVICE_PATCH not in source:
             if 'gpu_use = "0"' in source or "gpu_use = '0'" in source:
                 raise MVSepMDX23Error(
                     "unsupported upstream GPU-selection block in "
                     f"{inference_py}; refusing to run on an ambiguous device"
                 )
+        if _UPSTREAM_PROGRESS_MARKER not in source:
+            if _UPSTREAM_PROGRESS_ORIGINAL not in source:
+                logger.warning(
+                    "Could not patch MVSEP-MDX23 CLI progress reporter in %s",
+                    inference_py,
+                )
+            else:
+                source = source.replace(
+                    _UPSTREAM_PROGRESS_ORIGINAL,
+                    _UPSTREAM_PROGRESS_PATCH,
+                    1,
+                )
+        if source == original:
             return
-        patched_source = source.replace(
-            _UPSTREAM_DEVICE_OVERRIDE,
-            _UPSTREAM_DEVICE_PATCH,
-            1,
-        )
         temporary_path = inference_py.with_name(
             f".{inference_py.name}.{os.getpid()}.{threading.get_ident()}.tmp"
         )
         try:
-            temporary_path.write_text(patched_source, encoding="utf-8")
+            temporary_path.write_text(source, encoding="utf-8")
             temporary_path.replace(inference_py)
         finally:
             temporary_path.unlink(missing_ok=True)

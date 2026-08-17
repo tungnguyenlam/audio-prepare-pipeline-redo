@@ -376,6 +376,184 @@ html, body {
   background-color: var(--bg-sidebar);
 }
 
+/* ==========================================================================
+   Sidebar Hardware & Multi-GPU Selection Section
+   ========================================================================== */
+
+.sidebar-gpu-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-bottom: 0.15rem;
+}
+
+.sidebar-gpu-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0.15rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--text-subtle);
+  text-transform: uppercase;
+}
+
+.sidebar-gpu-header-left {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.sidebar-gpu-header-title {
+  letter-spacing: 0.06em;
+}
+
+.sidebar-gpu-cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.sidebar-gpu-loading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.6rem;
+  font-size: 0.72rem;
+  color: var(--text-subtle);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.sidebar-gpu-card {
+  padding: 0.6rem 0.7rem;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  user-select: none;
+  position: relative;
+}
+
+.sidebar-gpu-card:hover {
+  background-color: var(--bg-hover);
+  border-color: var(--border-focus);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.22);
+}
+
+.sidebar-gpu-card.selected {
+  background: linear-gradient(135deg, hsla(217, 91%, 60%, 0.14), hsla(188, 86%, 53%, 0.08));
+  border-color: var(--color-cyan);
+  box-shadow: 0 0 0 1px var(--color-cyan), 0 4px 14px rgba(6, 182, 212, 0.2);
+}
+
+.sidebar-gpu-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.sidebar-gpu-title-group {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.sidebar-gpu-radio-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-subtle);
+  background: transparent;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+.sidebar-gpu-radio-dot.checked {
+  border-color: var(--color-cyan);
+  background: var(--color-cyan);
+  box-shadow: 0 0 8px var(--color-cyan);
+}
+
+.sidebar-gpu-card-name {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-main);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-gpu-status-badge {
+  font-size: 0.58rem;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.sidebar-gpu-status-badge.active {
+  background: hsla(158, 64%, 52%, 0.22);
+  color: var(--color-emerald);
+  border: 1px solid hsla(158, 64%, 52%, 0.45);
+}
+
+.sidebar-gpu-status-badge.standby {
+  background: var(--bg-input);
+  color: var(--text-subtle);
+  border: 1px solid var(--border-subtle);
+}
+
+.sidebar-gpu-metrics {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.gpu-metric-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 5px;
+  background: var(--bg-input);
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  font-size: 0.64rem;
+  white-space: nowrap;
+}
+
+.sidebar-gpu-meter-track {
+  width: 100%;
+  height: 3px;
+  background: var(--bg-input);
+  border-radius: var(--radius-pill, 9999px);
+  overflow: hidden;
+  margin-top: 1px;
+}
+
+.sidebar-gpu-meter-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-cyan));
+  border-radius: var(--radius-pill, 9999px);
+  transition: width 0.3s ease;
+}
+
 .sidebar-telemetry-card {
   background-color: var(--bg-surface);
   border: 1px solid var(--border-subtle);

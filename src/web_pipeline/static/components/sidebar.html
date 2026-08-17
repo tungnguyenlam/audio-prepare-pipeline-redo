@@ -89,10 +89,30 @@
       </div>
 
       <!-- Sidebar Bottom Telemetry Widget -->
+      <!-- Sidebar Bottom Telemetry Widget -->
       <div class="sidebar-footer">
+        <!-- Sidebar Accelerator & Multi-GPU Selection Section -->
+        <div class="sidebar-gpu-section" id="sidebar-gpu-section">
+          <div class="sidebar-gpu-section-header">
+            <div class="sidebar-gpu-header-left">
+              <span class="gpu-icon">⚡</span>
+              <span class="sidebar-gpu-header-title">ACCELERATOR</span>
+            </div>
+            <span class="badge badge-sm badge-device font-mono" id="pipeline-selected-gpu-pill">Detecting...</span>
+          </div>
+
+          <!-- Dynamic Container for selectable GPU cards -->
+          <div class="sidebar-gpu-cards-list" id="pipeline-gpu-cards-list">
+            <div class="sidebar-gpu-loading font-mono">
+              <span class="dot-pulse-green"></span>
+              <span>Probing GPUs...</span>
+            </div>
+          </div>
+        </div>
+
         <div class="sidebar-telemetry-card">
           <div class="telemetry-card-header">
-            <span class="telemetry-device-name" id="dash-device-name">GPU Node</span>
+            <span class="telemetry-device-name" id="dash-device-name">Host System</span>
             <span class="telemetry-sse-pill">
               <span class="dot-pulse-green"></span>
               <span id="val-sse-status">Live</span>
@@ -100,36 +120,6 @@
           </div>
           
           <div class="sidebar-meter-list">
-            <div class="sidebar-meter-item">
-              <div class="meter-label-row">
-                <span>GPU Load</span>
-                <span class="meter-val-text" id="val-gpu-load">N/A</span>
-              </div>
-              <div class="mini-bar-track">
-                <div class="mini-bar-fill" id="meter-gpu-load" style="width: 0%;"></div>
-              </div>
-            </div>
-
-            <div class="sidebar-meter-item">
-              <div class="meter-label-row">
-                <span>GPU VRAM</span>
-                <span class="meter-val-text" id="val-gpu-vram">-- / -- MB</span>
-              </div>
-              <div class="mini-bar-track">
-                <div class="mini-bar-fill" id="meter-vram" style="width: 0%;"></div>
-              </div>
-            </div>
-
-            <div class="sidebar-meter-item" id="sidebar-gpu-power-item">
-              <div class="meter-label-row">
-                <span>GPU Power</span>
-                <span class="meter-val-text font-mono" id="val-gpu-power">-- W</span>
-              </div>
-              <div class="mini-bar-track">
-                <div class="mini-bar-fill" id="meter-gpu-power" style="width: 0%;"></div>
-              </div>
-            </div>
-
             <div class="sidebar-meter-item">
               <div class="meter-label-row">
                 <span>CPU Load</span>

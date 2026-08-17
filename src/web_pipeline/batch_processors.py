@@ -19,7 +19,7 @@ import soundfile as sf
 import torch
 
 from src.benchmark.separation.mixer import AudioMixer
-from src.diarization import PyannoteDiarizer, SortformerDiarizer
+from src.diarization import PyannoteDiarizer, SortformerWorkerDiarizer
 from src.separation import BSRoFormer, HTDemucs, MelRoFormer, MVSepMDX23
 from src.utils.AudioClass import DEFAULT_SAMPLE_RATE, Audio
 from src.web_pipeline.dataset_manager import dataset_manager
@@ -27,7 +27,11 @@ from src.web_pipeline.hardware_monitor import hardware_monitor
 from src.web_pipeline.queue_manager import PipelineJob, JobQueueManager
 from src.yt_crawler.YtCrawlerClass import YtCrawler
 
-logger = logging.getLogger("batch_processors")
+def _bind_job_cancel(queue: JobQueueManager, job_id: str, worker: Any) -> None:
+    """Attach a backend cancel hook when the worker supports it."""
+    cancel = getattr(worker, "cancel", None)
+    if callable(cancel):
+        queue.set_job_cancel_callback(job_id, cancel)
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = ROOT_DIR / ".data" / "pipeline"
@@ -144,6 +148,7 @@ async def process_batch_ingest_yt(job: PipelineJob, queue: JobQueueManager) -> N
         work_dir=str(INGEST_DIR / "work"),
         out_dir=str(INGEST_DIR / "out"),
     )
+    _bind_job_cancel(queue, job.id, crawler)
 
     for url in urls:
         if queue.is_cancelled(job.id):
@@ -333,12 +338,22 @@ async def process_batch_separation(job: PipelineJob, queue: JobQueueManager) -> 
         elif model_name == "MelRoFormer":
             separator = MelRoFormer(device=device)
         elif model_name == "HTDemucs":
-            separator = HTDemucs(device=device)
+            def report_cli_progress(message: str) -> None:
+                event_loop.call_soon_threadsafe(
+                    lambda current_message=message: queue.update_job_progress(
+                        job.id,
+                        current_step=current_message[:180],
+                        log_message=current_message,
+                    )
+                )
+
+            separator = HTDemucs(device=device, progress_callback=report_cli_progress)
         elif model_name == "MVSepMDX23":
             def report_mvsep_progress(message: str) -> None:
                 event_loop.call_soon_threadsafe(
                     lambda current_message=message: queue.update_job_progress(
                         job.id,
+                        current_step=current_message[:180],
                         log_message=f"MVSep-MDX23: {current_message}",
                     )
                 )
@@ -353,6 +368,7 @@ async def process_batch_separation(job: PipelineJob, queue: JobQueueManager) -> 
         # Check if ManagedModel needs load
         if hasattr(separator, "load"):
             await asyncio.to_thread(separator.load)
+        _bind_job_cancel(queue, job.id, separator)
     except Exception as e:
         job.add_log(f"Failed to initialize separator {model_name}: {e}", "error")
         raise
@@ -437,7 +453,12 @@ async def process_batch_separation(job: PipelineJob, queue: JobQueueManager) -> 
             queue.update_job_progress(job.id, processed_items=processed, failed_items=failed)
 
     finally:
-        if separator and hasattr(separator, "close"):
+        queue.set_job_cancel_callback(job.id, None)
+        if (
+            separator
+            and hasattr(separator, "close")
+            and not queue.is_cancelled(job.id)
+        ):
             await asyncio.to_thread(separator.close)
 
 
@@ -469,10 +490,11 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
     diarizer = None
     try:
         if backend.lower() == "sortformer":
-            diarizer = SortformerDiarizer(device=device)
+            diarizer = SortformerWorkerDiarizer(device=device)
         else:
             diarizer = PyannoteDiarizer(device=device, token=hf_token)
 
+        _bind_job_cancel(queue, job.id, diarizer)
         if hasattr(diarizer, "load"):
             await asyncio.to_thread(diarizer.load)
     except Exception as e:
@@ -563,11 +585,8 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
             queue.update_job_progress(job.id, processed_items=processed, failed_items=failed)
 
     finally:
-        if (
-            diarizer
-            and hasattr(diarizer, "close")
-            and not queue.is_cancelled(job.id)
-        ):
+        queue.set_job_cancel_callback(job.id, None)
+        if diarizer and hasattr(diarizer, "close"):
             await asyncio.to_thread(diarizer.close)
 
 
@@ -625,12 +644,22 @@ async def process_batch_benchmark(job: PipelineJob, queue: JobQueueManager) -> N
             elif model_name == "MelRoFormer":
                 separator = MelRoFormer(device=device)
             elif model_name == "HTDemucs":
-                separator = HTDemucs(device=device)
+                def report_cli_progress(message: str) -> None:
+                    event_loop.call_soon_threadsafe(
+                        lambda current_message=message: queue.update_job_progress(
+                            job.id,
+                            current_step=current_message[:180],
+                            log_message=current_message,
+                        )
+                    )
+
+                separator = HTDemucs(device=device, progress_callback=report_cli_progress)
             elif model_name == "MVSepMDX23":
                 def report_mvsep_progress(message: str) -> None:
                     event_loop.call_soon_threadsafe(
                         lambda current_message=message: queue.update_job_progress(
                             job.id,
+                            current_step=current_message[:180],
                             log_message=f"MVSep-MDX23: {current_message}",
                         )
                     )
@@ -643,6 +672,7 @@ async def process_batch_benchmark(job: PipelineJob, queue: JobQueueManager) -> N
                 raise ValueError(f"Unsupported separation backend: {model_name}")
             if hasattr(separator, "load"):
                 await asyncio.to_thread(separator.load)
+            _bind_job_cancel(queue, job.id, separator)
         except Exception as e:
             job.add_log(f"Failed to load model {model_name}: {e}", "error")
             failed += len(benchmark_tasks)
@@ -744,7 +774,12 @@ async def process_batch_benchmark(job: PipelineJob, queue: JobQueueManager) -> N
                 queue.update_job_progress(job.id, processed_items=processed, failed_items=failed)
 
         finally:
-            if separator and hasattr(separator, "close"):
+            queue.set_job_cancel_callback(job.id, None)
+            if (
+                separator
+                and hasattr(separator, "close")
+                and not queue.is_cancelled(job.id)
+            ):
                 await asyncio.to_thread(separator.close)
 
     # Aggregate Benchmark Leaderboard

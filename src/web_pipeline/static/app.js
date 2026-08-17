@@ -21,6 +21,7 @@
     batchUploadFiles: [],
     currentPlayingItemId: null,
     logEntries: [],
+    selectedGpu: localStorage.getItem('sonic_selected_gpu') || 'cuda:0',
   };
 
   const TAB_TITLES = {
@@ -47,6 +48,9 @@
     iconThemeMoon: document.getElementById('icon-theme-moon'),
     
     // Telemetry header & sidebar
+    sidebarGpuSection: document.getElementById('sidebar-gpu-section'),
+    pipelineGpuCardsList: document.getElementById('pipeline-gpu-cards-list'),
+    pipelineSelectedGpuPill: document.getElementById('pipeline-selected-gpu-pill'),
     valGpuLoad: document.getElementById('val-gpu-load'),
     valGpuVram: document.getElementById('val-gpu-vram'),
     valGpuPower: document.getElementById('val-gpu-power'),
@@ -392,14 +396,210 @@
   }
 
   // -----------------------------------------------------------------------
-  // Telemetry UI
+  // Telemetry & GPU Selection UI
   // -----------------------------------------------------------------------
+  function setPipelineTargetGpu(gpuId, notify = true) {
+    if (!gpuId) return;
+    state.selectedGpu = gpuId;
+    try {
+      localStorage.setItem('sonic_selected_gpu', gpuId);
+    } catch (_) {}
+
+    // Update sidebar active pill
+    if (els.pipelineSelectedGpuPill) {
+      if (gpuId.startsWith('cuda:')) {
+        const idx = gpuId.split(':')[1];
+        els.pipelineSelectedGpuPill.textContent = `GPU ${idx}`;
+      } else if (gpuId === 'cuda') {
+        els.pipelineSelectedGpuPill.textContent = 'Auto GPU';
+      } else if (gpuId === 'mps') {
+        els.pipelineSelectedGpuPill.textContent = 'MPS';
+      } else {
+        els.pipelineSelectedGpuPill.textContent = 'CPU';
+      }
+    }
+
+    // Update visual state of all cards in the sidebar
+    const cards = document.querySelectorAll('#pipeline-gpu-cards-list .sidebar-gpu-card');
+    let selectedDeviceName = gpuId;
+    cards.forEach(card => {
+      const cardId = card.getAttribute('data-gpu-id');
+      const isSelected = (cardId === gpuId) || (gpuId.startsWith('cuda:') && cardId === gpuId);
+      card.classList.toggle('selected', isSelected);
+      const radioDot = card.querySelector('.sidebar-gpu-radio-dot');
+      if (radioDot) radioDot.classList.toggle('checked', isSelected);
+      const badge = card.querySelector('.sidebar-gpu-status-badge');
+      if (badge) {
+        badge.textContent = isSelected ? 'ACTIVE' : 'READY';
+        badge.className = `sidebar-gpu-status-badge ${isSelected ? 'active' : 'standby'}`;
+      }
+      if (isSelected) {
+        const nameEl = card.querySelector('.sidebar-gpu-card-name');
+        if (nameEl) selectedDeviceName = nameEl.textContent;
+      }
+    });
+
+    // Synchronize select dropdowns in forms
+    const syncSelect = (sel) => {
+      if (!sel) return;
+      const hasOpt = Array.from(sel.options).some(o => o.value === gpuId);
+      if (hasOpt) {
+        sel.value = gpuId;
+      } else if (gpuId.startsWith('cuda:') && Array.from(sel.options).some(o => o.value === 'cuda')) {
+        sel.value = 'cuda';
+      }
+    };
+
+    syncSelect(els.sepDevice);
+    syncSelect(els.diarDevice);
+    syncSelect(els.benchDevice);
+
+    if (notify) {
+      showToast(`⚡ Target compute device set to ${selectedDeviceName}`, 'info');
+    }
+  }
+
+  function renderPipelineGpuCards(devices, gpuInfo) {
+    const container = document.getElementById('pipeline-gpu-cards-list');
+    if (!container) return;
+
+    const currentSelected = state.selectedGpu || localStorage.getItem('sonic_selected_gpu') || (devices && devices[0] ? devices[0].id : 'cuda:0');
+    state.selectedGpu = currentSelected;
+
+    if (!devices || devices.length === 0) {
+      if (gpuInfo && gpuInfo.type === 'mps') {
+        container.innerHTML = `
+          <div class="sidebar-gpu-card selected" data-gpu-id="mps" role="button" tabindex="0" title="Apple Silicon MPS Active">
+            <div class="sidebar-gpu-card-header">
+              <div class="sidebar-gpu-title-group">
+                <span class="sidebar-gpu-radio-dot checked"></span>
+                <span class="sidebar-gpu-card-name">Apple Silicon (MPS)</span>
+              </div>
+              <span class="sidebar-gpu-status-badge active">ACTIVE</span>
+            </div>
+            <div class="sidebar-gpu-metrics">
+              <span class="gpu-metric-pill">Unified Memory</span>
+            </div>
+          </div>
+        `;
+      } else {
+        container.innerHTML = `
+          <div class="sidebar-gpu-card selected" data-gpu-id="cpu" role="button" tabindex="0" title="CPU Mode Active">
+            <div class="sidebar-gpu-card-header">
+              <div class="sidebar-gpu-title-group">
+                <span class="sidebar-gpu-radio-dot checked"></span>
+                <span class="sidebar-gpu-card-name">CPU Compute</span>
+              </div>
+              <span class="sidebar-gpu-status-badge active">ACTIVE</span>
+            </div>
+            <div class="sidebar-gpu-metrics">
+              <span class="gpu-metric-pill">Host RAM</span>
+            </div>
+          </div>
+        `;
+      }
+      if (els.pipelineSelectedGpuPill) {
+        els.pipelineSelectedGpuPill.textContent = (gpuInfo && gpuInfo.type === 'mps') ? 'MPS' : 'CPU';
+      }
+      return;
+    }
+
+    // Check if in-place update
+    const existingCards = container.querySelectorAll('.sidebar-gpu-card');
+    if (existingCards.length === devices.length) {
+      devices.forEach((d, i) => {
+        const card = existingCards[i];
+        if (!card) return;
+        const isSelected = (d.id === state.selectedGpu) || (!state.selectedGpu && i === 0);
+        card.classList.toggle('selected', isSelected);
+
+        const radioDot = card.querySelector('.sidebar-gpu-radio-dot');
+        if (radioDot) radioDot.classList.toggle('checked', isSelected);
+
+        const badge = card.querySelector('.sidebar-gpu-status-badge');
+        if (badge) {
+          badge.textContent = isSelected ? 'ACTIVE' : 'READY';
+          badge.className = `sidebar-gpu-status-badge ${isSelected ? 'active' : 'standby'}`;
+        }
+
+        const loadVal = Number.isFinite(d.load_percent) ? Math.round(d.load_percent) : (Number.isFinite(d.utilization_percent) ? Math.round(d.utilization_percent) : 0);
+        const vramUsed = d.used_vram_mb != null ? (d.used_vram_mb >= 1024 ? `${(d.used_vram_mb / 1024).toFixed(1)}G` : `${Math.round(d.used_vram_mb)}M`) : '--';
+        const vramTotal = d.total_vram_mb != null ? (d.total_vram_mb >= 1024 ? `${Math.round(d.total_vram_mb / 1024)}GB` : `${Math.round(d.total_vram_mb)}MB`) : '--';
+        const dTemp = d.temperature_c != null ? `${Math.round(d.temperature_c)}°C` : '';
+        const dPower = d.power_w != null ? `${Math.round(d.power_w)}W` : '';
+
+        const loadEl = card.querySelector('.metric-load');
+        if (loadEl) loadEl.textContent = `⚡ ${loadVal}%`;
+        const vramEl = card.querySelector('.metric-vram');
+        if (vramEl) vramEl.textContent = `💾 ${vramUsed}/${vramTotal}`;
+        const pwrEl = card.querySelector('.metric-pwr');
+        if (pwrEl) pwrEl.textContent = dPower;
+        const tempEl = card.querySelector('.metric-temp');
+        if (tempEl) tempEl.textContent = dTemp;
+        const barEl = card.querySelector('.sidebar-gpu-meter-fill');
+        if (barEl) barEl.style.width = `${loadVal}%`;
+      });
+      return;
+    }
+
+    // Initial full render of cards
+    container.innerHTML = devices.map((d, i) => {
+      const isSelected = (d.id === state.selectedGpu) || (!state.selectedGpu && i === 0);
+      const loadVal = Number.isFinite(d.load_percent) ? Math.round(d.load_percent) : (Number.isFinite(d.utilization_percent) ? Math.round(d.utilization_percent) : 0);
+      const vramUsed = d.used_vram_mb != null ? (d.used_vram_mb >= 1024 ? `${(d.used_vram_mb / 1024).toFixed(1)}G` : `${Math.round(d.used_vram_mb)}M`) : '--';
+      const vramTotal = d.total_vram_mb != null ? (d.total_vram_mb >= 1024 ? `${Math.round(d.total_vram_mb / 1024)}GB` : `${Math.round(d.total_vram_mb)}MB`) : '--';
+      const dTemp = d.temperature_c != null ? `${Math.round(d.temperature_c)}°C` : '';
+      const dPower = d.power_w != null ? `${Math.round(d.power_w)}W` : '';
+
+      let cleanName = (d.name || `GPU ${i}`).replace(/^NVIDIA\s+/i, '').replace(/^GeForce\s+/i, '');
+
+      return `
+        <div class="sidebar-gpu-card ${isSelected ? 'selected' : ''}" data-gpu-id="${d.id}" data-gpu-index="${i}" role="button" tabindex="0" title="Click to route batch jobs to GPU ${i} (${escapeHtml(d.name)})">
+          <div class="sidebar-gpu-card-header">
+            <div class="sidebar-gpu-title-group">
+              <span class="sidebar-gpu-radio-dot ${isSelected ? 'checked' : ''}"></span>
+              <span class="sidebar-gpu-card-name">GPU ${i}: ${escapeHtml(cleanName)}</span>
+            </div>
+            <span class="sidebar-gpu-status-badge ${isSelected ? 'active' : 'standby'}">${isSelected ? 'ACTIVE' : 'READY'}</span>
+          </div>
+          <div class="sidebar-gpu-metrics">
+            <span class="gpu-metric-pill metric-load" title="GPU Core Utilization">⚡ ${loadVal}%</span>
+            <span class="gpu-metric-pill metric-vram" title="VRAM Memory Used / Total">💾 ${vramUsed}/${vramTotal}</span>
+            ${dPower ? `<span class="gpu-metric-pill metric-pwr font-mono" title="Wattage Power Draw">${dPower}</span>` : ''}
+            ${dTemp ? `<span class="gpu-metric-pill metric-temp" title="GPU Temperature">${dTemp}</span>` : ''}
+          </div>
+          <div class="sidebar-gpu-meter-track">
+            <div class="sidebar-gpu-meter-fill" style="width: ${loadVal}%;"></div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Attach click listeners to cards
+    container.querySelectorAll('.sidebar-gpu-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const gpuId = card.getAttribute('data-gpu-id');
+        setPipelineTargetGpu(gpuId, true);
+      });
+    });
+
+    setPipelineTargetGpu(state.selectedGpu || devices[0].id, false);
+  }
+
   function updateTelemetryUI(telemetry) {
     state.telemetry = telemetry;
     if (!telemetry) return;
 
     // Header pills & sidebar meters
     const gpu = telemetry.gpu;
+    if (gpu) {
+      if (gpu.devices && gpu.devices.length > 0) {
+        renderPipelineGpuCards(gpu.devices, gpu);
+      } else {
+        renderPipelineGpuCards([], gpu);
+      }
+    }
+
     if (gpu && gpu.available && gpu.type === 'cuda') {
       const isMultiGpu = gpu.device_count > 1 && gpu.devices && gpu.devices.length > 1;
       const vramPct = Number.isFinite(gpu.vram_percent) ? Math.max(0, Math.min(100, gpu.vram_percent)) : 0;
@@ -418,20 +618,23 @@
         ? `${vramUsed} / ${vramTotal} MB (${vramPct}%)`
         : 'VRAM unavailable';
 
-      const curPowerW = isMultiGpu && gpu.aggregate && gpu.aggregate.total_power_w !== null
-        ? gpu.aggregate.total_power_w
+      const curPowerW = isMultiGpu
+        ? (gpu.aggregate?.total_power_w ?? gpu.power_w)
         : gpu.power_w;
-      const curPowerLimitW = isMultiGpu && gpu.aggregate && gpu.aggregate.total_power_limit_w !== null
-        ? gpu.aggregate.total_power_limit_w
+      const curPowerLimitW = isMultiGpu
+        ? (gpu.aggregate?.total_power_limit_w ?? gpu.power_limit_w)
         : gpu.power_limit_w;
-      const powerPct = isMultiGpu && gpu.aggregate && gpu.aggregate.power_percent !== null
-        ? gpu.aggregate.power_percent
+      const powerPct = isMultiGpu
+        ? (gpu.aggregate?.power_percent ?? gpu.power_percent)
         : gpu.power_percent;
-      const powerPctClamped = Number.isFinite(powerPct) ? Math.max(0, Math.min(100, powerPct)) : (Number.isFinite(gpuLoad) ? gpuLoadPct : 0);
+      const powerPctClamped = Number.isFinite(powerPct) ? Math.max(0, Math.min(100, powerPct)) : 0;
+      const powerText = curPowerW != null
+        ? `${curPowerW} / ${curPowerLimitW ?? '--'} W`
+        : '-- / -- W';
 
       const multiPowerText = isMultiGpu
-        ? gpu.devices.map((d, i) => `GPU ${i}: ${d.power_w != null ? d.power_w + 'W' : '--'}`).join(' · ')
-        : (curPowerW != null ? `${curPowerW} W` : '-- W');
+        ? gpu.devices.map((d, i) => `GPU ${i}: ${d.power_w ?? '--'} / ${d.power_limit_w ?? '--'} W`).join(' · ')
+        : powerText;
 
       if (els.valGpuLoad) els.valGpuLoad.textContent = multiLoadText;
       if (els.meterGpuLoad) els.meterGpuLoad.style.width = `${gpuLoadPct}%`;
@@ -445,17 +648,17 @@
         : vramSummary;
 
       // Power readouts & meters
-      if (els.valGpuPower) els.valGpuPower.textContent = curPowerW != null ? `${curPowerW} W` : '-- W';
+      if (els.valGpuPower) els.valGpuPower.textContent = powerText;
       if (els.meterGpuPower) els.meterGpuPower.style.width = `${powerPctClamped}%`;
       if (els.dashGpuPowerText) els.dashGpuPowerText.textContent = multiPowerText;
       if (els.dashGpuPowerDetail) {
-        els.dashGpuPowerDetail.textContent = curPowerLimitW
-          ? `Total Power: ${curPowerW ?? '--'} / ${curPowerLimitW} W (${powerPct ?? '--'}%)`
-          : (curPowerW != null ? `Power Draw: ${curPowerW} W` : 'Power sensors N/A');
+        els.dashGpuPowerDetail.textContent = Number.isFinite(powerPct)
+          ? `${powerPct}% of the configured power limit`
+          : 'Power sensors N/A';
       }
       if (els.meterGpuPowerDash) els.meterGpuPowerDash.style.width = `${powerPctClamped}%`;
       if (els.pipelineGpuSharedPower) {
-        els.pipelineGpuSharedPower.textContent = curPowerW != null ? `${curPowerW} W` : '-- W';
+        els.pipelineGpuSharedPower.textContent = powerText;
       }
 
       if (els.dashVramDetail) {
@@ -480,14 +683,17 @@
           const cur = sel.value;
           let opts = '<option value="cuda">Auto (Fastest CUDA GPU)</option>';
           gpu.devices.forEach((d, i) => {
-            const pwr = d.power_w != null ? ` · ${d.power_w}W` : '';
+            const pwr = d.power_w != null ? ` · ${d.power_w}/${d.power_limit_w ?? '--'}W` : '';
             opts += `<option value="${d.id}">GPU ${i}: ${d.name} (${d.id}${pwr})</option>`;
           });
           opts += '<option value="cpu">CPU (Fallback)</option>';
           sel.innerHTML = opts;
-          if (cur && Array.from(sel.options).some(o => o.value === cur)) {
+          if (state.selectedGpu && Array.from(sel.options).some(o => o.value === state.selectedGpu)) {
+            sel.value = state.selectedGpu;
+          } else if (cur && Array.from(sel.options).some(o => o.value === cur)) {
             sel.value = cur;
           }
+          sel.addEventListener('change', (e) => setPipelineTargetGpu(e.target.value, false));
         };
         popSelect(els.sepDevice);
         popSelect(els.diarDevice);
@@ -503,6 +709,8 @@
       if (els.valGpuPower) els.valGpuPower.textContent = 'N/A';
       if (els.meterGpuPower) els.meterGpuPower.style.width = '0%';
       if (els.dashGpuPowerText) els.dashGpuPowerText.textContent = 'N/A (MPS)';
+      if (els.dashGpuPowerDetail) els.dashGpuPowerDetail.textContent = 'Power sensors unavailable on MPS';
+      if (els.meterGpuPowerDash) els.meterGpuPowerDash.style.width = '0%';
       if (els.dashVramText) els.dashVramText.textContent = 'Apple MPS Accelerator';
       if (els.meterVramDash) els.meterVramDash.style.width = '0%';
       if (els.dashVramDetail) els.dashVramDetail.textContent = 'VRAM counters unavailable on MPS';
@@ -516,6 +724,8 @@
       if (els.valGpuPower) els.valGpuPower.textContent = 'CPU Mode';
       if (els.meterGpuPower) els.meterGpuPower.style.width = '0%';
       if (els.dashGpuPowerText) els.dashGpuPowerText.textContent = 'CPU Mode';
+      if (els.dashGpuPowerDetail) els.dashGpuPowerDetail.textContent = 'No GPU power sensors available';
+      if (els.meterGpuPowerDash) els.meterGpuPowerDash.style.width = '0%';
       if (els.dashVramText) els.dashVramText.textContent = 'CPU Mode (No CUDA VRAM)';
       if (els.meterVramDash) els.meterVramDash.style.width = '0%';
       if (els.dashVramDetail) els.dashVramDetail.textContent = 'No GPU VRAM counters available';
@@ -551,7 +761,7 @@
       if (els.meterDisk) els.meterDisk.style.width = `${telemetry.disk.percent}%`;
     }
 
-    if (telemetry.gpu && els.dashDeviceName) {
+    if (telemetry.gpu && els.dashDeviceName && telemetry.gpu.type !== 'cuda') {
       els.dashDeviceName.textContent = telemetry.gpu.name || 'CPU Node';
     }
   }
@@ -662,6 +872,13 @@
           } else {
             els.pipelineGpuSharedVram.textContent = 'Shared Memory';
           }
+        }
+        if (els.pipelineGpuSharedPower) {
+          const powerW = dev.power_w ?? data.telemetry?.gpu?.aggregate?.total_power_w ?? data.telemetry?.gpu?.power_w;
+          const powerLimitW = dev.power_limit_w ?? data.telemetry?.gpu?.aggregate?.total_power_limit_w ?? data.telemetry?.gpu?.power_limit_w;
+          els.pipelineGpuSharedPower.textContent = powerW != null
+            ? `${powerW} / ${powerLimitW ?? '--'} W`
+            : '-- / -- W';
         }
         if (els.pipelineGpuSharedSplit) {
           els.pipelineGpuSharedSplit.textContent = `Studio: ${data.summary?.studio_running || 0} active • Pipeline: ${data.summary?.pipeline_running || 0} active`;
@@ -1015,7 +1232,7 @@
         e.preventDefault();
         const dataset = els.sepDatasetSelect.value;
         const model = els.sepModel.value;
-        const device = els.sepDevice.value;
+        const device = state.selectedGpu || (els.sepDevice ? els.sepDevice.value : 'cuda');
 
         try {
           const res = await fetch('/api/jobs/batch_separation', {
@@ -1084,7 +1301,7 @@
         e.preventDefault();
         const dataset = els.diarDatasetSelect.value;
         const backend = els.diarBackend.value;
-        const device = els.diarDevice.value;
+        const device = state.selectedGpu || (els.diarDevice ? els.diarDevice.value : 'cuda');
         const minSpk = els.diarMinSpk.value ? parseInt(els.diarMinSpk.value, 10) : null;
         const maxSpk = els.diarMaxSpk.value ? parseInt(els.diarMaxSpk.value, 10) : null;
         const token = els.diarHfToken.value.trim() || null;
@@ -1143,7 +1360,7 @@
               music_dataset: musicDs,
               snr_levels: snrs,
               models,
-              device: els.benchDevice ? els.benchDevice.value : 'cuda',
+              device: state.selectedGpu || (els.benchDevice ? els.benchDevice.value : 'cuda'),
             }),
           });
           const job = await res.json();

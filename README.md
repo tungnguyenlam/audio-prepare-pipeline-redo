@@ -43,13 +43,17 @@ UV_PROJECT_ENVIRONMENT=.venv-sortformer uv sync --frozen --no-dev
 uv pip install --python .venv-sortformer/bin/python -r requirements-sortformer.txt
 ```
 
-Run the shared backend with `.venv-sortformer/bin/python` when Sortformer is
-needed; the regular `uv run` launcher uses the primary `.venv` and cannot
-import NeMo:
+Always run the shared backend from the primary application environment:
 
 ```bash
-.venv-sortformer/bin/python scripts/start_web.py --host 127.0.0.1 --port 8765
+./scripts/start_web.sh
 ```
+
+When Sortformer is selected, the backend starts a persistent worker with
+`.venv-sortformer/bin/python`, loads NeMo inside that process, and reuses the
+model across batch items. Other utilities remain in the primary `.venv`; the
+server does not need to be restarted when switching models. Set
+`SORTFORMER_PYTHON` only when the isolated interpreter is stored elsewhere.
 
 ### Environment Configuration
 

@@ -7,13 +7,16 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import signal
 import shutil
 import subprocess
 import sys
+import threading
 import uuid
 import wave
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from src.utils.AudioClass import (
     DEFAULT_SAMPLE_RATE,
@@ -61,6 +64,7 @@ class YtCrawler:
         cookies_file: Optional[str] = None,
         cookies_from_browser: Optional[str] = None,
         proxy: Optional[str] = None,
+        progress_callback: Callable[[str], None] | None = None,
     ) -> None:
         self.output_dir = Path(output_dir)
         self.work_dir = Path(work_dir)
@@ -73,6 +77,10 @@ class YtCrawler:
         self.cookies_file = cookies_file
         self.cookies_from_browser = cookies_from_browser
         self.proxy = proxy
+        self.progress_callback = progress_callback
+        self._process: subprocess.Popen[str] | None = None
+        self._process_lock = threading.Lock()
+        self._cancel_requested = False
 
     @classmethod
     def ingest(
@@ -125,6 +133,7 @@ class YtCrawler:
             str(self.retries),
             "--fragment-retries",
             str(self.retries),
+            "--newline",
             "--postprocessor-args",
             f"ExtractAudio:-ac {self.channels}",
         ]
@@ -136,6 +145,68 @@ class YtCrawler:
             cmd.extend(["--cookies-from-browser", self.cookies_from_browser])
         cmd.append(url)
         return cmd
+
+    def cancel(self) -> None:
+        """Request non-blocking cancellation of an active yt-dlp download."""
+        with self._process_lock:
+            self._cancel_requested = True
+            process = self._process
+        if process is None or process.poll() is not None:
+            return
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        except OSError:
+            process.terminate()
+
+    def _run_yt_dlp(self, cmd: list[str]) -> None:
+        """Run yt-dlp while streaming logs and supporting cancellation."""
+        with self._process_lock:
+            if self._cancel_requested:
+                raise DownloadError("YouTube download was cancelled")
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                start_new_session=True,
+            )
+            self._process = process
+
+        output_tail: list[str] = []
+        try:
+            if process.stdout is not None:
+                for line in process.stdout:
+                    message = line.rstrip()
+                    if not message:
+                        continue
+                    output_tail.append(message)
+                    if len(output_tail) > 80:
+                        output_tail = output_tail[-80:]
+                    if self.progress_callback is not None:
+                        try:
+                            self.progress_callback(message)
+                        except Exception:
+                            logger.warning("yt-dlp progress callback failed", exc_info=True)
+            returncode = process.wait()
+        finally:
+            if process.stdout is not None:
+                process.stdout.close()
+            with self._process_lock:
+                if self._process is process:
+                    self._process = None
+
+        if returncode != 0:
+            with self._process_lock:
+                cancelled = self._cancel_requested
+            if cancelled:
+                raise DownloadError("YouTube download was cancelled")
+            detail = "\n".join(output_tail).strip()
+            raise DownloadError(
+                f"yt-dlp failed (exit code {returncode}): {detail[:1000] or 'No error output'}"
+            )
 
     def download(self, url: str) -> Audio:
         """Download audio from ``url``, convert to target specs, and return an Audio object."""
@@ -149,18 +220,9 @@ class YtCrawler:
         try:
             cmd = self.build_command(url, session_dir)
             logger.info(f"Running yt-dlp command: {' '.join(cmd)}")
-            completed = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-
-            if completed.returncode != 0:
-                detail = (completed.stderr or completed.stdout or "").strip()
-                raise DownloadError(
-                    f"yt-dlp failed (exit code {completed.returncode}): {detail[:1000] or 'No error output'}"
-                )
+            with self._process_lock:
+                self._cancel_requested = False
+            self._run_yt_dlp(cmd)
 
             info_paths = sorted(
                 session_dir.glob("*.info.json"),

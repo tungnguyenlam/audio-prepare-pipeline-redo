@@ -41,7 +41,7 @@ from src.utils.AudioCutter import AudioCutter, AudioCutterError
 from src.utils.SpectrogramComparer import SpectrogramComparer
 from src.utils.WaveformComparer import WaveformComparer
 from src.separation import HTDemucs, BSRoFormer, MelRoFormer, MVSepMDX23
-from src.diarization import PyannoteDiarizer, SortformerDiarizer
+from src.diarization import PyannoteDiarizer, SortformerWorkerDiarizer
 from src.benchmark.separation.mixer import AudioMixer
 from src.yt_crawler.YtCrawlerClass import YtCrawler
 
@@ -148,6 +148,38 @@ def _get_device_power_w(target_device: str) -> Optional[float]:
         return gpu_info.get("power_w")
     except Exception:
         return None
+
+
+def _task_is_cancelled(task_id: str) -> bool:
+    task = task_manager.get_task(task_id)
+    return bool(task and task.get("status") == "cancelled")
+
+
+def _apply_cli_progress(task_id: str, message: str, prefix: str = "") -> None:
+    """Update a Studio task from a backend log line when numeric progress exists."""
+    from src.web_pipeline.queue_manager import parse_progress_text
+
+    task = task_manager.get_task(task_id)
+    if not task or task["status"] != "running":
+        return
+    display = f"{prefix}{message}" if prefix else message
+    percent = parse_progress_text(message)
+    kwargs: Dict[str, Any] = {"message": display[:240]}
+    if percent is not None:
+        kwargs["progress"] = percent / 100.0
+        kwargs["progress_known"] = True
+    task_manager.update_task(task_id, **kwargs)
+
+
+def _cli_progress_reporter(
+    task_id: str,
+    loop: asyncio.AbstractEventLoop,
+    prefix: str,
+) -> Callable[[str], None]:
+    def report(message: str) -> None:
+        loop.call_soon_threadsafe(_apply_cli_progress, task_id, message, prefix)
+
+    return report
 
 
 
@@ -267,6 +299,7 @@ class TaskManager:
         self._queued_ids: List[str] = []
         self._workers: List[asyncio.Task[None]] = []
         self._running_ids: set[str] = set()
+        self._runner_tasks: Dict[str, asyncio.Task[None]] = {}
         self._cancel_callbacks: Dict[str, Callable[[], None]] = {}
         self.max_concurrency = max(1, min(4, max_concurrency))
 
@@ -290,7 +323,13 @@ class TaskManager:
                     message="Task interrupted by server shutdown.",
                 )
         for callback in list(self._cancel_callbacks.values()):
-            callback()
+            try:
+                callback()
+            except Exception:
+                logger.exception("Studio cancel callback failed during shutdown")
+        self._cancel_callbacks.clear()
+        for runner in list(self._runner_tasks.values()):
+            runner.cancel()
         self._queued_ids.clear()
 
         workers = [worker for worker in self._workers if not worker.done()]
@@ -320,10 +359,32 @@ class TaskManager:
 
                 self._running_ids.add(task_id)
                 self.update_task(task_id, status="running", message="Starting task...")
-                await runner()
-                task = self._tasks.get(task_id)
-                if task and task["status"] == "running":
-                    self.update_task(task_id, status="completed", progress=1.0)
+                runner_task = asyncio.create_task(runner())
+                self._runner_tasks[task_id] = runner_task
+                try:
+                    await asyncio.wait({runner_task})
+                    if runner_task.cancelled():
+                        task = self._tasks.get(task_id)
+                        if task and task["status"] == "running":
+                            self.update_task(
+                                task_id,
+                                status="cancelled",
+                                message="Task interrupted by server shutdown.",
+                            )
+                    else:
+                        exc = runner_task.exception()
+                        if exc is not None:
+                            raise exc
+                        task = self._tasks.get(task_id)
+                        if task and task["status"] == "running":
+                            self.update_task(
+                                task_id,
+                                status="completed",
+                                progress=1.0,
+                                progress_known=True,
+                            )
+                finally:
+                    self._runner_tasks.pop(task_id, None)
             except asyncio.CancelledError:
                 task = self._tasks.get(task_id)
                 if task and task["status"] == "running":
@@ -364,6 +425,7 @@ class TaskManager:
             "type": task_type,
             "status": "pending",  # pending, running, completed, failed, cancelled
             "progress": 0.0,
+            "progress_known": False,
             "message": "Task queued...",
             "error": None,
             "result": None,
@@ -381,6 +443,7 @@ class TaskManager:
         *,
         status: Optional[str] = None,
         progress: Optional[float] = None,
+        progress_known: Optional[bool] = None,
         message: Optional[str] = None,
         error: Optional[str] = None,
         result: Optional[Any] = None,
@@ -395,6 +458,8 @@ class TaskManager:
                     t["queue_position"] = None
             if progress is not None:
                 t["progress"] = progress
+            if progress_known is not None:
+                t["progress_known"] = progress_known
             if message:
                 t["message"] = message
             if error:
@@ -425,7 +490,7 @@ class TaskManager:
             self._cancel_callbacks[task_id] = callback
 
     def cancel_task(self, task_id: str) -> bool:
-        """Cancel a queued task or safely interrupt a supported running task."""
+        """Cancel a queued or running Studio task."""
         task = self._tasks.get(task_id)
         if not task or task["status"] not in ("pending", "running"):
             return False
@@ -434,11 +499,16 @@ class TaskManager:
                 self._queued_ids.remove(task_id)
             self.update_task(task_id, status="cancelled", message="Cancelled while queued.")
         else:
+            self.update_task(task_id, status="cancelled", message="Stopping running task...")
             callback = self._cancel_callbacks.get(task_id)
-            if callback is None:
-                return False
-            self.update_task(task_id, status="cancelled", message="Cancelling active process...")
-            callback()
+            if callback is not None:
+                try:
+                    callback()
+                except Exception:
+                    logger.exception("Studio cancel callback failed for %s", task_id)
+            runner = self._runner_tasks.get(task_id)
+            if runner is not None and not runner.done():
+                runner.cancel()
         self._refresh_queue_messages()
         return True
 
@@ -1102,7 +1172,7 @@ async def handle_youtube_ingest(request: web.Request) -> web.Response:
     task_id = task_manager.create_task("youtube_crawl", {"url": url, "sample_rate": sample_rate})
 
     async def run_crawler():
-        task_manager.update_task(task_id, status="running", progress=0.1, message="Downloading YouTube audio with yt-dlp...")
+        task_manager.update_task(task_id, status="running", message="Downloading YouTube audio with yt-dlp...")
         loop = asyncio.get_running_loop()
         try:
             crawler = YtCrawler(
@@ -1111,18 +1181,27 @@ async def handle_youtube_ingest(request: web.Request) -> web.Response:
                 audio_format=audio_format,
                 sample_rate=sample_rate,
                 channels=1,
+                progress_callback=_cli_progress_reporter(task_id, loop, "yt-dlp: "),
             )
-            # Run in worker thread
-            audio = await loop.run_in_executor(None, crawler.download, url)
+            task_manager.set_cancel_callback(task_id, crawler.cancel)
+            try:
+                audio = await loop.run_in_executor(None, crawler.download, url)
+            finally:
+                task_manager.set_cancel_callback(task_id, None)
+            if _task_is_cancelled(task_id):
+                return
             audio_id = registry.register(audio, source_type="youtube", tags=["youtube", "crawled", f"{sample_rate}Hz"])
             task_manager.update_task(
                 task_id,
                 status="completed",
                 progress=1.0,
+                progress_known=True,
                 message=f"Downloaded '{audio.title}' successfully!",
                 result={"audio_id": audio_id, "metadata": audio.metadata()},
             )
         except Exception as e:
+            if _task_is_cancelled(task_id):
+                return
             logger.exception("YouTube ingest failed")
             task_manager.update_task(
                 task_id,
@@ -1366,7 +1445,6 @@ async def handle_run_separation(request: web.Request) -> web.Response:
         task_manager.update_task(
             task_id,
             status="running",
-            progress=0.1,
             message=f"Initializing {model_type.upper()} on {target_device}{power_msg}...",
         )
         loop = asyncio.get_running_loop()
@@ -1385,8 +1463,14 @@ async def handle_run_separation(request: web.Request) -> web.Response:
                     two_stems=two_stems,
                     output_dir=DATA_DIR / "demucs" / "out",
                     work_dir=DATA_DIR / "demucs" / "work",
+                    progress_callback=_cli_progress_reporter(task_id, loop, "Demucs: "),
                 )
-                return sep.separate(audio)
+                task_manager.set_cancel_callback(task_id, sep.cancel)
+                try:
+                    return sep.separate(audio)
+                finally:
+                    task_manager.set_cancel_callback(task_id, None)
+                    sep.close()
             
             elif model_type == "bs_roformer":
                 kwargs = {
@@ -1444,6 +1528,8 @@ async def handle_run_separation(request: web.Request) -> web.Response:
         try:
             start_time = time.time()
             separated_audio = await loop.run_in_executor(None, do_separation)
+            if _task_is_cancelled(task_id):
+                return
             elapsed = time.time() - start_time
             end_power_w = _get_device_power_w(target_device)
             
@@ -1482,6 +1568,7 @@ async def handle_run_separation(request: web.Request) -> web.Response:
                 task_id,
                 status="completed",
                 progress=1.0,
+                progress_known=True,
                 message=complete_msg,
                 result={
                     "separated_audio_id": new_id,
@@ -1533,7 +1620,6 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
         task_manager.update_task(
             task_id,
             status="running",
-            progress=0.1,
             message=f"Running speaker diarization with {model_type} on {target_device}{power_msg}...",
         )
         loop = asyncio.get_running_loop()
@@ -1550,15 +1636,21 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
                 with diarizer:
                     return diarizer.diarize(audio)
             elif model_type == "sortformer":
-                diarizer = SortformerDiarizer(device=target_device)
-                with diarizer:
-                    return diarizer.diarize(audio)
+                diarizer = SortformerWorkerDiarizer(device=target_device)
+                task_manager.set_cancel_callback(task_id, diarizer.cancel)
+                try:
+                    with diarizer:
+                        return diarizer.diarize(audio)
+                finally:
+                    task_manager.set_cancel_callback(task_id, None)
             else:
                 raise ValueError(f"Unknown diarization model: {model_type}")
 
         try:
             start_time = time.time()
             result = await loop.run_in_executor(None, do_diarization)
+            if _task_is_cancelled(task_id):
+                return
             elapsed = time.time() - start_time
             end_power_w = _get_device_power_w(target_device)
 
@@ -1573,6 +1665,7 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
                 task_id,
                 status="completed",
                 progress=1.0,
+                progress_known=True,
                 message=complete_msg,
                 result={
                     "diarization": result_dict,
@@ -1583,6 +1676,9 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
                 },
             )
         except Exception as e:
+            task = task_manager.get_task(task_id)
+            if task and task["status"] == "cancelled":
+                return
             logger.exception("Diarization failed")
             task_manager.update_task(
                 task_id,
@@ -1950,14 +2046,14 @@ async def handle_list_tasks(request: web.Request) -> web.Response:
 
 
 async def handle_cancel_task(request: web.Request) -> web.Response:
-    """Cancel a queued task or a running task with safe cancellation support."""
+    """Cancel a queued or running Studio task."""
     task_id = request.match_info["id"]
     task = task_manager.get_task(task_id)
     if not task:
         return web.json_response({"error": "Task not found"}, status=404)
     if not task_manager.cancel_task(task_id):
         return web.json_response(
-            {"error": "This running task cannot be cancelled safely", "task": task},
+            {"error": "Task could not be cancelled", "task": task},
             status=409,
         )
     return web.json_response(task_manager.get_task(task_id))
@@ -1978,6 +2074,46 @@ def get_shared_queue_data() -> Dict[str, Any]:
         telemetry = hardware_monitor.get_telemetry()
     except Exception:
         pass
+
+    gpu = telemetry.get("gpu") or {}
+    aggregate = gpu.get("aggregate") or {}
+    is_multi_gpu = (gpu.get("device_count") or 0) > 1
+
+    gpu_load_pct = (
+        aggregate.get("avg_load_percent")
+        if is_multi_gpu
+        else gpu.get("load_percent")
+    )
+    vram_used_mb = (
+        aggregate.get("used_vram_mb")
+        if is_multi_gpu
+        else gpu.get("used_vram_mb")
+    )
+    vram_total_mb = (
+        aggregate.get("total_vram_mb")
+        if is_multi_gpu
+        else gpu.get("total_vram_mb")
+    )
+    vram_pct = (
+        aggregate.get("vram_percent")
+        if is_multi_gpu
+        else gpu.get("vram_percent")
+    )
+    power_w = (
+        aggregate.get("total_power_w")
+        if is_multi_gpu
+        else gpu.get("power_w")
+    )
+    power_limit_w = (
+        aggregate.get("total_power_limit_w")
+        if is_multi_gpu
+        else gpu.get("power_limit_w")
+    )
+    power_pct = (
+        aggregate.get("power_percent")
+        if is_multi_gpu
+        else gpu.get("power_percent")
+    )
 
     device_name = "CUDA GPU" if torch.cuda.is_available() else "CPU"
     if torch.cuda.is_available():
@@ -2013,7 +2149,8 @@ def get_shared_queue_data() -> Dict[str, Any]:
             "title": t.get("metadata", {}).get("title") or t.get("metadata", {}).get("model") or t.get("type", "Studio Task"),
             "type": t.get("type", "studio_task"),
             "status": t.get("status", "pending"),
-            "progress": t.get("progress", 0.0),
+            "progress": round(float(t.get("progress", 0.0)) * 100.0, 1) if float(t.get("progress", 0.0)) <= 1.0 else float(t.get("progress", 0.0)),
+            "progress_known": bool(t.get("progress_known")) or t.get("status") == "completed",
             "message": t.get("message", ""),
             "error": t.get("error"),
             "created_at": t.get("created_at"),
@@ -2032,6 +2169,7 @@ def get_shared_queue_data() -> Dict[str, Any]:
             "type": j.get("type", "batch_job"),
             "status": j.get("status", "pending"),
             "progress": j.get("progress", 0.0),
+            "progress_known": bool(j.get("progress_known")) or j.get("status") == "completed",
             "message": j.get("current_step", ""),
             "error": j.get("error"),
             "created_at": j.get("created_at"),
@@ -2049,13 +2187,16 @@ def get_shared_queue_data() -> Dict[str, Any]:
 
     return {
         "device": {
-            "name": device_name,
+            "name": gpu.get("name") or device_name,
             "cuda_available": torch.cuda.is_available(),
-            "gpu_load_pct": telemetry.get("gpu", {}).get("load_percent") if telemetry.get("gpu") else None,
-            "vram_used_mb": telemetry.get("gpu", {}).get("vram_used_mb") if telemetry.get("gpu") else None,
-            "vram_total_mb": telemetry.get("gpu", {}).get("vram_total_mb") if telemetry.get("gpu") else None,
-            "vram_pct": telemetry.get("gpu", {}).get("vram_percent") if telemetry.get("gpu") else None,
-            "devices": telemetry.get("gpu", {}).get("devices", []),
+            "gpu_load_pct": gpu_load_pct,
+            "vram_used_mb": vram_used_mb,
+            "vram_total_mb": vram_total_mb,
+            "vram_pct": vram_pct,
+            "power_w": power_w,
+            "power_limit_w": power_limit_w,
+            "power_pct": power_pct,
+            "devices": gpu.get("devices", []),
         },
         "telemetry": telemetry,
         "summary": {
@@ -2083,7 +2224,7 @@ async def handle_shared_queue_cancel(request: web.Request) -> web.Response:
     item_id = request.match_info["id"]
     if item_id.startswith("task_") or task_manager.get_task(item_id):
         if not task_manager.cancel_task(item_id):
-            return web.json_response({"error": "This running studio task cannot be cancelled safely"}, status=409)
+            return web.json_response({"error": "Could not cancel studio task"}, status=409)
         return web.json_response({"id": item_id, "source": "studio", "status": "cancelled"})
     else:
         try:
@@ -2204,6 +2345,7 @@ async def handle_batch_separation_compare(request: web.Request) -> web.Response:
                 task_id,
                 status="running",
                 progress=round((idx - 1) / total, 2),
+                progress_known=True,
                 message=f"[{idx}/{total}] Separating with {m_label} on {target_device}...",
             )
 
@@ -2223,8 +2365,14 @@ async def handle_batch_separation_compare(request: web.Request) -> web.Response:
                             two_stems=two_stems,
                             output_dir=DATA_DIR / "demucs" / "out",
                             work_dir=DATA_DIR / "demucs" / "work",
+                            progress_callback=_cli_progress_reporter(task_id, loop, "Demucs: "),
                         )
-                        return sep.separate(audio)
+                        task_manager.set_cancel_callback(task_id, sep.cancel)
+                        try:
+                            return sep.separate(audio)
+                        finally:
+                            task_manager.set_cancel_callback(task_id, None)
+                            sep.close()
                     elif curr_type == "bs_roformer":
                         kwargs = {
                             "device": target_device,
@@ -2335,6 +2483,7 @@ async def handle_batch_separation_compare(request: web.Request) -> web.Response:
             task_id,
             status="completed",
             progress=1.0,
+            progress_known=True,
             message=complete_msg,
             result={
                 "clip_id": audio_id,

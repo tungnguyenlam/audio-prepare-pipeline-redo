@@ -95,25 +95,21 @@
           </div>
         </button>
 
-        <!-- Sidebar Hardware & GPU State Telemetry Card -->
-        <div class="sidebar-telemetry-card" id="gpu-load-badge" title="Live GPU Compute Load (Click to view full Telemetry &amp; Queue)" aria-label="Live GPU Compute Load" role="button" tabindex="0">
-          <div class="telemetry-card-header">
-            <div class="telemetry-header-left">
+        <!-- Sidebar Hardware & Multi-GPU Selection Section -->
+        <div class="sidebar-gpu-section" id="sidebar-gpu-section">
+          <div class="sidebar-gpu-section-header">
+            <div class="sidebar-gpu-header-left">
               <span class="gpu-icon">⚡</span>
-              <span class="telemetry-device-name" id="device-label">Detecting...</span>
+              <span class="sidebar-gpu-header-title">ACCELERATOR</span>
             </div>
-            <span class="badge badge-sm badge-device font-mono" id="gpu-load-label">GPU: --</span>
+            <span class="badge badge-sm badge-device font-mono" id="sidebar-selected-gpu-pill">Detecting...</span>
           </div>
-          
-          <div class="sidebar-meter-list">
-            <div class="sidebar-meter-item">
-              <div class="meter-label-row">
-                <span>GPU Compute Load</span>
-                <span class="meter-val-text" id="sidebar-gpu-vram-text">-- / -- MB</span>
-              </div>
-              <div class="mini-bar-track">
-                <div class="mini-bar-fill" id="header-gpu-meter" style="width: 0%;"></div>
-              </div>
+
+          <!-- Dynamic Container for selectable GPU cards -->
+          <div class="sidebar-gpu-cards-list" id="sidebar-gpu-cards-list">
+            <div class="sidebar-gpu-loading font-mono">
+              <span class="dot-pulse-green"></span>
+              <span>Probing GPUs...</span>
             </div>
           </div>
         </div>

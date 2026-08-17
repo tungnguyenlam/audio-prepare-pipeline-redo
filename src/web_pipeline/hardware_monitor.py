@@ -43,7 +43,7 @@ class HardwareMonitor:
             result = subprocess.run(
                 [
                     "nvidia-smi",
-                    "--query-gpu=index,name,utilization.gpu,memory.used,memory.total,memory.free,temperature.gpu,power.draw,power.limit",
+                    "--query-gpu=index,uuid,name,utilization.gpu,memory.used,memory.total,memory.free,temperature.gpu,power.draw,power.limit",
                     "--format=csv,noheader,nounits",
                 ],
                 capture_output=True,
@@ -65,28 +65,29 @@ class HardwareMonitor:
                 if not line:
                     continue
                 parts = [p.strip() for p in line.split(",")]
-                if len(parts) < 7:
+                if len(parts) < 8:
                     continue
                 try:
                     idx = int(parts[0])
                 except ValueError:
                     continue
-                pwr_w = parse_num(parts[7]) if len(parts) > 7 else None
-                pwr_limit_w = parse_num(parts[8]) if len(parts) > 8 else None
+                pwr_w = parse_num(parts[8]) if len(parts) > 8 else None
+                pwr_limit_w = parse_num(parts[9]) if len(parts) > 9 else None
                 pwr_pct = (
                     round((pwr_w / pwr_limit_w) * 100, 1)
                     if (pwr_w is not None and pwr_limit_w and pwr_limit_w > 0)
                     else None
                 )
                 smi_data[idx] = {
-                    "index": idx,
+                    "physical_index": idx,
                     "id": f"cuda:{idx}",
-                    "name": parts[1],
-                    "utilization_percent": parse_num(parts[2]),
-                    "used_vram_mb": parse_num(parts[3]),
-                    "total_vram_mb": parse_num(parts[4]),
-                    "free_vram_mb": parse_num(parts[5]),
-                    "temperature_c": parse_num(parts[6]),
+                    "uuid": parts[1],
+                    "name": parts[2],
+                    "utilization_percent": parse_num(parts[3]),
+                    "used_vram_mb": parse_num(parts[4]),
+                    "total_vram_mb": parse_num(parts[5]),
+                    "free_vram_mb": parse_num(parts[6]),
+                    "temperature_c": parse_num(parts[7]),
                     "power_w": pwr_w,
                     "power_draw_w": pwr_w,
                     "power_limit_w": pwr_limit_w,
@@ -96,8 +97,14 @@ class HardwareMonitor:
         except Exception:
             return {}
 
+    @staticmethod
+    def _normalize_gpu_uuid(value: Any) -> str:
+        """Normalize PyTorch and nvidia-smi UUIDs for stable device matching."""
+        normalized = str(value or "").strip().lower()
+        return normalized.removeprefix("gpu-")
+
     @classmethod
-    def _query_nvidia_smi(cls, device_index: int) -> Dict[str, Optional[float]]:
+    def _query_nvidia_smi(cls, device_index: int) -> Dict[str, Any]:
         """Read host-level GPU load and VRAM counters for one CUDA device."""
         smi_all = cls._query_all_nvidia_gpus()
         return smi_all.get(device_index, {})
@@ -105,6 +112,11 @@ class HardwareMonitor:
     def get_gpu_info(self) -> Dict[str, Any]:
         """Query GPU telemetry via PyTorch and nvidia-smi if present."""
         smi_devices = self._query_all_nvidia_gpus()
+        smi_devices_by_uuid = {
+            self._normalize_gpu_uuid(device.get("uuid")): device
+            for device in smi_devices.values()
+            if device.get("uuid")
+        }
 
         if torch.cuda.is_available():
             device_count = torch.cuda.device_count()
@@ -112,7 +124,12 @@ class HardwareMonitor:
 
             for i in range(device_count):
                 props = torch.cuda.get_device_properties(i)
-                smi_info = smi_devices.get(i, {})
+                torch_uuid = self._normalize_gpu_uuid(getattr(props, "uuid", None))
+                smi_info = (
+                    smi_devices_by_uuid.get(torch_uuid, {})
+                    if torch_uuid
+                    else smi_devices.get(i, {})
+                )
 
                 total_vram_mb = round(
                     smi_info.get("total_vram_mb")
@@ -143,7 +160,9 @@ class HardwareMonitor:
 
                 devices.append({
                     "index": i,
+                    "physical_index": smi_info.get("physical_index"),
                     "id": f"cuda:{i}",
+                    "uuid": f"GPU-{torch_uuid}" if torch_uuid else smi_info.get("uuid"),
                     "name": props.name,
                     "total_vram_mb": total_vram_mb,
                     "used_vram_mb": used_vram_mb,
@@ -248,10 +267,25 @@ class HardwareMonitor:
 
         # If smi found standalone GPUs even if torch is CPU build
         if smi_devices:
-            dev_list = list(smi_devices.values())
+            dev_list = [
+                {"index": physical_index, **device}
+                for physical_index, device in smi_devices.items()
+            ]
             primary = dev_list[0]
+            tot_vram = round(sum(d.get("total_vram_mb") or 0.0 for d in dev_list), 1)
+            tot_used_vram = round(sum(d.get("used_vram_mb") or 0.0 for d in dev_list), 1)
+            tot_vram_pct = round((tot_used_vram / tot_vram) * 100, 1) if tot_vram > 0 else 0.0
+            valid_loads = [d["utilization_percent"] for d in dev_list if d.get("utilization_percent") is not None]
+            avg_load = round(sum(valid_loads) / len(valid_loads), 1) if valid_loads else None
             valid_powers = [d["power_w"] for d in dev_list if d.get("power_w") is not None]
             tot_power_w = round(sum(valid_powers), 1) if valid_powers else None
+            valid_limits = [d["power_limit_w"] for d in dev_list if d.get("power_limit_w") is not None]
+            tot_power_limit_w = round(sum(valid_limits), 1) if valid_limits else None
+            tot_power_pct = (
+                round((tot_power_w / tot_power_limit_w) * 100, 1)
+                if (tot_power_w is not None and tot_power_limit_w and tot_power_limit_w > 0)
+                else None
+            )
             return {
                 "available": True,
                 "type": "cuda",
@@ -272,7 +306,13 @@ class HardwareMonitor:
                 "power_limit_w": primary.get("power_limit_w"),
                 "power_percent": primary.get("power_percent"),
                 "aggregate": {
+                    "total_vram_mb": tot_vram,
+                    "used_vram_mb": tot_used_vram,
+                    "vram_percent": tot_vram_pct,
+                    "avg_load_percent": avg_load,
                     "total_power_w": tot_power_w,
+                    "total_power_limit_w": tot_power_limit_w,
+                    "power_percent": tot_power_pct,
                 },
             }
 
