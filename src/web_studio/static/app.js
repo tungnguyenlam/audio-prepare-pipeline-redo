@@ -1595,10 +1595,39 @@ function initIngestAndSaves() {
   });
 
   // Send to Separation tab
-  el.btnSendToSep.addEventListener('click', () => {
-    switchTab('tab-separation');
-    el.sepInputSelect.value = state.activeAudio.id;
-  });
+  if (el.btnSendToSep) {
+    el.btnSendToSep.addEventListener('click', () => {
+      if (!state.activeAudio) return;
+      switchTab('tab-separation');
+      if (el.sepInputSelect) el.sepInputSelect.value = state.activeAudio.id;
+    });
+  }
+
+  // Send to Diarization tab
+  const btnSendToDiar = document.getElementById('btn-send-to-diarization');
+  if (btnSendToDiar) {
+    btnSendToDiar.addEventListener('click', () => {
+      if (!state.activeAudio) return;
+      switchTab('tab-diarization');
+      if (el.diarInputSelect) {
+        el.diarInputSelect.value = state.activeAudio.id;
+        renderDiarizationChildren(state.activeAudio.id);
+      }
+    });
+  }
+
+  // Send to Audition tab
+  const btnSendToAudition = document.getElementById('btn-send-to-audition');
+  if (btnSendToAudition) {
+    btnSendToAudition.addEventListener('click', () => {
+      if (!state.activeAudio) return;
+      switchTab('tab-comparison');
+      if (el.auditionClipSelect) {
+        el.auditionClipSelect.value = state.activeAudio.id;
+        loadClipForAudition(state.activeAudio.id);
+      }
+    });
+  }
 
   // Sample Library Modal
   el.btnBrowseLibrary.addEventListener('click', openLibraryModal);

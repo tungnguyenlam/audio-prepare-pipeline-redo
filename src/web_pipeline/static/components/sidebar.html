@@ -1,32 +1,39 @@
     <aside class="app-sidebar">
-      <!-- Sidebar Brand Header -->
+      <!-- Sidebar Brand Header with Quick Switcher -->
       <div class="sidebar-brand">
-        <div class="brand-mark">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-          </svg>
-        </div>
-        <div class="brand-info">
-          <div class="brand-title-wrap">
-            <span class="brand-title">SonicPipeline</span>
-            <span class="brand-version">v2.5 Pro</span>
+        <a href="/pipeline/" class="brand-link" title="SonicPipeline Batch Cluster">
+          <div class="brand-mark">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
           </div>
-          <span class="brand-cluster-status">
-            <span class="pulse-indicator"></span>
-            <span>Cluster Engine Live</span>
-          </span>
-        </div>
+          <div class="brand-info">
+            <span class="brand-title">SonicPipeline</span>
+            <div class="brand-sub-row">
+              <span class="brand-version">v2.5 Pro</span>
+              <span class="brand-cluster-status">
+                <span class="pulse-indicator"></span>
+                <span>Live Cluster</span>
+              </span>
+            </div>
+          </div>
+        </a>
+        <a href="/studio/" class="brand-switch-btn" id="btn-sidebar-switch-to-studio" title="Switch to SonicStudio Audio Workbench (Alt+S)" aria-label="Switch to SonicStudio">
+          <span class="switcher-dot"></span>
+          <span class="brand-switch-name">Studio</span>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </a>
       </div>
 
       <!-- Navigation Section Links -->
       <div class="sidebar-scroll">
-        <div class="nav-section-label">WORKSPACE</div>
-        <nav class="sidebar-nav">
+        <div class="nav-section-label">MONITORING &amp; QUEUE</div>
+        <nav class="sidebar-nav" aria-label="Monitoring navigation">
           <button class="sidebar-nav-item active" data-tab="tab-dashboard" id="btn-tab-dashboard">
             <div class="nav-icon">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"></rect><rect x="14" y="3" width="7" height="5" rx="1"></rect><rect x="14" y="12" width="7" height="9" rx="1"></rect><rect x="3" y="16" width="7" height="5" rx="1"></rect></svg>
             </div>
-            <span class="nav-text">Overview & Metrics</span>
+            <span class="nav-text">Overview &amp; Metrics</span>
           </button>
 
           <button class="sidebar-nav-item" data-tab="tab-queue" id="btn-tab-queue">
@@ -36,17 +43,27 @@
             <span class="nav-text">Batch Job Queue</span>
             <span class="nav-badge" id="active-jobs-counter">0</span>
           </button>
+        </nav>
 
+        <div class="nav-section-label">DATASETS &amp; INGESTION</div>
+        <nav class="sidebar-nav" aria-label="Datasets navigation">
           <button class="sidebar-nav-item" data-tab="tab-ingest" id="btn-tab-ingest">
             <div class="nav-icon">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </div>
             <span class="nav-text">Batch Ingestion</span>
           </button>
+
+          <button class="sidebar-nav-item" data-tab="tab-datasets" id="btn-tab-datasets">
+            <div class="nav-icon">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+            </div>
+            <span class="nav-text">Datasets Hub &amp; Manifests</span>
+          </button>
         </nav>
 
-        <div class="nav-section-label">AI PROCESSING ENGINES</div>
-        <nav class="sidebar-nav">
+        <div class="nav-section-label">AI BATCH ENGINES</div>
+        <nav class="sidebar-nav" aria-label="AI batch engines navigation">
           <button class="sidebar-nav-item" data-tab="tab-separation" id="btn-tab-separation">
             <div class="nav-icon">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 2v7.31"></path><path d="M14 9.3V1.99"></path><path d="M8.5 2h7"></path><path d="M14 9.3a6.5 6.5 0 1 1-4 0"></path><path d="M5.52 16h12.96"></path></svg>
@@ -67,16 +84,6 @@
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
             </div>
             <span class="nav-text">Benchmark Matrix</span>
-          </button>
-        </nav>
-
-        <div class="nav-section-label">DATASET REPOSITORY</div>
-        <nav class="sidebar-nav">
-          <button class="sidebar-nav-item" data-tab="tab-datasets" id="btn-tab-datasets">
-            <div class="nav-icon">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-            </div>
-            <span class="nav-text">Datasets Hub & Manifests</span>
           </button>
         </nav>
       </div>
@@ -135,17 +142,14 @@
           </div>
         </div>
 
-        <!-- Studio Quick Link & Theme Switcher -->
+        <!-- Theme Switcher & Status -->
         <div class="sidebar-bottom-actions">
-          <a href="/studio/" class="sidebar-studio-btn" title="Open Interactive SonicStudio">
-            <span>🎙️ SonicStudio</span>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-          </a>
-          
-          <button class="theme-toggle-btn" id="btn-theme-toggle" title="Toggle Theme" aria-label="Toggle Theme">
-            <svg id="icon-theme-sun" class="hidden" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
-            <svg id="icon-theme-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
-          </button>
+          <div class="sidebar-quick-tools sidebar-quick-tools-full">
+            <button class="theme-toggle-btn" id="btn-theme-toggle" title="Toggle Theme" aria-label="Toggle Theme">
+              <svg id="icon-theme-sun" class="hidden" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+              <svg id="icon-theme-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+            </button>
+          </div>
         </div>
       </div>
     </aside>

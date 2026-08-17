@@ -141,16 +141,28 @@ html, body {
 }
 
 .sidebar-brand {
-  padding: 1.25rem 1.25rem 1rem 1.25rem;
+  padding: 1.1rem 1rem 0.95rem 1rem;
   display: flex;
   align-items: center;
-  gap: 0.85rem;
+  justify-content: space-between;
+  gap: 0.5rem;
   border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.brand-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  text-decoration: none;
+  color: inherit;
+  min-width: 0;
+  flex: 1;
 }
 
 .brand-mark {
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   border-radius: var(--radius-sm);
   background: linear-gradient(135deg, hsl(217, 91%, 50%), hsl(188, 86%, 45%));
   display: flex;
@@ -159,45 +171,99 @@ html, body {
   color: #ffffff;
   box-shadow: 0 2px 12px rgba(37, 99, 235, 0.4);
   flex-shrink: 0;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.brand-link:hover .brand-mark {
+  transform: scale(1.04);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.5);
 }
 
 .brand-info {
   display: flex;
   flex-direction: column;
   gap: 2px;
-}
-
-.brand-title-wrap {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  min-width: 0;
 }
 
 .brand-title {
-  font-size: 1.12rem;
+  font-size: 1.02rem;
   font-weight: 800;
   letter-spacing: -0.025em;
   color: var(--text-main);
+  white-space: nowrap;
+  line-height: 1.15;
+}
+
+.brand-sub-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 1px;
 }
 
 .brand-version {
-  font-size: 0.65rem;
+  font-size: 0.62rem;
   font-family: var(--font-mono);
   font-weight: 700;
   background-color: var(--bg-panel);
   border: 1px solid var(--border-subtle);
   color: var(--color-cyan);
-  padding: 1px 5px;
+  padding: 1px 4px;
   border-radius: var(--radius-xs);
+  line-height: 1.2;
 }
 
 .brand-cluster-status {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-size: 0.7rem;
+  gap: 4px;
+  font-size: 0.65rem;
   color: var(--text-muted);
   font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.brand-switch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  background: linear-gradient(135deg, hsla(217, 91%, 60%, 0.12), hsla(188, 86%, 53%, 0.1));
+  border: 1px solid hsla(217, 91%, 60%, 0.3);
+  border-radius: var(--radius-full, 9999px);
+  color: var(--text-main);
+  text-decoration: none;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.brand-switch-btn:hover {
+  background: linear-gradient(135deg, hsla(217, 91%, 60%, 0.28), hsla(188, 86%, 53%, 0.22));
+  border-color: var(--color-primary);
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
+}
+
+.brand-switch-name {
+  letter-spacing: -0.01em;
+}
+
+.brand-switch-btn svg {
+  color: var(--text-muted);
+  transition: transform var(--transition-fast), color var(--transition-fast);
+}
+
+.brand-switch-btn:hover svg {
+  color: #fff;
+  transform: translateX(1px);
 }
 
 .pulse-indicator {
@@ -400,6 +466,17 @@ html, body {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.sidebar-quick-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sidebar-quick-tools-full {
+  width: 100%;
+  justify-content: flex-end;
 }
 
 .sidebar-studio-btn {
@@ -752,6 +829,71 @@ html, body {
 .kpi-footer {
   font-size: 0.78rem;
   color: var(--text-subtle);
+}
+
+/* ==========================================================================
+   Workflow Operations Launchpad
+   ========================================================================== */
+
+.workflow-launchpad-panel {
+  padding: 1.25rem 1.4rem;
+}
+
+.workflow-steps-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.85rem;
+}
+
+.workflow-step-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 1rem;
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  position: relative;
+  overflow: hidden;
+}
+
+.workflow-step-card:hover {
+  background-color: var(--bg-hover);
+  border-color: var(--color-primary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+}
+
+.workflow-step-card .step-num {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-cyan);
+}
+
+.workflow-step-card .step-icon {
+  font-size: 1.4rem;
+  line-height: 1;
+  margin: 2px 0;
+}
+
+.workflow-step-card .step-title {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--text-main);
+  display: block;
+}
+
+.workflow-step-card .step-desc {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  display: block;
+  line-height: 1.3;
 }
 
 /* ==========================================================================

@@ -49,6 +49,66 @@
             </div>
           </div>
 
+          <!-- Workflow Launchpad Ribbon -->
+          <div class="glass-panel workflow-launchpad-panel" style="margin-bottom: 1.75rem;">
+            <div class="panel-header" style="margin-bottom: 1rem;">
+              <div>
+                <h3 class="panel-title">Batch Pipeline Workflow Operations</h3>
+                <span class="panel-desc">Quickly launch or jump across the end-to-end batch processing pipeline</span>
+              </div>
+            </div>
+            <div class="workflow-steps-grid">
+              <button type="button" class="workflow-step-card" onclick="document.getElementById('btn-tab-ingest').click()">
+                <div class="step-num">Step 1</div>
+                <div class="step-icon">📥</div>
+                <div class="step-info">
+                  <span class="step-title">Batch Ingestion</span>
+                  <span class="step-desc">Playlists, URLs &amp; folder scans</span>
+                </div>
+              </button>
+              <button type="button" class="workflow-step-card" onclick="document.getElementById('btn-tab-datasets').click()">
+                <div class="step-num">Step 2</div>
+                <div class="step-icon">📦</div>
+                <div class="step-info">
+                  <span class="step-title">Datasets Hub</span>
+                  <span class="step-desc">Browse assets &amp; export manifests</span>
+                </div>
+              </button>
+              <button type="button" class="workflow-step-card" onclick="document.getElementById('btn-tab-separation').click()">
+                <div class="step-num">Step 3</div>
+                <div class="step-icon">🧪</div>
+                <div class="step-info">
+                  <span class="step-title">Bulk Separation</span>
+                  <span class="step-desc">BS/Mel-RoFormer, Demucs, MVSep</span>
+                </div>
+              </button>
+              <button type="button" class="workflow-step-card" onclick="document.getElementById('btn-tab-diarization').click()">
+                <div class="step-num">Step 4</div>
+                <div class="step-icon">👥</div>
+                <div class="step-info">
+                  <span class="step-title">Batch Diarization</span>
+                  <span class="step-desc">Sortformer &amp; Pyannote annotations</span>
+                </div>
+              </button>
+              <button type="button" class="workflow-step-card" onclick="document.getElementById('btn-tab-benchmark').click()">
+                <div class="step-num">Step 5</div>
+                <div class="step-icon">📊</div>
+                <div class="step-info">
+                  <span class="step-title">Benchmark Matrix</span>
+                  <span class="step-desc">Synthetic mixes &amp; SI-SDR scores</span>
+                </div>
+              </button>
+              <button type="button" class="workflow-step-card" onclick="document.getElementById('btn-tab-queue').click()">
+                <div class="step-num">Monitor</div>
+                <div class="step-icon">⚡</div>
+                <div class="step-info">
+                  <span class="step-title">Batch Job Queue</span>
+                  <span class="step-desc">Live task slots &amp; cancellations</span>
+                </div>
+              </button>
+            </div>
+          </div>
+
           <!-- Host Telemetry & Activity Feed Grid -->
           <div class="overview-grid">
             <!-- Hardware Compute Status Panel -->

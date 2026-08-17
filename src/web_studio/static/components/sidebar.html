@@ -1,29 +1,36 @@
     <aside class="app-sidebar studio-sidebar">
-      <!-- Sidebar Brand Header -->
+      <!-- Sidebar Brand Header with Quick Switcher -->
       <div class="sidebar-brand">
-        <div class="brand-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M2 10v3"></path>
-            <path d="M6 6v11"></path>
-            <path d="M10 3v18"></path>
-            <path d="M14 8v7"></path>
-            <path d="M18 5v13"></path>
-            <path d="M22 10v3"></path>
-          </svg>
-        </div>
-        <div class="brand-text">
-          <div class="brand-title-wrap">
-            <span class="brand-title">SonicStudio</span>
-            <span class="brand-version">v2.5</span>
+        <a href="/studio/" class="brand-link" title="SonicStudio Audio Workbench">
+          <div class="brand-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 10v3"></path>
+              <path d="M6 6v11"></path>
+              <path d="M10 3v18"></path>
+              <path d="M14 8v7"></path>
+              <path d="M18 5v13"></path>
+              <path d="M22 10v3"></path>
+            </svg>
           </div>
-          <span class="brand-sub">Audio &amp; Separation</span>
-        </div>
+          <div class="brand-text">
+            <span class="brand-title">SonicStudio</span>
+            <div class="brand-sub-row">
+              <span class="brand-version">v2.5</span>
+              <span class="brand-sub">Workbench</span>
+            </div>
+          </div>
+        </a>
+        <a href="/pipeline/" class="brand-switch-btn" id="btn-switch-to-pipeline" title="Switch to SonicPipeline Batch Engine (Alt+P)" aria-label="Switch to SonicPipeline">
+          <span class="switcher-dot"></span>
+          <span class="brand-switch-name">Pipeline</span>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </a>
       </div>
 
       <!-- Navigation Section Links -->
       <div class="sidebar-scroll">
-        <div class="nav-section-label">STUDIO WORKBENCH</div>
-        <nav class="sidebar-nav" aria-label="Studio navigation">
+        <div class="nav-section-label">SOURCE &amp; WORKBENCH</div>
+        <nav class="sidebar-nav" aria-label="Studio workbench navigation">
           <button class="nav-tab active" data-tab="tab-workspace" id="btn-tab-workspace" title="Key: 1">
             <span class="tab-icon">🎛️</span>
             <span class="nav-text">Workspace &amp; Cutter</span>
@@ -31,32 +38,44 @@
           </button>
           <button class="nav-tab" data-tab="tab-crawler" id="btn-tab-crawler" title="Key: 2">
             <span class="tab-icon">📥</span>
-            <span class="nav-text">YouTube Crawler</span>
+            <span class="nav-text">YouTube Ingestion</span>
             <span class="tab-shortcut">2</span>
           </button>
+        </nav>
+
+        <div class="nav-section-label" style="margin-top: 0.5rem;">AI PROCESSING ENGINES</div>
+        <nav class="sidebar-nav" aria-label="Studio AI engines navigation">
           <button class="nav-tab" data-tab="tab-separation" id="btn-tab-separation" title="Key: 3">
             <span class="tab-icon">🧪</span>
-            <span class="nav-text">Model Separation</span>
+            <span class="nav-text">Stem Separation</span>
             <span class="tab-shortcut">3</span>
           </button>
-          <button class="nav-tab" data-tab="tab-comparison" id="btn-tab-comparison" title="Key: 4">
-            <span class="tab-icon">⚖️</span>
-            <span class="nav-text">Audition &amp; Scoring</span>
+          <button class="nav-tab" data-tab="tab-diarization" id="btn-tab-diarization" title="Key: 4">
+            <span class="tab-icon">👥</span>
+            <span class="nav-text">Speaker Diarization</span>
             <span class="tab-shortcut">4</span>
           </button>
-          <button class="nav-tab" data-tab="tab-matrix" id="btn-tab-matrix" title="Key: 5">
-            <span class="tab-icon">📊</span>
-            <span class="nav-text">Evaluation Matrix</span>
+        </nav>
+
+        <div class="nav-section-label" style="margin-top: 0.5rem;">AUDITION &amp; BENCHMARK</div>
+        <nav class="sidebar-nav" aria-label="Studio audition and scoring navigation">
+          <button class="nav-tab" data-tab="tab-comparison" id="btn-tab-comparison" title="Key: 5">
+            <span class="tab-icon">⚖️</span>
+            <span class="nav-text">Audition &amp; Comparison</span>
             <span class="tab-shortcut">5</span>
           </button>
-          <button class="nav-tab" data-tab="tab-diarization" id="btn-tab-diarization" title="Key: 6">
-            <span class="tab-icon">👥</span>
-            <span class="nav-text">Diarization</span>
+          <button class="nav-tab" data-tab="tab-matrix" id="btn-tab-matrix" title="Key: 6">
+            <span class="tab-icon">📊</span>
+            <span class="nav-text">Evaluation Matrix</span>
             <span class="tab-shortcut">6</span>
           </button>
+        </nav>
+
+        <div class="nav-section-label" style="margin-top: 0.5rem;">PROJECT REPOSITORY</div>
+        <nav class="sidebar-nav" aria-label="Studio library navigation">
           <button class="nav-tab" data-tab="tab-library" id="btn-tab-library" title="Key: 7">
             <span class="tab-icon">📁</span>
-            <span class="nav-text">Library &amp; History</span>
+            <span class="nav-text">Library &amp; Vault</span>
             <span class="tab-shortcut">7</span>
           </button>
         </nav>
@@ -99,15 +118,9 @@
           </div>
         </div>
 
-        <!-- Sidebar Bottom Actions: Switch to Pipeline, Shortcuts, Theme Toggle, Live Status -->
+        <!-- Sidebar Bottom Actions: Shortcuts, Theme Toggle, Live Status -->
         <div class="sidebar-bottom-actions">
-          <a href="/pipeline/" class="sidebar-studio-btn" id="btn-switch-to-pipeline" title="Switch to SonicPipeline Batch Engine (Alt+P)">
-            <span class="switcher-dot"></span>
-            <span>⚡ SonicPipeline</span>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-          </a>
-
-          <div class="sidebar-quick-tools">
+          <div class="sidebar-quick-tools sidebar-quick-tools-full">
             <div id="live-reload-badge" class="badge badge-reload" title="Hot reload status">
               <span class="reload-dot"></span>
               <span>Live</span>
