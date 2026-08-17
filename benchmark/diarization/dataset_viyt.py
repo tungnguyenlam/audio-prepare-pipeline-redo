@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterator
 
+import numpy as np
 import soundfile as sf
 
 from benchmark.diarization import (
@@ -17,6 +19,8 @@ from benchmark.diarization import (
 )
 
 logger = logging.getLogger(__name__)
+
+TARGET_SAMPLE_RATE = 16_000
 
 
 @dataclass(frozen=True)
@@ -55,6 +59,69 @@ def _speaker_list(row: dict[str, Any]) -> list[str]:
 
 def _manifest_path(cache_dir: Path) -> Path:
     return cache_dir / "manifest.json"
+
+
+def _write_wav_from_hf_audio(
+    audio_info: dict[str, Any],
+    wav_path: Path,
+    *,
+    target_sr: int = TARGET_SAMPLE_RATE,
+) -> None:
+    """Decode HF ``Audio(decode=False)`` path/bytes via soundfile (not torchcodec).
+
+    Datasets 4+/5+ decode Audio columns with torchcodec+FFmpeg by default. That
+    stack is brittle on the model server, so we keep HF decoding disabled and
+    materialize mono 16 kHz WAVs ourselves.
+
+    Args:
+        audio_info: Dict with ``path`` and/or ``bytes`` from the audio column.
+        wav_path: Destination WAV path.
+        target_sr: Output sample rate.
+
+    Raises:
+        ValueError: If neither path nor bytes is available, or audio is empty.
+    """
+    import tempfile
+
+    import librosa
+
+    path = audio_info.get("path")
+    raw = audio_info.get("bytes")
+
+    array: np.ndarray | None = None
+    sr: int | None = None
+    if raw is not None:
+        try:
+            array, sr = sf.read(io.BytesIO(raw), always_2d=False)
+        except (RuntimeError, OSError, ValueError, sf.LibsndfileError):
+            suffix = Path(str(path)).suffix if path else ".audio"
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                tmp.write(raw)
+                tmp_path = tmp.name
+            try:
+                array, sr = librosa.load(tmp_path, sr=None, mono=True)
+            finally:
+                Path(tmp_path).unlink(missing_ok=True)
+    elif path:
+        try:
+            array, sr = sf.read(str(path), always_2d=False)
+        except (RuntimeError, OSError, ValueError, sf.LibsndfileError):
+            array, sr = librosa.load(str(path), sr=None, mono=True)
+    else:
+        raise ValueError("audio sample has neither path nor bytes")
+
+    array = np.asarray(array, dtype=np.float64)
+    if array.size == 0:
+        raise ValueError(f"empty audio for {wav_path.name}")
+    if array.ndim > 1:
+        array = np.mean(array, axis=-1)
+
+    sr = int(sr)
+    if sr != target_sr:
+        array = librosa.resample(array, orig_sr=sr, target_sr=target_sr)
+        sr = target_sr
+
+    sf.write(str(wav_path), array.astype(np.float32), sr)
 
 
 def prepare_viyt_diar(
@@ -101,7 +168,8 @@ def prepare_viyt_diar(
 
     logger.info("Loading %s split=%s from Hugging Face…", dataset_id, split)
     ds = load_dataset(dataset_id, split=split)
-    ds = ds.cast_column("audio", Audio(sampling_rate=16_000, num_channels=1))
+    # Keep path/bytes only — datasets 4+/5+ would otherwise decode via torchcodec.
+    ds = ds.cast_column("audio", Audio(decode=False))
 
     samples: list[ViYTSample] = []
     for index, row in enumerate(ds):
@@ -113,9 +181,7 @@ def prepare_viyt_diar(
         wav_path = audio_dir / f"{audio_id}.wav"
 
         if force or not wav_path.is_file():
-            array = audio_info["array"]
-            sr = int(audio_info["sampling_rate"])
-            sf.write(str(wav_path), array, sr)
+            _write_wav_from_hf_audio(audio_info, wav_path)
 
         starts = [float(x) for x in row["timestamps_start"]]
         ends = [float(x) for x in row["timestamps_end"]]

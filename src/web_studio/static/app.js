@@ -231,7 +231,15 @@ const el = {
   btnDiarShortcutsModal: document.getElementById('btn-diar-shortcuts-modal'),
   modalDiarShortcuts: document.getElementById('modal-diar-shortcuts'),
   btnCloseDiarShortcuts: document.getElementById('btn-close-diar-shortcuts'),
+  btnToggleDiarSetup: document.getElementById('btn-toggle-diar-setup'),
+  diarSetupCard: document.getElementById('diar-setup-card'),
+  diarSetupBody: document.getElementById('diar-setup-body'),
+  diarSetupToggleIcon: document.getElementById('diar-setup-toggle-icon'),
+  diarSetupToggleText: document.getElementById('diar-setup-toggle-text'),
   diarInputSelect: document.getElementById('diar-input-select'),
+  diarSavedNoticePill: document.getElementById('diar-saved-notice-pill'),
+  diarSavedNoticeText: document.getElementById('diar-saved-notice-text'),
+  btnLoadSavedForTrack: document.getElementById('btn-load-saved-for-track'),
   diarAudioMetaChip: document.getElementById('diar-audio-meta-chip'),
   diarChildrenBox: document.getElementById('diar-children-box'),
   diarChildrenTitle: document.getElementById('diar-children-title'),
@@ -254,15 +262,16 @@ const el = {
   diarTaskTimer: document.getElementById('diar-task-timer'),
   diarProgressBar: document.getElementById('diar-progress-bar'),
   diarTaskStatusText: document.getElementById('diar-task-status-text'),
-  diarResultsWrapper: document.getElementById('diar-results-wrapper'),
   diarEmptyPlaceholder: document.getElementById('diar-empty-placeholder'),
   btnDiarEmptyDemo: document.getElementById('btn-diar-empty-demo'),
+  diarResultsWrapper: document.getElementById('diar-results-wrapper'),
   diarModelBadge: document.getElementById('diar-model-badge'),
   diarSpeakerCountBadge: document.getElementById('diar-speaker-count-badge'),
   diarTurnsCountBadge: document.getElementById('diar-turns-count-badge'),
   diarSpeechRatioBadge: document.getElementById('diar-speech-ratio-badge'),
   btnViewMultitrack: document.getElementById('btn-view-multitrack'),
   btnViewComposite: document.getElementById('btn-view-composite'),
+  btnViewCompare: document.getElementById('btn-view-compare'),
   btnToggleOverlapHighlight: document.getElementById('btn-toggle-overlap-highlight'),
   btnOpenAutoMerge: document.getElementById('btn-open-auto-merge'),
   modalAutoMergeGaps: document.getElementById('modal-auto-merge-gaps'),
@@ -270,6 +279,11 @@ const el = {
   btnCancelAutoMerge: document.getElementById('btn-cancel-auto-merge'),
   btnConfirmAutoMerge: document.getElementById('btn-confirm-auto-merge'),
   autoMergeThresholdInput: document.getElementById('auto-merge-threshold-input'),
+  diarSubtabBtns: document.querySelectorAll('.diar-subtab-btn'),
+  diarSubviews: document.querySelectorAll('.diar-subview-panel'),
+  diarSubtabTurnsCount: document.getElementById('diar-subtab-turns-count'),
+  diarSubtabSpkCount: document.getElementById('diar-subtab-spk-count'),
+  diarSubtabHistCount: document.getElementById('diar-subtab-hist-count'),
   diarMinimapContainer: document.getElementById('diar-minimap-container'),
   diarMinimapTrack: document.getElementById('diar-minimap-track'),
   diarMinimapBlocksLayer: document.getElementById('diar-minimap-blocks-layer'),
@@ -298,12 +312,14 @@ const el = {
   diarWaveformLabel: document.getElementById('diar-waveform-label'),
   diarCompositeLabel: document.getElementById('diar-composite-label'),
   diarSpkLabelsWrap: document.getElementById('diar-spk-labels-wrap'),
+  diarCompareLabelsWrap: document.getElementById('diar-compare-labels-wrap'),
   diarTracksArea: document.getElementById('diar-tracks-area'),
   diarRulerTrack: document.getElementById('diar-ruler-track'),
   diarWaveformTrack: document.getElementById('diar-waveform-track'),
   diarWaveformCanvas: document.getElementById('diar-waveform-canvas'),
   diarCompositeTrack: document.getElementById('diar-composite-track'),
   diarSpeakerLanesWrap: document.getElementById('diar-speaker-lanes-wrap'),
+  diarCompareLanesWrap: document.getElementById('diar-compare-lanes-wrap'),
   diarSelectionOverlay: document.getElementById('diar-selection-overlay'),
   diarSelectionActionsBar: document.getElementById('diar-selection-actions-bar'),
   btnSelPlay: document.getElementById('btn-sel-play'),
@@ -2493,6 +2509,46 @@ function syncDiarModelOptions(modelType) {
 }
 
 function initDiarizationStudio() {
+  // Studio Subtabs navigation
+  if (el.diarSubtabBtns) {
+    el.diarSubtabBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const subtab = btn.dataset.subtab;
+        el.diarSubtabBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        if (el.diarSubviews) {
+          el.diarSubviews.forEach(panel => {
+            if (panel.id === `diar-subview-${subtab}`) {
+              panel.classList.remove('hidden');
+              panel.classList.add('active');
+            } else {
+              panel.classList.add('hidden');
+              panel.classList.remove('active');
+            }
+          });
+        }
+      });
+    });
+  }
+
+  // Setup panel collapse/expand toggle
+  if (el.btnToggleDiarSetup) {
+    el.btnToggleDiarSetup.addEventListener('click', () => {
+      const body = el.diarSetupBody;
+      if (!body) return;
+      const isCollapsed = body.style.display === 'none';
+      if (isCollapsed) {
+        body.style.display = '';
+        if (el.diarSetupToggleIcon) el.diarSetupToggleIcon.textContent = '▲';
+        if (el.diarSetupToggleText) el.diarSetupToggleText.textContent = 'Collapse';
+      } else {
+        body.style.display = 'none';
+        if (el.diarSetupToggleIcon) el.diarSetupToggleIcon.textContent = '▼';
+        if (el.diarSetupToggleText) el.diarSetupToggleText.textContent = 'Expand';
+      }
+    });
+  }
+
   // Input track change listener
   if (el.diarInputSelect) {
     el.diarInputSelect.addEventListener('change', () => {
@@ -2500,6 +2556,7 @@ function initDiarizationStudio() {
       if (!audioId) {
         updateDiarInputMeta(null);
         renderDiarizationChildren(null);
+        if (el.diarSavedNoticePill) el.diarSavedNoticePill.classList.add('hidden');
         return;
       }
       renderDiarizationChildren(audioId);
@@ -2508,20 +2565,18 @@ function initDiarizationStudio() {
       loadAudioIntoPlayer(audioId, false);
       state.diarization.audioId = audioId;
 
-      // Check if there is an existing diarization session saved for this audio
+      // Check if there is an existing diarization session saved for this audio (non-intrusive notice)
       const existingSession = (state.diarization.history || []).find(h => h.audio_id === audioId);
-      if (existingSession) {
-        loadHistorySession(existingSession.id);
-      } else {
-        // Reset the diarization result view to empty state for the new track
-        state.diarization.data = null;
-        state.diarization.turns = [];
-        state.diarization.speakers = [];
-        state.diarization.activeTurnIndex = null;
-        state.diarization.selectedTurnIndices.clear();
-        updateBatchBar();
-        if (el.diarResultsWrapper) el.diarResultsWrapper.classList.add('hidden');
-        if (el.diarEmptyPlaceholder) el.diarEmptyPlaceholder.classList.remove('hidden');
+      if (existingSession && el.diarSavedNoticePill) {
+        el.diarSavedNoticePill.classList.remove('hidden');
+        if (el.diarSavedNoticeText) {
+          el.diarSavedNoticeText.textContent = `Saved session with ${existingSession.turn_count} turns (${existingSession.speaker_count} speakers) available`;
+        }
+        if (el.btnLoadSavedForTrack) {
+          el.btnLoadSavedForTrack.onclick = () => loadHistorySession(existingSession.id);
+        }
+      } else if (el.diarSavedNoticePill) {
+        el.diarSavedNoticePill.classList.add('hidden');
       }
     });
   }
@@ -2782,26 +2837,45 @@ function initDiarizationStudio() {
   }
 
   // View Mode Toggles
-  if (el.btnViewMultitrack && el.btnViewComposite) {
-    el.btnViewMultitrack.addEventListener('click', () => {
-      state.diarization.viewMode = 'multitrack';
-      el.btnViewMultitrack.classList.add('active');
-      el.btnViewComposite.classList.remove('active');
+  function setDiarViewMode(mode) {
+    state.diarization.viewMode = mode;
+    if (el.btnViewMultitrack) el.btnViewMultitrack.classList.toggle('active', mode === 'multitrack');
+    if (el.btnViewComposite) el.btnViewComposite.classList.toggle('active', mode === 'composite');
+    if (el.btnViewCompare) el.btnViewCompare.classList.toggle('active', mode === 'compare');
+
+    if (mode === 'multitrack') {
       if (el.diarSpeakerLanesWrap) el.diarSpeakerLanesWrap.style.display = 'flex';
       if (el.diarSpkLabelsWrap) el.diarSpkLabelsWrap.style.display = 'flex';
       if (el.diarCompositeTrack) el.diarCompositeTrack.style.display = 'block';
       if (el.diarCompositeLabel) el.diarCompositeLabel.style.display = 'flex';
-    });
-
-    el.btnViewComposite.addEventListener('click', () => {
-      state.diarization.viewMode = 'composite';
-      el.btnViewComposite.classList.add('active');
-      el.btnViewMultitrack.classList.remove('active');
+      if (el.diarCompareLanesWrap) el.diarCompareLanesWrap.style.display = 'none';
+      if (el.diarCompareLabelsWrap) el.diarCompareLabelsWrap.style.display = 'none';
+    } else if (mode === 'composite') {
       if (el.diarSpeakerLanesWrap) el.diarSpeakerLanesWrap.style.display = 'none';
       if (el.diarSpkLabelsWrap) el.diarSpkLabelsWrap.style.display = 'none';
       if (el.diarCompositeTrack) el.diarCompositeTrack.style.display = 'block';
       if (el.diarCompositeLabel) el.diarCompositeLabel.style.display = 'flex';
-    });
+      if (el.diarCompareLanesWrap) el.diarCompareLanesWrap.style.display = 'none';
+      if (el.diarCompareLabelsWrap) el.diarCompareLabelsWrap.style.display = 'none';
+    } else if (mode === 'compare') {
+      if (el.diarSpeakerLanesWrap) el.diarSpeakerLanesWrap.style.display = 'none';
+      if (el.diarSpkLabelsWrap) el.diarSpkLabelsWrap.style.display = 'none';
+      if (el.diarCompositeTrack) el.diarCompositeTrack.style.display = 'none';
+      if (el.diarCompositeLabel) el.diarCompositeLabel.style.display = 'none';
+      if (el.diarCompareLanesWrap) el.diarCompareLanesWrap.style.display = 'flex';
+      if (el.diarCompareLabelsWrap) el.diarCompareLabelsWrap.style.display = 'flex';
+      renderModelComparisonLanes();
+    }
+  }
+
+  if (el.btnViewMultitrack) {
+    el.btnViewMultitrack.addEventListener('click', () => setDiarViewMode('multitrack'));
+  }
+  if (el.btnViewComposite) {
+    el.btnViewComposite.addEventListener('click', () => setDiarViewMode('composite'));
+  }
+  if (el.btnViewCompare) {
+    el.btnViewCompare.addEventListener('click', () => setDiarViewMode('compare'));
   }
 
   if (el.btnToggleOverlapHighlight) {
@@ -3073,6 +3147,23 @@ function initDiarizationStudio() {
   loadDiarizationHistory();
 }
 
+function switchDiarSubtab(subtabName) {
+  if (el.diarSubtabBtns) {
+    el.diarSubtabBtns.forEach(b => b.classList.toggle('active', b.dataset.subtab === subtabName));
+  }
+  if (el.diarSubviews) {
+    el.diarSubviews.forEach(panel => {
+      if (panel.id === `diar-subview-${subtabName}`) {
+        panel.classList.remove('hidden');
+        panel.classList.add('active');
+      } else {
+        panel.classList.add('hidden');
+        panel.classList.remove('active');
+      }
+    });
+  }
+}
+
 async function loadDiarWaveform(audioId) {
   if (!audioId) return;
   try {
@@ -3094,6 +3185,7 @@ function updateDiarInputMeta(audioId) {
     return;
   }
   const item = state.audioList.find(a => a.id === audioId);
+  const histItem = (state.diarization.history || []).find(h => h.audio_id === audioId);
   if (item) {
     if (el.diarAudioMetaChip) {
       el.diarAudioMetaChip.textContent = `${(item.duration_s || 0).toFixed(1)}s • ${(item.sample_rate || 44100).toLocaleString()}Hz • ${(item.format || 'wav').toUpperCase()}`;
@@ -3103,6 +3195,17 @@ function updateDiarInputMeta(audioId) {
       if (el.diarTrackTitleText) el.diarTrackTitleText.textContent = item.title || item.source_id;
       if (el.diarTrackSpecChip) {
         el.diarTrackSpecChip.textContent = `${formatTime(item.duration_s || 0)} • ${item.channels === 1 ? 'Mono' : 'Stereo'}`;
+      }
+    }
+  } else if (histItem) {
+    if (el.diarAudioMetaChip) {
+      el.diarAudioMetaChip.textContent = `${(histItem.duration_s || 0).toFixed(1)}s • Session Track`;
+    }
+    if (el.diarInputPreviewPill) {
+      el.diarInputPreviewPill.classList.remove('hidden');
+      if (el.diarTrackTitleText) el.diarTrackTitleText.textContent = histItem.audio_title || audioId;
+      if (el.diarTrackSpecChip) {
+        el.diarTrackSpecChip.textContent = `${formatTime(histItem.duration_s || 0)} • Restored Run`;
       }
     }
   }
@@ -3129,20 +3232,32 @@ function setDiarZoom(zoom) {
 
 function renderDiarizationWorkspace(diarization, audioId, addToHistory = true) {
   state.diarization.audioId = audioId;
-  state.diarization.data = diarization;
-  state.diarization.turns = (diarization.turns || []).map(t => ({
+  state.diarization.data = diarization || state.diarization.data || {};
+  
+  // Robust speaker normalization (handles array of strings or objects)
+  const rawSpeakers = (diarization && diarization.speakers) || state.diarization.speakers || [];
+  state.diarization.speakers = rawSpeakers.map(s => {
+    if (typeof s === 'string') return { speaker_id: s };
+    if (s && s.speaker_id) return s;
+    return { speaker_id: s?.id || String(s) };
+  });
+
+  // Turn normalization and numeric validation
+  const rawTurns = (diarization && diarization.turns) || state.diarization.turns || [];
+  state.diarization.turns = rawTurns.map(t => ({
     ...t,
-    start_s: roundNum(Number(t.start_s) || 0, 2),
-    end_s: roundNum(Number(t.end_s) || 0, 2),
+    speaker_id: t.speaker_id || (state.diarization.speakers[0]?.speaker_id || "spk_00"),
+    start_s: roundNum(Math.max(0, Number(t.start_s) || 0), 2),
+    end_s: roundNum(Math.max(0.05, Number(t.end_s) || 0), 2),
   }));
-  state.diarization.speakers = diarization.speakers || [];
 
   if (el.diarEmptyPlaceholder) el.diarEmptyPlaceholder.classList.add('hidden');
   if (el.diarResultsWrapper) el.diarResultsWrapper.classList.remove('hidden');
 
-  const audioItem = state.audioList.find(a => a.id === audioId) || state.activeAudio;
+  // Safe duration calculation (never fall back to mismatched activeAudio)
+  const audioItem = state.audioList.find(a => a.id === audioId);
   const maxTurnEnd = state.diarization.turns.length > 0 ? Math.max(...state.diarization.turns.map(t => t.end_s)) : 10;
-  const totalAudioDuration = (audioItem ? audioItem.duration_s : 0) || maxTurnEnd || 10;
+  const totalAudioDuration = (audioItem ? audioItem.duration_s : 0) || (diarization && diarization.duration_s) || maxTurnEnd || 10;
   state.diarization.duration = totalAudioDuration;
 
   // Extract unique speakers if not present
@@ -3150,6 +3265,11 @@ function renderDiarizationWorkspace(diarization, audioId, addToHistory = true) {
     const uniqueSpkIds = Array.from(new Set(state.diarization.turns.map(t => t.speaker_id)));
     state.diarization.speakers = uniqueSpkIds.map(id => ({ speaker_id: id }));
   }
+
+  // Keep state.diarization.data in sync
+  state.diarization.data.turns = state.diarization.turns;
+  state.diarization.data.speakers = state.diarization.speakers;
+  state.diarization.data.duration_s = totalAudioDuration;
 
   // Assign default colors & custom names
   state.diarization.speakers.forEach((spk, idx) => {
@@ -3166,10 +3286,10 @@ function renderDiarizationWorkspace(diarization, audioId, addToHistory = true) {
 
   // Badges & Speech Ratio
   const totalSpeechS = state.diarization.turns.reduce((acc, t) => acc + Math.max(0, t.end_s - t.start_s), 0);
-  const speechRatioPct = ((totalSpeechS / totalAudioDuration) * 100).toFixed(1);
+  const speechRatioPct = totalAudioDuration > 0 ? ((totalSpeechS / totalAudioDuration) * 100).toFixed(1) : "0.0";
 
   if (el.diarModelBadge) {
-    const backend = diarization.model?.backend || diarization.model?.model_id || "Pyannote";
+    const backend = diarization?.model?.backend || diarization?.model?.model_id || "Pyannote";
     el.diarModelBadge.textContent = diarizationModelLabel(backend);
   }
   if (el.diarSpeakerCountBadge) {
@@ -3181,6 +3301,11 @@ function renderDiarizationWorkspace(diarization, audioId, addToHistory = true) {
   if (el.diarSpeechRatioBadge) {
     el.diarSpeechRatioBadge.textContent = `${speechRatioPct}% Speech (${totalSpeechS.toFixed(1)}s)`;
   }
+
+  // Update Subtab chip counters
+  if (el.diarSubtabTurnsCount) el.diarSubtabTurnsCount.textContent = state.diarization.turns.length;
+  if (el.diarSubtabSpkCount) el.diarSubtabSpkCount.textContent = state.diarization.speakers.length;
+  if (el.diarSubtabHistCount) el.diarSubtabHistCount.textContent = (state.diarization.history || []).length;
 
   // Update Speaker Filter Dropdown & Batch Speaker Select
   if (el.diarFilterSpeakerSelect) {
@@ -3219,7 +3344,12 @@ function renderDiarizationWorkspace(diarization, audioId, addToHistory = true) {
   // 8. Update Export Preview
   updateExportPreview();
 
-  // 9. Save to History (if new run)
+  // 9. If in comparison mode, update multi-model comparison lanes
+  if (state.diarization.viewMode === 'compare') {
+    renderModelComparisonLanes();
+  }
+
+  // 10. Save to History (if new run)
   if (addToHistory) {
     saveDiarizationToHistory(diarization, audioId);
   } else {
@@ -3641,6 +3771,140 @@ function renderSpeakerSwimlanes() {
   redrawAllSpeakerSpectrograms();
 }
 
+function renderModelComparisonLanes() {
+  if (!el.diarCompareLanesWrap || !el.diarCompareLabelsWrap) return;
+  el.diarCompareLanesWrap.innerHTML = "";
+  el.diarCompareLabelsWrap.innerHTML = "";
+
+  const audioId = state.diarization.audioId;
+  const dur = state.diarization.duration || 1;
+
+  // Gather all available sessions for this audioId from history
+  const historyRuns = (state.diarization.history || []).filter(h => h.audio_id === audioId);
+
+  let runsToCompare = [...historyRuns];
+
+  // If active session has turns, ensure current state is represented
+  if (state.diarization.turns && state.diarization.turns.length > 0) {
+    const currentBackend = state.diarization.data?.model?.backend || state.diarization.data?.model?.model_id || "Active Session";
+    const alreadyIncluded = runsToCompare.some(r => (r.model_backend === currentBackend || r.model_id === currentBackend) && r.turn_count === state.diarization.turns.length);
+    if (!alreadyIncluded && runsToCompare.length === 0) {
+      runsToCompare.push({
+        id: "current_active_session",
+        audio_id: audioId,
+        model_backend: currentBackend,
+        speaker_count: state.diarization.speakers.length,
+        turn_count: state.diarization.turns.length,
+        duration_s: dur,
+        speakers: state.diarization.speakers,
+        turns: state.diarization.turns,
+        customNames: state.diarization.customNames,
+        colors: state.diarization.colors,
+        isCurrent: true,
+      });
+    }
+  }
+
+  if (runsToCompare.length === 0) {
+    const emptyRow = document.createElement("div");
+    emptyRow.className = "diar-compare-label-row";
+    emptyRow.innerHTML = `<span class="text-xs text-muted">No runs found</span>`;
+    el.diarCompareLabelsWrap.appendChild(emptyRow);
+
+    const emptyTrack = document.createElement("div");
+    emptyTrack.className = "diar-compare-lane-track";
+    emptyTrack.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:0.75rem;">Run diarization with multiple models above to compare them side-by-side.</div>`;
+    el.diarCompareLanesWrap.appendChild(emptyTrack);
+    return;
+  }
+
+  runsToCompare.forEach(run => {
+    const modelTag = diarizationModelLabel(run.model_backend || run.model_id);
+    const isCurrentActive = state.diarization.data?.model?.backend === run.model_backend || run.id === "current_active_session";
+    const spkCount = run.speaker_count || (run.speakers ? run.speakers.length : 0);
+    const turnCount = run.turn_count || (run.turns ? run.turns.length : 0);
+    const totalSpeechS = (run.turns || []).reduce((acc, t) => acc + Math.max(0, (Number(t.end_s) || 0) - (Number(t.start_s) || 0)), 0);
+    const speechPct = dur > 0 ? ((totalSpeechS / dur) * 100).toFixed(1) : "0.0";
+
+    // 1. Left Sticky Label Column
+    const labelRow = document.createElement("div");
+    labelRow.className = `diar-compare-label-row ${isCurrentActive ? 'is-active-model' : ''}`;
+    labelRow.innerHTML = `
+      <div class="diar-compare-label-left">
+        <span class="diar-compare-model-name">
+          <span class="badge ${isCurrentActive ? 'badge-accent' : 'badge-info'} badge-sm">${escapeHtml(modelTag)}</span>
+          ${isCurrentActive ? '<span class="text-xs text-success" title="Active in editor">●</span>' : ''}
+        </span>
+        <span class="diar-compare-stats-sub">${spkCount} Spk • ${turnCount} Turns • ${speechPct}%</span>
+      </div>
+      <div class="diar-compare-label-controls">
+        <button class="btn btn-xs ${isCurrentActive ? 'btn-ghost' : 'btn-secondary'} btn-set-active-model" title="${isCurrentActive ? 'Currently active in editor' : 'Load this model into the editor & table'}">${isCurrentActive ? 'Editing' : '⚡ Edit'}</button>
+      </div>
+    `;
+
+    const editBtn = labelRow.querySelector('.btn-set-active-model');
+    if (editBtn && !isCurrentActive && run.id !== "current_active_session") {
+      editBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        loadHistorySession(run.id);
+      });
+    }
+
+    el.diarCompareLabelsWrap.appendChild(labelRow);
+
+    // 2. Right Track Lane
+    const track = document.createElement("div");
+    track.className = `diar-compare-lane-track ${isCurrentActive ? 'is-active-track' : ''}`;
+    track.title = `Model: ${modelTag} (${spkCount} speakers, ${turnCount} turns). Click to seek playhead.`;
+
+    (run.turns || []).forEach(turn => {
+      const startS = Number(turn.start_s) || 0;
+      const endS = Number(turn.end_s) || 0;
+      const leftPct = (startS / dur) * 100;
+      const widthPct = Math.max(0.4, ((endS - startS) / dur) * 100);
+      const spkId = turn.speaker_id || "spk_00";
+      const spkColor = (run.colors && run.colors[spkId]) || getSpeakerColor(spkId);
+      const spkName = (run.customNames && run.customNames[spkId]) || spkId;
+
+      const block = document.createElement("div");
+      block.className = "diar-compare-turn-block";
+      block.style.left = `${leftPct}%`;
+      block.style.width = `${widthPct}%`;
+      block.style.backgroundColor = `${spkColor}cc`;
+      block.style.border = `1px solid ${spkColor}`;
+      block.innerHTML = `<span style="pointer-events:none;">${escapeHtml(spkName)} (${(endS - startS).toFixed(1)}s)</span>`;
+
+      block.addEventListener('mouseenter', (e) => {
+        showTurnTooltip(e, {
+          speaker_id: `${spkName} [${modelTag}]`,
+          start_s: startS,
+          end_s: endS,
+          confidence: turn.confidence,
+        });
+      });
+      block.addEventListener('mouseleave', () => {
+        hideTurnTooltip();
+      });
+      block.addEventListener('click', (e) => {
+        e.stopPropagation();
+        seekDiarAudio(startS);
+      });
+
+      track.appendChild(block);
+    });
+
+    track.addEventListener('click', (e) => {
+      if (e.target.classList.contains('diar-compare-turn-block')) return;
+      const rect = track.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const pct = Math.max(0, Math.min(1, clickX / rect.width));
+      seekDiarAudio(pct * dur);
+    });
+
+    el.diarCompareLanesWrap.appendChild(track);
+  });
+}
+
 function attachTurnSegmentEvents(segEl, turn, idx) {
   segEl.addEventListener('mouseenter', (e) => {
     if (!state.diarization.dragTurnInfo) {
@@ -3670,7 +3934,7 @@ function attachTurnSegmentEvents(segEl, turn, idx) {
     if (audioId) {
       if (el.audio.src.indexOf(audioId) === -1) loadAudioIntoPlayer(audioId);
       seekTo(turn.start_s);
-      el.audio.play();
+      el.audio.play().catch(() => {});
     }
   });
 
@@ -4145,6 +4409,7 @@ function renderSpeakerProfiles() {
     card.querySelector('.btn-solo-spk').addEventListener('click', () => toggleSpeakerSolo(spkId));
     card.querySelector('.btn-mute-spk').addEventListener('click', () => toggleSpeakerMute(spkId));
     card.querySelector('.btn-filter-spk').addEventListener('click', () => {
+      switchDiarSubtab('turns');
       if (el.diarFilterSpeakerSelect) {
         el.diarFilterSpeakerSelect.value = spkId;
         state.diarization.activeSpeakerFilter = spkId;
@@ -5113,6 +5378,12 @@ function loadHistorySession(historyId) {
     return;
   }
 
+  // Clear selections & muting
+  state.diarization.activeTurnIndex = null;
+  state.diarization.selectedTurnIndices.clear();
+  state.diarization.soloSpeaker = null;
+  state.diarization.mutedSpeakers.clear();
+
   // Restore custom names & colors
   if (item.customNames) state.diarization.customNames = { ...item.customNames };
   if (item.colors) state.diarization.colors = { ...item.colors };
@@ -5120,13 +5391,27 @@ function loadHistorySession(historyId) {
   const restoredData = {
     schema_version: "1.0",
     audio_id: item.audio_id,
-    speakers: item.speakers || [],
-    turns: item.turns || [],
+    duration_s: item.duration_s || 0,
+    speakers: (item.speakers || []).map(s => typeof s === 'string' ? { speaker_id: s } : (s && s.speaker_id ? s : { speaker_id: s?.id || String(s) })),
+    turns: (item.turns || []).map(t => ({
+      speaker_id: t.speaker_id || "spk_00",
+      start_s: roundNum(Math.max(0, Number(t.start_s) || 0), 2),
+      end_s: roundNum(Math.max(0.05, Number(t.end_s) || 0), 2),
+      confidence: t.confidence ?? 1.0,
+      has_overlap: Boolean(t.has_overlap),
+    })),
     model: { backend: item.model_backend, model_id: item.model_id },
   };
 
   // Sync Input Select Dropdown
   if (el.diarInputSelect) {
+    const exists = Array.from(el.diarInputSelect.options).some(opt => opt.value === item.audio_id);
+    if (!exists && item.audio_id) {
+      const opt = document.createElement("option");
+      opt.value = item.audio_id;
+      opt.textContent = `${item.audio_title || item.audio_id} (${formatTime(item.duration_s || 0)}, Restored Track)`;
+      el.diarInputSelect.appendChild(opt);
+    }
     el.diarInputSelect.value = item.audio_id;
     updateDiarInputMeta(item.audio_id);
     renderDiarizationChildren(item.audio_id);
@@ -5135,8 +5420,12 @@ function loadHistorySession(historyId) {
   // Render without pushing duplicate to history
   renderDiarizationWorkspace(restoredData, item.audio_id, false);
 
-  // Load into master audio player
-  loadAudioIntoPlayer(item.audio_id);
+  // Safely load into player if audio exists on server
+  try {
+    loadAudioIntoPlayer(item.audio_id, false);
+  } catch (err) {
+    console.warn("Could not load audio file into player:", err);
+  }
 
   // Scroll to workspace
   if (el.diarResultsWrapper) {

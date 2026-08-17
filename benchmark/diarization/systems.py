@@ -95,13 +95,15 @@ SYSTEM_REGISTRY: dict[str, SystemSpec] = {
 }
 
 BASELINE_SYSTEM = "pyannote_community"
+ALL_SYSTEM_KEYS: tuple[str, ...] = tuple(SYSTEM_REGISTRY.keys())
 
 
 def resolve_systems(names: list[str] | None) -> list[SystemSpec]:
     """Resolve CLI system keys into ``SystemSpec`` entries.
 
     Args:
-        names: Explicit system keys, or ``None`` / empty for the baseline only.
+        names: Explicit system keys, ``["all"]``, or ``None`` / empty for
+            the baseline only. Order is preserved; duplicates are dropped.
 
     Returns:
         Ordered system specs.
@@ -118,8 +120,15 @@ def resolve_systems(names: list[str] | None) -> list[SystemSpec]:
         key = raw.strip().lower()
         if not key or key in seen:
             continue
+        if key == "all":
+            for registry_key in ALL_SYSTEM_KEYS:
+                if registry_key in seen:
+                    continue
+                resolved.append(SYSTEM_REGISTRY[registry_key])
+                seen.add(registry_key)
+            continue
         if key not in SYSTEM_REGISTRY:
-            known = ", ".join(SYSTEM_REGISTRY)
+            known = ", ".join((*SYSTEM_REGISTRY, "all"))
             raise ValueError(f"Unknown system {raw!r}. Choose from: {known}")
         resolved.append(SYSTEM_REGISTRY[key])
         seen.add(key)
@@ -140,6 +149,7 @@ def build_diarizer(
 
 
 __all__ = [
+    "ALL_SYSTEM_KEYS",
     "BASELINE_SYSTEM",
     "SYSTEM_REGISTRY",
     "SystemSpec",

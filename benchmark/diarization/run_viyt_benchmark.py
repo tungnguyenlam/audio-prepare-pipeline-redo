@@ -1,11 +1,14 @@
 """Run ViYT-Diar diarization benchmarks and export comparison figures.
 
-Baseline (default): Pyannote Community-1 in the primary ``.venv``.
+Systems run sequentially: each model evaluates the full sample set, then the
+next model loads. Per-system JSON checkpoints are written along the way; a
+combined result file and comparison figures are exported at the end.
 
-Example (model server)::
+Examples (model server)::
 
     uv run python -m benchmark.diarization.run_viyt_benchmark --prepare-only
     uv run python -m benchmark.diarization.run_viyt_benchmark --systems pyannote_community
+    uv run python -m benchmark.diarization.run_viyt_benchmark --all
     uv run python -m benchmark.diarization.run_viyt_benchmark \\
         --systems pyannote_community,pyannote_31,sortformer --limit 10
 """
@@ -39,8 +42,9 @@ from benchmark.diarization.metrics import (
     score_file,
     summarize_system,
 )
-from benchmark.diarization.plot import export_baseline_figures
+from benchmark.diarization.plot import export_comparison_figures
 from benchmark.diarization.systems import (
+    ALL_SYSTEM_KEYS,
     BASELINE_SYSTEM,
     SYSTEM_REGISTRY,
     SystemSpec,
@@ -71,6 +75,14 @@ def _load_env() -> None:
     load_dotenv(REPO_ROOT / ".env")
     if not os.environ.get("HF_HOME"):
         os.environ["HF_HOME"] = str(REPO_ROOT / ".data" / "huggingface")
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _diarize_sample(
@@ -165,19 +177,29 @@ def run_system(
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    known = ", ".join(SYSTEM_REGISTRY)
+    known = ", ".join((*SYSTEM_REGISTRY, "all"))
     parser = argparse.ArgumentParser(
         description=(
-            "Benchmark diarization systems on ViYT-Diar and export figures "
-            "under benchmark/figures/."
+            "Benchmark diarization systems on ViYT-Diar sequentially "
+            "(one model finishes all clips before the next loads), then "
+            "combine results and export comparison figures under "
+            "benchmark/figures/."
         )
     )
     parser.add_argument(
         "--systems",
-        default=BASELINE_SYSTEM,
+        default=None,
         help=(
             f"Comma-separated system keys (default: {BASELINE_SYSTEM}). "
-            f"Known: {known}"
+            f"Use 'all' or --all for every registered system. Known: {known}"
+        ),
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help=(
+            "Run every registered system sequentially "
+            f"({', '.join(ALL_SYSTEM_KEYS)}), then combine + plot."
         ),
     )
     parser.add_argument(
@@ -247,8 +269,13 @@ def main(argv: list[str] | None = None) -> int:
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
 
+    if args.all and args.systems:
+        logger.error("Pass either --all or --systems, not both.")
+        return 2
+
+    system_names = ["all"] if args.all else _parse_systems(args.systems)
     try:
-        systems = resolve_systems(_parse_systems(args.systems))
+        systems = resolve_systems(system_names)
     except ValueError as exc:
         logger.error("%s", exc)
         return 2
@@ -271,33 +298,87 @@ def main(argv: list[str] | None = None) -> int:
 
     token = os.getenv("HF_TOKEN")
     run_id = args.run_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    args.results_dir.mkdir(parents=True, exist_ok=True)
+
     per_system_files: dict[str, list[FileMetrics]] = {}
     summaries = []
     system_meta: list[dict[str, Any]] = []
 
-    for spec in systems:
-        file_metrics, meta = run_system(
-            spec,
-            samples,
-            device=args.device,
-            token=token,
-            collar_s=args.collar,
-            oracle_speakers=args.oracle_speakers,
-        )
-        per_system_files[spec.key] = file_metrics
-        summary = summarize_system(spec.key, file_metrics)
-        summaries.append(summary)
-        system_meta.append({**meta, "summary": metrics_to_dict(summary)})
+    logger.info(
+        "Sequential comparison: %d system(s) × %d clip(s) — %s",
+        len(systems),
+        len(samples),
+        ", ".join(spec.key for spec in systems),
+    )
+
+    for system_index, spec in enumerate(systems, start=1):
         logger.info(
-            "Summary %s: mean DER=%.3f median DER=%.3f mean JER=%.3f (n=%d)",
+            "=== [%d/%d] Starting %s (%s) on all %d samples ===",
+            system_index,
+            len(systems),
+            spec.key,
+            spec.label,
+            len(samples),
+        )
+        try:
+            file_metrics, meta = run_system(
+                spec,
+                samples,
+                device=args.device,
+                token=token,
+                collar_s=args.collar,
+                oracle_speakers=args.oracle_speakers,
+            )
+        except Exception as exc:
+            logger.exception(
+                "System %s aborted; continuing with remaining systems.",
+                spec.key,
+            )
+            meta = {
+                "system": spec.key,
+                "label": spec.label,
+                "env_hint": spec.env_hint,
+                "elapsed_s": 0.0,
+                "failures": [{"audio_id": "*", "error": str(exc)}],
+                "aborted": True,
+            }
+            file_metrics = []
+
+        per_system_files[spec.key] = file_metrics
+        summary = summarize_system(spec.key, file_metrics, label=spec.label)
+        summaries.append(summary)
+        summary_dict = metrics_to_dict(summary)
+        system_meta.append({**meta, "summary": summary_dict})
+
+        checkpoint_path = args.results_dir / f"{run_id}_{spec.key}.json"
+        _write_json(
+            checkpoint_path,
+            {
+                "run_id": run_id,
+                "dataset_id": VIYT_DIAR_DATASET_ID,
+                "collar_s": args.collar,
+                "device": args.device,
+                "oracle_speakers": args.oracle_speakers,
+                "limit": args.limit,
+                "num_samples": len(samples),
+                "system": {
+                    **meta,
+                    "summary": summary_dict,
+                    "per_file": [metrics_to_dict(m) for m in file_metrics],
+                },
+            },
+        )
+        logger.info("Checkpoint → %s", checkpoint_path)
+        logger.info(
+            "Summary %s: mean DER=%.3f median DER=%.3f mean JER=%.3f (n=%d, %.1fs)",
             spec.key,
             summary.mean_der,
             summary.median_der,
             summary.mean_jer,
             summary.num_files,
+            float(meta.get("elapsed_s", 0.0)),
         )
 
-    args.results_dir.mkdir(parents=True, exist_ok=True)
     result_path = args.results_dir / f"{run_id}_viyt_diar.json"
     payload = {
         "run_id": run_id,
@@ -313,13 +394,10 @@ def main(argv: list[str] | None = None) -> int:
             for system, files in per_system_files.items()
         },
     }
-    result_path.write_text(
-        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    logger.info("Wrote results → %s", result_path)
+    _write_json(result_path, payload)
+    logger.info("Combined results → %s", result_path)
 
-    figure_paths = export_baseline_figures(
+    figure_paths = export_comparison_figures(
         summaries=summaries,
         per_system_files=per_system_files,
         output_dir=args.figures_dir,
@@ -328,6 +406,11 @@ def main(argv: list[str] | None = None) -> int:
     for path in figure_paths:
         logger.info("Wrote figure → %s", path)
 
+    logger.info(
+        "Done. %d system(s) scored; figures under %s",
+        len(summaries),
+        args.figures_dir,
+    )
     return 0
 
 

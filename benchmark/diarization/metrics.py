@@ -40,6 +40,10 @@ class SystemSummary:
     mean_jer: float
     mean_speaker_count_abs_error: float
     total_duration_s: float
+    label: str = ""
+    mean_false_alarm: float = float("nan")
+    mean_missed_detection: float = float("nan")
+    mean_confusion: float = float("nan")
 
 
 def turns_to_annotation(
@@ -121,11 +125,18 @@ def score_file(
     )
 
 
-def summarize_system(system: str, file_metrics: Sequence[FileMetrics]) -> SystemSummary:
+def summarize_system(
+    system: str,
+    file_metrics: Sequence[FileMetrics],
+    *,
+    label: str | None = None,
+) -> SystemSummary:
     """Aggregate per-file metrics into a system-level summary."""
+    display = label or system
     if not file_metrics:
         return SystemSummary(
             system=system,
+            label=display,
             num_files=0,
             mean_der=float("nan"),
             median_der=float("nan"),
@@ -140,6 +151,7 @@ def summarize_system(system: str, file_metrics: Sequence[FileMetrics]) -> System
     median = ders[mid] if n % 2 == 1 else 0.5 * (ders[mid - 1] + ders[mid])
     return SystemSummary(
         system=system,
+        label=display,
         num_files=n,
         mean_der=sum(ders) / n,
         median_der=median,
@@ -148,6 +160,9 @@ def summarize_system(system: str, file_metrics: Sequence[FileMetrics]) -> System
             sum(m.speaker_count_abs_error for m in file_metrics) / n
         ),
         total_duration_s=sum(m.duration_s for m in file_metrics),
+        mean_false_alarm=sum(m.false_alarm for m in file_metrics) / n,
+        mean_missed_detection=sum(m.missed_detection for m in file_metrics) / n,
+        mean_confusion=sum(m.confusion for m in file_metrics) / n,
     )
 
 

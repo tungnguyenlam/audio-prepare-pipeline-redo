@@ -262,6 +262,7 @@
                 <div class="btn-group">
                   <button class="btn btn-xs btn-secondary active" id="btn-view-multitrack" title="Stacked Multi-Track Lanes">Multi-Track Lanes</button>
                   <button class="btn btn-xs btn-secondary" id="btn-view-composite" title="Single Composite Overview">Composite Overview</button>
+                  <button class="btn btn-xs btn-secondary" id="btn-view-compare" title="Stacked Multi-Model Comparison Lanes">⚡ Model Comparison</button>
                 </div>
                 <button class="btn btn-xs btn-ghost active" id="btn-toggle-overlap-highlight" title="Toggle Overlap Highlight">
                   <span>⚡ Overlaps</span>
@@ -351,6 +352,8 @@
                     <span class="lane-tag">Composite</span>
                   </div>
                   <div class="diar-spk-labels-wrap" id="diar-spk-labels-wrap"></div>
+                  <!-- Model Comparison Labels (Visible in Model Comparison View) -->
+                  <div class="diar-compare-labels-wrap" id="diar-compare-labels-wrap" style="display: none;"></div>
                 </div>
 
                 <!-- Right Column: Scrollable Tracks Area (Shared 0%-100% Coordinate Space) -->
@@ -368,6 +371,9 @@
 
                   <!-- Speaker Swimlanes Track Area -->
                   <div class="diar-speaker-lanes-wrap" id="diar-speaker-lanes-wrap"></div>
+
+                  <!-- Model Comparison Lanes Track Area -->
+                  <div class="diar-compare-lanes-wrap" id="diar-compare-lanes-wrap" style="display: none;"></div>
 
                   <!-- Region Selection Overlay (inside tracks area) -->
                   <div class="diar-selection-overlay hidden" id="diar-selection-overlay">
