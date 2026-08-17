@@ -68,8 +68,10 @@ or `ffmpeg` processing fails.
 
 Builds, but does not execute, the `yt-dlp` command. The returned value is a
 list of command-line tokens, not a data-contract class. The command includes
+`--newline` so yt-dlp emits one progress line at a time, and
 `--postprocessor-args ExtractAudio:-ac N` so extraction matches the crawler's
-channel count (default 1).
+channel count (default 1). `YtCrawler.cancel()` terminates an active yt-dlp
+process group.
 
 ## 2. `Audio` API
 
@@ -215,13 +217,20 @@ Long inputs are processed as bounded 10-minute WAV segments by default and the
 selected output stem is concatenated afterward; `max_segment_seconds=None`
 disables this behavior.
 `cancel()` requests non-blocking cancellation, while `close()` terminates and
-reaps any active upstream process group.
+reaps any active upstream process group. The cloned CLI is patched to print
+`PROGRESS: N%` lines from the upstream percent callback so the web queue can
+show a real progress bar when those lines are present.
+
+`HTDemucs` streams Demucs CLI output, exposes `progress_callback(message)` and
+`cancel()`, and terminates its process group on cancel. Tqdm percent lines are
+forwarded when Demucs prints them.
 
 ### `BaseSeparator.close() -> None`
 
 Default no-op resource cleanup method. `BSRoFormer` and `MelRoFormer` provide a
 compatibility implementation that delegates to `unload()`. `MVSepMDX23.close()`
-cancels and reaps an active CLI subprocess.
+cancels and reaps an active CLI subprocess. `HTDemucs.close()` cancels an
+active Demucs process group.
 
 ## 4. Managed model lifecycle API
 
@@ -272,7 +281,9 @@ Requires the Pyannote pipeline to be loaded first.
 
 **Behavior contract:**
 
-- Invokes Pyannote with the input audio path.
+- Decodes the file with `soundfile` and invokes Pyannote with a float32
+  `(channel, time)` waveform tensor plus its sample rate. This keeps file
+  decoding independent of Pyannote's optional `torchcodec` integration.
 - Converts backend speaker labels into result-local IDs such as `spk_00`.
 - Creates one `Speaker` record for each distinct label.
 - Creates one `SpeakerTurn` record for each annotated segment.
@@ -281,7 +292,8 @@ Requires the Pyannote pipeline to be loaded first.
   model ID.
 
 **Raises:** `RuntimeError` if `load()` has not completed or the underlying
-pipeline is unavailable.
+pipeline is unavailable; `ValueError` if the decoded audio is empty. Audio
+decoder errors are propagated.
 
 ### `PyannoteDiarizer._load() -> None` and `_unload() -> None`
 
@@ -434,7 +446,14 @@ The repository provides two specialized web platforms:
   default concurrency is `1`; `STUDIO_QUEUE_CONCURRENCY` can set it from 1–4.
 - **Task endpoints:** `GET /api/tasks` lists tasks and queue counts,
   `GET /api/tasks/{id}` returns one task, and `DELETE /api/tasks/{id}` cancels
-  a task that is still queued. Running native model work is not force-cancelled.
+  a queued or running task. Running CLI backends (yt-dlp, Demucs, MVSEP,
+  Sortformer) are force-stopped. In-process models (BS-RoFormer, Mel-RoFormer,
+  Pyannote) are marked cancelled; the current forward pass may finish.
+- **Queue progress:** Shared queue items expose `progress` as 0–100 and
+  `progress_known`. When a backend prints a detectable percent or fraction, or
+  a batch job reports item counts, the bar shows that value. Otherwise the UI
+  reports that numeric progress is unavailable instead of faking a stub
+  percentage.
 - **Shared Queue endpoints:** `GET /api/queue/shared` aggregates hardware
   telemetry (GPU name, load %, VRAM, current power draw, and power limit) and
   active/queued workloads across both SonicStudio and SonicPipeline. On

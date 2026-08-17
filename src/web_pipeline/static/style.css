@@ -1536,6 +1536,16 @@ html, body {
   animation: progressStripes 1s linear infinite;
 }
 
+.job-progress-fill.indeterminate {
+  width: 40%;
+  animation: jobProgressIndeterminate 1.4s ease-in-out infinite;
+}
+
+@keyframes jobProgressIndeterminate {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(280%); }
+}
+
 @keyframes progressStripes {
   0% { background-position: 0 0; }
   100% { background-position: 20px 0; }

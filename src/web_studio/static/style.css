@@ -4313,6 +4313,23 @@ html, body {
   transition: width 0.2s ease;
 }
 
+.task-card-progress-fill.indeterminate {
+  width: 40%;
+  animation: taskProgressIndeterminate 1.4s ease-in-out infinite;
+}
+
+@keyframes taskProgressIndeterminate {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(280%); }
+}
+
+.task-progress-unknown {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  margin-top: 4px;
+}
+
 .task-card-footer {
   display: flex;
   align-items: center;

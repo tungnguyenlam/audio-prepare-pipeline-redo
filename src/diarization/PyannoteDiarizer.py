@@ -79,7 +79,25 @@ class PyannoteDiarizer(BaseDiarizer, ManagedModel):
                 "or use it as a context manager."
             )
 
-        output = self._pipeline(str(audio.path))
+        import soundfile as sf
+        import torch
+
+        waveform, sample_rate = sf.read(
+            str(audio.path),
+            dtype="float32",
+            always_2d=True,
+        )
+        if waveform.shape[0] == 0:
+            raise ValueError(f"Cannot diarize empty audio file: {audio.path}")
+
+        # Pyannote expects (channel, time). Supplying decoded audio avoids its
+        # optional torchcodec file decoder and works with the project's
+        # existing libsndfile-backed audio formats.
+        pipeline_input = {
+            "waveform": torch.from_numpy(waveform.T.copy()),
+            "sample_rate": int(sample_rate),
+        }
+        output = self._pipeline(pipeline_input)
         annotation = output.speaker_diarization
 
         label_to_speaker_id: dict[Any, str] = {}

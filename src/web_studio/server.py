@@ -373,16 +373,25 @@ class TaskManager:
                             )
                     else:
                         exc = runner_task.exception()
-                        if exc is not None:
+                        if isinstance(exc, asyncio.CancelledError):
+                            task = self._tasks.get(task_id)
+                            if task and task["status"] == "running":
+                                self.update_task(
+                                    task_id,
+                                    status="cancelled",
+                                    message="Task interrupted by server shutdown.",
+                                )
+                        elif exc is not None:
                             raise exc
-                        task = self._tasks.get(task_id)
-                        if task and task["status"] == "running":
-                            self.update_task(
-                                task_id,
-                                status="completed",
-                                progress=1.0,
-                                progress_known=True,
-                            )
+                        else:
+                            task = self._tasks.get(task_id)
+                            if task and task["status"] == "running":
+                                self.update_task(
+                                    task_id,
+                                    status="completed",
+                                    progress=1.0,
+                                    progress_known=True,
+                                )
                 finally:
                     self._runner_tasks.pop(task_id, None)
             except asyncio.CancelledError:

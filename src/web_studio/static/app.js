@@ -6011,13 +6011,19 @@ async function loadAndRenderQueueModal() {
       if (isFailed) cardClass += ' task-failed';
       card.className = cardClass;
 
-      const progressPct = Math.round(Math.min(100, Math.max(0, (item.progress || 0) * 100)));
+      const progressKnown = item.progress_known === true || isCompleted;
+      let progressPct = Number(item.progress || 0);
+      if (progressPct > 0 && progressPct <= 1) progressPct = progressPct * 100;
+      progressPct = Math.round(Math.min(100, Math.max(0, progressPct)));
+      if (isCompleted) progressPct = 100;
       const typeLabel = formatTaskType(item.type);
       const timeStr = formatTaskTime(item);
 
       let statusBadgeHtml = '';
       if (isRunning) {
-        statusBadgeHtml = `<span class="task-status-pill task-status-running"><span class="dot dot-pulse"></span> Running (${progressPct}%)</span>`;
+        statusBadgeHtml = progressKnown
+          ? `<span class="task-status-pill task-status-running"><span class="dot dot-pulse"></span> Running (${progressPct}%)</span>`
+          : `<span class="task-status-pill task-status-running"><span class="dot dot-pulse"></span> Running</span>`;
       } else if (isPending) {
         const posText = item.queue_position ? ` #${item.queue_position}` : '';
         statusBadgeHtml = `<span class="task-status-pill task-status-pending">⏳ Queued${posText}</span>`;
@@ -6039,7 +6045,9 @@ async function loadAndRenderQueueModal() {
       }
 
       let cancelBtnHtml = '';
-      if (isPending) {
+      if (isRunning) {
+        cancelBtnHtml = `<button class="btn btn-sm btn-danger btn-cancel-task" data-item-id="${item.id}" title="Stop running workload">Stop</button>`;
+      } else if (isPending) {
         cancelBtnHtml = `<button class="btn btn-sm btn-danger btn-cancel-task" data-item-id="${item.id}" title="Cancel queued workload">Cancel</button>`;
       }
 
@@ -6074,9 +6082,10 @@ async function loadAndRenderQueueModal() {
         ${errorHtml}
 
         ${isRunning || isPending ? `
-          <div class="task-card-progress">
-            <div class="task-card-progress-fill" style="width: ${isRunning ? progressPct : 100}%; ${isPending ? 'opacity: 0.5;' : ''}"></div>
+          <div class="task-card-progress ${isRunning && !progressKnown ? 'indeterminate' : ''}">
+            <div class="task-card-progress-fill ${isRunning && !progressKnown ? 'indeterminate' : ''}" style="${isRunning && progressKnown ? `width: ${progressPct}%;` : (isPending ? 'width: 100%; opacity: 0.5;' : '')}"></div>
           </div>
+          ${isRunning && !progressKnown ? `<div class="task-progress-unknown">No numeric progress from this backend</div>` : ''}
         ` : ''}
 
         <div class="task-card-footer">
@@ -6391,13 +6400,15 @@ function updateTaskProgressUI(task) {
 
   if (statusText) statusText.textContent = task.message || task.status;
   if (progressBar) {
-    if (task.status === "pending") {
+    const known = task.progress_known === true || task.status === "completed";
+    if (task.status === "pending" || (task.status === "running" && !known)) {
       progressBar.classList.add("progress-animated");
       progressBar.style.removeProperty("width");
       progressBar.style.removeProperty("transform");
-    } else if (task.progress > 0) {
+    } else if (known) {
+      const pct = task.progress > 1 ? task.progress : (task.progress || 0) * 100;
       progressBar.classList.remove("progress-animated");
-      progressBar.style.width = `${Math.min(100, task.progress * 100)}%`;
+      progressBar.style.width = `${Math.min(100, pct)}%`;
       progressBar.style.transform = "none";
     }
   }

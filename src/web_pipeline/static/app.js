@@ -909,6 +909,7 @@
     const job = state.jobs.find((j) => j.id === progressData.id);
     if (job) {
       job.progress = progressData.progress;
+      job.progress_known = progressData.progress_known;
       job.current_step = progressData.current_step;
       job.processed_items = progressData.processed_items;
       job.failed_items = progressData.failed_items;
@@ -952,12 +953,17 @@
 
   function createJobCardHTML(job) {
     const statusClass = `job-status-${job.status}`;
-    const percent = Math.round((job.progress || 0) * (job.progress > 1 ? 1 : 100));
     const isRunning = job.status === 'running';
+    const isPending = job.status === 'pending';
     const isStudio = job.source === 'studio';
+    const progressKnown = job.progress_known === true || job.status === 'completed';
+    let percent = Number(job.progress || 0);
+    if (percent > 0 && percent <= 1) percent = percent * 100;
+    percent = Math.round(Math.min(100, Math.max(0, percent)));
+    if (job.status === 'completed') percent = 100;
 
     let etaText = '';
-    if (isRunning && percent > 0 && percent < 100) {
+    if (isRunning && progressKnown && percent > 0 && percent < 100) {
       const elapsed = (Date.now() / 1000) - (job.created_at || (Date.now() / 1000));
       const totalEstimated = elapsed / (percent / 100);
       const remaining = Math.max(0, totalEstimated - elapsed);
@@ -977,6 +983,13 @@
 
     const deviceBadge = jobDevice ? `<span class="badge badge-secondary font-mono" style="font-size:0.75rem;">🖥️ ${escapeHtml(jobDevice)}</span>` : '';
     const powerBadge = jobPower != null ? `<span class="badge badge-warning font-mono" style="font-size:0.75rem;">⚡ ${jobPower}W</span>` : '';
+    const progressLabel = progressKnown
+      ? `<strong>${percent}%</strong> ${job.total_items ? `(${job.processed_items || 0}/${job.total_items} items${etaText})` : ''}`
+      : (isRunning ? 'No numeric progress from this backend' : '');
+    const progressFillClass = isRunning
+      ? (progressKnown ? 'job-progress-fill running' : 'job-progress-fill running indeterminate')
+      : 'job-progress-fill';
+    const progressFillStyle = progressKnown || !isRunning ? `width: ${isPending ? 0 : percent}%;` : '';
 
     return `
       <div class="job-card" id="card-${job.id}">
@@ -995,10 +1008,10 @@
         <div class="job-progress-row">
           <div class="job-progress-meta">
             <span>${escapeHtml(job.current_step || job.message || 'Processing...')}</span>
-            <span><strong>${percent}%</strong> ${job.total_items ? `(${job.processed_items || 0}/${job.total_items} items${etaText})` : ''}</span>
+            <span>${progressLabel}</span>
           </div>
           <div class="job-progress-bar">
-            <div class="job-progress-fill ${isRunning ? 'running' : ''}" style="width: ${percent}%;"></div>
+            <div class="${progressFillClass}" style="${progressFillStyle}"></div>
           </div>
         </div>
 
@@ -1012,7 +1025,8 @@
             ${job.failed_items > 0 ? `<span style="color: var(--color-danger); font-weight: 700;">${job.failed_items} errors</span>` : ''}
           </div>
           <div class="job-actions">
-            ${isRunning || job.status === 'pending' ? `<button class="btn btn-secondary btn-xs btn-cancel-job" data-id="${job.id}">Cancel</button>` : ''}
+            ${isRunning ? `<button class="btn btn-danger btn-xs btn-cancel-job" data-id="${job.id}">Stop</button>` : ''}
+            ${isPending ? `<button class="btn btn-secondary btn-xs btn-cancel-job" data-id="${job.id}">Cancel</button>` : ''}
             ${!isStudio && (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') ? `<button class="btn btn-secondary btn-xs btn-delete-job" data-id="${job.id}">Delete</button>` : ''}
           </div>
         </div>

@@ -620,7 +620,7 @@ async def handle_shared_queue_cancel(request: web.Request) -> web.Response:
             from src.web_studio.server import task_manager
             success = task_manager.cancel_task(item_id)
             if not success:
-                return web.json_response({"error": "Only queued studio tasks can be cancelled"}, status=409)
+                return web.json_response({"error": "Could not cancel studio task"}, status=409)
             return web.json_response({"id": item_id, "source": "studio", "status": "cancelled"})
         except Exception as exc:
             return web.json_response({"error": str(exc)}, status=500)
