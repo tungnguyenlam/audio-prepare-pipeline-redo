@@ -15,7 +15,7 @@ from typing import Any, Optional
 from mel_band_roformer import MelBandRoformerSession
 
 from src.base.model import ManagedModel
-from src.separation.audio_utils import (
+from src.utils.audio_utils import (
     AudioConvertError,
     normalize_wav,
     prepare_separator_wav,

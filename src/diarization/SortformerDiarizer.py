@@ -25,7 +25,7 @@ from src.diarization.schemas import (
     Speaker,
     SpeakerTurn,
 )
-from src.separation.audio_utils import normalize_wav
+from src.utils.audio_utils import normalize_wav
 from src.utils.AudioClass import Audio
 
 logger = logging.getLogger(__name__)

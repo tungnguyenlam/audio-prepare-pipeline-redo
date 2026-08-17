@@ -16,7 +16,7 @@ import threading
 from pathlib import Path
 from typing import Callable, Optional
 
-from src.separation.audio_utils import normalize_wav, probe_wav
+from src.utils.audio_utils import normalize_wav, probe_wav
 from src.separation.BaseSeparator import BaseSeparator
 from src.utils.AudioClass import DEFAULT_SAMPLE_RATE, Audio
 

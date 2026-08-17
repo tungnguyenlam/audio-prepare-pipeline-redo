@@ -14,7 +14,7 @@ from typing import Optional
 from bs_roformer import BSRoformerSession
 
 from src.base.model import ManagedModel
-from src.separation.audio_utils import (
+from src.utils.audio_utils import (
     AudioConvertError,
     normalize_wav,
     prepare_separator_wav,
