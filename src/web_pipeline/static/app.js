@@ -49,11 +49,13 @@
     // Telemetry header & sidebar
     valGpuLoad: document.getElementById('val-gpu-load'),
     valGpuVram: document.getElementById('val-gpu-vram'),
+    valGpuPower: document.getElementById('val-gpu-power'),
     valCpuUtil: document.getElementById('val-cpu-util'),
     valRamUtil: document.getElementById('val-ram-util'),
     valSseStatus: document.getElementById('val-sse-status'),
     meterVram: document.getElementById('meter-vram'),
     meterGpuLoad: document.getElementById('meter-gpu-load'),
+    meterGpuPower: document.getElementById('meter-gpu-power'),
     meterCpu: document.getElementById('meter-cpu'),
     meterRam: document.getElementById('meter-ram'),
     
@@ -71,6 +73,9 @@
     dashVramText: document.getElementById('dash-vram-text'),
     dashVramDetail: document.getElementById('dash-vram-detail'),
     meterVramDash: document.getElementById('meter-vram-dash'),
+    dashGpuPowerText: document.getElementById('dash-gpu-power-text'),
+    dashGpuPowerDetail: document.getElementById('dash-gpu-power-detail'),
+    meterGpuPowerDash: document.getElementById('meter-gpu-power-dash'),
     dashCpuText: document.getElementById('dash-cpu-text'),
     meterCpuDash: document.getElementById('meter-cpu-dash'),
     dashRamText: document.getElementById('dash-ram-text'),
@@ -94,6 +99,7 @@
     pipelineGpuSharedName: document.getElementById('pipeline-gpu-shared-name'),
     pipelineGpuSharedLoad: document.getElementById('pipeline-gpu-shared-load'),
     pipelineGpuSharedVram: document.getElementById('pipeline-gpu-shared-vram'),
+    pipelineGpuSharedPower: document.getElementById('pipeline-gpu-shared-power'),
     pipelineGpuSharedSplit: document.getElementById('pipeline-gpu-shared-split'),
     countAll: document.getElementById('count-all'),
     countRunning: document.getElementById('count-running'),
@@ -145,6 +151,7 @@
     benchSpeechDs: document.getElementById('bench-speech-ds'),
     benchMusicDs: document.getElementById('bench-music-ds'),
     benchSnrs: document.getElementById('bench-snrs'),
+    benchDevice: document.getElementById('bench-device'),
     benchmarkHistorySelect: document.getElementById('benchmark-history-select'),
     leaderboardTbody: document.getElementById('leaderboard-tbody'),
 
@@ -411,6 +418,21 @@
         ? `${vramUsed} / ${vramTotal} MB (${vramPct}%)`
         : 'VRAM unavailable';
 
+      const curPowerW = isMultiGpu && gpu.aggregate && gpu.aggregate.total_power_w !== null
+        ? gpu.aggregate.total_power_w
+        : gpu.power_w;
+      const curPowerLimitW = isMultiGpu && gpu.aggregate && gpu.aggregate.total_power_limit_w !== null
+        ? gpu.aggregate.total_power_limit_w
+        : gpu.power_limit_w;
+      const powerPct = isMultiGpu && gpu.aggregate && gpu.aggregate.power_percent !== null
+        ? gpu.aggregate.power_percent
+        : gpu.power_percent;
+      const powerPctClamped = Number.isFinite(powerPct) ? Math.max(0, Math.min(100, powerPct)) : (Number.isFinite(gpuLoad) ? gpuLoadPct : 0);
+
+      const multiPowerText = isMultiGpu
+        ? gpu.devices.map((d, i) => `GPU ${i}: ${d.power_w != null ? d.power_w + 'W' : '--'}`).join(' · ')
+        : (curPowerW != null ? `${curPowerW} W` : '-- W');
+
       if (els.valGpuLoad) els.valGpuLoad.textContent = multiLoadText;
       if (els.meterGpuLoad) els.meterGpuLoad.style.width = `${gpuLoadPct}%`;
       if (els.dashGpuLoadText) els.dashGpuLoadText.textContent = multiLoadText;
@@ -422,9 +444,23 @@
         ? `Total VRAM: ${gpu.aggregate.used_vram_mb} / ${gpu.aggregate.total_vram_mb} MB (${gpu.aggregate.vram_percent}%)`
         : vramSummary;
 
+      // Power readouts & meters
+      if (els.valGpuPower) els.valGpuPower.textContent = curPowerW != null ? `${curPowerW} W` : '-- W';
+      if (els.meterGpuPower) els.meterGpuPower.style.width = `${powerPctClamped}%`;
+      if (els.dashGpuPowerText) els.dashGpuPowerText.textContent = multiPowerText;
+      if (els.dashGpuPowerDetail) {
+        els.dashGpuPowerDetail.textContent = curPowerLimitW
+          ? `Total Power: ${curPowerW ?? '--'} / ${curPowerLimitW} W (${powerPct ?? '--'}%)`
+          : (curPowerW != null ? `Power Draw: ${curPowerW} W` : 'Power sensors N/A');
+      }
+      if (els.meterGpuPowerDash) els.meterGpuPowerDash.style.width = `${powerPctClamped}%`;
+      if (els.pipelineGpuSharedPower) {
+        els.pipelineGpuSharedPower.textContent = curPowerW != null ? `${curPowerW} W` : '-- W';
+      }
+
       if (els.dashVramDetail) {
         if (isMultiGpu) {
-          els.dashVramDetail.textContent = gpu.devices.map((d, i) => `GPU ${i}: ${d.used_vram_mb}/${d.total_vram_mb} MB · ${d.temperature_c ?? '--'}°C`).join(' | ');
+          els.dashVramDetail.textContent = gpu.devices.map((d, i) => `GPU ${i}: ${d.used_vram_mb}/${d.total_vram_mb} MB · ${d.power_w != null ? d.power_w + 'W · ' : ''}${d.temperature_c ?? '--'}°C`).join(' | ');
         } else {
           els.dashVramDetail.textContent = `Process: ${gpu.allocated_vram_mb} MB allocated / ${gpu.reserved_vram_mb} MB reserved · ${gpu.free_vram_mb} MB free`;
         }
@@ -436,15 +472,16 @@
           : (gpu.name || 'CUDA GPU');
       }
 
-      // Populate pipeline compute device selectors if multi-GPU
-      if (isMultiGpu && !state._pipelineDevicesPopulated) {
+      // Populate pipeline compute device selectors for all devices
+      if (gpu.devices && gpu.devices.length > 0 && !state._pipelineDevicesPopulated) {
         state._pipelineDevicesPopulated = true;
         const popSelect = (sel) => {
           if (!sel) return;
           const cur = sel.value;
-          let opts = '<option value="cuda">CUDA (Auto / Primary)</option>';
-          gpu.devices.forEach(d => {
-            opts += `<option value="${d.id}">${d.id} (${d.name})</option>`;
+          let opts = '<option value="cuda">Auto (Fastest CUDA GPU)</option>';
+          gpu.devices.forEach((d, i) => {
+            const pwr = d.power_w != null ? ` · ${d.power_w}W` : '';
+            opts += `<option value="${d.id}">GPU ${i}: ${d.name} (${d.id}${pwr})</option>`;
           });
           opts += '<option value="cpu">CPU (Fallback)</option>';
           sel.innerHTML = opts;
@@ -454,6 +491,7 @@
         };
         popSelect(els.sepDevice);
         popSelect(els.diarDevice);
+        popSelect(els.benchDevice);
       }
     } else if (gpu && gpu.type === 'mps') {
       if (els.valGpuLoad) els.valGpuLoad.textContent = 'N/A';
@@ -462,6 +500,9 @@
       if (els.meterGpuLoadDash) els.meterGpuLoadDash.style.width = '0%';
       if (els.valGpuVram) els.valGpuVram.textContent = 'MPS';
       if (els.meterVram) els.meterVram.style.width = '0%';
+      if (els.valGpuPower) els.valGpuPower.textContent = 'N/A';
+      if (els.meterGpuPower) els.meterGpuPower.style.width = '0%';
+      if (els.dashGpuPowerText) els.dashGpuPowerText.textContent = 'N/A (MPS)';
       if (els.dashVramText) els.dashVramText.textContent = 'Apple MPS Accelerator';
       if (els.meterVramDash) els.meterVramDash.style.width = '0%';
       if (els.dashVramDetail) els.dashVramDetail.textContent = 'VRAM counters unavailable on MPS';
@@ -472,6 +513,9 @@
       if (els.meterGpuLoadDash) els.meterGpuLoadDash.style.width = '0%';
       if (els.valGpuVram) els.valGpuVram.textContent = 'CPU';
       if (els.meterVram) els.meterVram.style.width = '0%';
+      if (els.valGpuPower) els.valGpuPower.textContent = 'CPU Mode';
+      if (els.meterGpuPower) els.meterGpuPower.style.width = '0%';
+      if (els.dashGpuPowerText) els.dashGpuPowerText.textContent = 'CPU Mode';
       if (els.dashVramText) els.dashVramText.textContent = 'CPU Mode (No CUDA VRAM)';
       if (els.meterVramDash) els.meterVramDash.style.width = '0%';
       if (els.dashVramDetail) els.dashVramDetail.textContent = 'No GPU VRAM counters available';
@@ -709,12 +753,22 @@
 
     const typeDisplay = (job.type || 'TASK').replace('batch_', '').replace(/_/g, ' ').toUpperCase();
 
+    const jobDevice = job.params?.device || job.metadata?.device || (job.result?.device) || (job.item_results?.[0]?.device);
+    const jobPower = job.result?.power_w != null 
+      ? job.result.power_w 
+      : (job.item_results && job.item_results.length > 0 ? job.item_results[job.item_results.length - 1]?.power_w : null);
+
+    const deviceBadge = jobDevice ? `<span class="badge badge-secondary font-mono" style="font-size:0.75rem;">🖥️ ${escapeHtml(jobDevice)}</span>` : '';
+    const powerBadge = jobPower != null ? `<span class="badge badge-warning font-mono" style="font-size:0.75rem;">⚡ ${jobPower}W</span>` : '';
+
     return `
       <div class="job-card" id="card-${job.id}">
         <div class="job-header">
           <div class="job-title-group">
             ${sourceBadge}
             <span class="badge badge-accent">${escapeHtml(typeDisplay)}</span>
+            ${deviceBadge}
+            ${powerBadge}
             <span class="job-name">${escapeHtml(job.title)}</span>
             <span class="job-id">${escapeHtml(job.id)}</span>
           </div>
@@ -736,6 +790,8 @@
         <div class="job-footer">
           <div class="job-stats-pills">
             <span>${job.created_at ? 'Started ' + new Date(job.created_at * 1000).toLocaleTimeString() : ''}</span>
+            ${jobDevice ? `<span>🖥️ ${escapeHtml(jobDevice)}</span>` : ''}
+            ${jobPower != null ? `<span style="color: var(--color-warning); font-weight: 600;">⚡ ${jobPower}W Consumed</span>` : ''}
             ${job.failed_items > 0 ? `<span style="color: var(--color-danger); font-weight: 700;">${job.failed_items} errors</span>` : ''}
           </div>
           <div class="job-actions">
@@ -1087,6 +1143,7 @@
               music_dataset: musicDs,
               snr_levels: snrs,
               models,
+              device: els.benchDevice ? els.benchDevice.value : 'cuda',
             }),
           });
           const job = await res.json();

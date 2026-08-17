@@ -7,12 +7,16 @@ on first use; checkpoints download themselves on the first inference run.
 
 from __future__ import annotations
 
+from collections import deque
 import logging
+import os
+import signal
 import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from src.separation.audio_utils import normalize_wav, probe_wav
 from src.separation.BaseSeparator import BaseSeparator
@@ -23,6 +27,20 @@ logger = logging.getLogger(__name__)
 DEFAULT_REPO_URL = (
     "https://github.com/ZFTurbo/MVSEP-MDX23-music-separation-model.git"
 )
+
+_UPSTREAM_DEVICE_OVERRIDE = """if __name__ == '__main__':
+    import os
+
+    gpu_use = "0"
+    print('GPU use: {}'.format(gpu_use))
+    os.environ["CUDA_VISIBLE_DEVICES"] = "{}".format(gpu_use)
+"""
+_UPSTREAM_DEVICE_PATCH = """if __name__ == '__main__':
+    import os
+
+    # Device visibility is supplied by the MVSepMDX23 wrapper.
+    print('GPU visibility: {}'.format(os.environ.get('CUDA_VISIBLE_DEVICES', 'default')))
+"""
 
 # Upstream writes ``{stem}_instrum.wav`` for the residual instrumental.
 _STEM_OUTPUT_IDS = {
@@ -67,13 +85,14 @@ class MVSepMDX23(BaseSeparator):
         repo_dir: str | Path | None = None,
         repo_url: str = DEFAULT_REPO_URL,
         only_vocals: bool | None = None,
-        single_onnx: bool = False,
+        single_onnx: bool = True,
         large_gpu: bool = False,
         use_kim_model_1: bool = False,
-        overlap_large: float = 0.6,
-        overlap_small: float = 0.5,
+        overlap_large: float = 0.25,
+        overlap_small: float = 0.25,
         chunk_size: int | None = None,
         python_bin: Optional[str] = None,
+        progress_callback: Callable[[str], None] | None = None,
     ) -> None:
         super().__init__(
             model=model,
@@ -94,6 +113,10 @@ class MVSepMDX23(BaseSeparator):
         self.overlap_small = overlap_small
         self.chunk_size = chunk_size
         self.python_bin = python_bin or sys.executable
+        self.progress_callback = progress_callback
+        self._process: subprocess.Popen[str] | None = None
+        self._process_lock = threading.Lock()
+        self._cancel_requested = False
 
         if only_vocals is None:
             stem_id = _STEM_OUTPUT_IDS.get(self.two_stems.lower())
@@ -128,6 +151,18 @@ class MVSepMDX23(BaseSeparator):
                     raise MVSepMDX23Error(
                         f"Device {self.device!r} requested but PyTorch CUDA is not available."
                     )
+                if ":" in device:
+                    try:
+                        device_index = int(device.split(":", 1)[1])
+                    except ValueError as exc:
+                        raise MVSepMDX23Error(
+                            f"Invalid CUDA device {self.device!r}; expected cuda:<index>."
+                        ) from exc
+                    if not 0 <= device_index < torch.cuda.device_count():
+                        raise MVSepMDX23Error(
+                            f"CUDA device index {device_index} is unavailable; "
+                            f"found {torch.cuda.device_count()} device(s)."
+                        )
             except ImportError as exc:
                 raise MVSepMDX23Error(
                     f"Device {self.device!r} requested but torch is not installed."
@@ -164,6 +199,7 @@ class MVSepMDX23(BaseSeparator):
         inference_py = self.repo_dir / "inference.py"
         if inference_py.is_file():
             (self.repo_dir / "models").mkdir(parents=True, exist_ok=True)
+            self._patch_upstream_device_override(inference_py)
             return inference_py
 
         if self.repo_dir.exists() and any(self.repo_dir.iterdir()):
@@ -196,18 +232,61 @@ class MVSepMDX23(BaseSeparator):
                 f"clone finished but inference.py not found at {inference_py}"
             )
         (self.repo_dir / "models").mkdir(parents=True, exist_ok=True)
+        self._patch_upstream_device_override(inference_py)
         return inference_py
+
+    @staticmethod
+    def _patch_upstream_device_override(inference_py: Path) -> None:
+        """Make the cloned CLI preserve the wrapper's CUDA device isolation."""
+        source = inference_py.read_text(encoding="utf-8")
+        if _UPSTREAM_DEVICE_PATCH in source:
+            return
+        if _UPSTREAM_DEVICE_OVERRIDE not in source:
+            if 'gpu_use = "0"' in source or "gpu_use = '0'" in source:
+                raise MVSepMDX23Error(
+                    "unsupported upstream GPU-selection block in "
+                    f"{inference_py}; refusing to run on an ambiguous device"
+                )
+            return
+        patched_source = source.replace(
+            _UPSTREAM_DEVICE_OVERRIDE,
+            _UPSTREAM_DEVICE_PATCH,
+            1,
+        )
+        temporary_path = inference_py.with_name(
+            f".{inference_py.name}.{os.getpid()}.{threading.get_ident()}.tmp"
+        )
+        try:
+            temporary_path.write_text(patched_source, encoding="utf-8")
+            temporary_path.replace(inference_py)
+        finally:
+            temporary_path.unlink(missing_ok=True)
+
+    def _emit_progress(self, message: str) -> None:
+        """Log an upstream status line and forward it to the optional caller."""
+        logger.info("MVSEP-MDX23: %s", message)
+        if self.progress_callback is None:
+            return
+        try:
+            self.progress_callback(message)
+        except Exception:
+            logger.warning("MVSEP-MDX23 progress callback failed", exc_info=True)
 
     def _prepare_input(self, src: Path) -> Path:
         """Convert source to a working stereo WAV for upstream ``librosa`` load."""
+        self._emit_progress("Preparing 44.1 kHz stereo input...")
         input_dir = self.work_dir / "input"
-        input_dir.mkdir(parents=True, exist_ok=True)
+        if input_dir.exists():
+            shutil.rmtree(input_dir)
+        input_dir.mkdir(parents=True)
         working_wav = input_dir / f"{src.stem}.wav"
         cmd = [
             self.ffmpeg_bin,
             "-y",
             "-i",
             str(src),
+            "-ar",
+            "44100",
             "-ac",
             "2",
             "-c:a",
@@ -225,6 +304,7 @@ class MVSepMDX23(BaseSeparator):
     def _build_cmd(self, inference_py: Path, working_wav: Path, output_dir: Path) -> list[str]:
         cmd = [
             self.python_bin,
+            "-u",
             str(inference_py),
             "--input_audio",
             str(working_wav),
@@ -249,7 +329,98 @@ class MVSepMDX23(BaseSeparator):
             cmd.extend(["--chunk_size", str(self.chunk_size)])
         return cmd
 
+    def _subprocess_env(self) -> dict[str, str]:
+        """Build an environment that exposes only the requested CUDA device."""
+        env = os.environ.copy()
+        device = str(self.device).lower()
+        if device.startswith("cuda:"):
+            env["CUDA_VISIBLE_DEVICES"] = device.split(":", 1)[1]
+        elif device.isdigit():
+            env["CUDA_VISIBLE_DEVICES"] = device
+        return env
+
+    @staticmethod
+    def _terminate_process(process: subprocess.Popen[str]) -> None:
+        """Terminate an inference process group, escalating if it does not stop."""
+        if process.poll() is not None:
+            return
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        except OSError:
+            process.terminate()
+        try:
+            process.wait(timeout=5)
+            return
+        except subprocess.TimeoutExpired:
+            pass
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+        except OSError:
+            process.kill()
+        process.wait(timeout=5)
+
+    def _run_inference(self, cmd: list[str]) -> None:
+        """Run upstream inference while streaming logs and supporting cancellation."""
+        with self._process_lock:
+            if self._cancel_requested:
+                raise MVSepMDX23Error("MVSEP-MDX23 separation was cancelled")
+            if self._process is not None:
+                raise MVSepMDX23Error(
+                    "MVSepMDX23 does not support concurrent calls on one instance"
+                )
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                cwd=str(self.repo_dir),
+                env=self._subprocess_env(),
+                start_new_session=True,
+            )
+            self._process = process
+
+        output_tail: deque[str] = deque(maxlen=80)
+        try:
+            if process.stdout is not None:
+                for line in process.stdout:
+                    message = line.rstrip()
+                    if not message:
+                        continue
+                    output_tail.append(message)
+                    self._emit_progress(message)
+            returncode = process.wait()
+        finally:
+            if process.stdout is not None:
+                process.stdout.close()
+            with self._process_lock:
+                if self._process is process:
+                    self._process = None
+
+        if returncode != 0:
+            with self._process_lock:
+                cancelled = self._cancel_requested
+            if cancelled:
+                raise MVSepMDX23Error("MVSEP-MDX23 separation was cancelled")
+            detail = "\n".join(output_tail).strip()
+            raise MVSepMDX23Error(
+                f"MVSEP-MDX23 failed (exit {returncode}): "
+                f"{detail[-3000:] or 'no output'}"
+            )
+
     def _separate_stem(self, src: Path) -> Path:
+        with self._process_lock:
+            if self._process is not None:
+                raise MVSepMDX23Error(
+                    "MVSepMDX23 does not support concurrent calls on one instance"
+                )
+            if self._cancel_requested:
+                raise MVSepMDX23Error("MVSEP-MDX23 separation was cancelled")
+
         inference_py = self._ensure_repo()
         working_wav = self._prepare_input(src)
 
@@ -259,20 +430,13 @@ class MVSepMDX23(BaseSeparator):
         output_dir.mkdir(parents=True)
 
         cmd = self._build_cmd(inference_py, working_wav, output_dir)
-        logger.info("Running MVSEP-MDX23: %s", " ".join(cmd))
-        completed = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=False,
-            cwd=str(self.repo_dir),
+        onnx_models = 1 if self.single_onnx else 2
+        self._emit_progress(
+            f"Starting on {self.device} with {onnx_models} ONNX model(s) "
+            f"and overlap {self.overlap_large:.2f}..."
         )
-        if completed.returncode != 0:
-            detail = (completed.stderr or completed.stdout or "").strip()
-            raise MVSepMDX23Error(
-                f"MVSEP-MDX23 failed (exit {completed.returncode}): "
-                f"{detail[-3000:] or 'no output'}"
-            )
+        logger.info("Running MVSEP-MDX23: %s", " ".join(cmd))
+        self._run_inference(cmd)
 
         stem_id = self._output_stem_id()
         separated = output_dir / f"{working_wav.stem}_{stem_id}.wav"
@@ -319,3 +483,26 @@ class MVSepMDX23(BaseSeparator):
             channels=channels,
             step=f"mvsep_mdx23_{self.two_stems}",
         )
+
+    def close(self) -> None:
+        """Cancel any active upstream inference process and release its resources."""
+        self.cancel()
+        with self._process_lock:
+            process = self._process
+        if process is not None:
+            self._terminate_process(process)
+
+    def cancel(self) -> None:
+        """Request non-blocking cancellation of active upstream inference."""
+        with self._process_lock:
+            self._cancel_requested = True
+            process = self._process
+        if process is None or process.poll() is not None:
+            return
+        self._emit_progress("Cancelling active inference process...")
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        except OSError:
+            process.terminate()

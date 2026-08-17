@@ -2267,12 +2267,12 @@ html, body {
   top: 4px;
   bottom: 4px;
   border-radius: 4px;
-  cursor: pointer;
-  transition: all var(--transition-fast);
+  cursor: grab;
+  transition: opacity var(--transition-fast), box-shadow var(--transition-fast), outline var(--transition-fast);
   opacity: 0.88;
   display: flex;
   align-items: center;
-  padding: 0 6px;
+  padding: 0 8px;
   box-sizing: border-box;
   font-size: 0.7rem;
   font-family: var(--font-mono);
@@ -2281,23 +2281,159 @@ html, body {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
   overflow: hidden;
   white-space: nowrap;
+  user-select: none;
+}
+
+.diar-turn-segment:active {
+  cursor: grabbing;
 }
 
 .diar-turn-segment:hover {
   opacity: 1;
   z-index: 5;
   box-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
-  transform: scaleY(1.08);
 }
 
 .diar-turn-segment.active-turn {
   outline: 2px solid #fff;
-  box-shadow: 0 0 12px var(--accent-cyan);
+  box-shadow: 0 0 14px var(--accent-cyan);
   z-index: 6;
+  opacity: 1;
 }
 
 .diar-turn-segment.has-overlap {
   background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(0, 0, 0, 0.35) 5px, rgba(0, 0, 0, 0.35) 10px);
+}
+
+.diar-turn-segment.overlap-active {
+  animation: pulse-overlap 1.5s infinite alternate;
+}
+
+@keyframes pulse-overlap {
+  0% { filter: drop-shadow(0 0 2px rgba(239, 68, 68, 0.6)); }
+  100% { filter: drop-shadow(0 0 6px rgba(239, 68, 68, 1)); }
+}
+
+/* Turn Drag Resize Handles */
+.turn-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 10;
+  opacity: 0;
+  transition: opacity var(--transition-fast), background-color var(--transition-fast);
+}
+
+.turn-handle-left {
+  left: 0;
+  border-top-left-radius: 4px;
+  border-bottom-left-radius: 4px;
+}
+
+.turn-handle-right {
+  right: 0;
+  border-top-right-radius: 4px;
+  border-bottom-right-radius: 4px;
+}
+
+.diar-turn-segment:hover .turn-handle,
+.diar-turn-segment.active-turn .turn-handle {
+  opacity: 0.6;
+  background-color: rgba(255, 255, 255, 0.4);
+}
+
+.turn-handle:hover {
+  opacity: 1 !important;
+  background-color: #ffffff !important;
+  box-shadow: 0 0 6px #fff;
+}
+
+/* Minimap Overview */
+.diar-minimap-container {
+  display: flex;
+  align-items: center;
+  height: 24px;
+  background: var(--bg-surface-elevated);
+  border-bottom: 1px solid var(--border-subtle);
+  user-select: none;
+}
+
+.diar-minimap-label {
+  width: 130px;
+  min-width: 130px;
+  max-width: 130px;
+  padding: 0 10px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  border-right: 1px solid var(--border-subtle);
+  background: var(--bg-surface-elevated);
+}
+
+.diar-minimap-track {
+  flex: 1;
+  height: 100%;
+  position: relative;
+  background: rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.diar-minimap-block {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  border-radius: 2px;
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.diar-minimap-viewport-window {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  border: 1px solid var(--accent-cyan);
+  background: rgba(0, 229, 255, 0.15);
+  border-radius: 2px;
+  cursor: grab;
+  z-index: 5;
+}
+
+.diar-minimap-viewport-window:active {
+  cursor: grabbing;
+}
+
+/* Region Selection Overlay */
+.diar-selection-overlay {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(56, 189, 248, 0.2);
+  border-left: 1px solid var(--accent-cyan);
+  border-right: 1px solid var(--accent-cyan);
+  z-index: 9;
+  pointer-events: auto;
+}
+
+.diar-selection-actions-bar {
+  position: absolute;
+  top: -34px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-pill);
+  padding: 3px 6px;
+  box-shadow: var(--shadow-card);
+  white-space: nowrap;
+  z-index: 15;
 }
 
 .diar-playhead-line {
@@ -2318,6 +2454,8 @@ html, body {
   height: 10px;
   background-color: var(--accent-rose);
   clip-path: polygon(0 0, 100% 0, 50% 100%);
+  cursor: ew-resize;
+  pointer-events: auto;
 }
 
 .diar-turn-tooltip {
@@ -2445,6 +2583,36 @@ html, body {
   align-items: center;
   gap: 6px;
   margin-top: 2px;
+  flex-wrap: wrap;
+}
+
+/* Floating Batch Actions Bar */
+.diar-batch-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.98));
+  border: 1px solid var(--accent-cyan);
+  box-shadow: 0 4px 16px rgba(0, 229, 255, 0.12);
+  border-radius: var(--radius-md);
+  padding: 8px 14px;
+  margin-bottom: 0.8rem;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.batch-count-chip {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.batch-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 /* Turn Inspector Toolbar & Table */
@@ -2466,7 +2634,7 @@ html, body {
 }
 
 .diar-turns-table-wrapper {
-  max-height: 360px;
+  max-height: 380px;
   overflow-y: auto;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
@@ -2490,26 +2658,40 @@ html, body {
 }
 
 .diar-turns-table td {
-  padding: 8px 10px;
+  padding: 6px 10px;
   border-top: 1px solid var(--border-subtle);
   font-family: var(--font-mono);
   vertical-align: middle;
 }
 
+.diar-turns-table tr:hover {
+  background-color: var(--bg-surface-hover);
+}
+
+.diar-turns-table tr.playing-row {
+  background-color: rgba(0, 229, 255, 0.08);
+  border-left: 3px solid var(--accent-cyan);
+}
+
+.diar-turns-table tr.selected-row {
+  background-color: rgba(99, 102, 241, 0.12);
+}
+
 .turn-time-input {
-  width: 72px;
+  width: 68px;
   font-family: var(--font-mono);
-  font-size: 0.8rem;
-  padding: 3px 6px;
+  font-size: 0.78rem;
+  padding: 3px 5px;
   background-color: var(--bg-input);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-xs);
   color: var(--text-primary);
+  text-align: center;
 }
 
 .turn-nudge-btn {
-  padding: 2px 5px;
-  font-size: 0.68rem;
+  padding: 2px 4px;
+  font-size: 0.65rem;
   font-family: var(--font-mono);
   line-height: 1;
 }
@@ -2530,6 +2712,7 @@ html, body {
   border-bottom: 1px solid var(--border-subtle);
   padding-bottom: 8px;
   margin-bottom: 1rem;
+  flex-wrap: wrap;
 }
 
 .export-nav-tab {

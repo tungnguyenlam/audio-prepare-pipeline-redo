@@ -22,6 +22,47 @@ shared web backend, and two dedicated frontends:
 uv sync
 ```
 
+### Development and Model-Server Roles
+
+`tungnl5@VF-TUNGNL5-L` is the development machine: it is used for writing and
+reviewing code and does not run model inference. The web backend and model
+inference run on `vsf@vsf-242`.
+
+Synchronize source changes with the scripts in `scripts/sync/`. Install and
+maintain the model-serving environments on the server rather than on the
+development machine.
+
+Sortformer uses a separate environment because NeMo pins shared packages that
+conflict with the primary stack. On the model server, create it from the
+repository's locked application environment and install the pinned NeMo
+requirements:
+
+```bash
+uv venv --python .venv/bin/python .venv-sortformer
+UV_PROJECT_ENVIRONMENT=.venv-sortformer uv sync --frozen --no-dev
+uv pip install --python .venv-sortformer/bin/python -r requirements-sortformer.txt
+```
+
+Run the shared backend with `.venv-sortformer/bin/python` when Sortformer is
+needed; the regular `uv run` launcher uses the primary `.venv` and cannot
+import NeMo:
+
+```bash
+.venv-sortformer/bin/python scripts/start_web.py --host 127.0.0.1 --port 8765
+```
+
+### Environment Configuration
+
+The web server automatically loads the repository-root `.env` at startup. For
+Pyannote diarization, define the Hugging Face token as:
+
+```env
+HF_TOKEN=hf_...
+```
+
+Hugging Face model files are cached under `.data/huggingface` by default. Set
+`HF_HOME` in `.env` only when a different writable cache location is needed.
+
 ---
 
 ## Running the Web Applications

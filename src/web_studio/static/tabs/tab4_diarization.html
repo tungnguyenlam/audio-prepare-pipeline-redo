@@ -10,11 +10,15 @@
               <p class="card-subtitle">Detect "who spoke when" with neural boundary segmentation, interactive multi-track swimlanes, turn editing & multi-format export.</p>
             </div>
             <div class="card-actions">
-              <button class="btn btn-secondary btn-sm" id="btn-diar-import" title="Import RTTM or JSON Annotation">
+              <button class="btn btn-secondary btn-sm" id="btn-diar-shortcuts-modal" title="View Keyboard Shortcuts (?)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="M6 8h.001M10 8h.001M14 8h.001M18 8h.001M8 12h.001M12 12h.001M16 12h.001M7 16h10"></path></svg>
+                <span>Shortcuts</span>
+              </button>
+              <button class="btn btn-secondary btn-sm" id="btn-diar-import" title="Import RTTM, JSON, CSV, SRT or Audacity Label File">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                 <span>Import Annotation</span>
               </button>
-              <input type="file" id="diar-file-import-input" accept=".rttm,.json,.csv,.txt" style="display: none;">
+              <input type="file" id="diar-file-import-input" accept=".rttm,.json,.csv,.txt,.srt,.vtt,.TextGrid" style="display: none;">
               <button class="btn btn-secondary btn-sm" id="btn-diar-sample" title="Load Sample Demo Diarization">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                 <span>Demo Data</span>
@@ -153,11 +157,12 @@
           <!-- Master Interactive Multi-Track Timeline Card -->
           <div class="card diar-timeline-card">
             <div class="card-header">
-              <div class="flex-row items-center gap-3">
+              <div class="flex-row items-center gap-3 flex-wrap">
                 <h2 class="card-title">Interactive Multi-Track Speaker Timeline</h2>
                 <span id="diar-model-badge" class="badge badge-info">Pyannote 3.1</span>
                 <span id="diar-speaker-count-badge" class="badge badge-accent">0 Speakers</span>
                 <span id="diar-turns-count-badge" class="badge badge-ghost">0 Turns</span>
+                <span id="diar-speech-ratio-badge" class="badge badge-success">0% Speech</span>
               </div>
               <div class="timeline-view-actions">
                 <div class="btn-group">
@@ -167,6 +172,17 @@
                 <button class="btn btn-xs btn-ghost active" id="btn-toggle-overlap-highlight" title="Toggle Overlap Highlight">
                   <span>⚡ Overlaps</span>
                 </button>
+                <button class="btn btn-xs btn-secondary" id="btn-open-auto-merge" title="Auto-Merge small micro-gaps between consecutive turns">
+                  <span>🧹 Merge Gaps</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Visual Minimap Overview Strip -->
+            <div class="diar-minimap-container" id="diar-minimap-container" title="Full Track Overview — Click or drag to jump viewport">
+              <div class="diar-minimap-label">Overview</div>
+              <div class="diar-minimap-track" id="diar-minimap-track">
+                <div class="diar-minimap-viewport-window" id="diar-minimap-viewport-window"></div>
               </div>
             </div>
 
@@ -189,6 +205,10 @@
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
                   <span>Loop Turn</span>
                 </button>
+                <button class="btn btn-ctrl btn-sm active" id="btn-diar-follow-playhead" title="Toggle Auto-Scroll Follow Playhead (F)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>
+                  <span>Follow</span>
+                </button>
                 <div class="diar-time-readout">
                   <span id="diar-time-current">00:00.00</span> / <span id="diar-time-total">00:00.00</span>
                 </div>
@@ -198,10 +218,10 @@
                 <!-- Zoom Controls -->
                 <div class="diar-zoom-wrap">
                   <span class="zoom-label">Zoom:</span>
-                  <button class="btn btn-xs btn-ghost" id="btn-diar-zoom-out" title="Zoom Out">-</button>
+                  <button class="btn btn-xs btn-ghost" id="btn-diar-zoom-out" title="Zoom Out (Z)">-</button>
                   <span class="zoom-val" id="diar-zoom-level">1.0x</span>
-                  <button class="btn btn-xs btn-ghost" id="btn-diar-zoom-in" title="Zoom In">+</button>
-                  <button class="btn btn-xs btn-secondary" id="btn-diar-zoom-fit" title="Fit to Container">Fit</button>
+                  <button class="btn btn-xs btn-ghost" id="btn-diar-zoom-in" title="Zoom In (Shift+Z)">+</button>
+                  <button class="btn btn-xs btn-secondary" id="btn-diar-zoom-fit" title="Fit to Container (0)">Fit</button>
                 </div>
                 <!-- Speed selector -->
                 <select id="diar-speed-select" class="select-mini" title="Playback Speed">
@@ -241,9 +261,19 @@
               <!-- Dynamic Speaker Swimlanes Container -->
               <div class="diar-speaker-lanes-wrap" id="diar-speaker-lanes-wrap"></div>
 
+              <!-- Region Selection Box Overlay -->
+              <div class="diar-selection-overlay hidden" id="diar-selection-overlay">
+                <div class="diar-selection-actions-bar" id="diar-selection-actions-bar">
+                  <button class="btn btn-xs btn-primary" id="btn-sel-play">▶ Play Region</button>
+                  <button class="btn btn-xs btn-secondary" id="btn-sel-add-turn">+ Add Turn</button>
+                  <button class="btn btn-xs btn-ghost" id="btn-sel-cut">✂ Cut</button>
+                  <button class="btn btn-xs btn-ghost" id="btn-sel-clear">✕</button>
+                </div>
+              </div>
+
               <!-- Global Synchronized Playhead Line -->
               <div class="diar-playhead-line" id="diar-playhead-line" style="left: 0%;">
-                <div class="playhead-handle"></div>
+                <div class="playhead-handle" title="Playhead"></div>
               </div>
             </div>
 
@@ -258,7 +288,14 @@
                 <h2 class="card-title">Speaker Profiles & Speech Distribution</h2>
                 <p class="card-subtitle">Rename speakers, customize color palettes, inspect speech metrics, or extract speaker audio stems.</p>
               </div>
-              <div class="card-actions">
+              <div class="card-actions flex-wrap gap-2">
+                <div class="flex-row items-center gap-1">
+                  <label class="text-xs text-muted" for="diar-extract-mode-select">Stem Mode:</label>
+                  <select id="diar-extract-mode-select" class="select-input select-sm" title="Extraction mode for speaker audio files">
+                    <option value="concatenated">Concatenated Speech</option>
+                    <option value="time_aligned">Time-Aligned Stems (Muted Silence)</option>
+                  </select>
+                </div>
                 <button class="btn btn-secondary btn-sm" id="btn-extract-all-speakers" title="Extract all speaker stems as separate audio files">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                   <span>Extract All Speaker Stems</span>
@@ -272,15 +309,32 @@
           <!-- Precision Turn Inspector & Segment Editor -->
           <div class="card diar-turns-card">
             <div class="card-header">
-              <div class="flex-row items-center gap-3">
+              <div class="flex-row items-center gap-3 flex-wrap">
                 <h2 class="card-title">Speaker Turn Inspector & Segment Editor</h2>
                 <span class="badge badge-info" id="diar-filtered-turns-count">0 turns</span>
               </div>
               <div class="card-actions">
-                <button class="btn btn-secondary btn-sm" id="btn-add-turn-at-playhead" title="Insert new turn segment at current playhead">
+                <button class="btn btn-secondary btn-sm" id="btn-add-turn-at-playhead" title="Insert new turn segment at current playhead (N)">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                  <span>Add Turn at Cursor</span>
+                  <span>Add Turn at Cursor (N)</span>
                 </button>
+              </div>
+            </div>
+
+            <!-- Floating Batch Actions Bar (Visible when 1+ turns selected) -->
+            <div class="diar-batch-bar hidden" id="diar-batch-bar">
+              <div class="batch-bar-left">
+                <span class="batch-count-chip"><strong id="diar-batch-count">0</strong> turns selected</span>
+              </div>
+              <div class="batch-bar-right">
+                <div class="flex-row items-center gap-1">
+                  <span class="text-xs text-muted">Reassign to:</span>
+                  <select id="diar-batch-speaker-select" class="select-input select-sm"></select>
+                  <button class="btn btn-xs btn-primary" id="btn-batch-reassign">Apply</button>
+                </div>
+                <button class="btn btn-xs btn-secondary" id="btn-batch-cut" title="Send all selected turns to Clips registry">✂ Batch Cut</button>
+                <button class="btn btn-xs btn-destructive" id="btn-batch-delete" title="Delete all selected turns">🗑 Delete</button>
+                <button class="btn btn-xs btn-ghost" id="btn-batch-clear">✕ Clear Selection</button>
               </div>
             </div>
 
@@ -293,7 +347,7 @@
                   </select>
                 </div>
                 <div class="form-group mb-0">
-                  <input type="text" id="diar-turns-search-input" class="text-input text-sm" placeholder="Search turn index or timestamp...">
+                  <input type="text" id="diar-turns-search-input" class="text-input text-sm" placeholder="Search turn index, speaker or timestamp...">
                 </div>
                 <div class="form-group mb-0">
                   <select id="diar-filter-min-dur" class="select-input select-sm">
@@ -324,11 +378,14 @@
               <table class="turns-table diar-turns-table">
                 <thead>
                   <tr>
+                    <th style="width: 40px; text-align: center;">
+                      <input type="checkbox" id="th-select-all-turns" title="Select all visible turns">
+                    </th>
                     <th style="width: 50px;">#</th>
                     <th style="width: 140px;">Speaker</th>
-                    <th style="width: 150px;">Start Time (s)</th>
-                    <th style="width: 150px;">End Time (s)</th>
-                    <th style="width: 100px;">Duration</th>
+                    <th style="width: 160px;">Start Time (s)</th>
+                    <th style="width: 160px;">End Time (s)</th>
+                    <th style="width: 95px;">Duration</th>
                     <th style="width: 90px;">Overlap</th>
                     <th>Actions</th>
                   </tr>
@@ -343,7 +400,7 @@
             <div class="card-header">
               <div>
                 <h2 class="card-title">Diarization Export & Annotation Studio</h2>
-                <p class="card-subtitle">Export your diarization results in NIST RTTM, Pipeline JSON, CSV spreadsheet, or Subtitle formats.</p>
+                <p class="card-subtitle">Export your diarization results in NIST RTTM, Pipeline JSON, CSV spreadsheet, Subtitle formats, Audacity labels, or Praat TextGrid.</p>
               </div>
             </div>
 
@@ -354,6 +411,8 @@
               <button class="export-nav-tab" data-export-tab="csv">CSV Spreadsheet</button>
               <button class="export-nav-tab" data-export-tab="srt">SRT Subtitles</button>
               <button class="export-nav-tab" data-export-tab="vtt">WebVTT</button>
+              <button class="export-nav-tab" data-export-tab="audacity">Audacity Labels (.txt)</button>
+              <button class="export-nav-tab" data-export-tab="praat">Praat TextGrid</button>
             </div>
 
             <!-- Export Preview & Actions Box -->
@@ -393,6 +452,97 @@
             <div class="modal-footer">
               <button class="btn btn-ghost" id="btn-cancel-merge">Cancel</button>
               <button class="btn btn-primary" id="btn-confirm-merge">Merge Turns</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Auto-Merge Micro-Gaps Modal -->
+        <div id="modal-auto-merge-gaps" class="modal-overlay hidden">
+          <div class="modal-card">
+            <div class="modal-header">
+              <h3 class="modal-title">🧹 Auto-Merge Micro-Gaps</h3>
+              <button class="modal-close-btn" id="btn-close-auto-merge-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+              <p class="text-sm text-secondary mb-3">Merge consecutive speech turns from the same speaker if the silent pause between them is shorter than the threshold:</p>
+              <div class="form-group">
+                <label class="form-label" for="auto-merge-threshold-input">Maximum Gap Threshold (seconds):</label>
+                <input type="number" step="0.05" min="0.05" max="2.0" value="0.30" id="auto-merge-threshold-input" class="text-input font-mono">
+                <span class="text-xs text-muted">Recommended: 0.25s – 0.50s to bridge short breath pauses while preserving distinct phrases.</span>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-ghost" id="btn-cancel-auto-merge">Cancel</button>
+              <button class="btn btn-primary" id="btn-confirm-auto-merge">Merge Micro-Gaps</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Diarization Keyboard Shortcuts Modal -->
+        <div id="modal-diar-shortcuts" class="modal-overlay hidden">
+          <div class="modal-card modal-md">
+            <div class="modal-header">
+              <div class="modal-title-wrap">
+                <span class="modal-badge-icon">⌨️</span>
+                <h3 class="modal-title">Diarization Studio Keyboard Shortcuts</h3>
+              </div>
+              <button class="modal-close-btn" id="btn-close-diar-shortcuts">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div class="shortcuts-grid">
+                <div class="shortcut-item">
+                  <span class="shortcut-desc">Play / Pause Audio</span>
+                  <kbd class="kbd">Space</kbd>
+                </div>
+                <div class="shortcut-item">
+                  <span class="shortcut-desc">Nudge Playhead -0.5s / +0.5s</span>
+                  <div class="kbd-combo"><kbd class="kbd">←</kbd> <kbd class="kbd">→</kbd></div>
+                </div>
+                <div class="shortcut-item">
+                  <span class="shortcut-desc">Jump -5s / +5s</span>
+                  <div class="kbd-combo"><kbd class="kbd">Shift</kbd> + <kbd class="kbd">←</kbd> <kbd class="kbd">→</kbd></div>
+                </div>
+                <div class="shortcut-item">
+                  <span class="shortcut-desc">Previous / Next Speaker Turn</span>
+                  <div class="kbd-combo"><kbd class="kbd">[</kbd> <kbd class="kbd">]</kbd></div>
+                </div>
+                <div class="shortcut-item">
+                  <span class="shortcut-desc">Toggle Turn Loop</span>
+                  <kbd class="kbd">L</kbd>
+                </div>
+                <div class="shortcut-item">
+                  <span class="shortcut-desc">Split Active Turn at Playhead</span>
+                  <kbd class="kbd">S</kbd>
+                </div>
+                <div class="shortcut-item">
+                  <span class="shortcut-desc">Delete Active Turn</span>
+                  <kbd class="kbd">D</kbd> or <kbd class="kbd">Del</kbd>
+                </div>
+                <div class="shortcut-item">
+                  <span class="shortcut-desc">Add New Turn at Cursor</span>
+                  <kbd class="kbd">N</kbd>
+                </div>
+                <div class="shortcut-item">
+                  <span class="shortcut-desc">Toggle Follow Playhead Auto-Scroll</span>
+                  <kbd class="kbd">F</kbd>
+                </div>
+                <div class="shortcut-item">
+                  <span class="shortcut-desc">Quick Assign Active Turn to Speaker 1-8</span>
+                  <div class="kbd-combo"><kbd class="kbd">1</kbd> .. <kbd class="kbd">8</kbd></div>
+                </div>
+                <div class="shortcut-item">
+                  <span class="shortcut-desc">Zoom In / Zoom Out</span>
+                  <div class="kbd-combo"><kbd class="kbd">Z</kbd> / <kbd class="kbd">Shift+Z</kbd></div>
+                </div>
+                <div class="shortcut-item">
+                  <span class="shortcut-desc">Fit Zoom to Screen</span>
+                  <kbd class="kbd">0</kbd>
+                </div>
+                <div class="shortcut-item">
+                  <span class="shortcut-desc">Close Modals / Deselect</span>
+                  <kbd class="kbd">Esc</kbd>
+                </div>
+              </div>
             </div>
           </div>
         </div>

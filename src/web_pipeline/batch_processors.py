@@ -39,7 +39,42 @@ BENCHMARK_DIR = DATA_DIR / "benchmarks"
 INGEST_DIR.mkdir(parents=True, exist_ok=True)
 STEMS_DIR.mkdir(parents=True, exist_ok=True)
 DIARIZATION_DIR.mkdir(parents=True, exist_ok=True)
-BENCHMARK_DIR.mkdir(parents=True, exist_ok=True)
+
+def _setup_device(device_str: str) -> tuple[str, Optional[float]]:
+    """Configure torch active device if CUDA is selected and query current wattage."""
+    if device_str in ("auto", "cuda") and torch.cuda.is_available():
+        best_index = max(
+            range(torch.cuda.device_count()),
+            key=lambda index: torch.cuda.get_device_properties(index).total_memory,
+        )
+        device_str = f"cuda:{best_index}"
+    elif device_str == "auto":
+        device_str = "cpu"
+
+    if device_str.startswith("cuda:") and torch.cuda.is_available():
+        try:
+            torch.cuda.set_device(int(device_str.split(":")[1]))
+        except Exception:
+            pass
+
+    power_w = None
+    try:
+        gpu_info = hardware_monitor.get_gpu_info()
+        if gpu_info and gpu_info.get("available"):
+            if device_str.startswith("cuda:"):
+                try:
+                    idx = int(device_str.split(":")[1])
+                    for dev in gpu_info.get("devices", []):
+                        if dev.get("index") == idx:
+                            power_w = dev.get("power_w")
+                            break
+                except (ValueError, IndexError):
+                    pass
+            if power_w is None:
+                power_w = gpu_info.get("power_w")
+    except Exception:
+        pass
+    return device_str, power_w
 
 
 def si_sdr_db(estimate: np.ndarray, reference: np.ndarray) -> float:
@@ -274,16 +309,21 @@ async def process_batch_ingest_files(job: PipelineJob, queue: JobQueueManager) -
 
 async def process_batch_separation(job: PipelineJob, queue: JobQueueManager) -> None:
     """Batch stem separation across audio items."""
+    event_loop = asyncio.get_running_loop()
     item_ids: List[str] = job.params.get("item_ids", [])
     model_name: str = job.params.get("model", "BSRoFormer")
     device: str = job.params.get("device", "cuda" if torch.cuda.is_available() else "cpu")
     target_sr: int = int(job.params.get("sample_rate", DEFAULT_SAMPLE_RATE))
 
+    # Setup device and query wattage
+    device, cur_pwr = _setup_device(device)
+    pwr_str = f" (⚡ {cur_pwr} W)" if cur_pwr is not None else ""
+
     # Retrieve valid audio items
     items = [dataset_manager.get_item(iid) for iid in item_ids if dataset_manager.get_item(iid)]
     job.total_items = len(items)
-    job.add_log(f"Initializing {model_name} on device '{device}' for {len(items)} audio items", "info")
-    queue.update_job_progress(job.id, current_step=f"Initializing {model_name}...")
+    job.add_log(f"Initializing {model_name} on device '{device}'{pwr_str} for {len(items)} audio items", "info")
+    queue.update_job_progress(job.id, current_step=f"Initializing {model_name} on {device}...")
 
     # Instantiate model
     separator = None
@@ -295,7 +335,18 @@ async def process_batch_separation(job: PipelineJob, queue: JobQueueManager) -> 
         elif model_name == "HTDemucs":
             separator = HTDemucs(device=device)
         elif model_name == "MVSepMDX23":
-            separator = MVSepMDX23(device=device)
+            def report_mvsep_progress(message: str) -> None:
+                event_loop.call_soon_threadsafe(
+                    lambda current_message=message: queue.update_job_progress(
+                        job.id,
+                        log_message=f"MVSep-MDX23: {current_message}",
+                    )
+                )
+
+            separator = MVSepMDX23(
+                device=device,
+                progress_callback=report_mvsep_progress,
+            )
         else:
             raise ValueError(f"Unsupported separation backend: {model_name}")
 
@@ -319,7 +370,7 @@ async def process_batch_separation(job: PipelineJob, queue: JobQueueManager) -> 
                 job.id,
                 processed_items=processed,
                 failed_items=failed,
-                current_step=f"[{idx}/{job.total_items}] Separating {it.title} ({model_name})",
+                current_step=f"[{idx}/{job.total_items}] Separating {it.title} ({model_name} on {device})",
             )
 
             t0 = time.time()
@@ -350,17 +401,21 @@ async def process_batch_separation(job: PipelineJob, queue: JobQueueManager) -> 
 
                 wall_time = time.time() - t0
                 hardware_monitor.record_item_processed(it.duration, wall_time)
+                _, item_pwr = _setup_device(device)
 
                 job.item_results.append({
                     "item_id": it.id,
                     "title": it.title,
                     "model": model_name,
                     "stems": stems_found,
+                    "device": device,
+                    "power_w": item_pwr,
                     "wall_time": round(wall_time, 2),
                     "status": "success",
                 })
                 processed += 1
-                job.add_log(f"[{idx}/{job.total_items}] Completed {it.title} in {round(wall_time, 1)}s (Stems: {list(stems_found.keys())})", "info")
+                pwr_tag = f" • ⚡ {item_pwr}W" if item_pwr is not None else ""
+                job.add_log(f"[{idx}/{job.total_items}] Completed {it.title} in {round(wall_time, 1)}s (Device: {device}{pwr_tag}, Stems: {list(stems_found.keys())})", "info")
 
             except Exception as e:
                 failed += 1
@@ -402,10 +457,14 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
             "warning",
         )
 
+    # Setup device and query wattage
+    device, cur_pwr = _setup_device(device)
+    pwr_str = f" (⚡ {cur_pwr} W)" if cur_pwr is not None else ""
+
     items = [dataset_manager.get_item(iid) for iid in item_ids if dataset_manager.get_item(iid)]
     job.total_items = len(items)
-    job.add_log(f"Initializing Diarizer '{backend}' on device '{device}' for {len(items)} audio items", "info")
-    queue.update_job_progress(job.id, current_step=f"Initializing {backend} diarizer...")
+    job.add_log(f"Initializing Diarizer '{backend}' on device '{device}'{pwr_str} for {len(items)} audio items", "info")
+    queue.update_job_progress(job.id, current_step=f"Initializing {backend} diarizer on {device}...")
 
     diarizer = None
     try:
@@ -432,7 +491,7 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
                 job.id,
                 processed_items=processed,
                 failed_items=failed,
-                current_step=f"[{idx}/{job.total_items}] Diarizing {it.title}",
+                current_step=f"[{idx}/{job.total_items}] Diarizing {it.title} ({backend} on {device})",
             )
 
             t0 = time.time()
@@ -470,17 +529,21 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
 
                 wall_time = time.time() - t0
                 hardware_monitor.record_item_processed(it.duration, wall_time)
+                _, item_pwr = _setup_device(device)
 
                 job.item_results.append({
                     "item_id": it.id,
                     "title": it.title,
                     "speaker_count": len(res.speakers),
                     "num_turns": len(res.turns),
+                    "device": device,
+                    "power_w": item_pwr,
                     "wall_time": round(wall_time, 2),
                     "status": "success",
                 })
                 processed += 1
-                job.add_log(f"[{idx}/{job.total_items}] Diarized {it.title}: {len(res.speakers)} speakers, {len(res.turns)} turns", "info")
+                pwr_tag = f" • ⚡ {item_pwr}W" if item_pwr is not None else ""
+                job.add_log(f"[{idx}/{job.total_items}] Diarized {it.title}: {len(res.speakers)} speakers, {len(res.turns)} turns (Device: {device}{pwr_tag})", "info")
 
             except Exception as e:
                 failed += 1
@@ -500,17 +563,25 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
             queue.update_job_progress(job.id, processed_items=processed, failed_items=failed)
 
     finally:
-        if diarizer and hasattr(diarizer, "close"):
+        if (
+            diarizer
+            and hasattr(diarizer, "close")
+            and not queue.is_cancelled(job.id)
+        ):
             await asyncio.to_thread(diarizer.close)
 
 
 async def process_batch_benchmark(job: PipelineJob, queue: JobQueueManager) -> None:
     """Execute separation benchmark suite across speech and music datasets."""
+    event_loop = asyncio.get_running_loop()
     speech_ids: List[str] = job.params.get("speech_item_ids", [])
     music_ids: List[str] = job.params.get("music_item_ids", [])
     models_to_test: List[str] = job.params.get("models", ["BSRoFormer", "HTDemucs"])
     snr_levels: List[float] = [float(s) for s in job.params.get("snr_levels", [0.0, 6.0, 12.0])]
     device: str = job.params.get("device", "cuda" if torch.cuda.is_available() else "cpu")
+
+    device, cur_pwr = _setup_device(device)
+    pwr_str = f" (⚡ {cur_pwr} W)" if cur_pwr is not None else ""
 
     speech_items = [dataset_manager.get_item(iid) for iid in speech_ids if dataset_manager.get_item(iid)]
     music_items = [dataset_manager.get_item(iid) for iid in music_ids if dataset_manager.get_item(iid)]
@@ -532,7 +603,7 @@ async def process_batch_benchmark(job: PipelineJob, queue: JobQueueManager) -> N
 
     job.total_items = len(benchmark_tasks) * len(models_to_test)
     job.add_log(
-        f"Separation Benchmark initialized: {len(speech_items)} speech x {len(music_items)} music x {len(snr_levels)} SNRs = {len(benchmark_tasks)} mixtures across {len(models_to_test)} models ({job.total_items} runs total)",
+        f"Separation Benchmark initialized on device '{device}'{pwr_str}: {len(speech_items)} speech x {len(music_items)} music x {len(snr_levels)} SNRs = {len(benchmark_tasks)} mixtures across {len(models_to_test)} models ({job.total_items} runs total)",
         "info",
     )
 
@@ -546,7 +617,7 @@ async def process_batch_benchmark(job: PipelineJob, queue: JobQueueManager) -> N
         if queue.is_cancelled(job.id):
             break
 
-        job.add_log(f"Loading separation model {model_name} for benchmark...", "info")
+        job.add_log(f"Loading separation model {model_name} on {device} for benchmark...", "info")
         separator = None
         try:
             if model_name == "BSRoFormer":
@@ -556,7 +627,18 @@ async def process_batch_benchmark(job: PipelineJob, queue: JobQueueManager) -> N
             elif model_name == "HTDemucs":
                 separator = HTDemucs(device=device)
             elif model_name == "MVSepMDX23":
-                separator = MVSepMDX23(device=device)
+                def report_mvsep_progress(message: str) -> None:
+                    event_loop.call_soon_threadsafe(
+                        lambda current_message=message: queue.update_job_progress(
+                            job.id,
+                            log_message=f"MVSep-MDX23: {current_message}",
+                        )
+                    )
+
+                separator = MVSepMDX23(
+                    device=device,
+                    progress_callback=report_mvsep_progress,
+                )
             else:
                 raise ValueError(f"Unsupported separation backend: {model_name}")
             if hasattr(separator, "load"):
@@ -580,7 +662,7 @@ async def process_batch_benchmark(job: PipelineJob, queue: JobQueueManager) -> N
                     job.id,
                     processed_items=processed,
                     failed_items=failed,
-                    current_step=f"[{processed + failed + 1}/{job.total_items}] {model_name} on {spk.title} + {mus.title} (SNR {snr}dB)",
+                    current_step=f"[{processed + failed + 1}/{job.total_items}] {model_name} on {spk.title} + {mus.title} ({device}, SNR {snr}dB)",
                 )
 
                 t0 = time.time()
@@ -622,6 +704,7 @@ async def process_batch_benchmark(job: PipelineJob, queue: JobQueueManager) -> N
 
                     wall_time = time.time() - t0
                     hardware_monitor.record_item_processed(spk.duration, wall_time)
+                    _, item_pwr = _setup_device(device)
 
                     record = {
                         "model": model_name,
@@ -632,13 +715,16 @@ async def process_batch_benchmark(job: PipelineJob, queue: JobQueueManager) -> N
                         "mixture_si_sdr_db": round(mix_si_sdr, 2),
                         "vocals_si_sdr_db": round(pred_si_sdr, 2),
                         "si_sdri_db": round(si_sdri, 2),
+                        "device": device,
+                        "power_w": item_pwr,
                         "wall_time": round(wall_time, 2),
                         "status": "success",
                     }
                     evaluated_records.append(record)
                     job.item_results.append(record)
                     processed += 1
-                    job.add_log(f"Benchmark [{model_name} / SNR {snr}dB]: SI-SDRi = {round(si_sdri, 2)} dB (time {round(wall_time, 1)}s)", "info")
+                    pwr_tag = f" • ⚡ {item_pwr}W" if item_pwr is not None else ""
+                    job.add_log(f"Benchmark [{model_name} / {device}{pwr_tag} / SNR {snr}dB]: SI-SDRi = {round(si_sdri, 2)} dB (time {round(wall_time, 1)}s)", "info")
 
                 except Exception as e:
                     failed += 1

@@ -192,7 +192,7 @@ object. The returned object has the same nine-field class contract, while its
 | `HTDemucs` | `separate(audio) -> Audio` | No explicit `load()` required. |
 | `BSRoFormer` | `separate(audio) -> Audio` | Call `load()` first, or use a context manager. |
 | `MelRoFormer` | `separate(audio) -> Audio` | Call `load()` first, or use a context manager. |
-| `MVSepMDX23` | `separate(audio) -> Audio` | No `ManagedModel` load step; dependencies/checkpoints may be fetched on first use. Requires `onnxruntime-gpu` for CUDA execution; explicit `device="cuda"` raises `MVSepMDX23Error` if CUDA or ONNX CUDA execution provider is unavailable. |
+| `MVSepMDX23` | `separate(audio) -> Audio` | No `ManagedModel` load step; dependencies/checkpoints may be fetched on first use. Requires `onnxruntime-gpu` for CUDA execution; explicit `device="cuda"` raises `MVSepMDX23Error` if CUDA or ONNX CUDA execution provider is unavailable. Indexed devices such as `cuda:1` isolate the upstream subprocess to that physical GPU. |
 
 **Common behavior:**
 
@@ -206,10 +206,19 @@ object. The returned object has the same nine-field class contract, while its
 **Common failure behavior:** Each backend raises its own runtime error type
 when the input, external command, model, or expected output is unavailable.
 
+`MVSepMDX23` uses a resource-conscious vocal-separation default of one Kim
+ONNX model (`single_onnx=True`) and `0.25` overlap. Callers that need the
+upstream maximum-quality ensemble can pass `single_onnx=False`,
+`overlap_large=0.6`, and `overlap_small=0.5`. Its optional
+`progress_callback(message)` receives unbuffered upstream status lines.
+`cancel()` requests non-blocking cancellation, while `close()` terminates and
+reaps any active upstream process group.
+
 ### `BaseSeparator.close() -> None`
 
 Default no-op resource cleanup method. `BSRoFormer` and `MelRoFormer` provide a
-compatibility implementation that delegates to `unload()`.
+compatibility implementation that delegates to `unload()`. `MVSepMDX23.close()`
+cancels and reaps an active CLI subprocess.
 
 ## 4. Managed model lifecycle API
 
@@ -289,6 +298,12 @@ install them in an isolated worker/environment. The default model artifact is
 downloaded from
 `nvidia/diar_sortformer_4spk-v1` at revision
 `f059506485424eb68a90a7af84c8e63e67f381fd`.
+
+Deployment note: model inference is run on the dedicated model server
+(`vsf@vsf-242`), not on the development machine (`tungnl5@VF-TUNGNL5-L`). The
+server loads `HF_TOKEN` from the repository-root `.env` when the web process
+starts. Hugging Face downloads use `.data/huggingface` as the default cache
+(`HF_HOME` can override this location).
 
 **Behavior contract:**
 
@@ -389,6 +404,10 @@ The repository provides two specialized web platforms:
   served at `/pipeline/`.
 - **Health endpoint:** `GET /api/health` reports backend status and both
   frontend mount points.
+- **Shutdown:** Stopping the backend cancels every pending and running
+  SonicStudio task and SonicPipeline job, kills job child processes
+  (`yt-dlp`, `ffmpeg`, Demucs, MVSEP), and does not resume leftover jobs
+  after restart.
 - **Compatibility:** The former `start_studio.*` and `start_pipeline.*`
   launchers start the same unified backend.
 

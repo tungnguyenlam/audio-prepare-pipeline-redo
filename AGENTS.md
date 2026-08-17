@@ -13,6 +13,20 @@ Instructions for coding agents working in this repository.
 
 A Python 3.13 audio-prepare pipeline: ingest YouTube (or local files), separate stems, optionally diarize, and mix speech+music for separation benchmarks. There is no single pipeline class.
 
+## Environment roles
+
+- `tungnl5@VF-TUNGNL5-L` is the development machine. Use it to write and
+  review code, documentation, and configuration; do not run model inference
+  here.
+- `vsf@vsf-242` is the model server. Run the web backend and model inference
+  there, using its server-local virtual environment and runtime `.data/`
+  directory.
+- Synchronize source code between the two machines with the scripts under
+  `scripts/sync/`. Keep credentials and runtime artifacts machine-local.
+- The web server loads the repository-root `.env` at startup. `HF_TOKEN` is
+  used for Hugging Face authentication, and `HF_HOME` defaults to
+  `.data/huggingface` unless explicitly set.
+
 Operational flow (see `docs/data_contract.md`):
 
 ```text

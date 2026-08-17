@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import threading
+import time
 from pathlib import Path
 from typing import Awaitable, Callable
 
@@ -16,8 +19,65 @@ os.environ.setdefault("HF_HOME", str(ROOT_DIR / ".data" / "huggingface"))
 from src.web_pipeline import server as pipeline_server
 from src.web_studio import server as studio_server
 
+logger = logging.getLogger("web_backend")
 
 Handler = Callable[[web.Request], Awaitable[web.StreamResponse]]
+SHUTDOWN_WATCHDOG_S = 6.0
+
+
+def _ensure_own_process_group() -> None:
+    """Put the backend in its own process group so restart can stop job children."""
+    if os.name == "nt":
+        return
+    try:
+        os.setpgrp()
+    except OSError:
+        pass
+
+
+def terminate_descendant_processes(timeout_s: float = 1.5) -> None:
+    """Stop child processes spawned by running jobs (yt-dlp, ffmpeg, demucs, MVSEP)."""
+    try:
+        import psutil
+    except ImportError:
+        return
+
+    try:
+        children = psutil.Process().children(recursive=True)
+    except psutil.Error:
+        return
+
+    if not children:
+        return
+
+    logger.info("Terminating %d descendant process(es) from running jobs", len(children))
+    for child in children:
+        try:
+            child.terminate()
+        except psutil.Error:
+            pass
+    _, alive = psutil.wait_procs(children, timeout=timeout_s)
+    for child in alive:
+        try:
+            child.kill()
+        except psutil.Error:
+            pass
+
+
+def _start_shutdown_watchdog(timeout_s: float = SHUTDOWN_WATCHDOG_S) -> None:
+    """Force-exit if shutdown is blocked by in-process model threads."""
+
+    def _force_exit() -> None:
+        time.sleep(timeout_s)
+        logger.warning("Shutdown watchdog expired; forcing process exit")
+        terminate_descendant_processes(timeout_s=0.5)
+        os._exit(0)
+
+    threading.Thread(
+        target=_force_exit,
+        name="sonic-shutdown-watchdog",
+        daemon=True,
+    ).start()
 
 
 @web.middleware
@@ -60,13 +120,23 @@ def create_app() -> web.Application:
         Configured aiohttp application with both API surfaces and frontend
         mounts.
     """
+    _ensure_own_process_group()
     app = web.Application(
         client_max_size=2048 * 1024 * 1024,
         middlewares=[no_cache_frontend_middleware],
     )
 
+    async def on_shutdown_begin(app: web.Application) -> None:
+        logger.info("Backend shutting down; cancelling all running jobs")
+        _start_shutdown_watchdog()
+
+    async def on_shutdown_end(app: web.Application) -> None:
+        terminate_descendant_processes()
+
+    app.on_shutdown.append(on_shutdown_begin)
     studio_server.register_lifecycle(app)
     pipeline_server.register_lifecycle(app)
+    app.on_shutdown.append(on_shutdown_end)
     studio_server.register_api_routes(app)
     pipeline_server.register_api_routes(app)
 

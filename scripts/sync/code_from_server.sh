@@ -8,7 +8,9 @@ cd "$REPO_ROOT"
 
 rsync -avzP \
   --exclude='.git/' \
+  --exclude='.env' \
   --exclude='.venv/' \
+  --exclude='.venv-*/' \
   --exclude='.data/' \
   --exclude='__pycache__/' \
   --exclude='*.pyc' \

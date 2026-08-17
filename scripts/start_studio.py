@@ -69,20 +69,24 @@ def free_port(port: int, host: str = "127.0.0.1") -> None:
 
     pids.discard(current_pid)
 
+    def _signal_pid(pid: int, sig: int) -> None:
+        try:
+            pgid = os.getpgid(pid)
+            if pgid == pid:
+                os.killpg(pgid, sig)
+            else:
+                os.kill(pid, sig)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+
     if pids:
         pid_list = ", ".join(str(p) for p in sorted(pids))
         print(f"⚠️  Port {port} is occupied by PID(s): {pid_list}. Releasing...")
         for pid in pids:
-            try:
-                os.kill(pid, signal.SIGTERM)
-            except (ProcessLookupError, PermissionError):
-                pass
+            _signal_pid(pid, signal.SIGTERM)
         time.sleep(0.3)
         for pid in pids:
-            try:
-                os.kill(pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
+            _signal_pid(pid, signal.SIGKILL)
         time.sleep(0.3)
 
     # Validate if port was freed
@@ -121,7 +125,10 @@ def main() -> None:
     print(f"   ⚡ SonicPipeline: http://{args.host}:{args.port}/pipeline/")
     print(f"   ⚡ Compute Device: {get_device()}")
     print("=" * 60)
-    web.run_app(app, host=args.host, port=args.port)
+    try:
+        web.run_app(app, host=args.host, port=args.port, shutdown_timeout=5)
+    finally:
+        os._exit(0)
 
 
 if __name__ == "__main__":

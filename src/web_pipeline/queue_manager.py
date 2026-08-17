@@ -101,6 +101,7 @@ class JobQueueManager:
         self._subscribers: Set[asyncio.Queue[Dict[str, Any]]] = set()
         self._worker_task: Optional[asyncio.Task[Any]] = None
         self._dispatch_event = asyncio.Event()
+        self._shutting_down = False
         self._load_persisted_jobs()
 
     def _load_persisted_jobs(self) -> None:
@@ -112,15 +113,18 @@ class JobQueueManager:
                 with open(file_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     job = PipelineJob.from_dict(data)
-                    # If server restarted during running state, mark as failed/interrupted
-                    if job.status == "running":
-                        job.status = "failed"
-                        job.error = "Interrupted by server restart"
+                    # Leftover active jobs from a previous process must not resume.
+                    if job.status in ("pending", "running"):
+                        job.status = "cancelled"
+                        job.finished_at = time.time()
+                        job.current_step = "Cancelled by server shutdown"
+                        job.error = "Interrupted by server shutdown"
+                        job.add_log(
+                            "Job cancelled because the server stopped",
+                            "warning",
+                        )
                         self._save_job(job)
                     self._jobs[job.id] = job
-                    if job.status == "pending":
-                        self._queue.put_nowait(job.id)
-                        self._dispatch_event.set()
             except Exception as e:
                 logger.warning(f"Failed to load job {file_path}: {e}")
 
@@ -134,19 +138,48 @@ class JobQueueManager:
             self._worker_task = asyncio.create_task(self._worker_loop())
             logger.info("JobQueueManager worker loop started")
 
-    async def stop(self) -> None:
-        """Stop worker loop and cancel in-flight jobs gracefully."""
-        if self._worker_task:
-            self._worker_task.cancel()
+    def _cancel_unfinished_jobs(self, reason: str) -> None:
+        """Mark every pending or running job cancelled and persist the result."""
+        for job in list(self._jobs.values()):
+            if job.status not in ("pending", "running"):
+                continue
+            self._cancel_flags.add(job.id)
+            job.status = "cancelled"
+            job.finished_at = time.time()
+            job.current_step = "Cancelled by server shutdown"
+            job.add_log(reason, "warning")
+            self._save_job(job)
+            self.broadcast("job_updated", job.to_dict())
+
+    def _drain_pending_queue(self) -> None:
+        """Drop queued job ids so shutdown cannot dispatch more work."""
+        while True:
             try:
-                await self._worker_task
-            except asyncio.CancelledError:
-                pass
-        running_tasks = list(self._running_tasks.values())
+                self._queue.get_nowait()
+                self._queue.task_done()
+            except asyncio.QueueEmpty:
+                break
+
+    async def stop(self) -> None:
+        """Stop the worker loop and terminate unfinished jobs immediately."""
+        if self._shutting_down:
+            return
+        self._shutting_down = True
+        self._is_paused = False
+        self._cancel_unfinished_jobs(
+            "Job cancelled because the server is shutting down",
+        )
+        self._drain_pending_queue()
+
+        if self._worker_task and not self._worker_task.done():
+            self._worker_task.cancel()
+            await asyncio.wait({self._worker_task}, timeout=1.0)
+
+        running_tasks = [task for task in self._running_tasks.values() if not task.done()]
         for task in running_tasks:
             task.cancel()
         if running_tasks:
-            await asyncio.gather(*running_tasks, return_exceptions=True)
+            await asyncio.wait(running_tasks, timeout=2.0)
 
     def subscribe(self) -> asyncio.Queue[Dict[str, Any]]:
         """Subscribe to real-time job and telemetry events via SSE."""
@@ -388,7 +421,7 @@ class JobQueueManager:
 
             await handler(job, self)
 
-            if not self.is_cancelled(job.id):
+            if not self.is_cancelled(job.id) and not self._shutting_down:
                 job.status = "completed"
                 job.progress = 100.0
                 job.finished_at = time.time()
@@ -398,16 +431,36 @@ class JobQueueManager:
         except asyncio.CancelledError:
             job.status = "cancelled"
             job.finished_at = time.time()
-            job.current_step = "Cancelled by user"
-            job.add_log("Job execution cancelled", "warning")
+            if self._shutting_down:
+                job.current_step = "Cancelled by server shutdown"
+                job.add_log(
+                    "Job execution cancelled because the server is shutting down",
+                    "warning",
+                )
+            else:
+                job.current_step = "Cancelled by user"
+                job.add_log("Job execution cancelled", "warning")
         except Exception as e:
-            logger.error(f"Job {job.id} failed: {e}", exc_info=True)
-            job.status = "failed"
-            job.finished_at = time.time()
-            job.error = str(e)
-            job.current_step = f"Failed: {e}"
-            job.add_log(f"Job failed with error: {e}", "error")
+            if self.is_cancelled(job.id) or self._shutting_down:
+                job.status = "cancelled"
+                job.finished_at = time.time()
+                job.current_step = "Cancelled by server shutdown"
+                job.add_log(
+                    "Job cancelled because the server is shutting down",
+                    "warning",
+                )
+            else:
+                logger.error(f"Job {job.id} failed: {e}", exc_info=True)
+                job.status = "failed"
+                job.finished_at = time.time()
+                job.error = str(e)
+                job.current_step = f"Failed: {e}"
+                job.add_log(f"Job failed with error: {e}", "error")
         finally:
+            if self._shutting_down or self.is_cancelled(job.id):
+                job.status = "cancelled"
+                if not job.finished_at:
+                    job.finished_at = time.time()
             self._save_job(job)
             self.broadcast("job_updated", job.to_dict())
             # Clean VRAM and RAM

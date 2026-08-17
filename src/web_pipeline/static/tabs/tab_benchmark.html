@@ -40,10 +40,19 @@
                   </div>
                 </div>
 
-                <div class="form-item">
-                  <label class="form-label" for="bench-snrs">Signal-to-Music Ratio Levels (SNR in dB)</label>
-                  <input type="text" id="bench-snrs" class="form-input font-mono" value="0.0, 6.0, 12.0" placeholder="0.0, 6.0, 12.0">
-                  <span class="form-hint">Comma separated test SNRs (e.g. -6.0, 0.0, 6.0, 12.0).</span>
+                <div class="form-row">
+                  <div class="form-item flex-1">
+                    <label class="form-label" for="bench-snrs">Signal-to-Music Ratio Levels (SNR in dB)</label>
+                    <input type="text" id="bench-snrs" class="form-input font-mono" value="0.0, 6.0, 12.0" placeholder="0.0, 6.0, 12.0">
+                    <span class="form-hint">Comma separated test SNRs (e.g. -6.0, 0.0, 6.0, 12.0).</span>
+                  </div>
+                  <div class="form-item flex-1">
+                    <label class="form-label" for="bench-device">Accelerator Compute Device</label>
+                    <select id="bench-device" class="form-select">
+                      <option value="cuda">CUDA GPU Accelerator</option>
+                      <option value="cpu">CPU Compute Fallback</option>
+                    </select>
+                  </div>
                 </div>
 
                 <button type="submit" class="btn btn-primary w-full btn-lg" id="btn-submit-benchmark">

@@ -66,7 +66,11 @@ UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 def get_default_device() -> str:
     """Detect the best available compute device."""
     if torch.cuda.is_available():
-        return "cuda"
+        best_index = max(
+            range(torch.cuda.device_count()),
+            key=lambda index: torch.cuda.get_device_properties(index).total_memory,
+        )
+        return f"cuda:{best_index}"
     if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
         return "mps"
     return "cpu"
@@ -81,6 +85,13 @@ def get_system_device_info() -> dict[str, Any]:
     device_type = "cpu"
     device_count = 0
     devices = []
+
+    telemetry_gpu: Dict[str, Any] = {}
+    try:
+        from src.web_pipeline.hardware_monitor import hardware_monitor
+        telemetry_gpu = hardware_monitor.get_gpu_info()
+    except Exception:
+        pass
     
     if cuda_available:
         device_type = "cuda"
@@ -89,17 +100,23 @@ def get_system_device_info() -> dict[str, Any]:
             device_name = f"CUDA ({device_count} GPUs: {torch.cuda.get_device_name(0)})"
         else:
             device_name = f"CUDA: {torch.cuda.get_device_name(0)}"
-        for i in range(device_count):
-            devices.append({
-                "index": i,
-                "id": f"cuda:{i}",
-                "name": torch.cuda.get_device_name(i),
-            })
+        if telemetry_gpu and telemetry_gpu.get("devices"):
+            devices = telemetry_gpu["devices"]
+        else:
+            for i in range(device_count):
+                devices.append({
+                    "index": i,
+                    "id": f"cuda:{i}",
+                    "name": torch.cuda.get_device_name(i),
+                    "power_w": None,
+                    "power_limit_w": None,
+                    "power_percent": None,
+                })
     elif mps_available:
         device_type = "mps"
         device_name = "Apple Silicon (MPS)"
         device_count = 1
-        devices.append({"index": 0, "id": "mps", "name": "Apple Silicon (MPS)"})
+        devices.append({"index": 0, "id": "mps", "name": "Apple Silicon (MPS)", "power_w": None, "power_limit_w": None})
         
     return {
         "device_type": device_type,
@@ -111,6 +128,27 @@ def get_system_device_info() -> dict[str, Any]:
         "torch_version": torch.__version__,
         "python_version": sys.version.split()[0],
     }
+
+
+def _get_device_power_w(target_device: str) -> Optional[float]:
+    """Helper to query current power draw (watts) for a target device."""
+    try:
+        from src.web_pipeline.hardware_monitor import hardware_monitor
+        gpu_info = hardware_monitor.get_gpu_info()
+        if not gpu_info or not gpu_info.get("available"):
+            return None
+        if target_device.startswith("cuda:"):
+            try:
+                idx = int(target_device.split(":")[1])
+                for dev in gpu_info.get("devices", []):
+                    if dev.get("index") == idx:
+                        return dev.get("power_w")
+            except (ValueError, IndexError):
+                pass
+        return gpu_info.get("power_w")
+    except Exception:
+        return None
+
 
 
 class AudioRegistry:
@@ -229,6 +267,7 @@ class TaskManager:
         self._queued_ids: List[str] = []
         self._workers: List[asyncio.Task[None]] = []
         self._running_ids: set[str] = set()
+        self._cancel_callbacks: Dict[str, Callable[[], None]] = {}
         self.max_concurrency = max(1, min(4, max_concurrency))
 
     async def start(self) -> None:
@@ -242,13 +281,24 @@ class TaskManager:
         logger.info("Studio task queue started with concurrency %d", self.max_concurrency)
 
     async def stop(self) -> None:
-        """Stop queue workers during application shutdown."""
-        workers = list(self._workers)
+        """Cancel queued and running tasks, then stop workers during shutdown."""
+        for task_id, task in list(self._tasks.items()):
+            if task.get("status") in ("pending", "running"):
+                self.update_task(
+                    task_id,
+                    status="cancelled",
+                    message="Task interrupted by server shutdown.",
+                )
+        for callback in list(self._cancel_callbacks.values()):
+            callback()
+        self._queued_ids.clear()
+
+        workers = [worker for worker in self._workers if not worker.done()]
         self._workers.clear()
         for worker in workers:
             worker.cancel()
         if workers:
-            await asyncio.gather(*workers, return_exceptions=True)
+            await asyncio.wait(workers, timeout=2.0)
 
     def enqueue(self, task_id: str, runner: Callable[[], Awaitable[None]]) -> None:
         """Add a previously created task to the worker queue."""
@@ -292,6 +342,7 @@ class TaskManager:
                     message=f"Task failed: {exc}",
                 )
             finally:
+                self._cancel_callbacks.pop(task_id, None)
                 self._running_ids.discard(task_id)
                 self._queue.task_done()
                 self._refresh_queue_messages()
@@ -362,14 +413,32 @@ class TaskManager:
         tasks = sorted(self._tasks.values(), key=lambda task: task["created_at"], reverse=True)
         return [dict(task) for task in tasks]
 
+    def set_cancel_callback(
+        self,
+        task_id: str,
+        callback: Callable[[], None] | None,
+    ) -> None:
+        """Register or clear safe cancellation for a running task."""
+        if callback is None:
+            self._cancel_callbacks.pop(task_id, None)
+        else:
+            self._cancel_callbacks[task_id] = callback
+
     def cancel_task(self, task_id: str) -> bool:
-        """Cancel a pending task without interrupting unsafe native model work."""
+        """Cancel a queued task or safely interrupt a supported running task."""
         task = self._tasks.get(task_id)
-        if not task or task["status"] != "pending":
+        if not task or task["status"] not in ("pending", "running"):
             return False
-        if task_id in self._queued_ids:
-            self._queued_ids.remove(task_id)
-        self.update_task(task_id, status="cancelled", message="Cancelled while queued.")
+        if task["status"] == "pending":
+            if task_id in self._queued_ids:
+                self._queued_ids.remove(task_id)
+            self.update_task(task_id, status="cancelled", message="Cancelled while queued.")
+        else:
+            callback = self._cancel_callbacks.get(task_id)
+            if callback is None:
+                return False
+            self.update_task(task_id, status="cancelled", message="Cancelling active process...")
+            callback()
         self._refresh_queue_messages()
         return True
 
@@ -1291,17 +1360,24 @@ async def handle_run_separation(request: web.Request) -> web.Response:
     )
 
     async def run_sep():
+        target_device = get_default_device() if device == "auto" else device
+        power_w = _get_device_power_w(target_device)
+        power_msg = f" (⚡ {power_w}W)" if power_w is not None else ""
         task_manager.update_task(
             task_id,
             status="running",
             progress=0.1,
-            message=f"Initializing {model_type.upper()} on {device}...",
+            message=f"Initializing {model_type.upper()} on {target_device}{power_msg}...",
         )
         loop = asyncio.get_running_loop()
 
         def do_separation():
-            target_device = get_default_device() if device == "auto" else device
-            
+            if target_device.startswith("cuda:") and torch.cuda.is_available():
+                try:
+                    torch.cuda.set_device(int(target_device.split(":")[1]))
+                except Exception:
+                    pass
+
             if model_type == "htdemucs":
                 sep = HTDemucs(
                     model=model_name or "htdemucs",
@@ -1337,13 +1413,30 @@ async def handle_run_separation(request: web.Request) -> web.Response:
                     return sep.separate(audio)
             
             elif model_type == "mvsep_mdx23":
+                def report_mvsep_progress(message: str) -> None:
+                    def update_progress() -> None:
+                        task = task_manager.get_task(task_id)
+                        if task and task["status"] == "running":
+                            task_manager.update_task(
+                                task_id,
+                                message=f"MVSep-MDX23: {message}",
+                            )
+
+                    loop.call_soon_threadsafe(update_progress)
+
                 sep = MVSepMDX23(
                     device=target_device,
                     output_dir=DATA_DIR / "mvsep_mdx23" / "out",
                     work_dir=DATA_DIR / "mvsep_mdx23" / "work",
                     repo_dir=DATA_DIR / "mvsep_mdx23" / "repo",
+                    progress_callback=report_mvsep_progress,
                 )
-                return sep.separate(audio)
+                task_manager.set_cancel_callback(task_id, sep.cancel)
+                try:
+                    return sep.separate(audio)
+                finally:
+                    task_manager.set_cancel_callback(task_id, None)
+                    sep.close()
             
             else:
                 raise ValueError(f"Unknown separation model: {model_type}")
@@ -1352,6 +1445,7 @@ async def handle_run_separation(request: web.Request) -> web.Response:
             start_time = time.time()
             separated_audio = await loop.run_in_executor(None, do_separation)
             elapsed = time.time() - start_time
+            end_power_w = _get_device_power_w(target_device)
             
             model_label = "HTDemucs (Fine-Tuned)" if (model_type == "htdemucs" and model_name == "htdemucs_ft") else (
                 "HTDemucs (Default)" if model_type == "htdemucs" else (
@@ -1375,22 +1469,34 @@ async def handle_run_separation(request: web.Request) -> web.Response:
                     "stem": two_stems,
                     "parent_title": audio.title,
                     "elapsed_s": round(elapsed, 2),
+                    "device": target_device,
+                    "power_w": end_power_w,
                 },
+            )
+            complete_msg = (
+                f"Separation completed in {elapsed:.2f}s on {target_device} (⚡ {end_power_w}W)!"
+                if end_power_w is not None
+                else f"Separation completed in {elapsed:.2f}s on {target_device}!"
             )
             task_manager.update_task(
                 task_id,
                 status="completed",
                 progress=1.0,
-                message=f"Separation completed in {elapsed:.2f}s!",
+                message=complete_msg,
                 result={
                     "separated_audio_id": new_id,
                     "metadata": separated_audio.metadata(),
                     "elapsed_s": round(elapsed, 2),
                     "model_type": model_type,
                     "model_label": model_label,
+                    "device": target_device,
+                    "power_w": end_power_w,
                 },
             )
         except Exception as e:
+            task = task_manager.get_task(task_id)
+            if task and task["status"] == "cancelled":
+                return
             logger.exception("Separation failed")
             task_manager.update_task(
                 task_id,
@@ -1421,16 +1527,23 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
     )
 
     async def run_diar():
+        target_device = get_default_device() if device == "auto" else device
+        power_w = _get_device_power_w(target_device)
+        power_msg = f" (⚡ {power_w}W)" if power_w is not None else ""
         task_manager.update_task(
             task_id,
             status="running",
             progress=0.1,
-            message=f"Running speaker diarization with {model_type}...",
+            message=f"Running speaker diarization with {model_type} on {target_device}{power_msg}...",
         )
         loop = asyncio.get_running_loop()
 
         def do_diarization():
-            target_device = get_default_device() if device == "auto" else device
+            if target_device.startswith("cuda:") and torch.cuda.is_available():
+                try:
+                    torch.cuda.set_device(int(target_device.split(":")[1]))
+                except Exception:
+                    pass
             
             if model_type == "pyannote":
                 diarizer = PyannoteDiarizer(device=target_device, token=token)
@@ -1447,18 +1560,26 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
             start_time = time.time()
             result = await loop.run_in_executor(None, do_diarization)
             elapsed = time.time() - start_time
+            end_power_w = _get_device_power_w(target_device)
 
             # Format dataclass result to JSON
             result_dict = asdict(result)
+            complete_msg = (
+                f"Diarization finished in {elapsed:.2f}s on {target_device} (⚡ {end_power_w}W)!"
+                if end_power_w is not None
+                else f"Diarization finished in {elapsed:.2f}s on {target_device}!"
+            )
             task_manager.update_task(
                 task_id,
                 status="completed",
                 progress=1.0,
-                message=f"Diarization finished in {elapsed:.2f}s!",
+                message=complete_msg,
                 result={
                     "diarization": result_dict,
                     "elapsed_s": round(elapsed, 2),
                     "audio_id": audio_id,
+                    "device": target_device,
+                    "power_w": end_power_w,
                 },
             )
         except Exception as e:
@@ -1481,6 +1602,8 @@ async def handle_extract_speaker_audio(request: web.Request) -> web.Response:
     speaker_id = data.get("speaker_id")
     speaker_name = data.get("speaker_name") or speaker_id
     turns = data.get("turns", [])
+
+    mode = data.get("mode", "concatenated")  # "concatenated" or "time_aligned"
 
     if not audio_id or not speaker_id:
         return web.json_response({"error": "audio_id and speaker_id are required"}, status=400)
@@ -1516,21 +1639,29 @@ async def handle_extract_speaker_audio(request: web.Request) -> web.Response:
             raise ValueError(f"No valid audio samples found for speaker {speaker_id}")
 
         valid_intervals.sort(key=lambda x: x[0])
-        segments = [waveform[s:e] for s, e in valid_intervals]
-        combined = np.concatenate(segments, axis=0)
+        if mode == "time_aligned":
+            combined = np.zeros_like(waveform)
+            for s, e in valid_intervals:
+                combined[s:e] = waveform[s:e]
+            mode_suffix = "aligned"
+        else:
+            segments = [waveform[s:e] for s, e in valid_intervals]
+            combined = np.concatenate(segments, axis=0)
+            mode_suffix = "concat"
 
         sanitized_title = _sanitize_filename_component(audio.title or audio.source_id)
         sanitized_spk = _sanitize_filename_component(speaker_name or speaker_id)
-        out_filename = f"{sanitized_title}_{sanitized_spk}.wav"
+        out_filename = f"{sanitized_title}_{sanitized_spk}_{mode_suffix}.wav"
         out_path = out_dir / out_filename
         sf.write(str(out_path), combined, sr)
 
+        tag_title = f"{audio.title or audio.source_id} [{speaker_name}] ({mode_suffix})"
         extracted_audio = Audio.from_file(
             out_path,
-            source_id=f"{audio.source_id}_{sanitized_spk}",
-            title=f"{audio.title or audio.source_id} [{speaker_name}]",
+            source_id=f"{audio.source_id}_{sanitized_spk}_{mode_suffix}",
+            title=tag_title,
             native_sample_rate=audio.native_sample_rate,
-            history=(*audio.history, f"diar_extract_{speaker_id}"),
+            history=(*audio.history, f"diar_extract_{speaker_id}_{mode}"),
         )
         return extracted_audio
 
@@ -1541,13 +1672,14 @@ async def handle_extract_speaker_audio(request: web.Request) -> web.Response:
             extracted,
             source_type="speaker_stem",
             parent_id=audio_id,
-            tags=["diarization", f"speaker:{speaker_id}"],
+            tags=["diarization", f"speaker:{speaker_id}", f"mode:{mode}"],
         )
         return web.json_response({
             "audio_id": new_id,
             "metadata": extracted.metadata(),
             "speaker_id": speaker_id,
             "speaker_name": speaker_name,
+            "mode": mode,
             "duration_s": extracted.duration_s,
         })
     except Exception as e:
@@ -1561,6 +1693,7 @@ async def handle_extract_all_speakers(request: web.Request) -> web.Response:
     audio_id = data.get("audio_id")
     turns = data.get("turns", [])
     speaker_names = data.get("speaker_names", {})  # map spk_id -> custom_name
+    mode = data.get("mode", "concatenated")  # "concatenated" or "time_aligned"
 
     if not audio_id or not turns:
         return web.json_response({"error": "audio_id and non-empty turns are required"}, status=400)
@@ -1582,6 +1715,8 @@ async def handle_extract_all_speakers(request: web.Request) -> web.Response:
         total_frames = waveform.shape[0]
         results = []
 
+        mode_suffix = "aligned" if mode == "time_aligned" else "concat"
+
         for spk_id in unique_speakers:
             spk_name = speaker_names.get(spk_id, spk_id)
             spk_turns = [t for t in turns if t.get("speaker_id") == spk_id]
@@ -1599,21 +1734,26 @@ async def handle_extract_all_speakers(request: web.Request) -> web.Response:
                 continue
 
             valid_intervals.sort(key=lambda x: x[0])
-            segments = [waveform[s:e] for s, e in valid_intervals]
-            combined = np.concatenate(segments, axis=0)
+            if mode == "time_aligned":
+                combined = np.zeros_like(waveform)
+                for s, e in valid_intervals:
+                    combined[s:e] = waveform[s:e]
+            else:
+                segments = [waveform[s:e] for s, e in valid_intervals]
+                combined = np.concatenate(segments, axis=0)
 
             sanitized_title = _sanitize_filename_component(audio.title or audio.source_id)
             sanitized_spk = _sanitize_filename_component(spk_name or spk_id)
-            out_filename = f"{sanitized_title}_{sanitized_spk}.wav"
+            out_filename = f"{sanitized_title}_{sanitized_spk}_{mode_suffix}.wav"
             out_path = out_dir / out_filename
             sf.write(str(out_path), combined, sr)
 
             extracted_audio = Audio.from_file(
                 out_path,
-                source_id=f"{audio.source_id}_{sanitized_spk}",
-                title=f"{audio.title or audio.source_id} [{spk_name}]",
+                source_id=f"{audio.source_id}_{sanitized_spk}_{mode_suffix}",
+                title=f"{audio.title or audio.source_id} [{spk_name}] ({mode_suffix})",
                 native_sample_rate=audio.native_sample_rate,
-                history=(*audio.history, f"diar_extract_{spk_id}"),
+                history=(*audio.history, f"diar_extract_{spk_id}_{mode}"),
             )
             results.append((spk_id, spk_name, extracted_audio))
         return results
@@ -1810,16 +1950,19 @@ async def handle_list_tasks(request: web.Request) -> web.Response:
 
 
 async def handle_cancel_task(request: web.Request) -> web.Response:
-    """Cancel a task that has not started yet."""
+    """Cancel a queued task or a running task with safe cancellation support."""
     task_id = request.match_info["id"]
     task = task_manager.get_task(task_id)
     if not task:
         return web.json_response({"error": "Task not found"}, status=404)
     if not task_manager.cancel_task(task_id):
         return web.json_response(
-            {"error": "Only queued tasks can be cancelled safely", "task": task},
+            {"error": "This running task cannot be cancelled safely", "task": task},
             status=409,
         )
+    return web.json_response(task_manager.get_task(task_id))
+
+
 async def handle_clear_tasks(request: web.Request) -> web.Response:
     """Clear completed, failed, and cancelled tasks from Studio queue memory."""
     cleared = task_manager.clear_finished()
@@ -1940,7 +2083,7 @@ async def handle_shared_queue_cancel(request: web.Request) -> web.Response:
     item_id = request.match_info["id"]
     if item_id.startswith("task_") or task_manager.get_task(item_id):
         if not task_manager.cancel_task(item_id):
-            return web.json_response({"error": "Only queued studio tasks can be cancelled"}, status=409)
+            return web.json_response({"error": "This running studio task cannot be cancelled safely"}, status=409)
         return web.json_response({"id": item_id, "source": "studio", "status": "cancelled"})
     else:
         try:
@@ -2050,6 +2193,9 @@ async def handle_batch_separation_compare(request: web.Request) -> web.Response:
         total = len(models)
         
         for idx, m_spec in enumerate(models, start=1):
+            task = task_manager.get_task(task_id)
+            if task and task["status"] == "cancelled":
+                break
             m_type = m_spec.get("model_type", "htdemucs")
             m_name = m_spec.get("model_name")
             m_label = m_spec.get("label") or f"{m_type}_{m_name or 'default'}"
@@ -2064,6 +2210,12 @@ async def handle_batch_separation_compare(request: web.Request) -> web.Response:
             try:
                 loop = asyncio.get_running_loop()
                 def do_sep(curr_type=m_type, curr_name=m_name):
+                    if target_device.startswith("cuda:") and torch.cuda.is_available():
+                        try:
+                            torch.cuda.set_device(int(target_device.split(":")[1]))
+                        except Exception:
+                            pass
+
                     if curr_type == "htdemucs":
                         sep = HTDemucs(
                             model=curr_name or "htdemucs",
@@ -2096,19 +2248,37 @@ async def handle_batch_separation_compare(request: web.Request) -> web.Response:
                         with sep:
                             return sep.separate(audio)
                     elif curr_type == "mvsep_mdx23":
+                        def report_mvsep_progress(message: str) -> None:
+                            def update_progress() -> None:
+                                task = task_manager.get_task(task_id)
+                                if task and task["status"] == "running":
+                                    task_manager.update_task(
+                                        task_id,
+                                        message=f"[{idx}/{total}] MVSep-MDX23: {message}",
+                                    )
+
+                            loop.call_soon_threadsafe(update_progress)
+
                         sep = MVSepMDX23(
                             device=target_device,
                             output_dir=DATA_DIR / "mvsep_mdx23" / "out",
                             work_dir=DATA_DIR / "mvsep_mdx23" / "work",
                             repo_dir=DATA_DIR / "mvsep_mdx23" / "repo",
+                            progress_callback=report_mvsep_progress,
                         )
-                        return sep.separate(audio)
+                        task_manager.set_cancel_callback(task_id, sep.cancel)
+                        try:
+                            return sep.separate(audio)
+                        finally:
+                            task_manager.set_cancel_callback(task_id, None)
+                            sep.close()
                     else:
                         raise ValueError(f"Unknown model type: {curr_type}")
 
                 t0 = time.time()
                 sep_audio = await loop.run_in_executor(None, do_sep)
                 elapsed = time.time() - t0
+                item_power_w = _get_device_power_w(target_device)
 
                 new_id = registry.register(
                     sep_audio,
@@ -2122,6 +2292,8 @@ async def handle_batch_separation_compare(request: web.Request) -> web.Response:
                         "stem": two_stems,
                         "parent_title": audio.title,
                         "elapsed_s": round(elapsed, 2),
+                        "device": target_device,
+                        "power_w": item_power_w,
                     },
                 )
                 results.append({
@@ -2135,8 +2307,13 @@ async def handle_batch_separation_compare(request: web.Request) -> web.Response:
                     "path": str(sep_audio.path),
                     "elapsed_s": round(elapsed, 2),
                     "metadata": sep_audio.metadata(),
+                    "device": target_device,
+                    "power_w": item_power_w,
                 })
             except Exception as e:
+                task = task_manager.get_task(task_id)
+                if task and task["status"] == "cancelled":
+                    break
                 logger.exception("Failed model separation: %s", m_label)
                 results.append({
                     "model_id": f"{m_type}_{m_name or 'default'}",
@@ -2144,16 +2321,28 @@ async def handle_batch_separation_compare(request: web.Request) -> web.Response:
                     "error": str(e),
                 })
 
+        task = task_manager.get_task(task_id)
+        if task and task["status"] == "cancelled":
+            return
+
+        last_pwr = _get_device_power_w(target_device)
+        complete_msg = (
+            f"Completed {len(results)} model separations on {target_device} (⚡ {last_pwr}W) for '{audio.title}'!"
+            if last_pwr is not None
+            else f"Completed {len(results)} model separations on {target_device} for '{audio.title}'!"
+        )
         task_manager.update_task(
             task_id,
             status="completed",
             progress=1.0,
-            message=f"Completed {len(results)} model separations for '{audio.title}'!",
+            message=complete_msg,
             result={
                 "clip_id": audio_id,
                 "clip_title": audio.title,
                 "clip_path": str(audio.path),
                 "results": results,
+                "device": target_device,
+                "power_w": last_pwr,
             },
         )
 
@@ -2341,7 +2530,7 @@ def register_lifecycle(app: web.Application) -> None:
         app: Aiohttp application that owns the shared backend.
     """
     app.on_startup.append(start_background_tasks)
-    app.on_cleanup.append(cleanup_background_tasks)
+    app.on_shutdown.append(cleanup_background_tasks)
 
 
 def create_app() -> web.Application:

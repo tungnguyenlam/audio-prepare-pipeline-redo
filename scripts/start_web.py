@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -38,7 +39,10 @@ def main() -> None:
     print(f"   SonicPipeline: {base_url}/pipeline/")
     print(f"   Compute Device: {device}")
     print("=" * 65)
-    web.run_app(create_app(), host=args.host, port=args.port)
+    try:
+        web.run_app(create_app(), host=args.host, port=args.port, shutdown_timeout=5)
+    finally:
+        os._exit(0)
 
 
 if __name__ == "__main__":
