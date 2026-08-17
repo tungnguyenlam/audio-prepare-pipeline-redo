@@ -19,6 +19,10 @@ import aiohttp
 from aiohttp import web
 import soundfile as sf
 import torch
+from dotenv import load_dotenv
+
+ROOT_DIR = Path(__file__).resolve().parent.parent.parent
+load_dotenv(ROOT_DIR / ".env", override=False)
 
 from src.utils.AudioClass import DEFAULT_SAMPLE_RATE, Audio
 from src.web_pipeline.batch_processors import register_all_handlers
@@ -28,7 +32,6 @@ from src.web_pipeline.queue_manager import queue_manager
 
 logger = logging.getLogger("pipeline_server")
 
-ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 DATA_DIR = ROOT_DIR / ".data" / "pipeline"
 UPLOADS_DIR = DATA_DIR / "uploads"

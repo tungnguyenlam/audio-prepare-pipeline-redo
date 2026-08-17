@@ -30,8 +30,12 @@ import numpy as np
 import torch
 import matplotlib
 matplotlib.use("Agg")
+from dotenv import load_dotenv
 
-from src.utils.AudioClass import DEFAULT_SAMPLE_RATE, Audio
+ROOT_DIR = Path(__file__).resolve().parent.parent.parent
+load_dotenv(ROOT_DIR / ".env", override=False)
+
+from src.utils.AudioClass import DEFAULT_SAMPLE_RATE, Audio, _sanitize_filename_component
 from src.utils.AudioCutter import AudioCutter, AudioCutterError
 from src.utils.SpectrogramComparer import SpectrogramComparer
 from src.utils.WaveformComparer import WaveformComparer
@@ -47,7 +51,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("web_server")
 
-ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 DATA_DIR = ROOT_DIR / ".data"
 TEMP_DIR = ROOT_DIR / "temp"
@@ -1470,6 +1473,174 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
     return web.json_response({"task_id": task_id, "task": task_manager.get_task(task_id)}, status=202)
 
 
+async def handle_extract_speaker_audio(request: web.Request) -> web.Response:
+    """Extract all turns for a specific speaker and concatenate into a new Audio item."""
+    data = await request.json()
+    audio_id = data.get("audio_id")
+    speaker_id = data.get("speaker_id")
+    speaker_name = data.get("speaker_name") or speaker_id
+    turns = data.get("turns", [])
+
+    if not audio_id or not speaker_id:
+        return web.json_response({"error": "audio_id and speaker_id are required"}, status=400)
+
+    audio = registry.get_audio(audio_id)
+    if not audio:
+        return web.json_response({"error": "Audio not found"}, status=404)
+
+    # Filter turns for this speaker
+    spk_turns = [t for t in turns if t.get("speaker_id") == speaker_id]
+    if not spk_turns:
+        return web.json_response({"error": f"No turns found for speaker {speaker_id}"}, status=400)
+
+    out_dir = DATA_DIR / "diarization" / "extracted"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    def do_extract():
+        src_path = Path(audio.path)
+        waveform, sr = sf.read(str(src_path), always_2d=True)
+        total_frames = waveform.shape[0]
+
+        valid_intervals = []
+        for t in spk_turns:
+            s_sec = float(t.get("start_s", 0))
+            e_sec = float(t.get("end_s", 0))
+            if e_sec > s_sec:
+                s_frame = max(0, min(int(round(s_sec * sr)), total_frames))
+                e_frame = max(0, min(int(round(e_sec * sr)), total_frames))
+                if e_frame > s_frame:
+                    valid_intervals.append((s_frame, e_frame))
+
+        if not valid_intervals:
+            raise ValueError(f"No valid audio samples found for speaker {speaker_id}")
+
+        valid_intervals.sort(key=lambda x: x[0])
+        segments = [waveform[s:e] for s, e in valid_intervals]
+        combined = np.concatenate(segments, axis=0)
+
+        sanitized_title = _sanitize_filename_component(audio.title or audio.source_id)
+        sanitized_spk = _sanitize_filename_component(speaker_name or speaker_id)
+        out_filename = f"{sanitized_title}_{sanitized_spk}.wav"
+        out_path = out_dir / out_filename
+        sf.write(str(out_path), combined, sr)
+
+        extracted_audio = Audio.from_file(
+            out_path,
+            source_id=f"{audio.source_id}_{sanitized_spk}",
+            title=f"{audio.title or audio.source_id} [{speaker_name}]",
+            native_sample_rate=audio.native_sample_rate,
+            history=(*audio.history, f"diar_extract_{speaker_id}"),
+        )
+        return extracted_audio
+
+    try:
+        loop = asyncio.get_running_loop()
+        extracted = await loop.run_in_executor(None, do_extract)
+        new_id = registry.register(
+            extracted,
+            source_type="speaker_stem",
+            parent_id=audio_id,
+            tags=["diarization", f"speaker:{speaker_id}"],
+        )
+        return web.json_response({
+            "audio_id": new_id,
+            "metadata": extracted.metadata(),
+            "speaker_id": speaker_id,
+            "speaker_name": speaker_name,
+            "duration_s": extracted.duration_s,
+        })
+    except Exception as e:
+        logger.exception("Speaker extraction failed")
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def handle_extract_all_speakers(request: web.Request) -> web.Response:
+    """Extract audio for each speaker present in turns and register them all."""
+    data = await request.json()
+    audio_id = data.get("audio_id")
+    turns = data.get("turns", [])
+    speaker_names = data.get("speaker_names", {})  # map spk_id -> custom_name
+
+    if not audio_id or not turns:
+        return web.json_response({"error": "audio_id and non-empty turns are required"}, status=400)
+
+    audio = registry.get_audio(audio_id)
+    if not audio:
+        return web.json_response({"error": "Audio not found"}, status=404)
+
+    unique_speakers = sorted(list(set(t.get("speaker_id") for t in turns if t.get("speaker_id"))))
+    if not unique_speakers:
+        return web.json_response({"error": "No valid speakers found in turns"}, status=400)
+
+    out_dir = DATA_DIR / "diarization" / "extracted"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    def do_extract_all():
+        src_path = Path(audio.path)
+        waveform, sr = sf.read(str(src_path), always_2d=True)
+        total_frames = waveform.shape[0]
+        results = []
+
+        for spk_id in unique_speakers:
+            spk_name = speaker_names.get(spk_id, spk_id)
+            spk_turns = [t for t in turns if t.get("speaker_id") == spk_id]
+            valid_intervals = []
+            for t in spk_turns:
+                s_sec = float(t.get("start_s", 0))
+                e_sec = float(t.get("end_s", 0))
+                if e_sec > s_sec:
+                    s_frame = max(0, min(int(round(s_sec * sr)), total_frames))
+                    e_frame = max(0, min(int(round(e_sec * sr)), total_frames))
+                    if e_frame > s_frame:
+                        valid_intervals.append((s_frame, e_frame))
+
+            if not valid_intervals:
+                continue
+
+            valid_intervals.sort(key=lambda x: x[0])
+            segments = [waveform[s:e] for s, e in valid_intervals]
+            combined = np.concatenate(segments, axis=0)
+
+            sanitized_title = _sanitize_filename_component(audio.title or audio.source_id)
+            sanitized_spk = _sanitize_filename_component(spk_name or spk_id)
+            out_filename = f"{sanitized_title}_{sanitized_spk}.wav"
+            out_path = out_dir / out_filename
+            sf.write(str(out_path), combined, sr)
+
+            extracted_audio = Audio.from_file(
+                out_path,
+                source_id=f"{audio.source_id}_{sanitized_spk}",
+                title=f"{audio.title or audio.source_id} [{spk_name}]",
+                native_sample_rate=audio.native_sample_rate,
+                history=(*audio.history, f"diar_extract_{spk_id}"),
+            )
+            results.append((spk_id, spk_name, extracted_audio))
+        return results
+
+    try:
+        loop = asyncio.get_running_loop()
+        extracted_list = await loop.run_in_executor(None, do_extract_all)
+        registered = []
+        for spk_id, spk_name, extracted_audio in extracted_list:
+            new_id = registry.register(
+                extracted_audio,
+                source_type="speaker_stem",
+                parent_id=audio_id,
+                tags=["diarization", f"speaker:{spk_id}"],
+            )
+            registered.append({
+                "audio_id": new_id,
+                "speaker_id": spk_id,
+                "speaker_name": spk_name,
+                "metadata": extracted_audio.metadata(),
+                "duration_s": extracted_audio.duration_s,
+            })
+        return web.json_response({"extracted": registered, "total_speakers": len(registered)})
+    except Exception as e:
+        logger.exception("Bulk speaker extraction failed")
+        return web.json_response({"error": str(e)}, status=500)
+
+
 async def handle_mix_audio(request: web.Request) -> web.Response:
     """Mix speech and music benchmark audio."""
     data = await request.json()
@@ -2146,6 +2317,8 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_delete("/api/evaluations/{id}", handle_delete_evaluation)
     app.router.add_get("/api/evaluations/export", handle_export_evaluations)
     app.router.add_post("/api/diarization/run", handle_run_diarization)
+    app.router.add_post("/api/diarization/extract-speaker", handle_extract_speaker_audio)
+    app.router.add_post("/api/diarization/extract-all-speakers", handle_extract_all_speakers)
     app.router.add_post("/api/benchmark/mix", handle_mix_audio)
     app.router.add_post("/api/compare/spectrogram", handle_compare_spectrogram)
     app.router.add_post("/api/compare/waveform", handle_compare_waveform)

@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Awaitable, Callable
 
 from aiohttp import web
+from dotenv import load_dotenv
+
+ROOT_DIR = Path(__file__).resolve().parent.parent.parent
+load_dotenv(ROOT_DIR / ".env", override=False)
 
 from src.web_pipeline import server as pipeline_server
 from src.web_studio import server as studio_server

@@ -1,21 +1,46 @@
       <section id="tab-diarization" class="tab-pane">
-        <div class="grid-2col">
-          <!-- Diarization Controls -->
-          <div class="card">
-            <div class="card-header">
-              <div>
-                <h2 class="card-title">Speaker Diarization Pipeline</h2>
-                <p class="card-subtitle">Detect "who spoke when" with temporal boundary intervals.</p>
+        <!-- Master Setup & Model Configuration Card -->
+        <div class="card diar-setup-card">
+          <div class="card-header">
+            <div>
+              <div class="diar-header-title-row">
+                <h2 class="card-title">Speaker Diarization Studio</h2>
+                <span class="badge badge-accent">Neural Multi-Speaker</span>
               </div>
-              <span class="badge badge-accent">Speaker Awareness</span>
+              <p class="card-subtitle">Detect "who spoke when" with neural boundary segmentation, interactive multi-track swimlanes, turn editing & multi-format export.</p>
             </div>
+            <div class="card-actions">
+              <button class="btn btn-secondary btn-sm" id="btn-diar-import" title="Import RTTM or JSON Annotation">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                <span>Import Annotation</span>
+              </button>
+              <input type="file" id="diar-file-import-input" accept=".rttm,.json,.csv,.txt" style="display: none;">
+              <button class="btn btn-secondary btn-sm" id="btn-diar-sample" title="Load Sample Demo Diarization">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                <span>Demo Data</span>
+              </button>
+              <button class="btn btn-ghost btn-sm" id="btn-diar-reset" title="Clear Current Diarization">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                <span>Reset</span>
+              </button>
+            </div>
+          </div>
 
-            <div class="form-group">
-              <label class="form-label" for="diar-input-select">Select Audio:</label>
-              <select id="diar-input-select" class="select-input">
-                <option value="">-- Select Loaded Audio --</option>
-              </select>
-              <!-- Child vocal stems & derivative lineage -->
+          <!-- Setup 2-Column Grid -->
+          <div class="diar-setup-grid">
+            <!-- Left: Audio Source Selection & Lineage -->
+            <div class="diar-source-panel">
+              <div class="form-group">
+                <div class="label-with-tool">
+                  <label class="form-label" for="diar-input-select">1. Select Target Audio Track:</label>
+                  <span class="text-xs text-muted" id="diar-audio-meta-chip">No track selected</span>
+                </div>
+                <select id="diar-input-select" class="select-input">
+                  <option value="">-- Select Loaded Audio Track --</option>
+                </select>
+              </div>
+
+              <!-- Smart Vocal Stem Lineage Alert -->
               <div id="diar-children-box" class="child-derivatives-box" style="display: none;">
                 <div class="child-derivatives-header">
                   <div class="child-header-left">
@@ -26,102 +51,348 @@
                 </div>
                 <div class="child-derivatives-list" id="diar-children-list"></div>
               </div>
-            </div>
 
-            <div class="form-group">
-              <label class="form-label">Diarizer Backend:</label>
-              <div class="model-cards-grid">
-                <div class="model-card active" data-diar-model="pyannote">
-                  <div class="model-card-header">
-                    <span class="model-name">Pyannote 3.1</span>
-                    <span class="badge badge-sm badge-info">Community</span>
-                  </div>
-                  <p class="model-desc">pyannote/speaker-diarization-community-1 via Pyannote pipeline.</p>
-                </div>
-
-                <div class="model-card" data-diar-model="sortformer">
-                  <div class="model-card-header">
-                    <span class="model-name">NeMo Sortformer</span>
-                    <span class="badge badge-sm">Sortformer</span>
-                  </div>
-                  <p class="model-desc">nvidia/diar_sortformer_4spk-v1 4-speaker model.</p>
-                </div>
+              <!-- Quick Audio Preview / Playback Pill -->
+              <div id="diar-input-preview-pill" class="diar-input-preview-pill hidden">
+                <button class="btn btn-xs btn-primary" id="btn-diar-preview-input">▶ Play Track</button>
+                <span class="diar-track-title-text" id="diar-track-title-text">audio_title</span>
+                <span class="diar-track-spec-chip" id="diar-track-spec-chip">44.1kHz • Mono • 0:00</span>
               </div>
             </div>
 
-            <div class="form-group" id="hf-token-group">
-              <label class="form-label" for="hf-token-input">HuggingFace Token (Optional if set in ENV):</label>
-              <input type="password" id="hf-token-input" class="text-input" placeholder="hf_xxxxxxxxxxxxxxxxxxxx">
-            </div>
+            <!-- Right: Neural Model Selection & Settings -->
+            <div class="diar-model-panel">
+              <div class="form-group">
+                <label class="form-label">2. Diarization Neural Architecture:</label>
+                <div class="model-cards-grid">
+                  <div class="model-card active" data-diar-model="pyannote">
+                    <div class="model-card-header">
+                      <span class="model-name">Pyannote 3.1</span>
+                      <span class="badge badge-sm badge-info">Community SOTA</span>
+                    </div>
+                    <p class="model-desc">Gold-standard neural pipeline with overlapping speech handling and RTTM export.</p>
+                    <div class="model-specs">
+                      <span class="spec-tag">Overlap Detection</span>
+                      <span class="spec-tag">Requires HF Token</span>
+                    </div>
+                  </div>
 
-            <div class="form-group">
-              <label class="form-label" for="diar-device-select">Compute Device:</label>
-              <select id="diar-device-select" class="select-input">
-                <option value="auto">Auto (Best Available)</option>
-                <option value="cuda">CUDA (GPU)</option>
-                <option value="mps">MPS (Apple Silicon)</option>
-                <option value="cpu">CPU</option>
-              </select>
-            </div>
+                  <div class="model-card" data-diar-model="sortformer">
+                    <div class="model-card-header">
+                      <span class="model-name">NeMo Sortformer</span>
+                      <span class="badge badge-sm badge-success">Ultra Fast</span>
+                    </div>
+                    <p class="model-desc">nvidia/diar_sortformer_4spk-v1 streaming 4-speaker transformer model.</p>
+                    <div class="model-specs">
+                      <span class="spec-tag">Zero Token Required</span>
+                      <span class="spec-tag">Streaming Speed</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
-            <div class="diar-actions">
-              <button class="btn btn-primary btn-lg w-full" id="btn-run-diarization">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-                <span>Run Speaker Diarization</span>
-              </button>
+              <div class="diar-params-row">
+                <div class="form-group flex-1">
+                  <label class="form-label" for="diar-device-select">Compute Device:</label>
+                  <select id="diar-device-select" class="select-input">
+                    <option value="auto">Auto (Best Available GPU/MPS)</option>
+                    <option value="cuda">CUDA (NVIDIA GPU)</option>
+                    <option value="mps">MPS (Apple Silicon)</option>
+                    <option value="cpu">CPU Only</option>
+                  </select>
+                </div>
+
+                <div class="form-group flex-2" id="hf-token-group">
+                  <div class="label-with-tool">
+                    <label class="form-label" for="hf-token-input">HuggingFace Token (Pyannote):</label>
+                    <button type="button" class="btn btn-ghost btn-xs" id="btn-toggle-hf-vis">Show</button>
+                  </div>
+                  <input type="password" id="hf-token-input" class="text-input font-mono" placeholder="hf_xxxxxxxxxxxxxxxxxxxx">
+                </div>
+              </div>
+
+              <div class="diar-actions">
+                <button class="btn btn-primary btn-lg w-full" id="btn-run-diarization">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                  <span>Run Speaker Diarization</span>
+                </button>
+              </div>
             </div>
           </div>
 
-          <!-- Diarization Timeline & Turns View -->
-          <div class="card">
-            <div class="card-header">
-              <h2 class="card-title">Speaker Turns & Timeline</h2>
-              <span id="diar-model-badge" class="badge badge-ghost hidden">Pyannote</span>
-            </div>
-
-            <div id="diar-task-progress-box" class="task-progress-box hidden">
-              <div class="task-header">
+          <!-- Execution Progress Box -->
+          <div id="diar-task-progress-box" class="task-progress-box hidden">
+            <div class="task-header">
+              <div class="flex-row items-center gap-2">
+                <span class="spinner-sm"></span>
                 <span class="task-title">Diarization in progress...</span>
-                <span class="task-timer" id="diar-task-timer">0.0s</span>
               </div>
-              <div class="progress-bar-track">
-                <div class="progress-bar-fill progress-animated" id="diar-progress-bar"></div>
-              </div>
-              <div class="task-status-text" id="diar-task-status-text">Detecting speaker turns...</div>
+              <span class="task-timer" id="diar-task-timer">0.0s</span>
             </div>
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill progress-animated" id="diar-progress-bar"></div>
+            </div>
+            <div class="task-status-text" id="diar-task-status-text">Detecting speaker turns and voice activity...</div>
+          </div>
+        </div>
 
-            <div id="diar-results-wrapper" class="diar-results-wrapper hidden">
-              <!-- Speakers Overview Cards -->
-              <div class="speakers-summary-row" id="speakers-summary-row"></div>
+        <!-- Empty State Placeholder -->
+        <div id="diar-empty-placeholder" class="card empty-placeholder">
+          <div class="empty-icon-wrap">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+          </div>
+          <h3 class="empty-title">No Speaker Diarization Active</h3>
+          <p class="empty-desc">Select an audio track above and click <strong>Run Speaker Diarization</strong>, or import an existing <code>.rttm</code> / <code>.json</code> annotation file to inspect speaker turns.</p>
+          <div class="empty-actions">
+            <button class="btn btn-secondary btn-sm" id="btn-diar-empty-demo">⚡ Load Demo Diarization</button>
+          </div>
+        </div>
 
-              <!-- Interactive Timeline -->
-              <div class="timeline-container">
-                <div class="timeline-header">
-                  <span class="timeline-title">Speaker Timeline (Click turn to seek & play)</span>
+        <!-- Diarization Results & Interactive Studio Workspace (Visible once diarized) -->
+        <div id="diar-results-wrapper" class="diar-results-wrapper hidden">
+          <!-- Master Interactive Multi-Track Timeline Card -->
+          <div class="card diar-timeline-card">
+            <div class="card-header">
+              <div class="flex-row items-center gap-3">
+                <h2 class="card-title">Interactive Multi-Track Speaker Timeline</h2>
+                <span id="diar-model-badge" class="badge badge-info">Pyannote 3.1</span>
+                <span id="diar-speaker-count-badge" class="badge badge-accent">0 Speakers</span>
+                <span id="diar-turns-count-badge" class="badge badge-ghost">0 Turns</span>
+              </div>
+              <div class="timeline-view-actions">
+                <div class="btn-group">
+                  <button class="btn btn-xs btn-secondary active" id="btn-view-multitrack" title="Stacked Multi-Track Lanes">Multi-Track Lanes</button>
+                  <button class="btn btn-xs btn-secondary" id="btn-view-composite" title="Single Composite Overview">Composite Overview</button>
                 </div>
-                <div class="diar-timeline" id="diar-timeline"></div>
-              </div>
-
-              <!-- Turns Table -->
-              <div class="turns-table-wrapper">
-                <table class="turns-table">
-                  <thead>
-                    <tr>
-                      <th>Speaker</th>
-                      <th>Start (s)</th>
-                      <th>End (s)</th>
-                      <th>Duration</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody id="turns-table-body"></tbody>
-                </table>
+                <button class="btn btn-xs btn-ghost active" id="btn-toggle-overlap-highlight" title="Toggle Overlap Highlight">
+                  <span>⚡ Overlaps</span>
+                </button>
               </div>
             </div>
 
-            <div id="diar-empty-placeholder" class="empty-placeholder">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>
-              <span>Select an audio and run Diarization to see speaker separation turns.</span>
+            <!-- Synchronized Transport & Zoom Controls -->
+            <div class="diar-transport-toolbar">
+              <div class="transport-left">
+                <button class="btn btn-ctrl btn-sm" id="btn-diar-skip-back" title="Replay 5s (Shift+Left)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+                  <span>-5s</span>
+                </button>
+                <button class="btn btn-ctrl btn-sm btn-play-main" id="btn-diar-play-toggle" title="Play/Pause (Space)">
+                  <svg id="icon-diar-play" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                  <svg id="icon-diar-pause" class="hidden" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+                </button>
+                <button class="btn btn-ctrl btn-sm" id="btn-diar-skip-fwd" title="Forward 5s (Shift+Right)">
+                  <span>+5s</span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                </button>
+                <button class="btn btn-ctrl btn-sm" id="btn-diar-loop-turn" title="Toggle Turn Loop (L)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
+                  <span>Loop Turn</span>
+                </button>
+                <div class="diar-time-readout">
+                  <span id="diar-time-current">00:00.00</span> / <span id="diar-time-total">00:00.00</span>
+                </div>
+              </div>
+
+              <div class="transport-right">
+                <!-- Zoom Controls -->
+                <div class="diar-zoom-wrap">
+                  <span class="zoom-label">Zoom:</span>
+                  <button class="btn btn-xs btn-ghost" id="btn-diar-zoom-out" title="Zoom Out">-</button>
+                  <span class="zoom-val" id="diar-zoom-level">1.0x</span>
+                  <button class="btn btn-xs btn-ghost" id="btn-diar-zoom-in" title="Zoom In">+</button>
+                  <button class="btn btn-xs btn-secondary" id="btn-diar-zoom-fit" title="Fit to Container">Fit</button>
+                </div>
+                <!-- Speed selector -->
+                <select id="diar-speed-select" class="select-mini" title="Playback Speed">
+                  <option value="0.5">0.5×</option>
+                  <option value="0.75">0.75×</option>
+                  <option value="1.0" selected>1.0×</option>
+                  <option value="1.25">1.25×</option>
+                  <option value="1.5">1.5×</option>
+                  <option value="2.0">2.0×</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Multi-Track Canvas & Swimlanes Container -->
+            <div class="diar-multitrack-viewport" id="diar-multitrack-viewport">
+              <!-- Ruler Track -->
+              <div class="diar-ruler-track" id="diar-ruler-track"></div>
+
+              <!-- Waveform Preview Lane -->
+              <div class="diar-waveform-lane" id="diar-waveform-lane">
+                <div class="diar-lane-label">
+                  <span class="lane-tag">Waveform</span>
+                </div>
+                <div class="diar-waveform-canvas-wrap" id="diar-waveform-canvas-wrap">
+                  <canvas id="diar-waveform-canvas" class="diar-waveform-canvas"></canvas>
+                </div>
+              </div>
+
+              <!-- Composite Overview Lane -->
+              <div class="diar-swimlane-row composite-row" id="diar-composite-lane">
+                <div class="diar-lane-label">
+                  <span class="lane-tag">Composite</span>
+                </div>
+                <div class="diar-lane-track" id="diar-composite-track"></div>
+              </div>
+
+              <!-- Dynamic Speaker Swimlanes Container -->
+              <div class="diar-speaker-lanes-wrap" id="diar-speaker-lanes-wrap"></div>
+
+              <!-- Global Synchronized Playhead Line -->
+              <div class="diar-playhead-line" id="diar-playhead-line" style="left: 0%;">
+                <div class="playhead-handle"></div>
+              </div>
+            </div>
+
+            <!-- Hover Tooltip -->
+            <div id="diar-turn-tooltip" class="diar-turn-tooltip hidden"></div>
+          </div>
+
+          <!-- Speaker Profiles & Talk-Time Analytics -->
+          <div class="card diar-speakers-card">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">Speaker Profiles & Speech Distribution</h2>
+                <p class="card-subtitle">Rename speakers, customize color palettes, inspect speech metrics, or extract speaker audio stems.</p>
+              </div>
+              <div class="card-actions">
+                <button class="btn btn-secondary btn-sm" id="btn-extract-all-speakers" title="Extract all speaker stems as separate audio files">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                  <span>Extract All Speaker Stems</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="diar-speakers-grid" id="diar-speakers-grid"></div>
+          </div>
+
+          <!-- Precision Turn Inspector & Segment Editor -->
+          <div class="card diar-turns-card">
+            <div class="card-header">
+              <div class="flex-row items-center gap-3">
+                <h2 class="card-title">Speaker Turn Inspector & Segment Editor</h2>
+                <span class="badge badge-info" id="diar-filtered-turns-count">0 turns</span>
+              </div>
+              <div class="card-actions">
+                <button class="btn btn-secondary btn-sm" id="btn-add-turn-at-playhead" title="Insert new turn segment at current playhead">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                  <span>Add Turn at Cursor</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Filters & Search Toolbar -->
+            <div class="diar-inspector-toolbar">
+              <div class="toolbar-left">
+                <div class="form-group mb-0">
+                  <select id="diar-filter-speaker-select" class="select-input select-sm">
+                    <option value="all">All Speakers</option>
+                  </select>
+                </div>
+                <div class="form-group mb-0">
+                  <input type="text" id="diar-turns-search-input" class="text-input text-sm" placeholder="Search turn index or timestamp...">
+                </div>
+                <div class="form-group mb-0">
+                  <select id="diar-filter-min-dur" class="select-input select-sm">
+                    <option value="0">All Durations</option>
+                    <option value="0.5">> 0.5s</option>
+                    <option value="1.0">> 1.0s</option>
+                    <option value="2.0">> 2.0s</option>
+                    <option value="5.0">> 5.0s</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="toolbar-right">
+                <div class="form-group mb-0 flex-row items-center gap-2">
+                  <label class="text-xs text-muted">Sort:</label>
+                  <select id="diar-sort-turns-select" class="select-input select-sm">
+                    <option value="time-asc">Start Time (Ascending)</option>
+                    <option value="time-desc">Start Time (Descending)</option>
+                    <option value="dur-desc">Duration (Longest)</option>
+                    <option value="speaker">Speaker</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- Turns Table -->
+            <div class="turns-table-wrapper diar-turns-table-wrapper">
+              <table class="turns-table diar-turns-table">
+                <thead>
+                  <tr>
+                    <th style="width: 50px;">#</th>
+                    <th style="width: 140px;">Speaker</th>
+                    <th style="width: 150px;">Start Time (s)</th>
+                    <th style="width: 150px;">End Time (s)</th>
+                    <th style="width: 100px;">Duration</th>
+                    <th style="width: 90px;">Overlap</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="turns-table-body"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Multi-Format Export Studio Card -->
+          <div class="card diar-export-card">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">Diarization Export & Annotation Studio</h2>
+                <p class="card-subtitle">Export your diarization results in NIST RTTM, Pipeline JSON, CSV spreadsheet, or Subtitle formats.</p>
+              </div>
+            </div>
+
+            <!-- Export Tab Pills -->
+            <div class="export-format-nav">
+              <button class="export-nav-tab active" data-export-tab="rttm">NIST RTTM</button>
+              <button class="export-nav-tab" data-export-tab="json">Pipeline JSON</button>
+              <button class="export-nav-tab" data-export-tab="csv">CSV Spreadsheet</button>
+              <button class="export-nav-tab" data-export-tab="srt">SRT Subtitles</button>
+              <button class="export-nav-tab" data-export-tab="vtt">WebVTT</button>
+            </div>
+
+            <!-- Export Preview & Actions Box -->
+            <div class="export-content-box">
+              <div class="export-preview-header">
+                <span class="export-filename" id="export-filename-label">diarization.rttm</span>
+                <div class="export-actions-right">
+                  <button class="btn btn-secondary btn-sm" id="btn-copy-export">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                    <span>Copy</span>
+                  </button>
+                  <button class="btn btn-primary btn-sm" id="btn-download-export">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    <span>Download File</span>
+                  </button>
+                </div>
+              </div>
+              <textarea id="export-preview-textarea" class="export-preview-textarea font-mono" readonly rows="8"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- Merge Speaker Modal -->
+        <div id="modal-merge-speaker" class="modal-overlay hidden">
+          <div class="modal-card">
+            <div class="modal-header">
+              <h3 class="modal-title">Merge Speaker Turns</h3>
+              <button class="modal-close-btn" id="btn-close-merge-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+              <p class="text-sm text-secondary mb-3">Merge all turns of <strong id="merge-source-spk-name">spk_01</strong> into another speaker:</p>
+              <div class="form-group">
+                <label class="form-label" for="merge-target-spk-select">Target Speaker:</label>
+                <select id="merge-target-spk-select" class="select-input"></select>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-ghost" id="btn-cancel-merge">Cancel</button>
+              <button class="btn btn-primary" id="btn-confirm-merge">Merge Turns</button>
             </div>
           </div>
         </div>

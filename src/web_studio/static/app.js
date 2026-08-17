@@ -42,6 +42,28 @@ const state = {
   tabLibrarySearch: "",
   tabLibraryCategory: "all",
   activeSavePreset: "speech",
+
+  // Diarization Studio State
+  diarization: {
+    audioId: null,
+    data: null,
+    speakers: [],
+    turns: [],
+    customNames: {},
+    colors: {},
+    zoom: 1.0,
+    viewMode: 'multitrack',
+    highlightOverlaps: true,
+    activeTurnIndex: null,
+    loopTurn: false,
+    activeSpeakerFilter: 'all',
+    minDurFilter: 0,
+    searchQuery: '',
+    sortMode: 'time-asc',
+    activeExportTab: 'rttm',
+    soloSpeaker: null,
+    mutedSpeakers: new Set(),
+  },
 };
 
 // DOM Elements Cache
@@ -193,24 +215,79 @@ const el = {
 
   // Diarization Studio
   diarInputSelect: document.getElementById('diar-input-select'),
+  diarAudioMetaChip: document.getElementById('diar-audio-meta-chip'),
   diarChildrenBox: document.getElementById('diar-children-box'),
   diarChildrenTitle: document.getElementById('diar-children-title'),
   diarChildrenCount: document.getElementById('diar-children-count'),
   diarChildrenList: document.getElementById('diar-children-list'),
+  diarInputPreviewPill: document.getElementById('diar-input-preview-pill'),
+  btnDiarPreviewInput: document.getElementById('btn-diar-preview-input'),
+  diarTrackTitleText: document.getElementById('diar-track-title-text'),
+  diarTrackSpecChip: document.getElementById('diar-track-spec-chip'),
   diarModelCards: document.querySelectorAll('.model-card[data-diar-model]'),
   hfTokenInput: document.getElementById('hf-token-input'),
+  btnToggleHfVis: document.getElementById('btn-toggle-hf-vis'),
   diarDeviceSelect: document.getElementById('diar-device-select'),
   btnRunDiarization: document.getElementById('btn-run-diarization'),
+  btnDiarImport: document.getElementById('btn-diar-import'),
+  diarFileImportInput: document.getElementById('diar-file-import-input'),
+  btnDiarSample: document.getElementById('btn-diar-sample'),
+  btnDiarReset: document.getElementById('btn-diar-reset'),
   diarTaskProgressBox: document.getElementById('diar-task-progress-box'),
   diarTaskTimer: document.getElementById('diar-task-timer'),
   diarProgressBar: document.getElementById('diar-progress-bar'),
   diarTaskStatusText: document.getElementById('diar-task-status-text'),
   diarResultsWrapper: document.getElementById('diar-results-wrapper'),
   diarEmptyPlaceholder: document.getElementById('diar-empty-placeholder'),
-  speakersSummaryRow: document.getElementById('speakers-summary-row'),
-  diarTimeline: document.getElementById('diar-timeline'),
-  turnsTableBody: document.getElementById('turns-table-body'),
+  btnDiarEmptyDemo: document.getElementById('btn-diar-empty-demo'),
   diarModelBadge: document.getElementById('diar-model-badge'),
+  diarSpeakerCountBadge: document.getElementById('diar-speaker-count-badge'),
+  diarTurnsCountBadge: document.getElementById('diar-turns-count-badge'),
+  btnViewMultitrack: document.getElementById('btn-view-multitrack'),
+  btnViewComposite: document.getElementById('btn-view-composite'),
+  btnToggleOverlapHighlight: document.getElementById('btn-toggle-overlap-highlight'),
+  btnDiarSkipBack: document.getElementById('btn-diar-skip-back'),
+  btnDiarPlayToggle: document.getElementById('btn-diar-play-toggle'),
+  iconDiarPlay: document.getElementById('icon-diar-play'),
+  iconDiarPause: document.getElementById('icon-diar-pause'),
+  btnDiarSkipFwd: document.getElementById('btn-diar-skip-fwd'),
+  btnDiarLoopTurn: document.getElementById('btn-diar-loop-turn'),
+  diarTimeCurrent: document.getElementById('diar-time-current'),
+  diarTimeTotal: document.getElementById('diar-time-total'),
+  btnDiarZoomOut: document.getElementById('btn-diar-zoom-out'),
+  btnDiarZoomIn: document.getElementById('btn-diar-zoom-in'),
+  btnDiarZoomFit: document.getElementById('btn-diar-zoom-fit'),
+  diarZoomLevel: document.getElementById('diar-zoom-level'),
+  diarSpeedSelect: document.getElementById('diar-speed-select'),
+  diarMultitrackViewport: document.getElementById('diar-multitrack-viewport'),
+  diarRulerTrack: document.getElementById('diar-ruler-track'),
+  diarWaveformLane: document.getElementById('diar-waveform-lane'),
+  diarWaveformCanvas: document.getElementById('diar-waveform-canvas'),
+  diarCompositeLane: document.getElementById('diar-composite-lane'),
+  diarCompositeTrack: document.getElementById('diar-composite-track'),
+  diarSpeakerLanesWrap: document.getElementById('diar-speaker-lanes-wrap'),
+  diarPlayheadLine: document.getElementById('diar-playhead-line'),
+  diarTurnTooltip: document.getElementById('diar-turn-tooltip'),
+  diarSpeakersGrid: document.getElementById('diar-speakers-grid'),
+  btnExtractAllSpeakers: document.getElementById('btn-extract-all-speakers'),
+  btnAddTurnAtPlayhead: document.getElementById('btn-add-turn-at-playhead'),
+  diarFilterSpeakerSelect: document.getElementById('diar-filter-speaker-select'),
+  diarTurnsSearchInput: document.getElementById('diar-turns-search-input'),
+  diarFilterMinDur: document.getElementById('diar-filter-min-dur'),
+  diarSortTurnsSelect: document.getElementById('diar-sort-turns-select'),
+  diarFilteredTurnsCount: document.getElementById('diar-filtered-turns-count'),
+  turnsTableBody: document.getElementById('turns-table-body'),
+  exportNavTabs: document.querySelectorAll('.export-nav-tab'),
+  exportFilenameLabel: document.getElementById('export-filename-label'),
+  btnCopyExport: document.getElementById('btn-copy-export'),
+  btnDownloadExport: document.getElementById('btn-download-export'),
+  exportPreviewTextarea: document.getElementById('export-preview-textarea'),
+  modalMergeSpeaker: document.getElementById('modal-merge-speaker'),
+  btnCloseMergeModal: document.getElementById('btn-close-merge-modal'),
+  mergeSourceSpkName: document.getElementById('merge-source-spk-name'),
+  mergeTargetSpkSelect: document.getElementById('merge-target-spk-select'),
+  btnCancelMerge: document.getElementById('btn-cancel-merge'),
+  btnConfirmMerge: document.getElementById('btn-confirm-merge'),
 
   // Audition & Scoring Hub
   auditionClipSelect: document.getElementById('audition-clip-select'),
@@ -723,6 +800,8 @@ function setPlayingUI(isPlaying) {
   el.iconPause?.classList.toggle('hidden', !isPlaying);
   el.iconAuditionPlay?.classList.toggle('hidden', isPlaying);
   el.iconAuditionPause?.classList.toggle('hidden', !isPlaying);
+  el.iconDiarPlay?.classList.toggle('hidden', isPlaying);
+  el.iconDiarPause?.classList.toggle('hidden', !isPlaying);
 }
 
 function togglePlayPause() {
@@ -807,6 +886,7 @@ function onTimeUpdate() {
   const pct = Math.min(100, Math.max(0, (cur / dur) * 100));
   el.scrubProgress.style.width = `${pct}%`;
   updatePlayheadPosition(cur);
+  updateDiarizationPlayhead(cur, dur);
 }
 
 function onEnded() {
@@ -2200,15 +2280,57 @@ function renderSeparationResultCard(result) {
 
 // ==================== SPEAKER DIARIZATION STUDIO ====================
 
+const DIAR_PALETTE = [
+  "hsl(188, 86%, 53%)", // Cyan
+  "hsl(158, 64%, 52%)", // Emerald
+  "hsl(38, 92%, 50%)",  // Amber
+  "hsl(348, 83%, 60%)", // Rose
+  "hsl(270, 75%, 65%)", // Purple
+  "hsl(205, 90%, 55%)", // Sky Blue
+  "hsl(84, 80%, 50%)",  // Lime
+  "hsl(22, 90%, 55%)",  // Orange
+];
+
+let diarAuditionQueue = [];
+let diarAuditionIndex = 0;
+let diarAuditionActive = false;
+
+function getSpeakerColor(speakerId) {
+  if (state.diarization.colors[speakerId]) {
+    return state.diarization.colors[speakerId];
+  }
+  const spkList = state.diarization.speakers || [];
+  const idx = spkList.findIndex(s => s.speaker_id === speakerId);
+  const color = DIAR_PALETTE[(idx >= 0 ? idx : 0) % DIAR_PALETTE.length];
+  state.diarization.colors[speakerId] = color;
+  return color;
+}
+
+function getSpeakerName(speakerId) {
+  return state.diarization.customNames[speakerId] || speakerId;
+}
+
 function initDiarizationStudio() {
   // Input track change listener
   if (el.diarInputSelect) {
     el.diarInputSelect.addEventListener('change', () => {
-      renderDiarizationChildren(el.diarInputSelect.value);
+      const audioId = el.diarInputSelect.value;
+      renderDiarizationChildren(audioId);
+      updateDiarInputMeta(audioId);
     });
   }
 
-  // Model selection
+  // Preview target input audio
+  if (el.btnDiarPreviewInput) {
+    el.btnDiarPreviewInput.addEventListener('click', () => {
+      const audioId = el.diarInputSelect.value || state.activeAudio?.id;
+      if (audioId) {
+        loadAudioIntoPlayer(audioId, true);
+      }
+    });
+  }
+
+  // Model selection cards
   el.diarModelCards.forEach(card => {
     card.addEventListener('click', () => {
       el.diarModelCards.forEach(c => c.classList.remove('active'));
@@ -2216,148 +2338,1318 @@ function initDiarizationStudio() {
     });
   });
 
-  // Run Diarization
-  el.btnRunDiarization.addEventListener('click', async () => {
-    const audioId = el.diarInputSelect.value;
+  // HuggingFace Token visibility & persistence
+  if (el.hfTokenInput) {
+    const savedToken = localStorage.getItem('sonic_hf_token');
+    if (savedToken) el.hfTokenInput.value = savedToken;
+    el.hfTokenInput.addEventListener('change', () => {
+      if (el.hfTokenInput.value.trim()) {
+        localStorage.setItem('sonic_hf_token', el.hfTokenInput.value.trim());
+      }
+    });
+  }
+
+  if (el.btnToggleHfVis && el.hfTokenInput) {
+    el.btnToggleHfVis.addEventListener('click', () => {
+      const isPwd = el.hfTokenInput.type === 'password';
+      el.hfTokenInput.type = isPwd ? 'text' : 'password';
+      el.btnToggleHfVis.textContent = isPwd ? 'Hide' : 'Show';
+    });
+  }
+
+  // Run Diarization Button
+  if (el.btnRunDiarization) {
+    el.btnRunDiarization.addEventListener('click', async () => {
+      const audioId = el.diarInputSelect.value;
+      if (!audioId) {
+        showToast("Please select a target audio track for diarization", "error");
+        return;
+      }
+
+      const activeCard = document.querySelector('.model-card[data-diar-model].active');
+      const modelType = activeCard ? activeCard.dataset.diarModel : "pyannote";
+      const device = el.diarDeviceSelect.value;
+      const token = el.hfTokenInput.value.trim() || undefined;
+
+      el.btnRunDiarization.disabled = true;
+      el.diarTaskProgressBox.classList.remove('hidden');
+      if (el.diarTaskStatusText) {
+        el.diarTaskStatusText.textContent = `Running ${modelType === 'sortformer' ? 'NeMo Sortformer' : 'Pyannote 3.1'} diarization...`;
+      }
+
+      let startTime = Date.now();
+      const timerInterval = setInterval(() => {
+        if (el.diarTaskTimer) {
+          el.diarTaskTimer.textContent = `${((Date.now() - startTime) / 1000).toFixed(1)}s`;
+        }
+      }, 100);
+
+      try {
+        const res = await fetch("/api/diarization/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            audio_id: audioId,
+            model_type: modelType,
+            device: device,
+            token: token,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Diarization failed to start");
+
+        pollTask(data.task_id, (result) => {
+          clearInterval(timerInterval);
+          el.diarTaskProgressBox.classList.add('hidden');
+          el.btnRunDiarization.disabled = false;
+          showToast(`Speaker Diarization completed in ${result.elapsed_s}s!`, "success");
+          renderDiarizationWorkspace(result.diarization, audioId);
+        }, (err) => {
+          clearInterval(timerInterval);
+          el.diarTaskProgressBox.classList.add('hidden');
+          el.btnRunDiarization.disabled = false;
+          showToast(`Diarization failed: ${err}`, "error");
+        });
+
+      } catch (err) {
+        clearInterval(timerInterval);
+        el.diarTaskProgressBox.classList.add('hidden');
+        el.btnRunDiarization.disabled = false;
+        showToast(err.message, "error");
+      }
+    });
+  }
+
+  // Demo Data & Sample Generation
+  const triggerDemo = () => {
+    const audioId = el.diarInputSelect.value || state.activeAudio?.id || (state.audioList[0] ? state.audioList[0].id : null);
     if (!audioId) {
-      showToast("Please select an input audio for diarization", "error");
+      showToast("Load an audio track into the workspace first to view diarization demo", "info");
       return;
     }
+    generateDemoDiarization(audioId);
+    showToast("Demo multi-speaker diarization loaded!", "success");
+  };
 
-    const activeCard = document.querySelector('.model-card[data-diar-model].active');
-    const modelType = activeCard ? activeCard.dataset.diarModel : "pyannote";
-    const device = el.diarDeviceSelect.value;
-    const token = el.hfTokenInput.value.trim() || undefined;
+  if (el.btnDiarSample) el.btnDiarSample.addEventListener('click', triggerDemo);
+  if (el.btnDiarEmptyDemo) el.btnDiarEmptyDemo.addEventListener('click', triggerDemo);
 
-    el.btnRunDiarization.disabled = true;
-    el.diarTaskProgressBox.classList.remove('hidden');
+  // Reset / Clear Diarization
+  if (el.btnDiarReset) {
+    el.btnDiarReset.addEventListener('click', () => {
+      state.diarization.data = null;
+      state.diarization.turns = [];
+      state.diarization.speakers = [];
+      state.diarization.activeTurnIndex = null;
+      if (el.diarResultsWrapper) el.diarResultsWrapper.classList.add('hidden');
+      if (el.diarEmptyPlaceholder) el.diarEmptyPlaceholder.classList.remove('hidden');
+      showToast("Diarization workspace reset", "info");
+    });
+  }
 
-    let startTime = Date.now();
-    const timerInterval = setInterval(() => {
-      el.diarTaskTimer.textContent = `${((Date.now() - startTime) / 1000).toFixed(1)}s`;
-    }, 100);
+  // File Import Button
+  if (el.btnDiarImport && el.diarFileImportInput) {
+    el.btnDiarImport.addEventListener('click', () => el.diarFileImportInput.click());
+    el.diarFileImportInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) importAnnotationFile(file);
+      e.target.value = '';
+    });
+  }
 
-    try {
-      const res = await fetch("/api/diarization/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          audio_id: audioId,
-          model_type: modelType,
-          device: device,
-          token: token,
-        }),
+  // Transport Toolbar Controls
+  if (el.btnDiarPlayToggle) {
+    el.btnDiarPlayToggle.addEventListener('click', () => {
+      const audioId = state.diarization.audioId || el.diarInputSelect.value;
+      if (!el.audio.src && audioId) loadAudioIntoPlayer(audioId);
+      togglePlayPause();
+    });
+  }
+
+  if (el.btnDiarSkipBack) el.btnDiarSkipBack.addEventListener('click', () => seekRelative(-5));
+  if (el.btnDiarSkipFwd) el.btnDiarSkipFwd.addEventListener('click', () => seekRelative(5));
+
+  if (el.btnDiarLoopTurn) {
+    el.btnDiarLoopTurn.addEventListener('click', () => {
+      state.diarization.loopTurn = !state.diarization.loopTurn;
+      el.btnDiarLoopTurn.classList.toggle('active', state.diarization.loopTurn);
+      showToast(`Turn loop ${state.diarization.loopTurn ? 'enabled' : 'disabled'}`, 'info');
+    });
+  }
+
+  if (el.diarSpeedSelect) {
+    el.diarSpeedSelect.addEventListener('change', (e) => {
+      setPlaybackSpeed(parseFloat(e.target.value) || 1.0);
+    });
+  }
+
+  // View Mode Toggles
+  if (el.btnViewMultitrack && el.btnViewComposite) {
+    el.btnViewMultitrack.addEventListener('click', () => {
+      state.diarization.viewMode = 'multitrack';
+      el.btnViewMultitrack.classList.add('active');
+      el.btnViewComposite.classList.remove('active');
+      if (el.diarSpeakerLanesWrap) el.diarSpeakerLanesWrap.style.display = 'block';
+    });
+
+    el.btnViewComposite.addEventListener('click', () => {
+      state.diarization.viewMode = 'composite';
+      el.btnViewComposite.classList.add('active');
+      el.btnViewMultitrack.classList.remove('active');
+      if (el.diarSpeakerLanesWrap) el.diarSpeakerLanesWrap.style.display = 'none';
+    });
+  }
+
+  if (el.btnToggleOverlapHighlight) {
+    el.btnToggleOverlapHighlight.addEventListener('click', () => {
+      state.diarization.highlightOverlaps = !state.diarization.highlightOverlaps;
+      el.btnToggleOverlapHighlight.classList.toggle('active', state.diarization.highlightOverlaps);
+      document.querySelectorAll('.diar-turn-segment.has-overlap').forEach(seg => {
+        seg.classList.toggle('overlap-active', state.diarization.highlightOverlaps);
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Diarization failed to start");
+    });
+  }
 
-      pollTask(data.task_id, (result) => {
-        clearInterval(timerInterval);
-        el.diarTaskProgressBox.classList.add('hidden');
-        el.btnRunDiarization.disabled = false;
-        showToast(`Speaker Diarization completed in ${result.elapsed_s}s!`, "success");
-        renderDiarizationResults(result.diarization, audioId);
-      }, (err) => {
-        clearInterval(timerInterval);
-        el.diarTaskProgressBox.classList.add('hidden');
-        el.btnRunDiarization.disabled = false;
-        showToast(`Diarization failed: ${err}`, "error");
+  // Zoom Controls
+  if (el.btnDiarZoomIn) {
+    el.btnDiarZoomIn.addEventListener('click', () => setDiarZoom(Math.min(10.0, state.diarization.zoom * 1.5)));
+  }
+  if (el.btnDiarZoomOut) {
+    el.btnDiarZoomOut.addEventListener('click', () => setDiarZoom(Math.max(1.0, state.diarization.zoom / 1.5)));
+  }
+  if (el.btnDiarZoomFit) {
+    el.btnDiarZoomFit.addEventListener('click', () => setDiarZoom(1.0));
+  }
+
+  // Add Turn at Cursor
+  if (el.btnAddTurnAtPlayhead) {
+    el.btnAddTurnAtPlayhead.addEventListener('click', addTurnAtCursor);
+  }
+
+  // Filters & Search Toolbar
+  if (el.diarFilterSpeakerSelect) {
+    el.diarFilterSpeakerSelect.addEventListener('change', (e) => {
+      state.diarization.activeSpeakerFilter = e.target.value;
+      renderTurnsTable();
+    });
+  }
+
+  if (el.diarTurnsSearchInput) {
+    el.diarTurnsSearchInput.addEventListener('input', (e) => {
+      state.diarization.searchQuery = e.target.value.toLowerCase().trim();
+      renderTurnsTable();
+    });
+  }
+
+  if (el.diarFilterMinDur) {
+    el.diarFilterMinDur.addEventListener('change', (e) => {
+      state.diarization.minDurFilter = parseFloat(e.target.value) || 0;
+      renderTurnsTable();
+    });
+  }
+
+  if (el.diarSortTurnsSelect) {
+    el.diarSortTurnsSelect.addEventListener('change', (e) => {
+      state.diarization.sortMode = e.target.value;
+      renderTurnsTable();
+    });
+  }
+
+  // Extract All Speakers Button
+  if (el.btnExtractAllSpeakers) {
+    el.btnExtractAllSpeakers.addEventListener('click', extractAllSpeakers);
+  }
+
+  // Export Navigation Tabs
+  if (el.exportNavTabs) {
+    el.exportNavTabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        el.exportNavTabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        state.diarization.activeExportTab = tab.dataset.exportTab;
+        updateExportPreview();
       });
+    });
+  }
 
-    } catch (err) {
-      clearInterval(timerInterval);
-      el.diarTaskProgressBox.classList.add('hidden');
-      el.btnRunDiarization.disabled = false;
-      showToast(err.message, "error");
+  // Copy & Download Export
+  if (el.btnCopyExport) {
+    el.btnCopyExport.addEventListener('click', () => {
+      if (el.exportPreviewTextarea) {
+        navigator.clipboard.writeText(el.exportPreviewTextarea.value).then(() => {
+          showToast("Diarization annotation copied to clipboard!", "success");
+        }).catch(() => {
+          el.exportPreviewTextarea.select();
+          document.execCommand('copy');
+          showToast("Copied to clipboard!", "success");
+        });
+      }
+    });
+  }
+
+  if (el.btnDownloadExport) {
+    el.btnDownloadExport.addEventListener('click', downloadActiveExport);
+  }
+
+  // Merge Speaker Modal Controls
+  if (el.btnCloseMergeModal) el.btnCloseMergeModal.addEventListener('click', closeMergeModal);
+  if (el.btnCancelMerge) el.btnCancelMerge.addEventListener('click', closeMergeModal);
+  if (el.btnConfirmMerge) el.btnConfirmMerge.addEventListener('click', confirmMergeSpeakers);
+}
+
+function updateDiarInputMeta(audioId) {
+  if (!audioId) {
+    if (el.diarAudioMetaChip) el.diarAudioMetaChip.textContent = "No track selected";
+    if (el.diarInputPreviewPill) el.diarInputPreviewPill.classList.add('hidden');
+    return;
+  }
+  const item = state.audioList.find(a => a.id === audioId);
+  if (item) {
+    if (el.diarAudioMetaChip) {
+      el.diarAudioMetaChip.textContent = `${(item.duration_s || 0).toFixed(1)}s • ${(item.sample_rate || 44100).toLocaleString()}Hz • ${(item.format || 'wav').toUpperCase()}`;
+    }
+    if (el.diarInputPreviewPill) {
+      el.diarInputPreviewPill.classList.remove('hidden');
+      if (el.diarTrackTitleText) el.diarTrackTitleText.textContent = item.title || item.source_id;
+      if (el.diarTrackSpecChip) {
+        el.diarTrackSpecChip.textContent = `${formatTime(item.duration_s || 0)} • ${item.channels === 1 ? 'Mono' : 'Stereo'}`;
+      }
+    }
+  }
+}
+
+function setDiarZoom(zoom) {
+  state.diarization.zoom = zoom;
+  if (el.diarZoomLevel) el.diarZoomLevel.textContent = `${zoom.toFixed(1)}x`;
+
+  const trackWidthPercent = zoom * 100;
+  const viewport = el.diarMultitrackViewport;
+  if (viewport) {
+    const tracks = viewport.querySelectorAll('.diar-lane-track, .diar-waveform-canvas-wrap, .diar-ruler-track');
+    tracks.forEach(t => {
+      t.style.minWidth = `${trackWidthPercent}%`;
+    });
+  }
+
+  renderDiarWaveform();
+  renderDiarRuler();
+}
+
+function renderDiarizationWorkspace(diarization, audioId) {
+  state.diarization.audioId = audioId;
+  state.diarization.data = diarization;
+  state.diarization.turns = diarization.turns || [];
+  state.diarization.speakers = diarization.speakers || [];
+
+  if (el.diarEmptyPlaceholder) el.diarEmptyPlaceholder.classList.add('hidden');
+  if (el.diarResultsWrapper) el.diarResultsWrapper.classList.remove('hidden');
+
+  const audioItem = state.audioList.find(a => a.id === audioId) || state.activeAudio;
+  const totalAudioDuration = (audioItem ? audioItem.duration_s : 0) || Math.max(...state.diarization.turns.map(t => t.end_s), 1);
+  state.diarization.duration = totalAudioDuration;
+
+  // Extract unique speakers if not present
+  if (state.diarization.speakers.length === 0) {
+    const uniqueSpkIds = Array.from(new Set(state.diarization.turns.map(t => t.speaker_id)));
+    state.diarization.speakers = uniqueSpkIds.map(id => ({ speaker_id: id }));
+  }
+
+  // Assign default colors
+  state.diarization.speakers.forEach((spk, idx) => {
+    if (!state.diarization.colors[spk.speaker_id]) {
+      state.diarization.colors[spk.speaker_id] = DIAR_PALETTE[idx % DIAR_PALETTE.length];
+    }
+    if (!state.diarization.customNames[spk.speaker_id]) {
+      state.diarization.customNames[spk.speaker_id] = spk.speaker_id;
+    }
+  });
+
+  // Check and flag overlaps
+  detectTurnOverlaps();
+
+  // Badges
+  if (el.diarModelBadge) {
+    const backend = diarization.model?.backend || "Pyannote";
+    el.diarModelBadge.textContent = backend === "sortformer" ? "NeMo Sortformer" : "Pyannote 3.1";
+  }
+  if (el.diarSpeakerCountBadge) {
+    el.diarSpeakerCountBadge.textContent = `${state.diarization.speakers.length} Speaker${state.diarization.speakers.length === 1 ? '' : 's'}`;
+  }
+  if (el.diarTurnsCountBadge) {
+    el.diarTurnsCountBadge.textContent = `${state.diarization.turns.length} Turn${state.diarization.turns.length === 1 ? '' : 's'}`;
+  }
+
+  // Update Speaker Filter Dropdown
+  if (el.diarFilterSpeakerSelect) {
+    el.diarFilterSpeakerSelect.innerHTML = `<option value="all">All Speakers (${state.diarization.speakers.length})</option>` +
+      state.diarization.speakers.map(s => `<option value="${s.speaker_id}">${escapeHtml(getSpeakerName(s.speaker_id))}</option>`).join('');
+  }
+
+  // 1. Render Time Ruler
+  renderDiarRuler();
+
+  // 2. Render Waveform Lane
+  renderDiarWaveform();
+
+  // 3. Render Composite Lane
+  renderCompositeLane();
+
+  // 4. Render Multi-Track Swimlanes
+  renderSpeakerSwimlanes();
+
+  // 5. Render Speaker Profile Cards & Stats
+  renderSpeakerProfiles();
+
+  // 6. Render Turns Inspector Table
+  renderTurnsTable();
+
+  // 7. Update Export Preview
+  updateExportPreview();
+}
+
+function detectTurnOverlaps() {
+  const turns = state.diarization.turns;
+  turns.forEach(t => t.has_overlap = false);
+
+  for (let i = 0; i < turns.length; i++) {
+    for (let j = i + 1; j < turns.length; j++) {
+      const a = turns[i];
+      const b = turns[j];
+      if (a.speaker_id !== b.speaker_id) {
+        const overlapStart = Math.max(a.start_s, b.start_s);
+        const overlapEnd = Math.min(a.end_s, b.end_s);
+        if (overlapEnd > overlapStart) {
+          a.has_overlap = true;
+          b.has_overlap = true;
+        }
+      }
+    }
+  }
+}
+
+function renderDiarRuler() {
+  if (!el.diarRulerTrack) return;
+  const dur = state.diarization.duration || 1;
+  el.diarRulerTrack.innerHTML = "";
+
+  // Step interval based on duration and zoom
+  let stepSec = 5;
+  if (dur > 300) stepSec = 30;
+  else if (dur > 120) stepSec = 15;
+  else if (dur > 60) stepSec = 10;
+
+  for (let t = 0; t <= dur; t += stepSec) {
+    const pct = (t / dur) * 100;
+    const tick = document.createElement("div");
+    tick.className = "diar-ruler-tick";
+    tick.style.left = `${pct}%`;
+    tick.textContent = formatTime(t);
+    el.diarRulerTrack.appendChild(tick);
+  }
+}
+
+function renderDiarWaveform() {
+  const canvas = el.diarWaveformCanvas;
+  if (!canvas || !el.diarWaveformLane) return;
+
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = (canvas.parentElement.clientWidth || rect.width || 800) * window.devicePixelRatio;
+  canvas.height = (rect.height || 42) * window.devicePixelRatio;
+
+  const ctx = canvas.getContext("2d");
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  const w = canvas.width / window.devicePixelRatio;
+  const h = canvas.height / window.devicePixelRatio;
+  ctx.clearRect(0, 0, w, h);
+
+  const peaks = state.activePeaks;
+  if (peaks && peaks.length > 0) {
+    const numBars = peaks.length;
+    const barWidth = w / numBars;
+    ctx.fillStyle = "rgba(100, 149, 237, 0.65)";
+    for (let i = 0; i < numBars; i++) {
+      const val = peaks[i];
+      const barH = Math.max(2, val * (h - 6));
+      const y = (h - barH) / 2;
+      ctx.fillRect(i * barWidth, y, Math.max(1, barWidth - 1), barH);
+    }
+  } else {
+    // Generate subtle synthetic wave bars
+    const numBars = Math.floor(w / 4);
+    ctx.fillStyle = "rgba(148, 163, 184, 0.4)";
+    for (let i = 0; i < numBars; i++) {
+      const s = Math.sin(i * 0.15) * 0.4 + Math.sin(i * 0.05) * 0.3 + 0.3;
+      const barH = Math.max(2, s * (h - 8));
+      const y = (h - barH) / 2;
+      ctx.fillRect(i * 4, y, 2, barH);
+    }
+  }
+}
+
+function renderCompositeLane() {
+  if (!el.diarCompositeTrack) return;
+  el.diarCompositeTrack.innerHTML = "";
+  const dur = state.diarization.duration || 1;
+
+  state.diarization.turns.forEach((turn, idx) => {
+    const color = getSpeakerColor(turn.speaker_id);
+    const leftPct = (turn.start_s / dur) * 100;
+    const widthPct = Math.max(0.4, ((turn.end_s - turn.start_s) / dur) * 100);
+
+    const seg = document.createElement("div");
+    seg.className = `diar-turn-segment ${turn.has_overlap ? 'has-overlap' : ''}`;
+    seg.style.left = `${leftPct}%`;
+    seg.style.width = `${widthPct}%`;
+    seg.style.backgroundColor = color;
+    seg.dataset.index = idx;
+    seg.textContent = getSpeakerName(turn.speaker_id);
+
+    attachTurnSegmentEvents(seg, turn, idx);
+    el.diarCompositeTrack.appendChild(seg);
+  });
+
+  // Track click to seek
+  el.diarCompositeTrack.addEventListener('click', (e) => {
+    if (e.target === el.diarCompositeTrack) {
+      const rect = el.diarCompositeTrack.getBoundingClientRect();
+      const pos = (e.clientX - rect.left) / rect.width;
+      seekTo(pos * dur);
     }
   });
 }
 
-function renderDiarizationResults(diarization, audioId) {
-  el.diarEmptyPlaceholder.classList.add('hidden');
-  el.diarResultsWrapper.classList.remove('hidden');
+function renderSpeakerSwimlanes() {
+  if (!el.diarSpeakerLanesWrap) return;
+  el.diarSpeakerLanesWrap.innerHTML = "";
+  const dur = state.diarization.duration || 1;
 
-  const audioItem = state.audioList.find(a => a.id === audioId);
-  const totalAudioDuration = (audioItem ? audioItem.duration_s : 0) || 1;
-  const turns = diarization.turns || [];
-  const speakerStats = {};
-  turns.forEach(turn => {
-    const speakerId = turn.speaker_id;
-    const duration = Math.max(0, Number(turn.end_s) - Number(turn.start_s));
-    if (!speakerStats[speakerId]) {
-      speakerStats[speakerId] = { totalSpeechS: 0, turnsCount: 0 };
+  state.diarization.speakers.forEach(spk => {
+    const spkId = spk.speaker_id;
+    const color = getSpeakerColor(spkId);
+    const spkName = getSpeakerName(spkId);
+    const spkTurns = state.diarization.turns.filter(t => t.speaker_id === spkId);
+
+    const row = document.createElement("div");
+    row.className = "diar-swimlane-row";
+    row.dataset.speakerId = spkId;
+
+    row.innerHTML = `
+      <div class="diar-lane-label">
+        <span class="spk-color-indicator" style="background-color: ${color}; margin-right: 6px;"></span>
+        <span class="lane-spk-name" style="color: ${color};">${escapeHtml(spkName)}</span>
+      </div>
+      <div class="diar-lane-track" data-speaker="${spkId}"></div>
+    `;
+
+    const track = row.querySelector('.diar-lane-track');
+
+    spkTurns.forEach(turn => {
+      const idx = state.diarization.turns.indexOf(turn);
+      const leftPct = (turn.start_s / dur) * 100;
+      const widthPct = Math.max(0.4, ((turn.end_s - turn.start_s) / dur) * 100);
+
+      const seg = document.createElement("div");
+      seg.className = `diar-turn-segment ${turn.has_overlap ? 'has-overlap' : ''}`;
+      seg.style.left = `${leftPct}%`;
+      seg.style.width = `${widthPct}%`;
+      seg.style.backgroundColor = color;
+      seg.dataset.index = idx;
+      seg.textContent = `${(turn.end_s - turn.start_s).toFixed(1)}s`;
+
+      attachTurnSegmentEvents(seg, turn, idx);
+      track.appendChild(seg);
+    });
+
+    track.addEventListener('click', (e) => {
+      if (e.target === track) {
+        const rect = track.getBoundingClientRect();
+        const pos = (e.clientX - rect.left) / rect.width;
+        seekTo(pos * dur);
+      }
+    });
+
+    el.diarSpeakerLanesWrap.appendChild(row);
+  });
+}
+
+function attachTurnSegmentEvents(segEl, turn, idx) {
+  segEl.addEventListener('mouseenter', (e) => {
+    showTurnTooltip(e, turn);
+  });
+
+  segEl.addEventListener('mouseleave', () => {
+    hideTurnTooltip();
+  });
+
+  segEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    state.diarization.activeTurnIndex = idx;
+    highlightActiveTurn(idx);
+    const audioId = state.diarization.audioId || el.diarInputSelect.value;
+    if (audioId) {
+      if (el.audio.src.indexOf(audioId) === -1) loadAudioIntoPlayer(audioId);
+      seekTo(turn.start_s);
+      el.audio.play();
     }
-    speakerStats[speakerId].totalSpeechS += duration;
-    speakerStats[speakerId].turnsCount += 1;
   });
 
-  // Speaker Palette map
-  const colors = ["var(--spk-0)", "var(--spk-1)", "var(--spk-2)", "var(--spk-3)", "var(--spk-4)"];
-  const spkColorMap = {};
-  (diarization.speakers || []).forEach((spk, idx) => {
-    spkColorMap[spk.speaker_id] = colors[idx % colors.length];
+  segEl.addEventListener('dblclick', (e) => {
+    e.stopPropagation();
+    state.diarization.activeTurnIndex = idx;
+    highlightActiveTurn(idx);
+    // Scroll corresponding table row into view
+    const row = document.getElementById(`turn-row-${idx}`);
+    if (row) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      row.classList.add('highlight-row');
+      setTimeout(() => row.classList.remove('highlight-row'), 1500);
+    }
   });
+}
 
-  // 1. Speakers Summary Cards
-  el.speakersSummaryRow.innerHTML = "";
-  (diarization.speakers || []).forEach(spk => {
+function showTurnTooltip(e, turn) {
+  const tooltip = el.diarTurnTooltip;
+  if (!tooltip) return;
+  const spkName = getSpeakerName(turn.speaker_id);
+  const dur = (turn.end_s - turn.start_s).toFixed(2);
+
+  tooltip.innerHTML = `
+    <strong>${escapeHtml(spkName)}</strong> (${turn.speaker_id})<br>
+    Start: <code>${turn.start_s.toFixed(2)}s</code> • End: <code>${turn.end_s.toFixed(2)}s</code><br>
+    Duration: <strong>${dur}s</strong> ${turn.has_overlap ? '• ⚠️ Overlap' : ''}
+  `;
+
+  tooltip.classList.remove('hidden');
+  tooltip.style.left = `${e.clientX + 12}px`;
+  tooltip.style.top = `${e.clientY + 12}px`;
+}
+
+function hideTurnTooltip() {
+  if (el.diarTurnTooltip) el.diarTurnTooltip.classList.add('hidden');
+}
+
+function highlightActiveTurn(idx) {
+  document.querySelectorAll('.diar-turn-segment').forEach(s => {
+    s.classList.toggle('active-turn', parseInt(s.dataset.index) === idx);
+  });
+}
+
+function updateDiarizationPlayhead(currentTime, totalDuration) {
+  if (!el.diarPlayheadLine) return;
+  const dur = totalDuration || state.diarization.duration || 1;
+  const pct = Math.min(100, Math.max(0, (currentTime / dur) * 100));
+  el.diarPlayheadLine.style.left = `${pct}%`;
+
+  if (el.diarTimeCurrent) el.diarTimeCurrent.textContent = formatTime(currentTime);
+  if (el.diarTimeTotal) el.diarTimeTotal.textContent = formatTime(dur);
+
+  // Turn looping handler
+  if (state.diarization.loopTurn && state.diarization.activeTurnIndex !== null) {
+    const turn = state.diarization.turns[state.diarization.activeTurnIndex];
+    if (turn && currentTime >= turn.end_s) {
+      seekTo(turn.start_s);
+    }
+  }
+
+  // Highlight active turn segment during continuous playback
+  const activeTurn = state.diarization.turns.find(t => currentTime >= t.start_s && currentTime <= t.end_s);
+  if (activeTurn) {
+    const idx = state.diarization.turns.indexOf(activeTurn);
+    highlightActiveTurn(idx);
+  }
+}
+
+function renderSpeakerProfiles() {
+  if (!el.diarSpeakersGrid) return;
+  el.diarSpeakersGrid.innerHTML = "";
+  const totalDur = state.diarization.duration || 1;
+
+  state.diarization.speakers.forEach(spk => {
+    const spkId = spk.speaker_id;
+    const spkName = getSpeakerName(spkId);
+    const color = getSpeakerColor(spkId);
+    const spkTurns = state.diarization.turns.filter(t => t.speaker_id === spkId);
+
+    const totalSpeechS = spkTurns.reduce((acc, t) => acc + Math.max(0, t.end_s - t.start_s), 0);
+    const turnsCount = spkTurns.length;
+    const talkPct = ((totalSpeechS / totalDur) * 100).toFixed(1);
+    const avgDurS = turnsCount > 0 ? (totalSpeechS / turnsCount).toFixed(2) : "0.00";
+    const overlapDurS = spkTurns.filter(t => t.has_overlap).reduce((acc, t) => acc + (t.end_s - t.start_s), 0).toFixed(1);
+
     const card = document.createElement("div");
-    card.className = "speaker-badge-card";
-    const color = spkColorMap[spk.speaker_id] || "var(--accent-cyan)";
-    const stats = speakerStats[spk.speaker_id] || { totalSpeechS: 0, turnsCount: 0 };
-    const pct = ((stats.totalSpeechS / totalAudioDuration) * 100).toFixed(1);
-
+    card.className = "diar-speaker-card";
     card.innerHTML = `
-      <div class="spk-color-indicator" style="background-color: ${color};"></div>
-      <span class="spk-id">${spk.speaker_id}</span>
-      <span class="spk-stats">${stats.totalSpeechS.toFixed(2)}s (${pct}% • ${stats.turnsCount} turns)</span>
+      <div class="diar-spk-header">
+        <span class="diar-spk-avatar" style="background-color: ${color};"></span>
+        <input type="text" class="diar-spk-name-input" value="${escapeHtml(spkName)}" title="Click to rename speaker" data-speaker="${spkId}">
+        <input type="color" class="diar-spk-color-picker" value="${hslToHex(color)}" title="Change speaker color" data-speaker="${spkId}">
+      </div>
+
+      <div class="diar-spk-share-bar-track">
+        <div class="diar-spk-share-bar-fill" style="width: ${talkPct}%; background-color: ${color};"></div>
+      </div>
+
+      <div class="diar-spk-stats-grid">
+        <div class="diar-spk-stat-item">
+          <span class="diar-spk-stat-label">Speech Time:</span>
+          <span class="diar-spk-stat-val">${totalSpeechS.toFixed(1)}s (${talkPct}%)</span>
+        </div>
+        <div class="diar-spk-stat-item">
+          <span class="diar-spk-stat-label">Turn Count:</span>
+          <span class="diar-spk-stat-val">${turnsCount} turns</span>
+        </div>
+        <div class="diar-spk-stat-item">
+          <span class="diar-spk-stat-label">Avg Turn:</span>
+          <span class="diar-spk-stat-val">${avgDurS}s</span>
+        </div>
+        <div class="diar-spk-stat-item">
+          <span class="diar-spk-stat-label">Overlaps:</span>
+          <span class="diar-spk-stat-val">${overlapDurS}s</span>
+        </div>
+      </div>
+
+      <div class="diar-spk-actions-row">
+        <button class="btn btn-xs btn-secondary btn-audition-spk" data-speaker="${spkId}" title="Play all turns of this speaker sequentially">▶ Audition</button>
+        <button class="btn btn-xs btn-ghost btn-filter-spk" data-speaker="${spkId}" title="Filter turns table">🔍 Filter</button>
+        <button class="btn btn-xs btn-ghost btn-merge-spk" data-speaker="${spkId}" title="Merge into another speaker">🔀 Merge</button>
+        <button class="btn btn-xs btn-primary btn-extract-spk" data-speaker="${spkId}" title="Extract and save speaker audio to workspace">✂ Extract</button>
+      </div>
     `;
-    el.speakersSummaryRow.appendChild(card);
-  });
 
-  // 2. Interactive Timeline
-  el.diarTimeline.innerHTML = "";
-  turns.forEach(turn => {
-    const block = document.createElement("div");
-    block.className = "diar-turn-block";
-    const color = spkColorMap[turn.speaker_id] || "var(--accent-cyan)";
-    const leftPct = (turn.start_s / totalAudioDuration) * 100;
-    const widthPct = Math.max(0.5, ((turn.end_s - turn.start_s) / totalAudioDuration) * 100);
-
-    block.style.left = `${leftPct}%`;
-    block.style.width = `${widthPct}%`;
-    block.style.backgroundColor = color;
-    const duration = Math.max(0, Number(turn.end_s) - Number(turn.start_s));
-    block.title = `${turn.speaker_id}: ${turn.start_s.toFixed(2)}s – ${turn.end_s.toFixed(2)}s (${duration.toFixed(2)}s)`;
-
-    block.addEventListener('click', () => {
-      loadAudioIntoPlayer(audioId);
-      seekTo(turn.start_s);
-      el.audio.play();
+    // Event listeners
+    const nameInput = card.querySelector('.diar-spk-name-input');
+    nameInput.addEventListener('change', (e) => {
+      const val = e.target.value.trim() || spkId;
+      state.diarization.customNames[spkId] = val;
+      renderSpeakerSwimlanes();
+      renderCompositeLane();
+      renderTurnsTable();
+      updateExportPreview();
+      showToast(`Speaker ${spkId} renamed to "${val}"`, "success");
     });
 
-    el.diarTimeline.appendChild(block);
-  });
+    const colorPicker = card.querySelector('.diar-spk-color-picker');
+    colorPicker.addEventListener('input', (e) => {
+      state.diarization.colors[spkId] = e.target.value;
+      card.querySelector('.diar-spk-avatar').style.backgroundColor = e.target.value;
+      card.querySelector('.diar-spk-share-bar-fill').style.backgroundColor = e.target.value;
+      renderSpeakerSwimlanes();
+      renderCompositeLane();
+      renderTurnsTable();
+    });
 
-  // 3. Turns Table
+    card.querySelector('.btn-audition-spk').addEventListener('click', () => auditionSpeakerTurns(spkId));
+    card.querySelector('.btn-filter-spk').addEventListener('click', () => {
+      if (el.diarFilterSpeakerSelect) {
+        el.diarFilterSpeakerSelect.value = spkId;
+        state.diarization.activeSpeakerFilter = spkId;
+        renderTurnsTable();
+      }
+    });
+    card.querySelector('.btn-merge-spk').addEventListener('click', () => openMergeModal(spkId));
+    card.querySelector('.btn-extract-spk').addEventListener('click', () => extractSpeakerAudio(spkId, spkName));
+
+    el.diarSpeakersGrid.appendChild(card);
+  });
+}
+
+function renderTurnsTable() {
+  if (!el.turnsTableBody) return;
   el.turnsTableBody.innerHTML = "";
+
+  let turns = state.diarization.turns.map((t, idx) => ({ ...t, originalIndex: idx }));
+
+  // Filter by Speaker
+  if (state.diarization.activeSpeakerFilter && state.diarization.activeSpeakerFilter !== 'all') {
+    turns = turns.filter(t => t.speaker_id === state.diarization.activeSpeakerFilter);
+  }
+
+  // Filter by Search Query
+  if (state.diarization.searchQuery) {
+    const q = state.diarization.searchQuery;
+    turns = turns.filter(t => {
+      const spkName = getSpeakerName(t.speaker_id).toLowerCase();
+      return spkName.includes(q) || t.speaker_id.toLowerCase().includes(q) || `#${t.originalIndex + 1}`.includes(q) || t.start_s.toString().includes(q);
+    });
+  }
+
+  // Filter by Min Duration
+  if (state.diarization.minDurFilter > 0) {
+    turns = turns.filter(t => (t.end_s - t.start_s) >= state.diarization.minDurFilter);
+  }
+
+  // Sort
+  if (state.diarization.sortMode === 'time-desc') {
+    turns.sort((a, b) => b.start_s - a.start_s);
+  } else if (state.diarization.sortMode === 'dur-desc') {
+    turns.sort((a, b) => (b.end_s - b.start_s) - (a.end_s - a.start_s));
+  } else if (state.diarization.sortMode === 'speaker') {
+    turns.sort((a, b) => a.speaker_id.localeCompare(b.speaker_id));
+  } else {
+    turns.sort((a, b) => a.start_s - b.start_s);
+  }
+
+  if (el.diarFilteredTurnsCount) {
+    el.diarFilteredTurnsCount.textContent = `${turns.length} of ${state.diarization.turns.length} turns`;
+  }
+
+  if (turns.length === 0) {
+    el.turnsTableBody.innerHTML = `<tr><td colspan="7" class="text-center text-muted" style="padding: 24px;">No turns match the active filter criteria.</td></tr>`;
+    return;
+  }
+
   turns.forEach(turn => {
+    const idx = turn.originalIndex;
+    const color = getSpeakerColor(turn.speaker_id);
+    const spkName = getSpeakerName(turn.speaker_id);
+    const duration = Math.max(0, turn.end_s - turn.start_s).toFixed(2);
+
     const tr = document.createElement("tr");
-    const color = spkColorMap[turn.speaker_id] || "var(--accent-cyan)";
+    tr.id = `turn-row-${idx}`;
     tr.innerHTML = `
-      <td style="color: ${color}; font-weight: 700;">${turn.speaker_id}</td>
-      <td>${turn.start_s.toFixed(2)}</td>
-      <td>${turn.end_s.toFixed(2)}</td>
-      <td>${Math.max(0, Number(turn.end_s) - Number(turn.start_s)).toFixed(2)}s</td>
-      <td><button class="btn btn-sm btn-ghost btn-play-turn" data-start="${turn.start_s}">▶ Seek</button></td>
+      <td><span class="text-muted font-mono">#${idx + 1}</span></td>
+      <td>
+        <select class="turn-speaker-select" data-index="${idx}" style="color: ${color}; font-weight: 700;">
+          ${state.diarization.speakers.map(s => `
+            <option value="${s.speaker_id}" ${s.speaker_id === turn.speaker_id ? 'selected' : ''}>
+              ${escapeHtml(getSpeakerName(s.speaker_id))}
+            </option>
+          `).join('')}
+        </select>
+      </td>
+      <td>
+        <div class="flex-row items-center gap-1">
+          <button class="btn btn-ghost turn-nudge-btn" data-index="${idx}" data-field="start" data-delta="-0.1">-0.1</button>
+          <input type="number" step="0.05" class="turn-time-input turn-start-input" data-index="${idx}" value="${turn.start_s.toFixed(2)}">
+          <button class="btn btn-ghost turn-nudge-btn" data-index="${idx}" data-field="start" data-delta="0.1">+0.1</button>
+        </div>
+      </td>
+      <td>
+        <div class="flex-row items-center gap-1">
+          <button class="btn btn-ghost turn-nudge-btn" data-index="${idx}" data-field="end" data-delta="-0.1">-0.1</button>
+          <input type="number" step="0.05" class="turn-time-input turn-end-input" data-index="${idx}" value="${turn.end_s.toFixed(2)}">
+          <button class="btn btn-ghost turn-nudge-btn" data-index="${idx}" data-field="end" data-delta="0.1">+0.1</button>
+        </div>
+      </td>
+      <td><span class="badge badge-ghost">${duration}s</span></td>
+      <td>${turn.has_overlap ? '<span class="badge badge-warning">⚠️ Overlap</span>' : '<span class="text-muted text-xs">Clean</span>'}</td>
+      <td class="table-actions">
+        <button class="btn btn-sm btn-ghost btn-play-turn" data-index="${idx}" title="Play turn segment">▶ Play</button>
+        <button class="btn btn-sm btn-ghost btn-loop-turn" data-index="${idx}" title="Loop turn segment">🔁 Loop</button>
+        <button class="btn btn-sm btn-secondary btn-cut-turn" data-index="${idx}" title="Send segment to Cuts/Clips library">✂ Cut</button>
+        <button class="btn btn-sm btn-ghost btn-split-turn" data-index="${idx}" title="Split turn into two">✂ Split</button>
+        <button class="btn btn-sm btn-ghost btn-delete-turn text-destructive" data-index="${idx}" title="Delete turn">🗑</button>
+      </td>
     `;
+
+    // Reassign Speaker
+    tr.querySelector('.turn-speaker-select').addEventListener('change', (e) => {
+      state.diarization.turns[idx].speaker_id = e.target.value;
+      renderSpeakerSwimlanes();
+      renderCompositeLane();
+      renderSpeakerProfiles();
+      updateExportPreview();
+    });
+
+    // Start / End inputs
+    const startInput = tr.querySelector('.turn-start-input');
+    startInput.addEventListener('change', (e) => {
+      const val = Math.max(0, parseFloat(e.target.value) || 0);
+      state.diarization.turns[idx].start_s = val;
+      renderSpeakerSwimlanes();
+      renderCompositeLane();
+      updateExportPreview();
+    });
+
+    const endInput = tr.querySelector('.turn-end-input');
+    endInput.addEventListener('change', (e) => {
+      const val = Math.max(state.diarization.turns[idx].start_s + 0.1, parseFloat(e.target.value) || 0);
+      state.diarization.turns[idx].end_s = val;
+      renderSpeakerSwimlanes();
+      renderCompositeLane();
+      updateExportPreview();
+    });
+
+    // Nudge buttons
+    tr.querySelectorAll('.turn-nudge-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const field = btn.dataset.field;
+        const delta = parseFloat(btn.dataset.delta);
+        if (field === 'start') {
+          state.diarization.turns[idx].start_s = Math.max(0, state.diarization.turns[idx].start_s + delta);
+        } else {
+          state.diarization.turns[idx].end_s = Math.max(state.diarization.turns[idx].start_s + 0.05, state.diarization.turns[idx].end_s + delta);
+        }
+        renderTurnsTable();
+        renderSpeakerSwimlanes();
+        renderCompositeLane();
+        updateExportPreview();
+      });
+    });
+
+    // Action buttons
     tr.querySelector('.btn-play-turn').addEventListener('click', () => {
+      const audioId = state.diarization.audioId || el.diarInputSelect.value;
+      loadAudioIntoPlayer(audioId);
+      seekTo(turn.start_s);
+      state.player.previewEnd = turn.end_s;
+      el.audio.play();
+    });
+
+    tr.querySelector('.btn-loop-turn').addEventListener('click', () => {
+      state.diarization.activeTurnIndex = idx;
+      state.diarization.loopTurn = true;
+      if (el.btnDiarLoopTurn) el.btnDiarLoopTurn.classList.add('active');
+      const audioId = state.diarization.audioId || el.diarInputSelect.value;
       loadAudioIntoPlayer(audioId);
       seekTo(turn.start_s);
       el.audio.play();
+      showToast(`Looping turn #${idx + 1} (${turn.start_s.toFixed(2)}s - ${turn.end_s.toFixed(2)}s)`, 'info');
     });
+
+    tr.querySelector('.btn-cut-turn').addEventListener('click', () => {
+      const audioId = state.diarization.audioId || el.diarInputSelect.value;
+      addCutToRegistry(audioId, turn.start_s, turn.end_s, 'seconds');
+      showToast(`Added turn #${idx + 1} to Clips registry!`, 'success');
+    });
+
+    tr.querySelector('.btn-split-turn').addEventListener('click', () => {
+      const mid = turn.start_s + (turn.end_s - turn.start_s) / 2;
+      const turn1 = { ...turn, end_s: mid };
+      const turn2 = { ...turn, start_s: mid };
+      state.diarization.turns.splice(idx, 1, turn1, turn2);
+      detectTurnOverlaps();
+      renderDiarizationWorkspace(state.diarization.data, state.diarization.audioId);
+      showToast(`Turn #${idx + 1} split into two segments`, 'success');
+    });
+
+    tr.querySelector('.btn-delete-turn').addEventListener('click', () => {
+      state.diarization.turns.splice(idx, 1);
+      detectTurnOverlaps();
+      renderDiarizationWorkspace(state.diarization.data, state.diarization.audioId);
+      showToast(`Turn #${idx + 1} removed`, 'info');
+    });
+
     el.turnsTableBody.appendChild(tr);
   });
+}
+
+function addTurnAtCursor() {
+  const curTime = state.player.currentTime || 0;
+  const dur = state.diarization.duration || 10;
+  const start = Math.max(0, Math.min(curTime, dur - 1));
+  const end = Math.min(dur, start + 2.0);
+  const spkId = state.diarization.speakers[0]?.speaker_id || "spk_00";
+
+  const newTurn = {
+    speaker_id: spkId,
+    start_s: roundNum(start, 2),
+    end_s: roundNum(end, 2),
+    confidence: 1.0,
+  };
+
+  state.diarization.turns.push(newTurn);
+  state.diarization.turns.sort((a, b) => a.start_s - b.start_s);
+  detectTurnOverlaps();
+  renderDiarizationWorkspace(state.diarization.data, state.diarization.audioId);
+  showToast(`Added new turn at ${start.toFixed(2)}s`, 'success');
+}
+
+function auditionSpeakerTurns(speakerId) {
+  const turns = state.diarization.turns.filter(t => t.speaker_id === speakerId);
+  if (turns.length === 0) {
+    showToast("No turns found for this speaker", "info");
+    return;
+  }
+
+  diarAuditionQueue = [...turns];
+  diarAuditionIndex = 0;
+  diarAuditionActive = true;
+
+  playNextAuditionTurn();
+  showToast(`Auditioning ${turns.length} turns for ${getSpeakerName(speakerId)}...`, 'info');
+}
+
+function playNextAuditionTurn() {
+  if (diarAuditionIndex >= diarAuditionQueue.length) {
+    diarAuditionActive = false;
+    showToast("Speaker audition finished", "success");
+    return;
+  }
+
+  const turn = diarAuditionQueue[diarAuditionIndex];
+  const audioId = state.diarization.audioId || el.diarInputSelect.value;
+  loadAudioIntoPlayer(audioId);
+  seekTo(turn.start_s);
+  state.player.previewEnd = turn.end_s;
+  el.audio.play();
+
+  // Monitor end of turn
+  const checkTurnEnd = () => {
+    if (el.audio.currentTime >= turn.end_s - 0.05 || el.audio.paused) {
+      el.audio.removeEventListener('timeupdate', checkTurnEnd);
+      diarAuditionIndex++;
+      setTimeout(playNextAuditionTurn, 400);
+    }
+  };
+  el.audio.addEventListener('timeupdate', checkTurnEnd);
+}
+
+// Modal Merge Speaker
+let activeMergeSourceSpeaker = null;
+
+function openMergeModal(sourceSpeakerId) {
+  activeMergeSourceSpeaker = sourceSpeakerId;
+  if (!el.modalMergeSpeaker) return;
+
+  const spkName = getSpeakerName(sourceSpeakerId);
+  if (el.mergeSourceSpkName) el.mergeSourceSpkName.textContent = `${spkName} (${sourceSpeakerId})`;
+
+  if (el.mergeTargetSpkSelect) {
+    const targets = state.diarization.speakers.filter(s => s.speaker_id !== sourceSpeakerId);
+    el.mergeTargetSpkSelect.innerHTML = targets.map(s => `
+      <option value="${s.speaker_id}">${escapeHtml(getSpeakerName(s.speaker_id))} (${s.speaker_id})</option>
+    `).join('');
+  }
+
+  el.modalMergeSpeaker.classList.remove('hidden');
+}
+
+function closeMergeModal() {
+  if (el.modalMergeSpeaker) el.modalMergeSpeaker.classList.add('hidden');
+  activeMergeSourceSpeaker = null;
+}
+
+function confirmMergeSpeakers() {
+  const targetSpkId = el.mergeTargetSpkSelect?.value;
+  if (!activeMergeSourceSpeaker || !targetSpkId) return;
+
+  const srcName = getSpeakerName(activeMergeSourceSpeaker);
+  const tgtName = getSpeakerName(targetSpkId);
+
+  state.diarization.turns.forEach(t => {
+    if (t.speaker_id === activeMergeSourceSpeaker) {
+      t.speaker_id = targetSpkId;
+    }
+  });
+
+  // Remove source speaker from list
+  state.diarization.speakers = state.diarization.speakers.filter(s => s.speaker_id !== activeMergeSourceSpeaker);
+
+  closeMergeModal();
+  detectTurnOverlaps();
+  renderDiarizationWorkspace(state.diarization.data, state.diarization.audioId);
+  showToast(`Merged all turns of ${srcName} into ${tgtName}!`, 'success');
+}
+
+// Export Studio Generator
+function updateExportPreview() {
+  if (!el.exportPreviewTextarea) return;
+  const format = state.diarization.activeExportTab || 'rttm';
+  const audioId = state.diarization.audioId || 'audio_sample';
+  const turns = state.diarization.turns || [];
+
+  let content = "";
+  let filename = `diarization_${audioId}.${format}`;
+
+  if (format === 'rttm') {
+    filename = `diarization_${audioId}.rttm`;
+    content = turns.map(t => {
+      const dur = (t.end_s - t.start_s).toFixed(3);
+      const spkName = getSpeakerName(t.speaker_id);
+      return `SPEAKER ${audioId} 1 ${t.start_s.toFixed(3)} ${dur} <NA> <NA> ${spkName} <NA> <NA>`;
+    }).join('\n');
+  } else if (format === 'json') {
+    filename = `diarization_${audioId}.json`;
+    const jsonOutput = {
+      schema_version: "1.0",
+      audio_id: audioId,
+      model: state.diarization.data?.model || { backend: "pyannote", model_id: "speaker-diarization-3.1" },
+      speaker_count: state.diarization.speakers.length,
+      speakers: state.diarization.speakers.map(s => ({
+        speaker_id: s.speaker_id,
+        display_name: getSpeakerName(s.speaker_id),
+      })),
+      turns: turns.map(t => ({
+        speaker_id: t.speaker_id,
+        speaker_name: getSpeakerName(t.speaker_id),
+        start_s: roundNum(t.start_s, 3),
+        end_s: roundNum(t.end_s, 3),
+        duration_s: roundNum(t.end_s - t.start_s, 3),
+        confidence: t.confidence || null,
+        has_overlap: Boolean(t.has_overlap),
+      })),
+    };
+    content = JSON.stringify(jsonOutput, null, 2);
+  } else if (format === 'csv') {
+    filename = `diarization_${audioId}.csv`;
+    content = "turn_index,speaker_id,speaker_name,start_seconds,end_seconds,duration_seconds,has_overlap\n" +
+      turns.map((t, idx) => `${idx + 1},${t.speaker_id},"${getSpeakerName(t.speaker_id)}",${t.start_s.toFixed(3)},${t.end_s.toFixed(3)},${(t.end_s - t.start_s).toFixed(3)},${t.has_overlap ? 1 : 0}`).join('\n');
+  } else if (format === 'srt') {
+    filename = `diarization_${audioId}.srt`;
+    content = turns.map((t, idx) => {
+      const srtStart = secondsToSrtTime(t.start_s);
+      const srtEnd = secondsToSrtTime(t.end_s);
+      return `${idx + 1}\n${srtStart} --> ${srtEnd}\n[${getSpeakerName(t.speaker_id)}]: Speech turn\n`;
+    }).join('\n');
+  } else if (format === 'vtt') {
+    filename = `diarization_${audioId}.vtt`;
+    content = "WEBVTT\n\n" + turns.map((t, idx) => {
+      const vttStart = secondsToVttTime(t.start_s);
+      const vttEnd = secondsToVttTime(t.end_s);
+      return `${idx + 1}\n${vttStart} --> ${vttEnd}\n<v ${getSpeakerName(t.speaker_id)}>Speech turn</v>\n`;
+    }).join('\n');
+  }
+
+  el.exportPreviewTextarea.value = content;
+  if (el.exportFilenameLabel) el.exportFilenameLabel.textContent = filename;
+}
+
+function downloadActiveExport() {
+  const content = el.exportPreviewTextarea?.value;
+  const filename = el.exportFilenameLabel?.textContent || "diarization.rttm";
+  if (!content) return;
+
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast(`Downloaded ${filename}`, 'success');
+}
+
+function secondsToSrtTime(seconds) {
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  const millis = Math.floor((seconds % 1) * 1000);
+  return `${padZero(hrs, 2)}:${padZero(mins, 2)}:${padZero(secs, 2)},${padZero(millis, 3)}`;
+}
+
+function secondsToVttTime(seconds) {
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  const millis = Math.floor((seconds % 1) * 1000);
+  return `${padZero(hrs, 2)}:${padZero(mins, 2)}:${padZero(secs, 2)}.${padZero(millis, 3)}`;
+}
+
+function padZero(num, size) {
+  let s = String(num);
+  while (s.length < size) s = "0" + s;
+  return s;
+}
+
+function roundNum(num, decimals) {
+  return Number(Math.round(num + "e" + decimals) + "e-" + decimals);
+}
+
+function hslToHex(hslStr) {
+  if (!hslStr || !hslStr.startsWith('hsl')) return "#00e5ff";
+  const match = hslStr.match(/\d+(\.\d+)?/g);
+  if (!match || match.length < 3) return "#00e5ff";
+  let h = parseFloat(match[0]) / 360;
+  let s = parseFloat(match[1]) / 100;
+  let l = parseFloat(match[2]) / 100;
+  let r, g, b;
+  if (s === 0) {
+    r = g = b = l;
+  } else {
+    const hue2rgb = (p, q, t) => {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1/6) return p + (q - p) * 6 * t;
+      if (t < 1/2) return q;
+      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      return p;
+    };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1/3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1/3);
+  }
+  const toHex = x => {
+    const hex = Math.round(x * 255).toString(16);
+    return hex.length === 1 ? '0' + hex : hex;
+  };
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+// Annotation File Parser
+function importAnnotationFile(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const text = e.target.result;
+      const audioId = state.activeAudio?.id || (state.audioList[0] ? state.audioList[0].id : "imported_track");
+      let turns = [];
+      let speakers = new Set();
+
+      if (file.name.endsWith('.json')) {
+        const json = JSON.parse(text);
+        turns = json.turns || [];
+        if (json.speakers) {
+          json.speakers.forEach(s => speakers.add(s.speaker_id || s));
+        }
+      } else if (file.name.endsWith('.rttm') || text.includes('SPEAKER')) {
+        const lines = text.split('\n');
+        lines.forEach(line => {
+          const parts = line.trim().split(/\s+/);
+          if (parts[0] === 'SPEAKER' && parts.length >= 8) {
+            const start = parseFloat(parts[3]);
+            const dur = parseFloat(parts[4]);
+            const spkId = parts[7];
+            if (!isNaN(start) && !isNaN(dur) && spkId) {
+              speakers.add(spkId);
+              turns.push({
+                speaker_id: spkId,
+                start_s: start,
+                end_s: start + dur,
+              });
+            }
+          }
+        });
+      } else if (file.name.endsWith('.csv')) {
+        const lines = text.split('\n');
+        lines.slice(1).forEach(line => {
+          const parts = line.split(',');
+          if (parts.length >= 5) {
+            const spkId = parts[1].trim();
+            const start = parseFloat(parts[3]);
+            const end = parseFloat(parts[4]);
+            if (spkId && !isNaN(start) && !isNaN(end)) {
+              speakers.add(spkId);
+              turns.push({ speaker_id: spkId, start_s: start, end_s: end });
+            }
+          }
+        });
+      }
+
+      if (turns.length === 0) {
+        throw new Error("No valid speaker turns could be parsed from this file");
+      }
+
+      turns.sort((a, b) => a.start_s - b.start_s);
+      const diarResult = {
+        schema_version: "1.0",
+        audio_id: audioId,
+        speakers: Array.from(speakers).map(id => ({ speaker_id: id })),
+        turns: turns,
+        model: { backend: "import", model_id: file.name },
+      };
+
+      renderDiarizationWorkspace(diarResult, audioId);
+      showToast(`Imported ${turns.length} turns across ${speakers.size} speakers!`, 'success');
+    } catch (err) {
+      showToast(`Failed to parse annotation: ${err.message}`, 'error');
+    }
+  };
+  reader.readAsText(file);
+}
+
+// Extract Speaker Audio Handlers
+async function extractSpeakerAudio(speakerId, speakerName) {
+  const audioId = state.diarization.audioId || el.diarInputSelect.value;
+  if (!audioId) {
+    showToast("No active audio track selected", "error");
+    return;
+  }
+
+  const turns = state.diarization.turns.filter(t => t.speaker_id === speakerId);
+  if (turns.length === 0) {
+    showToast("No turns found for speaker extraction", "error");
+    return;
+  }
+
+  showToast(`Extracting audio for ${speakerName || speakerId}...`, "info");
+
+  try {
+    const res = await fetch("/api/diarization/extract-speaker", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        audio_id: audioId,
+        speaker_id: speakerId,
+        speaker_name: speakerName || speakerId,
+        turns: turns,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to extract speaker audio");
+
+    await fetchAudioList();
+    showToast(`Speaker track extracted: "${data.metadata?.title || speakerId}" (${data.duration_s?.toFixed(2)}s)`, "success");
+  } catch (err) {
+    showToast(`Extraction failed: ${err.message}`, "error");
+  }
+}
+
+async function extractAllSpeakers() {
+  const audioId = state.diarization.audioId || el.diarInputSelect.value;
+  if (!audioId) {
+    showToast("No active audio track selected", "error");
+    return;
+  }
+
+  showToast(`Extracting all speaker stems...`, "info");
+
+  try {
+    const res = await fetch("/api/diarization/extract-all-speakers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        audio_id: audioId,
+        turns: state.diarization.turns,
+        speaker_names: state.diarization.customNames,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to extract all speakers");
+
+    await fetchAudioList();
+    showToast(`Successfully extracted ${data.total_speakers} speaker stems into workspace!`, "success");
+  } catch (err) {
+    showToast(`Extraction failed: ${err.message}`, "error");
+  }
+}
+
+function generateDemoDiarization(audioId) {
+  const audioItem = state.audioList.find(a => a.id === audioId) || state.activeAudio;
+  const dur = (audioItem ? audioItem.duration_s : 0) || 60;
+
+  const demoTurns = [
+    { speaker_id: "spk_00", start_s: 0.5, end_s: Math.min(dur * 0.15, 6.2), confidence: 0.95 },
+    { speaker_id: "spk_01", start_s: Math.min(dur * 0.16, 6.5), end_s: Math.min(dur * 0.35, 14.8), confidence: 0.92 },
+    { speaker_id: "spk_00", start_s: Math.min(dur * 0.36, 15.2), end_s: Math.min(dur * 0.55, 23.5), confidence: 0.96 },
+    { speaker_id: "spk_02", start_s: Math.min(dur * 0.52, 22.0), end_s: Math.min(dur * 0.72, 31.0), confidence: 0.89 },
+    { speaker_id: "spk_01", start_s: Math.min(dur * 0.73, 31.5), end_s: Math.min(dur * 0.88, 38.0), confidence: 0.94 },
+    { speaker_id: "spk_00", start_s: Math.min(dur * 0.89, 38.5), end_s: Math.min(dur * 0.98, 42.0), confidence: 0.97 },
+  ];
+
+  state.diarization.customNames = {
+    "spk_00": "Host / Interviewer",
+    "spk_01": "Guest 1 (Alice)",
+    "spk_02": "Guest 2 (Bob)",
+  };
+
+  const demoData = {
+    schema_version: "1.0",
+    audio_id: audioId,
+    speakers: [
+      { speaker_id: "spk_00" },
+      { speaker_id: "spk_01" },
+      { speaker_id: "spk_02" },
+    ],
+    turns: demoTurns,
+    model: { backend: "pyannote", model_id: "pyannote/speaker-diarization-community-1" },
+  };
+
+  renderDiarizationWorkspace(demoData, audioId);
 }
 
 // ==================== CUTS MANAGER ====================
