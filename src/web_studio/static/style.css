@@ -2275,14 +2275,166 @@ html, body {
   overflow-x: auto;
   overflow-y: hidden;
   user-select: none;
-  min-height: 160px;
+  min-height: 180px;
+  scrollbar-width: thin;
+}
+
+.diar-timeline-inner {
+  display: flex;
+  min-width: 100%;
+  position: relative;
+}
+
+/* Left Sticky Column: Lane Labels */
+.diar-lane-labels-col {
+  width: 160px;
+  min-width: 160px;
+  max-width: 160px;
+  flex-shrink: 0;
+  background-color: var(--bg-surface-elevated);
+  border-right: 1px solid var(--border-subtle);
+  position: sticky;
+  left: 0;
+  z-index: 25;
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+}
+
+.diar-lane-label {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  box-sizing: border-box;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background-color: var(--bg-surface-elevated);
+}
+
+.diar-lane-label.ruler-label {
+  height: 24px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.diar-lane-label.waveform-label {
+  height: 44px;
+}
+
+.diar-lane-label.composite-label {
+  height: 40px;
+}
+
+.diar-spk-labels-wrap {
+  display: flex;
+  flex-direction: column;
+}
+
+.diar-spk-label-row {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  box-sizing: border-box;
+  gap: 6px;
+  background-color: var(--bg-surface-elevated);
+  transition: background var(--transition-fast);
+}
+
+.diar-spk-label-row.lane-dimmed {
+  opacity: 0.45;
+}
+
+.spk-label-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  flex: 1;
+}
+
+.lane-spk-name {
+  font-size: 0.76rem;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spk-label-controls {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.spk-ctrl-btn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  border-radius: 3px;
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.spk-ctrl-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: var(--text-primary);
+}
+
+.spk-ctrl-btn.btn-solo.active {
+  background: var(--accent-amber);
+  color: #000;
+  border-color: var(--accent-amber);
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.5);
+}
+
+.spk-ctrl-btn.btn-mute.active {
+  background: var(--accent-rose);
+  color: #fff;
+  border-color: var(--accent-rose);
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
+}
+
+.spk-ctrl-btn.btn-audition:hover {
+  color: var(--accent-cyan);
+}
+
+/* Right Scrollable Tracks Area */
+.diar-tracks-area {
+  flex: 1;
+  min-width: 100%;
+  position: relative;
+  display: flex;
+  flex-direction: column;
 }
 
 .diar-ruler-track {
-  height: 22px;
+  height: 24px;
   position: relative;
   border-bottom: 1px solid var(--border-subtle);
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+  cursor: pointer;
 }
 
 .diar-ruler-tick {
@@ -2295,36 +2447,23 @@ html, body {
   padding-left: 4px;
   border-left: 1px solid var(--border-subtle);
   pointer-events: none;
+  white-space: nowrap;
 }
 
-.diar-waveform-lane {
-  height: 42px;
+.diar-ruler-subtick {
+  position: absolute;
+  top: 14px;
+  height: 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+}
+
+.diar-waveform-track {
+  height: 44px;
   position: relative;
-  display: flex;
   border-bottom: 1px solid var(--border-subtle);
-}
-
-.diar-lane-label {
-  width: 130px;
-  min-width: 130px;
-  max-width: 130px;
-  padding: 0 10px;
-  display: flex;
-  align-items: center;
-  background-color: var(--bg-surface-elevated);
-  border-right: 1px solid var(--border-subtle);
-  z-index: 3;
-  position: sticky;
-  left: 0;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-
-.diar-waveform-canvas-wrap {
-  flex: 1;
-  height: 100%;
-  position: relative;
+  background: rgba(0, 0, 0, 0.15);
+  cursor: pointer;
 }
 
 .diar-waveform-canvas {
@@ -2333,29 +2472,37 @@ html, body {
   display: block;
 }
 
-.diar-swimlane-row {
-  height: 38px;
+.diar-composite-track {
+  height: 40px;
   position: relative;
-  display: flex;
   border-bottom: 1px solid var(--border-subtle);
-}
-
-.diar-swimlane-row.composite-row {
   background: rgba(255, 255, 255, 0.015);
-}
-
-.diar-swimlane-row:last-child {
-  border-bottom: none;
-}
-
-.diar-lane-track {
-  flex: 1;
-  height: 100%;
-  position: relative;
-  overflow: hidden;
   cursor: pointer;
 }
 
+.diar-speaker-lanes-wrap {
+  display: flex;
+  flex-direction: column;
+}
+
+.diar-speaker-lane-track {
+  height: 40px;
+  position: relative;
+  border-bottom: 1px solid var(--border-subtle);
+  background: rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+
+.diar-speaker-lane-track:last-child {
+  border-bottom: none;
+}
+
+.diar-speaker-lane-track.lane-dimmed {
+  opacity: 0.25;
+}
+
+/* Turn Segments */
 .diar-turn-segment {
   position: absolute;
   top: 4px;
@@ -2384,14 +2531,14 @@ html, body {
 
 .diar-turn-segment:hover {
   opacity: 1;
-  z-index: 5;
+  z-index: 12;
   box-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
 }
 
 .diar-turn-segment.active-turn {
   outline: 2px solid #fff;
   box-shadow: 0 0 14px var(--accent-cyan);
-  z-index: 6;
+  z-index: 15;
   opacity: 1;
 }
 
@@ -2401,6 +2548,10 @@ html, body {
 
 .diar-turn-segment.overlap-active {
   animation: pulse-overlap 1.5s infinite alternate;
+}
+
+.diar-turn-segment.turn-dimmed {
+  opacity: 0.25 !important;
 }
 
 @keyframes pulse-overlap {
@@ -2413,9 +2564,9 @@ html, body {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 6px;
+  width: 7px;
   cursor: col-resize;
-  z-index: 10;
+  z-index: 16;
   opacity: 0;
   transition: opacity var(--transition-fast), background-color var(--transition-fast);
 }
@@ -2441,23 +2592,23 @@ html, body {
 .turn-handle:hover {
   opacity: 1 !important;
   background-color: #ffffff !important;
-  box-shadow: 0 0 6px #fff;
+  box-shadow: 0 0 8px #fff;
 }
 
 /* Minimap Overview */
 .diar-minimap-container {
   display: flex;
   align-items: center;
-  height: 24px;
+  height: 26px;
   background: var(--bg-surface-elevated);
   border-bottom: 1px solid var(--border-subtle);
   user-select: none;
 }
 
 .diar-minimap-label {
-  width: 130px;
-  min-width: 130px;
-  max-width: 130px;
+  width: 160px;
+  min-width: 160px;
+  max-width: 160px;
   padding: 0 10px;
   font-size: 0.68rem;
   font-weight: 700;
@@ -2472,9 +2623,18 @@ html, body {
   flex: 1;
   height: 100%;
   position: relative;
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(0, 0, 0, 0.3);
   cursor: pointer;
   overflow: hidden;
+}
+
+.diar-minimap-blocks-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
 }
 
 .diar-minimap-block {
@@ -2486,15 +2646,26 @@ html, body {
   pointer-events: none;
 }
 
+.diar-minimap-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background-color: var(--accent-rose);
+  z-index: 8;
+  pointer-events: none;
+}
+
 .diar-minimap-viewport-window {
   position: absolute;
   top: 1px;
   bottom: 1px;
   border: 1px solid var(--accent-cyan);
-  background: rgba(0, 229, 255, 0.15);
+  background: rgba(0, 229, 255, 0.18);
   border-radius: 2px;
   cursor: grab;
-  z-index: 5;
+  z-index: 6;
+  box-shadow: 0 0 6px rgba(0, 229, 255, 0.2);
 }
 
 .diar-minimap-viewport-window:active {
@@ -2507,15 +2678,15 @@ html, body {
   top: 0;
   bottom: 0;
   background: rgba(56, 189, 248, 0.2);
-  border-left: 1px solid var(--accent-cyan);
-  border-right: 1px solid var(--accent-cyan);
-  z-index: 9;
+  border-left: 2px solid var(--accent-cyan);
+  border-right: 2px solid var(--accent-cyan);
+  z-index: 18;
   pointer-events: auto;
 }
 
 .diar-selection-actions-bar {
   position: absolute;
-  top: -34px;
+  top: 8px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -2527,7 +2698,7 @@ html, body {
   padding: 3px 6px;
   box-shadow: var(--shadow-card);
   white-space: nowrap;
-  z-index: 15;
+  z-index: 22;
 }
 
 .diar-playhead-line {
@@ -2536,20 +2707,26 @@ html, body {
   bottom: 0;
   width: 2px;
   background-color: var(--accent-rose);
-  z-index: 10;
+  z-index: 20;
   pointer-events: none;
+  transform: translateX(-1px);
 }
 
 .playhead-handle {
   position: absolute;
   top: 0;
-  left: -4px;
-  width: 10px;
-  height: 10px;
+  left: -5px;
+  width: 12px;
+  height: 12px;
   background-color: var(--accent-rose);
   clip-path: polygon(0 0, 100% 0, 50% 100%);
   cursor: ew-resize;
   pointer-events: auto;
+  z-index: 24;
+}
+
+.playhead-handle:hover {
+  filter: drop-shadow(0 0 4px var(--accent-rose));
 }
 
 .diar-turn-tooltip {
@@ -2864,6 +3041,114 @@ html, body {
   line-height: 1.4;
   resize: vertical;
   font-family: var(--font-mono);
+}
+
+/* Diarization Session History Card */
+.diar-history-card {
+  background-color: var(--bg-surface);
+}
+
+.diar-history-filter-bar {
+  margin-bottom: 1rem;
+}
+
+.diar-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.diar-history-item {
+  background-color: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  transition: all var(--transition-fast);
+}
+
+.diar-history-item:hover {
+  border-color: var(--border-muted);
+  background-color: var(--bg-surface-hover);
+}
+
+.diar-history-item.active-session {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.15);
+}
+
+.diar-hist-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.diar-hist-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.diar-hist-title {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diar-hist-time {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.diar-hist-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.diar-hist-spk-chips {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.diar-hist-spk-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  font-size: 0.68rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-subtle);
+}
+
+.diar-hist-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 0.5rem;
+  margin-top: 0.2rem;
 }
 
 /* ==========================================================================

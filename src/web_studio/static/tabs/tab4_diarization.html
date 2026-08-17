@@ -182,6 +182,8 @@
             <div class="diar-minimap-container" id="diar-minimap-container" title="Full Track Overview — Click or drag to jump viewport">
               <div class="diar-minimap-label">Overview</div>
               <div class="diar-minimap-track" id="diar-minimap-track">
+                <div class="diar-minimap-blocks-layer" id="diar-minimap-blocks-layer"></div>
+                <div class="diar-minimap-playhead" id="diar-minimap-playhead" style="left: 0%;"></div>
                 <div class="diar-minimap-viewport-window" id="diar-minimap-viewport-window"></div>
               </div>
             </div>
@@ -235,45 +237,54 @@
               </div>
             </div>
 
-            <!-- Multi-Track Canvas & Swimlanes Container -->
+            <!-- Multi-Track Canvas & Swimlanes Container (Unified DAW Layout) -->
             <div class="diar-multitrack-viewport" id="diar-multitrack-viewport">
-              <!-- Ruler Track -->
-              <div class="diar-ruler-track" id="diar-ruler-track"></div>
-
-              <!-- Waveform Preview Lane -->
-              <div class="diar-waveform-lane" id="diar-waveform-lane">
-                <div class="diar-lane-label">
-                  <span class="lane-tag">Waveform</span>
+              <div class="diar-timeline-inner" id="diar-timeline-inner">
+                <!-- Left Sticky Column: Lane Labels -->
+                <div class="diar-lane-labels-col" id="diar-lane-labels-col">
+                  <div class="diar-lane-label ruler-label">
+                    <span class="lane-tag">Time</span>
+                  </div>
+                  <div class="diar-lane-label waveform-label" id="diar-waveform-label">
+                    <span class="lane-tag">Waveform</span>
+                  </div>
+                  <div class="diar-lane-label composite-label" id="diar-composite-label">
+                    <span class="lane-tag">Composite</span>
+                  </div>
+                  <div class="diar-spk-labels-wrap" id="diar-spk-labels-wrap"></div>
                 </div>
-                <div class="diar-waveform-canvas-wrap" id="diar-waveform-canvas-wrap">
-                  <canvas id="diar-waveform-canvas" class="diar-waveform-canvas"></canvas>
+
+                <!-- Right Column: Scrollable Tracks Area (Shared 0%-100% Coordinate Space) -->
+                <div class="diar-tracks-area" id="diar-tracks-area">
+                  <!-- Time Ruler Track -->
+                  <div class="diar-ruler-track" id="diar-ruler-track"></div>
+
+                  <!-- Waveform Preview Lane -->
+                  <div class="diar-waveform-track" id="diar-waveform-track">
+                    <canvas id="diar-waveform-canvas" class="diar-waveform-canvas"></canvas>
+                  </div>
+
+                  <!-- Composite Overview Lane -->
+                  <div class="diar-composite-track" id="diar-composite-track"></div>
+
+                  <!-- Speaker Swimlanes Track Area -->
+                  <div class="diar-speaker-lanes-wrap" id="diar-speaker-lanes-wrap"></div>
+
+                  <!-- Region Selection Overlay (inside tracks area) -->
+                  <div class="diar-selection-overlay hidden" id="diar-selection-overlay">
+                    <div class="diar-selection-actions-bar" id="diar-selection-actions-bar">
+                      <button class="btn btn-xs btn-primary" id="btn-sel-play">▶ Play Region</button>
+                      <button class="btn btn-xs btn-secondary" id="btn-sel-add-turn">+ Add Turn</button>
+                      <button class="btn btn-xs btn-ghost" id="btn-sel-cut">✂ Cut</button>
+                      <button class="btn btn-xs btn-ghost" id="btn-sel-clear">✕</button>
+                    </div>
+                  </div>
+
+                  <!-- Global Synchronized Playhead Line (inside tracks area) -->
+                  <div class="diar-playhead-line" id="diar-playhead-line" style="left: 0%;">
+                    <div class="playhead-handle" id="diar-playhead-handle" title="Drag Playhead to Scrub Audio"></div>
+                  </div>
                 </div>
-              </div>
-
-              <!-- Composite Overview Lane -->
-              <div class="diar-swimlane-row composite-row" id="diar-composite-lane">
-                <div class="diar-lane-label">
-                  <span class="lane-tag">Composite</span>
-                </div>
-                <div class="diar-lane-track" id="diar-composite-track"></div>
-              </div>
-
-              <!-- Dynamic Speaker Swimlanes Container -->
-              <div class="diar-speaker-lanes-wrap" id="diar-speaker-lanes-wrap"></div>
-
-              <!-- Region Selection Box Overlay -->
-              <div class="diar-selection-overlay hidden" id="diar-selection-overlay">
-                <div class="diar-selection-actions-bar" id="diar-selection-actions-bar">
-                  <button class="btn btn-xs btn-primary" id="btn-sel-play">▶ Play Region</button>
-                  <button class="btn btn-xs btn-secondary" id="btn-sel-add-turn">+ Add Turn</button>
-                  <button class="btn btn-xs btn-ghost" id="btn-sel-cut">✂ Cut</button>
-                  <button class="btn btn-xs btn-ghost" id="btn-sel-clear">✕</button>
-                </div>
-              </div>
-
-              <!-- Global Synchronized Playhead Line -->
-              <div class="diar-playhead-line" id="diar-playhead-line" style="left: 0%;">
-                <div class="playhead-handle" title="Playhead"></div>
               </div>
             </div>
 
@@ -431,6 +442,42 @@
                 </div>
               </div>
               <textarea id="export-preview-textarea" class="export-preview-textarea font-mono" readonly rows="8"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- Diarization Session & Annotation History Card (Always visible) -->
+        <div class="card diar-history-card">
+          <div class="card-header">
+            <div>
+              <div class="flex-row items-center gap-2">
+                <h2 class="card-title">Diarization History & Saved Sessions</h2>
+                <span class="badge badge-info" id="diar-history-count-badge">0 saved runs</span>
+              </div>
+              <p class="card-subtitle">Explore, reload, export, or audit past speaker diarization runs, imports, and multi-track sessions.</p>
+            </div>
+            <div class="card-actions flex-wrap gap-2">
+              <button class="btn btn-secondary btn-sm" id="btn-export-all-history" title="Export full history registry as JSON bundle">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                <span>Export History</span>
+              </button>
+              <button class="btn btn-ghost btn-sm text-destructive" id="btn-clear-diar-history" title="Clear all saved diarization history">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                <span>Clear History</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- History Search & Filter -->
+          <div class="diar-history-filter-bar">
+            <input type="text" id="diar-history-search-input" class="text-input text-sm flex-1" placeholder="Filter history by audio title, model ID, speaker name, or date...">
+          </div>
+
+          <!-- History List Container -->
+          <div class="diar-history-list" id="diar-history-list">
+            <div class="empty-placeholder">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              <span>No diarization sessions saved yet. Run diarization or import annotations above.</span>
             </div>
           </div>
         </div>
