@@ -101,7 +101,7 @@ def prepare_viyt_diar(
 
     logger.info("Loading %s split=%s from Hugging Face…", dataset_id, split)
     ds = load_dataset(dataset_id, split=split)
-    ds = ds.cast_column("audio", Audio(sampling_rate=16_000, mono=True))
+    ds = ds.cast_column("audio", Audio(sampling_rate=16_000, num_channels=1))
 
     samples: list[ViYTSample] = []
     for index, row in enumerate(ds):

@@ -1,37 +1,42 @@
       <section id="tab-diarization" class="tab-pane">
         <!-- Master Setup & Model Configuration Card -->
-        <div class="card diar-setup-card">
+        <div class="card diar-setup-card" id="diar-setup-card">
           <div class="card-header">
             <div>
               <div class="diar-header-title-row">
+                <span class="workflow-step">Neural Segmentation & Diarization</span>
                 <h2 class="card-title">Speaker Diarization Studio</h2>
-                <span class="badge badge-accent">Neural Multi-Speaker</span>
+                <span class="badge badge-accent">Multi-Speaker</span>
               </div>
-              <p class="card-subtitle">Detect "who spoke when" with neural boundary segmentation, interactive multi-track swimlanes, turn editing & multi-format export.</p>
+              <p class="card-subtitle">Detect "who spoke when" with neural multi-speaker boundary segmentation, interactive multi-track swimlanes, turn editing & multi-format export.</p>
             </div>
-            <div class="card-actions">
+            <div class="card-actions flex-wrap gap-2">
               <button class="btn btn-secondary btn-sm" id="btn-diar-shortcuts-modal" title="View Keyboard Shortcuts (?)">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="M6 8h.001M10 8h.001M14 8h.001M18 8h.001M8 12h.001M12 12h.001M16 12h.001M7 16h10"></path></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="M6 8h.001M10 8h.001M14 8h.001M18 8h.001M8 12h.001M12 12h.001M16 12h.001M7 16h10"></path></svg>
                 <span>Shortcuts</span>
               </button>
-              <button class="btn btn-secondary btn-sm" id="btn-diar-import" title="Import RTTM, JSON, CSV, SRT or Audacity Label File">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+              <button class="btn btn-secondary btn-sm" id="btn-diar-import" title="Import RTTM, JSON, CSV, SRT, Audacity or Praat Label File">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                 <span>Import Annotation</span>
               </button>
               <input type="file" id="diar-file-import-input" accept=".rttm,.json,.csv,.txt,.srt,.vtt,.TextGrid" style="display: none;">
               <button class="btn btn-secondary btn-sm" id="btn-diar-sample" title="Load Sample Demo Diarization">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                 <span>Demo Data</span>
               </button>
               <button class="btn btn-ghost btn-sm" id="btn-diar-reset" title="Clear Current Diarization">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                 <span>Reset</span>
+              </button>
+              <button class="btn btn-ghost btn-sm" id="btn-toggle-diar-setup" title="Toggle Setup Panel Visibility">
+                <span id="diar-setup-toggle-icon">▲</span>
+                <span id="diar-setup-toggle-text">Collapse</span>
               </button>
             </div>
           </div>
 
           <!-- Setup 2-Column Grid -->
-          <div class="diar-setup-grid">
+          <div class="diar-setup-grid" id="diar-setup-body">
             <!-- Left: Audio Source Selection & Lineage -->
             <div class="diar-source-panel">
               <div class="form-group">
@@ -42,6 +47,13 @@
                 <select id="diar-input-select" class="select-input">
                   <option value="">-- Select Loaded Audio Track --</option>
                 </select>
+              </div>
+
+              <!-- Saved Session Available Notice Pill (Non-intrusive) -->
+              <div id="diar-saved-notice-pill" class="diar-saved-notice-pill hidden">
+                <span class="notice-icon">💾</span>
+                <span class="notice-text" id="diar-saved-notice-text">Previous diarization session available for this track</span>
+                <button class="btn btn-xs btn-primary" id="btn-load-saved-for-track">Load Session</button>
               </div>
 
               <!-- Smart Vocal Stem Lineage Alert -->
@@ -74,23 +86,22 @@
                       <span class="model-name">Pyannote Community-1</span>
                       <span class="badge badge-sm badge-info">Community SOTA</span>
                     </div>
-                    <p class="model-desc">Successor of Pyannote 3.1. Exclusive speaker diarization with high accuracy and offline support.</p>
+                    <p class="model-desc">Successor of Pyannote 3.1. Exclusive multi-speaker diarization with high accuracy.</p>
                     <div class="model-specs">
-                      <span class="spec-tag">speaker-diarization-community-1</span>
-                      <span class="spec-tag">Requires HF Token</span>
+                      <span class="spec-tag">community-1</span>
+                      <span class="spec-tag">HF Token</span>
                     </div>
                   </div>
 
                   <div class="model-card" data-diar-model="pyannote_31" data-model-id="pyannote/speaker-diarization-3.1">
                     <div class="model-card-header">
                       <span class="model-name">Pyannote 3.1</span>
-                      <span class="badge badge-sm badge-info">Precision Classic</span>
+                      <span class="badge badge-sm badge-info">Classic SOTA</span>
                     </div>
-                    <p class="model-desc">Gold-standard neural pipeline with overlapping speech handling and RTTM export.</p>
+                    <p class="model-desc">Gold-standard neural pipeline with overlapping speech handling.</p>
                     <div class="model-specs">
-                      <span class="spec-tag">speaker-diarization-3.1</span>
+                      <span class="spec-tag">3.1</span>
                       <span class="spec-tag">Overlap Detection</span>
-                      <span class="spec-tag">Requires HF Token</span>
                     </div>
                   </div>
 
@@ -101,7 +112,7 @@
                     </div>
                     <p class="model-desc">nvidia/diar_sortformer_4spk-v1 streaming 4-speaker transformer model.</p>
                     <div class="model-specs">
-                      <span class="spec-tag">Zero Token Required</span>
+                      <span class="spec-tag">Zero Token</span>
                       <span class="spec-tag">Streaming Speed</span>
                     </div>
                   </div>
@@ -111,10 +122,10 @@
                       <span class="model-name">NeMo Clustering</span>
                       <span class="badge badge-sm badge-accent">Cascaded</span>
                     </div>
-                    <p class="model-desc">MarbleNet VAD + TitaNet embeddings + spectral clustering. No speaker-count cap per window.</p>
+                    <p class="model-desc">MarbleNet VAD + TitaNet embeddings + spectral clustering. Flexible speaker count.</p>
                     <div class="model-specs">
-                      <span class="spec-tag">Zero Token Required</span>
-                      <span class="spec-tag">Unknown # Speakers</span>
+                      <span class="spec-tag">Zero Token</span>
+                      <span class="spec-tag">Multi-Scale</span>
                     </div>
                   </div>
 
@@ -125,8 +136,8 @@
                     </div>
                     <p class="model-desc">ModelScope speakerlab: FSMN VAD + CAM++ embeddings + spectral clustering.</p>
                     <div class="model-specs">
-                      <span class="spec-tag">campplus + fsmn-vad</span>
-                      <span class="spec-tag">Zero Token Required</span>
+                      <span class="spec-tag">campplus</span>
+                      <span class="spec-tag">Zero Token</span>
                     </div>
                   </div>
                 </div>
@@ -228,8 +239,8 @@
           <div class="empty-icon-wrap">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
           </div>
-          <h3 class="empty-title">No Speaker Diarization Active</h3>
-          <p class="empty-desc">Select an audio track above and click <strong>Run Speaker Diarization</strong>, or import an existing <code>.rttm</code> / <code>.json</code> annotation file to inspect speaker turns.</p>
+          <h3 class="empty-title">No Active Speaker Diarization</h3>
+          <p class="empty-desc">Select a target audio track above and click <strong>Run Speaker Diarization</strong>, or import an annotation file / load demo data to inspect interactive speaker swimlanes.</p>
           <div class="empty-actions">
             <button class="btn btn-secondary btn-sm" id="btn-diar-empty-demo">⚡ Load Demo Diarization</button>
           </div>
@@ -380,192 +391,219 @@
             <div id="diar-turn-tooltip" class="diar-turn-tooltip hidden"></div>
           </div>
 
-          <!-- Speaker Profiles & Talk-Time Analytics -->
-          <div class="card diar-speakers-card">
-            <div class="card-header">
-              <div>
-                <h2 class="card-title">Speaker Profiles & Speech Distribution</h2>
-                <p class="card-subtitle">Rename speakers, customize color palettes, inspect speech metrics, or extract speaker audio stems.</p>
-              </div>
-              <div class="card-actions flex-wrap gap-2">
-                <div class="flex-row items-center gap-1">
-                  <label class="text-xs text-muted" for="diar-extract-mode-select">Stem Mode:</label>
-                  <select id="diar-extract-mode-select" class="select-input select-sm" title="Extraction mode for speaker audio files">
-                    <option value="concatenated">Concatenated Speech</option>
-                    <option value="time_aligned">Time-Aligned Stems (Muted Silence)</option>
-                  </select>
+          <!-- Studio Workstation Modular Navigation & Panels -->
+          <div class="diar-studio-tabs-card card">
+            <!-- Studio Tab Switcher Bar -->
+            <div class="diar-subtabs-nav">
+              <button class="diar-subtab-btn active" data-subtab="turns">
+                <span class="subtab-icon">📑</span>
+                <span class="subtab-label">Turns Inspector</span>
+                <span class="subtab-chip" id="diar-subtab-turns-count">0</span>
+              </button>
+              <button class="diar-subtab-btn" data-subtab="speakers">
+                <span class="subtab-icon">👥</span>
+                <span class="subtab-label">Speaker Profiles</span>
+                <span class="subtab-chip" id="diar-subtab-spk-count">0</span>
+              </button>
+              <button class="diar-subtab-btn" data-subtab="export">
+                <span class="subtab-icon">💾</span>
+                <span class="subtab-label">Export & Annotations</span>
+              </button>
+              <button class="diar-subtab-btn" data-subtab="history">
+                <span class="subtab-icon">🕒</span>
+                <span class="subtab-label">Saved Runs History</span>
+                <span class="subtab-chip" id="diar-subtab-hist-count">0</span>
+              </button>
+            </div>
+
+            <!-- Subview 1: Precision Turn Inspector & Segment Editor -->
+            <div class="diar-subview-panel active" id="diar-subview-turns">
+              <div class="subview-header">
+                <div>
+                  <h3 class="subview-title">Speaker Turn Inspector & Editor</h3>
+                  <p class="subview-desc">Inspect, trim, split, nudge, reassign, or batch modify speaker turn segments.</p>
                 </div>
-                <button class="btn btn-secondary btn-sm" id="btn-extract-all-speakers" title="Extract all speaker stems as separate audio files">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                  <span>Extract All Speaker Stems</span>
-                </button>
-              </div>
-            </div>
-
-            <div class="diar-speakers-grid" id="diar-speakers-grid"></div>
-          </div>
-
-          <!-- Precision Turn Inspector & Segment Editor -->
-          <div class="card diar-turns-card">
-            <div class="card-header">
-              <div class="flex-row items-center gap-3 flex-wrap">
-                <h2 class="card-title">Speaker Turn Inspector & Segment Editor</h2>
-                <span class="badge badge-info" id="diar-filtered-turns-count">0 turns</span>
-              </div>
-              <div class="card-actions">
-                <button class="btn btn-secondary btn-sm" id="btn-add-turn-at-playhead" title="Insert new turn segment at current playhead (N)">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                  <span>Add Turn at Cursor (N)</span>
-                </button>
-              </div>
-            </div>
-
-            <!-- Floating Batch Actions Bar (Visible when 1+ turns selected) -->
-            <div class="diar-batch-bar hidden" id="diar-batch-bar">
-              <div class="batch-bar-left">
-                <span class="batch-count-chip"><strong id="diar-batch-count">0</strong> turns selected</span>
-              </div>
-              <div class="batch-bar-right">
-                <div class="flex-row items-center gap-1">
-                  <span class="text-xs text-muted">Reassign to:</span>
-                  <select id="diar-batch-speaker-select" class="select-input select-sm"></select>
-                  <button class="btn btn-xs btn-primary" id="btn-batch-reassign">Apply</button>
-                </div>
-                <button class="btn btn-xs btn-secondary" id="btn-batch-cut" title="Send all selected turns to Clips registry">✂ Batch Cut</button>
-                <button class="btn btn-xs btn-destructive" id="btn-batch-delete" title="Delete all selected turns">🗑 Delete</button>
-                <button class="btn btn-xs btn-ghost" id="btn-batch-clear">✕ Clear Selection</button>
-              </div>
-            </div>
-
-            <!-- Filters & Search Toolbar -->
-            <div class="diar-inspector-toolbar">
-              <div class="toolbar-left">
-                <div class="form-group mb-0">
-                  <select id="diar-filter-speaker-select" class="select-input select-sm">
-                    <option value="all">All Speakers</option>
-                  </select>
-                </div>
-                <div class="form-group mb-0">
-                  <input type="text" id="diar-turns-search-input" class="text-input text-sm" placeholder="Search turn index, speaker or timestamp...">
-                </div>
-                <div class="form-group mb-0">
-                  <select id="diar-filter-min-dur" class="select-input select-sm">
-                    <option value="0">All Durations</option>
-                    <option value="0.5">> 0.5s</option>
-                    <option value="1.0">> 1.0s</option>
-                    <option value="2.0">> 2.0s</option>
-                    <option value="5.0">> 5.0s</option>
-                  </select>
-                </div>
-              </div>
-
-              <div class="toolbar-right">
-                <div class="form-group mb-0 flex-row items-center gap-2">
-                  <label class="text-xs text-muted">Sort:</label>
-                  <select id="diar-sort-turns-select" class="select-input select-sm">
-                    <option value="time-asc">Start Time (Ascending)</option>
-                    <option value="time-desc">Start Time (Descending)</option>
-                    <option value="dur-desc">Duration (Longest)</option>
-                    <option value="speaker">Speaker</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <!-- Turns Table -->
-            <div class="turns-table-wrapper diar-turns-table-wrapper">
-              <table class="turns-table diar-turns-table">
-                <thead>
-                  <tr>
-                    <th style="width: 40px; text-align: center;">
-                      <input type="checkbox" id="th-select-all-turns" title="Select all visible turns">
-                    </th>
-                    <th style="width: 50px;">#</th>
-                    <th style="width: 140px;">Speaker</th>
-                    <th style="width: 160px;">Start Time (s)</th>
-                    <th style="width: 160px;">End Time (s)</th>
-                    <th style="width: 95px;">Duration</th>
-                    <th style="width: 90px;">Overlap</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="turns-table-body"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Multi-Format Export Studio Card -->
-          <div class="card diar-export-card">
-            <div class="card-header">
-              <div>
-                <h2 class="card-title">Diarization Export & Annotation Studio</h2>
-                <p class="card-subtitle">Export your diarization results in NIST RTTM, Pipeline JSON, CSV spreadsheet, Subtitle formats, Audacity labels, or Praat TextGrid.</p>
-              </div>
-            </div>
-
-            <!-- Export Tab Pills -->
-            <div class="export-format-nav">
-              <button class="export-nav-tab active" data-export-tab="rttm">NIST RTTM</button>
-              <button class="export-nav-tab" data-export-tab="json">Pipeline JSON</button>
-              <button class="export-nav-tab" data-export-tab="csv">CSV Spreadsheet</button>
-              <button class="export-nav-tab" data-export-tab="srt">SRT Subtitles</button>
-              <button class="export-nav-tab" data-export-tab="vtt">WebVTT</button>
-              <button class="export-nav-tab" data-export-tab="audacity">Audacity Labels (.txt)</button>
-              <button class="export-nav-tab" data-export-tab="praat">Praat TextGrid</button>
-            </div>
-
-            <!-- Export Preview & Actions Box -->
-            <div class="export-content-box">
-              <div class="export-preview-header">
-                <span class="export-filename" id="export-filename-label">diarization.rttm</span>
-                <div class="export-actions-right">
-                  <button class="btn btn-secondary btn-sm" id="btn-copy-export">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                    <span>Copy</span>
-                  </button>
-                  <button class="btn btn-primary btn-sm" id="btn-download-export">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                    <span>Download File</span>
+                <div class="subview-actions">
+                  <button class="btn btn-secondary btn-sm" id="btn-add-turn-at-playhead" title="Insert new turn segment at current playhead (N)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    <span>Add Turn at Cursor (N)</span>
                   </button>
                 </div>
               </div>
-              <textarea id="export-preview-textarea" class="export-preview-textarea font-mono" readonly rows="8"></textarea>
-            </div>
-          </div>
-        </div>
 
-        <!-- Diarization Session & Annotation History Card (Always visible) -->
-        <div class="card diar-history-card">
-          <div class="card-header">
-            <div>
-              <div class="flex-row items-center gap-2">
-                <h2 class="card-title">Diarization History & Saved Sessions</h2>
-                <span class="badge badge-info" id="diar-history-count-badge">0 saved runs</span>
+              <!-- Floating Batch Actions Bar (Visible when 1+ turns selected) -->
+              <div class="diar-batch-bar hidden" id="diar-batch-bar">
+                <div class="batch-bar-left">
+                  <span class="batch-count-chip"><strong id="diar-batch-count">0</strong> turns selected</span>
+                </div>
+                <div class="batch-bar-right">
+                  <div class="flex-row items-center gap-1">
+                    <span class="text-xs text-muted">Reassign to:</span>
+                    <select id="diar-batch-speaker-select" class="select-input select-sm"></select>
+                    <button class="btn btn-xs btn-primary" id="btn-batch-reassign">Apply</button>
+                  </div>
+                  <button class="btn btn-xs btn-secondary" id="btn-batch-cut" title="Send all selected turns to Clips registry">✂ Batch Cut</button>
+                  <button class="btn btn-xs btn-destructive" id="btn-batch-delete" title="Delete all selected turns">🗑 Delete</button>
+                  <button class="btn btn-xs btn-ghost" id="btn-batch-clear">✕ Clear Selection</button>
+                </div>
               </div>
-              <p class="card-subtitle">Explore, reload, export, or audit past speaker diarization runs, imports, and multi-track sessions.</p>
-            </div>
-            <div class="card-actions flex-wrap gap-2">
-              <button class="btn btn-secondary btn-sm" id="btn-export-all-history" title="Export full history registry as JSON bundle">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                <span>Export History</span>
-              </button>
-              <button class="btn btn-ghost btn-sm text-destructive" id="btn-clear-diar-history" title="Clear all saved diarization history">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                <span>Clear History</span>
-              </button>
-            </div>
-          </div>
 
-          <!-- History Search & Filter -->
-          <div class="diar-history-filter-bar">
-            <input type="text" id="diar-history-search-input" class="text-input text-sm flex-1" placeholder="Filter history by audio title, model ID, speaker name, or date...">
-          </div>
+              <!-- Filters & Search Toolbar -->
+              <div class="diar-inspector-toolbar">
+                <div class="toolbar-left">
+                  <div class="form-group mb-0">
+                    <select id="diar-filter-speaker-select" class="select-input select-sm">
+                      <option value="all">All Speakers</option>
+                    </select>
+                  </div>
+                  <div class="form-group mb-0 flex-1">
+                    <input type="text" id="diar-turns-search-input" class="text-input text-sm" placeholder="Search turn #, speaker name, or timestamp...">
+                  </div>
+                  <div class="form-group mb-0">
+                    <select id="diar-filter-min-dur" class="select-input select-sm">
+                      <option value="0">All Durations</option>
+                      <option value="0.5">> 0.5s</option>
+                      <option value="1.0">> 1.0s</option>
+                      <option value="2.0">> 2.0s</option>
+                      <option value="5.0">> 5.0s</option>
+                    </select>
+                  </div>
+                </div>
 
-          <!-- History List Container -->
-          <div class="diar-history-list" id="diar-history-list">
-            <div class="empty-placeholder">
-              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-              <span>No diarization sessions saved yet. Run diarization or import annotations above.</span>
+                <div class="toolbar-right">
+                  <div class="form-group mb-0 flex-row items-center gap-2">
+                    <label class="text-xs text-muted">Sort:</label>
+                    <select id="diar-sort-turns-select" class="select-input select-sm">
+                      <option value="time-asc">Start Time (Ascending)</option>
+                      <option value="time-desc">Start Time (Descending)</option>
+                      <option value="dur-desc">Duration (Longest)</option>
+                      <option value="speaker">Speaker</option>
+                    </select>
+                  </div>
+                  <span class="badge badge-info" id="diar-filtered-turns-count">0 turns</span>
+                </div>
+              </div>
+
+              <!-- Turns Table -->
+              <div class="turns-table-wrapper diar-turns-table-wrapper">
+                <table class="turns-table diar-turns-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 40px; text-align: center;">
+                        <input type="checkbox" id="th-select-all-turns" title="Select all visible turns">
+                      </th>
+                      <th style="width: 50px;">#</th>
+                      <th style="width: 140px;">Speaker</th>
+                      <th style="width: 160px;">Start Time (s)</th>
+                      <th style="width: 160px;">End Time (s)</th>
+                      <th style="width: 95px;">Duration</th>
+                      <th style="width: 90px;">Overlap</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="turns-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Subview 2: Speaker Profiles & Speech Distribution -->
+            <div class="diar-subview-panel hidden" id="diar-subview-speakers">
+              <div class="subview-header">
+                <div>
+                  <h3 class="subview-title">Speaker Profiles & Speech Analytics</h3>
+                  <p class="subview-desc">Rename speakers, customize color palettes, inspect speech metrics, or extract isolated speaker audio stems.</p>
+                </div>
+                <div class="subview-actions flex-wrap gap-2">
+                  <div class="flex-row items-center gap-1">
+                    <label class="text-xs text-muted" for="diar-extract-mode-select">Stem Mode:</label>
+                    <select id="diar-extract-mode-select" class="select-input select-sm" title="Extraction mode for speaker audio files">
+                      <option value="concatenated">Concatenated Speech</option>
+                      <option value="time_aligned">Time-Aligned Stems (Muted Silence)</option>
+                    </select>
+                  </div>
+                  <button class="btn btn-secondary btn-sm" id="btn-extract-all-speakers" title="Extract all speaker stems as separate audio files">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    <span>Extract All Speaker Stems</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="diar-speakers-grid" id="diar-speakers-grid"></div>
+            </div>
+
+            <!-- Subview 3: Multi-Format Export Studio -->
+            <div class="diar-subview-panel hidden" id="diar-subview-export">
+              <div class="subview-header">
+                <div>
+                  <h3 class="subview-title">Diarization Export & Annotations</h3>
+                  <p class="subview-desc">Export your diarization results in NIST RTTM, Pipeline JSON, CSV spreadsheet, Subtitle formats, Audacity labels, or Praat TextGrid.</p>
+                </div>
+              </div>
+
+              <!-- Export Tab Pills -->
+              <div class="export-format-nav">
+                <button class="export-nav-tab active" data-export-tab="rttm">NIST RTTM</button>
+                <button class="export-nav-tab" data-export-tab="json">Pipeline JSON</button>
+                <button class="export-nav-tab" data-export-tab="csv">CSV Spreadsheet</button>
+                <button class="export-nav-tab" data-export-tab="srt">SRT Subtitles</button>
+                <button class="export-nav-tab" data-export-tab="vtt">WebVTT</button>
+                <button class="export-nav-tab" data-export-tab="audacity">Audacity Labels (.txt)</button>
+                <button class="export-nav-tab" data-export-tab="praat">Praat TextGrid</button>
+              </div>
+
+              <!-- Export Preview & Actions Box -->
+              <div class="export-content-box">
+                <div class="export-preview-header">
+                  <span class="export-filename" id="export-filename-label">diarization.rttm</span>
+                  <div class="export-actions-right">
+                    <button class="btn btn-secondary btn-sm" id="btn-copy-export">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                      <span>Copy</span>
+                    </button>
+                    <button class="btn btn-primary btn-sm" id="btn-download-export">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                      <span>Download File</span>
+                    </button>
+                  </div>
+                </div>
+                <textarea id="export-preview-textarea" class="export-preview-textarea font-mono" readonly rows="10"></textarea>
+              </div>
+            </div>
+
+            <!-- Subview 4: Saved Runs History -->
+            <div class="diar-subview-panel hidden" id="diar-subview-history">
+              <div class="subview-header">
+                <div>
+                  <div class="flex-row items-center gap-2">
+                    <h3 class="subview-title">Diarization History & Saved Sessions</h3>
+                    <span class="badge badge-info" id="diar-history-count-badge">0 saved runs</span>
+                  </div>
+                  <p class="subview-desc">Explore, restore, export, or audit past speaker diarization runs and annotations.</p>
+                </div>
+                <div class="subview-actions flex-wrap gap-2">
+                  <button class="btn btn-secondary btn-sm" id="btn-export-all-history" title="Export full history registry as JSON bundle">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    <span>Export History</span>
+                  </button>
+                  <button class="btn btn-ghost btn-sm text-destructive" id="btn-clear-diar-history" title="Clear all saved diarization history">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    <span>Clear History</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- History Search & Filter -->
+              <div class="diar-history-filter-bar">
+                <input type="text" id="diar-history-search-input" class="text-input text-sm flex-1" placeholder="Filter history by audio title, model ID, speaker name, or date...">
+              </div>
+
+              <!-- History List Container -->
+              <div class="diar-history-list" id="diar-history-list">
+                <div class="empty-placeholder">
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                  <span>No diarization sessions saved yet. Run diarization or import annotations above.</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -680,25 +718,5 @@
               </div>
             </div>
           </div>
-        </div>
-
-        <!-- Diarization Floating Quick Scroll Navigator -->
-        <div class="diar-quick-nav" id="diar-quick-nav">
-          <button class="diar-nav-btn" id="btn-scroll-to-top" title="Scroll to Top (Setup & Settings)">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"></polyline></svg>
-            <span>Top</span>
-          </button>
-          <button class="diar-nav-btn" id="btn-scroll-to-timeline" title="Scroll Down to Multi-Track Timeline">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
-            <span>Timeline</span>
-          </button>
-          <button class="diar-nav-btn" id="btn-scroll-to-turns" title="Scroll Down to Turns Inspector Table">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
-            <span>Turns</span>
-          </button>
-          <button class="diar-nav-btn" id="btn-scroll-to-history" title="Scroll Down to History & Saved Sessions">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
-            <span>History</span>
-          </button>
         </div>
       </section>
