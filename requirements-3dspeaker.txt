@@ -1,0 +1,20 @@
+# Keep ModelScope / speakerlab isolated from the primary uv environment: their
+# shared dependency constraints otherwise alter the existing Pyannote /
+# separation stack. Install into .venv-3dspeaker (see README).
+#
+# The 3D-Speaker sources are shallow-cloned into .data/3d-speaker on first
+# load (speakerlab is not on PyPI).
+modelscope>=1.20.0
+funasr>=1.1.0
+scipy>=1.11.0
+scikit-learn>=1.3.0
+soundfile>=0.12.0
+kaldiio>=2.18.0
+pyyaml>=6.0
+addict>=2.4.0
+simplejson>=3.19.0
+sortedcontainers>=2.4.0
+datasets>=2.19.0
+transformers>=4.40.0
+# Overlap refinement imports pyannote even when include_overlap is False.
+pyannote.audio>=3.1.0

@@ -9,6 +9,8 @@ from src.diarization.PyannoteDiarizer import (
 )
 from src.diarization.SortformerDiarizer import SortformerDiarizer
 from src.diarization.SortformerWorkerDiarizer import SortformerWorkerDiarizer
+from src.diarization.ThreeDSpeakerDiarizer import ThreeDSpeakerDiarizer
+from src.diarization.ThreeDSpeakerWorkerDiarizer import ThreeDSpeakerWorkerDiarizer
 
 from src.diarization.schemas import (
     DiarizationModelInfo,
@@ -29,4 +31,6 @@ __all__ = [
     "SpeakerTurn",
     "SortformerDiarizer",
     "SortformerWorkerDiarizer",
+    "ThreeDSpeakerDiarizer",
+    "ThreeDSpeakerWorkerDiarizer",
 ]

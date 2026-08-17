@@ -54,7 +54,7 @@ BenchmarkDefinition + speech Audio + music Audio
 | `src/utils/` | File-backed `Audio` plus notebook helpers (`AudioCutter`, comparers) |
 | `src/yt_crawler/` | `YtCrawler` ingest/download |
 | `src/separation/` | `BaseSeparator` and backends (`HTDemucs`, `BSRoFormer`, `MelRoFormer`, `MVSepMDX23`) |
-| `src/diarization/` | `BaseDiarizer`, schemas, Pyannote/Sortformer backends |
+| `src/diarization/` | `BaseDiarizer`, schemas, Pyannote/Sortformer/Clustering/3D-Speaker backends |
 | `src/benchmark/separation/` | `AudioMixer` and mix/benchmark schemas |
 | `src/base/model.py` | `ManagedModel` load/unload lifecycle |
 | `src/notebooks/` | Interactive callers (`pipeline1.ipynb`, mixer, benchmark) |

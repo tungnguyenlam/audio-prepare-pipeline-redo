@@ -46,6 +46,8 @@ from src.diarization import (
     ClusteringWorkerDiarizer,
     PyannoteDiarizer,
     SortformerWorkerDiarizer,
+    ThreeDSpeakerDiarizer,
+    ThreeDSpeakerWorkerDiarizer,
 )
 from src.benchmark.separation.mixer import AudioMixer
 from src.yt_crawler.YtCrawlerClass import YtCrawler
@@ -1631,13 +1633,14 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
     """Run speaker diarization in background."""
     data = await request.json()
     audio_id = data.get("audio_id")
-    model_type = data.get("model_type", "pyannote").lower()  # pyannote, sortformer, clustering
+    model_type = data.get("model_type", "pyannote").lower()  # pyannote, sortformer, clustering, 3d_speaker
     model_id = data.get("model_id")
     device = data.get("device", "auto")
     token = data.get("token") or os.getenv("HF_TOKEN")
     num_speakers = data.get("num_speakers")
     min_speakers = data.get("min_speakers")
     max_speakers = data.get("max_speakers")
+    include_overlap = bool(data.get("include_overlap", False))
 
     audio = registry.get_audio(audio_id)
     if not audio:
@@ -1710,6 +1713,24 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
                     device=target_device,
                     num_speakers=oracle_speakers,
                     max_num_speakers=max_num_speakers,
+                )
+                task_manager.set_cancel_callback(task_id, diarizer.cancel)
+                try:
+                    with diarizer:
+                        return diarizer.diarize(audio)
+                finally:
+                    task_manager.set_cancel_callback(task_id, None)
+            elif model_type in {"3d_speaker", "3d-speaker", "threed_speaker", "speakerlab"}:
+                oracle_speakers = ThreeDSpeakerDiarizer.resolve_speaker_settings(
+                    num_speakers,
+                    min_speakers,
+                    max_speakers,
+                )
+                diarizer = ThreeDSpeakerWorkerDiarizer(
+                    device=target_device,
+                    num_speakers=oracle_speakers,
+                    include_overlap=include_overlap,
+                    token=token if include_overlap else None,
                 )
                 task_manager.set_cancel_callback(task_id, diarizer.cancel)
                 try:

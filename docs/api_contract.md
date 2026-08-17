@@ -238,7 +238,7 @@ active Demucs process group.
 **Defined in:** `src/base/model.py`
 
 `ManagedModel` is used by `PyannoteDiarizer`, `SortformerDiarizer`,
-`ClusteringDiarizer`, `BSRoFormer`, and `MelRoFormer`.
+`ClusteringDiarizer`, `ThreeDSpeakerDiarizer`, `BSRoFormer`, and `MelRoFormer`.
 
 ### `is_loaded -> bool`
 
@@ -429,6 +429,59 @@ constructor option can point to a non-default isolated interpreter.
 - `_load()` constructs NeMo `ClusteringDiarizer` with the configured VAD and
   speaker-embedding models and places them on the selected device.
 - `_unload()` releases both models and clears available accelerator caches.
+
+### `ThreeDSpeakerDiarizer.diarize(audio: Audio) -> DiarizationResult`
+
+**Defined in:** `src/diarization/ThreeDSpeakerDiarizer.py`
+
+ModelScope [3D-Speaker](https://github.com/modelscope/3D-Speaker) audio-only
+pipeline: FSMN voice-activity detection, CAM++ speaker embeddings, then
+spectral clustering, with optional pyannote overlap refinement. Requires the
+isolated environment pinned in `requirements-3dspeaker.txt`. The 3D-Speaker
+repository is shallow-cloned into `.data/3d-speaker` on first `load()` when
+missing (override with `THREEDSPEAKER_ROOT`). Model downloads default to
+`.data/modelscope`.
+
+**Behavior contract:**
+
+- Normalizes the input file to mono, 16 kHz PCM WAV rather than trusting
+  `Audio` metadata.
+- Runs `speakerlab.bin.infer_diarization.Diarization3Dspeaker` and converts
+  `[[start, end, speaker_id], ...]` segments into result-local IDs such as
+  `spk_00`, preserving first-seen speaker order.
+- When `num_speakers` is set, or when min and max speaker bounds are equal,
+  clustering uses that exact count. Otherwise it estimates the count.
+- When `include_overlap=True`, enables pyannote `segmentation-3.0` overlap
+  refinement and requires `token` or `HF_TOKEN`.
+- Includes `DiarizationModelInfo` with backend `"3d-speaker"` and a `model_id`
+  of `{vad_model}+{embedding_model}`.
+
+**Device behavior:** `device="auto"` selects CUDA, then MPS, then CPU. An
+explicitly requested unavailable device raises `RuntimeError`.
+
+**Raises:** `RuntimeError` when the model is not loaded, speakerlab/ModelScope
+support is unavailable, the 3D-Speaker checkout cannot be cloned or is
+incomplete, inference fails, or the selected device cannot be initialized.
+Audio conversion and file errors are propagated.
+
+### `ThreeDSpeakerWorkerDiarizer`
+
+The web applications use `ThreeDSpeakerWorkerDiarizer` from the primary
+`.venv`. Its public lifecycle and `diarize(audio) -> DiarizationResult`
+contract match `ThreeDSpeakerDiarizer`, but `load()` starts
+`.venv-3dspeaker/bin/python -m src.diarization.threed_speaker_worker`. The
+worker loads ModelScope/speakerlab models once and reuses them until
+`unload()` or `close()`. `THREEDSPEAKER_PYTHON` or the `worker_python`
+constructor option can point to a non-default isolated interpreter.
+`cancel()` terminates active worker inference.
+
+### `ThreeDSpeakerDiarizer._load() -> None` and `_unload() -> None`
+
+- `_load()` adds the 3D-Speaker checkout to `sys.path` (shallow-cloning
+  https://github.com/modelscope/3D-Speaker into `.data/3d-speaker` when
+  missing), constructs `Diarization3Dspeaker` with the configured device /
+  overlap settings, and caches ModelScope weights under `.data/modelscope`.
+- `_unload()` releases the pipeline and clears available accelerator caches.
 
 ## 6. Benchmark mixing API
 

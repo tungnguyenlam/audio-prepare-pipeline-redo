@@ -106,7 +106,11 @@ class SortformerWorkerDiarizer(BaseDiarizer, ManagedModel):
 
     def _load(self) -> None:
         """Start the isolated worker and load Sortformer once."""
-        worker_python = self.worker_python.resolve()
+        worker_python = (
+            self.worker_python
+            if self.worker_python.is_absolute()
+            else (_REPO_ROOT / self.worker_python)
+        ).expanduser()
         if not worker_python.is_file():
             raise RuntimeError(
                 f"Sortformer worker Python does not exist: {worker_python}. "
@@ -123,6 +127,10 @@ class SortformerWorkerDiarizer(BaseDiarizer, ManagedModel):
             ]
         )
         worker_environment["PYTHONNOUSERSITE"] = "1"
+        worker_environment.setdefault(
+            "HF_HOME",
+            os.environ.get("HF_HOME") or str(_REPO_ROOT / ".data" / "huggingface"),
+        )
         process = subprocess.Popen(
             [
                 str(worker_python),

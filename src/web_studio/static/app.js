@@ -2464,6 +2464,7 @@ function diarizationModelLabel(modelTypeOrBackend) {
   const key = String(modelTypeOrBackend || "").toLowerCase();
   if (key.includes("sortformer")) return "NeMo Sortformer";
   if (key.includes("clustering") || key.includes("cluster")) return "NeMo Clustering";
+  if (key.includes("3d") || key.includes("speakerlab") || key.includes("threed")) return "3D-Speaker";
   if (key.includes("3.1") || key.includes("pyannote_31") || key.includes("pyannote_3")) return "Pyannote 3.1";
   if (key.includes("community") || key.includes("pyannote_community")) return "Pyannote Community-1";
   if (key.includes("pyannote")) return "Pyannote Community-1";
@@ -5000,7 +5001,7 @@ function renderDiarizationHistory() {
     const isCurrentActive = state.diarization.audioId === item.audio_id && state.diarization.turns.length === item.turn_count;
     const dateStr = new Date(item.timestamp).toLocaleString();
     const timeAgo = formatTimeAgo(item.timestamp);
-    const modelTag = String(item.model_backend).toLowerCase().includes("sortformer") ? "NeMo Sortformer" : (String(item.model_backend).includes("community") ? "Pyannote Community-1" : (item.model_backend || "Pyannote Community-1"));
+    const modelTag = diarizationModelLabel(item.model_backend);
 
     const card = document.createElement("div");
     card.className = `diar-history-item ${isCurrentActive ? 'active-session' : ''}`;

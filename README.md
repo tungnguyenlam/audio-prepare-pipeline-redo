@@ -7,7 +7,7 @@ High-throughput audio preparation, YouTube crawling, stem separation, speaker di
 This repository provides modular, file-backed audio processing utilities, one
 shared web backend, and two dedicated frontends:
 
-1. **⚡ SonicPipeline (Large-Scale Processing Engine):** High-throughput batch audio ingestion (playlists, multi-URLs, folder scans), asynchronous worker task queue, dataset management, bulk stem separation (`BS-RoFormer`, `Mel-RoFormer`, `HTDemucs`, `MVSep-MDX23`), batch speaker diarization (`Sortformer`, `Pyannote`), separation benchmark matrix evaluation, hardware telemetry monitoring, and JSONL/CSV manifest exports.
+1. **⚡ SonicPipeline (Large-Scale Processing Engine):** High-throughput batch audio ingestion (playlists, multi-URLs, folder scans), asynchronous worker task queue, dataset management, bulk stem separation (`BS-RoFormer`, `Mel-RoFormer`, `HTDemucs`, `MVSep-MDX23`), batch speaker diarization (`Sortformer`, `3D-Speaker`, `Pyannote`), separation benchmark matrix evaluation, hardware telemetry monitoring, and JSONL/CSV manifest exports.
 2. **🎙️ SonicStudio (Interactive Exploration Studio):** Single-track audio workstation for manual audio cutting, waveform and spectrogram side-by-side visual comparison, model stem auditioning, and quick parameter exploration.
 
 ## Quickstart
@@ -43,6 +43,17 @@ UV_PROJECT_ENVIRONMENT=.venv-sortformer uv sync --frozen --no-dev
 uv pip install --python .venv-sortformer/bin/python -r requirements-sortformer.txt
 ```
 
+3D-Speaker similarly needs an isolated environment
+([modelscope/3D-Speaker](https://github.com/modelscope/3D-Speaker);
+`speakerlab` is not published on PyPI). The toolkit sources are
+shallow-cloned into `.data/3d-speaker` automatically on first use:
+
+```bash
+uv venv --python .venv/bin/python .venv-3dspeaker
+UV_PROJECT_ENVIRONMENT=.venv-3dspeaker uv sync --frozen --no-dev
+uv pip install --python .venv-3dspeaker/bin/python -r requirements-3dspeaker.txt
+```
+
 Always run the shared backend from the primary application environment:
 
 ```bash
@@ -51,9 +62,13 @@ Always run the shared backend from the primary application environment:
 
 When Sortformer is selected, the backend starts a persistent worker with
 `.venv-sortformer/bin/python`, loads NeMo inside that process, and reuses the
-model across batch items. Other utilities remain in the primary `.venv`; the
-server does not need to be restarted when switching models. Set
-`SORTFORMER_PYTHON` only when the isolated interpreter is stored elsewhere.
+model across batch items. When 3D-Speaker is selected, the backend starts
+`.venv-3dspeaker/bin/python` the same way (and clones the toolkit into
+`.data/3d-speaker` if needed). Other utilities remain in the primary `.venv`;
+the server does not need to be restarted when switching models. Set
+`SORTFORMER_PYTHON` or `THREEDSPEAKER_PYTHON` only when an isolated
+interpreter is stored elsewhere. Override the 3D-Speaker checkout path with
+`THREEDSPEAKER_ROOT` when it is not at `.data/3d-speaker`.
 
 ### Environment Configuration
 
@@ -97,7 +112,7 @@ count with `STUDIO_QUEUE_CONCURRENCY=2` (supported range: 1–4).
 ├── src/
 │   ├── base/               # ManagedModel lifecycle (load/unload)
 │   ├── benchmark/          # AudioMixer and separation benchmark schemas
-│   ├── diarization/        # BaseDiarizer, Sortformer, Pyannote backends
+│   ├── diarization/        # BaseDiarizer, Sortformer, Clustering, 3D-Speaker, Pyannote backends
 │   ├── notebooks/          # Interactive Jupyter callers (pipeline1, benchmark, mixer)
 │   ├── separation/         # BaseSeparator, BSRoFormer, MelRoFormer, HTDemucs, MVSepMDX23
 │   ├── utils/              # File-backed Audio class, AudioCutter, Comparers

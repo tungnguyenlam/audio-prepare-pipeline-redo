@@ -373,6 +373,8 @@
     }
     if (event === 'telemetry') {
       updateTelemetryUI(data);
+    } else if (event === 'queue_state') {
+      setQueuePaused(data.is_paused);
     } else if (event === 'job_created' || event === 'job_updated') {
       upsertJobInState(data);
       renderJobs();
@@ -395,6 +397,16 @@
     } else if (event === 'datasets_updated' || event === 'items_deleted' || event === 'items_tagged' || event === 'items_moved') {
       loadDatasets();
       if (state.activeTab === 'tab-datasets') loadItems();
+    }
+  }
+
+  function setQueuePaused(isPaused) {
+    state.isPaused = Boolean(isPaused);
+    if (els.labelPauseQueue) {
+      els.labelPauseQueue.textContent = state.isPaused ? '▶ Resume Queue' : '⏸ Pause Queue';
+    }
+    if (els.btnPauseQueue) {
+      els.btnPauseQueue.setAttribute('aria-pressed', String(state.isPaused));
     }
   }
 
@@ -864,6 +876,7 @@
         state.sharedData = data;
         state.jobs = data.pipeline?.jobs || [];
         state.sharedItems = data.items || [];
+        setQueuePaused(data.pipeline?.queue?.is_paused);
 
         // Update Shared GPU Ribbon
         const dev = data.device || {};
@@ -2014,14 +2027,24 @@
     // Pause / Resume Queue
     if (els.btnPauseQueue) {
       els.btnPauseQueue.addEventListener('click', async () => {
-        state.isPaused = !state.isPaused;
-        await fetch('/api/queue/controls', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: state.isPaused ? 'pause' : 'resume' }),
-        });
-        els.labelPauseQueue.textContent = state.isPaused ? '▶ Resume Queue' : '⏸ Pause Queue';
-        showToast(state.isPaused ? 'Queue paused' : 'Queue resumed', 'warning');
+        const action = state.isPaused ? 'resume' : 'pause';
+        els.btnPauseQueue.disabled = true;
+        try {
+          const res = await fetch('/api/queue/controls', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || `Unable to ${action} queue`);
+
+          setQueuePaused(data.is_paused);
+          showToast(state.isPaused ? 'Queue paused' : 'Queue resumed', 'warning');
+        } catch (err) {
+          showToast(err.message || `Unable to ${action} queue`, 'error');
+        } finally {
+          els.btnPauseQueue.disabled = false;
+        }
       });
     }
 

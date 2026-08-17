@@ -24,6 +24,8 @@ from src.diarization import (
     ClusteringWorkerDiarizer,
     PyannoteDiarizer,
     SortformerWorkerDiarizer,
+    ThreeDSpeakerDiarizer,
+    ThreeDSpeakerWorkerDiarizer,
 )
 from src.separation import BSRoFormer, HTDemucs, MelRoFormer, MVSepMDX23
 from src.utils.AudioClass import DEFAULT_SAMPLE_RATE, Audio
@@ -457,6 +459,7 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
     min_speakers: Optional[int] = job.params.get("min_speakers")
     max_speakers: Optional[int] = job.params.get("max_speakers")
     hf_token: Optional[str] = job.params.get("hf_token")
+    include_overlap: bool = bool(job.params.get("include_overlap", False))
     backend_key = backend.lower()
 
     if backend_key == "sortformer" and any(
@@ -490,6 +493,18 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
                 device=device,
                 num_speakers=oracle_speakers,
                 max_num_speakers=max_num_speakers,
+            )
+        elif backend_key in {"3d_speaker", "3d-speaker", "threed_speaker", "speakerlab"}:
+            oracle_speakers = ThreeDSpeakerDiarizer.resolve_speaker_settings(
+                num_speakers,
+                min_speakers,
+                max_speakers,
+            )
+            diarizer = ThreeDSpeakerWorkerDiarizer(
+                device=device,
+                num_speakers=oracle_speakers,
+                include_overlap=include_overlap,
+                token=hf_token if include_overlap else None,
             )
         elif backend_key in {"pyannote_31", "pyannote_3", "pyannote_3.1"}:
             diarizer = PyannoteDiarizer(
