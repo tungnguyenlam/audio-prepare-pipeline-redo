@@ -1,0 +1,279 @@
+"""Main-environment proxy for the isolated NeMo clustering worker."""
+
+from __future__ import annotations
+
+from collections import deque
+import json
+import logging
+import os
+import signal
+import subprocess
+import threading
+from pathlib import Path
+from typing import Any
+
+from src.base.model import ManagedModel
+from src.diarization.BaseDiarizer import BaseDiarizer
+from src.diarization.ClusteringDiarizer import (
+    DEFAULT_MAX_NUM_SPEAKERS,
+    DEFAULT_SPEAKER_MODEL,
+    DEFAULT_VAD_MODEL,
+)
+from src.diarization.schemas import (
+    DiarizationModelInfo,
+    DiarizationResult,
+    Speaker,
+    SpeakerTurn,
+)
+from src.utils.AudioClass import Audio
+
+logger = logging.getLogger(__name__)
+
+_PROTOCOL_PREFIX = "@@CLUSTERING_RPC@@"
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+
+class ClusteringWorkerDiarizer(BaseDiarizer, ManagedModel):
+    """Run NeMo clustering diarization in a persistent isolated process.
+
+    The caller remains in the primary application environment. ``load()``
+    starts one worker and loads MarbleNet plus TitaNet once; repeated
+    ``diarize()`` calls reuse those models until ``close()`` or ``unload()``.
+    """
+
+    def __init__(
+        self,
+        vad_model: str = DEFAULT_VAD_MODEL,
+        speaker_model: str = DEFAULT_SPEAKER_MODEL,
+        *,
+        device: str = "auto",
+        num_speakers: int | None = None,
+        max_num_speakers: int = DEFAULT_MAX_NUM_SPEAKERS,
+        batch_size: int = 64,
+        num_workers: int = 0,
+        ffmpeg_bin: str = "ffmpeg",
+        vad_onset: float = 0.5,
+        vad_offset: float = 0.3,
+        vad_pad_onset_s: float = 0.2,
+        vad_pad_offset_s: float = 0.2,
+        vad_min_duration_on_s: float = 0.5,
+        vad_min_duration_off_s: float = 0.5,
+        worker_python: str | Path | None = None,
+    ) -> None:
+        ManagedModel.__init__(self)
+        configured_python = (
+            worker_python
+            or os.getenv("CLUSTERING_PYTHON")
+            or os.getenv("SORTFORMER_PYTHON")
+        )
+        self.worker_python = Path(
+            configured_python
+            if configured_python is not None
+            else _REPO_ROOT / ".venv-sortformer" / "bin" / "python"
+        ).expanduser()
+        self._config: dict[str, Any] = {
+            "vad_model": vad_model,
+            "speaker_model": speaker_model,
+            "device": device,
+            "num_speakers": num_speakers,
+            "max_num_speakers": max_num_speakers,
+            "batch_size": batch_size,
+            "num_workers": num_workers,
+            "ffmpeg_bin": ffmpeg_bin,
+            "vad_onset": vad_onset,
+            "vad_offset": vad_offset,
+            "vad_pad_onset_s": vad_pad_onset_s,
+            "vad_pad_offset_s": vad_pad_offset_s,
+            "vad_min_duration_on_s": vad_min_duration_on_s,
+            "vad_min_duration_off_s": vad_min_duration_off_s,
+        }
+        self._process: subprocess.Popen[str] | None = None
+        self._request_lock = threading.Lock()
+        self._output_tail: deque[str] = deque(maxlen=100)
+        self._cancel_requested = False
+
+    def _load(self) -> None:
+        """Start the isolated worker and load clustering models once."""
+        worker_python = self.worker_python.resolve()
+        if not worker_python.is_file():
+            raise RuntimeError(
+                f"Clustering worker Python does not exist: {worker_python}. "
+                "Create .venv-sortformer from requirements-sortformer.txt or "
+                "set CLUSTERING_PYTHON / SORTFORMER_PYTHON."
+            )
+        self._cancel_requested = False
+        worker_environment = os.environ.copy()
+        worker_environment["VIRTUAL_ENV"] = str(worker_python.parent.parent)
+        worker_environment["PATH"] = os.pathsep.join(
+            [
+                str(worker_python.parent),
+                worker_environment.get("PATH", ""),
+            ]
+        )
+        worker_environment["PYTHONNOUSERSITE"] = "1"
+        process = subprocess.Popen(
+            [
+                str(worker_python),
+                "-u",
+                "-m",
+                "src.diarization.clustering_worker",
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            cwd=str(_REPO_ROOT),
+            env=worker_environment,
+            start_new_session=True,
+        )
+        self._process = process
+        try:
+            self._request({"action": "load", "config": self._config})
+        except Exception:
+            self._stop_process(process)
+            self._process = None
+            raise
+
+    def _unload(self) -> None:
+        """Unload the worker models and reap the isolated process."""
+        process = self._process
+        if process is None:
+            return
+        if process.poll() is None and not self._cancel_requested:
+            try:
+                self._request({"action": "close"})
+            except Exception:
+                logger.warning(
+                    "Clustering worker did not close cleanly",
+                    exc_info=True,
+                )
+        self._stop_process(process)
+        self._process = None
+
+    def diarize(self, audio: Audio) -> DiarizationResult:
+        """Diarize ``audio`` through the persistent isolated worker."""
+        if not self.is_loaded or self._process is None:
+            raise RuntimeError(
+                "Clustering worker is not loaded. Call load() before diarize(), "
+                "or use it as a context manager."
+            )
+        if not Path(audio.path).is_file():
+            raise FileNotFoundError(f"Audio file does not exist: {audio.path}")
+        payload = self._request(
+            {
+                "action": "diarize",
+                "audio": audio.metadata(),
+            }
+        )
+        return self._result_from_dict(payload)
+
+    def cancel(self) -> None:
+        """Request non-blocking cancellation of active worker inference."""
+        self._cancel_requested = True
+        process = self._process
+        if process is None or process.poll() is not None:
+            return
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        except OSError:
+            process.terminate()
+
+    def close(self) -> None:
+        """Compatibility alias that unloads and reaps the worker."""
+        self.unload()
+
+    def _request(self, payload: dict[str, Any]) -> Any:
+        with self._request_lock:
+            process = self._process
+            if process is None or process.poll() is not None:
+                raise RuntimeError(self._worker_exit_message(process))
+            if process.stdin is None or process.stdout is None:
+                raise RuntimeError("Clustering worker pipes are unavailable")
+            try:
+                process.stdin.write(json.dumps(payload, ensure_ascii=False) + "\n")
+                process.stdin.flush()
+            except BrokenPipeError as exc:
+                raise RuntimeError(self._worker_exit_message(process)) from exc
+
+            for line in process.stdout:
+                message = line.rstrip()
+                if not message:
+                    continue
+                protocol_index = message.find(_PROTOCOL_PREFIX)
+                if protocol_index < 0:
+                    self._output_tail.append(message)
+                    logger.info("Clustering worker: %s", message)
+                    continue
+                preceding_output = message[:protocol_index].strip()
+                if preceding_output:
+                    self._output_tail.append(preceding_output)
+                    logger.info("Clustering worker: %s", preceding_output)
+                response = json.loads(
+                    message[protocol_index + len(_PROTOCOL_PREFIX) :]
+                )
+                if response.get("ok"):
+                    return response.get("result")
+                detail = response.get("error") or "unknown worker error"
+                traceback_text = response.get("traceback") or ""
+                raise RuntimeError(
+                    f"Clustering worker failed: {detail}\n{traceback_text[-3000:]}"
+                )
+            raise RuntimeError(self._worker_exit_message(process))
+
+    def _worker_exit_message(
+        self,
+        process: subprocess.Popen[str] | None,
+    ) -> str:
+        returncode = process.poll() if process is not None else None
+        detail = "\n".join(self._output_tail).strip()
+        if self._cancel_requested:
+            return "Clustering worker was cancelled"
+        return (
+            f"Clustering worker exited unexpectedly (exit {returncode}): "
+            f"{detail[-3000:] or 'no output'}"
+        )
+
+    @staticmethod
+    def _stop_process(process: subprocess.Popen[str]) -> None:
+        if process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                return
+            except OSError:
+                process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    return
+                except OSError:
+                    process.kill()
+                process.wait(timeout=5)
+        if process.stdin is not None:
+            try:
+                process.stdin.close()
+            except BrokenPipeError:
+                pass
+        if process.stdout is not None:
+            process.stdout.close()
+
+    @staticmethod
+    def _result_from_dict(payload: dict[str, Any]) -> DiarizationResult:
+        model_payload = payload.get("model")
+        return DiarizationResult(
+            schema_version=payload["schema_version"],
+            audio_id=payload["audio_id"],
+            speakers=[Speaker(**speaker) for speaker in payload["speakers"]],
+            turns=[SpeakerTurn(**turn) for turn in payload["turns"]],
+            model=(
+                DiarizationModelInfo(**model_payload)
+                if model_payload is not None
+                else None
+            ),
+        )

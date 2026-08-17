@@ -69,13 +69,26 @@
               <div class="form-group">
                 <label class="form-label">2. Diarization Neural Architecture:</label>
                 <div class="model-cards-grid">
-                  <div class="model-card active" data-diar-model="pyannote">
+                  <div class="model-card active" data-diar-model="pyannote_community" data-model-id="pyannote/speaker-diarization-community-1">
+                    <div class="model-card-header">
+                      <span class="model-name">Pyannote Community-1</span>
+                      <span class="badge badge-sm badge-info">Community SOTA</span>
+                    </div>
+                    <p class="model-desc">Successor of Pyannote 3.1. Exclusive speaker diarization with high accuracy and offline support.</p>
+                    <div class="model-specs">
+                      <span class="spec-tag">speaker-diarization-community-1</span>
+                      <span class="spec-tag">Requires HF Token</span>
+                    </div>
+                  </div>
+
+                  <div class="model-card" data-diar-model="pyannote_31" data-model-id="pyannote/speaker-diarization-3.1">
                     <div class="model-card-header">
                       <span class="model-name">Pyannote 3.1</span>
-                      <span class="badge badge-sm badge-info">Community SOTA</span>
+                      <span class="badge badge-sm badge-info">Precision Classic</span>
                     </div>
                     <p class="model-desc">Gold-standard neural pipeline with overlapping speech handling and RTTM export.</p>
                     <div class="model-specs">
+                      <span class="spec-tag">speaker-diarization-3.1</span>
                       <span class="spec-tag">Overlap Detection</span>
                       <span class="spec-tag">Requires HF Token</span>
                     </div>
@@ -90,6 +103,18 @@
                     <div class="model-specs">
                       <span class="spec-tag">Zero Token Required</span>
                       <span class="spec-tag">Streaming Speed</span>
+                    </div>
+                  </div>
+
+                  <div class="model-card" data-diar-model="clustering">
+                    <div class="model-card-header">
+                      <span class="model-name">NeMo Clustering</span>
+                      <span class="badge badge-sm badge-accent">Cascaded</span>
+                    </div>
+                    <p class="model-desc">MarbleNet VAD + TitaNet embeddings + spectral clustering. No speaker-count cap per window.</p>
+                    <div class="model-specs">
+                      <span class="spec-tag">Zero Token Required</span>
+                      <span class="spec-tag">Unknown # Speakers</span>
                     </div>
                   </div>
                 </div>
@@ -195,9 +220,14 @@
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
                   <span>-5s</span>
                 </button>
-                <button class="btn btn-ctrl btn-sm btn-play-main" id="btn-diar-play-toggle" title="Play/Pause (Space)">
+                <button class="btn btn-ctrl btn-sm btn-play-main" id="btn-diar-play-toggle" title="Play/Pause All Speakers (Space)">
                   <svg id="icon-diar-play" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                   <svg id="icon-diar-pause" class="hidden" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+                  <span>Play All</span>
+                </button>
+                <button class="btn btn-ctrl btn-sm" id="btn-diar-mute-all" title="Toggle Mute All / Unmute All Speakers">
+                  <span id="icon-diar-mute-all">🔇</span>
+                  <span id="diar-mute-all-label">Mute All</span>
                 </button>
                 <button class="btn btn-ctrl btn-sm" id="btn-diar-skip-fwd" title="Forward 5s (Shift+Right)">
                   <span>+5s</span>
@@ -592,5 +622,25 @@
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- Diarization Floating Quick Scroll Navigator -->
+        <div class="diar-quick-nav" id="diar-quick-nav">
+          <button class="diar-nav-btn" id="btn-scroll-to-top" title="Scroll to Top (Setup & Settings)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"></polyline></svg>
+            <span>Top</span>
+          </button>
+          <button class="diar-nav-btn" id="btn-scroll-to-timeline" title="Scroll Down to Multi-Track Timeline">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            <span>Timeline</span>
+          </button>
+          <button class="diar-nav-btn" id="btn-scroll-to-turns" title="Scroll Down to Turns Inspector Table">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            <span>Turns</span>
+          </button>
+          <button class="diar-nav-btn" id="btn-scroll-to-history" title="Scroll Down to History & Saved Sessions">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            <span>History</span>
+          </button>
         </div>
       </section>

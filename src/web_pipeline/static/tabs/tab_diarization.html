@@ -36,13 +36,40 @@
                   </label>
 
                   <label class="model-pro-card">
-                    <input type="radio" name="diar-backend-radio" value="pyannote" class="hidden-radio">
+                    <input type="radio" name="diar-backend-radio" value="clustering" class="hidden-radio">
+                    <div class="pro-card-top">
+                      <span class="pro-card-title">NeMo Clustering</span>
+                      <span class="badge-spec-glow">Cascaded</span>
+                    </div>
+                    <p class="pro-card-desc">MarbleNet VAD + TitaNet embeddings + spectral clustering. Uses min/max speaker bounds when provided.</p>
+                    <div class="pro-card-specs">
+                      <span class="spec-chip">Multi-Scale TitaNet</span>
+                      <span class="spec-chip">Zero Token Required</span>
+                    </div>
+                  </label>
+
+                  <label class="model-pro-card">
+                    <input type="radio" name="diar-backend-radio" value="pyannote_community" class="hidden-radio">
+                    <div class="pro-card-top">
+                      <span class="pro-card-title">Pyannote Community-1</span>
+                      <span class="badge-spec-glow">Community SOTA</span>
+                    </div>
+                    <p class="pro-card-desc">Successor of Pyannote 3.1 (pyannote/speaker-diarization-community-1). Exclusive diarization with high accuracy.</p>
+                    <div class="pro-card-specs">
+                      <span class="spec-chip">speaker-diarization-community-1</span>
+                      <span class="spec-chip">Requires HF Token</span>
+                    </div>
+                  </label>
+
+                  <label class="model-pro-card">
+                    <input type="radio" name="diar-backend-radio" value="pyannote_31" class="hidden-radio">
                     <div class="pro-card-top">
                       <span class="pro-card-title">Pyannote Audio 3.1</span>
-                      <span class="badge-spec-glow">Precision</span>
+                      <span class="badge-spec-glow">Precision Classic</span>
                     </div>
                     <p class="pro-card-desc">Gold-standard neural diarization pipeline with overlapping speech handling and RTTM export.</p>
                     <div class="pro-card-specs">
+                      <span class="spec-chip">speaker-diarization-3.1</span>
                       <span class="spec-chip">Overlap Handling</span>
                       <span class="spec-chip">Requires HF Token</span>
                     </div>

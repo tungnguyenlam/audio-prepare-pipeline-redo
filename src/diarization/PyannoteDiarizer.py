@@ -17,23 +17,44 @@ from src.diarization.schemas import (
 from src.utils.AudioClass import Audio
 
 
+DEFAULT_PYANNOTE_MODEL_ID = "pyannote/speaker-diarization-community-1"
+
+
 class PyannoteDiarizer(BaseDiarizer, ManagedModel):
     """Speaker diarization using Pyannote's community pipeline.
 
     The speaker labels produced by Pyannote are converted to local ``spk_NN``
-    identifiers.  Those identifiers are meaningful only within one result.
+    identifiers. Those identifiers are meaningful only within one result.
     """
 
     def __init__(
         self,
-        model_id: str = "pyannote/speaker-diarization-community-1",
+        model_id: str = DEFAULT_PYANNOTE_MODEL_ID,
         device: str = "auto",
         token: str | None = None,
+        *,
+        num_speakers: int | None = None,
+        min_speakers: int | None = None,
+        max_speakers: int | None = None,
     ) -> None:
+        """Initialize PyannoteDiarizer.
+
+        Args:
+            model_id: Hugging Face repository ID for the diarization pipeline.
+                Defaults to ``"pyannote/speaker-diarization-community-1"``.
+            device: Compute device (``"auto"``, ``"cuda"``, ``"cpu"``, etc.).
+            token: Optional Hugging Face access token (or ``HF_TOKEN`` env).
+            num_speakers: Optional exact number of speakers to look for.
+            min_speakers: Optional lower bound on the number of speakers.
+            max_speakers: Optional upper bound on the number of speakers.
+        """
         ManagedModel.__init__(self)
         self.model_id = model_id
         self.device = str(device)
         self.token = token
+        self.num_speakers = num_speakers
+        self.min_speakers = min_speakers
+        self.max_speakers = max_speakers
         self._pipeline: Any | None = None
 
     def _load(self) -> None:
@@ -71,8 +92,31 @@ class PyannoteDiarizer(BaseDiarizer, ManagedModel):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-    def diarize(self, audio: Audio) -> DiarizationResult:
-        """Diarize ``audio`` and return backend-independent speaker turns."""
+    def diarize(
+        self,
+        audio: Audio,
+        *,
+        num_speakers: int | None = None,
+        min_speakers: int | None = None,
+        max_speakers: int | None = None,
+        hook: Any | None = None,
+    ) -> DiarizationResult:
+        """Diarize ``audio`` and return backend-independent speaker turns.
+
+        Args:
+            audio: Audio instance to diarize.
+            num_speakers: Exact number of speakers, if known in advance.
+            min_speakers: Minimum number of speakers to look for.
+            max_speakers: Maximum number of speakers to look for.
+            hook: Optional callback hook for progress tracking.
+
+        Returns:
+            A DiarizationResult containing detected speakers and turns.
+
+        Raises:
+            RuntimeError: If the model is not loaded.
+            ValueError: If the audio file is empty.
+        """
         if not self.is_loaded or self._pipeline is None:
             raise RuntimeError(
                 "PyannoteDiarizer is not loaded. Call load() before diarize(), "
@@ -90,15 +134,43 @@ class PyannoteDiarizer(BaseDiarizer, ManagedModel):
         if waveform.shape[0] == 0:
             raise ValueError(f"Cannot diarize empty audio file: {audio.path}")
 
-        # Pyannote expects (channel, time). Supplying decoded audio avoids its
-        # optional torchcodec file decoder and works with the project's
-        # existing libsndfile-backed audio formats.
+        # Pyannote expects (channel, time). Downmix stereo to mono if needed.
+        if waveform.shape[1] > 1:
+            waveform = waveform.mean(axis=1, keepdims=True)
+
         pipeline_input = {
             "waveform": torch.from_numpy(waveform.T.copy()),
             "sample_rate": int(sample_rate),
         }
-        output = self._pipeline(pipeline_input)
-        annotation = output.speaker_diarization
+
+        pipeline_kwargs: dict[str, Any] = {}
+        target_num_speakers = (
+            num_speakers if num_speakers is not None else self.num_speakers
+        )
+        target_min_speakers = (
+            min_speakers if min_speakers is not None else self.min_speakers
+        )
+        target_max_speakers = (
+            max_speakers if max_speakers is not None else self.max_speakers
+        )
+
+        if target_num_speakers is not None:
+            pipeline_kwargs["num_speakers"] = int(target_num_speakers)
+        if target_min_speakers is not None:
+            pipeline_kwargs["min_speakers"] = int(target_min_speakers)
+        if target_max_speakers is not None:
+            pipeline_kwargs["max_speakers"] = int(target_max_speakers)
+        if hook is not None:
+            pipeline_kwargs["hook"] = hook
+
+        output = self._pipeline(pipeline_input, **pipeline_kwargs)
+
+        if hasattr(output, "speaker_diarization"):
+            annotation = output.speaker_diarization
+        elif isinstance(output, dict) and "speaker_diarization" in output:
+            annotation = output["speaker_diarization"]
+        else:
+            annotation = output
 
         label_to_speaker_id: dict[Any, str] = {}
         speakers: list[Speaker] = []

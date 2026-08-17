@@ -237,7 +237,8 @@ active Demucs process group.
 
 **Defined in:** `src/base/model.py`
 
-`ManagedModel` is used by `PyannoteDiarizer`, `SortformerDiarizer`, `BSRoFormer`, and `MelRoFormer`.
+`ManagedModel` is used by `PyannoteDiarizer`, `SortformerDiarizer`,
+`ClusteringDiarizer`, `BSRoFormer`, and `MelRoFormer`.
 
 ### `is_loaded -> bool`
 
@@ -276,15 +277,26 @@ Subclasses must implement `_load() -> None` and `_unload() -> None`.
 Abstract interface for converting audio into backend-independent speaker
 information.
 
-### `PyannoteDiarizer.diarize(audio: Audio) -> DiarizationResult`
+### `PyannoteDiarizer(model_id=..., device=..., token=..., num_speakers=..., min_speakers=..., max_speakers=...)`
+
+**Defined in:** `src/diarization/PyannoteDiarizer.py`
+
+- `model_id`: Hugging Face repository ID. Defaults to `DEFAULT_PYANNOTE_MODEL_ID` (`"pyannote/speaker-diarization-community-1"`).
+- `device`: Compute target (`"auto"`, `"cuda"`, `"cpu"`, etc.).
+- `token`: Optional Hugging Face authentication token (or reads `HF_TOKEN` from environment).
+- `num_speakers`, `min_speakers`, `max_speakers`: Optional speaker-count constraints.
+
+### `PyannoteDiarizer.diarize(audio: Audio, *, num_speakers=None, min_speakers=None, max_speakers=None, hook=None) -> DiarizationResult`
 
 Requires the Pyannote pipeline to be loaded first.
 
 **Behavior contract:**
 
 - Decodes the file with `soundfile` and invokes Pyannote with a float32
-  `(channel, time)` waveform tensor plus its sample rate. This keeps file
+  `(channel, time)` waveform tensor plus its sample rate. Downmixes stereo/multi-channel to mono when applicable. This keeps file
   decoding independent of Pyannote's optional `torchcodec` integration.
+- Passes `num_speakers`, `min_speakers`, `max_speakers`, and `hook` if specified.
+- Extracts speaker turns from both `output.speaker_diarization` (pyannote 3.3/4.0+ and community models) or direct Annotation outputs (pyannote 3.1).
 - Converts backend speaker labels into result-local IDs such as `spk_00`.
 - Creates one `Speaker` record for each distinct label.
 - Creates one `SpeakerTurn` record for each annotated segment.
@@ -370,6 +382,52 @@ worker inference.
   supplied), restores it with `strict=False`, and moves it to the selected
   device.
 - TitaNet is loaded lazily only when a recording needs multiple windows.
+- `_unload()` releases both models and clears available accelerator caches.
+
+### `ClusteringDiarizer.diarize(audio: Audio) -> DiarizationResult`
+
+**Defined in:** `src/diarization/ClusteringDiarizer.py`
+
+NeMo's cascaded clustering pipeline: MarbleNet voice-activity detection,
+multi-scale TitaNet speaker embeddings, then spectral clustering. Requires the
+same isolated NeMo environment as Sortformer (`requirements-sortformer.txt`).
+Default models are `vad_multilingual_marblenet` and `titanet_large`.
+
+**Behavior contract:**
+
+- Inspects and normalizes the actual input file to mono, 16 kHz PCM WAV rather
+  than trusting `Audio` metadata.
+- Writes a one-file NeMo manifest and runs `ClusteringDiarizer.diarize()`.
+- Parses predicted RTTM into result-local IDs such as `spk_00`, preserving
+  first-seen speaker order.
+- When `num_speakers` is set, or when min and max speaker bounds are equal,
+  clustering uses that exact count. Otherwise it estimates the count up to
+  `max_num_speakers` (default 8).
+- Includes `DiarizationModelInfo` with backend `"nemo-clustering"` and a
+  `model_id` of `{vad_model}+{speaker_model}`.
+
+**Device behavior:** `device="auto"` selects CUDA, then MPS, then CPU. An
+explicitly requested unavailable device raises `RuntimeError`.
+
+**Raises:** `RuntimeError` when the model is not loaded, optional NeMo support
+is unavailable, clustering fails without writing RTTM, or the selected device
+cannot be initialized. Audio conversion and file errors are propagated.
+
+### `ClusteringWorkerDiarizer`
+
+The web applications use `ClusteringWorkerDiarizer` from the primary `.venv`.
+Its public lifecycle and `diarize(audio) -> DiarizationResult` contract match
+`ClusteringDiarizer`, but `load()` starts
+`.venv-sortformer/bin/python -m src.diarization.clustering_worker`. The worker
+loads MarbleNet and TitaNet once and reuses them until `unload()` or
+`close()`. `CLUSTERING_PYTHON`, `SORTFORMER_PYTHON`, or the `worker_python`
+constructor option can point to a non-default isolated interpreter.
+`cancel()` terminates active worker inference.
+
+### `ClusteringDiarizer._load() -> None` and `_unload() -> None`
+
+- `_load()` constructs NeMo `ClusteringDiarizer` with the configured VAD and
+  speaker-embedding models and places them on the selected device.
 - `_unload()` releases both models and clears available accelerator caches.
 
 ## 6. Benchmark mixing API

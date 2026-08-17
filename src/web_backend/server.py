@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import signal
 import threading
 import time
 from pathlib import Path
@@ -30,6 +31,11 @@ def _ensure_own_process_group() -> None:
     if os.name == "nt":
         return
     try:
+        # After creating a new process group, this process is no longer the
+        # terminal's foreground group. Ignore job-control signals so logging
+        # to the inherited terminal does not suspend the backend with SIGTTOU.
+        signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+        signal.signal(signal.SIGTTIN, signal.SIG_IGN)
         os.setpgrp()
     except OSError:
         pass

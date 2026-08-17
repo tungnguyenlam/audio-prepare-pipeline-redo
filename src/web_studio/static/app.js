@@ -279,6 +279,9 @@ const el = {
   btnDiarPlayToggle: document.getElementById('btn-diar-play-toggle'),
   iconDiarPlay: document.getElementById('icon-diar-play'),
   iconDiarPause: document.getElementById('icon-diar-pause'),
+  btnDiarMuteAll: document.getElementById('btn-diar-mute-all'),
+  iconDiarMuteAll: document.getElementById('icon-diar-mute-all'),
+  diarMuteAllLabel: document.getElementById('diar-mute-all-label'),
   btnDiarSkipFwd: document.getElementById('btn-diar-skip-fwd'),
   btnDiarLoopTurn: document.getElementById('btn-diar-loop-turn'),
   btnDiarFollowPlayhead: document.getElementById('btn-diar-follow-playhead'),
@@ -2457,14 +2460,55 @@ function getSpeakerName(speakerId) {
   return state.diarization.customNames[speakerId] || speakerId;
 }
 
+function diarizationModelLabel(modelTypeOrBackend) {
+  const key = String(modelTypeOrBackend || "").toLowerCase();
+  if (key.includes("sortformer")) return "NeMo Sortformer";
+  if (key.includes("clustering") || key.includes("cluster")) return "NeMo Clustering";
+  if (key.includes("3.1") || key.includes("pyannote_31") || key.includes("pyannote_3")) return "Pyannote 3.1";
+  if (key.includes("community") || key.includes("pyannote_community")) return "Pyannote Community-1";
+  if (key.includes("pyannote")) return "Pyannote Community-1";
+  return modelTypeOrBackend || "Pyannote";
+}
+
+function syncDiarModelOptions(modelType) {
+  const hfGroup = document.getElementById("hf-token-group");
+  if (hfGroup) {
+    const isPyannote = modelType && modelType.startsWith("pyannote");
+    hfGroup.style.display = isPyannote ? "" : "none";
+  }
+}
+
 function initDiarizationStudio() {
   // Input track change listener
   if (el.diarInputSelect) {
     el.diarInputSelect.addEventListener('change', () => {
       const audioId = el.diarInputSelect.value;
+      if (!audioId) {
+        updateDiarInputMeta(null);
+        renderDiarizationChildren(null);
+        return;
+      }
       renderDiarizationChildren(audioId);
       updateDiarInputMeta(audioId);
-      if (audioId) loadDiarWaveform(audioId);
+      loadDiarWaveform(audioId);
+      loadAudioIntoPlayer(audioId, false);
+      state.diarization.audioId = audioId;
+
+      // Check if there is an existing diarization session saved for this audio
+      const existingSession = (state.diarization.history || []).find(h => h.audio_id === audioId);
+      if (existingSession) {
+        loadHistorySession(existingSession.id);
+      } else {
+        // Reset the diarization result view to empty state for the new track
+        state.diarization.data = null;
+        state.diarization.turns = [];
+        state.diarization.speakers = [];
+        state.diarization.activeTurnIndex = null;
+        state.diarization.selectedTurnIndices.clear();
+        updateBatchBar();
+        if (el.diarResultsWrapper) el.diarResultsWrapper.classList.add('hidden');
+        if (el.diarEmptyPlaceholder) el.diarEmptyPlaceholder.classList.remove('hidden');
+      }
     });
   }
 
@@ -2483,8 +2527,11 @@ function initDiarizationStudio() {
     card.addEventListener('click', () => {
       el.diarModelCards.forEach(c => c.classList.remove('active'));
       card.classList.add('active');
+      syncDiarModelOptions(card.dataset.diarModel);
     });
   });
+  const initiallyActive = document.querySelector('.model-card[data-diar-model].active');
+  syncDiarModelOptions(initiallyActive ? initiallyActive.dataset.diarModel : "pyannote_community");
 
   // HuggingFace Token visibility & persistence
   if (el.hfTokenInput) {
@@ -2551,14 +2598,15 @@ function initDiarizationStudio() {
       }
 
       const activeCard = document.querySelector('.model-card[data-diar-model].active');
-      const modelType = activeCard ? activeCard.dataset.diarModel : "pyannote";
+      const modelType = activeCard ? activeCard.dataset.diarModel : "pyannote_community";
+      const modelId = activeCard?.dataset.modelId || (modelType === "pyannote_31" ? "pyannote/speaker-diarization-3.1" : (modelType.startsWith("pyannote") ? "pyannote/speaker-diarization-community-1" : undefined));
       const device = state.selectedGpu || (el.diarDeviceSelect ? el.diarDeviceSelect.value : 'auto');
       const token = el.hfTokenInput.value.trim() || undefined;
 
       el.btnRunDiarization.disabled = true;
       el.diarTaskProgressBox.classList.remove('hidden');
       if (el.diarTaskStatusText) {
-        el.diarTaskStatusText.textContent = `Running ${modelType === 'sortformer' ? 'NeMo Sortformer' : 'Pyannote 3.1'} diarization...`;
+        el.diarTaskStatusText.textContent = `Running ${diarizationModelLabel(modelType)} diarization...`;
       }
 
       let startTime = Date.now();
@@ -2575,6 +2623,7 @@ function initDiarizationStudio() {
           body: JSON.stringify({
             audio_id: audioId,
             model_type: modelType,
+            model_id: modelId,
             device: device,
             token: token,
           }),
@@ -2649,6 +2698,12 @@ function initDiarizationStudio() {
       const audioId = state.diarization.audioId || el.diarInputSelect.value;
       if (!el.audio.src && audioId) loadAudioIntoPlayer(audioId);
       togglePlayPause();
+    });
+  }
+
+  if (el.btnDiarMuteAll) {
+    el.btnDiarMuteAll.addEventListener('click', () => {
+      toggleMuteAllSpeakers();
     });
   }
 
@@ -2934,6 +2989,37 @@ function initDiarizationStudio() {
   setupTimelineDragListeners();
   setupMinimapListeners();
 
+  // Diarization Quick Scroll Navigator Listeners
+  const btnScrollTop = document.getElementById('btn-scroll-to-top');
+  const btnScrollTimeline = document.getElementById('btn-scroll-to-timeline');
+  const btnScrollTurns = document.getElementById('btn-scroll-to-turns');
+  const btnScrollHistory = document.getElementById('btn-scroll-to-history');
+
+  if (btnScrollTop) {
+    btnScrollTop.addEventListener('click', () => {
+      const topTarget = document.querySelector('#tab-diarization .diar-setup-card') || document.getElementById('tab-diarization');
+      if (topTarget) topTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+  if (btnScrollTimeline) {
+    btnScrollTimeline.addEventListener('click', () => {
+      const timelineTarget = document.querySelector('#tab-diarization .diar-timeline-card') || el.diarResultsWrapper;
+      if (timelineTarget) timelineTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+  if (btnScrollTurns) {
+    btnScrollTurns.addEventListener('click', () => {
+      const turnsTarget = document.querySelector('#tab-diarization .diar-turns-card');
+      if (turnsTarget) turnsTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+  if (btnScrollHistory) {
+    btnScrollHistory.addEventListener('click', () => {
+      const histTarget = document.querySelector('#tab-diarization .diar-history-card');
+      if (histTarget) histTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+
   // Load Persisted Diarization History
   loadDiarizationHistory();
 }
@@ -2977,8 +3063,10 @@ function setDiarZoom(zoom) {
   state.diarization.zoom = zoom;
   if (el.diarZoomLevel) el.diarZoomLevel.textContent = `${zoom.toFixed(1)}x`;
 
-  const availableWidth = Math.max(400, (el.diarMultitrackViewport ? el.diarMultitrackViewport.clientWidth - 160 : 800));
-  const targetWidth = Math.round(availableWidth * zoom);
+  const viewportWidth = el.diarMultitrackViewport ? el.diarMultitrackViewport.clientWidth : 1000;
+  const labelColWidth = el.diarLaneLabelsCol ? el.diarLaneLabelsCol.offsetWidth : 200;
+  const visibleTrackWidth = Math.max(300, viewportWidth - labelColWidth);
+  const targetWidth = Math.round(visibleTrackWidth * zoom);
   if (el.diarTracksArea) {
     el.diarTracksArea.style.width = `${targetWidth}px`;
     el.diarTracksArea.style.minWidth = `${targetWidth}px`;
@@ -2986,6 +3074,7 @@ function setDiarZoom(zoom) {
 
   renderDiarWaveform();
   renderDiarRuler();
+  redrawAllSpeakerSpectrograms();
   updateMinimapViewport();
 }
 
@@ -3032,7 +3121,7 @@ function renderDiarizationWorkspace(diarization, audioId, addToHistory = true) {
 
   if (el.diarModelBadge) {
     const backend = diarization.model?.backend || diarization.model?.model_id || "Pyannote";
-    el.diarModelBadge.textContent = String(backend).toLowerCase().includes("sortformer") ? "NeMo Sortformer" : "Pyannote 3.1";
+    el.diarModelBadge.textContent = diarizationModelLabel(backend);
   }
   if (el.diarSpeakerCountBadge) {
     el.diarSpeakerCountBadge.textContent = `${state.diarization.speakers.length} Speaker${state.diarization.speakers.length === 1 ? '' : 's'}`;
@@ -3055,7 +3144,8 @@ function renderDiarizationWorkspace(diarization, audioId, addToHistory = true) {
     `).join('');
   }
 
-  // 1. Fetch / Render Waveform
+  // 1. Fetch Spectrogram & Waveform
+  loadDiarSpectrogram(audioId, () => redrawAllSpeakerSpectrograms());
   loadDiarWaveform(audioId);
 
   // 2. Render Minimap
@@ -3301,6 +3391,98 @@ function renderCompositeLane() {
   });
 }
 
+const diarSpectrogramCache = new Map(); // audioId -> HTMLImageElement
+
+function loadDiarSpectrogram(audioId, onLoaded) {
+  if (!audioId) return;
+  if (diarSpectrogramCache.has(audioId)) {
+    const cached = diarSpectrogramCache.get(audioId);
+    if (cached.complete && cached.naturalWidth > 0) {
+      if (onLoaded) onLoaded(cached);
+      redrawAllSpeakerSpectrograms();
+      return;
+    }
+  }
+
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.src = `/api/audio/${audioId}/spectrogram?raw=1&t=${Date.now()}`;
+  img.onload = () => {
+    diarSpectrogramCache.set(audioId, img);
+    if (onLoaded) onLoaded(img);
+    redrawAllSpeakerSpectrograms();
+  };
+  img.onerror = () => {
+    console.warn("Could not load raw spectrogram image for:", audioId);
+  };
+}
+
+function redrawAllSpeakerSpectrograms() {
+  const audioId = state.diarization.audioId;
+  const img = diarSpectrogramCache.get(audioId);
+  const dur = state.diarization.duration || 1;
+
+  const canvases = document.querySelectorAll('.diar-speaker-spectrogram-canvas');
+  canvases.forEach(canvas => {
+    const spkId = canvas.dataset.speaker;
+    const spkTurns = state.diarization.turns.filter(t => t.speaker_id === spkId);
+    drawSpeakerSpectrogramCanvas(canvas, img, spkTurns, dur);
+  });
+}
+
+function drawSpeakerSpectrogramCanvas(canvas, img, spkTurns, dur) {
+  const track = canvas.parentElement;
+  if (!track) return;
+
+  const rect = track.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const w = track.clientWidth || rect.width || 800;
+  const h = track.clientHeight || rect.height || 64;
+
+  if (w <= 0 || h <= 0) return;
+
+  canvas.width = Math.floor(w * dpr);
+  canvas.height = Math.floor(h * dpr);
+
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+
+  // 1. Draw raw full mel spectrogram
+  if (img && img.complete && img.naturalWidth > 0) {
+    ctx.drawImage(img, 0, 0, w, h);
+  } else {
+    // Fallback procedural spectrogram grid
+    ctx.fillStyle = "#0c101c";
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "rgba(100, 149, 237, 0.18)";
+    for (let i = 0; i < w; i += 6) {
+      const s = Math.sin(i * 0.08) * 0.5 + 0.5;
+      ctx.fillRect(i, h - s * (h - 10), 3, s * (h - 10));
+    }
+  }
+
+  // 2. Dim regions where this speaker is NOT speaking with semi-transparent dark shade
+  ctx.fillStyle = "rgba(10, 14, 23, 0.78)";
+  let lastEnd = 0;
+  const sortedTurns = [...spkTurns].sort((a, b) => a.start_s - b.start_s);
+
+  sortedTurns.forEach(turn => {
+    if (turn.start_s > lastEnd) {
+      const nonSpkLeft = (lastEnd / dur) * w;
+      const nonSpkWidth = Math.max(0, ((turn.start_s - lastEnd) / dur) * w);
+      ctx.fillRect(nonSpkLeft, 0, nonSpkWidth, h);
+    }
+    lastEnd = Math.max(lastEnd, turn.end_s);
+  });
+
+  if (lastEnd < dur) {
+    const nonSpkLeft = (lastEnd / dur) * w;
+    const nonSpkWidth = Math.max(0, ((dur - lastEnd) / dur) * w);
+    ctx.fillRect(nonSpkLeft, 0, nonSpkWidth, h);
+  }
+}
+
 function renderSpeakerSwimlanes() {
   if (!el.diarSpeakerLanesWrap || !el.diarSpkLabelsWrap) return;
   el.diarSpeakerLanesWrap.innerHTML = "";
@@ -3312,27 +3494,43 @@ function renderSpeakerSwimlanes() {
     const color = getSpeakerColor(spkId);
     const spkName = getSpeakerName(spkId);
     const spkTurns = state.diarization.turns.filter(t => t.speaker_id === spkId);
+    const spkTotalSpeech = spkTurns.reduce((acc, t) => acc + Math.max(0, t.end_s - t.start_s), 0);
 
     const isSoloActive = Boolean(state.diarization.soloSpeaker);
     const isSolo = state.diarization.soloSpeaker === spkId;
     const isMuted = state.diarization.mutedSpeakers.has(spkId);
     const isDimmed = (isSoloActive && !isSolo) || isMuted;
 
-    // 1. Left Label Row
+    // 1. Left Sticky Label Row
     const labelRow = document.createElement("div");
     labelRow.className = `diar-spk-label-row ${isDimmed ? 'lane-dimmed' : ''}`;
     labelRow.dataset.speakerId = spkId;
     labelRow.innerHTML = `
-      <div class="spk-label-left">
-        <span class="spk-color-indicator" style="background-color: ${color}; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;"></span>
-        <span class="lane-spk-name" style="color: ${color};" title="${escapeHtml(spkName)}">${escapeHtml(spkName)}</span>
+      <div class="spk-label-left" title="Click to rename ${escapeHtml(spkName)}">
+        <span class="spk-color-indicator" style="background-color: ${color}; width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 6px ${color}; flex-shrink: 0;"></span>
+        <div class="spk-name-wrap">
+          <span class="lane-spk-name" style="color: ${color};" title="${escapeHtml(spkName)}">${escapeHtml(spkName)}</span>
+          <span class="spk-stats-sub">${spkTurns.length} turns • ${spkTotalSpeech.toFixed(1)}s</span>
+        </div>
       </div>
       <div class="spk-label-controls">
-        <button class="spk-ctrl-btn btn-solo ${isSolo ? 'active' : ''}" data-speaker="${spkId}" title="Solo Speaker [S]">S</button>
-        <button class="spk-ctrl-btn btn-mute ${isMuted ? 'active' : ''}" data-speaker="${spkId}" title="Mute Speaker [M]">M</button>
-        <button class="spk-ctrl-btn btn-audition" data-speaker="${spkId}" title="Audition Speaker Turns">▶</button>
+        <button class="spk-ctrl-btn btn-solo ${isSolo ? 'active' : ''}" data-speaker="${spkId}" title="Solo ${escapeHtml(spkName)} [S]">S</button>
+        <button class="spk-ctrl-btn btn-mute ${isMuted ? 'active' : ''}" data-speaker="${spkId}" title="Mute ${escapeHtml(spkName)} [M]">M</button>
+        <button class="spk-ctrl-btn btn-audition" data-speaker="${spkId}" title="Audition ${escapeHtml(spkName)} Segments">▶</button>
       </div>
     `;
+
+    labelRow.querySelector('.spk-label-left').addEventListener('click', () => {
+      const newName = prompt(`Rename speaker '${spkName}':`, spkName);
+      if (newName && newName.trim() && newName.trim() !== spkName) {
+        state.diarization.customNames[spkId] = newName.trim();
+        renderSpeakerSwimlanes();
+        renderCompositeLane();
+        renderSpeakerProfiles();
+        renderTurnsTable();
+        updateExportPreview();
+      }
+    });
 
     labelRow.querySelector('.btn-solo').addEventListener('click', (e) => {
       e.stopPropagation();
@@ -3349,11 +3547,18 @@ function renderSpeakerSwimlanes() {
 
     el.diarSpkLabelsWrap.appendChild(labelRow);
 
-    // 2. Right Track Lane
+    // 2. Right Track Lane with Spectrogram Canvas + Speech Segment Color Indicators
     const track = document.createElement("div");
     track.className = `diar-speaker-lane-track ${isDimmed ? 'lane-dimmed' : ''}`;
     track.dataset.speaker = spkId;
 
+    // Mel-Spectrogram Canvas Background
+    const canvas = document.createElement("canvas");
+    canvas.className = "diar-speaker-spectrogram-canvas";
+    canvas.dataset.speaker = spkId;
+    track.appendChild(canvas);
+
+    // Speech Segments denoted by prominent color lines and glowing boundaries
     spkTurns.forEach(turn => {
       const idx = state.diarization.turns.indexOf(turn);
       const leftPct = (turn.start_s / dur) * 100;
@@ -3363,12 +3568,17 @@ function renderSpeakerSwimlanes() {
       seg.className = `diar-turn-segment ${turn.has_overlap ? 'has-overlap' : ''} ${state.diarization.highlightOverlaps && turn.has_overlap ? 'overlap-active' : ''} ${state.diarization.activeTurnIndex === idx ? 'active-turn' : ''} ${isDimmed ? 'turn-dimmed' : ''}`;
       seg.style.left = `${leftPct}%`;
       seg.style.width = `${widthPct}%`;
-      seg.style.backgroundColor = color;
+      seg.style.borderTop = `3px solid ${color}`;
+      seg.style.borderBottom = `3px solid ${color}`;
+      seg.style.borderLeft = `2px solid ${color}`;
+      seg.style.borderRight = `2px solid ${color}`;
+      seg.style.backgroundColor = `${color}28`;
+      seg.style.boxShadow = `0 0 12px ${color}45`;
       seg.dataset.index = idx;
       seg.innerHTML = `
-        <div class="turn-handle turn-handle-left" data-index="${idx}"></div>
+        <div class="turn-handle turn-handle-left" style="background-color: ${color};" data-index="${idx}"></div>
         <span class="turn-label-text">${(turn.end_s - turn.start_s).toFixed(1)}s</span>
-        <div class="turn-handle turn-handle-right" data-index="${idx}"></div>
+        <div class="turn-handle turn-handle-right" style="background-color: ${color};" data-index="${idx}"></div>
       `;
 
       attachTurnSegmentEvents(seg, turn, idx);
@@ -3377,6 +3587,9 @@ function renderSpeakerSwimlanes() {
 
     el.diarSpeakerLanesWrap.appendChild(track);
   });
+
+  // Render spectrogram image on all speaker canvases
+  redrawAllSpeakerSpectrograms();
 }
 
 function attachTurnSegmentEvents(segEl, turn, idx) {
@@ -3681,21 +3894,7 @@ function updateDiarizationPlayhead(currentTime, totalDuration) {
   }
 
   // Speaker Solo / Mute Audio Handling
-  const isSoloActive = Boolean(state.diarization.soloSpeaker);
-  const hasMuted = state.diarization.mutedSpeakers.size > 0;
-
-  if (isSoloActive || hasMuted) {
-    const currentTurn = state.diarization.turns.find(t => currentTime >= t.start_s && currentTime <= t.end_s);
-    if (currentTurn) {
-      const isSolo = state.diarization.soloSpeaker === currentTurn.speaker_id;
-      const isMuted = state.diarization.mutedSpeakers.has(currentTurn.speaker_id);
-      const shouldMute = (isSoloActive && !isSolo) || isMuted;
-      el.audio.muted = shouldMute;
-    } else {
-      // In silence gap, un-mute for natural background
-      el.audio.muted = false;
-    }
-  }
+  applyDiarSoloMuteAudio(currentTime);
 
   // Follow Playhead Auto-Scroll
   if (state.diarization.followPlayhead && !el.audio.paused && el.diarMultitrackViewport) {
@@ -3711,16 +3910,57 @@ function updateDiarizationPlayhead(currentTime, totalDuration) {
   }
 }
 
+function applyDiarSoloMuteAudio(currentTime) {
+  if (state.activeTab !== 'tab-diarization') return;
+
+  const isSoloActive = Boolean(state.diarization.soloSpeaker);
+  const hasMuted = state.diarization.mutedSpeakers && state.diarization.mutedSpeakers.size > 0;
+  const allSpeakers = state.diarization.speakers || [];
+  const allMuted = allSpeakers.length > 0 && allSpeakers.every(s => state.diarization.mutedSpeakers.has(s.speaker_id));
+
+  if (allMuted) {
+    el.audio.muted = true;
+    return;
+  }
+
+  if (isSoloActive || hasMuted) {
+    const activeTurns = (state.diarization.turns || []).filter(t => currentTime >= t.start_s && currentTime <= t.end_s);
+    if (activeTurns.length > 0) {
+      if (isSoloActive) {
+        const hasSoloMatch = activeTurns.some(t => t.speaker_id === state.diarization.soloSpeaker);
+        el.audio.muted = !hasSoloMatch;
+      } else {
+        const hasUnmutedTurn = activeTurns.some(t => !state.diarization.mutedSpeakers.has(t.speaker_id));
+        el.audio.muted = !hasUnmutedTurn;
+      }
+    } else {
+      // In silence gaps: if solo is active, silence gaps so only the solo speaker's voice is heard
+      if (isSoloActive) {
+        el.audio.muted = true;
+      } else {
+        el.audio.muted = false;
+      }
+    }
+  } else {
+    el.audio.muted = false;
+  }
+}
+
 function toggleSpeakerSolo(speakerId) {
   if (state.diarization.soloSpeaker === speakerId) {
     state.diarization.soloSpeaker = null;
     showToast(`Solo disabled for ${getSpeakerName(speakerId)}`, 'info');
   } else {
     state.diarization.soloSpeaker = speakerId;
+    if (state.diarization.mutedSpeakers) {
+      state.diarization.mutedSpeakers.delete(speakerId);
+    }
     showToast(`Soloing ${getSpeakerName(speakerId)} [S]`, 'success');
   }
+  applyDiarSoloMuteAudio(el.audio.currentTime || 0);
   renderSpeakerSwimlanes();
   renderCompositeLane();
+  renderSpeakerProfiles();
 }
 
 function toggleSpeakerMute(speakerId) {
@@ -3729,10 +3969,42 @@ function toggleSpeakerMute(speakerId) {
     showToast(`Unmuted ${getSpeakerName(speakerId)}`, 'info');
   } else {
     state.diarization.mutedSpeakers.add(speakerId);
+    if (state.diarization.soloSpeaker === speakerId) {
+      state.diarization.soloSpeaker = null;
+    }
     showToast(`Muted ${getSpeakerName(speakerId)} [M]`, 'info');
   }
+  applyDiarSoloMuteAudio(el.audio.currentTime || 0);
   renderSpeakerSwimlanes();
   renderCompositeLane();
+  renderSpeakerProfiles();
+}
+
+function toggleMuteAllSpeakers() {
+  const allSpeakers = state.diarization.speakers || [];
+  if (allSpeakers.length === 0) return;
+
+  const allMuted = allSpeakers.length > 0 && allSpeakers.every(s => state.diarization.mutedSpeakers.has(s.speaker_id));
+
+  if (allMuted) {
+    state.diarization.mutedSpeakers.clear();
+    if (el.iconDiarMuteAll) el.iconDiarMuteAll.textContent = "🔇";
+    if (el.diarMuteAllLabel) el.diarMuteAllLabel.textContent = "Mute All";
+    if (el.btnDiarMuteAll) el.btnDiarMuteAll.classList.remove('active');
+    showToast("Unmuted all speakers", "info");
+  } else {
+    allSpeakers.forEach(s => state.diarization.mutedSpeakers.add(s.speaker_id));
+    state.diarization.soloSpeaker = null;
+    if (el.iconDiarMuteAll) el.iconDiarMuteAll.textContent = "🔊";
+    if (el.diarMuteAllLabel) el.diarMuteAllLabel.textContent = "Unmute All";
+    if (el.btnDiarMuteAll) el.btnDiarMuteAll.classList.add('active');
+    showToast("Muted all speakers", "info");
+  }
+
+  applyDiarSoloMuteAudio(el.audio.currentTime || 0);
+  renderSpeakerSwimlanes();
+  renderCompositeLane();
+  renderSpeakerProfiles();
 }
 
 function renderSpeakerProfiles() {
@@ -4302,7 +4574,7 @@ function updateExportPreview() {
     const jsonOutput = {
       schema_version: "1.0",
       audio_id: audioId,
-      model: state.diarization.data?.model || { backend: "pyannote", model_id: "speaker-diarization-3.1" },
+      model: state.diarization.data?.model || { backend: "pyannote", model_id: "pyannote/speaker-diarization-community-1" },
       speaker_count: state.diarization.speakers.length,
       speakers: state.diarization.speakers.map(s => ({
         speaker_id: s.speaker_id,
@@ -4728,7 +5000,7 @@ function renderDiarizationHistory() {
     const isCurrentActive = state.diarization.audioId === item.audio_id && state.diarization.turns.length === item.turn_count;
     const dateStr = new Date(item.timestamp).toLocaleString();
     const timeAgo = formatTimeAgo(item.timestamp);
-    const modelTag = String(item.model_backend).toLowerCase().includes("sortformer") ? "NeMo Sortformer" : (item.model_backend || "Pyannote 3.1");
+    const modelTag = String(item.model_backend).toLowerCase().includes("sortformer") ? "NeMo Sortformer" : (String(item.model_backend).includes("community") ? "Pyannote Community-1" : (item.model_backend || "Pyannote Community-1"));
 
     const card = document.createElement("div");
     card.className = `diar-history-item ${isCurrentActive ? 'active-session' : ''}`;
@@ -6067,7 +6339,10 @@ function renderSessionHistory() {
     card.querySelector('.btn-session-diar')?.addEventListener('click', () => {
       popupMenu.classList.add('hidden');
       switchTab('tab-diarization');
-      if (el.diarInputSelect) el.diarInputSelect.value = item.id;
+      if (el.diarInputSelect) {
+        el.diarInputSelect.value = item.id;
+        el.diarInputSelect.dispatchEvent(new Event('change'));
+      }
       showToast(`Selected "${item.title}" for Diarization!`, "success");
     });
     card.querySelector('.btn-session-speech')?.addEventListener('click', () => {
@@ -6954,7 +7229,10 @@ function populateAllAudioSelects() {
 
   // Update derivative lineage displays
   if (el.sepInputSelect) renderSeparationChildren(el.sepInputSelect.value);
-  if (el.diarInputSelect) renderDiarizationChildren(el.diarInputSelect.value);
+  if (el.diarInputSelect) {
+    renderDiarizationChildren(el.diarInputSelect.value);
+    updateDiarInputMeta(el.diarInputSelect.value);
+  }
 }
 
 // ==================== KEYBOARD SHORTCUTS ====================
@@ -7419,12 +7697,27 @@ function switchTab(tabId) {
     }
     syncActivePlaybackControls();
   } else if (tabId === 'tab-diarization') {
+    if (el.diarInputSelect) {
+      if (!el.diarInputSelect.value && state.activeAudio) {
+        el.diarInputSelect.value = state.activeAudio.id;
+        renderDiarizationChildren(state.activeAudio.id);
+        updateDiarInputMeta(state.activeAudio.id);
+        loadDiarWaveform(state.activeAudio.id);
+      } else if (el.diarInputSelect.value) {
+        updateDiarInputMeta(el.diarInputSelect.value);
+        renderDiarizationChildren(el.diarInputSelect.value);
+      }
+    }
     setDiarZoom(state.diarization.zoom || 1.0);
     renderDiarWaveform();
     renderDiarRuler();
     updateMinimapViewport();
   } else if (tabId === 'tab-matrix') {
     fetchEvaluations();
+  }
+
+  if (tabId !== 'tab-diarization' && el.audio) {
+    el.audio.muted = false;
   }
 
   if (tabId !== 'tab-comparison') syncActivePlaybackControls();

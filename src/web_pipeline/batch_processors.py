@@ -19,7 +19,12 @@ import soundfile as sf
 import torch
 
 from src.benchmark.separation.mixer import AudioMixer
-from src.diarization import PyannoteDiarizer, SortformerWorkerDiarizer
+from src.diarization import (
+    ClusteringDiarizer,
+    ClusteringWorkerDiarizer,
+    PyannoteDiarizer,
+    SortformerWorkerDiarizer,
+)
 from src.separation import BSRoFormer, HTDemucs, MelRoFormer, MVSepMDX23
 from src.utils.AudioClass import DEFAULT_SAMPLE_RATE, Audio
 from src.web_pipeline.dataset_manager import dataset_manager
@@ -445,16 +450,20 @@ async def process_batch_separation(job: PipelineJob, queue: JobQueueManager) -> 
 async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) -> None:
     """Batch speaker diarization across audio items."""
     item_ids: List[str] = job.params.get("item_ids", [])
-    backend: str = job.params.get("backend", "sortformer")  # sortformer or pyannote
+    backend: str = job.params.get("backend", "sortformer")
     device: str = job.params.get("device", "cuda" if torch.cuda.is_available() else "cpu")
+    model_id: Optional[str] = job.params.get("model_id")
     num_speakers: Optional[int] = job.params.get("num_speakers")
     min_speakers: Optional[int] = job.params.get("min_speakers")
     max_speakers: Optional[int] = job.params.get("max_speakers")
     hf_token: Optional[str] = job.params.get("hf_token")
+    backend_key = backend.lower()
 
-    if any(value is not None for value in (num_speakers, min_speakers, max_speakers)):
+    if backend_key == "sortformer" and any(
+        value is not None for value in (num_speakers, min_speakers, max_speakers)
+    ):
         job.add_log(
-            "Speaker-count bounds are not supported by the configured diarizer API; using backend defaults.",
+            "Speaker-count bounds are not supported by Sortformer; using backend defaults.",
             "warning",
         )
 
@@ -469,10 +478,37 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
 
     diarizer = None
     try:
-        if backend.lower() == "sortformer":
+        if backend_key == "sortformer":
             diarizer = SortformerWorkerDiarizer(device=device)
+        elif backend_key in {"clustering", "nemo-clustering"}:
+            oracle_speakers, max_num_speakers = ClusteringDiarizer.resolve_speaker_settings(
+                num_speakers,
+                min_speakers,
+                max_speakers,
+            )
+            diarizer = ClusteringWorkerDiarizer(
+                device=device,
+                num_speakers=oracle_speakers,
+                max_num_speakers=max_num_speakers,
+            )
+        elif backend_key in {"pyannote_31", "pyannote_3", "pyannote_3.1"}:
+            diarizer = PyannoteDiarizer(
+                model_id=model_id or "pyannote/speaker-diarization-3.1",
+                device=device,
+                token=hf_token,
+                num_speakers=num_speakers,
+                min_speakers=min_speakers,
+                max_speakers=max_speakers,
+            )
         else:
-            diarizer = PyannoteDiarizer(device=device, token=hf_token)
+            diarizer = PyannoteDiarizer(
+                model_id=model_id or "pyannote/speaker-diarization-community-1",
+                device=device,
+                token=hf_token,
+                num_speakers=num_speakers,
+                min_speakers=min_speakers,
+                max_speakers=max_speakers,
+            )
 
         _bind_job_cancel(queue, job.id, diarizer)
         if hasattr(diarizer, "load"):

@@ -41,7 +41,12 @@ from src.utils.AudioCutter import AudioCutter, AudioCutterError
 from src.utils.SpectrogramComparer import SpectrogramComparer
 from src.utils.WaveformComparer import WaveformComparer
 from src.separation import HTDemucs, BSRoFormer, MelRoFormer, MVSepMDX23
-from src.diarization import PyannoteDiarizer, SortformerWorkerDiarizer
+from src.diarization import (
+    ClusteringDiarizer,
+    ClusteringWorkerDiarizer,
+    PyannoteDiarizer,
+    SortformerWorkerDiarizer,
+)
 from src.benchmark.separation.mixer import AudioMixer
 from src.yt_crawler.YtCrawlerClass import YtCrawler
 
@@ -1286,9 +1291,12 @@ async def handle_get_spectrogram(request: web.Request) -> web.Response:
     if not audio or not audio.path.is_file():
         return web.Response(text="Audio file not found", status=404)
 
+    is_raw = request.query.get("raw") in ("1", "true", "yes")
+
     def generate_spec_png():
+        import io
         import librosa
-        import librosa.display
+        import numpy as np
         import matplotlib.pyplot as plt
 
         sr = 16000
@@ -1296,6 +1304,13 @@ async def handle_get_spectrogram(request: web.Request) -> web.Response:
         mel = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=128, hop_length=512)
         mel_db = librosa.power_to_db(mel, ref=np.max)
 
+        buf = io.BytesIO()
+        if is_raw:
+            plt.imsave(buf, mel_db, cmap="magma", origin="lower", format="png")
+            buf.seek(0)
+            return buf.getvalue()
+
+        import librosa.display
         fig, ax = plt.subplots(figsize=(10, 3.5), facecolor="#141721")
         ax.set_facecolor("#0e111a")
         img = librosa.display.specshow(
@@ -1320,7 +1335,6 @@ async def handle_get_spectrogram(request: web.Request) -> web.Response:
             spine.set_color("#334155")
 
         fig.tight_layout()
-        buf = io.BytesIO()
         plt.savefig(buf, format="png", dpi=120, bbox_inches="tight", facecolor=fig.get_facecolor())
         plt.close(fig)
         buf.seek(0)
@@ -1617,9 +1631,13 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
     """Run speaker diarization in background."""
     data = await request.json()
     audio_id = data.get("audio_id")
-    model_type = data.get("model_type", "pyannote").lower()  # pyannote, sortformer
+    model_type = data.get("model_type", "pyannote").lower()  # pyannote, sortformer, clustering
+    model_id = data.get("model_id")
     device = data.get("device", "auto")
     token = data.get("token") or os.getenv("HF_TOKEN")
+    num_speakers = data.get("num_speakers")
+    min_speakers = data.get("min_speakers")
+    max_speakers = data.get("max_speakers")
 
     audio = registry.get_audio(audio_id)
     if not audio:
@@ -1648,12 +1666,51 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
                 except Exception:
                     pass
             
-            if model_type == "pyannote":
-                diarizer = PyannoteDiarizer(device=target_device, token=token)
+            if model_type in {"pyannote", "pyannote_community"}:
+                target_model_id = model_id or "pyannote/speaker-diarization-community-1"
+                diarizer = PyannoteDiarizer(
+                    model_id=target_model_id,
+                    device=target_device,
+                    token=token,
+                    num_speakers=num_speakers,
+                    min_speakers=min_speakers,
+                    max_speakers=max_speakers,
+                )
+                with diarizer:
+                    return diarizer.diarize(audio)
+            elif model_type in {"pyannote_31", "pyannote_3", "pyannote_3.1"}:
+                target_model_id = model_id or "pyannote/speaker-diarization-3.1"
+                diarizer = PyannoteDiarizer(
+                    model_id=target_model_id,
+                    device=target_device,
+                    token=token,
+                    num_speakers=num_speakers,
+                    min_speakers=min_speakers,
+                    max_speakers=max_speakers,
+                )
                 with diarizer:
                     return diarizer.diarize(audio)
             elif model_type == "sortformer":
                 diarizer = SortformerWorkerDiarizer(device=target_device)
+                task_manager.set_cancel_callback(task_id, diarizer.cancel)
+                try:
+                    with diarizer:
+                        return diarizer.diarize(audio)
+                finally:
+                    task_manager.set_cancel_callback(task_id, None)
+            elif model_type in {"clustering", "nemo-clustering"}:
+                oracle_speakers, max_num_speakers = (
+                    ClusteringDiarizer.resolve_speaker_settings(
+                        num_speakers,
+                        min_speakers,
+                        max_speakers,
+                    )
+                )
+                diarizer = ClusteringWorkerDiarizer(
+                    device=target_device,
+                    num_speakers=oracle_speakers,
+                    max_num_speakers=max_num_speakers,
+                )
                 task_manager.set_cancel_callback(task_id, diarizer.cancel)
                 try:
                     with diarizer:
