@@ -211,6 +211,9 @@ ONNX model (`single_onnx=True`) and `0.25` overlap. Callers that need the
 upstream maximum-quality ensemble can pass `single_onnx=False`,
 `overlap_large=0.6`, and `overlap_small=0.5`. Its optional
 `progress_callback(message)` receives unbuffered upstream status lines.
+Long inputs are processed as bounded 10-minute WAV segments by default and the
+selected output stem is concatenated afterward; `max_segment_seconds=None`
+disables this behavior.
 `cancel()` requests non-blocking cancellation, while `close()` terminates and
 reaps any active upstream process group.
 

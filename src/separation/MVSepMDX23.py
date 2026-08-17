@@ -69,6 +69,8 @@ class MVSepMDX23(BaseSeparator):
         - On Apple Silicon / machines without CUDA ONNX, ``auto`` device
           falls back to ``--cpu`` (slow, but functional). Explicit ``device="cuda"``
           raises :exc:`MVSepMDX23Error` if CUDA or ONNX CUDA provider is missing.
+        - Inputs are split into bounded 10-minute segments by default to limit
+          host RAM. Pass ``max_segment_seconds=None`` to disable segmentation.
         - First run clones the upstream repo and downloads multi-GB weights.
     """
 
@@ -91,6 +93,7 @@ class MVSepMDX23(BaseSeparator):
         overlap_large: float = 0.25,
         overlap_small: float = 0.25,
         chunk_size: int | None = None,
+        max_segment_seconds: float | None = 600.0,
         python_bin: Optional[str] = None,
         progress_callback: Callable[[str], None] | None = None,
     ) -> None:
@@ -112,6 +115,9 @@ class MVSepMDX23(BaseSeparator):
         self.overlap_large = overlap_large
         self.overlap_small = overlap_small
         self.chunk_size = chunk_size
+        if max_segment_seconds is not None and max_segment_seconds <= 0:
+            raise MVSepMDX23Error("max_segment_seconds must be positive or None")
+        self.max_segment_seconds = max_segment_seconds
         self.python_bin = python_bin or sys.executable
         self.progress_callback = progress_callback
         self._process: subprocess.Popen[str] | None = None
@@ -272,14 +278,19 @@ class MVSepMDX23(BaseSeparator):
         except Exception:
             logger.warning("MVSEP-MDX23 progress callback failed", exc_info=True)
 
-    def _prepare_input(self, src: Path) -> Path:
-        """Convert source to a working stereo WAV for upstream ``librosa`` load."""
+    def _prepare_inputs(self, src: Path) -> list[Path]:
+        """Convert source to bounded 44.1 kHz stereo WAV segments."""
         self._emit_progress("Preparing 44.1 kHz stereo input...")
         input_dir = self.work_dir / "input"
         if input_dir.exists():
             shutil.rmtree(input_dir)
         input_dir.mkdir(parents=True)
-        working_wav = input_dir / f"{src.stem}.wav"
+
+        if self.max_segment_seconds is None:
+            output_path = input_dir / f"{src.stem}.wav"
+        else:
+            output_path = input_dir / f"{src.stem}_part_%04d.wav"
+
         cmd = [
             self.ffmpeg_bin,
             "-y",
@@ -291,23 +302,47 @@ class MVSepMDX23(BaseSeparator):
             "2",
             "-c:a",
             "pcm_f32le",
-            str(working_wav),
         ]
+        if self.max_segment_seconds is not None:
+            cmd.extend(
+                [
+                    "-f",
+                    "segment",
+                    "-segment_time",
+                    str(self.max_segment_seconds),
+                    "-reset_timestamps",
+                    "1",
+                ]
+            )
+        cmd.append(str(output_path))
+
         completed = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if completed.returncode != 0:
             detail = (completed.stderr or completed.stdout or "").strip()
             raise MVSepMDX23Error(
                 f"ffmpeg input conversion failed: {detail[-2000:] or 'no output'}"
             )
-        return working_wav
+        if self.max_segment_seconds is None:
+            working_wavs = [output_path]
+        else:
+            working_wavs = sorted(input_dir.glob("*.wav"))
+        if not working_wavs:
+            raise MVSepMDX23Error("ffmpeg input conversion produced no WAV segments")
+        self._emit_progress(f"Prepared {len(working_wavs)} input segment(s).")
+        return working_wavs
 
-    def _build_cmd(self, inference_py: Path, working_wav: Path, output_dir: Path) -> list[str]:
+    def _build_cmd(
+        self,
+        inference_py: Path,
+        working_wavs: list[Path],
+        output_dir: Path,
+    ) -> list[str]:
         cmd = [
             self.python_bin,
             "-u",
             str(inference_py),
             "--input_audio",
-            str(working_wav),
+            *(str(path) for path in working_wavs),
             "--output_folder",
             str(output_dir),
             "--overlap_large",
@@ -328,6 +363,32 @@ class MVSepMDX23(BaseSeparator):
         if self.chunk_size is not None:
             cmd.extend(["--chunk_size", str(self.chunk_size)])
         return cmd
+
+    def _concat_stem_outputs(self, inputs: list[Path], destination: Path) -> Path:
+        """Concatenate separated segments without loading them into host memory."""
+        self._emit_progress(f"Joining {len(inputs)} separated segments...")
+        cmd = [self.ffmpeg_bin, "-y"]
+        for input_path in inputs:
+            cmd.extend(["-i", str(input_path)])
+        input_labels = "".join(f"[{index}:a:0]" for index in range(len(inputs)))
+        cmd.extend(
+            [
+                "-filter_complex",
+                f"{input_labels}concat=n={len(inputs)}:v=0:a=1[out]",
+                "-map",
+                "[out]",
+                "-c:a",
+                "pcm_f32le",
+                str(destination),
+            ]
+        )
+        completed = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout or "").strip()
+            raise MVSepMDX23Error(
+                f"ffmpeg output concatenation failed: {detail[-2000:] or 'no output'}"
+            )
+        return destination
 
     def _subprocess_env(self) -> dict[str, str]:
         """Build an environment that exposes only the requested CUDA device."""
@@ -422,14 +483,14 @@ class MVSepMDX23(BaseSeparator):
                 raise MVSepMDX23Error("MVSEP-MDX23 separation was cancelled")
 
         inference_py = self._ensure_repo()
-        working_wav = self._prepare_input(src)
+        working_wavs = self._prepare_inputs(src)
 
         output_dir = self.work_dir / "mvsep_out"
         if output_dir.exists():
             shutil.rmtree(output_dir)
         output_dir.mkdir(parents=True)
 
-        cmd = self._build_cmd(inference_py, working_wav, output_dir)
+        cmd = self._build_cmd(inference_py, working_wavs, output_dir)
         onnx_models = 1 if self.single_onnx else 2
         self._emit_progress(
             f"Starting on {self.device} with {onnx_models} ONNX model(s) "
@@ -439,17 +500,23 @@ class MVSepMDX23(BaseSeparator):
         self._run_inference(cmd)
 
         stem_id = self._output_stem_id()
-        separated = output_dir / f"{working_wav.stem}_{stem_id}.wav"
-        if not separated.is_file():
-            matches = list(output_dir.glob(f"*_{stem_id}.wav"))
-            if not matches:
-                available = sorted(p.name for p in output_dir.glob("*.wav"))
-                raise MVSepMDX23Error(
-                    f"MVSEP-MDX23 finished but stem {stem_id!r} not found under "
-                    f"{output_dir}. Available: {available}"
-                )
-            separated = matches[0]
-        return separated
+        separated_parts = [
+            output_dir / f"{working_wav.stem}_{stem_id}.wav"
+            for working_wav in working_wavs
+        ]
+        missing = [path.name for path in separated_parts if not path.is_file()]
+        if missing:
+            available = sorted(path.name for path in output_dir.glob("*.wav"))
+            raise MVSepMDX23Error(
+                f"MVSEP-MDX23 finished but stem {stem_id!r} is missing for "
+                f"segments {missing}. Available: {available}"
+            )
+        if len(separated_parts) == 1:
+            return separated_parts[0]
+        return self._concat_stem_outputs(
+            separated_parts,
+            output_dir / f"combined_{stem_id}.wav",
+        )
 
     def separate(self, audio: Audio) -> Audio:
         """Separate ``audio`` and return a cleaned ``Audio`` object."""

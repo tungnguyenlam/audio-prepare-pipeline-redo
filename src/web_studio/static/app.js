@@ -733,7 +733,58 @@ function handleGlobalKeydown(e) {
     return;
   }
 
-  // [ and ]: Set Cut Start / End to current playhead
+  // Diarization Studio Context-Aware Hotkeys
+  if (state.activeTab === 'tab-diarization') {
+    if (e.key === '[') {
+      e.preventDefault();
+      navigateToAdjacentTurn(-1);
+      return;
+    }
+    if (e.key === ']') {
+      e.preventDefault();
+      navigateToAdjacentTurn(1);
+      return;
+    }
+    if (e.key === 'l' || e.key === 'L') {
+      e.preventDefault();
+      if (el.btnDiarLoopTurn) el.btnDiarLoopTurn.click();
+      return;
+    }
+    if (e.key === 'f' || e.key === 'F') {
+      e.preventDefault();
+      if (el.btnDiarFollowPlayhead) el.btnDiarFollowPlayhead.click();
+      return;
+    }
+    if (e.key === 's' || e.key === 'S') {
+      e.preventDefault();
+      splitActiveTurnAtPlayhead();
+      return;
+    }
+    if (e.key === 'd' || e.key === 'D' || e.key === 'Delete') {
+      e.preventDefault();
+      deleteActiveTurn();
+      return;
+    }
+    if (e.key === 'n' || e.key === 'N' || e.key === 'a' || e.key === 'A') {
+      e.preventDefault();
+      addTurnAtCursor();
+      return;
+    }
+    if (e.key >= '1' && e.key <= '8' && state.diarization.activeTurnIndex !== null) {
+      e.preventDefault();
+      const spkIdx = parseInt(e.key) - 1;
+      if (state.diarization.speakers[spkIdx]) {
+        const targetSpk = state.diarization.speakers[spkIdx].speaker_id;
+        state.diarization.turns[state.diarization.activeTurnIndex].speaker_id = targetSpk;
+        detectTurnOverlaps();
+        renderDiarizationWorkspace(state.diarization.data, state.diarization.audioId);
+        showToast(`Turn assigned to ${getSpeakerName(targetSpk)}`, 'success');
+      }
+      return;
+    }
+  }
+
+  // Workspace Cut Shortcuts: [ and ]: Set Cut Start / End to current playhead
   if (e.key === '[') {
     if (state.activeAudio) {
       const range = readCutRange();
@@ -763,6 +814,16 @@ function handleGlobalKeydown(e) {
   if (e.key === 'm' || e.key === 'M') {
     if (!e.metaKey && !e.ctrlKey) {
       el.btnMute.click();
+    }
+    return;
+  }
+
+  // Shortcuts Cheatsheet
+  if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+    if (el.modalDiarShortcuts && state.activeTab === 'tab-diarization') {
+      el.modalDiarShortcuts.classList.toggle('hidden');
+    } else if (el.btnOpenShortcutsModal) {
+      el.btnOpenShortcutsModal.click();
     }
     return;
   }
@@ -3737,6 +3798,66 @@ function addTurnAtCursor() {
   detectTurnOverlaps();
   renderDiarizationWorkspace(state.diarization.data, state.diarization.audioId);
   showToast(`Added new turn at ${start.toFixed(2)}s`, 'success');
+}
+
+function navigateToAdjacentTurn(delta) {
+  const turns = state.diarization.turns;
+  if (!turns || turns.length === 0) return;
+  let nextIdx = 0;
+  if (state.diarization.activeTurnIndex !== null) {
+    nextIdx = (state.diarization.activeTurnIndex + delta + turns.length) % turns.length;
+  } else {
+    nextIdx = delta > 0 ? 0 : turns.length - 1;
+  }
+  state.diarization.activeTurnIndex = nextIdx;
+  const turn = turns[nextIdx];
+  highlightActiveTurn(nextIdx);
+  seekTo(turn.start_s);
+  const row = document.getElementById(`turn-row-${nextIdx}`);
+  if (row) {
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    row.classList.add('selected-row');
+    setTimeout(() => row.classList.remove('selected-row'), 1000);
+  }
+  showToast(`Selected Turn #${nextIdx + 1} (${getSpeakerName(turn.speaker_id)})`, 'info');
+}
+
+function splitActiveTurnAtPlayhead() {
+  const curTime = state.player.currentTime || 0;
+  const turns = state.diarization.turns;
+  let targetIdx = state.diarization.activeTurnIndex;
+  if (targetIdx === null) {
+    targetIdx = turns.findIndex(t => curTime > t.start_s + 0.1 && curTime < t.end_s - 0.1);
+  }
+  if (targetIdx === -1 || targetIdx === null || !turns[targetIdx]) {
+    showToast("Place playhead inside a turn segment to split it", "info");
+    return;
+  }
+  const turn = turns[targetIdx];
+  if (curTime <= turn.start_s + 0.05 || curTime >= turn.end_s - 0.05) {
+    showToast("Playhead is at boundary of turn", "info");
+    return;
+  }
+  const turn1 = { ...turn, end_s: roundNum(curTime, 2) };
+  const turn2 = { ...turn, start_s: roundNum(curTime, 2) };
+  turns.splice(targetIdx, 1, turn1, turn2);
+  detectTurnOverlaps();
+  renderDiarizationWorkspace(state.diarization.data, state.diarization.audioId);
+  showToast(`Split turn #${targetIdx + 1} at ${curTime.toFixed(2)}s`, 'success');
+}
+
+function deleteActiveTurn() {
+  if (state.diarization.activeTurnIndex === null) {
+    showToast("No turn selected to delete", "info");
+    return;
+  }
+  const idx = state.diarization.activeTurnIndex;
+  state.diarization.turns.splice(idx, 1);
+  state.diarization.selectedTurnIndices.delete(idx);
+  state.diarization.activeTurnIndex = null;
+  detectTurnOverlaps();
+  renderDiarizationWorkspace(state.diarization.data, state.diarization.audioId);
+  showToast(`Turn #${idx + 1} deleted`, 'info');
 }
 
 function runAutoMergeMicroGaps(thresholdSec) {
