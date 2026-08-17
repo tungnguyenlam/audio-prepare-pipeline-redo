@@ -34,6 +34,7 @@ from dotenv import load_dotenv
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 load_dotenv(ROOT_DIR / ".env", override=False)
+os.environ.setdefault("HF_HOME", str(ROOT_DIR / ".data" / "huggingface"))
 
 from src.utils.AudioClass import DEFAULT_SAMPLE_RATE, Audio, _sanitize_filename_component
 from src.utils.AudioCutter import AudioCutter, AudioCutterError
