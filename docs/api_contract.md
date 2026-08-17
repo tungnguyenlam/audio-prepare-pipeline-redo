@@ -68,10 +68,11 @@ or `ffmpeg` processing fails.
 
 Builds, but does not execute, the `yt-dlp` command. The returned value is a
 list of command-line tokens, not a data-contract class. The command includes
-`--newline` so yt-dlp emits one progress line at a time, and
-`--postprocessor-args ExtractAudio:-ac N` so extraction matches the crawler's
-channel count (default 1). `YtCrawler.cancel()` terminates an active yt-dlp
-process group.
+`--newline` so yt-dlp emits one progress line at a time, uses yt-dlp's
+`no-certifi` compatibility option with the system CA bundle when available, and
+passes `--postprocessor-args ExtractAudio:-ac N` so extraction matches the
+crawler's channel count (default 1). `YtCrawler.cancel()` terminates an active
+yt-dlp process group.
 
 ## 2. `Audio` API
 

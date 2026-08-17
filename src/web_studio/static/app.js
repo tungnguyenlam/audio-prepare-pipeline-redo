@@ -6,6 +6,7 @@
 // ==================== STATE MANAGEMENT ====================
 
 const state = {
+  activeTab: 'tab-workspace',
   activeAudio: null,       // Currently selected Audio metadata
   activePeaks: [],         // Downsampled waveform peaks
   selection: { start: 0, end: 0, active: false },
@@ -568,11 +569,11 @@ function getPlaybackAudio() {
 }
 
 function getPlaybackDuration(audio = getPlaybackAudio()) {
-  if (Number.isFinite(audio.duration) && audio.duration > 0) return audio.duration;
+  if (Number.isFinite(audio?.duration) && audio.duration > 0) return audio.duration;
   if (audio === auditionAudio) {
     return state.audioList.find(item => item.id === auditionTracks[0]?.id)?.duration_s || 0;
   }
-  return state.player.duration || state.activeAudio?.duration_s || 0;
+  return state.player.duration || state.activeAudio?.duration_s || state.diarization?.duration || 0;
 }
 
 function syncLoopControls(audio = getPlaybackAudio()) {
@@ -592,6 +593,7 @@ function syncSpeedControls(rate = getPlaybackAudio()?.playbackRate || state.play
   };
   setSelectValue(el.speedSelect);
   setSelectValue(el.auditionSpeedSelect);
+  setSelectValue(el.diarSpeedSelect);
 }
 
 function syncVolumeControls(volume = getPlaybackAudio()?.volume ?? state.player.volume) {
@@ -1031,14 +1033,19 @@ function onEnded() {
 }
 
 function loadAudioIntoPlayer(audioId, autoplay = false) {
+  const currentStreamUrl = `/api/audio/${audioId}/stream`;
+  const isDifferent = !el.audio.src || !el.audio.src.endsWith(currentStreamUrl);
+
   const item = state.audioList.find(a => a.id === audioId)
     || (state.activeAudio?.id === audioId ? state.activeAudio : null);
 
-  el.audio.src = `/api/audio/${audioId}/stream`;
-  el.audio.playbackRate = state.player.playbackRate;
-  el.audio.volume = state.player.volume;
-  el.audio.loop = state.player.loop;
-  el.audio.load();
+  if (isDifferent) {
+    el.audio.src = currentStreamUrl;
+    el.audio.playbackRate = state.player.playbackRate;
+    el.audio.volume = state.player.volume;
+    el.audio.loop = state.player.loop;
+    el.audio.load();
+  }
   el.playerTitle.textContent = item?.title || item?.source_id || audioId;
   el.playerSub.textContent = item
     ? `${(item.format || "audio").toUpperCase()} • ${(item.sample_rate || 0).toLocaleString()}Hz • ${item.channels === 1 ? 'Mono' : 'Stereo'} • ID: ${audioId}`
@@ -1355,7 +1362,12 @@ function initWaveformInteractions() {
   if (el.btnToggleSpec) el.btnToggleSpec.addEventListener('click', toggleSpectrogramPanel);
   if (el.btnRefreshSpec) el.btnRefreshSpec.addEventListener('click', loadSpectrogramImage);
 
-  window.addEventListener('resize', renderWaveform);
+  window.addEventListener('resize', () => {
+    renderWaveform();
+    if (state.activeTab === 'tab-diarization') {
+      setDiarZoom(state.diarization.zoom || 1.0);
+    }
+  });
 }
 
 function setZoom(newZoom) {
@@ -2271,6 +2283,8 @@ function renderDiarizationChildren(selectedAudioId) {
       e.stopPropagation();
       el.diarInputSelect.value = btn.dataset.id;
       renderDiarizationChildren(btn.dataset.id);
+      updateDiarInputMeta(btn.dataset.id);
+      loadDiarWaveform(btn.dataset.id);
     });
   });
 }
@@ -2659,7 +2673,7 @@ function initDiarizationStudio() {
 
   if (el.diarSpeedSelect) {
     el.diarSpeedSelect.addEventListener('change', (e) => {
-      setPlaybackSpeed(parseFloat(e.target.value) || 1.0);
+      setPlaybackRate(parseFloat(e.target.value) || 1.0);
     });
   }
 
@@ -2963,9 +2977,11 @@ function setDiarZoom(zoom) {
   state.diarization.zoom = zoom;
   if (el.diarZoomLevel) el.diarZoomLevel.textContent = `${zoom.toFixed(1)}x`;
 
-  const trackWidthPercent = zoom * 100;
+  const availableWidth = Math.max(400, (el.diarMultitrackViewport ? el.diarMultitrackViewport.clientWidth - 160 : 800));
+  const targetWidth = Math.round(availableWidth * zoom);
   if (el.diarTracksArea) {
-    el.diarTracksArea.style.width = `${trackWidthPercent}%`;
+    el.diarTracksArea.style.width = `${targetWidth}px`;
+    el.diarTracksArea.style.minWidth = `${targetWidth}px`;
   }
 
   renderDiarWaveform();
@@ -3210,7 +3226,9 @@ function renderDiarWaveform() {
   const rect = el.diarWaveformTrack.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
   const w = el.diarWaveformTrack.clientWidth || rect.width || 800;
-  const h = rect.height || 44;
+  const h = el.diarWaveformTrack.clientHeight || rect.height || 44;
+
+  if (w <= 0 || h <= 0) return;
 
   canvas.width = Math.floor(w * dpr);
   canvas.height = Math.floor(h * dpr);
@@ -3640,8 +3658,8 @@ function updateDiarizationPlayhead(currentTime, totalDuration) {
   el.diarPlayheadLine.style.left = `${pct}%`;
   if (el.diarMinimapPlayhead) el.diarMinimapPlayhead.style.left = `${pct}%`;
 
-  if (el.diarTimeCurrent) el.diarTimeCurrent.textContent = formatTime(currentTime);
-  if (el.diarTimeTotal) el.diarTimeTotal.textContent = formatTime(dur);
+  if (el.diarTimeCurrent) el.diarTimeCurrent.textContent = formatTimePrecise(currentTime);
+  if (el.diarTimeTotal) el.diarTimeTotal.textContent = formatTimePrecise(dur);
 
   // Turn looping handler
   if (state.diarization.loopTurn && state.diarization.activeTurnIndex !== null) {
@@ -4376,7 +4394,9 @@ function roundNum(num, decimals) {
 }
 
 function hslToHex(hslStr) {
-  if (!hslStr || !hslStr.startsWith('hsl')) return "#00e5ff";
+  if (!hslStr) return "#00e5ff";
+  if (hslStr.startsWith('#')) return hslStr;
+  if (!hslStr.startsWith('hsl')) return "#00e5ff";
   const match = hslStr.match(/\d+(\.\d+)?/g);
   if (!match || match.length < 3) return "#00e5ff";
   let h = parseFloat(match[0]) / 360;
@@ -4914,19 +4934,20 @@ function initCutsManager() {
 }
 
 function addCutToRegistry(audioId, start, end, unit = state.cutUnit) {
-  const sourceDuration = state.activeAudio?.duration_s || 0;
+  const audioItem = state.audioList.find(a => a.id === audioId) || state.activeAudio;
+  const sourceDuration = audioItem?.duration_s || state.diarization?.duration || 0;
   const startSeconds = cutValueToSeconds(start, unit, sourceDuration);
-  const endSeconds = Math.min(cutValueToSeconds(end, unit, sourceDuration), sourceDuration);
-  const audio = state.audioList.find(a => a.id === audioId) || {
+  const endSeconds = sourceDuration > 0 ? Math.min(cutValueToSeconds(end, unit, sourceDuration), sourceDuration) : cutValueToSeconds(end, unit, sourceDuration);
+  const audio = audioItem || {
     id: audioId,
-    title: state.activeAudio ? `${state.activeAudio.title}_cut_${start}_${end}` : audioId,
-    duration_s: endSeconds - startSeconds,
+    title: `${audioId}_cut_${start}_${end}`,
+    duration_s: Math.max(0, endSeconds - startSeconds),
   };
   if (!state.cuts) state.cuts = [];
   state.cuts.unshift({
     id: audioId,
     title: audio.title || audioId,
-    parentId: state.activeAudio ? state.activeAudio.id : null,
+    parentId: audioItem ? audioItem.id : null,
     start: startSeconds,
     end: endSeconds,
     duration: Math.max(0, endSeconds - startSeconds),
@@ -7372,6 +7393,8 @@ function initNavigation() {
 }
 
 function switchTab(tabId) {
+  state.activeTab = tabId;
+
   if (tabId === 'tab-comparison') {
     // Only one audio context should be audible at a time. The bottom player
     // will now operate on the audition element while this tab is active.
@@ -7395,6 +7418,11 @@ function switchTab(tabId) {
       loadClipForAudition(state.activeAudio.id);
     }
     syncActivePlaybackControls();
+  } else if (tabId === 'tab-diarization') {
+    setDiarZoom(state.diarization.zoom || 1.0);
+    renderDiarWaveform();
+    renderDiarRuler();
+    updateMinimapViewport();
   } else if (tabId === 'tab-matrix') {
     fetchEvaluations();
   }

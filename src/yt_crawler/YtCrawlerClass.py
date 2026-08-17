@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 # Extensions that should never be saved as final audio artifacts
 _VIDEO_SUFFIXES = {".mp4", ".mkv", ".webm", ".avi", ".mov", ".flv", ".m4v"}
+_SYSTEM_CA_BUNDLE = Path("/etc/ssl/certs/ca-certificates.crt")
 
 
 class DownloadError(RuntimeError):
@@ -134,6 +135,8 @@ class YtCrawler:
             "--fragment-retries",
             str(self.retries),
             "--newline",
+            "--compat-options",
+            "no-certifi",
             "--postprocessor-args",
             f"ExtractAudio:-ac {self.channels}",
         ]
@@ -145,6 +148,14 @@ class YtCrawler:
             cmd.extend(["--cookies-from-browser", self.cookies_from_browser])
         cmd.append(url)
         return cmd
+
+    @staticmethod
+    def _yt_dlp_env() -> dict[str, str]:
+        """Return the subprocess environment with a usable system CA bundle."""
+        env = os.environ.copy()
+        if "SSL_CERT_FILE" not in env and _SYSTEM_CA_BUNDLE.is_file():
+            env["SSL_CERT_FILE"] = str(_SYSTEM_CA_BUNDLE)
+        return env
 
     def cancel(self) -> None:
         """Request non-blocking cancellation of an active yt-dlp download."""
@@ -172,6 +183,7 @@ class YtCrawler:
                 text=True,
                 bufsize=1,
                 start_new_session=True,
+                env=self._yt_dlp_env(),
             )
             self._process = process
 

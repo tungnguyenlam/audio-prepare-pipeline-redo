@@ -494,8 +494,9 @@ async def handle_submit_separation(request: web.Request) -> web.Response:
         model = body.get("model", "BSRoFormer")
         device = body.get("device", "cuda" if torch.cuda.is_available() else "cpu")
 
-        if not item_ids and dataset:
-            matched = dataset_manager.list_items(dataset=dataset, limit=10000)
+        if not item_ids and (dataset or "dataset" in body):
+            target_ds = None if (not dataset or dataset == "all") else dataset
+            matched = dataset_manager.list_items(dataset=target_ds, limit=10000)
             item_ids = [it["id"] for it in matched["items"]]
 
         if not item_ids:
@@ -530,8 +531,9 @@ async def handle_submit_diarization(request: web.Request) -> web.Response:
         max_speakers = body.get("max_speakers")
         hf_token = body.get("hf_token")
 
-        if not item_ids and dataset:
-            matched = dataset_manager.list_items(dataset=dataset, limit=10000)
+        if not item_ids and (dataset or "dataset" in body):
+            target_ds = None if (not dataset or dataset == "all") else dataset
+            matched = dataset_manager.list_items(dataset=target_ds, limit=10000)
             item_ids = [it["id"] for it in matched["items"]]
 
         if not item_ids:

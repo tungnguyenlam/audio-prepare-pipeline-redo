@@ -1082,9 +1082,17 @@ async def handle_youtube_inspect(request: web.Request) -> web.Response:
             "--dump-json",
             "--no-playlist",
             "--no-download",
+            "--compat-options",
+            "no-certifi",
             url,
         ]
-        res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        res = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=crawler._yt_dlp_env(),
+        )
         if res.returncode != 0:
             err = (res.stderr or res.stdout or "").strip()
             raise RuntimeError(f"Failed to inspect YouTube URL: {err[:500]}")
