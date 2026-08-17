@@ -124,6 +124,53 @@ Interactive callers live under `src/notebooks/`. Open them from that
 directory so `os.getcwd()` ends with `notebooks`, and select the project
 `.venv` kernel (`ipykernel` is installed by `uv sync`).
 
+### 6. ViYT-Diar diarization benchmark (offline)
+
+Offline evaluation of diarization systems on
+[`tuanduy1612/ViYT-Diar`](https://huggingface.co/datasets/tuanduy1612/ViYT-Diar)
+(100 Vietnamese YouTube clips, `test` split). Scripts live under
+`benchmark/diarization/`. Run this on the **model server**, not the development
+machine.
+
+**Baseline (v1):** Pyannote Community-1
+(`pyannote/speaker-diarization-community-1`) in the primary `.venv`.
+
+```bash
+# Cache the dataset only (no model inference)
+uv run python -m benchmark.diarization --prepare-only
+
+# Smoke test (first N clips)
+uv run python -m benchmark.diarization --systems pyannote_community --limit 5
+
+# Full baseline (all 100 clips)
+uv run python -m benchmark.diarization --systems pyannote_community
+
+# Compare multiple systems (isolated worker venvs when needed)
+uv run python -m benchmark.diarization \
+  --systems pyannote_community,pyannote_31,sortformer,clustering,3d_speaker
+```
+
+| System key | Backend | Environment |
+|---|---|---|
+| `pyannote_community` | Pyannote Community-1 (baseline) | primary `.venv` |
+| `pyannote_31` | Pyannote 3.1 | primary `.venv` |
+| `sortformer` | NeMo Sortformer | `.venv-sortformer` |
+| `clustering` | NeMo Clustering | `.venv-sortformer` |
+| `3d_speaker` | 3D-Speaker | `.venv-3dspeaker` |
+
+Metrics: Diarization Error Rate (DER) with a 0.25 s collar (`pyannote.metrics`),
+plus mean speaker-count absolute error. Outputs (gitignored):
+
+| Path | Contents |
+|---|---|
+| `benchmark/cache/` | Cached ViYT-Diar WAVs + manifest |
+| `benchmark/results/` | Per-run JSON metrics |
+| `benchmark/figures/` | Comparison plots (mean DER, boxplot, speaker-count error) |
+
+Requires `HF_TOKEN` in `.env` for Pyannote. Sortformer / Clustering /
+3D-Speaker need their optional environments from step 3. More detail:
+[`benchmark/README.md`](benchmark/README.md).
+
 ---
 
 ## Development and model-server roles
@@ -143,6 +190,7 @@ environments (primary `.venv` plus optional `.venv-sortformer` /
 
 ```text
 .
+├── benchmark/              # Offline ViYT-Diar diarization benchmark (+ exported figures)
 ├── src/
 │   ├── base/               # ManagedModel lifecycle (load/unload)
 │   ├── benchmark/          # AudioMixer and separation benchmark schemas
@@ -152,7 +200,7 @@ environments (primary `.venv` plus optional `.venv-sortformer` /
 │   ├── utils/              # File-backed Audio class, AudioCutter, Comparers
 │   ├── web_backend/        # Shared API backend and frontend mounts
 │   ├── web_pipeline/       # SonicPipeline API domain, queue, dataset manager, frontend
-│   ├── web_studio/         # SonicStudio API domain and frontend
+│   ├── web_studio/         # SonicStudio API domain, frontend
 │   └── yt_crawler/         # YtCrawler YouTube ingestion
 ├── scripts/
 │   ├── start_web.sh        # Launch the shared backend (port 8765)

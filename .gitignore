@@ -171,6 +171,11 @@ venv.bak/
 *.ogg
 *.opus
 
+# Diarization benchmark runtime outputs (scripts/README stay tracked)
+/benchmark/cache/
+/benchmark/results/
+/benchmark/figures/
+
 # Spyder project settings
 .spyderproject
 .spyproject

@@ -8,6 +8,7 @@ import logging
 import os
 import signal
 import subprocess
+import sys
 import threading
 from pathlib import Path
 from typing import Any
@@ -103,6 +104,7 @@ class ThreeDSpeakerWorkerDiarizer(BaseDiarizer, ManagedModel):
                 worker_environment.get("PATH", ""),
             ]
         )
+        self._prefer_system_media_libraries(worker_environment)
         worker_environment["PYTHONNOUSERSITE"] = "1"
         worker_environment.setdefault(
             "HF_HOME",
@@ -131,6 +133,37 @@ class ThreeDSpeakerWorkerDiarizer(BaseDiarizer, ManagedModel):
             self._stop_process(process)
             self._process = None
             raise
+
+    @staticmethod
+    def _prefer_system_media_libraries(environment: dict[str, str]) -> None:
+        """Put host shared libraries before Conda libraries in the worker.
+
+        TorchCodec loads the host FFmpeg shared libraries dynamically.  On
+        Linux, a Conda launcher can put an older ``libstdc++.so.6`` ahead of
+        the system runtime, making an otherwise compatible FFmpeg fail with a
+        missing ``GLIBCXX`` symbol.  Keep the worker isolated while allowing
+        its existing CUDA paths to remain available after the host paths.
+        """
+        if not sys.platform.startswith("linux"):
+            return
+
+        system_library_dirs = (
+            "/usr/lib/x86_64-linux-gnu",
+            "/lib/x86_64-linux-gnu",
+            "/usr/lib64",
+            "/lib64",
+        )
+        existing = environment.get("LD_LIBRARY_PATH", "").split(os.pathsep)
+        ordered_paths: list[str] = []
+        for directory in (*system_library_dirs, *existing):
+            if (
+                directory
+                and directory not in ordered_paths
+                and Path(directory).is_dir()
+            ):
+                ordered_paths.append(directory)
+        if ordered_paths:
+            environment["LD_LIBRARY_PATH"] = os.pathsep.join(ordered_paths)
 
     def _unload(self) -> None:
         """Unload the worker models and reap the isolated process."""
