@@ -460,6 +460,8 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
     max_speakers: Optional[int] = job.params.get("max_speakers")
     hf_token: Optional[str] = job.params.get("hf_token")
     include_overlap: bool = bool(job.params.get("include_overlap", False))
+    chunk_duration_s = float(job.params.get("chunk_duration_s", 1.5))
+    chunk_step_s = float(job.params.get("chunk_step_s", 0.75))
     backend_key = backend.lower()
 
     if backend_key == "sortformer" and any(
@@ -504,6 +506,8 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
                 device=device,
                 num_speakers=oracle_speakers,
                 include_overlap=include_overlap,
+                chunk_duration_s=chunk_duration_s,
+                chunk_step_s=chunk_step_s,
                 token=hf_token if include_overlap else None,
             )
         elif backend_key in {"pyannote_31", "pyannote_3", "pyannote_3.1"}:

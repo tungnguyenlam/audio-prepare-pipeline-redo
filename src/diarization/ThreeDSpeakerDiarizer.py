@@ -37,6 +37,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_EMBEDDING_MODEL_ID = "iic/speech_campplus_sv_zh_en_16k-common_advanced"
 DEFAULT_VAD_MODEL_ID = "iic/speech_fsmn_vad_zh-cn-16k-common-pytorch"
 DEFAULT_MODEL_ID = f"{DEFAULT_VAD_MODEL_ID}+{DEFAULT_EMBEDDING_MODEL_ID}"
+DEFAULT_CHUNK_DURATION_S = 1.5
+DEFAULT_CHUNK_STEP_S = 0.75
 SAMPLE_RATE = 16000
 THREEDSPEAKER_GIT_URL = "https://github.com/modelscope/3D-Speaker.git"
 
@@ -56,6 +58,8 @@ class ThreeDSpeakerDiarizer(BaseDiarizer, ManagedModel):
         device: str = "auto",
         num_speakers: int | None = None,
         include_overlap: bool = False,
+        chunk_duration_s: float = DEFAULT_CHUNK_DURATION_S,
+        chunk_step_s: float = DEFAULT_CHUNK_STEP_S,
         token: str | None = None,
         model_cache_dir: str | Path | None = None,
         speakerlab_root: str | Path | None = None,
@@ -68,6 +72,11 @@ class ThreeDSpeakerDiarizer(BaseDiarizer, ManagedModel):
             num_speakers: Exact speaker count when known in advance.
             include_overlap: Enable pyannote segmentation-based overlap
                 refinement. Requires a Hugging Face token.
+            chunk_duration_s: Embedding subsegment window length in seconds.
+                Upstream default is ``1.5``.
+            chunk_step_s: Hop between consecutive subsegments in seconds.
+                Upstream default is ``0.75`` (50% overlap at the default
+                duration). Must be ``> 0`` and ``<= chunk_duration_s``.
             token: Hugging Face token used when ``include_overlap`` is True.
                 Falls back to ``HF_TOKEN`` when unset.
             model_cache_dir: Directory for ModelScope pretrained downloads.
@@ -81,6 +90,10 @@ class ThreeDSpeakerDiarizer(BaseDiarizer, ManagedModel):
         ManagedModel.__init__(self)
         if num_speakers is not None and num_speakers < 1:
             raise ValueError("num_speakers must be at least 1")
+        duration_s, step_s = self._validate_chunk_settings(
+            chunk_duration_s,
+            chunk_step_s,
+        )
         if include_overlap:
             resolved_token = token if token is not None else os.getenv("HF_TOKEN")
             if not resolved_token:
@@ -93,6 +106,8 @@ class ThreeDSpeakerDiarizer(BaseDiarizer, ManagedModel):
         self.device = str(device)
         self.num_speakers = num_speakers
         self.include_overlap = bool(include_overlap)
+        self.chunk_duration_s = duration_s
+        self.chunk_step_s = step_s
         self.token = token
         self.model_cache_dir = (
             Path(model_cache_dir).expanduser()
@@ -113,6 +128,54 @@ class ThreeDSpeakerDiarizer(BaseDiarizer, ManagedModel):
 
         self._pipeline: Any | None = None
         self._target_device: Any | None = None
+
+    @staticmethod
+    def _validate_chunk_settings(
+        chunk_duration_s: float,
+        chunk_step_s: float,
+    ) -> tuple[float, float]:
+        """Validate embedding subsegment window and hop."""
+        if isinstance(chunk_duration_s, bool) or not isinstance(
+            chunk_duration_s, (int, float)
+        ):
+            raise TypeError("chunk_duration_s must be a number")
+        if isinstance(chunk_step_s, bool) or not isinstance(
+            chunk_step_s, (int, float)
+        ):
+            raise TypeError("chunk_step_s must be a number")
+        duration_s = float(chunk_duration_s)
+        step_s = float(chunk_step_s)
+        if not math.isfinite(duration_s) or duration_s <= 0:
+            raise ValueError("chunk_duration_s must be finite and > 0")
+        if not math.isfinite(step_s) or step_s <= 0:
+            raise ValueError("chunk_step_s must be finite and > 0")
+        if step_s > duration_s:
+            raise ValueError(
+                "chunk_step_s must be <= chunk_duration_s "
+                f"(got step={step_s}, duration={duration_s})"
+            )
+        return duration_s, step_s
+
+    def _apply_chunk_settings(self) -> None:
+        """Override upstream ``chunk(dur=1.5, step=0.75)`` with configured values."""
+        pipeline = self._pipeline
+        if pipeline is None:
+            return
+
+        duration_s = self.chunk_duration_s
+        step_s = self.chunk_step_s
+
+        def chunk(st: float, ed: float, dur: float = duration_s, step: float = step_s):
+            chunks: list[list[float]] = []
+            subseg_st = float(st)
+            end = float(ed)
+            while subseg_st + dur < end + step:
+                subseg_ed = min(subseg_st + dur, end)
+                chunks.append([subseg_st, subseg_ed])
+                subseg_st += step
+            return chunks
+
+        pipeline.chunk = chunk
 
     @staticmethod
     def resolve_speaker_settings(
@@ -255,6 +318,7 @@ class ThreeDSpeakerDiarizer(BaseDiarizer, ManagedModel):
         )
         self._target_device = target_device
         self._pipeline = pipeline
+        self._apply_chunk_settings()
 
     def _unload(self) -> None:
         """Release VAD, embedding, clustering, and accelerator caches."""

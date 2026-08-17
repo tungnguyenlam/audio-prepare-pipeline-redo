@@ -149,6 +149,9 @@
     diarHfToken: document.getElementById('diar-hf-token'),
     btnToggleTokenVis: document.getElementById('btn-toggle-token-vis'),
     diarBackendRadios: document.querySelectorAll('input[name="diar-backend-radio"]'),
+    diar3dChunkGroup: document.getElementById('diar-3d-chunk-group'),
+    diarChunkDuration: document.getElementById('diar-chunk-duration'),
+    diarChunkStep: document.getElementById('diar-chunk-step'),
 
     // Benchmark
     formBatchBenchmark: document.getElementById('form-batch-benchmark'),
@@ -1333,6 +1336,13 @@
     }
 
     // Diarization backend radio cards
+    function syncDiarBackendOptions(backend) {
+      if (els.diar3dChunkGroup) {
+        const is3d = backend === '3d_speaker' || backend === '3d-speaker' || backend === 'threed_speaker';
+        els.diar3dChunkGroup.style.display = is3d ? '' : 'none';
+      }
+    }
+
     els.diarBackendRadios.forEach(radio => {
       radio.addEventListener('change', () => {
         document.querySelectorAll('input[name="diar-backend-radio"]').forEach(r => {
@@ -1340,8 +1350,10 @@
         });
         radio.closest('.model-pro-card')?.classList.add('active');
         if (els.diarBackend) els.diarBackend.value = radio.value;
+        syncDiarBackendOptions(radio.value);
       });
     });
+    syncDiarBackendOptions(els.diarBackend ? els.diarBackend.value : 'sortformer');
 
     if (els.formBatchDiarization) {
       els.formBatchDiarization.addEventListener('submit', async (e) => {
@@ -1352,6 +1364,8 @@
         const minSpk = els.diarMinSpk.value ? parseInt(els.diarMinSpk.value, 10) : null;
         const maxSpk = els.diarMaxSpk.value ? parseInt(els.diarMaxSpk.value, 10) : null;
         const token = els.diarHfToken.value.trim() || null;
+        const chunkDuration = els.diarChunkDuration ? parseFloat(els.diarChunkDuration.value) : 1.5;
+        const chunkStep = els.diarChunkStep ? parseFloat(els.diarChunkStep.value) : 0.75;
 
         try {
           const res = await fetch('/api/jobs/batch_diarization', {
@@ -1364,6 +1378,8 @@
               min_speakers: minSpk,
               max_speakers: maxSpk,
               hf_token: token,
+              chunk_duration_s: Number.isFinite(chunkDuration) ? chunkDuration : 1.5,
+              chunk_step_s: Number.isFinite(chunkStep) ? chunkStep : 0.75,
             }),
           });
           const job = await res.json();

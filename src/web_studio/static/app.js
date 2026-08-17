@@ -2477,6 +2477,11 @@ function syncDiarModelOptions(modelType) {
     const isPyannote = modelType && modelType.startsWith("pyannote");
     hfGroup.style.display = isPyannote ? "" : "none";
   }
+  const chunkGroup = document.getElementById("diar-3d-chunk-group");
+  if (chunkGroup) {
+    const is3d = modelType === "3d_speaker" || modelType === "3d-speaker" || modelType === "threed_speaker";
+    chunkGroup.style.display = is3d ? "" : "none";
+  }
 }
 
 function initDiarizationStudio() {
@@ -2603,6 +2608,10 @@ function initDiarizationStudio() {
       const modelId = activeCard?.dataset.modelId || (modelType === "pyannote_31" ? "pyannote/speaker-diarization-3.1" : (modelType.startsWith("pyannote") ? "pyannote/speaker-diarization-community-1" : undefined));
       const device = state.selectedGpu || (el.diarDeviceSelect ? el.diarDeviceSelect.value : 'auto');
       const token = el.hfTokenInput.value.trim() || undefined;
+      const chunkDurationEl = document.getElementById('diar-chunk-duration');
+      const chunkStepEl = document.getElementById('diar-chunk-step');
+      const chunkDuration = chunkDurationEl ? parseFloat(chunkDurationEl.value) : 1.5;
+      const chunkStep = chunkStepEl ? parseFloat(chunkStepEl.value) : 0.75;
 
       el.btnRunDiarization.disabled = true;
       el.diarTaskProgressBox.classList.remove('hidden');
@@ -2627,6 +2636,8 @@ function initDiarizationStudio() {
             model_id: modelId,
             device: device,
             token: token,
+            chunk_duration_s: Number.isFinite(chunkDuration) ? chunkDuration : 1.5,
+            chunk_step_s: Number.isFinite(chunkStep) ? chunkStep : 0.75,
           }),
         });
         const data = await res.json();

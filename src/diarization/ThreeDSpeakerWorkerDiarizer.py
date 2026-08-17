@@ -42,6 +42,8 @@ class ThreeDSpeakerWorkerDiarizer(BaseDiarizer, ManagedModel):
         device: str = "auto",
         num_speakers: int | None = None,
         include_overlap: bool = False,
+        chunk_duration_s: float = 1.5,
+        chunk_step_s: float = 0.75,
         token: str | None = None,
         model_cache_dir: str | Path | None = None,
         speakerlab_root: str | Path | None = None,
@@ -59,6 +61,8 @@ class ThreeDSpeakerWorkerDiarizer(BaseDiarizer, ManagedModel):
             "device": device,
             "num_speakers": num_speakers,
             "include_overlap": include_overlap,
+            "chunk_duration_s": chunk_duration_s,
+            "chunk_step_s": chunk_step_s,
             "token": token,
             "model_cache_dir": (
                 str(Path(model_cache_dir).expanduser())

@@ -530,6 +530,9 @@ async def handle_submit_diarization(request: web.Request) -> web.Response:
         min_speakers = body.get("min_speakers")
         max_speakers = body.get("max_speakers")
         hf_token = body.get("hf_token")
+        include_overlap = bool(body.get("include_overlap", False))
+        chunk_duration_s = body.get("chunk_duration_s", 1.5)
+        chunk_step_s = body.get("chunk_step_s", 0.75)
 
         if not item_ids and (dataset or "dataset" in body):
             target_ds = None if (not dataset or dataset == "all") else dataset
@@ -551,6 +554,9 @@ async def handle_submit_diarization(request: web.Request) -> web.Response:
                 "min_speakers": min_speakers,
                 "max_speakers": max_speakers,
                 "hf_token": hf_token,
+                "include_overlap": include_overlap,
+                "chunk_duration_s": chunk_duration_s,
+                "chunk_step_s": chunk_step_s,
             },
             total_items=len(item_ids),
         )

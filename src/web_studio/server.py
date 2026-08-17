@@ -1641,6 +1641,14 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
     min_speakers = data.get("min_speakers")
     max_speakers = data.get("max_speakers")
     include_overlap = bool(data.get("include_overlap", False))
+    try:
+        chunk_duration_s = float(data.get("chunk_duration_s", 1.5))
+        chunk_step_s = float(data.get("chunk_step_s", 0.75))
+    except (TypeError, ValueError):
+        return web.json_response(
+            {"error": "chunk_duration_s and chunk_step_s must be numbers"},
+            status=400,
+        )
 
     audio = registry.get_audio(audio_id)
     if not audio:
@@ -1730,6 +1738,8 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
                     device=target_device,
                     num_speakers=oracle_speakers,
                     include_overlap=include_overlap,
+                    chunk_duration_s=chunk_duration_s,
+                    chunk_step_s=chunk_step_s,
                     token=token if include_overlap else None,
                 )
                 task_manager.set_cancel_callback(task_id, diarizer.cancel)

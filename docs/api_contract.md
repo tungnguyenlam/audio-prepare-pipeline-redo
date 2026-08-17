@@ -453,6 +453,9 @@ missing (override with `THREEDSPEAKER_ROOT`). Model downloads default to
   clustering uses that exact count. Otherwise it estimates the count.
 - When `include_overlap=True`, enables pyannote `segmentation-3.0` overlap
   refinement and requires `token` or `HF_TOKEN`.
+- `chunk_duration_s` / `chunk_step_s` control embedding subsegment window and
+  hop (upstream defaults `1.5` / `0.75`). Values must satisfy
+  `0 < chunk_step_s <= chunk_duration_s`.
 - Includes `DiarizationModelInfo` with backend `"3d-speaker"` and a `model_id`
   of `{vad_model}+{embedding_model}`.
 
@@ -480,7 +483,9 @@ constructor option can point to a non-default isolated interpreter.
 - `_load()` adds the 3D-Speaker checkout to `sys.path` (shallow-cloning
   https://github.com/modelscope/3D-Speaker into `.data/3d-speaker` when
   missing), constructs `Diarization3Dspeaker` with the configured device /
-  overlap settings, and caches ModelScope weights under `.data/modelscope`.
+  overlap settings, overrides embedding `chunk(dur, step)` with
+  `chunk_duration_s` / `chunk_step_s`, and caches ModelScope weights under
+  `.data/modelscope`.
 - `_unload()` releases the pipeline and clears available accelerator caches.
 
 ## 6. Benchmark mixing API
