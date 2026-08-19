@@ -165,6 +165,20 @@ class ThreeDSpeakerWorkerDiarizer(BaseDiarizer, ManagedModel):
         if ordered_paths:
             environment["LD_LIBRARY_PATH"] = os.pathsep.join(ordered_paths)
 
+        system_runtime_libraries = (
+            "/usr/lib/x86_64-linux-gnu/libstdc++.so.6",
+            "/lib/x86_64-linux-gnu/libgcc_s.so.1",
+        )
+        existing_preloads = environment.get("LD_PRELOAD", "").split(
+            os.pathsep
+        )
+        preloads: list[str] = []
+        for library in (*system_runtime_libraries, *existing_preloads):
+            if library and library not in preloads and Path(library).is_file():
+                preloads.append(library)
+        if preloads:
+            environment["LD_PRELOAD"] = os.pathsep.join(preloads)
+
     def _unload(self) -> None:
         """Unload the worker models and reap the isolated process."""
         process = self._process

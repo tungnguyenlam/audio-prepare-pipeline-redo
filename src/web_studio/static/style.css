@@ -2586,6 +2586,7 @@ html, body {
   border-bottom: 1px solid var(--border-subtle);
   background: rgba(0, 0, 0, 0.25);
   overflow: hidden;
+  box-sizing: border-box;
   cursor: pointer;
 }
 
@@ -2615,6 +2616,7 @@ html, body {
   position: relative;
   border-bottom: 1px solid var(--border-subtle);
   background: rgba(0, 0, 0, 0.15);
+  box-sizing: border-box;
   cursor: pointer;
 }
 
@@ -2629,6 +2631,7 @@ html, body {
   position: relative;
   border-bottom: 1px solid var(--border-subtle);
   background: rgba(255, 255, 255, 0.015);
+  box-sizing: border-box;
   cursor: pointer;
 }
 
@@ -2697,6 +2700,7 @@ html, body {
   position: relative;
   border-bottom: 1px solid var(--border-subtle);
   background: #080c16;
+  box-sizing: border-box;
   cursor: pointer;
   overflow: hidden;
 }
@@ -2740,6 +2744,7 @@ html, body {
   position: relative;
   border-bottom: 1px solid var(--border-subtle);
   background: #080c16;
+  box-sizing: border-box;
   cursor: crosshair;
   overflow: hidden;
   transition: opacity var(--transition-fast);
@@ -2754,10 +2759,6 @@ html, body {
   display: block;
   pointer-events: none;
   z-index: 1;
-}
-
-.diar-speaker-lane-track:last-child {
-  border-bottom: none;
 }
 
 .diar-speaker-lane-track.lane-dimmed {
@@ -2775,7 +2776,7 @@ html, body {
   opacity: 0.92;
   display: flex;
   align-items: center;
-  padding: 0 8px;
+  padding: 0 6px;
   box-sizing: border-box;
   font-size: 0.72rem;
   font-family: var(--font-mono);
@@ -2786,6 +2787,15 @@ html, body {
   white-space: nowrap;
   user-select: none;
   z-index: 10;
+}
+
+.turn-label-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  font-size: 0.70rem;
+  line-height: 1;
 }
 
 .diar-turn-segment:active {
@@ -2828,6 +2838,7 @@ html, body {
   top: 0;
   bottom: 0;
   width: 7px;
+  max-width: 35%;
   cursor: col-resize;
   z-index: 16;
   opacity: 0;
@@ -2869,9 +2880,9 @@ html, body {
 }
 
 .diar-minimap-label {
-  width: 160px;
-  min-width: 160px;
-  max-width: 160px;
+  width: 200px;
+  min-width: 200px;
+  max-width: 200px;
   padding: 0 10px;
   font-size: 0.68rem;
   font-weight: 700;
@@ -2880,6 +2891,7 @@ html, body {
   color: var(--text-muted);
   border-right: 1px solid var(--border-subtle);
   background: var(--bg-surface-elevated);
+  box-sizing: border-box;
 }
 
 .diar-minimap-track {
@@ -3309,9 +3321,14 @@ html, body {
   font-family: var(--font-mono);
 }
 
-/* Diarization Session History Card */
+/* Diarization Session History Card (always visible under results/empty) */
 .diar-history-card {
   background-color: var(--bg-surface);
+  margin-top: 0.25rem;
+}
+
+.diar-history-card .card-subtitle {
+  margin-top: 0.25rem;
 }
 
 .diar-history-filter-bar {

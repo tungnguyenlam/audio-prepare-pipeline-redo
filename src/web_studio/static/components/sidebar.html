@@ -20,7 +20,7 @@
             </div>
           </div>
         </a>
-        <a href="/pipeline/" class="brand-switch-btn" id="btn-switch-to-pipeline" title="Switch to SonicPipeline Batch Engine (Alt+P)" aria-label="Switch to SonicPipeline">
+        <a href="/pipeline/" class="brand-switch-btn" id="btn-switch-to-pipeline" title="Switch to SonicPipeline Batch Engine" aria-label="Switch to SonicPipeline">
           <span class="switcher-dot"></span>
           <span class="brand-switch-name">Pipeline</span>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
@@ -31,52 +31,45 @@
       <div class="sidebar-scroll">
         <div class="nav-section-label">SOURCE &amp; WORKBENCH</div>
         <nav class="sidebar-nav" aria-label="Studio workbench navigation">
-          <button class="nav-tab active" data-tab="tab-workspace" id="btn-tab-workspace" title="Key: 1">
+          <button class="nav-tab active" data-tab="tab-workspace" id="btn-tab-workspace">
             <span class="tab-icon">🎛️</span>
             <span class="nav-text">Workspace &amp; Cutter</span>
-            <span class="tab-shortcut">1</span>
           </button>
-          <button class="nav-tab" data-tab="tab-crawler" id="btn-tab-crawler" title="Key: 2">
+          <button class="nav-tab" data-tab="tab-crawler" id="btn-tab-crawler">
             <span class="tab-icon">📥</span>
             <span class="nav-text">YouTube Ingestion</span>
-            <span class="tab-shortcut">2</span>
           </button>
         </nav>
 
         <div class="nav-section-label" style="margin-top: 0.5rem;">AI PROCESSING ENGINES</div>
         <nav class="sidebar-nav" aria-label="Studio AI engines navigation">
-          <button class="nav-tab" data-tab="tab-separation" id="btn-tab-separation" title="Key: 3">
+          <button class="nav-tab" data-tab="tab-separation" id="btn-tab-separation">
             <span class="tab-icon">🧪</span>
             <span class="nav-text">Stem Separation</span>
-            <span class="tab-shortcut">3</span>
           </button>
-          <button class="nav-tab" data-tab="tab-diarization" id="btn-tab-diarization" title="Key: 4">
+          <button class="nav-tab" data-tab="tab-diarization" id="btn-tab-diarization">
             <span class="tab-icon">👥</span>
             <span class="nav-text">Speaker Diarization</span>
-            <span class="tab-shortcut">4</span>
           </button>
         </nav>
 
         <div class="nav-section-label" style="margin-top: 0.5rem;">AUDITION &amp; BENCHMARK</div>
         <nav class="sidebar-nav" aria-label="Studio audition and scoring navigation">
-          <button class="nav-tab" data-tab="tab-comparison" id="btn-tab-comparison" title="Key: 5">
+          <button class="nav-tab" data-tab="tab-comparison" id="btn-tab-comparison">
             <span class="tab-icon">⚖️</span>
             <span class="nav-text">Audition &amp; Comparison</span>
-            <span class="tab-shortcut">5</span>
           </button>
-          <button class="nav-tab" data-tab="tab-matrix" id="btn-tab-matrix" title="Key: 6">
+          <button class="nav-tab" data-tab="tab-matrix" id="btn-tab-matrix">
             <span class="tab-icon">📊</span>
             <span class="nav-text">Evaluation Matrix</span>
-            <span class="tab-shortcut">6</span>
           </button>
         </nav>
 
         <div class="nav-section-label" style="margin-top: 0.5rem;">PROJECT REPOSITORY</div>
         <nav class="sidebar-nav" aria-label="Studio library navigation">
-          <button class="nav-tab" data-tab="tab-library" id="btn-tab-library" title="Key: 7">
+          <button class="nav-tab" data-tab="tab-library" id="btn-tab-library">
             <span class="tab-icon">📁</span>
             <span class="nav-text">Library &amp; Vault</span>
-            <span class="tab-shortcut">7</span>
           </button>
         </nav>
       </div>
@@ -84,13 +77,12 @@
       <!-- Sidebar Bottom Telemetry & Task Queue Widget -->
       <div class="sidebar-footer">
         <!-- Sidebar Task Queue Button Trigger -->
-        <button class="sidebar-queue-btn" id="queue-badge" title="View Background Task Queue (Q)" aria-label="Open Studio Task Queue">
+        <button class="sidebar-queue-btn" id="queue-badge" title="View Background Task Queue" aria-label="Open Studio Task Queue">
           <div class="sidebar-queue-left">
             <span class="dot" id="queue-dot"></span>
             <span class="queue-btn-title" id="queue-label">Task Queue (0)</span>
           </div>
           <div class="sidebar-queue-right">
-            <span class="sidebar-queue-shortcut">Q</span>
             <svg class="queue-btn-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
           </div>
         </button>
@@ -114,17 +106,13 @@
           </div>
         </div>
 
-        <!-- Sidebar Bottom Actions: Shortcuts, Theme Toggle, Live Status -->
+        <!-- Sidebar Bottom Actions: Theme Toggle, Live Status -->
         <div class="sidebar-bottom-actions">
           <div class="sidebar-quick-tools sidebar-quick-tools-full">
             <div id="live-reload-badge" class="badge badge-reload" title="Hot reload status">
               <span class="reload-dot"></span>
               <span>Live</span>
             </div>
-
-            <button class="btn btn-ctrl btn-icon-round" id="btn-open-shortcuts-modal" title="Keyboard Shortcuts (?)">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-            </button>
 
             <button class="theme-toggle-btn" id="btn-theme-toggle" title="Toggle Light/Dark Theme" aria-label="Toggle Light/Dark Theme">
               <svg id="icon-theme-sun" class="hidden" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>

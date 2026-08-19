@@ -11,10 +11,6 @@
               <p class="card-subtitle">Detect "who spoke when" with neural multi-speaker boundary segmentation, interactive multi-track swimlanes, turn editing & multi-format export.</p>
             </div>
             <div class="card-actions flex-wrap gap-2">
-              <button class="btn btn-secondary btn-sm" id="btn-diar-shortcuts-modal" title="View Keyboard Shortcuts (?)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="M6 8h.001M10 8h.001M14 8h.001M18 8h.001M8 12h.001M12 12h.001M16 12h.001M7 16h10"></path></svg>
-                <span>Shortcuts</span>
-              </button>
               <button class="btn btn-secondary btn-sm" id="btn-diar-import" title="Import RTTM, JSON, CSV, SRT, Audacity or Praat Label File">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                 <span>Import Annotation</span>
@@ -42,10 +38,16 @@
               <div class="form-group">
                 <div class="label-with-tool">
                   <label class="form-label" for="diar-input-select">1. Select Target Audio Track:</label>
-                  <span class="text-xs text-muted" id="diar-audio-meta-chip">No track selected</span>
+                  <div class="flex-row items-center gap-2">
+                    <span class="text-xs text-muted" id="diar-audio-meta-chip">No track selected</span>
+                    <button type="button" class="btn btn-ghost btn-xs" id="btn-diar-browse-library" title="Browse and load from the sample library">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                      <span>Library</span>
+                    </button>
+                  </div>
                 </div>
                 <select id="diar-input-select" class="select-input">
-                  <option value="">-- Select Loaded Audio Track --</option>
+                  <option value="">-- Select session or library track --</option>
                 </select>
               </div>
 
@@ -286,11 +288,11 @@
             <!-- Synchronized Transport & Zoom Controls -->
             <div class="diar-transport-toolbar">
               <div class="transport-left">
-                <button class="btn btn-ctrl btn-sm" id="btn-diar-skip-back" title="Replay 5s (Shift+Left)">
+                <button class="btn btn-ctrl btn-sm" id="btn-diar-skip-back" title="Replay 5s">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
                   <span>-5s</span>
                 </button>
-                <button class="btn btn-ctrl btn-sm btn-play-main" id="btn-diar-play-toggle" title="Play/Pause All Speakers (Space)">
+                <button class="btn btn-ctrl btn-sm btn-play-main" id="btn-diar-play-toggle" title="Play/Pause All Speakers">
                   <svg id="icon-diar-play" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                   <svg id="icon-diar-pause" class="hidden" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
                   <span>Play All</span>
@@ -299,15 +301,15 @@
                   <span id="icon-diar-mute-all">🔇</span>
                   <span id="diar-mute-all-label">Mute All</span>
                 </button>
-                <button class="btn btn-ctrl btn-sm" id="btn-diar-skip-fwd" title="Forward 5s (Shift+Right)">
+                <button class="btn btn-ctrl btn-sm" id="btn-diar-skip-fwd" title="Forward 5s">
                   <span>+5s</span>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
                 </button>
-                <button class="btn btn-ctrl btn-sm" id="btn-diar-loop-turn" title="Toggle Turn Loop (L)">
+                <button class="btn btn-ctrl btn-sm" id="btn-diar-loop-turn" title="Toggle Turn Loop">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
                   <span>Loop Turn</span>
                 </button>
-                <button class="btn btn-ctrl btn-sm active" id="btn-diar-follow-playhead" title="Toggle Auto-Scroll Follow Playhead (F)">
+                <button class="btn btn-ctrl btn-sm active" id="btn-diar-follow-playhead" title="Toggle Auto-Scroll Follow Playhead">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>
                   <span>Follow</span>
                 </button>
@@ -320,10 +322,10 @@
                 <!-- Zoom Controls -->
                 <div class="diar-zoom-wrap">
                   <span class="zoom-label">Zoom:</span>
-                  <button class="btn btn-xs btn-ghost" id="btn-diar-zoom-out" title="Zoom Out (Z)">-</button>
+                  <button class="btn btn-xs btn-ghost" id="btn-diar-zoom-out" title="Zoom Out">-</button>
                   <span class="zoom-val" id="diar-zoom-level">1.0x</span>
-                  <button class="btn btn-xs btn-ghost" id="btn-diar-zoom-in" title="Zoom In (Shift+Z)">+</button>
-                  <button class="btn btn-xs btn-secondary" id="btn-diar-zoom-fit" title="Fit to Container (0)">Fit</button>
+                  <button class="btn btn-xs btn-ghost" id="btn-diar-zoom-in" title="Zoom In">+</button>
+                  <button class="btn btn-xs btn-secondary" id="btn-diar-zoom-fit" title="Fit to Container">Fit</button>
                 </div>
                 <!-- Speed selector -->
                 <select id="diar-speed-select" class="select-mini" title="Playback Speed">
@@ -415,11 +417,6 @@
                 <span class="subtab-icon">💾</span>
                 <span class="subtab-label">Export & Annotations</span>
               </button>
-              <button class="diar-subtab-btn" data-subtab="history">
-                <span class="subtab-icon">🕒</span>
-                <span class="subtab-label">Saved Runs History</span>
-                <span class="subtab-chip" id="diar-subtab-hist-count">0</span>
-              </button>
             </div>
 
             <!-- Subview 1: Precision Turn Inspector & Segment Editor -->
@@ -430,9 +427,9 @@
                   <p class="subview-desc">Inspect, trim, split, nudge, reassign, or batch modify speaker turn segments.</p>
                 </div>
                 <div class="subview-actions">
-                  <button class="btn btn-secondary btn-sm" id="btn-add-turn-at-playhead" title="Insert new turn segment at current playhead (N)">
+                  <button class="btn btn-secondary btn-sm" id="btn-add-turn-at-playhead" title="Insert new turn segment at current playhead">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                    <span>Add Turn at Cursor (N)</span>
+                    <span>Add Turn at Cursor</span>
                   </button>
                 </div>
               </div>
@@ -575,41 +572,39 @@
                 <textarea id="export-preview-textarea" class="export-preview-textarea font-mono" readonly rows="10"></textarea>
               </div>
             </div>
+          </div>
+        </div>
 
-            <!-- Subview 4: Saved Runs History -->
-            <div class="diar-subview-panel hidden" id="diar-subview-history">
-              <div class="subview-header">
-                <div>
-                  <div class="flex-row items-center gap-2">
-                    <h3 class="subview-title">Diarization History & Saved Sessions</h3>
-                    <span class="badge badge-info" id="diar-history-count-badge">0 saved runs</span>
-                  </div>
-                  <p class="subview-desc">Explore, restore, export, or audit past speaker diarization runs and annotations.</p>
-                </div>
-                <div class="subview-actions flex-wrap gap-2">
-                  <button class="btn btn-secondary btn-sm" id="btn-export-all-history" title="Export full history registry as JSON bundle">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                    <span>Export History</span>
-                  </button>
-                  <button class="btn btn-ghost btn-sm text-destructive" id="btn-clear-diar-history" title="Clear all saved diarization history">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                    <span>Clear History</span>
-                  </button>
-                </div>
+        <!-- Saved Runs History (always visible — outside results wrapper) -->
+        <div class="card diar-history-card" id="diar-history-card">
+          <div class="card-header">
+            <div>
+              <div class="flex-row items-center gap-2">
+                <h2 class="card-title">Diarization History & Saved Sessions</h2>
+                <span class="badge badge-info" id="diar-history-count-badge">0 saved runs</span>
               </div>
+              <p class="card-subtitle">Explore, restore, export, or audit past speaker diarization runs and annotations. Sessions persist in this browser.</p>
+            </div>
+            <div class="card-actions flex-wrap gap-2">
+              <button class="btn btn-secondary btn-sm" id="btn-export-all-history" title="Export full history registry as JSON bundle">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                <span>Export History</span>
+              </button>
+              <button class="btn btn-ghost btn-sm text-destructive" id="btn-clear-diar-history" title="Clear all saved diarization history">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                <span>Clear History</span>
+              </button>
+            </div>
+          </div>
 
-              <!-- History Search & Filter -->
-              <div class="diar-history-filter-bar">
-                <input type="text" id="diar-history-search-input" class="text-input text-sm flex-1" placeholder="Filter history by audio title, model ID, speaker name, or date...">
-              </div>
+          <div class="diar-history-filter-bar">
+            <input type="text" id="diar-history-search-input" class="text-input text-sm flex-1" placeholder="Filter history by audio title, model ID, speaker name, or date...">
+          </div>
 
-              <!-- History List Container -->
-              <div class="diar-history-list" id="diar-history-list">
-                <div class="empty-placeholder">
-                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                  <span>No diarization sessions saved yet. Run diarization or import annotations above.</span>
-                </div>
-              </div>
+          <div class="diar-history-list" id="diar-history-list">
+            <div class="empty-placeholder">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              <span>No diarization sessions saved yet. Run diarization or import annotations above.</span>
             </div>
           </div>
         </div>
@@ -653,75 +648,6 @@
             <div class="modal-footer">
               <button class="btn btn-ghost" id="btn-cancel-auto-merge">Cancel</button>
               <button class="btn btn-primary" id="btn-confirm-auto-merge">Merge Micro-Gaps</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Diarization Keyboard Shortcuts Modal -->
-        <div id="modal-diar-shortcuts" class="modal-overlay hidden">
-          <div class="modal-card modal-md">
-            <div class="modal-header">
-              <div class="modal-title-wrap">
-                <span class="modal-badge-icon">⌨️</span>
-                <h3 class="modal-title">Diarization Studio Keyboard Shortcuts</h3>
-              </div>
-              <button class="modal-close-btn" id="btn-close-diar-shortcuts">&times;</button>
-            </div>
-            <div class="modal-body">
-              <div class="shortcuts-grid">
-                <div class="shortcut-item">
-                  <span class="shortcut-desc">Play / Pause Audio</span>
-                  <kbd class="kbd">Space</kbd>
-                </div>
-                <div class="shortcut-item">
-                  <span class="shortcut-desc">Nudge Playhead -0.5s / +0.5s</span>
-                  <div class="kbd-combo"><kbd class="kbd">←</kbd> <kbd class="kbd">→</kbd></div>
-                </div>
-                <div class="shortcut-item">
-                  <span class="shortcut-desc">Jump -5s / +5s</span>
-                  <div class="kbd-combo"><kbd class="kbd">Shift</kbd> + <kbd class="kbd">←</kbd> <kbd class="kbd">→</kbd></div>
-                </div>
-                <div class="shortcut-item">
-                  <span class="shortcut-desc">Previous / Next Speaker Turn</span>
-                  <div class="kbd-combo"><kbd class="kbd">[</kbd> <kbd class="kbd">]</kbd></div>
-                </div>
-                <div class="shortcut-item">
-                  <span class="shortcut-desc">Toggle Turn Loop</span>
-                  <kbd class="kbd">L</kbd>
-                </div>
-                <div class="shortcut-item">
-                  <span class="shortcut-desc">Split Active Turn at Playhead</span>
-                  <kbd class="kbd">S</kbd>
-                </div>
-                <div class="shortcut-item">
-                  <span class="shortcut-desc">Delete Active Turn</span>
-                  <kbd class="kbd">D</kbd> or <kbd class="kbd">Del</kbd>
-                </div>
-                <div class="shortcut-item">
-                  <span class="shortcut-desc">Add New Turn at Cursor</span>
-                  <kbd class="kbd">N</kbd>
-                </div>
-                <div class="shortcut-item">
-                  <span class="shortcut-desc">Toggle Follow Playhead Auto-Scroll</span>
-                  <kbd class="kbd">F</kbd>
-                </div>
-                <div class="shortcut-item">
-                  <span class="shortcut-desc">Quick Assign Active Turn to Speaker 1-8</span>
-                  <div class="kbd-combo"><kbd class="kbd">1</kbd> .. <kbd class="kbd">8</kbd></div>
-                </div>
-                <div class="shortcut-item">
-                  <span class="shortcut-desc">Zoom In / Zoom Out</span>
-                  <div class="kbd-combo"><kbd class="kbd">Z</kbd> / <kbd class="kbd">Shift+Z</kbd></div>
-                </div>
-                <div class="shortcut-item">
-                  <span class="shortcut-desc">Fit Zoom to Screen</span>
-                  <kbd class="kbd">0</kbd>
-                </div>
-                <div class="shortcut-item">
-                  <span class="shortcut-desc">Close Modals / Deselect</span>
-                  <kbd class="kbd">Esc</kbd>
-                </div>
-              </div>
             </div>
           </div>
         </div>

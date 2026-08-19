@@ -39,6 +39,7 @@ const state = {
   // Sample Library Modal Filter State
   libraryModalSearch: "",
   libraryModalCategory: "all",
+  libraryLoadTarget: "workspace",
 
   // Tab 7 Project Explorer Filter State
   tabLibrarySearch: "",
@@ -92,7 +93,6 @@ const el = {
   btnThemeToggle: document.getElementById('btn-theme-toggle'),
   iconThemeSun: document.getElementById('icon-theme-sun'),
   iconThemeMoon: document.getElementById('icon-theme-moon'),
-  btnOpenShortcutsModal: document.getElementById('btn-open-shortcuts-modal'),
 
   // Master Player
   audio: document.getElementById('global-audio-element'),
@@ -228,15 +228,13 @@ const el = {
   sepResultsList: document.getElementById('sep-results-list'),
 
   // Diarization Studio
-  btnDiarShortcutsModal: document.getElementById('btn-diar-shortcuts-modal'),
-  modalDiarShortcuts: document.getElementById('modal-diar-shortcuts'),
-  btnCloseDiarShortcuts: document.getElementById('btn-close-diar-shortcuts'),
   btnToggleDiarSetup: document.getElementById('btn-toggle-diar-setup'),
   diarSetupCard: document.getElementById('diar-setup-card'),
   diarSetupBody: document.getElementById('diar-setup-body'),
   diarSetupToggleIcon: document.getElementById('diar-setup-toggle-icon'),
   diarSetupToggleText: document.getElementById('diar-setup-toggle-text'),
   diarInputSelect: document.getElementById('diar-input-select'),
+  btnDiarBrowseLibrary: document.getElementById('btn-diar-browse-library'),
   diarSavedNoticePill: document.getElementById('diar-saved-notice-pill'),
   diarSavedNoticeText: document.getElementById('diar-saved-notice-text'),
   btnLoadSavedForTrack: document.getElementById('btn-load-saved-for-track'),
@@ -283,7 +281,7 @@ const el = {
   diarSubviews: document.querySelectorAll('.diar-subview-panel'),
   diarSubtabTurnsCount: document.getElementById('diar-subtab-turns-count'),
   diarSubtabSpkCount: document.getElementById('diar-subtab-spk-count'),
-  diarSubtabHistCount: document.getElementById('diar-subtab-hist-count'),
+  diarHistoryCard: document.getElementById('diar-history-card'),
   diarMinimapContainer: document.getElementById('diar-minimap-container'),
   diarMinimapTrack: document.getElementById('diar-minimap-track'),
   diarMinimapBlocksLayer: document.getElementById('diar-minimap-blocks-layer'),
@@ -441,8 +439,6 @@ const el = {
   libraryModalCount: document.getElementById('library-modal-count'),
   tabLibrarySearch: document.getElementById('tab-library-search'),
   tabLibraryCategories: document.getElementById('tab-library-categories'),
-  modalShortcuts: document.getElementById('modal-shortcuts'),
-  btnCloseShortcutsModal: document.getElementById('btn-close-shortcuts-modal'),
   queueBadge: document.getElementById('queue-badge'),
   modalTaskQueue: document.getElementById('modal-task-queue'),
   btnCloseQueueModal: document.getElementById('btn-close-queue-modal'),
@@ -879,16 +875,6 @@ function handleGlobalKeydown(e) {
     return;
   }
 
-  // Shortcuts Cheatsheet
-  if (e.key === '?' || (e.shiftKey && e.key === '/')) {
-    if (el.modalDiarShortcuts && state.activeTab === 'tab-diarization') {
-      el.modalDiarShortcuts.classList.toggle('hidden');
-    } else if (el.btnOpenShortcutsModal) {
-      el.btnOpenShortcutsModal.click();
-    }
-    return;
-  }
-
   // Z / Shift+Z / 0: Zoom (Workspace)
   if (e.key === 'z' || e.key === 'Z') {
     if (e.shiftKey) {
@@ -926,12 +912,6 @@ function handleGlobalKeydown(e) {
     return;
   }
 
-  // ?: Toggle Shortcuts Modal
-  if (e.key === '?' || (e.shiftKey && e.key === '/')) {
-    toggleShortcutsModal();
-    return;
-  }
-
   // Escape: Close open modals / clear selection
   if (e.code === 'Escape') {
     closeAllModals();
@@ -956,6 +936,11 @@ function setPlayingUI(isPlaying) {
   el.iconAuditionPause?.classList.toggle('hidden', !isPlaying);
   el.iconDiarPlay?.classList.toggle('hidden', isPlaying);
   el.iconDiarPause?.classList.toggle('hidden', !isPlaying);
+
+  const diarPlayText = el.btnDiarPlayToggle?.querySelector('span');
+  if (diarPlayText) {
+    diarPlayText.textContent = isPlaying ? 'Pause' : 'Play All';
+  }
 }
 
 function togglePlayPause() {
@@ -1874,9 +1859,9 @@ function initIngestAndSaves() {
   }
 
   // Sample Library Modal
-  el.btnBrowseLibrary.addEventListener('click', openLibraryModal);
+  el.btnBrowseLibrary.addEventListener('click', () => openLibraryModal('workspace'));
   const btnBrowseTop = document.getElementById('btn-browse-library-top');
-  if (btnBrowseTop) btnBrowseTop.addEventListener('click', openLibraryModal);
+  if (btnBrowseTop) btnBrowseTop.addEventListener('click', () => openLibraryModal('workspace'));
   el.btnCloseLibraryModal.addEventListener('click', () => el.modalLibrary.classList.add('hidden'));
 }
 
@@ -2551,7 +2536,7 @@ function initDiarizationStudio() {
 
   // Input track change listener
   if (el.diarInputSelect) {
-    el.diarInputSelect.addEventListener('change', () => {
+    el.diarInputSelect.addEventListener('change', async () => {
       const audioId = el.diarInputSelect.value;
       if (!audioId) {
         updateDiarInputMeta(null);
@@ -2559,6 +2544,14 @@ function initDiarizationStudio() {
         if (el.diarSavedNoticePill) el.diarSavedNoticePill.classList.add('hidden');
         return;
       }
+
+      // Library paths are exposed as lib:<path> options; load into session first
+      if (audioId.startsWith('lib:')) {
+        const filePath = audioId.slice(4);
+        await loadLibraryFileTo(filePath, 'diarization');
+        return;
+      }
+
       renderDiarizationChildren(audioId);
       updateDiarInputMeta(audioId);
       loadDiarWaveform(audioId);
@@ -2579,6 +2572,10 @@ function initDiarizationStudio() {
         el.diarSavedNoticePill.classList.add('hidden');
       }
     });
+  }
+
+  if (el.btnDiarBrowseLibrary) {
+    el.btnDiarBrowseLibrary.addEventListener('click', () => openLibraryModal('diarization'));
   }
 
   // Preview target input audio
@@ -2626,18 +2623,6 @@ function initDiarizationStudio() {
       const isPwd = el.hfTokenInput.type === 'password';
       el.hfTokenInput.type = isPwd ? 'text' : 'password';
       el.btnToggleHfVis.textContent = isPwd ? 'Hide' : 'Show';
-    });
-  }
-
-  // Shortcuts Modal
-  if (el.btnDiarShortcutsModal && el.modalDiarShortcuts) {
-    el.btnDiarShortcutsModal.addEventListener('click', () => {
-      el.modalDiarShortcuts.classList.remove('hidden');
-    });
-  }
-  if (el.btnCloseDiarShortcuts && el.modalDiarShortcuts) {
-    el.btnCloseDiarShortcuts.addEventListener('click', () => {
-      el.modalDiarShortcuts.classList.add('hidden');
     });
   }
 
@@ -2799,8 +2784,12 @@ function initDiarizationStudio() {
   // Transport Toolbar Controls
   if (el.btnDiarPlayToggle) {
     el.btnDiarPlayToggle.addEventListener('click', () => {
-      const audioId = state.diarization.audioId || el.diarInputSelect.value;
-      if (!el.audio.src && audioId) loadAudioIntoPlayer(audioId);
+      const audioId = state.diarization.audioId || (el.diarInputSelect ? el.diarInputSelect.value : null);
+      if (audioId) {
+        if (!el.audio.src || !el.audio.src.includes(audioId)) {
+          loadAudioIntoPlayer(audioId);
+        }
+      }
       togglePlayPause();
     });
   }
@@ -3305,7 +3294,6 @@ function renderDiarizationWorkspace(diarization, audioId, addToHistory = true) {
   // Update Subtab chip counters
   if (el.diarSubtabTurnsCount) el.diarSubtabTurnsCount.textContent = state.diarization.turns.length;
   if (el.diarSubtabSpkCount) el.diarSubtabSpkCount.textContent = state.diarization.speakers.length;
-  if (el.diarSubtabHistCount) el.diarSubtabHistCount.textContent = (state.diarization.history || []).length;
 
   // Update Speaker Filter Dropdown & Batch Speaker Select
   if (el.diarFilterSpeakerSelect) {
@@ -3375,6 +3363,22 @@ function detectTurnOverlaps() {
   }
 }
 
+function seekDiarAudio(timeSec, andPlay = false) {
+  const audioId = state.diarization.audioId || (el.diarInputSelect ? el.diarInputSelect.value : null);
+  if (audioId) {
+    if (!el.audio.src || !el.audio.src.includes(audioId)) {
+      loadAudioIntoPlayer(audioId);
+    }
+  }
+  const dur = state.diarization.duration || 1;
+  const targetTime = Math.max(0, Math.min(Number(timeSec) || 0, dur));
+  seekTo(targetTime);
+  updateDiarizationPlayhead(targetTime, dur);
+  if (andPlay) {
+    el.audio.play().catch(() => {});
+  }
+}
+
 function renderDiarMinimap() {
   if (!el.diarMinimapBlocksLayer) return;
   el.diarMinimapBlocksLayer.innerHTML = "";
@@ -3399,14 +3403,16 @@ function renderDiarMinimap() {
 function updateMinimapViewport() {
   const windowEl = el.diarMinimapViewportWindow;
   const viewport = el.diarMultitrackViewport;
+  const tracksArea = el.diarTracksArea;
   if (!windowEl || !viewport) return;
 
-  const totalWidth = viewport.scrollWidth || 1;
-  const clientWidth = viewport.clientWidth || 1;
-  const scrollLeft = viewport.scrollLeft || 0;
+  const labelColWidth = el.diarLaneLabelsCol ? el.diarLaneLabelsCol.offsetWidth : 200;
+  const visibleTrackWidth = Math.max(1, viewport.clientWidth - labelColWidth);
+  const totalTrackWidth = Math.max(1, tracksArea ? tracksArea.offsetWidth : visibleTrackWidth);
 
-  const leftPct = (scrollLeft / totalWidth) * 100;
-  const widthPct = Math.min(100, Math.max(3, (clientWidth / totalWidth) * 100));
+  const scrollLeft = Math.max(0, viewport.scrollLeft);
+  const leftPct = Math.min(100, Math.max(0, (scrollLeft / totalTrackWidth) * 100));
+  const widthPct = Math.min(100 - leftPct, Math.max(2, (visibleTrackWidth / totalTrackWidth) * 100));
 
   windowEl.style.left = `${leftPct}%`;
   windowEl.style.width = `${widthPct}%`;
@@ -3424,10 +3430,15 @@ function setupMinimapListeners() {
     const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     const dur = state.diarization.duration || 1;
     const seekSec = pos * dur;
-    seekTo(seekSec);
+    seekDiarAudio(seekSec);
 
     // Center viewport at seek position
-    viewport.scrollLeft = pos * viewport.scrollWidth - viewport.clientWidth / 2;
+    const tracksArea = el.diarTracksArea;
+    const labelColWidth = el.diarLaneLabelsCol ? el.diarLaneLabelsCol.offsetWidth : 200;
+    const visibleTrackWidth = Math.max(1, viewport.clientWidth - labelColWidth);
+    const totalTrackWidth = tracksArea ? tracksArea.offsetWidth : visibleTrackWidth;
+
+    viewport.scrollLeft = Math.max(0, pos * totalTrackWidth - visibleTrackWidth / 2);
     updateMinimapViewport();
   };
 
@@ -3466,17 +3477,25 @@ function renderDiarRuler() {
   let stepSec = candidateSteps.find(s => s * pixelsPerSec >= 65) || 60;
 
   for (let t = 0; t <= dur; t += stepSec) {
-    const pct = (t / dur) * 100;
+    const roundedT = Math.round(t * 1000) / 1000;
+    const pct = Math.min(100, (roundedT / dur) * 100);
     const tick = document.createElement("div");
     tick.className = "diar-ruler-tick";
     tick.style.left = `${pct}%`;
-    tick.textContent = stepSec < 1 ? t.toFixed(2) + 's' : formatTime(t);
+    if (pct > 96) {
+      tick.style.transform = "translateX(-100%)";
+      tick.style.borderLeft = "none";
+      tick.style.borderRight = "1px solid var(--border-subtle)";
+      tick.style.paddingRight = "4px";
+      tick.style.paddingLeft = "0";
+    }
+    tick.textContent = stepSec < 1 ? roundedT.toFixed(2) + 's' : formatTime(roundedT);
     el.diarRulerTrack.appendChild(tick);
 
     // Add sub-ticks
     if (stepSec >= 1 && stepSec <= 10) {
       const subStep = stepSec / 2;
-      const subT = t + subStep;
+      const subT = roundedT + subStep;
       if (subT < dur) {
         const subPct = (subT / dur) * 100;
         const subTick = document.createElement("div");
@@ -3755,9 +3774,9 @@ function renderSpeakerSwimlanes() {
       seg.style.boxShadow = `0 0 12px ${color}45`;
       seg.dataset.index = idx;
       seg.innerHTML = `
-        <div class="turn-handle turn-handle-left" style="background-color: ${color};" data-index="${idx}"></div>
+        <div class="turn-handle turn-handle-left" data-index="${idx}"></div>
         <span class="turn-label-text">${(turn.end_s - turn.start_s).toFixed(1)}s</span>
-        <div class="turn-handle turn-handle-right" style="background-color: ${color};" data-index="${idx}"></div>
+        <div class="turn-handle turn-handle-right" data-index="${idx}"></div>
       `;
 
       attachTurnSegmentEvents(seg, turn, idx);
@@ -3788,8 +3807,8 @@ function renderModelComparisonLanes() {
   if (state.diarization.turns && state.diarization.turns.length > 0) {
     const currentBackend = state.diarization.data?.model?.backend || state.diarization.data?.model?.model_id || "Active Session";
     const alreadyIncluded = runsToCompare.some(r => (r.model_backend === currentBackend || r.model_id === currentBackend) && r.turn_count === state.diarization.turns.length);
-    if (!alreadyIncluded && runsToCompare.length === 0) {
-      runsToCompare.push({
+    if (!alreadyIncluded) {
+      runsToCompare.unshift({
         id: "current_active_session",
         audio_id: audioId,
         model_backend: currentBackend,
@@ -3987,7 +4006,14 @@ function startTurnDrag(turnIndex, action, clientX) {
     origStart: turn.start_s,
     origEnd: turn.end_s,
     startClientX: clientX,
+    hasMoved: false,
   };
+  document.body.style.userSelect = 'none';
+  if (action === 'move') {
+    document.body.style.cursor = 'grabbing';
+  } else if (action === 'resize-left' || action === 'resize-right') {
+    document.body.style.cursor = 'col-resize';
+  }
 }
 
 function getTrackTimeFromClientX(clientX) {
@@ -4016,17 +4042,25 @@ function setupTimelineDragListeners() {
     // 1. Playhead Scrubbing
     if (state.diarization.isScrubbing) {
       const scrubSec = getTrackTimeFromClientX(e.clientX);
-      seekTo(scrubSec);
+      updateDiarizationPlayhead(scrubSec, dur);
+      if (el.audio && !isNaN(scrubSec)) {
+        el.audio.currentTime = Math.max(0, Math.min(scrubSec, dur));
+      }
       return;
     }
 
-    // 2. Handling Turn Resizing or Moving (Smooth live DOM update without re-rendering everything!)
+    // 2. Handling Turn Resizing or Moving
     if (state.diarization.dragTurnInfo) {
       const { turnIndex, action, origStart, origEnd, startClientX } = state.diarization.dragTurnInfo;
       const turn = state.diarization.turns[turnIndex];
       if (!turn) return;
 
       const deltaPx = e.clientX - startClientX;
+      if (!state.diarization.dragTurnInfo.hasMoved && Math.abs(deltaPx) > 3) {
+        state.diarization.dragTurnInfo.hasMoved = true;
+      }
+      if (!state.diarization.dragTurnInfo.hasMoved) return;
+
       const deltaSec = (deltaPx / trackWidth) * dur;
 
       let tempStart = origStart;
@@ -4088,21 +4122,32 @@ function setupTimelineDragListeners() {
   });
 
   window.addEventListener('mouseup', () => {
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+
     if (state.diarization.isScrubbing) {
       state.diarization.isScrubbing = false;
     }
 
     if (state.diarization.dragTurnInfo) {
+      const { hasMoved, turnIndex } = state.diarization.dragTurnInfo;
+      const activeTurnObj = turnIndex !== null ? state.diarization.turns[turnIndex] : null;
       state.diarization.dragTurnInfo = null;
       hideTurnTooltip();
-      state.diarization.turns.sort((a, b) => a.start_s - b.start_s);
-      detectTurnOverlaps();
-      renderSpeakerSwimlanes();
-      renderCompositeLane();
-      renderSpeakerProfiles();
-      renderTurnsTable();
-      renderDiarMinimap();
-      updateExportPreview();
+
+      if (hasMoved) {
+        state.diarization.turns.sort((a, b) => a.start_s - b.start_s);
+        if (activeTurnObj) {
+          state.diarization.activeTurnIndex = state.diarization.turns.indexOf(activeTurnObj);
+        }
+        detectTurnOverlaps();
+        renderSpeakerSwimlanes();
+        renderCompositeLane();
+        renderSpeakerProfiles();
+        renderTurnsTable();
+        renderDiarMinimap();
+        updateExportPreview();
+      }
     }
 
     if (isSelectingRegion) {
@@ -4130,7 +4175,9 @@ function setupTimelineDragListeners() {
     } else {
       // Direct click or scrub
       state.diarization.isScrubbing = true;
-      seekTo(clickSec);
+      document.body.style.cursor = 'ew-resize';
+      document.body.style.userSelect = 'none';
+      seekDiarAudio(clickSec);
     }
   });
 
@@ -4140,6 +4187,8 @@ function setupTimelineDragListeners() {
       e.stopPropagation();
       e.preventDefault();
       state.diarization.isScrubbing = true;
+      document.body.style.cursor = 'ew-resize';
+      document.body.style.userSelect = 'none';
     });
   }
 }
@@ -4156,14 +4205,26 @@ function showTurnTooltip(e, turn) {
   const dur = (turn.end_s - turn.start_s).toFixed(2);
 
   tooltip.innerHTML = `
-    <strong>${escapeHtml(spkName)}</strong> (${turn.speaker_id})<br>
+    <strong>${escapeHtml(spkName)}</strong> <span style="opacity:0.7;">(${turn.speaker_id})</span><br>
     Start: <code>${turn.start_s.toFixed(2)}s</code> • End: <code>${turn.end_s.toFixed(2)}s</code><br>
-    Duration: <strong>${dur}s</strong> ${turn.has_overlap ? '• ⚠️ Overlap' : ''}
+    Duration: <strong>${dur}s</strong> ${turn.has_overlap ? '• <span style="color:var(--accent-amber);">⚠️ Overlap</span>' : ''}
   `;
 
   tooltip.classList.remove('hidden');
-  tooltip.style.left = `${e.clientX + 14}px`;
-  tooltip.style.top = `${e.clientY + 14}px`;
+  const tooltipWidth = tooltip.offsetWidth || 180;
+  const tooltipHeight = tooltip.offsetHeight || 60;
+  let posX = e.clientX + 14;
+  let posY = e.clientY + 14;
+
+  if (posX + tooltipWidth > window.innerWidth - 10) {
+    posX = Math.max(10, e.clientX - tooltipWidth - 14);
+  }
+  if (posY + tooltipHeight > window.innerHeight - 10) {
+    posY = Math.max(10, e.clientY - tooltipHeight - 14);
+  }
+
+  tooltip.style.left = `${posX}px`;
+  tooltip.style.top = `${posY}px`;
 }
 
 function hideTurnTooltip() {
@@ -4212,13 +4273,17 @@ function updateDiarizationPlayhead(currentTime, totalDuration) {
   // Follow Playhead Auto-Scroll
   if (state.diarization.followPlayhead && !el.audio.paused && el.diarMultitrackViewport) {
     const viewport = el.diarMultitrackViewport;
-    const totalWidth = viewport.scrollWidth;
-    const playheadPx = (pct / 100) * totalWidth;
-    const scrollMin = viewport.scrollLeft;
-    const scrollMax = viewport.scrollLeft + viewport.clientWidth;
+    const labelColWidth = el.diarLaneLabelsCol ? el.diarLaneLabelsCol.offsetWidth : 200;
+    const visibleTrackWidth = Math.max(1, viewport.clientWidth - labelColWidth);
+    const tracksArea = el.diarTracksArea;
+    const totalTrackWidth = tracksArea ? tracksArea.offsetWidth : visibleTrackWidth;
 
-    if (playheadPx > scrollMax - 80 || playheadPx < scrollMin) {
-      viewport.scrollLeft = Math.max(0, playheadPx - viewport.clientWidth / 3);
+    const playheadPx = (pct / 100) * totalTrackWidth;
+    const scrollLeft = viewport.scrollLeft;
+
+    if (playheadPx > scrollLeft + visibleTrackWidth - 60 || playheadPx < scrollLeft) {
+      viewport.scrollLeft = Math.max(0, playheadPx - visibleTrackWidth / 3);
+      updateMinimapViewport();
     }
   }
 }
@@ -5446,6 +5511,10 @@ function deleteHistoryItem(historyId) {
 
 function clearDiarizationHistory() {
   if (!state.diarization.history || state.diarization.history.length === 0) return;
+  const count = state.diarization.history.length;
+  if (!confirm(`Clear all ${count} saved diarization session${count === 1 ? '' : 's'}? This cannot be undone.`)) {
+    return;
+  }
   state.diarization.history = [];
   try {
     localStorage.removeItem('sonic_diarization_history');
@@ -6008,9 +6077,8 @@ function renderSideBySideDeck() {
         <span class="badge ${badgeClass}">${track.isOriginal ? 'Reference' : (track.modelName || 'Model')}</span>
       </div>
 
-      <button class="sbs-solo-btn ${idx === activeAuditionIndex ? 'active' : ''}" data-index="${idx}" title="Listen solo at current position (Shortcut: ${idx + 1})">
+      <button class="sbs-solo-btn ${idx === activeAuditionIndex ? 'active' : ''}" data-index="${idx}" title="Listen solo at current position">
         <span>${idx === activeAuditionIndex ? '🔊 Active / Auditioning' : '▶ Solo / Audition'}</span>
-        <kbd class="kbd" style="font-size: 0.7rem;">${idx + 1}</kbd>
       </button>
 
       <div class="sbs-meta-strip">
@@ -6723,6 +6791,8 @@ async function fetchServerFiles() {
     state.serverFiles = data.files || [];
     renderServerFiles();
     renderLibraryModalItems();
+    // Keep diarization (and other) selects in sync with library contents
+    populateAllAudioSelects();
   } catch (err) {
     console.error("Failed to fetch library:", err);
   }
@@ -6819,7 +6889,10 @@ function buildFileItemCard(file, { isModal = false } = {}) {
   const btnPrev = card.querySelector('.btn-preview-file');
   btnPrev.addEventListener('click', () => toggleFilePreview(file.path, btnPrev));
 
-  card.querySelector('.btn-load-target').addEventListener('click', () => loadLibraryFileTo(file.path, 'workspace'));
+  card.querySelector('.btn-load-target').addEventListener('click', () => {
+    const target = isModal ? (state.libraryLoadTarget || 'workspace') : 'workspace';
+    loadLibraryFileTo(file.path, target);
+  });
 
   const btnMore = card.querySelector('.btn-more-actions');
   const popupMenu = card.querySelector('.actions-popup-menu');
@@ -6913,7 +6986,10 @@ async function loadLibraryFileTo(filePath, target = 'workspace') {
         showToast(`Selected "${data.metadata?.title || filePath}" for Separation!`, "success");
       } else if (target === 'diarization') {
         switchTab('tab-diarization');
-        if (el.diarInputSelect) el.diarInputSelect.value = data.audio_id;
+        if (el.diarInputSelect) {
+          el.diarInputSelect.value = data.audio_id;
+          el.diarInputSelect.dispatchEvent(new Event('change'));
+        }
         showToast(`Selected "${data.metadata?.title || filePath}" for Diarization!`, "success");
       } else if (target === 'speech') {
         switchTab('tab-bench-mixer');
@@ -6934,7 +7010,10 @@ async function loadServerFile(filePath) {
   return loadLibraryFileTo(filePath, 'workspace');
 }
 
-async function openLibraryModal() {
+async function openLibraryModal(loadTarget = 'workspace') {
+  // Guard: click handlers may pass an Event as the first argument
+  const target = (typeof loadTarget === 'string' && loadTarget) ? loadTarget : 'workspace';
+  state.libraryLoadTarget = target;
   if (el.modalLibrary) el.modalLibrary.classList.remove('hidden');
   if (el.libraryModalSearch) {
     el.libraryModalSearch.value = "";
@@ -6983,12 +7062,6 @@ function renderLibraryModalItems() {
     const card = buildFileItemCard(file, { isModal: true });
     el.modalLibraryItems.appendChild(card);
   });
-}
-
-function toggleShortcutsModal() {
-  if (el.modalShortcuts) {
-    el.modalShortcuts.classList.toggle('hidden');
-  }
 }
 
 // ==================== STUDIO TASK QUEUE MODAL LOGIC ====================
@@ -7368,7 +7441,6 @@ async function clearQueueFinished() {
 function closeAllModals() {
   if (el.modalSaveTo) el.modalSaveTo.classList.add('hidden');
   if (el.modalLibrary) el.modalLibrary.classList.add('hidden');
-  if (el.modalShortcuts) el.modalShortcuts.classList.add('hidden');
   if (el.modalTaskQueue) el.modalTaskQueue.classList.add('hidden');
   if (state.queuePollingInterval) {
     clearInterval(state.queuePollingInterval);
@@ -7434,11 +7506,6 @@ function initModals() {
       if (el.modalSaveTo) el.modalSaveTo.classList.add('hidden');
     });
   }
-  if (el.btnCloseShortcutsModal) {
-    el.btnCloseShortcutsModal.addEventListener('click', () => {
-      if (el.modalShortcuts) el.modalShortcuts.classList.add('hidden');
-    });
-  }
 
   // Close modals when clicking directly on backdrop outside modal card
   document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
@@ -7470,6 +7537,30 @@ function initModals() {
   }
 }
 
+function audioOptionLabel(item, { includeFormat = true } = {}) {
+  let prefix = "";
+  if (item.model_info?.model_label) {
+    prefix = `[${item.model_info.model_label}] `;
+  } else if (item.tags?.includes("htdemucs_ft")) {
+    prefix = "[HTDemucs FT] ";
+  } else if (item.tags?.includes("htdemucs")) {
+    prefix = "[HTDemucs] ";
+  } else if (item.tags?.includes("bs_roformer")) {
+    prefix = "[BS-RoFormer] ";
+  } else if (item.tags?.includes("mel_roformer")) {
+    prefix = "[Mel-RoFormer] ";
+  } else if (item.source_type === "cut" || item.tags?.includes("cut")) {
+    prefix = "[Cut Snippet] ";
+  }
+  const title = item.title || item.name || item.id || "Untitled";
+  const dur = Number(item.duration_s) || 0;
+  const fmt = (item.format || "wav").toString().toUpperCase();
+  if (includeFormat) {
+    return `${prefix}${title} (${dur.toFixed(1)}s, ${fmt})`;
+  }
+  return `${prefix}${title} (${dur.toFixed(1)}s)`;
+}
+
 function populateAllAudioSelects() {
   const standardSelects = [
     el.sepInputSelect,
@@ -7479,33 +7570,65 @@ function populateAllAudioSelects() {
   standardSelects.forEach(select => {
     if (!select) return;
     const currentVal = select.value;
-    select.innerHTML = '<option value="">-- Select Audio Track --</option>';
+    const isDiar = select === el.diarInputSelect;
+    select.innerHTML = isDiar
+      ? '<option value="">-- Select session or library track --</option>'
+      : '<option value="">-- Select Audio Track --</option>';
+
+    const sessionGroup = document.createElement("optgroup");
+    sessionGroup.label = `🎛️ Session Audio (${state.audioList.length})`;
 
     state.audioList.forEach(item => {
       const opt = document.createElement("option");
       opt.value = item.id;
-      let prefix = "";
-      if (item.model_info?.model_label) {
-        prefix = `[${item.model_info.model_label}] `;
-      } else if (item.tags?.includes("htdemucs_ft")) {
-        prefix = "[HTDemucs FT] ";
-      } else if (item.tags?.includes("htdemucs")) {
-        prefix = "[HTDemucs] ";
-      } else if (item.tags?.includes("bs_roformer")) {
-        prefix = "[BS-RoFormer] ";
-      } else if (item.tags?.includes("mel_roformer")) {
-        prefix = "[Mel-RoFormer] ";
-      } else if (item.source_type === "cut" || item.tags?.includes("cut")) {
-        prefix = "[Cut Snippet] ";
-      }
-      opt.textContent = `${prefix}${item.title} (${(item.duration_s || 0).toFixed(1)}s, ${item.format.toUpperCase()})`;
-      select.appendChild(opt);
+      opt.textContent = audioOptionLabel(item);
+      sessionGroup.appendChild(opt);
     });
 
-    if (currentVal && state.audioList.some(a => a.id === currentVal)) {
-      select.value = currentVal;
-    } else if (state.activeAudio) {
+    if (sessionGroup.children.length > 0) {
+      select.appendChild(sessionGroup);
+    }
+
+    // Diarization: also list sample-library files so users can pick without
+    // pre-loading into the session from the Library tab.
+    if (isDiar && Array.isArray(state.serverFiles) && state.serverFiles.length > 0) {
+      const sessionPaths = new Set(
+        state.audioList.map(a => a.path).filter(Boolean)
+      );
+      const libraryGroup = document.createElement("optgroup");
+      libraryGroup.label = `📁 Sample Library (${state.serverFiles.length})`;
+
+      state.serverFiles.forEach(file => {
+        if (!file?.path || sessionPaths.has(file.path)) return;
+        const opt = document.createElement("option");
+        opt.value = `lib:${file.path}`;
+        const title = file.title || file.name || file.path;
+        const dur = Number(file.duration_s) || 0;
+        const fmt = (file.format || "wav").toString().toUpperCase();
+        const cat = file.category ? `[${file.category}] ` : "";
+        opt.textContent = `${cat}${title} (${dur.toFixed(1)}s, ${fmt})`;
+        libraryGroup.appendChild(opt);
+      });
+
+      if (libraryGroup.children.length > 0) {
+        select.appendChild(libraryGroup);
+      }
+    }
+
+    if (currentVal && (
+      state.audioList.some(a => a.id === currentVal) ||
+      (typeof currentVal === "string" && currentVal.startsWith("lib:"))
+    )) {
+      // Keep lib: selection only briefly; load flow replaces it with session id
+      if (!currentVal.startsWith("lib:") || Array.from(select.options).some(o => o.value === currentVal)) {
+        select.value = currentVal;
+      } else if (state.activeAudio) {
+        select.value = state.activeAudio.id;
+      }
+    } else if (state.activeAudio && state.audioList.some(a => a.id === state.activeAudio.id)) {
       select.value = state.activeAudio.id;
+    } else if (state.diarization?.audioId && isDiar && state.audioList.some(a => a.id === state.diarization.audioId)) {
+      select.value = state.diarization.audioId;
     }
   });
 
@@ -7538,7 +7661,8 @@ function populateAllAudioSelects() {
       else if (isCut) prefix = "[Audio Cut] ";
       else prefix = "[Raw Source] ";
 
-      opt.textContent = `${prefix}${item.title} (${(item.duration_s || 0).toFixed(1)}s)`;
+      const title = item.title || item.id || "Untitled";
+      opt.textContent = `${prefix}${title} (${(Number(item.duration_s) || 0).toFixed(1)}s)`;
 
       if (isCut) {
         cutsGroup.appendChild(opt);
@@ -7568,8 +7692,11 @@ function populateAllAudioSelects() {
   // Update derivative lineage displays
   if (el.sepInputSelect) renderSeparationChildren(el.sepInputSelect.value);
   if (el.diarInputSelect) {
-    renderDiarizationChildren(el.diarInputSelect.value);
-    updateDiarInputMeta(el.diarInputSelect.value);
+    const selected = el.diarInputSelect.value;
+    if (selected && !selected.startsWith('lib:')) {
+      renderDiarizationChildren(selected);
+      updateDiarInputMeta(selected);
+    }
   }
 }
 
@@ -7982,13 +8109,6 @@ function initNavigation() {
     tab.addEventListener('click', () => switchTab(tab.dataset.tab));
   });
 
-  if (el.btnOpenShortcutsModal) {
-    el.btnOpenShortcutsModal.addEventListener('click', toggleShortcutsModal);
-  }
-  if (el.btnCloseShortcutsModal) {
-    el.btnCloseShortcutsModal.addEventListener('click', () => el.modalShortcuts.classList.add('hidden'));
-  }
-
   // Tab 7 Project Explorer Search & Filters
   if (el.tabLibrarySearch) {
     el.tabLibrarySearch.addEventListener('input', (e) => {
@@ -8059,10 +8179,6 @@ function switchTab(tabId) {
   }
 
   if (tabId !== 'tab-comparison') syncActivePlaybackControls();
-}
-
-function toggleShortcutsModal() {
-  el.modalShortcuts.classList.toggle('hidden');
 }
 
 // ==================== THEME MANAGEMENT ====================
