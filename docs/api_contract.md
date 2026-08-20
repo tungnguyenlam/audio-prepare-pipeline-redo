@@ -557,10 +557,19 @@ The repository provides two specialized web platforms:
   launchers start the same unified backend.
 
 ### `src/web_studio/` (SonicStudio API domain and frontend)
-- **Role:** Interactive audio editor, single-sample inspection, waveform/spectrogram comparer, model stem tester.
+- **Role:** Interactive workbench for upload/YouTube ingest, cutting, stem
+  separation, diarization, A/B audition, and library browsing.
+- **Frontend layout:** Flat `static/index.html` + `app.js` + `style.css` (no
+  HTML partial composer). Tabs: Workspace, Separation, Diarization, Audition,
+  Library.
 - **Background task queue:** YouTube ingestion, single-model separation,
-  diarization, and multi-model comparison use a bounded-concurrency in-memory queue. The
-  default concurrency is `1`; `STUDIO_QUEUE_CONCURRENCY` can set it from 1–4.
+  diarization, and multi-model comparison use **per-device FIFO queues**.
+  Each GPU (`cuda:0`, `cuda:1`, …) and the `cpu`/`mps` lane have independent
+  workers so work for one accelerator never blocks another. Default is
+  `1` worker per device; `STUDIO_QUEUE_CONCURRENCY` sets workers-per-device
+  (1–4). CPU-only jobs (YouTube crawl) always use the `cpu` lane.
+  Long-running studio jobs use **polling** via `GET /api/tasks/{id}` (no
+  live-reload SSE).
 - **Task endpoints:** `GET /api/tasks` lists tasks and queue counts,
   `GET /api/tasks/{id}` returns one task, and `DELETE /api/tasks/{id}` cancels
   a queued or running task. Running CLI backends (yt-dlp, Demucs, MVSEP,
@@ -571,18 +580,25 @@ The repository provides two specialized web platforms:
   a batch job reports item counts, the bar shows that value. Otherwise the UI
   reports that numeric progress is unavailable instead of faking a stub
   percentage.
-- **Shared Queue endpoints:** `GET /api/queue/shared` aggregates hardware
-  telemetry (GPU name, load %, VRAM, current power draw, and power limit) and
-  active/queued workloads across both SonicStudio and SonicPipeline. On
-  multi-GPU hosts, the summary device values aggregate all visible GPUs.
-  `DELETE /api/queue/shared/{id}` and `POST /api/queue/shared/{id}/cancel`
-  cancel a workload in either domain.
+- **Shared Queue endpoints (registered once by Studio):** `GET /api/queue/shared`
+  aggregates hardware telemetry and active/queued workloads across Studio and
+  Pipeline, including a `device_queues` map (`running` / `queued` / `workers`
+  per lane). `DELETE /api/queue/shared/{id}` and
+  `POST /api/queue/shared/{id}/cancel` cancel a workload in either domain.
+- **Telemetry:** `GET /api/telemetry` is owned by the Studio route table and
+  returns host/GPU metrics from `hardware_monitor`.
 
 ### `src/web_pipeline/` (SonicPipeline API domain and frontend)
 - **Role:** Large-scale batch engine for high-throughput ingestion, task queue orchestration, dataset curation, bulk separation, batch diarization, separation benchmark matrix evaluation, and ML manifest generation (JSONL/CSV).
+- **Frontend layout:** Flat `static/index.html` + `app.js` + `style.css`.
+- **Job progress:** Server-Sent Events on `GET /api/events` (queue/job updates
+  plus telemetry heartbeats). Initial hydrate still uses `GET /api/jobs`.
+- **Per-GPU queues:** Batch jobs are routed by `params.device` onto independent
+  lanes (same model as Studio). Ingest/upload jobs use the `cpu` lane.
+  `POST /api/queue/controls` `set_concurrency` sets **workers per GPU**
+  (default 1), not a single global worker pool.
 
-**Telemetry endpoint:** `GET /api/telemetry` returns the current host and
-pipeline metrics. The `gpu` object includes `load_percent`, host-level
+**Telemetry payload:** The `gpu` object includes `load_percent`, host-level
 `used_vram_mb`, `free_vram_mb`, and `total_vram_mb`, plus the current process's
 `allocated_vram_mb` and `reserved_vram_mb`. NVIDIA telemetry also includes
 `power_w`, `power_limit_w`, and `power_percent`; each entry in `devices` includes

@@ -374,11 +374,6 @@
 
   function handleStreamEvent(eventPayload) {
     const { event, data } = eventPayload;
-    if (event === 'reload') {
-      console.log('Hot reload event received from server!');
-      window.location.reload();
-      return;
-    }
     if (event === 'telemetry') {
       updateTelemetryUI(data);
     } else if (event === 'queue_state') {
@@ -905,7 +900,10 @@
             : '-- / -- W';
         }
         if (els.pipelineGpuSharedSplit) {
-          els.pipelineGpuSharedSplit.textContent = `Studio: ${data.summary?.studio_running || 0} active • Pipeline: ${data.summary?.pipeline_running || 0} active`;
+          const lanes = data.device_queues || {};
+          els.pipelineGpuSharedSplit.textContent = Object.keys(lanes).length
+            ? Object.entries(lanes).map(([dev, lane]) => `${dev}: ${lane.running || 0}/${lane.queued || 0}`).join(' · ')
+            : `Studio: ${data.summary?.studio_running || 0} active • Pipeline: ${data.summary?.pipeline_running || 0} active`;
         }
       } else {
         const res = await fetch('/api/jobs');
@@ -1012,7 +1010,7 @@
 
     const typeDisplay = (job.type || 'TASK').replace('batch_', '').replace(/_/g, ' ').toUpperCase();
 
-    const jobDevice = job.params?.device || job.metadata?.device || (job.result?.device) || (job.item_results?.[0]?.device);
+    const jobDevice = job.device || job.queue_device || job.params?.queue_device || job.params?.device || job.metadata?.device || (job.result?.device) || (job.item_results?.[0]?.device);
     const jobPower = job.result?.power_w != null 
       ? job.result.power_w 
       : (job.item_results && job.item_results.length > 0 ? job.item_results[job.item_results.length - 1]?.power_w : null);

@@ -104,12 +104,14 @@ Notebooks run from `src/notebooks/` so `os.getcwd()` ends with `notebooks`. Keep
 - **`src/web_backend/`:** One aiohttp application owns both API domains and
   serves the independent frontends at `/studio/` and `/pipeline/`.
 
-- **`src/web_studio/` (SonicStudio):** Designed for single-sample inspection, visual waveform/spectrogram comparer, manual cutting, fast preview, and ad-hoc mixing.
+- **`src/web_studio/` (SonicStudio):** Designed for single-sample inspection, visual waveform/spectrogram comparer, manual cutting, fast preview, and A/B audition. Frontend is flat `static/{index.html,app.js,style.css}`.
 - **`src/web_pipeline/` (SonicPipeline):** Designed for large-scale operations:
-  - `queue_manager.py`: Async task queue with configurable concurrency (1–8 worker slots), cooperative cancellation, and Server-Sent Events (SSE).
-  - `dataset_manager.py`: Persistent audio registry (`.data/pipeline/dataset_registry.json`), dataset groupings, tag filtering, and ML manifest exports (JSONL / CSV / ZIP bundles).
-  - `batch_processors.py`: High-throughput batch handlers for playlist ingestion, directory scans, bulk separation, batch diarization, and benchmark matrix generation.
-  - `hardware_monitor.py`: Real-time telemetry (GPU VRAM, CPU utilization, RAM, disk space, and `x Realtime` speedup metrics).
+ - Frontend is flat `static/{index.html,app.js,style.css}`; job updates use SSE (`GET /api/events`).
+ - Queues are **per GPU** (plus a `cpu`/`mps` lane): jobs for `cuda:0` and `cuda:1` never share a worker slot.
+ - `queue_manager.py`: Async task queue with configurable workers-per-device (1–8), cooperative cancellation, and Server-Sent Events (SSE).
+ - `dataset_manager.py`: Persistent audio registry (`.data/pipeline/dataset_registry.json`), dataset groupings, tag filtering, and ML manifest exports (JSONL / CSV / ZIP bundles).
+ - `batch_processors.py`: High-throughput batch handlers for playlist ingestion, directory scans, bulk separation, batch diarization, and benchmark matrix generation.
+ - `hardware_monitor.py`: Real-time telemetry (GPU VRAM, CPU utilization, RAM, disk space, and `x Realtime` speedup metrics).
 
 ## Code style
 

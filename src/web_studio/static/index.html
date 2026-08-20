@@ -13,33 +13,1686 @@
 <body>
   <div id="app" class="app-layout">
     <!-- Left Navigation & Telemetry Sidebar -->
-    <!-- include: components/sidebar.html -->
+        <aside class="app-sidebar studio-sidebar">
+      <!-- Sidebar Brand Header with Quick Switcher -->
+      <div class="sidebar-brand">
+        <a href="/studio/" class="brand-link" title="SonicStudio Audio Workbench">
+          <div class="brand-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 10v3"></path>
+              <path d="M6 6v11"></path>
+              <path d="M10 3v18"></path>
+              <path d="M14 8v7"></path>
+              <path d="M18 5v13"></path>
+              <path d="M22 10v3"></path>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <span class="brand-title">SonicStudio</span>
+            <div class="brand-sub-row">
+              <span class="brand-version">v2.5</span>
+              <span class="brand-sub">Workbench</span>
+            </div>
+          </div>
+        </a>
+        <a href="/pipeline/" class="brand-switch-btn" id="btn-switch-to-pipeline" title="Switch to SonicPipeline Batch Engine" aria-label="Switch to SonicPipeline">
+          <span class="switcher-dot"></span>
+          <span class="brand-switch-name">Pipeline</span>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </a>
+      </div>
+
+      <!-- Navigation Section Links -->
+      <div class="sidebar-scroll">
+        <nav class="sidebar-nav" aria-label="Studio navigation">
+          <button class="nav-tab active" data-tab="tab-workspace" id="btn-tab-workspace">
+            <span class="tab-icon">🎛️</span>
+            <span class="nav-text">Workspace</span>
+          </button>
+          <button class="nav-tab" data-tab="tab-separation" id="btn-tab-separation">
+            <span class="tab-icon">🧪</span>
+            <span class="nav-text">Separation</span>
+          </button>
+          <button class="nav-tab" data-tab="tab-diarization" id="btn-tab-diarization">
+            <span class="tab-icon">👥</span>
+            <span class="nav-text">Diarization</span>
+          </button>
+          <button class="nav-tab" data-tab="tab-comparison" id="btn-tab-comparison">
+            <span class="tab-icon">⚖️</span>
+            <span class="nav-text">Audition</span>
+          </button>
+          <button class="nav-tab" data-tab="tab-library" id="btn-tab-library">
+            <span class="tab-icon">📁</span>
+            <span class="nav-text">Library</span>
+          </button>
+        </nav>
+      </div>
+
+      <!-- Sidebar Bottom Telemetry & Task Queue Widget -->
+      <div class="sidebar-footer">
+        <!-- Sidebar Task Queue Button Trigger -->
+        <button class="sidebar-queue-btn" id="queue-badge" title="View Background Task Queue" aria-label="Open Studio Task Queue">
+          <div class="sidebar-queue-left">
+            <span class="dot" id="queue-dot"></span>
+            <span class="queue-btn-title" id="queue-label">Task Queue (0)</span>
+          </div>
+          <div class="sidebar-queue-right">
+            <svg class="queue-btn-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </div>
+        </button>
+
+        <!-- Sidebar Hardware & Multi-GPU Selection Section -->
+        <div class="sidebar-gpu-section" id="sidebar-gpu-section">
+          <div class="sidebar-gpu-section-header">
+            <div class="sidebar-gpu-header-left">
+              <span class="gpu-icon">⚡</span>
+              <span class="sidebar-gpu-header-title">ACCELERATOR</span>
+            </div>
+            <span class="badge badge-sm badge-device font-mono" id="sidebar-selected-gpu-pill">Detecting...</span>
+          </div>
+
+          <!-- Dynamic Container for selectable GPU cards -->
+          <div class="sidebar-gpu-cards-list" id="sidebar-gpu-cards-list">
+            <div class="sidebar-gpu-loading font-mono">
+              <span class="dot-pulse-green"></span>
+              <span>Probing GPUs...</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sidebar Bottom Actions: Theme Toggle, Live Status -->
+        <div class="sidebar-bottom-actions">
+          <div class="sidebar-quick-tools sidebar-quick-tools-full">
+            
+
+            <button class="theme-toggle-btn" id="btn-theme-toggle" title="Toggle Light/Dark Theme" aria-label="Toggle Light/Dark Theme">
+              <svg id="icon-theme-sun" class="hidden" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+              <svg id="icon-theme-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </aside>
+
 
     <!-- Main Viewport Area -->
     <div class="app-main-viewport">
       <!-- Top Header -->
-      <!-- include: components/header.html -->
+          <header class="top-header studio-top-header">
+      <div class="header-left-title">
+        <span class="header-title-text" id="header-active-track-name">Interactive Audio Engineering Workbench</span>
+      </div>
+
+      <div class="header-right-actions">
+        <button class="btn btn-sm btn-secondary" id="btn-browse-library-top" title="Browse Audio Library &amp; Presets">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+          <span>Sample Library</span>
+        </button>
+      </div>
+    </header>
+
 
       <!-- Main Content Area -->
       <main class="main-content">
         <!-- ==================== TABS ==================== -->
-        <!-- include: tabs/tab1_workspace.html -->
-        <!-- include: tabs/tab2_crawler.html -->
-        <!-- include: tabs/tab3_separation.html -->
-        <!-- include: tabs/tab4_diarization.html -->
-        <!-- include: tabs/tab5_comparison.html -->
-        <!-- include: tabs/tab6_matrix.html -->
-        <!-- include: tabs/tab7_library.html -->
+              <section id="tab-workspace" class="tab-pane active">
+        <!-- Ingestion Bar -->
+        <div class="card ingest-card">
+          <div class="card-header">
+            <div class="section-heading">
+              <span class="workflow-step">1 · Choose source</span>
+              <h2 class="card-title">Load Audio Source</h2>
+              <p class="card-subtitle">Start with a local file, a library item, or a YouTube URL.</p>
+            </div>
+            <div class="card-actions">
+              <button class="btn btn-sm btn-secondary" id="btn-browse-library-modal">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                <span>Sample Library</span>
+              </button>
+            </div>
+          </div>
+          
+          <div class="ingest-grid">
+            <!-- Upload Box -->
+            <div class="dropzone" id="audio-dropzone">
+              <input type="file" id="file-input" accept="audio/*,.wav,.mp3,.flac,.ogg,.m4a" class="file-input-hidden">
+              <div class="dropzone-content">
+                <div class="dropzone-icon">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                </div>
+                <div class="dropzone-text">
+                  <span class="dropzone-title">Drop audio file here, or <span class="accent-text">browse files</span></span>
+                  <span class="dropzone-desc">WAV, MP3, FLAC, M4A, OGG up to 500MB</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- YouTube Ingest Box -->
+            <div class="yt-ingest-box">
+              <label class="input-label" for="yt-url-input">Direct YouTube Ingestion (via YtCrawler)</label>
+              <div class="input-group">
+                <div class="input-icon-prefix">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"></path><polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon></svg>
+                </div>
+                <input type="text" id="yt-url-input" class="text-input" placeholder="https://www.youtube.com/watch?v=...">
+                <button class="btn btn-sm btn-ghost btn-paste-url" id="btn-yt-paste-workspace" title="Paste from clipboard">
+                  <span>Paste</span>
+                </button>
+                <button class="btn btn-primary" id="btn-yt-download">
+                  <span>Fetch & Normalize</span>
+                </button>
+              </div>
+              <p class="input-hint">Downloads, extracts audio & standardizes to 44.1kHz mono WAV.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Active Audio Workspace -->
+        <div id="active-audio-section" class="workspace-section hidden">
+          <!-- Audio Metadata & Quick Actions Card -->
+          <div class="card active-audio-card">
+            <div class="audio-header-row">
+              <div class="audio-identity-block">
+                <span class="workflow-step">2 · Current audio</span>
+                <div class="audio-main-meta">
+                  <div class="audio-source-badge" id="meta-source-type">Local</div>
+                  <h3 class="audio-title" id="meta-title">ready_or_not.wav</h3>
+                  <span class="audio-id-chip" id="meta-id" title="Click to copy Audio ID">aud_000000</span>
+                </div>
+              </div>
+
+              <!-- Model Provenance Banner (Shows which Demucs model or cut produced this file) -->
+              <div id="active-model-provenance-banner" class="model-provenance-banner hidden">
+                <span class="prov-icon">✨</span>
+                <div class="prov-content">
+                  <span class="prov-badge" id="prov-model-badge">HTDemucs (Fine-Tuned)</span>
+                  <span class="prov-text" id="prov-details-text">Vocals Stem separated from parent audio</span>
+                </div>
+              </div>
+
+              <div class="audio-action-stack">
+                <div class="workflow-next-actions">
+                  <button class="btn btn-accent" id="btn-send-to-separation" title="Open in Stem Separation">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
+                    <span>🧪 Separate</span>
+                  </button>
+                  <button class="btn btn-secondary" id="btn-send-to-diarization" title="Open in Speaker Diarization">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>
+                    <span>👥 Diarize</span>
+                  </button>
+                  <button class="btn btn-secondary" id="btn-send-to-audition" title="Open in Audition &amp; Comparison">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                    <span>⚖️ Audition</span>
+                  </button>
+                </div>
+                <div class="audio-quick-actions" aria-label="File actions">
+                  <button class="btn btn-sm btn-ghost" id="btn-quick-save" title="Quick save with standardized fingerprint to temp/">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                    <span>Quick Save</span>
+                  </button>
+                  <button class="btn btn-sm btn-ghost" id="btn-save-to-dialog">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    <span>Save As</span>
+                  </button>
+                  <button class="btn btn-sm btn-ghost" id="btn-download-audio">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4M17 9l-5 5-5-5M12 12.8V2.5"/></svg>
+                    <span>Download</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Metadata Pills Row -->
+            <div class="meta-pills-row">
+              <div class="meta-pill">
+                <span class="pill-label">Duration</span>
+                <span class="pill-val" id="meta-duration">0.00s</span>
+              </div>
+              <div class="meta-pill">
+                <span class="pill-label">Sample Rate</span>
+                <span class="pill-val" id="meta-sample-rate">44,100 Hz</span>
+              </div>
+              <div class="meta-pill">
+                <span class="pill-label">Native Rate</span>
+                <span class="pill-val" id="meta-native-rate">44,100 Hz</span>
+              </div>
+              <div class="meta-pill">
+                <span class="pill-label">Channels</span>
+                <span class="pill-val" id="meta-channels">1 (Mono)</span>
+              </div>
+              <div class="meta-pill">
+                <span class="pill-label">Format</span>
+                <span class="pill-val" id="meta-format">WAV</span>
+              </div>
+              <div class="meta-pill">
+                <span class="pill-label">File Size</span>
+                <span class="pill-val" id="meta-size">0.0 MB</span>
+              </div>
+            </div>
+
+            <!-- Fingerprint Line -->
+            <div class="fingerprint-bar">
+              <span class="fp-title">Fingerprint:</span>
+              <code class="fp-code" id="meta-fingerprint" title="Click to copy fingerprint">none</code>
+            </div>
+
+            <!-- History Steps -->
+            <div class="history-bar" id="history-container">
+              <span class="fp-title">Step History:</span>
+              <div class="history-tags" id="history-tags-list">
+                <span class="history-tag base">raw_audio</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Interactive Waveform & Precision Cutting Studio -->
+          <div class="card waveform-card clip-editor-card">
+            <div class="card-header">
+              <div class="waveform-header-left">
+                <span class="workflow-step">3 · Select a range</span>
+                <h3 class="card-title">Waveform</h3>
+                <span class="waveform-sub">Drag to select · drag either edge to refine · click to move the playhead</span>
+              </div>
+
+              <!-- Selection Quick Bar (appears when region is selected) -->
+              <div class="selection-actions-bar" id="selection-actions-bar" style="display: none;">
+                <button class="btn btn-sm btn-primary" id="btn-audition-selection" title="Loop play selected range">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                  <span>Preview Selection</span>
+                </button>
+                <button class="btn btn-sm btn-secondary" id="btn-clear-selection" title="Clear selection">
+                  <span>Clear</span>
+                </button>
+              </div>
+
+              <div class="waveform-controls-top">
+                <button class="btn btn-sm btn-ghost" id="btn-zoom-out" title="Zoom Out">−</button>
+                <span class="zoom-label" id="zoom-level-label">100%</span>
+                <button class="btn btn-sm btn-ghost" id="btn-zoom-in" title="Zoom In">+</button>
+                <button class="btn btn-sm btn-ghost" id="btn-reset-zoom" title="Reset Zoom">Fit</button>
+                <div class="divider-v"></div>
+                <button class="btn btn-sm btn-ghost" id="btn-toggle-spectrogram">
+                  <span>📊 Spectrogram</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="clip-editor-grid">
+              <div class="timeline-column">
+                <!-- Canvas Waveform Container -->
+                <div class="waveform-viewport" id="waveform-viewport">
+                  <canvas id="waveform-canvas" width="1200" height="180"></canvas>
+                  <div id="selection-overlay" class="selection-overlay hidden">
+                    <div class="selection-handle handle-left" data-handle="start" title="Drag to adjust start"></div>
+                    <div class="selection-range-label" id="selection-range-label">0.0s - 0.0s</div>
+                    <div class="selection-handle handle-right" data-handle="end" title="Drag to adjust end"></div>
+                  </div>
+                  <div id="playhead-line" class="playhead-line"></div>
+                  <div id="waveform-time-tooltip" class="time-tooltip hidden">00:00.00</div>
+                </div>
+
+                <!-- Time Axis Ruler -->
+                <div class="time-ruler" id="time-ruler">
+                  <span class="ruler-tick">00:00</span>
+                  <span class="ruler-tick" id="ruler-mid">--:--</span>
+                  <span class="ruler-tick" id="ruler-end">--:--</span>
+                </div>
+
+                <div class="selection-helper" id="selection-helper">
+                  <span class="selection-helper-icon">↔</span>
+                  <span><strong>Select the useful moment.</strong> You can fine-tune its boundaries in the range panel.</span>
+                </div>
+
+                <!-- Mel Spectrogram View (Collapsible) -->
+                <div id="spectrogram-panel" class="spectrogram-panel hidden">
+                  <div class="spec-header">
+                    <span class="spec-title">Mel-Frequency Spectrogram (16kHz Aligned)</span>
+                    <button class="btn btn-sm btn-ghost" id="btn-refresh-spec">Refresh</button>
+                  </div>
+                  <div class="spec-img-wrapper" id="spec-img-wrapper">
+                    <div class="skeleton-loader" id="spec-loader">Generating spectrogram...</div>
+                    <img id="spec-image" class="spec-image hidden" alt="Mel Spectrogram">
+                  </div>
+                </div>
+              </div>
+
+              <!-- Audio Cutter Controls -->
+              <aside class="cutter-toolbar" aria-label="Clip range controls">
+                <div class="cutter-heading">
+                  <div>
+                    <span class="workflow-step">4 · Refine & create</span>
+                    <h3 class="cutter-title">Clip range</h3>
+                    <p class="card-subtitle">Precise controls, when you need them.</p>
+                  </div>
+                  <div class="clip-duration-badge" id="cut-duration-display">Full track</div>
+                </div>
+
+                <div class="cutter-config-grid">
+                  <div class="cutter-inputs-group">
+                    <div class="cut-input-wrap">
+                      <label for="cut-start-input">Start</label>
+                      <input type="text" id="cut-start-input" class="text-input cut-input" value="0.0" inputmode="decimal">
+                      <button class="inline-time-action" id="btn-set-start-playhead" type="button" title="Set start to current playhead">Use playhead</button>
+                    </div>
+                    <span class="range-arrow" aria-hidden="true">→</span>
+                    <div class="cut-input-wrap">
+                      <label for="cut-end-input">End</label>
+                      <input type="text" id="cut-end-input" class="text-input cut-input" value="10.0" inputmode="decimal">
+                      <button class="inline-time-action" id="btn-set-end-playhead" type="button" title="Set end to current playhead">Use playhead</button>
+                    </div>
+                  </div>
+
+                  <div class="cutter-unit-group">
+                    <label class="cutter-label">Format</label>
+                    <div class="radio-pills">
+                      <label class="radio-pill active"><input type="radio" name="cut_unit" value="seconds" checked> Seconds</label>
+                      <label class="radio-pill"><input type="radio" name="cut_unit" value="timestamp"> Timecode</label>
+                      <label class="radio-pill"><input type="radio" name="cut_unit" value="minutes"> Minutes</label>
+                      <label class="radio-pill"><input type="radio" name="cut_unit" value="percent"> Percent</label>
+                    </div>
+                  </div>
+
+                  <div class="range-presets" aria-label="Quick range presets">
+                    <span class="cutter-label">Quick range from playhead</span>
+                    <div class="preset-button-row">
+                      <button class="range-preset" type="button" data-duration="15">15s</button>
+                      <button class="range-preset" type="button" data-duration="30">30s</button>
+                      <button class="range-preset" type="button" data-duration="60">1m</button>
+                      <button class="range-preset" type="button" data-duration="all">All</button>
+                    </div>
+                  </div>
+
+                  <button class="btn btn-sm btn-secondary btn-use-selection" id="btn-use-selection" title="Copy the waveform selection into the start and end fields">
+                    Use waveform selection
+                  </button>
+                  <p class="cut-validation" id="cut-validation" role="status">Ready to create a clip.</p>
+                </div>
+
+                <div class="cutter-actions-row">
+                  <button class="btn btn-secondary" id="btn-preview-cut" title="Preview this range without creating a file">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                    <span>Preview</span>
+                  </button>
+                  <button class="btn btn-primary" id="btn-apply-cut" title="Create the clip and open it in this workspace">
+                    <span>Create Clip</span>
+                  </button>
+                </div>
+
+                <details class="advanced-cut-actions">
+                  <summary>More create workflows</summary>
+                  <div class="cutter-destination-actions">
+                    <button class="btn btn-secondary" id="btn-cut-and-audition" title="Create the clip and open Audition & Scoring">
+                      <span>Create &amp; open Audition</span>
+                    </button>
+                    <button class="btn btn-accent" id="btn-cut-and-run-models" title="Create the clip and run all separation models for scoring">
+                      <span>Create &amp; run models</span>
+                    </button>
+                  </div>
+                </details>
+              </aside>
+            </div>
+          </div>
+
+          <!-- Cut Snippets Vault for Active Audio -->
+          <div class="card cuts-vault-card" style="margin-top: 1.25rem;">
+            <div class="card-header">
+              <div>
+                <h3 class="card-title">Recent Clips</h3>
+                <p class="card-subtitle">Replay a clip or continue with audition and separation.</p>
+              </div>
+              <span class="badge badge-sm" id="cuts-counter-badge">0 Cuts</span>
+            </div>
+
+            <div class="table-responsive">
+              <table class="data-table" id="cuts-table">
+                <thead>
+                  <tr>
+                    <th>Clip Title</th>
+                    <th>Time Range</th>
+                    <th>Duration</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="cuts-table-body">
+                  <tr>
+                    <td colspan="5" class="empty-table-msg">No clips yet. Select a waveform range, confirm the boundaries, then choose where to open the new clip.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+              
+
+              <section id="tab-separation" class="tab-pane">
+        <div class="grid-2col">
+          <!-- Separation Config -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">Source Separation Engine</h2>
+                <p class="card-subtitle">Separate vocals, speech, drums, bass, and accompaniment.</p>
+              </div>
+              <span class="badge badge-accent">Modular Backends</span>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="sep-input-select">Input Audio Track:</label>
+              <select id="sep-input-select" class="select-input">
+                <option value="">-- Select Loaded Audio --</option>
+              </select>
+              <!-- Child files & existing stem derivatives -->
+              <div id="sep-children-box" class="child-derivatives-box" style="display: none;">
+                <div class="child-derivatives-header">
+                  <div class="child-header-left">
+                    <span class="child-icon">🧬</span>
+                    <span class="child-title" id="sep-children-title">Existing Child Stems & Cuts</span>
+                  </div>
+                  <span class="badge badge-sm badge-info" id="sep-children-count">0 items</span>
+                </div>
+                <div class="child-derivatives-list" id="sep-children-list"></div>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Separation Backend Model:</label>
+              <div class="model-cards-grid">
+                <!-- HTDemucs Card -->
+                <div class="model-card active" data-model="htdemucs" data-variant="htdemucs">
+                  <div class="model-card-header">
+                    <span class="model-name">HTDemucs (Default)</span>
+                    <span class="badge badge-sm badge-success">4-Stem</span>
+                  </div>
+                  <p class="model-desc">Hybrid Transformer Demucs v4. Fast balanced separation.</p>
+                </div>
+
+                <!-- HTDemucs Fine-Tuned Card -->
+                <div class="model-card" data-model="htdemucs" data-variant="htdemucs_ft">
+                  <div class="model-card-header">
+                    <span class="model-name">HTDemucs (Fine-Tuned)</span>
+                    <span class="badge badge-sm badge-accent">Vocals FT</span>
+                  </div>
+                  <p class="model-desc">Fine-tuned HTDemucs specialized for clean vocal isolation.</p>
+                </div>
+
+                <!-- BS-RoFormer Card -->
+                <div class="model-card" data-model="bs_roformer">
+                  <div class="model-card-header">
+                    <span class="model-name">BS-RoFormer</span>
+                    <span class="badge badge-sm badge-info">SOTA</span>
+                  </div>
+                  <p class="model-desc">Band-Split RoFormer via bs-roformer-infer. Pristine vocal isolation.</p>
+                </div>
+
+                <!-- Mel-RoFormer Card -->
+                <div class="model-card" data-model="mel_roformer">
+                  <div class="model-card-header">
+                    <span class="model-name">Mel-RoFormer</span>
+                    <span class="badge badge-sm">MelBand</span>
+                  </div>
+                  <p class="model-desc">Mel-Band RoFormer architecture for speech/vocal separation.</p>
+                </div>
+
+                <!-- MVSep MDX23 Card -->
+                <div class="model-card" data-model="mvsep_mdx23">
+                  <div class="model-card-header">
+                    <span class="model-name">MVSep MDX23</span>
+                    <span class="badge badge-sm">Ensemble</span>
+                  </div>
+                  <p class="model-desc">Multi-model MDX23 ensemble separator.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group col-half">
+                <label class="form-label" for="sep-device-select">Compute Device:</label>
+                <select id="sep-device-select" class="select-input">
+                  <option value="auto">Auto (Best Available)</option>
+                  <option value="cuda">CUDA (GPU)</option>
+                  <option value="mps">MPS (Apple Silicon)</option>
+                  <option value="cpu">CPU</option>
+                </select>
+              </div>
+              <div class="form-group col-half">
+                <label class="form-label" for="sep-stems-select">Target Stem Filter:</label>
+                <select id="sep-stems-select" class="select-input">
+                  <option value="vocals">Vocals / Speech</option>
+                  <option value="no_vocals">Accompaniment / Music</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group" id="roformer-preset-group" style="display: none;">
+              <label class="form-label" for="roformer-checkpoint-input">Checkpoint Name (Optional):</label>
+              <input type="text" id="roformer-checkpoint-input" class="text-input" placeholder="e.g. roformer-model-bs-roformer-sw-by-jarredou">
+            </div>
+
+            <div class="sep-actions-grid">
+              <button class="btn btn-primary btn-lg" id="btn-run-separation">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                <span>Run Selected Model</span>
+              </button>
+              <button class="btn btn-accent btn-lg" id="btn-run-multi-separation" title="Run HTDemucs, HTDemucs FT, BS-RoFormer, Mel-RoFormer in batch">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                <span>⚡ Run Multi-Model Comparison Suite</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Separation Tasks & Results Panel -->
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Separation Results & Stem Inspector</h2>
+            </div>
+
+            <div id="sep-task-progress-box" class="task-progress-box hidden">
+              <div class="task-header">
+                <span class="task-title" id="sep-task-title">Separation in progress...</span>
+                <span class="task-timer" id="sep-task-timer">0.0s</span>
+              </div>
+              <div class="progress-bar-track">
+                <div class="progress-bar-fill progress-animated" id="sep-progress-bar"></div>
+              </div>
+              <div class="task-status-text" id="sep-task-status-text">Processing with Demucs...</div>
+            </div>
+
+            <div id="sep-results-list" class="sep-results-list">
+              <div class="empty-placeholder">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><path d="M8 12h8"></path></svg>
+                <span>No separated stems yet. Choose an audio and click "Run Separation".</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+              <section id="tab-diarization" class="tab-pane">
+        <!-- Master Setup & Model Configuration Card -->
+        <div class="card diar-setup-card" id="diar-setup-card">
+          <div class="card-header">
+            <div>
+              <div class="diar-header-title-row">
+                <span class="workflow-step">Neural Segmentation & Diarization</span>
+                <h2 class="card-title">Speaker Diarization Studio</h2>
+                <span class="badge badge-accent">Multi-Speaker</span>
+              </div>
+              <p class="card-subtitle">Detect "who spoke when" with neural multi-speaker boundary segmentation, interactive multi-track swimlanes, turn editing & multi-format export.</p>
+            </div>
+            <div class="card-actions flex-wrap gap-2">
+              
+              <input type="file" id="diar-file-import-input" accept=".rttm,.json,.csv,.txt,.srt,.vtt,.TextGrid" style="display: none;">
+              
+              <button class="btn btn-ghost btn-sm" id="btn-diar-reset" title="Clear Current Diarization">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                <span>Reset</span>
+              </button>
+              <button class="btn btn-ghost btn-sm" id="btn-toggle-diar-setup" title="Toggle Setup Panel Visibility">
+                <span id="diar-setup-toggle-icon">▲</span>
+                <span id="diar-setup-toggle-text">Collapse</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Setup 2-Column Grid -->
+          <div class="diar-setup-grid" id="diar-setup-body">
+            <!-- Left: Audio Source Selection & Lineage -->
+            <div class="diar-source-panel">
+              <div class="form-group">
+                <div class="label-with-tool">
+                  <label class="form-label" for="diar-input-select">1. Select Target Audio Track:</label>
+                  <div class="flex-row items-center gap-2">
+                    <span class="text-xs text-muted" id="diar-audio-meta-chip">No track selected</span>
+                    <button type="button" class="btn btn-ghost btn-xs" id="btn-diar-browse-library" title="Browse and load from the sample library">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                      <span>Library</span>
+                    </button>
+                  </div>
+                </div>
+                <select id="diar-input-select" class="select-input">
+                  <option value="">-- Select session or library track --</option>
+                </select>
+              </div>
+
+              <!-- Saved Session Available Notice Pill (Non-intrusive) -->
+              <div id="diar-saved-notice-pill" class="diar-saved-notice-pill hidden">
+                <span class="notice-icon">💾</span>
+                <span class="notice-text" id="diar-saved-notice-text">Previous diarization session available for this track</span>
+                <button class="btn btn-xs btn-primary" id="btn-load-saved-for-track">Load Session</button>
+              </div>
+
+              <!-- Smart Vocal Stem Lineage Alert -->
+              <div id="diar-children-box" class="child-derivatives-box" style="display: none;">
+                <div class="child-derivatives-header">
+                  <div class="child-header-left">
+                    <span class="child-icon">🧬</span>
+                    <span class="child-title" id="diar-children-title">Available Vocal Stems & Child Files</span>
+                  </div>
+                  <span class="badge badge-sm badge-info" id="diar-children-count">0 items</span>
+                </div>
+                <div class="child-derivatives-list" id="diar-children-list"></div>
+              </div>
+
+              <!-- Quick Audio Preview / Playback Pill -->
+              <div id="diar-input-preview-pill" class="diar-input-preview-pill hidden">
+                <button class="btn btn-xs btn-primary" id="btn-diar-preview-input">▶ Play Track</button>
+                <span class="diar-track-title-text" id="diar-track-title-text">audio_title</span>
+                <span class="diar-track-spec-chip" id="diar-track-spec-chip">44.1kHz • Mono • 0:00</span>
+              </div>
+            </div>
+
+            <!-- Right: Neural Model Selection & Settings -->
+            <div class="diar-model-panel">
+              <div class="form-group">
+                <label class="form-label">2. Diarization Neural Architecture:</label>
+                <div class="model-cards-grid">
+                  <div class="model-card active" data-diar-model="pyannote_community" data-model-id="pyannote/speaker-diarization-community-1">
+                    <div class="model-card-header">
+                      <span class="model-name">Pyannote Community-1</span>
+                      <span class="badge badge-sm badge-info">Community SOTA</span>
+                    </div>
+                    <p class="model-desc">Successor of Pyannote 3.1. Exclusive multi-speaker diarization with high accuracy.</p>
+                    <div class="model-specs">
+                      <span class="spec-tag">community-1</span>
+                      <span class="spec-tag">HF Token</span>
+                    </div>
+                  </div>
+
+                  <div class="model-card" data-diar-model="pyannote_31" data-model-id="pyannote/speaker-diarization-3.1">
+                    <div class="model-card-header">
+                      <span class="model-name">Pyannote 3.1</span>
+                      <span class="badge badge-sm badge-info">Classic SOTA</span>
+                    </div>
+                    <p class="model-desc">Gold-standard neural pipeline with overlapping speech handling.</p>
+                    <div class="model-specs">
+                      <span class="spec-tag">3.1</span>
+                      <span class="spec-tag">Overlap Detection</span>
+                    </div>
+                  </div>
+
+                  <div class="model-card" data-diar-model="sortformer">
+                    <div class="model-card-header">
+                      <span class="model-name">NeMo Sortformer</span>
+                      <span class="badge badge-sm badge-success">Ultra Fast</span>
+                    </div>
+                    <p class="model-desc">nvidia/diar_sortformer_4spk-v1 streaming 4-speaker transformer model.</p>
+                    <div class="model-specs">
+                      <span class="spec-tag">Zero Token</span>
+                      <span class="spec-tag">Streaming Speed</span>
+                    </div>
+                  </div>
+
+                  <div class="model-card" data-diar-model="clustering">
+                    <div class="model-card-header">
+                      <span class="model-name">NeMo Clustering</span>
+                      <span class="badge badge-sm badge-accent">Cascaded</span>
+                    </div>
+                    <p class="model-desc">MarbleNet VAD + TitaNet embeddings + spectral clustering. Flexible speaker count.</p>
+                    <div class="model-specs">
+                      <span class="spec-tag">Zero Token</span>
+                      <span class="spec-tag">Multi-Scale</span>
+                    </div>
+                  </div>
+
+                  <div class="model-card" data-diar-model="3d_speaker">
+                    <div class="model-card-header">
+                      <span class="model-name">3D-Speaker</span>
+                      <span class="badge badge-sm badge-accent">ModelScope</span>
+                    </div>
+                    <p class="model-desc">ModelScope speakerlab: FSMN VAD + CAM++ embeddings + spectral clustering.</p>
+                    <div class="model-specs">
+                      <span class="spec-tag">campplus</span>
+                      <span class="spec-tag">Zero Token</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="diar-params-row">
+                <div class="form-group flex-1">
+                  <label class="form-label" for="diar-device-select">Compute Device:</label>
+                  <select id="diar-device-select" class="select-input">
+                    <option value="auto">Auto (Best Available GPU/MPS)</option>
+                    <option value="cuda">CUDA (NVIDIA GPU)</option>
+                    <option value="mps">MPS (Apple Silicon)</option>
+                    <option value="cpu">CPU Only</option>
+                  </select>
+                </div>
+
+                <div class="form-group flex-2" id="hf-token-group">
+                  <div class="label-with-tool">
+                    <label class="form-label" for="hf-token-input">HuggingFace Token (Pyannote):</label>
+                    <button type="button" class="btn btn-ghost btn-xs" id="btn-toggle-hf-vis">Show</button>
+                  </div>
+                  <input type="password" id="hf-token-input" class="text-input font-mono" placeholder="hf_xxxxxxxxxxxxxxxxxxxx">
+                </div>
+              </div>
+
+              <div class="diar-params-row" id="diar-speaker-bounds-group">
+                <div class="form-group flex-1">
+                  <label class="form-label" for="diar-min-speakers">Min Speakers</label>
+                  <input type="number" id="diar-min-speakers" class="text-input" min="1" max="32" placeholder="Auto" title="Optional lower bound on number of speakers">
+                </div>
+                <div class="form-group flex-1">
+                  <label class="form-label" for="diar-max-speakers">Max Speakers</label>
+                  <input type="number" id="diar-max-speakers" class="text-input" min="1" max="32" placeholder="Auto" title="Optional upper bound on number of speakers">
+                </div>
+                <div class="form-group flex-1">
+                  <label class="form-label" for="diar-num-speakers">Exact Speakers</label>
+                  <input type="number" id="diar-num-speakers" class="text-input" min="1" max="32" placeholder="Auto" title="Exact number of speakers if known in advance">
+                </div>
+              </div>
+
+              <div class="diar-params-row" id="diar-3d-chunk-group" style="display: none;">
+                <div class="form-group flex-1">
+                  <label class="form-label" for="diar-chunk-duration">Embedding Window (s)</label>
+                  <input type="number" id="diar-chunk-duration" class="text-input" min="0.25" max="5" step="0.25" value="1.5" title="3D-Speaker subsegment duration (upstream default 1.5s)">
+                </div>
+                <div class="form-group flex-1">
+                  <label class="form-label" for="diar-chunk-step">Embedding Hop (s)</label>
+                  <input type="number" id="diar-chunk-step" class="text-input" min="0.1" max="5" step="0.25" value="0.75" title="Hop between subsegments (upstream default 0.75s). Must be ≤ window.">
+                </div>
+                <div class="form-group flex-1 flex-col justify-center">
+                  <label class="checkbox-label flex-row items-center gap-2" style="margin-top: 1.6rem;" title="Refine overlapping speech using Pyannote segmentation model (requires HF token)">
+                    <input type="checkbox" id="diar-3d-overlap">
+                    <span class="text-sm">Pyannote Overlap Refine</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="diar-params-row" id="diar-clustering-params-group" style="display: none;">
+                <div class="form-group flex-1">
+                  <label class="form-label" for="diar-vad-onset">VAD Onset Threshold</label>
+                  <input type="number" id="diar-vad-onset" class="text-input" min="0.05" max="0.95" step="0.05" value="0.5" title="MarbleNet speech-onset probability threshold (default 0.5)">
+                </div>
+                <div class="form-group flex-1">
+                  <label class="form-label" for="diar-vad-offset">VAD Offset Threshold</label>
+                  <input type="number" id="diar-vad-offset" class="text-input" min="0.05" max="0.95" step="0.05" value="0.3" title="MarbleNet speech-offset probability threshold (default 0.3)">
+                </div>
+                <div class="form-group flex-2">
+                  <p class="text-sm text-secondary" style="margin: 1.6rem 0 0;">Multi-scale TitaNet: [1.9s, 1.2s, 0.5s] with shifts [0.95s, 0.6s, 0.25s].</p>
+                </div>
+              </div>
+
+              <div class="diar-actions">
+                <button class="btn btn-primary btn-lg w-full" id="btn-run-diarization">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                  <span>Run Speaker Diarization</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Execution Progress Box -->
+          <div id="diar-task-progress-box" class="task-progress-box hidden">
+            <div class="task-header">
+              <div class="flex-row items-center gap-2">
+                <span class="spinner-sm"></span>
+                <span class="task-title">Diarization in progress...</span>
+              </div>
+              <span class="task-timer" id="diar-task-timer">0.0s</span>
+            </div>
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill progress-animated" id="diar-progress-bar"></div>
+            </div>
+            <div class="task-status-text" id="diar-task-status-text">Detecting speaker turns and voice activity...</div>
+          </div>
+        </div>
+
+        <!-- Empty State Placeholder -->
+        <div id="diar-empty-placeholder" class="card empty-placeholder">
+          <div class="empty-icon-wrap">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+          </div>
+          <h3 class="empty-title">No Active Speaker Diarization</h3>
+          <p class="empty-desc">Select a target audio track above and click <strong>Run Speaker Diarization</strong>, or import an annotation file / load demo data to inspect interactive speaker swimlanes.</p>
+          <div class="empty-actions">
+            
+          </div>
+        </div>
+
+        <!-- Diarization Results & Interactive Studio Workspace (Visible once diarized) -->
+        <div id="diar-results-wrapper" class="diar-results-wrapper hidden">
+          <!-- Master Interactive Multi-Track Timeline Card -->
+          <div class="card diar-timeline-card">
+            <div class="card-header">
+              <div class="flex-row items-center gap-3 flex-wrap">
+                <h2 class="card-title">Interactive Multi-Track Speaker Timeline</h2>
+                <span id="diar-model-badge" class="badge badge-info">Pyannote 3.1</span>
+                <span id="diar-speaker-count-badge" class="badge badge-accent">0 Speakers</span>
+                <span id="diar-turns-count-badge" class="badge badge-ghost">0 Turns</span>
+                <span id="diar-speech-ratio-badge" class="badge badge-success">0% Speech</span>
+              </div>
+              <div class="timeline-view-actions">
+                <div class="btn-group">
+                  
+                  
+                  
+                </div>
+                
+                
+              </div>
+            </div>
+
+            <!-- Visual Minimap Overview Strip -->
+            
+
+            <!-- Synchronized Transport & Zoom Controls -->
+            <div class="diar-transport-toolbar">
+              <div class="transport-left">
+                <button class="btn btn-ctrl btn-sm" id="btn-diar-skip-back" title="Replay 5s">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+                  <span>-5s</span>
+                </button>
+                <button class="btn btn-ctrl btn-sm btn-play-main" id="btn-diar-play-toggle" title="Play/Pause All Speakers">
+                  <svg id="icon-diar-play" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                  <svg id="icon-diar-pause" class="hidden" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+                  <span>Play All</span>
+                </button>
+                
+                <button class="btn btn-ctrl btn-sm" id="btn-diar-skip-fwd" title="Forward 5s">
+                  <span>+5s</span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                </button>
+                
+                
+                <div class="diar-time-readout">
+                  <span id="diar-time-current">00:00.00</span> / <span id="diar-time-total">00:00.00</span>
+                </div>
+              </div>
+
+              <div class="transport-right">
+                <!-- Zoom Controls -->
+                <div class="diar-zoom-wrap">
+                  <span class="zoom-label">Zoom:</span>
+                  <button class="btn btn-xs btn-ghost" id="btn-diar-zoom-out" title="Zoom Out">-</button>
+                  <span class="zoom-val" id="diar-zoom-level">1.0x</span>
+                  <button class="btn btn-xs btn-ghost" id="btn-diar-zoom-in" title="Zoom In">+</button>
+                  <button class="btn btn-xs btn-secondary" id="btn-diar-zoom-fit" title="Fit to Container">Fit</button>
+                </div>
+                <!-- Speed selector -->
+                <select id="diar-speed-select" class="select-mini" title="Playback Speed">
+                  <option value="0.5">0.5×</option>
+                  <option value="0.75">0.75×</option>
+                  <option value="1.0" selected>1.0×</option>
+                  <option value="1.25">1.25×</option>
+                  <option value="1.5">1.5×</option>
+                  <option value="2.0">2.0×</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Multi-Track Canvas & Swimlanes Container (Unified DAW Layout) -->
+            <div class="diar-multitrack-viewport" id="diar-multitrack-viewport">
+              <div class="diar-timeline-inner" id="diar-timeline-inner">
+                <!-- Left Sticky Column: Lane Labels -->
+                <div class="diar-lane-labels-col" id="diar-lane-labels-col">
+                  <div class="diar-lane-label ruler-label">
+                    <span class="lane-tag">Time</span>
+                  </div>
+                  <div class="diar-lane-label waveform-label" id="diar-waveform-label">
+                    <span class="lane-tag">Waveform</span>
+                  </div>
+                  <div class="diar-lane-label composite-label" id="diar-composite-label">
+                    <span class="lane-tag">Composite</span>
+                  </div>
+                  <div class="diar-spk-labels-wrap" id="diar-spk-labels-wrap"></div>
+                  <!-- Model Comparison Labels (Visible in Model Comparison View) -->
+                  <div class="diar-compare-labels-wrap" id="diar-compare-labels-wrap" style="display: none;"></div>
+                </div>
+
+                <!-- Right Column: Scrollable Tracks Area (Shared 0%-100% Coordinate Space) -->
+                <div class="diar-tracks-area" id="diar-tracks-area">
+                  <!-- Time Ruler Track -->
+                  <div class="diar-ruler-track" id="diar-ruler-track"></div>
+
+                  <!-- Waveform Preview Lane -->
+                  <div class="diar-waveform-track" id="diar-waveform-track">
+                    <canvas id="diar-waveform-canvas" class="diar-waveform-canvas"></canvas>
+                  </div>
+
+                  <!-- Composite Overview Lane -->
+                  <div class="diar-composite-track" id="diar-composite-track"></div>
+
+                  <!-- Speaker Swimlanes Track Area -->
+                  <div class="diar-speaker-lanes-wrap" id="diar-speaker-lanes-wrap"></div>
+
+                  <!-- Model Comparison Lanes Track Area -->
+                  <div class="diar-compare-lanes-wrap" id="diar-compare-lanes-wrap" style="display: none;"></div>
+
+                  <!-- Region Selection Overlay (inside tracks area) -->
+                  
+
+                  <!-- Global Synchronized Playhead Line (inside tracks area) -->
+                  <div class="diar-playhead-line" id="diar-playhead-line" style="left: 0%;">
+                    <div class="playhead-handle" id="diar-playhead-handle" title="Drag Playhead to Scrub Audio"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Hover Tooltip -->
+            <div id="diar-turn-tooltip" class="diar-turn-tooltip hidden"></div>
+          </div>
+
+          <!-- Studio Workstation Modular Navigation & Panels -->
+          <div class="diar-studio-tabs-card card">
+            <!-- Studio Tab Switcher Bar -->
+            <div class="diar-subtabs-nav">
+              <button class="diar-subtab-btn active" data-subtab="turns">
+                <span class="subtab-icon">📑</span>
+                <span class="subtab-label">Turns Inspector</span>
+                <span class="subtab-chip" id="diar-subtab-turns-count">0</span>
+              </button>
+              <button class="diar-subtab-btn" data-subtab="speakers">
+                <span class="subtab-icon">👥</span>
+                <span class="subtab-label">Speaker Profiles</span>
+                <span class="subtab-chip" id="diar-subtab-spk-count">0</span>
+              </button>
+              <button class="diar-subtab-btn" data-subtab="export">
+                <span class="subtab-icon">💾</span>
+                <span class="subtab-label">Export & Annotations</span>
+              </button>
+            </div>
+
+            <!-- Subview 1: Precision Turn Inspector & Segment Editor -->
+            <div class="diar-subview-panel active" id="diar-subview-turns">
+              <div class="subview-header">
+                <div>
+                  <h3 class="subview-title">Speaker Turn Inspector & Editor</h3>
+                  <p class="subview-desc">Inspect, trim, split, nudge, reassign, or batch modify speaker turn segments.</p>
+                </div>
+                <div class="subview-actions">
+                  
+                </div>
+              </div>
+
+              <!-- Floating Batch Actions Bar (Visible when 1+ turns selected) -->
+              
+
+              <!-- Filters & Search Toolbar -->
+              <div class="diar-inspector-toolbar">
+                <div class="toolbar-left">
+                  <div class="form-group mb-0">
+                    <select id="diar-filter-speaker-select" class="select-input select-sm">
+                      <option value="all">All Speakers</option>
+                    </select>
+                  </div>
+                  <div class="form-group mb-0 flex-1">
+                    <input type="text" id="diar-turns-search-input" class="text-input text-sm" placeholder="Search turn #, speaker name, or timestamp...">
+                  </div>
+                  <div class="form-group mb-0">
+                    <select id="diar-filter-min-dur" class="select-input select-sm">
+                      <option value="0">All Durations</option>
+                      <option value="0.5">> 0.5s</option>
+                      <option value="1.0">> 1.0s</option>
+                      <option value="2.0">> 2.0s</option>
+                      <option value="5.0">> 5.0s</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="toolbar-right">
+                  <div class="form-group mb-0 flex-row items-center gap-2">
+                    <label class="text-xs text-muted">Sort:</label>
+                    <select id="diar-sort-turns-select" class="select-input select-sm">
+                      <option value="time-asc">Start Time (Ascending)</option>
+                      <option value="time-desc">Start Time (Descending)</option>
+                      <option value="dur-desc">Duration (Longest)</option>
+                      <option value="speaker">Speaker</option>
+                    </select>
+                  </div>
+                  <span class="badge badge-info" id="diar-filtered-turns-count">0 turns</span>
+                </div>
+              </div>
+
+              <!-- Turns Table -->
+              <div class="turns-table-wrapper diar-turns-table-wrapper">
+                <table class="turns-table diar-turns-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 40px; text-align: center;">
+                        <input type="checkbox" id="th-select-all-turns" title="Select all visible turns">
+                      </th>
+                      <th style="width: 50px;">#</th>
+                      <th style="width: 140px;">Speaker</th>
+                      <th style="width: 160px;">Start Time (s)</th>
+                      <th style="width: 160px;">End Time (s)</th>
+                      <th style="width: 95px;">Duration</th>
+                      <th style="width: 90px;">Overlap</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="turns-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Subview 2: Speaker Profiles & Speech Distribution -->
+            <div class="diar-subview-panel hidden" id="diar-subview-speakers">
+              <div class="subview-header">
+                <div>
+                  <h3 class="subview-title">Speaker Profiles & Speech Analytics</h3>
+                  <p class="subview-desc">Rename speakers, customize color palettes, inspect speech metrics, or extract isolated speaker audio stems.</p>
+                </div>
+                <div class="subview-actions flex-wrap gap-2">
+                  <div class="flex-row items-center gap-1">
+                    <label class="text-xs text-muted" for="diar-extract-mode-select">Stem Mode:</label>
+                    <select id="diar-extract-mode-select" class="select-input select-sm" title="Extraction mode for speaker audio files">
+                      <option value="concatenated">Concatenated Speech</option>
+                      <option value="time_aligned">Time-Aligned Stems (Muted Silence)</option>
+                    </select>
+                  </div>
+                  <button class="btn btn-secondary btn-sm" id="btn-extract-all-speakers" title="Extract all speaker stems as separate audio files">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    <span>Extract All Speaker Stems</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="diar-speakers-grid" id="diar-speakers-grid"></div>
+            </div>
+
+            <!-- Subview 3: Multi-Format Export Studio -->
+            <div class="diar-subview-panel hidden" id="diar-subview-export">
+              <div class="subview-header">
+                <div>
+                  <h3 class="subview-title">Diarization Export & Annotations</h3>
+                  <p class="subview-desc">Export your diarization results in NIST RTTM, Pipeline JSON, CSV spreadsheet, Subtitle formats, Audacity labels, or Praat TextGrid.</p>
+                </div>
+              </div>
+
+              <!-- Export Tab Pills -->
+              <div class="export-format-nav">
+                <button class="export-nav-tab active" data-export-tab="rttm">NIST RTTM</button>
+                <button class="export-nav-tab" data-export-tab="json">Pipeline JSON</button>
+                <button class="export-nav-tab" data-export-tab="csv">CSV Spreadsheet</button>
+                <button class="export-nav-tab" data-export-tab="srt">SRT Subtitles</button>
+                <button class="export-nav-tab" data-export-tab="vtt">WebVTT</button>
+                <button class="export-nav-tab" data-export-tab="audacity">Audacity Labels (.txt)</button>
+                <button class="export-nav-tab" data-export-tab="praat">Praat TextGrid</button>
+              </div>
+
+              <!-- Export Preview & Actions Box -->
+              <div class="export-content-box">
+                <div class="export-preview-header">
+                  <span class="export-filename" id="export-filename-label">diarization.rttm</span>
+                  <div class="export-actions-right">
+                    <button class="btn btn-secondary btn-sm" id="btn-copy-export">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                      <span>Copy</span>
+                    </button>
+                    <button class="btn btn-primary btn-sm" id="btn-download-export">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                      <span>Download File</span>
+                    </button>
+                  </div>
+                </div>
+                <textarea id="export-preview-textarea" class="export-preview-textarea font-mono" readonly rows="10"></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Saved Runs History (always visible — outside results wrapper) -->
+        
+
+        <!-- Merge Speaker Modal -->
+        
+
+        <!-- Auto-Merge Micro-Gaps Modal -->
+        
+      </section>
+
+              <section id="tab-comparison" class="tab-pane">
+        <!-- Master Audition Setup Card -->
+        <div class="card audition-setup-card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Audition, Compare & Human Scoring Hub</h2>
+              <p class="card-subtitle">Seamless continuous playback switching between original cut (with background music) and Demucs separation models.</p>
+            </div>
+            <div class="card-actions">
+              <button class="btn btn-secondary" id="btn-batch-separate-active-clip" title="Run all models on this cut clip">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                <span>⚡ Run All Models on Clip</span>
+              </button>
+              <button class="btn btn-primary" id="btn-generate-comparison">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+                <span>Render Mel Spectrograms</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Clip & Track Selection Row -->
+          <div class="audition-selection-row">
+            <div class="form-group flex-1">
+              <label class="form-label" for="audition-clip-select">Audio Cut / Snippet to Evaluate (with BG Music):</label>
+              <select id="audition-clip-select" class="select-input"></select>
+            </div>
+          </div>
+
+          <!-- Multi-Track Live Switcher Bar -->
+          <div class="multi-track-switcher-card">
+            <div class="switcher-header">
+              <div class="switcher-title-wrap">
+                <span class="pulse-indicator"></span>
+                <span class="switcher-title">Continuous Live Track Switcher:</span>
+                <span class="active-track-name" id="active-audition-track-name">Original Audio Cut (with BG Music)</span>
+              </div>
+              <div class="switcher-time-display">
+                <span id="audition-time-current">00:00.00</span> / <span id="audition-time-total">00:00.00</span>
+              </div>
+            </div>
+
+            <!-- Master Playback Scrubber -->
+            <div class="audition-scrubber-wrap">
+              <input type="range" id="audition-scrubber" class="audition-scrubber" min="0" max="100" step="0.1" value="0">
+            </div>
+
+            <!-- Master Transport Controls & Track Selectors -->
+            <div class="switcher-controls-row">
+              <div class="transport-buttons">
+                <button class="btn btn-ctrl" id="btn-audition-skip-back" title="Replay 5 seconds">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path><text x="9" y="16" font-size="8" font-family="sans-serif">5</text></svg>
+                </button>
+                <button class="btn btn-ctrl" id="btn-audition-start" title="Go to the start">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="4" x2="5" y2="20"></line><polygon points="19 4 9 12 19 20 19 4"></polygon></svg>
+                </button>
+                <button class="btn btn-ctrl btn-play-main" id="btn-audition-play" title="Play/Pause">
+                  <svg id="icon-audition-play" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                  <svg id="icon-audition-pause" class="hidden" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+                </button>
+                <button class="btn btn-ctrl" id="btn-audition-skip-fwd" title="Forward 5 seconds">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path><text x="9" y="16" font-size="8" font-family="sans-serif">5</text></svg>
+                </button>
+                <button class="btn btn-ctrl" id="btn-audition-loop" title="Toggle Loop">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
+                </button>
+                <select id="audition-speed-select" class="select-mini" title="Audition Playback Speed">
+                  <option value="0.5">0.5×</option>
+                  <option value="0.75">0.75×</option>
+                  <option value="1.0" selected>1.0×</option>
+                  <option value="1.25">1.25×</option>
+                  <option value="1.5">1.5×</option>
+                  <option value="2.0">2.0×</option>
+                </select>
+                <div class="volume-slider-wrap">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+                  <input type="range" id="audition-volume-slider" class="range-slider range-sm" min="0" max="1" step="0.05" value="1">
+                </div>
+              </div>
+
+              <!-- Track Selectors (Instant Switch Pills) -->
+              <div class="track-pills-list" id="audition-track-pills">
+                <!-- Populated dynamically: Original, HTDemucs, HTDemucs FT, BS-RoFormer, Mel-RoFormer -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== SIDE-BY-SIDE MULTI-MODEL DECK ==================== -->
+        <div class="card sbs-deck-card" style="margin-top: 1.25rem;">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">🎛️ Side-by-Side Demucs & Separation Model Matrix</h3>
+              <p class="card-subtitle">Direct multi-model comparison deck. Inspect outputs, audio specifications, inline ratings, and notes side-by-side.</p>
+            </div>
+            <div class="sbs-deck-actions">
+              <span class="badge badge-accent" id="sbs-models-count-badge">5 Stems Aligned</span>
+            </div>
+          </div>
+
+          <div class="sbs-columns-deck" id="sbs-columns-deck">
+            <!-- Dynamically populated with comparison cards for Original, HTDemucs, HTDemucs FT, BS-RoFormer, Mel-RoFormer -->
+            <div class="empty-placeholder">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              <span>Select an audio cut snippet above to view model outputs side-by-side.</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Two Column Layout: Visual Comparer (Left) & Human Evaluation Card (Right) -->
+        <div class="grid-2col audition-workbench-grid" style="margin-top: 1.25rem;">
+          
+          <!-- Left: Aligned Visual Analysis -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h3 class="card-title">Aligned Spectrogram & Residual Analysis</h3>
+                <p class="card-subtitle">Mixture (Original) vs Estimated Stem vs Residual</p>
+              </div>
+              <span class="badge badge-sm badge-accent">SpectrogramComparer</span>
+            </div>
+            <div class="comparison-img-box" id="spectrogram-compare-box">
+              <div class="empty-placeholder">
+                <span>Click "Render Mel Spectrograms" to generate aligned visual difference plots.</span>
+              </div>
+              <img id="img-compare-spectrogram" class="compare-rendered-img hidden" alt="Mel Spectrogram Comparison">
+            </div>
+          </div>
+
+          <!-- Right: Human Scoring & Observations Card -->
+          <div class="card human-evaluation-card">
+            <div class="card-header">
+              <div>
+                <h3 class="card-title">Human Evaluation & Scoring Card</h3>
+                <p class="card-subtitle" id="scoring-active-model-label">Evaluating: HTDemucs (Default) — Vocals</p>
+              </div>
+              <span class="score-badge" id="current-eval-score-badge">Unrated</span>
+            </div>
+
+            <!-- Overall Quality Rating Stars -->
+            <div class="eval-section">
+              <label class="eval-label">⭐ Overall Separation Score (1 to 5 Stars):</label>
+              <div class="star-rating-widget" id="star-rating-widget">
+                <button class="star-btn" data-value="1" title="1 Star - Poor">★</button>
+                <button class="star-btn" data-value="2" title="2 Stars - Fair">★</button>
+                <button class="star-btn" data-value="3" title="3 Stars - Good">★</button>
+                <button class="star-btn" data-value="4" title="4 Stars - Very Good">★</button>
+                <button class="star-btn" data-value="5" title="5 Stars - Excellent">★</button>
+                <span class="star-score-text" id="star-score-text">5.0 / 5.0</span>
+              </div>
+            </div>
+
+            <!-- Sub-Metrics Matrix -->
+            <div class="eval-submetrics-grid">
+              <div class="submetric-box">
+                <div class="submetric-header">
+                  <span class="submetric-title">🗣️ Vocal Clarity & Timbre</span>
+                  <span class="submetric-val" id="val-submetric-clarity">5 / 5</span>
+                </div>
+                <input type="range" id="slider-submetric-clarity" class="range-slider range-sm" min="1" max="5" step="1" value="5">
+                <span class="submetric-hint">Natural timbre, preserved high frequencies</span>
+              </div>
+
+              <div class="submetric-box">
+                <div class="submetric-header">
+                  <span class="submetric-title">🔇 BG Music Suppression (Zero Bleed)</span>
+                  <span class="submetric-val" id="val-submetric-bleed">5 / 5</span>
+                </div>
+                <input type="range" id="slider-submetric-bleed" class="range-slider range-sm" min="1" max="5" step="1" value="5">
+                <span class="submetric-hint">5 = zero music leak, 1 = heavy background music bleed</span>
+              </div>
+
+              <div class="submetric-box">
+                <div class="submetric-header">
+                  <span class="submetric-title">⚡ Artifacts & Distortion</span>
+                  <span class="submetric-val" id="val-submetric-artifacts">5 / 5</span>
+                </div>
+                <input type="range" id="slider-submetric-artifacts" class="range-slider range-sm" min="1" max="5" step="1" value="5">
+                <span class="submetric-hint">5 = zero artifacts, 1 = metallic/robotic phase warping</span>
+              </div>
+            </div>
+
+            <!-- Quick Observation Tags -->
+            <div class="eval-section">
+              <label class="eval-label">Quick Observation Tags:</label>
+              <div class="eval-tag-chips" id="eval-tag-chips">
+                <button type="button" class="tag-chip" data-tag="clean_vocals">+ Clean Vocals</button>
+                <button type="button" class="tag-chip" data-tag="snare_bleed">+ Snare/Percussion Bleed</button>
+                <button type="button" class="tag-chip" data-tag="bass_bleed">+ Bass Bleed</button>
+                <button type="button" class="tag-chip" data-tag="robotic_artifacts">+ Robotic Artifacts</button>
+                <button type="button" class="tag-chip" data-tag="muffled_highs">+ Muffled Highs</button>
+                <button type="button" class="tag-chip" data-tag="reverb_tail">+ Background Reverb Residual</button>
+                <button type="button" class="tag-chip" data-tag="excellent_isolation">+ Excellent Isolation</button>
+              </div>
+            </div>
+
+            <!-- Detailed Notes Textarea -->
+            <div class="eval-section">
+              <label class="eval-label" for="eval-notes-input">Detailed Notes & Observations:</label>
+              <textarea id="eval-notes-input" class="textarea-input" rows="4" placeholder="e.g. At 0:04 background drums leak into speech; vocal timbre remains natural and clear. HTDemucs FT suppressed synth melody better than default HTDemucs."></textarea>
+            </div>
+
+            <!-- Scoring Actions -->
+            <div class="eval-actions-row">
+              <button class="btn btn-primary btn-lg flex-1" id="btn-save-evaluation">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                <span>Save Evaluation & Notes</span>
+              </button>
+              <button class="btn btn-secondary" id="btn-copy-eval-note" title="Copy note text to clipboard">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                <span>Copy Note</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+              
+
+              <section id="tab-library" class="tab-pane">
+        <div class="grid-2col">
+          <!-- Project Audio Files Explorer -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">Project File Explorer</h2>
+                <span class="card-subtitle">Scanned from <code>benchmarks/</code>, <code>data/</code>, <code>temp/</code>, and <code>.data/</code></span>
+              </div>
+              <button class="btn btn-sm btn-ghost" id="btn-refresh-library">
+                <span>↻ Refresh</span>
+              </button>
+            </div>
+            
+            <div class="modal-filter-bar" style="margin-bottom: 0.75rem;">
+              <input type="text" id="tab-library-search" class="input-text library-search-input" placeholder="🔍 Search audio files by name, path, format...">
+              <div class="category-pills" id="tab-library-categories">
+                <button class="pill-btn active" data-category="all">All</button>
+                <button class="pill-btn" data-category="speech">Speech</button>
+                <button class="pill-btn" data-category="music">Music</button>
+                <button class="pill-btn" data-category="cuts">Cuts</button>
+                <button class="pill-btn" data-category="stems">Stems</button>
+                <button class="pill-btn" data-category="downloads">Ingest</button>
+                <button class="pill-btn" data-category="pipeline">Pipeline</button>
+                <button class="pill-btn" data-category="temp">Temp</button>
+              </div>
+            </div>
+
+            <div class="library-list-wrapper" id="server-files-list">
+              <div class="empty-placeholder">Loading project files...</div>
+            </div>
+          </div>
+
+          <!-- Active Session History Stack -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">Active Session Audio Objects</h2>
+                <span class="card-subtitle">In-memory registered Audio instances</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="badge badge-ghost" id="session-count-badge">0 items</span>
+                <button class="btn btn-xs btn-ghost text-muted" id="btn-clear-session" title="Clear all active session audios">Clear All</button>
+              </div>
+            </div>
+            <div class="session-history-list" id="session-history-list">
+              <div class="empty-placeholder">No active audio in this session.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       </main>
     </div>
 
     <!-- Master Bottom Audio Player -->
-    <!-- include: components/player_bar.html -->
+        <footer class="master-player">
+      <audio id="global-audio-element" preload="auto"></audio>
+      
+      <div class="player-left">
+        <div class="track-avatar" id="player-avatar">🎵</div>
+        <div class="track-details">
+          <span class="track-title" id="player-track-title">No Audio Loaded</span>
+          <span class="track-sub" id="player-track-sub">Select or load an audio track to play</span>
+        </div>
+      </div>
+
+      <div class="player-center">
+        <div class="player-controls">
+          <button class="btn-ctrl" id="btn-player-skip-back" title="Replay 5s">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path><text x="9" y="16" font-size="8" font-family="sans-serif">5</text></svg>
+          </button>
+
+          <button class="btn-ctrl" id="btn-player-start" title="Go to the start">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="4" x2="5" y2="20"></line><polygon points="19 4 9 12 19 20 19 4"></polygon></svg>
+          </button>
+          
+          <button class="btn-ctrl btn-play-master" id="btn-player-play-pause" title="Play/Pause">
+            <svg id="icon-play" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            <svg id="icon-pause" class="hidden" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+          </button>
+
+          <button class="btn-ctrl" id="btn-player-skip-fwd" title="Forward 5s">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path><text x="9" y="16" font-size="8" font-family="sans-serif">5</text></svg>
+          </button>
+
+          <button class="btn-ctrl" id="btn-player-loop" title="Toggle Loop">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
+          </button>
+        </div>
+
+        <div class="player-scrub-row">
+          <span class="time-label" id="player-time-current">00:00</span>
+          <div class="scrub-track-wrapper" id="player-scrub-wrapper">
+            <div class="scrub-track">
+              <div class="scrub-progress" id="player-scrub-progress"></div>
+              <div class="scrub-handle" id="player-scrub-handle"></div>
+            </div>
+          </div>
+          <span class="time-label" id="player-time-total" title="Click to toggle remaining time">00:00</span>
+        </div>
+      </div>
+
+      <div class="player-right">
+        <!-- Speed selector -->
+        <div class="speed-selector">
+          <select id="player-speed-select" class="select-mini" title="Playback Speed">
+            <option value="0.5">0.5×</option>
+            <option value="0.75">0.75×</option>
+            <option value="1.0" selected>1.0×</option>
+            <option value="1.25">1.25×</option>
+            <option value="1.5">1.5×</option>
+            <option value="2.0">2.0×</option>
+          </select>
+        </div>
+
+        <!-- Volume control -->
+        <div class="volume-group">
+          <button class="btn-ctrl-sm" id="btn-player-mute" title="Mute/Unmute">
+            <svg id="icon-vol" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+            <svg id="icon-vol-mute" class="hidden" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
+          </button>
+          <input type="range" id="player-volume-slider" class="range-slider range-slider-sm" min="0" max="1" step="0.02" value="1">
+        </div>
+      </div>
+    </footer>
+
 
     <!-- ==================== MODALS ==================== -->
-    <!-- include: modals/save_modal.html -->
-    <!-- include: modals/library_modal.html -->
-    <!-- include: modals/queue_modal.html -->
+    <div id="modal-save-to" class="modal-backdrop hidden">
+      <div class="modal-card modal-md">
+        <div class="modal-header">
+          <div class="modal-title-wrap">
+            <span class="modal-badge-icon">💾</span>
+            <div>
+              <h3 class="modal-title">Save Audio Object To Disk</h3>
+              <p class="modal-subtitle">Writes audio artifact and companion <code>{stem}.json</code> sidecar metadata</p>
+            </div>
+          </div>
+          <button class="btn-close-modal" id="btn-close-save-modal" title="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Target Directory Presets:</label>
+            <div class="save-presets-list" id="save-target-presets">
+              <button type="button" class="save-preset-chip active" data-folder="benchmarks/separation/sources/speech">
+                <span class="preset-chip-icon">🎯</span>
+                <span class="preset-chip-title">Benchmark Speech</span>
+                <span class="preset-chip-sub">benchmarks/separation/sources/speech/</span>
+              </button>
+              <button type="button" class="save-preset-chip" data-folder="benchmarks/separation/sources/music">
+                <span class="preset-chip-icon">🎵</span>
+                <span class="preset-chip-title">Benchmark Music</span>
+                <span class="preset-chip-sub">benchmarks/separation/sources/music/</span>
+              </button>
+              <button type="button" class="save-preset-chip" data-folder="benchmarks/separation/sources/cuts">
+                <span class="preset-chip-icon">✂️</span>
+                <span class="preset-chip-title">Benchmark Cuts</span>
+                <span class="preset-chip-sub">benchmarks/separation/sources/cuts/</span>
+              </button>
+              <button type="button" class="save-preset-chip" data-folder="data">
+                <span class="preset-chip-icon">📁</span>
+                <span class="preset-chip-title">Data Directory</span>
+                <span class="preset-chip-sub">data/</span>
+              </button>
+              <button type="button" class="save-preset-chip" data-folder="temp">
+                <span class="preset-chip-icon">⚡</span>
+                <span class="preset-chip-title">Temp Directory</span>
+                <span class="preset-chip-sub">temp/</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 1rem;">
+            <label class="form-label" for="input-save-path">Destination File Path:</label>
+            <input type="text" id="input-save-path" class="text-input font-mono" placeholder="e.g. benchmarks/separation/sources/speech/my_audio.wav">
+            <p class="input-hint">Calls <code>Audio.save_to()</code> — copies file, updates path identity, and writes sidecar JSON.</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="btn-cancel-save">Cancel</button>
+          <button class="btn btn-primary" id="btn-confirm-save">Save File & Metadata</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sample Library Modal -->
+
+    <div id="modal-library" class="modal-backdrop hidden">
+      <div class="modal-card modal-lg">
+        <div class="modal-header">
+          <div class="modal-title-wrap">
+            <span class="modal-badge-icon">📁</span>
+            <div>
+              <h3 class="modal-title">Project Sample Library</h3>
+              <p class="modal-subtitle">Browse, preview, and load audio files from data/ and .data/ directories</p>
+            </div>
+          </div>
+          <button class="btn-close-modal" id="btn-close-library-modal" title="Close" aria-label="Close modal">&times;</button>
+        </div>
+        
+        <div class="modal-filter-bar">
+          <input type="text" id="library-modal-search" class="input-text library-search-input" placeholder="🔍 Search samples by name, folder, format...">
+          <div class="category-pills" id="library-modal-categories">
+            <button class="pill-btn active" data-category="all">All</button>
+            <button class="pill-btn" data-category="speech">Speech</button>
+            <button class="pill-btn" data-category="music">Music</button>
+            <button class="pill-btn" data-category="cuts">Cuts</button>
+            <button class="pill-btn" data-category="stems">Stems</button>
+            <button class="pill-btn" data-category="downloads">Ingest</button>
+            <button class="pill-btn" data-category="pipeline">Pipeline</button>
+            <button class="pill-btn" data-category="temp">Temp</button>
+          </div>
+        </div>
+
+        <div class="modal-body">
+          <div class="library-modal-list" id="modal-library-items"></div>
+        </div>
+
+        <div class="modal-footer">
+          <span class="modal-footer-hint font-mono text-muted" id="library-modal-count">0 files available</span>
+          <button class="btn btn-secondary" id="btn-cancel-library-modal">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Studio & Pipeline Shared Task Queue Inspector Modal -->
+
+    <div id="modal-task-queue" class="modal-backdrop hidden">
+      <div class="modal-card modal-lg queue-modal-card">
+        <div class="modal-header">
+          <div class="modal-title-wrap">
+            <span class="modal-badge-icon">⚡</span>
+            <div>
+              <h3 class="modal-title">Shared GPU &amp; Task Queue</h3>
+              <p class="modal-subtitle" id="queue-modal-subtitle">Live unified compute workloads across SonicStudio &amp; SonicPipeline</p>
+            </div>
+          </div>
+          <div class="modal-header-actions">
+            <button class="btn btn-sm btn-secondary" id="btn-refresh-queue-modal" title="Refresh task status">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+              <span>Refresh</span>
+            </button>
+            <button class="btn btn-sm btn-secondary" id="btn-clear-queue-finished" title="Clear finished and cancelled tasks">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+              <span>Clear Done</span>
+            </button>
+            <button class="btn-close-modal" id="btn-close-queue-modal" title="Close">&times;</button>
+          </div>
+        </div>
+
+        <!-- Shared GPU Telemetry Ribbon -->
+        <div class="queue-gpu-ribbon" id="queue-gpu-ribbon">
+          <div class="gpu-ribbon-item">
+            <span class="gpu-ribbon-icon">🖥️</span>
+            <span class="gpu-ribbon-label">Compute:</span>
+            <span class="gpu-ribbon-val" id="queue-gpu-name">Detecting...</span>
+          </div>
+          <div class="gpu-ribbon-divider"></div>
+          <div class="gpu-ribbon-item">
+            <span class="gpu-ribbon-label">GPU Load:</span>
+            <span class="gpu-ribbon-val font-mono" id="queue-gpu-load">--</span>
+          </div>
+          <div class="gpu-ribbon-divider"></div>
+          <div class="gpu-ribbon-item">
+            <span class="gpu-ribbon-label">VRAM:</span>
+            <span class="gpu-ribbon-val font-mono" id="queue-gpu-vram">-- / -- MB</span>
+          </div>
+          <div class="gpu-ribbon-divider"></div>
+            <div class="gpu-ribbon-item">
+              <span class="gpu-ribbon-label">Power Draw / Limit:</span>
+              <span class="gpu-ribbon-val font-mono text-amber" id="queue-gpu-power">-- / -- W</span>
+          </div>
+          <div class="gpu-ribbon-divider"></div>
+          <div class="gpu-ribbon-item">
+            <span class="gpu-ribbon-label">Shared Allocation:</span>
+            <span class="gpu-ribbon-val font-mono text-cyan" id="queue-active-split">Studio: 0 • Pipeline: 0</span>
+          </div>
+        </div>
+
+        <!-- Multi-GPU Individual Cards (shown when 2+ GPUs detected) -->
+        <div class="gpu-devices-grid" id="queue-gpu-devices-grid" style="display: none;"></div>
+
+        <div class="queue-modal-stats-bar">
+          <div class="queue-stat-pill" id="stat-pill-running">
+            <span class="stat-dot dot-pulse"></span>
+            <span class="stat-num" id="queue-stat-running">0</span>
+            <span class="stat-name">Running</span>
+          </div>
+          <div class="queue-stat-pill" id="stat-pill-queued">
+            <span class="stat-num" id="queue-stat-queued">0</span>
+            <span class="stat-name">Queued</span>
+          </div>
+          <div class="queue-stat-pill" id="stat-pill-completed">
+            <span class="stat-num" id="queue-stat-completed">0</span>
+            <span class="stat-name">Completed</span>
+          </div>
+          <div class="queue-stat-pill" id="stat-pill-failed">
+            <span class="stat-num" id="queue-stat-failed">0</span>
+            <span class="stat-name">Failed</span>
+          </div>
+          <div class="queue-stat-divider"></div>
+          <div class="queue-modal-filters" id="queue-modal-filters">
+            <button class="pill-btn active" data-filter="all">All (Shared)</button>
+            <button class="pill-btn" data-filter="active">Active &amp; Queued</button>
+            <button class="pill-btn" data-filter="studio">🎙️ Studio</button>
+            <button class="pill-btn" data-filter="pipeline">⚡ Pipeline</button>
+            <button class="pill-btn" data-filter="completed">Completed</button>
+            <button class="pill-btn" data-filter="failed">Failed</button>
+          </div>
+        </div>
+
+        <div class="modal-body queue-modal-body">
+          <div id="studio-queue-task-list" class="queue-task-list">
+            <!-- Dynamically populated from shared queue -->
+          </div>
+        </div>
+
+        <div class="modal-footer queue-modal-footer">
+          <a href="/pipeline/#tab-queue" class="btn btn-secondary btn-sm queue-switch-link" title="Open SonicPipeline Batch Job Queue">
+            <span>⚡ Open SonicPipeline Batch Queue</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+          </a>
+          <button class="btn btn-secondary" id="btn-cancel-queue-modal">Close</button>
+        </div>
+      </div>
+    </div>
+
 
     <!-- Toast Notification Container -->
     <div id="toast-container" class="toast-container"></div>

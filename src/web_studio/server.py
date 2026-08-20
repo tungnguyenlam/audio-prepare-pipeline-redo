@@ -1,8 +1,8 @@
 """Web server application for the audio preparation pipeline.
 
 Provides a full REST API, background task management, audio streaming,
-waveform extraction, spectrogram generation, live-reload SSE, and static
-file serving for the frontend studio.
+waveform extraction, spectrogram generation, and static file serving for
+the frontend studio.
 """
 
 from __future__ import annotations
@@ -39,7 +39,6 @@ os.environ.setdefault("HF_HOME", str(ROOT_DIR / ".data" / "huggingface"))
 from src.utils.AudioClass import DEFAULT_SAMPLE_RATE, Audio, _sanitize_filename_component
 from src.utils.AudioCutter import AudioCutter, AudioCutterError
 from src.utils.SpectrogramComparer import SpectrogramComparer
-from src.utils.WaveformComparer import WaveformComparer
 from src.separation import HTDemucs, BSRoFormer, MelRoFormer, MVSepMDX23
 from src.diarization import (
     ClusteringDiarizer,
@@ -49,7 +48,6 @@ from src.diarization import (
     ThreeDSpeakerDiarizer,
     ThreeDSpeakerWorkerDiarizer,
 )
-from src.benchmark.separation.mixer import AudioMixer
 from src.yt_crawler.YtCrawlerClass import YtCrawler
 
 # Setup logging
@@ -82,6 +80,39 @@ def get_default_device() -> str:
         return "mps"
     return "cpu"
 
+
+
+
+def normalize_queue_device(device: str | None) -> str:
+    """Map a requested compute device to a dedicated queue lane key.
+
+    Args:
+        device: Requested device string such as ``cuda:0``, ``auto``, or ``cpu``.
+
+    Returns:
+        Stable lane id used for per-GPU / CPU queue routing.
+    """
+    raw = (device or "").strip().lower()
+    if not raw or raw in {"auto", "cuda"}:
+        return get_default_device()
+    if raw.startswith("cuda:"):
+        if torch.cuda.is_available():
+            return raw
+        return "cpu"
+    if raw in {"cpu", "mps"}:
+        return raw
+    return get_default_device()
+
+
+def discover_queue_devices() -> List[str]:
+    """Return the default set of queue lanes for this host."""
+    devices = ["cpu"]
+    if torch.cuda.is_available():
+        for index in range(torch.cuda.device_count()):
+            devices.append(f"cuda:{index}")
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        devices.append("mps")
+    return devices
 
 def get_system_device_info() -> dict[str, Any]:
     """Return hardware accelerator and environment details."""
@@ -298,30 +329,76 @@ class AudioRegistry:
 
 
 class TaskManager:
-    """Run Studio background jobs through a bounded asynchronous queue."""
+    """Per-device Studio task queues with independent worker pools.
 
-    def __init__(self, max_concurrency: int = 1) -> None:
+    Each GPU (and CPU/MPS) owns its own FIFO lane so work targeting
+    ``cuda:0`` never blocks ``cuda:1``. Default concurrency is one worker
+    per device to avoid VRAM contention on the same accelerator.
+    """
+
+    def __init__(self, workers_per_device: int = 1) -> None:
+        self.workers_per_device = max(1, min(4, workers_per_device))
         self._tasks: Dict[str, Dict[str, Any]] = {}
-        self._queue: asyncio.Queue[tuple[str, Callable[[], Awaitable[None]]]] = asyncio.Queue()
-        self._queued_ids: List[str] = []
-        self._workers: List[asyncio.Task[None]] = []
-        self._running_ids: set[str] = set()
+        self._device_queues: Dict[str, asyncio.Queue[tuple[str, Callable[[], Awaitable[None]]]]] = {}
+        self._device_queued_ids: Dict[str, List[str]] = {}
+        self._device_running_ids: Dict[str, set[str]] = {}
+        self._device_workers: Dict[str, List[asyncio.Task[None]]] = {}
         self._runner_tasks: Dict[str, asyncio.Task[None]] = {}
         self._cancel_callbacks: Dict[str, Callable[[], None]] = {}
-        self.max_concurrency = max(1, min(4, max_concurrency))
+        self._started = False
+
+    @property
+    def max_concurrency(self) -> int:
+        """Compatibility alias: workers available per device lane."""
+        return self.workers_per_device
+
+    def _ensure_device_lane(self, device: str) -> None:
+        """Create the FIFO queue and workers for ``device`` if missing."""
+        if device in self._device_queues:
+            return
+        self._device_queues[device] = asyncio.Queue()
+        self._device_queued_ids[device] = []
+        self._device_running_ids[device] = set()
+        workers: List[asyncio.Task[None]] = []
+        if self._started:
+            for index in range(self.workers_per_device):
+                workers.append(
+                    asyncio.create_task(
+                        self._worker_loop(device),
+                        name=f"studio-task-worker-{device}-{index + 1}",
+                    )
+                )
+        self._device_workers[device] = workers
+        logger.info(
+            "Studio queue lane ready for %s (%d worker(s))",
+            device,
+            self.workers_per_device,
+        )
 
     async def start(self) -> None:
-        """Start the fixed-size worker pool."""
-        if self._workers:
+        """Start per-device worker pools for all known accelerators."""
+        if self._started:
             return
-        self._workers = [
-            asyncio.create_task(self._worker_loop(), name=f"studio-task-worker-{index + 1}")
-            for index in range(self.max_concurrency)
-        ]
-        logger.info("Studio task queue started with concurrency %d", self.max_concurrency)
+        self._started = True
+        for device in discover_queue_devices():
+            self._ensure_device_lane(device)
+            workers = self._device_workers[device]
+            if not workers:
+                self._device_workers[device] = [
+                    asyncio.create_task(
+                        self._worker_loop(device),
+                        name=f"studio-task-worker-{device}-{index + 1}",
+                    )
+                    for index in range(self.workers_per_device)
+                ]
+        logger.info(
+            "Studio task queues started (%d worker(s)/device, lanes=%s)",
+            self.workers_per_device,
+            ", ".join(sorted(self._device_queues)),
+        )
 
     async def stop(self) -> None:
-        """Cancel queued and running tasks, then stop workers during shutdown."""
+        """Cancel queued and running tasks, then stop all device workers."""
         for task_id, task in list(self._tasks.items()):
             if task.get("status") in ("pending", "running"):
                 self.update_task(
@@ -337,35 +414,60 @@ class TaskManager:
         self._cancel_callbacks.clear()
         for runner in list(self._runner_tasks.values()):
             runner.cancel()
-        self._queued_ids.clear()
+        for queued in self._device_queued_ids.values():
+            queued.clear()
 
-        workers = [worker for worker in self._workers if not worker.done()]
-        self._workers.clear()
+        workers: List[asyncio.Task[None]] = []
+        for device_workers in self._device_workers.values():
+            workers.extend(w for w in device_workers if not w.done())
+        self._device_workers.clear()
+        self._started = False
         for worker in workers:
             worker.cancel()
         if workers:
             await asyncio.wait(workers, timeout=2.0)
 
-    def enqueue(self, task_id: str, runner: Callable[[], Awaitable[None]]) -> None:
-        """Add a previously created task to the worker queue."""
+    def enqueue(
+        self,
+        task_id: str,
+        runner: Callable[[], Awaitable[None]],
+        device: str | None = None,
+    ) -> None:
+        """Add a previously created task to the queue lane for its device."""
         if task_id not in self._tasks:
             raise KeyError(f"Unknown task: {task_id}")
-        self._queued_ids.append(task_id)
-        self._queue.put_nowait((task_id, runner))
-        self._refresh_queue_messages()
+        task = self._tasks[task_id]
+        metadata = dict(task.get("metadata") or {})
+        requested = device if device is not None else metadata.get("device")
+        # CPU-only work (YouTube crawl, etc.) stays off the GPU lanes.
+        if task.get("type") == "youtube_crawl":
+            lane = "cpu"
+        else:
+            lane = normalize_queue_device(requested if requested is not None else "auto")
+        metadata["device"] = lane
+        metadata["queue_device"] = lane
+        task["metadata"] = metadata
+        task["queue_device"] = lane
 
-    async def _worker_loop(self) -> None:
+        self._ensure_device_lane(lane)
+        self._device_queued_ids[lane].append(task_id)
+        self._device_queues[lane].put_nowait((task_id, runner))
+        self._refresh_queue_messages(lane)
+
+    async def _worker_loop(self, device: str) -> None:
+        queue = self._device_queues[device]
         while True:
-            task_id, runner = await self._queue.get()
+            task_id, runner = await queue.get()
             try:
-                if task_id in self._queued_ids:
-                    self._queued_ids.remove(task_id)
+                queued_ids = self._device_queued_ids[device]
+                if task_id in queued_ids:
+                    queued_ids.remove(task_id)
                 task = self._tasks.get(task_id)
                 if not task or task["status"] == "cancelled":
                     continue
 
-                self._running_ids.add(task_id)
-                self.update_task(task_id, status="running", message="Starting task...")
+                self._device_running_ids[device].add(task_id)
+                self.update_task(task_id, status="running", message=f"Starting on {device}...")
                 runner_task = asyncio.create_task(runner())
                 self._runner_tasks[task_id] = runner_task
                 try:
@@ -420,26 +522,32 @@ class TaskManager:
                 )
             finally:
                 self._cancel_callbacks.pop(task_id, None)
-                self._running_ids.discard(task_id)
-                self._queue.task_done()
-                self._refresh_queue_messages()
+                self._device_running_ids[device].discard(task_id)
+                queue.task_done()
+                self._refresh_queue_messages(device)
                 gc.collect()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
 
-    def _refresh_queue_messages(self) -> None:
-        for position, task_id in enumerate(self._queued_ids, start=1):
-            task = self._tasks.get(task_id)
-            if task and task["status"] == "pending":
-                task["queue_position"] = position
-                task["message"] = f"Queued — position {position}"
+    def _refresh_queue_messages(self, device: str | None = None) -> None:
+        devices = [device] if device else list(self._device_queued_ids)
+        for lane in devices:
+            for position, task_id in enumerate(self._device_queued_ids.get(lane, []), start=1):
+                task = self._tasks.get(task_id)
+                if task and task["status"] == "pending":
+                    task["queue_position"] = position
+                    task["queue_device"] = lane
+                    task["message"] = f"Queued on {lane} — position {position}"
 
     def create_task(self, task_type: str, metadata: Optional[Dict[str, Any]] = None) -> str:
         task_id = f"task_{uuid.uuid4().hex[:10]}"
+        meta = dict(metadata or {})
+        if task_type == "youtube_crawl":
+            meta.setdefault("device", "cpu")
         self._tasks[task_id] = {
             "id": task_id,
             "type": task_type,
-            "status": "pending",  # pending, running, completed, failed, cancelled
+            "status": "pending",
             "progress": 0.0,
             "progress_known": False,
             "message": "Task queued...",
@@ -449,7 +557,8 @@ class TaskManager:
             "start_time": None,
             "end_time": None,
             "queue_position": None,
-            "metadata": metadata or {},
+            "queue_device": None,
+            "metadata": meta,
         }
         return task_id
 
@@ -510,9 +619,10 @@ class TaskManager:
         task = self._tasks.get(task_id)
         if not task or task["status"] not in ("pending", "running"):
             return False
+        lane = task.get("queue_device") or (task.get("metadata") or {}).get("queue_device")
         if task["status"] == "pending":
-            if task_id in self._queued_ids:
-                self._queued_ids.remove(task_id)
+            if lane and task_id in self._device_queued_ids.get(lane, []):
+                self._device_queued_ids[lane].remove(task_id)
             self.update_task(task_id, status="cancelled", message="Cancelled while queued.")
         else:
             self.update_task(task_id, status="cancelled", message="Stopping running task...")
@@ -525,7 +635,10 @@ class TaskManager:
             runner = self._runner_tasks.get(task_id)
             if runner is not None and not runner.done():
                 runner.cancel()
-        self._refresh_queue_messages()
+        if lane:
+            self._refresh_queue_messages(lane)
+        else:
+            self._refresh_queue_messages()
         return True
 
     def clear_finished(self) -> int:
@@ -539,11 +652,27 @@ class TaskManager:
         return len(to_delete)
 
     def status(self) -> Dict[str, Any]:
-        """Return a compact queue status summary."""
+        """Return aggregate and per-device queue status."""
+        device_queues: Dict[str, Dict[str, Any]] = {}
+        total_running = 0
+        total_queued = 0
+        for device, running_ids in self._device_running_ids.items():
+            queued = len(self._device_queued_ids.get(device, []))
+            running = len(running_ids)
+            total_running += running
+            total_queued += queued
+            device_queues[device] = {
+                "device": device,
+                "running": running,
+                "queued": queued,
+                "workers": self.workers_per_device,
+            }
         return {
-            "max_concurrency": self.max_concurrency,
-            "running": len(self._running_ids),
-            "queued": len(self._queued_ids),
+            "max_concurrency": self.workers_per_device,
+            "workers_per_device": self.workers_per_device,
+            "running": total_running,
+            "queued": total_queued,
+            "device_queues": device_queues,
         }
 
 
@@ -625,9 +754,8 @@ try:
 except ValueError:
     logger.warning("Invalid STUDIO_QUEUE_CONCURRENCY; falling back to 1")
     STUDIO_QUEUE_CONCURRENCY = 1
-task_manager = TaskManager(max_concurrency=STUDIO_QUEUE_CONCURRENCY)
+task_manager = TaskManager(workers_per_device=STUDIO_QUEUE_CONCURRENCY)
 evaluation_manager = EvaluationManager(DATA_DIR / "studio" / "evaluations.json")
-live_reload_subscribers: List[asyncio.Queue] = []
 
 
 def extract_waveform_peaks(audio_path: Path, num_points: int = 1200) -> List[float]:
@@ -666,16 +794,36 @@ async def handle_status(request: web.Request) -> web.Response:
     info["task_queue"] = studio_q
     try:
         from src.web_pipeline.queue_manager import queue_manager
-        p_running = len(queue_manager.running_jobs)
-        p_pending = len(queue_manager.pending_jobs)
+        pipe_q = queue_manager.status()
         info["shared_queue"] = {
-            "total_running": studio_q["running"] + p_running,
-            "total_queued": studio_q["queued"] + p_pending,
+            "total_running": studio_q["running"] + pipe_q["running"],
+            "total_queued": studio_q["queued"] + pipe_q["queued"],
             "studio_running": studio_q["running"],
             "studio_queued": studio_q["queued"],
-            "pipeline_running": p_running,
-            "pipeline_queued": p_pending,
+            "pipeline_running": pipe_q["running"],
+            "pipeline_queued": pipe_q["queued"],
+            "device_queues": {
+                **{
+                    device: {
+                        "device": device,
+                        "running": int(lane.get("running", 0)),
+                        "queued": int(lane.get("queued", 0)),
+                        "workers": int(lane.get("workers", 1)),
+                    }
+                    for device, lane in (studio_q.get("device_queues") or {}).items()
+                }
+            },
         }
+        # Merge pipeline lanes into the same map.
+        merged = info["shared_queue"]["device_queues"]
+        for device, lane in (pipe_q.get("device_queues") or {}).items():
+            bucket = merged.setdefault(
+                device,
+                {"device": device, "running": 0, "queued": 0, "workers": int(lane.get("workers", 1))},
+            )
+            bucket["running"] += int(lane.get("running", 0))
+            bucket["queued"] += int(lane.get("queued", 0))
+            bucket["workers"] = max(int(bucket.get("workers", 1)), int(lane.get("workers", 1)))
     except Exception:
         info["shared_queue"] = {
             "total_running": studio_q["running"],
@@ -684,6 +832,7 @@ async def handle_status(request: web.Request) -> web.Response:
             "studio_queued": studio_q["queued"],
             "pipeline_running": 0,
             "pipeline_queued": 0,
+            "device_queues": studio_q.get("device_queues") or {},
         }
     try:
         from src.web_pipeline.hardware_monitor import hardware_monitor
@@ -1073,102 +1222,6 @@ async def handle_upload_audio(request: web.Request) -> web.Response:
     except Exception as e:
         logger.exception("Error processing uploaded file")
         return web.json_response({"error": str(e)}, status=500)
-
-
-async def handle_youtube_inspect(request: web.Request) -> web.Response:
-    """Inspect YouTube video metadata without downloading full media."""
-    data = await request.json()
-    url = data.get("url")
-    if not url:
-        return web.json_response({"error": "URL is required"}, status=400)
-
-    def do_inspect():
-        import subprocess
-        crawler = YtCrawler()
-        cmd = crawler._yt_dlp_prefix() + [
-            "--dump-json",
-            "--no-playlist",
-            "--no-download",
-            "--compat-options",
-            "no-certifi",
-            url,
-        ]
-        res = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=False,
-            env=crawler._yt_dlp_env(),
-        )
-        if res.returncode != 0:
-            err = (res.stderr or res.stdout or "").strip()
-            raise RuntimeError(f"Failed to inspect YouTube URL: {err[:500]}")
-        info = json.loads(res.stdout)
-        return {
-            "id": info.get("id"),
-            "title": info.get("title"),
-            "duration": info.get("duration"),
-            "uploader": info.get("uploader") or info.get("channel"),
-            "thumbnail": info.get("thumbnail"),
-            "view_count": info.get("view_count"),
-            "webpage_url": info.get("webpage_url") or url,
-            "description": (info.get("description") or "")[:300],
-        }
-
-    try:
-        loop = asyncio.get_running_loop()
-        meta = await loop.run_in_executor(None, do_inspect)
-        return web.json_response(meta)
-    except Exception as e:
-        logger.exception("YouTube inspect failed")
-        return web.json_response({"error": str(e)}, status=500)
-
-
-async def handle_youtube_history(request: web.Request) -> web.Response:
-    """List previously crawled YouTube audio files from disk."""
-    yt_dir = DATA_DIR / "yt_crawler" / "downloads"
-    files = []
-    if yt_dir.is_dir():
-        for p in yt_dir.iterdir():
-            if not p.is_file() or p.suffix.lower() not in {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac", ".aiff"}:
-                continue
-            try:
-                audio = Audio.from_file(p)
-                stat = p.stat()
-                files.append({
-                    "name": p.name,
-                    "stem": p.stem,
-                    "path": str(p.relative_to(ROOT_DIR)),
-                    "absolute_path": str(p.resolve()),
-                    "sample_rate": audio.sample_rate or 0,
-                    "duration_s": audio.duration_s or 0,
-                    "channels": audio.channels or 0,
-                    "size": stat.st_size,
-                    "modified": stat.st_mtime,
-                })
-            except Exception:
-                pass
-    files.sort(key=lambda x: x["modified"], reverse=True)
-    return web.json_response({"downloads": files})
-
-
-async def handle_delete_youtube_file(request: web.Request) -> web.Response:
-    """Delete a crawled YouTube audio file from disk."""
-    data = await request.json()
-    file_path = data.get("path")
-    if not file_path:
-        return web.json_response({"error": "Path is required"}, status=400)
-    p = Path(file_path)
-    if not p.is_absolute():
-        p = ROOT_DIR / file_path
-    p = p.resolve()
-    if p.is_file() and p.is_relative_to((DATA_DIR / "yt_crawler").resolve()):
-        p.unlink()
-        sidecar = p.with_suffix(".json")
-        if sidecar.is_file():
-            sidecar.unlink()
-        return web.json_response({"status": "success", "file": str(p.name)})
-    return web.json_response({"error": "File not found or not in downloads directory"}, status=404)
 
 
 async def handle_delete_audio(request: web.Request) -> web.Response:
@@ -1990,52 +2043,6 @@ async def handle_extract_all_speakers(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=500)
 
 
-async def handle_mix_audio(request: web.Request) -> web.Response:
-    """Mix speech and music benchmark audio."""
-    data = await request.json()
-    speech_id = data.get("speech_id")
-    music_id = data.get("music_id")
-    target_smr_db = float(data.get("target_smr_db", 0.0))
-    seed = int(data.get("seed", 42))
-
-    speech_audio = registry.get_audio(speech_id)
-    music_audio = registry.get_audio(music_id)
-
-    if not speech_audio or not music_audio:
-        return web.json_response({"error": "Both speech and music audios are required"}, status=400)
-
-    mix_out = DATA_DIR / "benchmark_mixer" / f"mix_{int(time.time())}"
-    mix_out.mkdir(parents=True, exist_ok=True)
-
-    def do_mix():
-        mixer = AudioMixer(sample_rate=44100, channels=1)
-        return mixer.mix(
-            speech=speech_audio,
-            music=music_audio,
-            target_smr_db=target_smr_db,
-            seed=seed,
-            output_dir=mix_out,
-        )
-
-    try:
-        loop = asyncio.get_running_loop()
-        mix_res = await loop.run_in_executor(None, do_mix)
-
-        mixture_id = registry.register(mix_res.mixture, source_type="mix", tags=["mixture", f"smr_{target_smr_db}"])
-        speech_ref_id = registry.register(mix_res.speech_reference, source_type="mix_ref", tags=["speech_ref"])
-        music_ref_id = registry.register(mix_res.music_reference, source_type="mix_ref", tags=["music_ref"])
-
-        return web.json_response({
-            "mixture_id": mixture_id,
-            "speech_ref_id": speech_ref_id,
-            "music_ref_id": music_ref_id,
-            "params": asdict(mix_res.parameters),
-        })
-    except Exception as e:
-        logger.exception("Mixing failed")
-        return web.json_response({"error": str(e)}, status=500)
-
-
 async def handle_compare_spectrogram(request: web.Request) -> web.Response:
     """Run SpectrogramComparer on two audio objects and return comparison image."""
     data = await request.json()
@@ -2087,59 +2094,6 @@ async def handle_compare_spectrogram(request: web.Request) -> web.Response:
         return web.Response(body=img_bytes, content_type="image/png")
     except Exception as e:
         logger.exception("Spectrogram compare failed")
-        return web.json_response({"error": str(e)}, status=500)
-
-
-async def handle_compare_waveform(request: web.Request) -> web.Response:
-    """Run WaveformComparer on two audio objects and return comparison image."""
-    data = await request.json()
-    before_id = data.get("before_id")
-    after_id = data.get("after_id")
-    sample_rate = int(data.get("sample_rate", 16000))
-
-    before = registry.get_audio(before_id)
-    after = registry.get_audio(after_id)
-
-    if not before or not after:
-        return web.json_response({"error": "Both audio IDs are required"}, status=400)
-
-    def run_compare():
-        import matplotlib.pyplot as plt
-
-        comparer = WaveformComparer(sample_rate=sample_rate)
-        fig = comparer.compare(
-            before=before,
-            after=after,
-            before_title=f"Before ({before.title})",
-            after_title=f"After ({after.title})",
-            residual_title="Residual (Mixture - Estimate)",
-            show=False,
-        )
-        if fig is None:
-            raise RuntimeError("Failed to generate figure")
-
-        fig.patch.set_facecolor("#141721")
-        for ax in fig.axes:
-            ax.set_facecolor("#0e111a")
-            ax.tick_params(colors="#94a3b8")
-            ax.xaxis.label.set_color("#94a3b8")
-            ax.yaxis.label.set_color("#94a3b8")
-            ax.title.set_color("#e2e8f0")
-            for spine in ax.spines.values():
-                spine.set_color("#334155")
-
-        buf = io.BytesIO()
-        fig.savefig(buf, format="png", dpi=120, bbox_inches="tight", facecolor=fig.get_facecolor())
-        plt.close(fig)
-        buf.seek(0)
-        return buf.getvalue()
-
-    try:
-        loop = asyncio.get_running_loop()
-        img_bytes = await loop.run_in_executor(None, run_compare)
-        return web.Response(body=img_bytes, content_type="image/png")
-    except Exception as e:
-        logger.exception("Waveform compare failed")
         return web.json_response({"error": str(e)}, status=500)
 
 
@@ -2238,27 +2192,31 @@ def get_shared_queue_data() -> Dict[str, Any]:
     studio_status = task_manager.status()
 
     pipeline_jobs: List[Dict[str, Any]] = []
-    pipeline_status = {"running": 0, "pending": 0, "is_paused": False, "max_concurrency": 2}
+    pipeline_status = {
+        "running": 0,
+        "pending": 0,
+        "queued": 0,
+        "is_paused": False,
+        "max_concurrency": 1,
+        "workers_per_device": 1,
+        "device_queues": {},
+    }
     try:
         from src.web_pipeline.queue_manager import queue_manager
         pipeline_jobs = queue_manager.list_jobs(limit=50)
-        pipeline_status = {
-            "running": len(queue_manager.running_jobs),
-            "pending": len(queue_manager.pending_jobs),
-            "is_paused": queue_manager.is_paused,
-            "max_concurrency": queue_manager.max_concurrency,
-        }
+        pipeline_status = queue_manager.status()
     except Exception:
         pass
 
     unified_items = []
 
     for t in studio_tasks:
+        meta = t.get("metadata", {}) or {}
         unified_items.append({
             "id": t["id"],
             "source": "studio",
             "source_label": "SonicStudio",
-            "title": t.get("metadata", {}).get("title") or t.get("metadata", {}).get("model") or t.get("type", "Studio Task"),
+            "title": meta.get("title") or meta.get("model") or t.get("type", "Studio Task"),
             "type": t.get("type", "studio_task"),
             "status": t.get("status", "pending"),
             "progress": round(min(100.0, max(0.0, float(t.get("progress") or 0.0) * 100.0)), 1),
@@ -2269,10 +2227,12 @@ def get_shared_queue_data() -> Dict[str, Any]:
             "start_time": t.get("start_time"),
             "end_time": t.get("end_time"),
             "queue_position": t.get("queue_position"),
-            "metadata": t.get("metadata", {}),
+            "device": t.get("queue_device") or meta.get("queue_device") or meta.get("device"),
+            "metadata": meta,
         })
 
     for j in pipeline_jobs:
+        params = j.get("params", {}) or {}
         unified_items.append({
             "id": j["id"],
             "source": "pipeline",
@@ -2289,13 +2249,25 @@ def get_shared_queue_data() -> Dict[str, Any]:
             "end_time": j.get("finished_at"),
             "processed_items": j.get("processed_items", 0),
             "total_items": j.get("total_items", 0),
-            "metadata": j.get("params", {}),
+            "device": j.get("queue_device") or params.get("queue_device") or params.get("device"),
+            "metadata": params,
         })
 
     unified_items.sort(key=lambda x: x.get("created_at") or 0, reverse=True)
 
     total_running = studio_status["running"] + pipeline_status["running"]
     total_queued = studio_status["queued"] + pipeline_status["pending"]
+
+    device_queues: Dict[str, Dict[str, Any]] = {}
+    for source_status in (studio_status, pipeline_status):
+        for device, lane in (source_status.get("device_queues") or {}).items():
+            bucket = device_queues.setdefault(
+                device,
+                {"device": device, "running": 0, "queued": 0, "workers": lane.get("workers", 1)},
+            )
+            bucket["running"] += int(lane.get("running", 0))
+            bucket["queued"] += int(lane.get("queued", 0))
+            bucket["workers"] = max(int(bucket.get("workers", 1)), int(lane.get("workers", 1)))
 
     return {
         "device": {
@@ -2320,6 +2292,7 @@ def get_shared_queue_data() -> Dict[str, Any]:
             "pipeline_queued": pipeline_status["pending"],
             "pipeline_paused": pipeline_status["is_paused"],
         },
+        "device_queues": device_queues,
         "items": unified_items,
         "studio": {"tasks": studio_tasks, "queue": studio_status},
         "pipeline": {"jobs": pipeline_jobs, "queue": pipeline_status},
@@ -2378,41 +2351,6 @@ async def handle_delete_evaluation(request: web.Request) -> web.Response:
     if not success:
         return web.json_response({"error": "Evaluation not found"}, status=404)
     return web.json_response({"status": "success", "deleted_id": eval_id})
-
-
-async def handle_export_evaluations(request: web.Request) -> web.Response:
-    """Export human evaluations as JSON or CSV."""
-    fmt = request.query.get("format", "csv").lower()
-    evals = evaluation_manager.get_all()
-
-    if fmt == "json":
-        return web.Response(
-            text=json.dumps(evals, indent=2, ensure_ascii=False),
-            content_type="application/json",
-            headers={"Content-Disposition": 'attachment; filename="separation_evaluations.json"'},
-        )
-
-    # CSV export
-    output = io.StringIO()
-    import csv
-    fieldnames = [
-        "id", "clip_title", "clip_id", "model_name", "model_id", "stem",
-        "score_overall", "score_vocal_clarity", "score_bleed", "score_artifacts",
-        "notes", "tags", "created_at", "updated_at", "clip_path", "separated_audio_path"
-    ]
-    writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
-    writer.writeheader()
-    for row in evals:
-        row_copy = dict(row)
-        if isinstance(row_copy.get("tags"), list):
-            row_copy["tags"] = ";".join(str(t) for t in row_copy["tags"])
-        writer.writerow(row_copy)
-
-    return web.Response(
-        text=output.getvalue(),
-        content_type="text/csv",
-        headers={"Content-Disposition": 'attachment; filename="separation_evaluations.csv"'},
-    )
 
 
 async def handle_batch_separation_compare(request: web.Request) -> web.Response:
@@ -2614,41 +2552,6 @@ async def handle_batch_separation_compare(request: web.Request) -> web.Response:
 # ==================== LIVE RELOAD SSE ====================
 
 
-async def handle_live_reload_sse(request: web.Request) -> web.StreamResponse:
-    """Server-Sent Events endpoint for hot live-reloading."""
-    response = web.StreamResponse(
-        status=200,
-        reason="OK",
-        headers={
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "Access-Control-Allow-Origin": "*",
-        },
-    )
-    await response.prepare(request)
-    queue: asyncio.Queue = asyncio.Queue()
-    live_reload_subscribers.append(queue)
-
-    # Send initial connection event
-    await response.write(b"data: connected\n\n")
-
-    try:
-        while True:
-            msg = await queue.get()
-            try:
-                await response.write(f"data: {msg}\n\n".encode("utf-8"))
-            except (ConnectionResetError, aiohttp.ClientConnectionResetError):
-                break
-    except asyncio.CancelledError:
-        pass
-    finally:
-        if queue in live_reload_subscribers:
-            live_reload_subscribers.remove(queue)
-
-    return response
-
-
 @web.middleware
 async def no_cache_middleware(request: web.Request, handler):
     """Ensure static files and HTML are never served from browser stale cache in development."""
@@ -2660,73 +2563,24 @@ async def no_cache_middleware(request: web.Request, handler):
     return response
 
 
-async def file_watcher_loop(app: web.Application):
-    """Background task to watch frontend and studio backend files and trigger live reload."""
-    mtimes: Dict[str, float] = {}
-
-    def scan():
-        changed = False
-        # Watch static frontend files
-        for p in STATIC_DIR.rglob("*"):
-            if p.is_file() and p.suffix in (".html", ".css", ".js"):
-                try:
-                    mt = p.stat().st_mtime
-                    if str(p) in mtimes and mtimes[str(p)] != mt:
-                        changed = True
-                    mtimes[str(p)] = mt
-                except Exception:
-                    pass
-
-        # Watch Python server/router files
-        for p in (ROOT_DIR / "src" / "web_studio").rglob("*.py"):
-            if p.is_file():
-                try:
-                    mt = p.stat().st_mtime
-                    if str(p) in mtimes and mtimes[str(p)] != mt:
-                        changed = True
-                    mtimes[str(p)] = mt
-                except Exception:
-                    pass
-
-        return changed
-
-    scan()
-    while True:
-        await asyncio.sleep(0.5)
-        if scan():
-            logger.info("Modification detected! Broadcasting hot reload to %d client(s)...", len(live_reload_subscribers))
-            for q in list(live_reload_subscribers):
-                await q.put("reload")
-
-
 async def start_background_tasks(app: web.Application):
     await task_manager.start()
-    app["studio_watcher"] = asyncio.create_task(file_watcher_loop(app))
 
 
 async def cleanup_background_tasks(app: web.Application):
     await task_manager.stop()
-    watcher = app.get("studio_watcher")
-    if watcher and not watcher.done():
-        watcher.cancel()
-        try:
-            await watcher
-        except (asyncio.CancelledError, Exception):
-            pass
 
 
 # ==================== STATIC FILE HANDLERS ====================
 
 
 async def handle_index(request: web.Request) -> web.Response:
-    """Serve modular index.html with composed partials and no-cache for instant development feedback."""
-    from src.web_backend.html_composer import compose_html
+    """Serve the SonicStudio frontend index.html."""
     index_file = STATIC_DIR / "index.html"
     if not index_file.is_file():
         return web.Response(text="index.html not found", status=404)
-    content = compose_html(index_file)
     return web.Response(
-        text=content,
+        text=index_file.read_text(encoding="utf-8"),
         content_type="text/html",
         headers={"Cache-Control": "no-cache, no-store, must-revalidate, max-age=0"},
     )
@@ -2748,9 +2602,6 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_post("/api/audio/clear-all", handle_clear_session_audios)
     app.router.add_post("/api/audio/upload", handle_upload_audio)
     app.router.add_post("/api/audio/youtube", handle_youtube_ingest)
-    app.router.add_post("/api/crawler/inspect", handle_youtube_inspect)
-    app.router.add_get("/api/crawler/history", handle_youtube_history)
-    app.router.add_post("/api/crawler/delete", handle_delete_youtube_file)
     app.router.add_get("/api/audio", handle_list_audios)
     app.router.add_get("/api/audio/{id}", handle_get_audio_metadata)
     app.router.add_delete("/api/audio/{id}", handle_delete_audio)
@@ -2766,13 +2617,10 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_get("/api/evaluations", handle_list_evaluations)
     app.router.add_post("/api/evaluations", handle_save_evaluation)
     app.router.add_delete("/api/evaluations/{id}", handle_delete_evaluation)
-    app.router.add_get("/api/evaluations/export", handle_export_evaluations)
     app.router.add_post("/api/diarization/run", handle_run_diarization)
     app.router.add_post("/api/diarization/extract-speaker", handle_extract_speaker_audio)
     app.router.add_post("/api/diarization/extract-all-speakers", handle_extract_all_speakers)
-    app.router.add_post("/api/benchmark/mix", handle_mix_audio)
     app.router.add_post("/api/compare/spectrogram", handle_compare_spectrogram)
-    app.router.add_post("/api/compare/waveform", handle_compare_waveform)
     app.router.add_get("/api/tasks", handle_list_tasks)
     app.router.add_post("/api/tasks/clear", handle_clear_tasks)
     app.router.add_get("/api/tasks/{id}", handle_get_task)
@@ -2781,7 +2629,6 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_delete("/api/queue/shared/{id}", handle_shared_queue_cancel)
     app.router.add_post("/api/queue/shared/{id}/cancel", handle_shared_queue_cancel)
     app.router.add_get("/api/telemetry", handle_telemetry)
-    app.router.add_get("/api/live-reload", handle_live_reload_sse)
 
 
 def register_lifecycle(app: web.Application) -> None:

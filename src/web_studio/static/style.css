@@ -943,9 +943,7 @@ html, body {
   color: var(--accent-cyan);
 }
 
-.badge-reload {
-  color: var(--accent-emerald);
-}
+
 
 .badge-primary {
   background-color: hsla(217, 91%, 60%, 0.18);
@@ -1005,12 +1003,7 @@ html, body {
   animation: pulse-glow 2s infinite ease-in-out;
 }
 
-.reload-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background-color: var(--accent-emerald);
-}
+
 
 @keyframes pulse-glow {
   0%, 100% { opacity: 1; transform: scale(1); }
@@ -2641,103 +2634,27 @@ html, body {
 }
 
 /* Model Comparison Stacked Lanes */
-.diar-compare-labels-wrap {
-  display: flex;
-  flex-direction: column;
-}
 
-.diar-compare-label-row {
-  height: 56px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 8px;
-  border-bottom: 1px solid var(--border-subtle);
-  box-sizing: border-box;
-  gap: 6px;
-  background-color: var(--bg-surface-elevated);
-  transition: background var(--transition-fast);
-}
 
-.diar-compare-label-row.is-active-model {
-  border-left: 3px solid var(--accent-cyan);
-  background: rgba(6, 182, 212, 0.08);
-}
 
-.diar-compare-label-left {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  min-width: 0;
-  flex: 1;
-}
 
-.diar-compare-model-name {
-  font-size: 0.76rem;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
-.diar-compare-stats-sub {
-  font-size: 0.65rem;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  white-space: nowrap;
-}
 
-.diar-compare-lanes-wrap {
-  display: flex;
-  flex-direction: column;
-}
 
-.diar-compare-lane-track {
-  height: 56px;
-  position: relative;
-  border-bottom: 1px solid var(--border-subtle);
-  background: #080c16;
-  box-sizing: border-box;
-  cursor: pointer;
-  overflow: hidden;
-}
 
-.diar-compare-lane-track:hover {
-  background: #0c1220;
-}
 
-.diar-compare-turn-block {
-  position: absolute;
-  top: 6px;
-  bottom: 6px;
-  border-radius: 4px;
-  cursor: pointer;
-  opacity: 0.90;
-  display: flex;
-  align-items: center;
-  padding: 0 6px;
-  box-sizing: border-box;
-  font-size: 0.68rem;
-  font-family: var(--font-mono);
-  font-weight: 700;
-  color: #fff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
-  overflow: hidden;
-  white-space: nowrap;
-  user-select: none;
-  z-index: 10;
-  transition: transform 0.1s, box-shadow 0.15s;
-}
 
-.diar-compare-turn-block:hover {
-  opacity: 1;
-  transform: scaleY(1.06);
-  z-index: 15;
-  box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
-}
+
+
+
+
+
+
+
+
+
+
+
 
 .diar-speaker-lane-track {
   height: 64px;
@@ -3322,48 +3239,19 @@ html, body {
 }
 
 /* Diarization Session History Card (always visible under results/empty) */
-.diar-history-card {
-  background-color: var(--bg-surface);
-  margin-top: 0.25rem;
-}
 
-.diar-history-card .card-subtitle {
-  margin-top: 0.25rem;
-}
 
-.diar-history-filter-bar {
-  margin-bottom: 1rem;
-}
 
-.diar-history-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  max-height: 520px;
-  overflow-y: auto;
-  padding-right: 4px;
-}
 
-.diar-history-item {
-  background-color: var(--bg-surface-elevated);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  padding: 0.85rem 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  transition: all var(--transition-fast);
-}
 
-.diar-history-item:hover {
-  border-color: var(--border-muted);
-  background-color: var(--bg-surface-hover);
-}
 
-.diar-history-item.active-session {
-  border-color: var(--accent-cyan);
-  box-shadow: 0 0 10px rgba(0, 229, 255, 0.15);
-}
+
+
+
+
+
+
+
 
 .diar-hist-top {
   display: flex;
@@ -5479,12 +5367,7 @@ html, body {
 }
 
 /* Evaluation Matrix KPI Grid */
-.matrix-kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 1rem;
-  margin-top: 1rem;
-}
+
 
 .kpi-card {
   background: var(--bg-surface, #141722);
@@ -5511,13 +5394,7 @@ html, body {
   font-family: var(--font-mono, monospace);
 }
 
-.matrix-filter-bar {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-top: 1.25rem;
-  flex-wrap: wrap;
-}
+
 
 .filter-pills {
   display: flex;

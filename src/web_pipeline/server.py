@@ -62,11 +62,6 @@ def json_error(message: str, status: int = 400) -> web.Response:
 # Telemetry & Real-Time SSE Stream
 # -------------------------------------------------------------------------
 
-async def handle_telemetry(request: web.Request) -> web.Response:
-    """Return live system telemetry and throughput stats."""
-    return json_response(hardware_monitor.get_system_telemetry())
-
-
 async def handle_events_sse(request: web.Request) -> web.StreamResponse:
     """Server-Sent Events (SSE) stream for real-time dashboard events."""
     response = web.StreamResponse(
@@ -362,12 +357,14 @@ async def handle_queue_controls(request: web.Request) -> web.Response:
         elif action == "resume":
             queue_manager.resume_queue()
         elif action == "set_concurrency":
-            concurrency = int(body.get("concurrency", 2))
+            concurrency = int(body.get("concurrency", 1))
             queue_manager.set_concurrency(concurrency)
 
         return json_response({
-            "is_paused": queue_manager._is_paused,
+            "is_paused": queue_manager.is_paused,
             "max_concurrency": queue_manager.max_concurrency,
+            "workers_per_device": queue_manager.workers_per_device,
+            "device_queues": queue_manager.status().get("device_queues", {}),
         })
     except Exception as e:
         return json_error(str(e))
@@ -610,38 +607,6 @@ async def handle_submit_benchmark(request: web.Request) -> web.Response:
         return json_error(str(e))
 
 
-async def handle_shared_queue(request: web.Request) -> web.Response:
-    """Return unified GPU workload queue across Studio and Pipeline."""
-    try:
-        from src.web_studio.server import get_shared_queue_data
-        return web.json_response(get_shared_queue_data())
-    except Exception as exc:
-        return web.json_response({"error": str(exc)}, status=500)
-
-
-async def handle_shared_queue_cancel(request: web.Request) -> web.Response:
-    """Cancel a task or job across either SonicStudio or SonicPipeline."""
-    item_id = request.match_info["id"]
-    if item_id.startswith("job_") or queue_manager.get_job(item_id):
-        success = queue_manager.cancel_job(item_id)
-        if not success:
-            return web.json_response({"error": "Could not cancel pipeline job"}, status=409)
-        return web.json_response({"id": item_id, "source": "pipeline", "status": "cancelled"})
-    else:
-        try:
-            from src.web_studio.server import task_manager
-            success = task_manager.cancel_task(item_id)
-            if not success:
-                return web.json_response({"error": "Could not cancel studio task"}, status=409)
-            return web.json_response({"id": item_id, "source": "studio", "status": "cancelled"})
-        except Exception as exc:
-            return web.json_response({"error": str(exc)}, status=500)
-
-
-# -------------------------------------------------------------------------
-# Manifest & Export Endpoints
-# -------------------------------------------------------------------------
-
 async def handle_generate_manifest(request: web.Request) -> web.Response:
     """Generate manifest string (JSONL or CSV)."""
     try:
@@ -760,53 +725,13 @@ async def no_cache_middleware(request: web.Request, handler):
     return response
 
 
-async def file_watcher_loop(app: web.Application):
-    """Background task to watch pipeline frontend & backend files and trigger live reload."""
-    mtimes: Dict[str, float] = {}
-
-    def scan() -> bool:
-        changed = False
-        # Watch static frontend files
-        for p in STATIC_DIR.rglob("*"):
-            if p.is_file() and p.suffix in (".html", ".css", ".js"):
-                try:
-                    mt = p.stat().st_mtime
-                    if str(p) in mtimes and mtimes[str(p)] != mt:
-                        changed = True
-                    mtimes[str(p)] = mt
-                except Exception:
-                    pass
-
-        # Watch Python backend files
-        for p in (ROOT_DIR / "src" / "web_pipeline").rglob("*.py"):
-            if p.is_file():
-                try:
-                    mt = p.stat().st_mtime
-                    if str(p) in mtimes and mtimes[str(p)] != mt:
-                        changed = True
-                    mtimes[str(p)] = mt
-                except Exception:
-                    pass
-
-        return changed
-
-    scan()
-    while True:
-        await asyncio.sleep(0.5)
-        if scan():
-            logger.info("Pipeline file modification detected! Broadcasting hot reload...")
-            queue_manager.broadcast("reload", {})
-
-
 async def handle_index(request: web.Request) -> web.Response:
-    """Serve modular index.html with composed partials and no-cache headers."""
-    from src.web_backend.html_composer import compose_html
+    """Serve the SonicPipeline frontend index.html."""
     index_path = STATIC_DIR / "index.html"
     if not index_path.exists():
         return web.Response(status=404, text="Static frontend not found")
-    content = compose_html(index_path)
     return web.Response(
-        text=content,
+        text=index_path.read_text(encoding="utf-8"),
         content_type="text/html",
         headers={"Cache-Control": "no-cache, no-store, must-revalidate, max-age=0"},
     )
@@ -824,17 +749,9 @@ def register_lifecycle(app: web.Application) -> None:
     # Lifecycle hooks
     async def on_startup(app: web.Application) -> None:
         await queue_manager.start()
-        app["pipeline_watcher"] = asyncio.create_task(file_watcher_loop(app))
         logger.info("SonicPipeline server initialized and queue manager active.")
 
     async def on_shutdown(app: web.Application) -> None:
-        watcher = app.get("pipeline_watcher")
-        if watcher and not watcher.done():
-            watcher.cancel()
-            try:
-                await watcher
-            except (asyncio.CancelledError, Exception):
-                pass
         await queue_manager.stop()
         logger.info("SonicPipeline server stopped.")
 
@@ -848,7 +765,6 @@ def register_api_routes(app: web.Application) -> None:
     Args:
         app: Aiohttp application that owns the shared backend.
     """
-    app.router.add_get("/api/telemetry", handle_telemetry)
     app.router.add_get("/api/events", handle_events_sse)
 
     # Dataset & item routes
@@ -872,9 +788,6 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_post("/api/jobs/{id}/cancel", handle_cancel_job)
     app.router.add_delete("/api/jobs/{id}", handle_delete_job)
     app.router.add_post("/api/queue/controls", handle_queue_controls)
-    app.router.add_get("/api/queue/shared", handle_shared_queue)
-    app.router.add_delete("/api/queue/shared/{id}", handle_shared_queue_cancel)
-    app.router.add_post("/api/queue/shared/{id}/cancel", handle_shared_queue_cancel)
 
     # Job submission routes
     app.router.add_post("/api/jobs/batch_ingest_yt", handle_submit_ingest_yt)

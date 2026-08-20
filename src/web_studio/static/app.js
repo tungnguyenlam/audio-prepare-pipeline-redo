@@ -17,13 +17,6 @@ const state = {
   systemStatus: null,
   selectedGpu: localStorage.getItem('sonic_selected_gpu') || 'cuda:0',
 
-  // Live A/B state
-  ab: {
-    trackAId: null,
-    trackBId: null,
-    currentTrack: 'A',     // 'A' or 'B'
-  },
-
   // Master Player State
   player: {
     isPlaying: false,
@@ -44,7 +37,6 @@ const state = {
   // Tab 7 Project Explorer Filter State
   tabLibrarySearch: "",
   tabLibraryCategory: "all",
-  activeSavePreset: "speech",
 
   // Diarization Studio State
   diarization: {
@@ -55,24 +47,13 @@ const state = {
     customNames: {},
     colors: {},
     zoom: 1.0,
-    viewMode: 'multitrack',
-    highlightOverlaps: true,
+    duration: 0,
     activeTurnIndex: null,
-    selectedTurnIndices: new Set(),
-    loopTurn: false,
-    followPlayhead: true,
     activeSpeakerFilter: 'all',
     minDurFilter: 0,
     searchQuery: '',
     sortMode: 'time-asc',
-    activeExportTab: 'rttm',
-    soloSpeaker: null,
-    mutedSpeakers: new Set(),
-    history: [],
-    historySearch: '',
-    dragTurnInfo: null,
     isScrubbing: false,
-    selectionRange: null,
   },
 };
 
@@ -82,9 +63,6 @@ const el = {
   tabs: document.querySelectorAll('.nav-tab'),
   tabPanes: document.querySelectorAll('.tab-pane'),
   deviceLabel: document.getElementById('device-label'),
-  sidebarGpuSection: document.getElementById('sidebar-gpu-section'),
-  sidebarGpuCardsList: document.getElementById('sidebar-gpu-cards-list'),
-  sidebarSelectedGpuPill: document.getElementById('sidebar-selected-gpu-pill'),
   gpuLoadBadge: document.getElementById('gpu-load-badge'),
   gpuLoadLabel: document.getElementById('gpu-load-label'),
   headerGpuMeter: document.getElementById('header-gpu-meter'),
@@ -110,7 +88,6 @@ const el = {
   speedSelect: document.getElementById('player-speed-select'),
   scrubWrapper: document.getElementById('player-scrub-wrapper'),
   scrubProgress: document.getElementById('player-scrub-progress'),
-  scrubHandle: document.getElementById('player-scrub-handle'),
   timeCurrent: document.getElementById('player-time-current'),
   timeTotal: document.getElementById('player-time-total'),
   playerTitle: document.getElementById('player-track-title'),
@@ -179,38 +156,10 @@ const el = {
   cutsTableBody: document.getElementById('cuts-table-body'),
   cutsCounterBadge: document.getElementById('cuts-counter-badge'),
   cutUnitRadios: document.querySelectorAll('input[name="cut_unit"]'),
-  cutsCountBadge: document.getElementById('cuts-count-badge'),
-  btnExportAllCuts: document.getElementById('btn-export-all-cuts'),
-  btnClearAllCuts: document.getElementById('btn-clear-all-cuts'),
-
-  // YouTube Ingest
-  ytUrlInput: document.getElementById('yt-url-input'),
-  ytTargetRate: document.getElementById('yt-target-rate'),
-  ytMaxDuration: document.getElementById('yt-max-duration'),
-  ytCookiesInput: document.getElementById('yt-cookies-input'),
-  btnDownloadYt: document.getElementById('btn-download-yt'),
-  btnIngestYt: document.getElementById('btn-ingest-yt'),
-  ytTaskProgressBox: document.getElementById('yt-task-progress-box'),
-  ytTaskTitle: document.getElementById('yt-task-title'),
-  ytTaskTimer: document.getElementById('yt-task-timer'),
-  ytProgressBar: document.getElementById('yt-progress-bar'),
-  ytTaskStatusText: document.getElementById('yt-task-status-text'),
-  ytPreviewCard: document.getElementById('yt-preview-card'),
-  ytPreviewThumb: document.getElementById('yt-preview-thumb'),
-  ytPreviewTitle: document.getElementById('yt-preview-title'),
-  ytPreviewUploader: document.getElementById('yt-preview-uploader'),
-  ytPreviewDuration: document.getElementById('yt-preview-duration'),
-  ytPreviewId: document.getElementById('yt-preview-id'),
-  ytPreviewLink: document.getElementById('yt-preview-link'),
-  ytEmptyPlaceholder: document.getElementById('yt-empty-placeholder'),
-  ytInspectBadge: document.getElementById('yt-inspect-badge'),
-  ytVaultList: document.getElementById('yt-vault-list'),
-  btnRefreshYtHistory: document.getElementById('btn-refresh-yt-history'),
 
   // Separation Studio
   sepInputSelect: document.getElementById('sep-input-select'),
   sepChildrenBox: document.getElementById('sep-children-box'),
-  sepChildrenTitle: document.getElementById('sep-children-title'),
   sepChildrenCount: document.getElementById('sep-children-count'),
   sepChildrenList: document.getElementById('sep-children-list'),
   modelCards: document.querySelectorAll('.model-card[data-model]'),
@@ -229,18 +178,13 @@ const el = {
 
   // Diarization Studio
   btnToggleDiarSetup: document.getElementById('btn-toggle-diar-setup'),
-  diarSetupCard: document.getElementById('diar-setup-card'),
   diarSetupBody: document.getElementById('diar-setup-body'),
   diarSetupToggleIcon: document.getElementById('diar-setup-toggle-icon'),
   diarSetupToggleText: document.getElementById('diar-setup-toggle-text'),
   diarInputSelect: document.getElementById('diar-input-select'),
   btnDiarBrowseLibrary: document.getElementById('btn-diar-browse-library'),
-  diarSavedNoticePill: document.getElementById('diar-saved-notice-pill'),
-  diarSavedNoticeText: document.getElementById('diar-saved-notice-text'),
-  btnLoadSavedForTrack: document.getElementById('btn-load-saved-for-track'),
   diarAudioMetaChip: document.getElementById('diar-audio-meta-chip'),
   diarChildrenBox: document.getElementById('diar-children-box'),
-  diarChildrenTitle: document.getElementById('diar-children-title'),
   diarChildrenCount: document.getElementById('diar-children-count'),
   diarChildrenList: document.getElementById('diar-children-list'),
   diarInputPreviewPill: document.getElementById('diar-input-preview-pill'),
@@ -252,51 +196,26 @@ const el = {
   btnToggleHfVis: document.getElementById('btn-toggle-hf-vis'),
   diarDeviceSelect: document.getElementById('diar-device-select'),
   btnRunDiarization: document.getElementById('btn-run-diarization'),
-  btnDiarImport: document.getElementById('btn-diar-import'),
-  diarFileImportInput: document.getElementById('diar-file-import-input'),
-  btnDiarSample: document.getElementById('btn-diar-sample'),
   btnDiarReset: document.getElementById('btn-diar-reset'),
   diarTaskProgressBox: document.getElementById('diar-task-progress-box'),
   diarTaskTimer: document.getElementById('diar-task-timer'),
   diarProgressBar: document.getElementById('diar-progress-bar'),
   diarTaskStatusText: document.getElementById('diar-task-status-text'),
   diarEmptyPlaceholder: document.getElementById('diar-empty-placeholder'),
-  btnDiarEmptyDemo: document.getElementById('btn-diar-empty-demo'),
   diarResultsWrapper: document.getElementById('diar-results-wrapper'),
   diarModelBadge: document.getElementById('diar-model-badge'),
   diarSpeakerCountBadge: document.getElementById('diar-speaker-count-badge'),
   diarTurnsCountBadge: document.getElementById('diar-turns-count-badge'),
   diarSpeechRatioBadge: document.getElementById('diar-speech-ratio-badge'),
-  btnViewMultitrack: document.getElementById('btn-view-multitrack'),
-  btnViewComposite: document.getElementById('btn-view-composite'),
-  btnViewCompare: document.getElementById('btn-view-compare'),
-  btnToggleOverlapHighlight: document.getElementById('btn-toggle-overlap-highlight'),
-  btnOpenAutoMerge: document.getElementById('btn-open-auto-merge'),
-  modalAutoMergeGaps: document.getElementById('modal-auto-merge-gaps'),
-  btnCloseAutoMergeModal: document.getElementById('btn-close-auto-merge-modal'),
-  btnCancelAutoMerge: document.getElementById('btn-cancel-auto-merge'),
-  btnConfirmAutoMerge: document.getElementById('btn-confirm-auto-merge'),
-  autoMergeThresholdInput: document.getElementById('auto-merge-threshold-input'),
   diarSubtabBtns: document.querySelectorAll('.diar-subtab-btn'),
   diarSubviews: document.querySelectorAll('.diar-subview-panel'),
   diarSubtabTurnsCount: document.getElementById('diar-subtab-turns-count'),
   diarSubtabSpkCount: document.getElementById('diar-subtab-spk-count'),
-  diarHistoryCard: document.getElementById('diar-history-card'),
-  diarMinimapContainer: document.getElementById('diar-minimap-container'),
-  diarMinimapTrack: document.getElementById('diar-minimap-track'),
-  diarMinimapBlocksLayer: document.getElementById('diar-minimap-blocks-layer'),
-  diarMinimapPlayhead: document.getElementById('diar-minimap-playhead'),
-  diarMinimapViewportWindow: document.getElementById('diar-minimap-viewport-window'),
   btnDiarSkipBack: document.getElementById('btn-diar-skip-back'),
   btnDiarPlayToggle: document.getElementById('btn-diar-play-toggle'),
   iconDiarPlay: document.getElementById('icon-diar-play'),
   iconDiarPause: document.getElementById('icon-diar-pause'),
-  btnDiarMuteAll: document.getElementById('btn-diar-mute-all'),
-  iconDiarMuteAll: document.getElementById('icon-diar-mute-all'),
-  diarMuteAllLabel: document.getElementById('diar-mute-all-label'),
   btnDiarSkipFwd: document.getElementById('btn-diar-skip-fwd'),
-  btnDiarLoopTurn: document.getElementById('btn-diar-loop-turn'),
-  btnDiarFollowPlayhead: document.getElementById('btn-diar-follow-playhead'),
   diarTimeCurrent: document.getElementById('diar-time-current'),
   diarTimeTotal: document.getElementById('diar-time-total'),
   btnDiarZoomOut: document.getElementById('btn-diar-zoom-out'),
@@ -305,62 +224,26 @@ const el = {
   diarZoomLevel: document.getElementById('diar-zoom-level'),
   diarSpeedSelect: document.getElementById('diar-speed-select'),
   diarMultitrackViewport: document.getElementById('diar-multitrack-viewport'),
-  diarTimelineInner: document.getElementById('diar-timeline-inner'),
   diarLaneLabelsCol: document.getElementById('diar-lane-labels-col'),
-  diarWaveformLabel: document.getElementById('diar-waveform-label'),
-  diarCompositeLabel: document.getElementById('diar-composite-label'),
   diarSpkLabelsWrap: document.getElementById('diar-spk-labels-wrap'),
-  diarCompareLabelsWrap: document.getElementById('diar-compare-labels-wrap'),
   diarTracksArea: document.getElementById('diar-tracks-area'),
   diarRulerTrack: document.getElementById('diar-ruler-track'),
   diarWaveformTrack: document.getElementById('diar-waveform-track'),
   diarWaveformCanvas: document.getElementById('diar-waveform-canvas'),
-  diarCompositeTrack: document.getElementById('diar-composite-track'),
   diarSpeakerLanesWrap: document.getElementById('diar-speaker-lanes-wrap'),
-  diarCompareLanesWrap: document.getElementById('diar-compare-lanes-wrap'),
-  diarSelectionOverlay: document.getElementById('diar-selection-overlay'),
-  diarSelectionActionsBar: document.getElementById('diar-selection-actions-bar'),
-  btnSelPlay: document.getElementById('btn-sel-play'),
-  btnSelAddTurn: document.getElementById('btn-sel-add-turn'),
-  btnSelCut: document.getElementById('btn-sel-cut'),
-  btnSelClear: document.getElementById('btn-sel-clear'),
   diarPlayheadLine: document.getElementById('diar-playhead-line'),
   diarPlayheadHandle: document.getElementById('diar-playhead-handle'),
   diarTurnTooltip: document.getElementById('diar-turn-tooltip'),
   diarSpeakersGrid: document.getElementById('diar-speakers-grid'),
   diarExtractModeSelect: document.getElementById('diar-extract-mode-select'),
   btnExtractAllSpeakers: document.getElementById('btn-extract-all-speakers'),
-  btnAddTurnAtPlayhead: document.getElementById('btn-add-turn-at-playhead'),
-  diarBatchBar: document.getElementById('diar-batch-bar'),
-  diarBatchCount: document.getElementById('diar-batch-count'),
-  diarBatchSpeakerSelect: document.getElementById('diar-batch-speaker-select'),
-  btnBatchReassign: document.getElementById('btn-batch-reassign'),
-  btnBatchCut: document.getElementById('btn-batch-cut'),
-  btnBatchDelete: document.getElementById('btn-batch-delete'),
-  btnBatchClear: document.getElementById('btn-batch-clear'),
   diarFilterSpeakerSelect: document.getElementById('diar-filter-speaker-select'),
   diarTurnsSearchInput: document.getElementById('diar-turns-search-input'),
   diarFilterMinDur: document.getElementById('diar-filter-min-dur'),
   diarSortTurnsSelect: document.getElementById('diar-sort-turns-select'),
   diarFilteredTurnsCount: document.getElementById('diar-filtered-turns-count'),
-  thSelectAllTurns: document.getElementById('th-select-all-turns'),
   turnsTableBody: document.getElementById('turns-table-body'),
-  exportNavTabs: document.querySelectorAll('.export-nav-tab'),
-  exportFilenameLabel: document.getElementById('export-filename-label'),
-  btnCopyExport: document.getElementById('btn-copy-export'),
   btnDownloadExport: document.getElementById('btn-download-export'),
-  exportPreviewTextarea: document.getElementById('export-preview-textarea'),
-  diarHistoryCountBadge: document.getElementById('diar-history-count-badge'),
-  btnExportAllHistory: document.getElementById('btn-export-all-history'),
-  btnClearDiarHistory: document.getElementById('btn-clear-diar-history'),
-  diarHistorySearchInput: document.getElementById('diar-history-search-input'),
-  diarHistoryList: document.getElementById('diar-history-list'),
-  modalMergeSpeaker: document.getElementById('modal-merge-speaker'),
-  btnCloseMergeModal: document.getElementById('btn-close-merge-modal'),
-  mergeSourceSpkName: document.getElementById('merge-source-spk-name'),
-  mergeTargetSpkSelect: document.getElementById('merge-target-spk-select'),
-  btnCancelMerge: document.getElementById('btn-cancel-merge'),
-  btnConfirmMerge: document.getElementById('btn-confirm-merge'),
 
   // Audition & Scoring Hub
   auditionClipSelect: document.getElementById('audition-clip-select'),
@@ -386,28 +269,9 @@ const el = {
   currentEvalScoreBadge: document.getElementById('current-eval-score-badge'),
   starRatingWidget: document.getElementById('star-rating-widget'),
   starScoreText: document.getElementById('star-score-text'),
-  sliderSubmetricClarity: document.getElementById('slider-submetric-clarity'),
-  valSubmetricClarity: document.getElementById('val-submetric-clarity'),
-  sliderSubmetricBleed: document.getElementById('slider-submetric-bleed'),
-  valSubmetricBleed: document.getElementById('val-submetric-bleed'),
-  sliderSubmetricArtifacts: document.getElementById('slider-submetric-artifacts'),
-  valSubmetricArtifacts: document.getElementById('val-submetric-artifacts'),
-  evalTagChips: document.getElementById('eval-tag-chips'),
   evalNotesInput: document.getElementById('eval-notes-input'),
   btnSaveEvaluation: document.getElementById('btn-save-evaluation'),
   btnCopyEvalNote: document.getElementById('btn-copy-eval-note'),
-
-  // Evaluation Matrix & Notes Review
-  btnExportEvalCsv: document.getElementById('btn-export-eval-csv'),
-  btnExportEvalJson: document.getElementById('btn-export-eval-json'),
-  btnRefreshEvalMatrix: document.getElementById('btn-refresh-eval-matrix'),
-  kpiTotalEvals: document.getElementById('kpi-total-evals'),
-  kpiTotalClips: document.getElementById('kpi-total-clips'),
-  kpiTopModel: document.getElementById('kpi-top-model'),
-  kpiAvgScore: document.getElementById('kpi-avg-score'),
-  evalSearchInput: document.getElementById('eval-search-input'),
-  evalModelFilterPills: document.getElementById('eval-model-filter-pills'),
-  evaluationsTableBody: document.getElementById('evaluations-table-body'),
 
   // Side-by-Side Model Comparison Deck & Provenance
   activeModelProvenanceBanner: document.getElementById('active-model-provenance-banner'),
@@ -759,43 +623,8 @@ function handleGlobalKeydown(e) {
     return;
   }
 
-  // Diarization Studio Context-Aware Hotkeys
+  // Diarization Studio: zoom hotkeys only
   if (state.activeTab === 'tab-diarization') {
-    if (e.key === '[') {
-      e.preventDefault();
-      navigateToAdjacentTurn(-1);
-      return;
-    }
-    if (e.key === ']') {
-      e.preventDefault();
-      navigateToAdjacentTurn(1);
-      return;
-    }
-    if (e.key === 'l' || e.key === 'L') {
-      e.preventDefault();
-      if (el.btnDiarLoopTurn) el.btnDiarLoopTurn.click();
-      return;
-    }
-    if (e.key === 'f' || e.key === 'F') {
-      e.preventDefault();
-      if (el.btnDiarFollowPlayhead) el.btnDiarFollowPlayhead.click();
-      return;
-    }
-    if (e.key === 's' || e.key === 'S') {
-      e.preventDefault();
-      splitActiveTurnAtPlayhead();
-      return;
-    }
-    if (e.key === 'd' || e.key === 'D' || e.key === 'Delete') {
-      e.preventDefault();
-      deleteActiveTurn();
-      return;
-    }
-    if (e.key === 'n' || e.key === 'N' || e.key === 'a' || e.key === 'A') {
-      e.preventDefault();
-      addTurnAtCursor();
-      return;
-    }
     if (e.key === 'z' || e.key === 'Z') {
       e.preventDefault();
       if (e.shiftKey) {
@@ -809,20 +638,6 @@ function handleGlobalKeydown(e) {
       e.preventDefault();
       setDiarZoom(1.0);
       return;
-    }
-    if (e.key >= '1' && e.key <= '8') {
-      if (state.diarization.activeTurnIndex !== null) {
-        e.preventDefault();
-        const spkIdx = parseInt(e.key) - 1;
-        if (state.diarization.speakers[spkIdx]) {
-          const targetSpk = state.diarization.speakers[spkIdx].speaker_id;
-          state.diarization.turns[state.diarization.activeTurnIndex].speaker_id = targetSpk;
-          detectTurnOverlaps();
-          renderDiarizationWorkspace(state.diarization.data, state.diarization.audioId, false);
-          showToast(`Turn assigned to ${getSpeakerName(targetSpk)}`, 'success');
-        }
-        return;
-      }
     }
   }
 
@@ -1865,200 +1680,6 @@ function initIngestAndSaves() {
   el.btnCloseLibraryModal.addEventListener('click', () => el.modalLibrary.classList.add('hidden'));
 }
 
-// ==================== YOUTUBE CRAWLER STUDIO ====================
-
-function initYouTubeCrawler() {
-  // Paste button in tab
-  if (el.btnYtPasteTab) {
-    el.btnYtPasteTab.addEventListener('click', async () => {
-      try {
-        const text = await navigator.clipboard.readText();
-        if (text) {
-          el.ytTabUrlInput.value = text.trim();
-          showToast("Pasted link from clipboard", "info");
-        }
-      } catch (_) {
-        showToast("Clipboard access denied or empty", "warning");
-      }
-    });
-  }
-
-  // Inspect URL
-  el.btnYtTabInspect.addEventListener('click', async () => {
-    const url = el.ytTabUrlInput.value.trim();
-    if (!url) {
-      showToast("Please enter a YouTube video URL to inspect", "error");
-      return;
-    }
-    el.btnYtTabInspect.disabled = true;
-    el.btnYtTabInspect.textContent = "Inspecting...";
-
-    try {
-      const res = await fetch("/api/crawler/inspect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to inspect YouTube URL");
-
-      renderYouTubePreview(data);
-      showToast(`Found: ${data.title}`, "success");
-    } catch (err) {
-      showToast(err.message, "error");
-    } finally {
-      el.btnYtTabInspect.disabled = false;
-      el.btnYtTabInspect.textContent = "Inspect";
-    }
-  });
-
-  // Download & Normalize
-  el.btnYtTabDownload.addEventListener('click', async () => {
-    const url = el.ytTabUrlInput.value.trim();
-    if (!url) {
-      showToast("Please enter a YouTube URL to download", "error");
-      return;
-    }
-
-    const sampleRate = parseInt(el.ytSampleRateSelect.value) || 44100;
-    const audioFormat = el.ytFormatSelect.value || "wav";
-
-    el.btnYtTabDownload.disabled = true;
-    el.ytTaskProgressBox.classList.remove('hidden');
-    el.ytEmptyPlaceholder.classList.add('hidden');
-
-    let startTime = Date.now();
-    const timerInterval = setInterval(() => {
-      el.ytTaskTimer.textContent = `${((Date.now() - startTime) / 1000).toFixed(1)}s`;
-    }, 100);
-
-    try {
-      const res = await fetch("/api/audio/youtube", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url,
-          sample_rate: sampleRate,
-          channels: 1,
-          audio_format: audioFormat,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "YouTube crawl failed to start");
-
-      pollTask(data.task_id, async (result) => {
-        clearInterval(timerInterval);
-        el.ytTaskProgressBox.classList.add('hidden');
-        el.btnYtTabDownload.disabled = false;
-        showToast(`YouTube download complete! Loaded '${result.metadata.title}'`, "success");
-        await fetchAudioList();
-        await fetchYouTubeVault();
-        await setActiveAudio(result.audio_id, { play: true });
-      }, (err) => {
-        clearInterval(timerInterval);
-        el.ytTaskProgressBox.classList.add('hidden');
-        el.btnYtTabDownload.disabled = false;
-        showToast(`YouTube ingestion error: ${err}`, "error");
-      });
-
-    } catch (err) {
-      clearInterval(timerInterval);
-      el.ytTaskProgressBox.classList.add('hidden');
-      el.btnYtTabDownload.disabled = false;
-      showToast(err.message, "error");
-    }
-  });
-
-  el.btnRefreshYtHistory.addEventListener('click', fetchYouTubeVault);
-}
-
-function renderYouTubePreview(meta) {
-  el.ytEmptyPlaceholder.classList.add('hidden');
-  el.ytPreviewCard.classList.remove('hidden');
-  el.ytInspectBadge.classList.remove('hidden');
-
-  el.ytPreviewTitle.textContent = meta.title || "Unknown Video";
-  el.ytPreviewChannel.textContent = meta.uploader || "YouTube Channel";
-  el.ytPreviewViews.textContent = meta.view_count ? `${meta.view_count.toLocaleString()} views` : "";
-  el.ytPreviewDuration.textContent = formatTime(meta.duration || 0);
-  el.ytPreviewDesc.textContent = meta.description || "No description provided.";
-  el.ytPreviewThumb.src = meta.thumbnail || "";
-  el.ytPreviewLink.href = meta.webpage_url || "#";
-}
-
-async function fetchYouTubeVault() {
-  try {
-    const res = await fetch("/api/crawler/history");
-    const data = await res.json();
-    renderYouTubeVault(data.downloads || []);
-  } catch (err) {
-    console.error("Failed to fetch YouTube history:", err);
-  }
-}
-
-function renderYouTubeVault(items) {
-  const container = el.ytVaultList;
-  container.innerHTML = "";
-
-  if (!items || items.length === 0) {
-    container.innerHTML = `<div class="empty-placeholder">No previously downloaded YouTube audio in .data/yt_crawler/downloads.</div>`;
-    return;
-  }
-
-  items.forEach(item => {
-    const card = document.createElement("div");
-    card.className = "yt-vault-item";
-    card.innerHTML = `
-      <div class="file-details">
-        <span class="file-name">${escapeHtml(item.name)}</span>
-        <span class="file-path">${item.sample_rate.toLocaleString()}Hz • ${item.channels === 1 ? 'Mono' : 'Stereo'} • ${(item.duration_s || 0).toFixed(1)}s • ${formatBytes(item.size)}</span>
-      </div>
-      <div class="stem-actions" style="display: flex; align-items: center; gap: 6px;">
-        <button class="btn btn-sm btn-secondary btn-load-yt-workspace">🎛️ Workspace</button>
-        <button class="btn btn-sm btn-secondary btn-yt-sep">🧪 Separate</button>
-        <button class="btn btn-sm btn-secondary btn-yt-diar">👥 Diarize</button>
-        <button class="btn btn-sm btn-ghost btn-delete-yt" title="Delete downloaded audio file">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-        </button>
-      </div>
-    `;
-
-    card.querySelector('.btn-load-yt-workspace').addEventListener('click', async () => {
-      await loadServerFile(item.path);
-    });
-
-    card.querySelector('.btn-yt-sep').addEventListener('click', async () => {
-      await loadServerFile(item.path);
-      switchTab('tab-separation');
-    });
-
-    card.querySelector('.btn-yt-diar').addEventListener('click', async () => {
-      await loadServerFile(item.path);
-      switchTab('tab-diarization');
-    });
-
-    card.querySelector('.btn-delete-yt').addEventListener('click', async () => {
-      if (confirm(`Delete YouTube downloaded audio "${item.name}" from disk?`)) {
-        try {
-          const res = await fetch("/api/crawler/delete", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ path: item.path }),
-          });
-          if (!res.ok) throw new Error("Failed to delete YouTube audio file");
-          showToast(`Deleted ${item.name}`, "info");
-          await fetchYouTubeVault();
-          await fetchServerFiles();
-        } catch (err) {
-          showToast(err.message, "error");
-        }
-      }
-    });
-
-    container.appendChild(card);
-  });
-}
-
 async function uploadFile(file) {
   const formData = new FormData();
   formData.append('file', file);
@@ -2432,19 +2053,20 @@ function renderSeparationResultCard(result) {
 // ==================== SPEAKER DIARIZATION STUDIO ====================
 
 const DIAR_PALETTE = [
-  "hsl(188, 86%, 53%)", // Cyan
-  "hsl(158, 64%, 52%)", // Emerald
-  "hsl(38, 92%, 50%)",  // Amber
-  "hsl(348, 83%, 60%)", // Rose
-  "hsl(270, 75%, 65%)", // Purple
-  "hsl(205, 90%, 55%)", // Sky Blue
-  "hsl(84, 80%, 50%)",  // Lime
-  "hsl(22, 90%, 55%)",  // Orange
+  "hsl(188, 86%, 53%)",
+  "hsl(158, 64%, 52%)",
+  "hsl(38, 92%, 50%)",
+  "hsl(348, 83%, 60%)",
+  "hsl(270, 75%, 65%)",
+  "hsl(205, 90%, 55%)",
+  "hsl(84, 80%, 50%)",
+  "hsl(22, 90%, 55%)",
 ];
 
-let diarAuditionQueue = [];
-let diarAuditionIndex = 0;
-let diarAuditionActive = false;
+function roundNum(value, decimals) {
+  const factor = Math.pow(10, decimals);
+  return Math.round(value * factor) / factor;
+}
 
 function getSpeakerColor(speakerId) {
   if (state.diarization.colors[speakerId]) {
@@ -2476,7 +2098,7 @@ function syncDiarModelOptions(modelType) {
   const isPyannote = modelType && modelType.startsWith("pyannote");
   const is3d = modelType === "3d_speaker" || modelType === "3d-speaker" || modelType === "threed_speaker";
   const isClustering = modelType === "clustering" || modelType === "nemo-clustering" || modelType === "nemo_clustering";
-  
+
   const hfGroup = document.getElementById("hf-token-group");
   const overlapCheck = document.getElementById("diar-3d-overlap");
   const needsHf = isPyannote || (is3d && overlapCheck && overlapCheck.checked);
@@ -2494,7 +2116,6 @@ function syncDiarModelOptions(modelType) {
 }
 
 function initDiarizationStudio() {
-  // Studio Subtabs navigation
   if (el.diarSubtabBtns) {
     el.diarSubtabBtns.forEach(btn => {
       btn.addEventListener('click', () => {
@@ -2516,7 +2137,6 @@ function initDiarizationStudio() {
     });
   }
 
-  // Setup panel collapse/expand toggle
   if (el.btnToggleDiarSetup) {
     el.btnToggleDiarSetup.addEventListener('click', () => {
       const body = el.diarSetupBody;
@@ -2534,43 +2154,24 @@ function initDiarizationStudio() {
     });
   }
 
-  // Input track change listener
   if (el.diarInputSelect) {
     el.diarInputSelect.addEventListener('change', async () => {
       const audioId = el.diarInputSelect.value;
       if (!audioId) {
         updateDiarInputMeta(null);
         renderDiarizationChildren(null);
-        if (el.diarSavedNoticePill) el.diarSavedNoticePill.classList.add('hidden');
         return;
       }
-
-      // Library paths are exposed as lib:<path> options; load into session first
       if (audioId.startsWith('lib:')) {
         const filePath = audioId.slice(4);
         await loadLibraryFileTo(filePath, 'diarization');
         return;
       }
-
       renderDiarizationChildren(audioId);
       updateDiarInputMeta(audioId);
       loadDiarWaveform(audioId);
       loadAudioIntoPlayer(audioId, false);
       state.diarization.audioId = audioId;
-
-      // Check if there is an existing diarization session saved for this audio (non-intrusive notice)
-      const existingSession = (state.diarization.history || []).find(h => h.audio_id === audioId);
-      if (existingSession && el.diarSavedNoticePill) {
-        el.diarSavedNoticePill.classList.remove('hidden');
-        if (el.diarSavedNoticeText) {
-          el.diarSavedNoticeText.textContent = `Saved session with ${existingSession.turn_count} turns (${existingSession.speaker_count} speakers) available`;
-        }
-        if (el.btnLoadSavedForTrack) {
-          el.btnLoadSavedForTrack.onclick = () => loadHistorySession(existingSession.id);
-        }
-      } else if (el.diarSavedNoticePill) {
-        el.diarSavedNoticePill.classList.add('hidden');
-      }
     });
   }
 
@@ -2578,7 +2179,6 @@ function initDiarizationStudio() {
     el.btnDiarBrowseLibrary.addEventListener('click', () => openLibraryModal('diarization'));
   }
 
-  // Preview target input audio
   if (el.btnDiarPreviewInput) {
     el.btnDiarPreviewInput.addEventListener('click', () => {
       const audioId = el.diarInputSelect.value || state.activeAudio?.id;
@@ -2588,7 +2188,6 @@ function initDiarizationStudio() {
     });
   }
 
-  // Model selection cards
   el.diarModelCards.forEach(card => {
     card.addEventListener('click', () => {
       el.diarModelCards.forEach(c => c.classList.remove('active'));
@@ -2607,7 +2206,6 @@ function initDiarizationStudio() {
     });
   }
 
-  // HuggingFace Token visibility & persistence
   if (el.hfTokenInput) {
     const savedToken = localStorage.getItem('sonic_hf_token');
     if (savedToken) el.hfTokenInput.value = savedToken;
@@ -2626,31 +2224,6 @@ function initDiarizationStudio() {
     });
   }
 
-  // Auto-Merge Micro-Gaps Modal
-  if (el.btnOpenAutoMerge && el.modalAutoMergeGaps) {
-    el.btnOpenAutoMerge.addEventListener('click', () => {
-      el.modalAutoMergeGaps.classList.remove('hidden');
-    });
-  }
-  if (el.btnCloseAutoMergeModal && el.modalAutoMergeGaps) {
-    el.btnCloseAutoMergeModal.addEventListener('click', () => {
-      el.modalAutoMergeGaps.classList.add('hidden');
-    });
-  }
-  if (el.btnCancelAutoMerge && el.modalAutoMergeGaps) {
-    el.btnCancelAutoMerge.addEventListener('click', () => {
-      el.modalAutoMergeGaps.classList.add('hidden');
-    });
-  }
-  if (el.btnConfirmAutoMerge) {
-    el.btnConfirmAutoMerge.addEventListener('click', () => {
-      const threshold = parseFloat(el.autoMergeThresholdInput?.value) || 0.30;
-      runAutoMergeMicroGaps(threshold);
-      if (el.modalAutoMergeGaps) el.modalAutoMergeGaps.classList.add('hidden');
-    });
-  }
-
-  // Run Diarization Button
   if (el.btnRunDiarization) {
     el.btnRunDiarization.addEventListener('click', async () => {
       const audioId = el.diarInputSelect.value;
@@ -2725,14 +2298,13 @@ function initDiarizationStudio() {
           el.diarTaskProgressBox.classList.add('hidden');
           el.btnRunDiarization.disabled = false;
           showToast(`Speaker Diarization completed in ${result.elapsed_s}s!`, "success");
-          renderDiarizationWorkspace(result.diarization, audioId, true);
+          renderDiarizationWorkspace(result.diarization, audioId);
         }, (err) => {
           clearInterval(timerInterval);
           el.diarTaskProgressBox.classList.add('hidden');
           el.btnRunDiarization.disabled = false;
           showToast(`Diarization failed: ${err}`, "error");
         });
-
       } catch (err) {
         clearInterval(timerInterval);
         el.diarTaskProgressBox.classList.add('hidden');
@@ -2742,46 +2314,18 @@ function initDiarizationStudio() {
     });
   }
 
-  // Demo Data & Sample Generation
-  const triggerDemo = () => {
-    const audioId = el.diarInputSelect.value || state.activeAudio?.id || (state.audioList[0] ? state.audioList[0].id : null);
-    if (!audioId) {
-      showToast("Load an audio track into the workspace first to view diarization demo", "info");
-      return;
-    }
-    generateDemoDiarization(audioId);
-    showToast("Demo multi-speaker diarization loaded!", "success");
-  };
-
-  if (el.btnDiarSample) el.btnDiarSample.addEventListener('click', triggerDemo);
-  if (el.btnDiarEmptyDemo) el.btnDiarEmptyDemo.addEventListener('click', triggerDemo);
-
-  // Reset / Clear Diarization
   if (el.btnDiarReset) {
     el.btnDiarReset.addEventListener('click', () => {
       state.diarization.data = null;
       state.diarization.turns = [];
       state.diarization.speakers = [];
       state.diarization.activeTurnIndex = null;
-      state.diarization.selectedTurnIndices.clear();
-      updateBatchBar();
       if (el.diarResultsWrapper) el.diarResultsWrapper.classList.add('hidden');
       if (el.diarEmptyPlaceholder) el.diarEmptyPlaceholder.classList.remove('hidden');
       showToast("Diarization workspace reset", "info");
     });
   }
 
-  // File Import Button
-  if (el.btnDiarImport && el.diarFileImportInput) {
-    el.btnDiarImport.addEventListener('click', () => el.diarFileImportInput.click());
-    el.diarFileImportInput.addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (file) importAnnotationFile(file);
-      e.target.value = '';
-    });
-  }
-
-  // Transport Toolbar Controls
   if (el.btnDiarPlayToggle) {
     el.btnDiarPlayToggle.addEventListener('click', () => {
       const audioId = state.diarization.audioId || (el.diarInputSelect ? el.diarInputSelect.value : null);
@@ -2794,30 +2338,8 @@ function initDiarizationStudio() {
     });
   }
 
-  if (el.btnDiarMuteAll) {
-    el.btnDiarMuteAll.addEventListener('click', () => {
-      toggleMuteAllSpeakers();
-    });
-  }
-
   if (el.btnDiarSkipBack) el.btnDiarSkipBack.addEventListener('click', () => seekRelative(-5));
   if (el.btnDiarSkipFwd) el.btnDiarSkipFwd.addEventListener('click', () => seekRelative(5));
-
-  if (el.btnDiarLoopTurn) {
-    el.btnDiarLoopTurn.addEventListener('click', () => {
-      state.diarization.loopTurn = !state.diarization.loopTurn;
-      el.btnDiarLoopTurn.classList.toggle('active', state.diarization.loopTurn);
-      showToast(`Turn loop ${state.diarization.loopTurn ? 'enabled' : 'disabled'}`, 'info');
-    });
-  }
-
-  if (el.btnDiarFollowPlayhead) {
-    el.btnDiarFollowPlayhead.addEventListener('click', () => {
-      state.diarization.followPlayhead = !state.diarization.followPlayhead;
-      el.btnDiarFollowPlayhead.classList.toggle('active', state.diarization.followPlayhead);
-      showToast(`Follow Playhead ${state.diarization.followPlayhead ? 'enabled' : 'disabled'}`, 'info');
-    });
-  }
 
   if (el.diarSpeedSelect) {
     el.diarSpeedSelect.addEventListener('change', (e) => {
@@ -2825,59 +2347,6 @@ function initDiarizationStudio() {
     });
   }
 
-  // View Mode Toggles
-  function setDiarViewMode(mode) {
-    state.diarization.viewMode = mode;
-    if (el.btnViewMultitrack) el.btnViewMultitrack.classList.toggle('active', mode === 'multitrack');
-    if (el.btnViewComposite) el.btnViewComposite.classList.toggle('active', mode === 'composite');
-    if (el.btnViewCompare) el.btnViewCompare.classList.toggle('active', mode === 'compare');
-
-    if (mode === 'multitrack') {
-      if (el.diarSpeakerLanesWrap) el.diarSpeakerLanesWrap.style.display = 'flex';
-      if (el.diarSpkLabelsWrap) el.diarSpkLabelsWrap.style.display = 'flex';
-      if (el.diarCompositeTrack) el.diarCompositeTrack.style.display = 'block';
-      if (el.diarCompositeLabel) el.diarCompositeLabel.style.display = 'flex';
-      if (el.diarCompareLanesWrap) el.diarCompareLanesWrap.style.display = 'none';
-      if (el.diarCompareLabelsWrap) el.diarCompareLabelsWrap.style.display = 'none';
-    } else if (mode === 'composite') {
-      if (el.diarSpeakerLanesWrap) el.diarSpeakerLanesWrap.style.display = 'none';
-      if (el.diarSpkLabelsWrap) el.diarSpkLabelsWrap.style.display = 'none';
-      if (el.diarCompositeTrack) el.diarCompositeTrack.style.display = 'block';
-      if (el.diarCompositeLabel) el.diarCompositeLabel.style.display = 'flex';
-      if (el.diarCompareLanesWrap) el.diarCompareLanesWrap.style.display = 'none';
-      if (el.diarCompareLabelsWrap) el.diarCompareLabelsWrap.style.display = 'none';
-    } else if (mode === 'compare') {
-      if (el.diarSpeakerLanesWrap) el.diarSpeakerLanesWrap.style.display = 'none';
-      if (el.diarSpkLabelsWrap) el.diarSpkLabelsWrap.style.display = 'none';
-      if (el.diarCompositeTrack) el.diarCompositeTrack.style.display = 'none';
-      if (el.diarCompositeLabel) el.diarCompositeLabel.style.display = 'none';
-      if (el.diarCompareLanesWrap) el.diarCompareLanesWrap.style.display = 'flex';
-      if (el.diarCompareLabelsWrap) el.diarCompareLabelsWrap.style.display = 'flex';
-      renderModelComparisonLanes();
-    }
-  }
-
-  if (el.btnViewMultitrack) {
-    el.btnViewMultitrack.addEventListener('click', () => setDiarViewMode('multitrack'));
-  }
-  if (el.btnViewComposite) {
-    el.btnViewComposite.addEventListener('click', () => setDiarViewMode('composite'));
-  }
-  if (el.btnViewCompare) {
-    el.btnViewCompare.addEventListener('click', () => setDiarViewMode('compare'));
-  }
-
-  if (el.btnToggleOverlapHighlight) {
-    el.btnToggleOverlapHighlight.addEventListener('click', () => {
-      state.diarization.highlightOverlaps = !state.diarization.highlightOverlaps;
-      el.btnToggleOverlapHighlight.classList.toggle('active', state.diarization.highlightOverlaps);
-      document.querySelectorAll('.diar-turn-segment.has-overlap').forEach(seg => {
-        seg.classList.toggle('overlap-active', state.diarization.highlightOverlaps);
-      });
-    });
-  }
-
-  // Zoom Controls
   if (el.btnDiarZoomIn) {
     el.btnDiarZoomIn.addEventListener('click', () => setDiarZoom(Math.min(10.0, state.diarization.zoom * 1.5)));
   }
@@ -2888,130 +2357,6 @@ function initDiarizationStudio() {
     el.btnDiarZoomFit.addEventListener('click', () => setDiarZoom(1.0));
   }
 
-  // Add Turn at Cursor
-  if (el.btnAddTurnAtPlayhead) {
-    el.btnAddTurnAtPlayhead.addEventListener('click', addTurnAtCursor);
-  }
-
-  // Batch Toolbar Controls
-  if (el.thSelectAllTurns) {
-    el.thSelectAllTurns.addEventListener('change', (e) => {
-      const checked = e.target.checked;
-      const visibleTurns = getFilteredAndSortedTurns();
-      if (checked) {
-        visibleTurns.forEach(t => state.diarization.selectedTurnIndices.add(t.originalIndex));
-      } else {
-        visibleTurns.forEach(t => state.diarization.selectedTurnIndices.delete(t.originalIndex));
-      }
-      renderTurnsTable();
-      updateBatchBar();
-    });
-  }
-
-  if (el.btnBatchReassign) {
-    el.btnBatchReassign.addEventListener('click', () => {
-      const targetSpk = el.diarBatchSpeakerSelect?.value;
-      if (!targetSpk || state.diarization.selectedTurnIndices.size === 0) return;
-      const count = state.diarization.selectedTurnIndices.size;
-      state.diarization.selectedTurnIndices.forEach(idx => {
-        if (state.diarization.turns[idx]) {
-          state.diarization.turns[idx].speaker_id = targetSpk;
-        }
-      });
-      state.diarization.selectedTurnIndices.clear();
-      detectTurnOverlaps();
-      renderDiarizationWorkspace(state.diarization.data, state.diarization.audioId, false);
-      showToast(`Reassigned ${count} turn(s) to ${getSpeakerName(targetSpk)}`, 'success');
-    });
-  }
-
-  if (el.btnBatchCut) {
-    el.btnBatchCut.addEventListener('click', () => {
-      const audioId = state.diarization.audioId || el.diarInputSelect.value;
-      let count = 0;
-      state.diarization.selectedTurnIndices.forEach(idx => {
-        const turn = state.diarization.turns[idx];
-        if (turn) {
-          addCutToRegistry(audioId, turn.start_s, turn.end_s, 'seconds');
-          count++;
-        }
-      });
-      state.diarization.selectedTurnIndices.clear();
-      updateBatchBar();
-      renderTurnsTable();
-      showToast(`Added ${count} turns to Workspace Clips library!`, 'success');
-    });
-  }
-
-  if (el.btnBatchDelete) {
-    el.btnBatchDelete.addEventListener('click', () => {
-      const count = state.diarization.selectedTurnIndices.size;
-      if (count === 0) return;
-      state.diarization.turns = state.diarization.turns.filter((_, idx) => !state.diarization.selectedTurnIndices.has(idx));
-      state.diarization.selectedTurnIndices.clear();
-      detectTurnOverlaps();
-      renderDiarizationWorkspace(state.diarization.data, state.diarization.audioId, false);
-      showToast(`Deleted ${count} turn(s)`, 'info');
-    });
-  }
-
-  if (el.btnBatchClear) {
-    el.btnBatchClear.addEventListener('click', () => {
-      state.diarization.selectedTurnIndices.clear();
-      if (el.thSelectAllTurns) el.thSelectAllTurns.checked = false;
-      renderTurnsTable();
-      updateBatchBar();
-    });
-  }
-
-  // Region Selection Actions
-  if (el.btnSelPlay) {
-    el.btnSelPlay.addEventListener('click', () => {
-      if (!state.diarization.selectionRange) return;
-      const { start_s, end_s } = state.diarization.selectionRange;
-      const audioId = state.diarization.audioId || el.diarInputSelect.value;
-      loadAudioIntoPlayer(audioId);
-      seekTo(start_s);
-      state.player.previewEnd = end_s;
-      el.audio.play();
-    });
-  }
-
-  if (el.btnSelAddTurn) {
-    el.btnSelAddTurn.addEventListener('click', () => {
-      if (!state.diarization.selectionRange) return;
-      const { start_s, end_s } = state.diarization.selectionRange;
-      const spkId = state.diarization.speakers[0]?.speaker_id || "spk_00";
-      state.diarization.turns.push({
-        speaker_id: spkId,
-        start_s: roundNum(start_s, 2),
-        end_s: roundNum(end_s, 2),
-        confidence: 1.0,
-      });
-      state.diarization.turns.sort((a, b) => a.start_s - b.start_s);
-      clearTimelineSelection();
-      detectTurnOverlaps();
-      renderDiarizationWorkspace(state.diarization.data, state.diarization.audioId, true);
-      showToast(`Created new speaker turn (${start_s.toFixed(2)}s – ${end_s.toFixed(2)}s)`, 'success');
-    });
-  }
-
-  if (el.btnSelCut) {
-    el.btnSelCut.addEventListener('click', () => {
-      if (!state.diarization.selectionRange) return;
-      const { start_s, end_s } = state.diarization.selectionRange;
-      const audioId = state.diarization.audioId || el.diarInputSelect.value;
-      addCutToRegistry(audioId, start_s, end_s, 'seconds');
-      clearTimelineSelection();
-      showToast(`Added region (${start_s.toFixed(2)}s – ${end_s.toFixed(2)}s) to Clips registry!`, 'success');
-    });
-  }
-
-  if (el.btnSelClear) {
-    el.btnSelClear.addEventListener('click', clearTimelineSelection);
-  }
-
-  // Filters & Search Toolbar
   if (el.diarFilterSpeakerSelect) {
     el.diarFilterSpeakerSelect.addEventListener('change', (e) => {
       state.diarization.activeSpeakerFilter = e.target.value;
@@ -3040,72 +2385,19 @@ function initDiarizationStudio() {
     });
   }
 
-  // Extract All Speakers Button
   if (el.btnExtractAllSpeakers) {
     el.btnExtractAllSpeakers.addEventListener('click', extractAllSpeakers);
   }
 
-  // Export Navigation Tabs
-  if (el.exportNavTabs) {
-    el.exportNavTabs.forEach(tab => {
-      tab.addEventListener('click', () => {
-        el.exportNavTabs.forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        state.diarization.activeExportTab = tab.dataset.exportTab;
-        updateExportPreview();
-      });
-    });
-  }
-
-  // Copy & Download Export
-  if (el.btnCopyExport) {
-    el.btnCopyExport.addEventListener('click', () => {
-      if (el.exportPreviewTextarea) {
-        navigator.clipboard.writeText(el.exportPreviewTextarea.value).then(() => {
-          showToast("Diarization annotation copied to clipboard!", "success");
-        }).catch(() => {
-          el.exportPreviewTextarea.select();
-          document.execCommand('copy');
-          showToast("Copied to clipboard!", "success");
-        });
-      }
-    });
-  }
-
   if (el.btnDownloadExport) {
-    el.btnDownloadExport.addEventListener('click', downloadActiveExport);
+    el.btnDownloadExport.addEventListener('click', downloadDiarizationRttm);
   }
 
-  // Diarization History Actions
-  if (el.diarHistorySearchInput) {
-    el.diarHistorySearchInput.addEventListener('input', (e) => {
-      state.diarization.historySearch = e.target.value.toLowerCase().trim();
-      renderDiarizationHistory();
-    });
-  }
+  setupDiarTimelineSeek();
 
-  if (el.btnClearDiarHistory) {
-    el.btnClearDiarHistory.addEventListener('click', clearDiarizationHistory);
-  }
-
-  if (el.btnExportAllHistory) {
-    el.btnExportAllHistory.addEventListener('click', exportAllDiarizationHistory);
-  }
-
-  // Merge Speaker Modal Controls
-  if (el.btnCloseMergeModal) el.btnCloseMergeModal.addEventListener('click', closeMergeModal);
-  if (el.btnCancelMerge) el.btnCancelMerge.addEventListener('click', closeMergeModal);
-  if (el.btnConfirmMerge) el.btnConfirmMerge.addEventListener('click', confirmMergeSpeakers);
-
-  // Setup Global Drag, Scrub & Timeline Listeners
-  setupTimelineDragListeners();
-  setupMinimapListeners();
-
-  // Diarization Quick Scroll Navigator Listeners
   const btnScrollTop = document.getElementById('btn-scroll-to-top');
   const btnScrollTimeline = document.getElementById('btn-scroll-to-timeline');
   const btnScrollTurns = document.getElementById('btn-scroll-to-turns');
-  const btnScrollHistory = document.getElementById('btn-scroll-to-history');
 
   if (btnScrollTop) {
     btnScrollTop.addEventListener('click', () => {
@@ -3125,15 +2417,6 @@ function initDiarizationStudio() {
       if (turnsTarget) turnsTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   }
-  if (btnScrollHistory) {
-    btnScrollHistory.addEventListener('click', () => {
-      const histTarget = document.querySelector('#tab-diarization .diar-history-card');
-      if (histTarget) histTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  }
-
-  // Load Persisted Diarization History
-  loadDiarizationHistory();
 }
 
 function switchDiarSubtab(subtabName) {
@@ -3174,7 +2457,6 @@ function updateDiarInputMeta(audioId) {
     return;
   }
   const item = state.audioList.find(a => a.id === audioId);
-  const histItem = (state.diarization.history || []).find(h => h.audio_id === audioId);
   if (item) {
     if (el.diarAudioMetaChip) {
       el.diarAudioMetaChip.textContent = `${(item.duration_s || 0).toFixed(1)}s • ${(item.sample_rate || 44100).toLocaleString()}Hz • ${(item.format || 'wav').toUpperCase()}`;
@@ -3184,17 +2466,6 @@ function updateDiarInputMeta(audioId) {
       if (el.diarTrackTitleText) el.diarTrackTitleText.textContent = item.title || item.source_id;
       if (el.diarTrackSpecChip) {
         el.diarTrackSpecChip.textContent = `${formatTime(item.duration_s || 0)} • ${item.channels === 1 ? 'Mono' : 'Stereo'}`;
-      }
-    }
-  } else if (histItem) {
-    if (el.diarAudioMetaChip) {
-      el.diarAudioMetaChip.textContent = `${(histItem.duration_s || 0).toFixed(1)}s • Session Track`;
-    }
-    if (el.diarInputPreviewPill) {
-      el.diarInputPreviewPill.classList.remove('hidden');
-      if (el.diarTrackTitleText) el.diarTrackTitleText.textContent = histItem.audio_title || audioId;
-      if (el.diarTrackSpecChip) {
-        el.diarTrackSpecChip.textContent = `${formatTime(histItem.duration_s || 0)} • Restored Run`;
       }
     }
   }
@@ -3215,15 +2486,12 @@ function setDiarZoom(zoom) {
 
   renderDiarWaveform();
   renderDiarRuler();
-  redrawAllSpeakerSpectrograms();
-  updateMinimapViewport();
 }
 
-function renderDiarizationWorkspace(diarization, audioId, addToHistory = true) {
+function renderDiarizationWorkspace(diarization, audioId) {
   state.diarization.audioId = audioId;
   state.diarization.data = diarization || state.diarization.data || {};
-  
-  // Robust speaker normalization (handles array of strings or objects)
+
   const rawSpeakers = (diarization && diarization.speakers) || state.diarization.speakers || [];
   state.diarization.speakers = rawSpeakers.map(s => {
     if (typeof s === 'string') return { speaker_id: s };
@@ -3231,7 +2499,6 @@ function renderDiarizationWorkspace(diarization, audioId, addToHistory = true) {
     return { speaker_id: s?.id || String(s) };
   });
 
-  // Turn normalization and numeric validation
   const rawTurns = (diarization && diarization.turns) || state.diarization.turns || [];
   state.diarization.turns = rawTurns.map(t => ({
     ...t,
@@ -3243,24 +2510,20 @@ function renderDiarizationWorkspace(diarization, audioId, addToHistory = true) {
   if (el.diarEmptyPlaceholder) el.diarEmptyPlaceholder.classList.add('hidden');
   if (el.diarResultsWrapper) el.diarResultsWrapper.classList.remove('hidden');
 
-  // Safe duration calculation (never fall back to mismatched activeAudio)
   const audioItem = state.audioList.find(a => a.id === audioId);
   const maxTurnEnd = state.diarization.turns.length > 0 ? Math.max(...state.diarization.turns.map(t => t.end_s)) : 10;
   const totalAudioDuration = (audioItem ? audioItem.duration_s : 0) || (diarization && diarization.duration_s) || maxTurnEnd || 10;
   state.diarization.duration = totalAudioDuration;
 
-  // Extract unique speakers if not present
   if (state.diarization.speakers.length === 0) {
     const uniqueSpkIds = Array.from(new Set(state.diarization.turns.map(t => t.speaker_id)));
     state.diarization.speakers = uniqueSpkIds.map(id => ({ speaker_id: id }));
   }
 
-  // Keep state.diarization.data in sync
   state.diarization.data.turns = state.diarization.turns;
   state.diarization.data.speakers = state.diarization.speakers;
   state.diarization.data.duration_s = totalAudioDuration;
 
-  // Assign default colors & custom names
   state.diarization.speakers.forEach((spk, idx) => {
     if (!state.diarization.colors[spk.speaker_id]) {
       state.diarization.colors[spk.speaker_id] = DIAR_PALETTE[idx % DIAR_PALETTE.length];
@@ -3270,10 +2533,8 @@ function renderDiarizationWorkspace(diarization, audioId, addToHistory = true) {
     }
   });
 
-  // Check and flag overlaps
   detectTurnOverlaps();
 
-  // Badges & Speech Ratio
   const totalSpeechS = state.diarization.turns.reduce((acc, t) => acc + Math.max(0, t.end_s - t.start_s), 0);
   const speechRatioPct = totalAudioDuration > 0 ? ((totalSpeechS / totalAudioDuration) * 100).toFixed(1) : "0.0";
 
@@ -3291,63 +2552,25 @@ function renderDiarizationWorkspace(diarization, audioId, addToHistory = true) {
     el.diarSpeechRatioBadge.textContent = `${speechRatioPct}% Speech (${totalSpeechS.toFixed(1)}s)`;
   }
 
-  // Update Subtab chip counters
   if (el.diarSubtabTurnsCount) el.diarSubtabTurnsCount.textContent = state.diarization.turns.length;
   if (el.diarSubtabSpkCount) el.diarSubtabSpkCount.textContent = state.diarization.speakers.length;
 
-  // Update Speaker Filter Dropdown & Batch Speaker Select
   if (el.diarFilterSpeakerSelect) {
     el.diarFilterSpeakerSelect.innerHTML = `<option value="all">All Speakers (${state.diarization.speakers.length})</option>` +
       state.diarization.speakers.map(s => `<option value="${s.speaker_id}">${escapeHtml(getSpeakerName(s.speaker_id))}</option>`).join('');
   }
-  if (el.diarBatchSpeakerSelect) {
-    el.diarBatchSpeakerSelect.innerHTML = state.diarization.speakers.map(s => `
-      <option value="${s.speaker_id}">${escapeHtml(getSpeakerName(s.speaker_id))}</option>
-    `).join('');
-  }
 
-  // 1. Fetch Spectrogram & Waveform
-  loadDiarSpectrogram(audioId, () => redrawAllSpeakerSpectrograms());
   loadDiarWaveform(audioId);
-
-  // 2. Render Minimap
-  renderDiarMinimap();
-
-  // 3. Render Time Ruler
   renderDiarRuler();
-
-  // 4. Render Composite Lane
-  renderCompositeLane();
-
-  // 5. Render Multi-Track Swimlanes & Left Labels
   renderSpeakerSwimlanes();
-
-  // 6. Render Speaker Profile Cards & Stats
   renderSpeakerProfiles();
-
-  // 7. Render Turns Inspector Table
   renderTurnsTable();
-  updateBatchBar();
-
-  // 8. Update Export Preview
-  updateExportPreview();
-
-  // 9. If in comparison mode, update multi-model comparison lanes
-  if (state.diarization.viewMode === 'compare') {
-    renderModelComparisonLanes();
-  }
-
-  // 10. Save to History (if new run)
-  if (addToHistory) {
-    saveDiarizationToHistory(diarization, audioId);
-  } else {
-    renderDiarizationHistory();
-  }
+  updateDiarizationPlayhead(state.player.currentTime || 0, totalAudioDuration);
 }
 
 function detectTurnOverlaps() {
   const turns = state.diarization.turns;
-  turns.forEach(t => t.has_overlap = false);
+  turns.forEach(t => { t.has_overlap = false; });
 
   for (let i = 0; i < turns.length; i++) {
     for (let j = i + 1; j < turns.length; j++) {
@@ -3379,87 +2602,53 @@ function seekDiarAudio(timeSec, andPlay = false) {
   }
 }
 
-function renderDiarMinimap() {
-  if (!el.diarMinimapBlocksLayer) return;
-  el.diarMinimapBlocksLayer.innerHTML = "";
-  const dur = state.diarization.duration || 1;
-
-  state.diarization.turns.forEach(turn => {
-    const leftPct = (turn.start_s / dur) * 100;
-    const widthPct = Math.max(0.3, ((turn.end_s - turn.start_s) / dur) * 100);
-    const color = getSpeakerColor(turn.speaker_id);
-
-    const block = document.createElement("div");
-    block.className = "diar-minimap-block";
-    block.style.left = `${leftPct}%`;
-    block.style.width = `${widthPct}%`;
-    block.style.backgroundColor = color;
-    el.diarMinimapBlocksLayer.appendChild(block);
-  });
-
-  updateMinimapViewport();
-}
-
-function updateMinimapViewport() {
-  const windowEl = el.diarMinimapViewportWindow;
-  const viewport = el.diarMultitrackViewport;
+function getTrackTimeFromClientX(clientX) {
   const tracksArea = el.diarTracksArea;
-  if (!windowEl || !viewport) return;
-
-  const labelColWidth = el.diarLaneLabelsCol ? el.diarLaneLabelsCol.offsetWidth : 200;
-  const visibleTrackWidth = Math.max(1, viewport.clientWidth - labelColWidth);
-  const totalTrackWidth = Math.max(1, tracksArea ? tracksArea.offsetWidth : visibleTrackWidth);
-
-  const scrollLeft = Math.max(0, viewport.scrollLeft);
-  const leftPct = Math.min(100, Math.max(0, (scrollLeft / totalTrackWidth) * 100));
-  const widthPct = Math.min(100 - leftPct, Math.max(2, (visibleTrackWidth / totalTrackWidth) * 100));
-
-  windowEl.style.left = `${leftPct}%`;
-  windowEl.style.width = `${widthPct}%`;
+  if (!tracksArea) return 0;
+  const rect = tracksArea.getBoundingClientRect();
+  const dur = state.diarization.duration || 1;
+  const relX = Math.max(0, Math.min(rect.width, clientX - rect.left));
+  return (relX / rect.width) * dur;
 }
 
-function setupMinimapListeners() {
-  const track = el.diarMinimapTrack;
-  const viewport = el.diarMultitrackViewport;
-  if (!track || !viewport) return;
-
-  let isDraggingMinimap = false;
-
-  const handleMinimapSeek = (e) => {
-    const rect = track.getBoundingClientRect();
-    const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const dur = state.diarization.duration || 1;
-    const seekSec = pos * dur;
-    seekDiarAudio(seekSec);
-
-    // Center viewport at seek position
-    const tracksArea = el.diarTracksArea;
-    const labelColWidth = el.diarLaneLabelsCol ? el.diarLaneLabelsCol.offsetWidth : 200;
-    const visibleTrackWidth = Math.max(1, viewport.clientWidth - labelColWidth);
-    const totalTrackWidth = tracksArea ? tracksArea.offsetWidth : visibleTrackWidth;
-
-    viewport.scrollLeft = Math.max(0, pos * totalTrackWidth - visibleTrackWidth / 2);
-    updateMinimapViewport();
-  };
-
-  track.addEventListener('mousedown', (e) => {
-    isDraggingMinimap = true;
-    handleMinimapSeek(e);
-  });
+function setupDiarTimelineSeek() {
+  const tracksArea = el.diarTracksArea;
+  if (!tracksArea) return;
 
   window.addEventListener('mousemove', (e) => {
-    if (isDraggingMinimap) {
-      handleMinimapSeek(e);
+    if (!state.diarization.isScrubbing) return;
+    const dur = state.diarization.duration || 1;
+    const scrubSec = getTrackTimeFromClientX(e.clientX);
+    updateDiarizationPlayhead(scrubSec, dur);
+    if (el.audio && !isNaN(scrubSec)) {
+      el.audio.currentTime = Math.max(0, Math.min(scrubSec, dur));
     }
   });
 
   window.addEventListener('mouseup', () => {
-    isDraggingMinimap = false;
+    if (state.diarization.isScrubbing) {
+      state.diarization.isScrubbing = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
   });
 
-  if (viewport) {
-    viewport.addEventListener('scroll', () => {
-      updateMinimapViewport();
+  tracksArea.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.diar-turn-segment')) return;
+    const clickSec = getTrackTimeFromClientX(e.clientX);
+    state.diarization.isScrubbing = true;
+    document.body.style.cursor = 'ew-resize';
+    document.body.style.userSelect = 'none';
+    seekDiarAudio(clickSec);
+  });
+
+  if (el.diarPlayheadHandle) {
+    el.diarPlayheadHandle.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      state.diarization.isScrubbing = true;
+      document.body.style.cursor = 'ew-resize';
+      document.body.style.userSelect = 'none';
     });
   }
 }
@@ -3474,7 +2663,7 @@ function renderDiarRuler() {
   const pixelsPerSec = trackWidth / dur;
 
   const candidateSteps = [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
-  let stepSec = candidateSteps.find(s => s * pixelsPerSec >= 65) || 60;
+  const stepSec = candidateSteps.find(s => s * pixelsPerSec >= 65) || 60;
 
   for (let t = 0; t <= dur; t += stepSec) {
     const roundedT = Math.round(t * 1000) / 1000;
@@ -3492,7 +2681,6 @@ function renderDiarRuler() {
     tick.textContent = stepSec < 1 ? roundedT.toFixed(2) + 's' : formatTime(roundedT);
     el.diarRulerTrack.appendChild(tick);
 
-    // Add sub-ticks
     if (stepSec >= 1 && stepSec <= 10) {
       const subStep = stepSec / 2;
       const subT = roundedT + subStep;
@@ -3531,7 +2719,6 @@ function renderDiarWaveform() {
     const barWidth = Math.max(1, w / numBars);
     const centerY = h / 2;
 
-    // Gradient peak fill
     const grad = ctx.createLinearGradient(0, 0, 0, h);
     grad.addColorStop(0, "hsl(188, 86%, 58%)");
     grad.addColorStop(0.5, "hsl(217, 91%, 65%)");
@@ -3545,7 +2732,6 @@ function renderDiarWaveform() {
       ctx.fillRect(i * barWidth, y, Math.max(1, barWidth - 0.5), barH);
     }
   } else {
-    // Subtle procedural waveform while loading
     const numBars = Math.floor(w / 4);
     ctx.fillStyle = "rgba(100, 149, 237, 0.4)";
     for (let i = 0; i < numBars; i++) {
@@ -3554,130 +2740,6 @@ function renderDiarWaveform() {
       const y = (h - barH) / 2;
       ctx.fillRect(i * 4, y, 2, barH);
     }
-  }
-}
-
-function renderCompositeLane() {
-  if (!el.diarCompositeTrack) return;
-  el.diarCompositeTrack.innerHTML = "";
-  const dur = state.diarization.duration || 1;
-
-  state.diarization.turns.forEach((turn, idx) => {
-    const color = getSpeakerColor(turn.speaker_id);
-    const leftPct = (turn.start_s / dur) * 100;
-    const widthPct = Math.max(0.4, ((turn.end_s - turn.start_s) / dur) * 100);
-
-    const isSoloActive = Boolean(state.diarization.soloSpeaker);
-    const isSolo = state.diarization.soloSpeaker === turn.speaker_id;
-    const isMuted = state.diarization.mutedSpeakers.has(turn.speaker_id);
-    const isDimmed = (isSoloActive && !isSolo) || isMuted;
-
-    const seg = document.createElement("div");
-    seg.className = `diar-turn-segment ${turn.has_overlap ? 'has-overlap' : ''} ${state.diarization.highlightOverlaps && turn.has_overlap ? 'overlap-active' : ''} ${state.diarization.activeTurnIndex === idx ? 'active-turn' : ''} ${isDimmed ? 'turn-dimmed' : ''}`;
-    seg.style.left = `${leftPct}%`;
-    seg.style.width = `${widthPct}%`;
-    seg.style.backgroundColor = color;
-    seg.dataset.index = idx;
-    seg.innerHTML = `
-      <div class="turn-handle turn-handle-left" data-index="${idx}"></div>
-      <span class="turn-label-text">${escapeHtml(getSpeakerName(turn.speaker_id))} (${(turn.end_s - turn.start_s).toFixed(1)}s)</span>
-      <div class="turn-handle turn-handle-right" data-index="${idx}"></div>
-    `;
-
-    attachTurnSegmentEvents(seg, turn, idx);
-    el.diarCompositeTrack.appendChild(seg);
-  });
-}
-
-const diarSpectrogramCache = new Map(); // audioId -> HTMLImageElement
-
-function loadDiarSpectrogram(audioId, onLoaded) {
-  if (!audioId) return;
-  if (diarSpectrogramCache.has(audioId)) {
-    const cached = diarSpectrogramCache.get(audioId);
-    if (cached.complete && cached.naturalWidth > 0) {
-      if (onLoaded) onLoaded(cached);
-      redrawAllSpeakerSpectrograms();
-      return;
-    }
-  }
-
-  const img = new Image();
-  img.crossOrigin = "anonymous";
-  img.src = `/api/audio/${audioId}/spectrogram?raw=1&t=${Date.now()}`;
-  img.onload = () => {
-    diarSpectrogramCache.set(audioId, img);
-    if (onLoaded) onLoaded(img);
-    redrawAllSpeakerSpectrograms();
-  };
-  img.onerror = () => {
-    console.warn("Could not load raw spectrogram image for:", audioId);
-  };
-}
-
-function redrawAllSpeakerSpectrograms() {
-  const audioId = state.diarization.audioId;
-  const img = diarSpectrogramCache.get(audioId);
-  const dur = state.diarization.duration || 1;
-
-  const canvases = document.querySelectorAll('.diar-speaker-spectrogram-canvas');
-  canvases.forEach(canvas => {
-    const spkId = canvas.dataset.speaker;
-    const spkTurns = state.diarization.turns.filter(t => t.speaker_id === spkId);
-    drawSpeakerSpectrogramCanvas(canvas, img, spkTurns, dur);
-  });
-}
-
-function drawSpeakerSpectrogramCanvas(canvas, img, spkTurns, dur) {
-  const track = canvas.parentElement;
-  if (!track) return;
-
-  const rect = track.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  const w = track.clientWidth || rect.width || 800;
-  const h = track.clientHeight || rect.height || 64;
-
-  if (w <= 0 || h <= 0) return;
-
-  canvas.width = Math.floor(w * dpr);
-  canvas.height = Math.floor(h * dpr);
-
-  const ctx = canvas.getContext("2d");
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, w, h);
-
-  // 1. Draw raw full mel spectrogram
-  if (img && img.complete && img.naturalWidth > 0) {
-    ctx.drawImage(img, 0, 0, w, h);
-  } else {
-    // Fallback procedural spectrogram grid
-    ctx.fillStyle = "#0c101c";
-    ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = "rgba(100, 149, 237, 0.18)";
-    for (let i = 0; i < w; i += 6) {
-      const s = Math.sin(i * 0.08) * 0.5 + 0.5;
-      ctx.fillRect(i, h - s * (h - 10), 3, s * (h - 10));
-    }
-  }
-
-  // 2. Dim regions where this speaker is NOT speaking with semi-transparent dark shade
-  ctx.fillStyle = "rgba(10, 14, 23, 0.78)";
-  let lastEnd = 0;
-  const sortedTurns = [...spkTurns].sort((a, b) => a.start_s - b.start_s);
-
-  sortedTurns.forEach(turn => {
-    if (turn.start_s > lastEnd) {
-      const nonSpkLeft = (lastEnd / dur) * w;
-      const nonSpkWidth = Math.max(0, ((turn.start_s - lastEnd) / dur) * w);
-      ctx.fillRect(nonSpkLeft, 0, nonSpkWidth, h);
-    }
-    lastEnd = Math.max(lastEnd, turn.end_s);
-  });
-
-  if (lastEnd < dur) {
-    const nonSpkLeft = (lastEnd / dur) * w;
-    const nonSpkWidth = Math.max(0, ((dur - lastEnd) / dur) * w);
-    ctx.fillRect(nonSpkLeft, 0, nonSpkWidth, h);
   }
 }
 
@@ -3694,76 +2756,31 @@ function renderSpeakerSwimlanes() {
     const spkTurns = state.diarization.turns.filter(t => t.speaker_id === spkId);
     const spkTotalSpeech = spkTurns.reduce((acc, t) => acc + Math.max(0, t.end_s - t.start_s), 0);
 
-    const isSoloActive = Boolean(state.diarization.soloSpeaker);
-    const isSolo = state.diarization.soloSpeaker === spkId;
-    const isMuted = state.diarization.mutedSpeakers.has(spkId);
-    const isDimmed = (isSoloActive && !isSolo) || isMuted;
-
-    // 1. Left Sticky Label Row
     const labelRow = document.createElement("div");
-    labelRow.className = `diar-spk-label-row ${isDimmed ? 'lane-dimmed' : ''}`;
+    labelRow.className = "diar-spk-label-row";
     labelRow.dataset.speakerId = spkId;
     labelRow.innerHTML = `
-      <div class="spk-label-left" title="Click to rename ${escapeHtml(spkName)}">
+      <div class="spk-label-left" title="${escapeHtml(spkName)}">
         <span class="spk-color-indicator" style="background-color: ${color}; width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 6px ${color}; flex-shrink: 0;"></span>
         <div class="spk-name-wrap">
           <span class="lane-spk-name" style="color: ${color};" title="${escapeHtml(spkName)}">${escapeHtml(spkName)}</span>
           <span class="spk-stats-sub">${spkTurns.length} turns • ${spkTotalSpeech.toFixed(1)}s</span>
         </div>
       </div>
-      <div class="spk-label-controls">
-        <button class="spk-ctrl-btn btn-solo ${isSolo ? 'active' : ''}" data-speaker="${spkId}" title="Solo ${escapeHtml(spkName)} [S]">S</button>
-        <button class="spk-ctrl-btn btn-mute ${isMuted ? 'active' : ''}" data-speaker="${spkId}" title="Mute ${escapeHtml(spkName)} [M]">M</button>
-        <button class="spk-ctrl-btn btn-audition" data-speaker="${spkId}" title="Audition ${escapeHtml(spkName)} Segments">▶</button>
-      </div>
     `;
-
-    labelRow.querySelector('.spk-label-left').addEventListener('click', () => {
-      const newName = prompt(`Rename speaker '${spkName}':`, spkName);
-      if (newName && newName.trim() && newName.trim() !== spkName) {
-        state.diarization.customNames[spkId] = newName.trim();
-        renderSpeakerSwimlanes();
-        renderCompositeLane();
-        renderSpeakerProfiles();
-        renderTurnsTable();
-        updateExportPreview();
-      }
-    });
-
-    labelRow.querySelector('.btn-solo').addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleSpeakerSolo(spkId);
-    });
-    labelRow.querySelector('.btn-mute').addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleSpeakerMute(spkId);
-    });
-    labelRow.querySelector('.btn-audition').addEventListener('click', (e) => {
-      e.stopPropagation();
-      auditionSpeakerTurns(spkId);
-    });
-
     el.diarSpkLabelsWrap.appendChild(labelRow);
 
-    // 2. Right Track Lane with Spectrogram Canvas + Speech Segment Color Indicators
     const track = document.createElement("div");
-    track.className = `diar-speaker-lane-track ${isDimmed ? 'lane-dimmed' : ''}`;
+    track.className = "diar-speaker-lane-track";
     track.dataset.speaker = spkId;
 
-    // Mel-Spectrogram Canvas Background
-    const canvas = document.createElement("canvas");
-    canvas.className = "diar-speaker-spectrogram-canvas";
-    canvas.dataset.speaker = spkId;
-    track.appendChild(canvas);
-
-    // Speech Segments denoted by prominent color lines and glowing boundaries
     spkTurns.forEach(turn => {
       const idx = state.diarization.turns.indexOf(turn);
       const leftPct = (turn.start_s / dur) * 100;
       const widthPct = Math.max(0.4, ((turn.end_s - turn.start_s) / dur) * 100);
 
       const seg = document.createElement("div");
-      seg.className = `diar-turn-segment ${turn.has_overlap ? 'has-overlap' : ''} ${state.diarization.highlightOverlaps && turn.has_overlap ? 'overlap-active' : ''} ${state.diarization.activeTurnIndex === idx ? 'active-turn' : ''} ${isDimmed ? 'turn-dimmed' : ''}`;
+      seg.className = `diar-turn-segment ${turn.has_overlap ? 'has-overlap' : ''} ${state.diarization.activeTurnIndex === idx ? 'active-turn' : ''}`;
       seg.style.left = `${leftPct}%`;
       seg.style.width = `${widthPct}%`;
       seg.style.borderTop = `3px solid ${color}`;
@@ -3773,11 +2790,7 @@ function renderSpeakerSwimlanes() {
       seg.style.backgroundColor = `${color}28`;
       seg.style.boxShadow = `0 0 12px ${color}45`;
       seg.dataset.index = idx;
-      seg.innerHTML = `
-        <div class="turn-handle turn-handle-left" data-index="${idx}"></div>
-        <span class="turn-label-text">${(turn.end_s - turn.start_s).toFixed(1)}s</span>
-        <div class="turn-handle turn-handle-right" data-index="${idx}"></div>
-      `;
+      seg.innerHTML = `<span class="turn-label-text">${(turn.end_s - turn.start_s).toFixed(1)}s</span>`;
 
       attachTurnSegmentEvents(seg, turn, idx);
       track.appendChild(seg);
@@ -3785,150 +2798,11 @@ function renderSpeakerSwimlanes() {
 
     el.diarSpeakerLanesWrap.appendChild(track);
   });
-
-  // Render spectrogram image on all speaker canvases
-  redrawAllSpeakerSpectrograms();
-}
-
-function renderModelComparisonLanes() {
-  if (!el.diarCompareLanesWrap || !el.diarCompareLabelsWrap) return;
-  el.diarCompareLanesWrap.innerHTML = "";
-  el.diarCompareLabelsWrap.innerHTML = "";
-
-  const audioId = state.diarization.audioId;
-  const dur = state.diarization.duration || 1;
-
-  // Gather all available sessions for this audioId from history
-  const historyRuns = (state.diarization.history || []).filter(h => h.audio_id === audioId);
-
-  let runsToCompare = [...historyRuns];
-
-  // If active session has turns, ensure current state is represented
-  if (state.diarization.turns && state.diarization.turns.length > 0) {
-    const currentBackend = state.diarization.data?.model?.backend || state.diarization.data?.model?.model_id || "Active Session";
-    const alreadyIncluded = runsToCompare.some(r => (r.model_backend === currentBackend || r.model_id === currentBackend) && r.turn_count === state.diarization.turns.length);
-    if (!alreadyIncluded) {
-      runsToCompare.unshift({
-        id: "current_active_session",
-        audio_id: audioId,
-        model_backend: currentBackend,
-        speaker_count: state.diarization.speakers.length,
-        turn_count: state.diarization.turns.length,
-        duration_s: dur,
-        speakers: state.diarization.speakers,
-        turns: state.diarization.turns,
-        customNames: state.diarization.customNames,
-        colors: state.diarization.colors,
-        isCurrent: true,
-      });
-    }
-  }
-
-  if (runsToCompare.length === 0) {
-    const emptyRow = document.createElement("div");
-    emptyRow.className = "diar-compare-label-row";
-    emptyRow.innerHTML = `<span class="text-xs text-muted">No runs found</span>`;
-    el.diarCompareLabelsWrap.appendChild(emptyRow);
-
-    const emptyTrack = document.createElement("div");
-    emptyTrack.className = "diar-compare-lane-track";
-    emptyTrack.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:0.75rem;">Run diarization with multiple models above to compare them side-by-side.</div>`;
-    el.diarCompareLanesWrap.appendChild(emptyTrack);
-    return;
-  }
-
-  runsToCompare.forEach(run => {
-    const modelTag = diarizationModelLabel(run.model_backend || run.model_id);
-    const isCurrentActive = state.diarization.data?.model?.backend === run.model_backend || run.id === "current_active_session";
-    const spkCount = run.speaker_count || (run.speakers ? run.speakers.length : 0);
-    const turnCount = run.turn_count || (run.turns ? run.turns.length : 0);
-    const totalSpeechS = (run.turns || []).reduce((acc, t) => acc + Math.max(0, (Number(t.end_s) || 0) - (Number(t.start_s) || 0)), 0);
-    const speechPct = dur > 0 ? ((totalSpeechS / dur) * 100).toFixed(1) : "0.0";
-
-    // 1. Left Sticky Label Column
-    const labelRow = document.createElement("div");
-    labelRow.className = `diar-compare-label-row ${isCurrentActive ? 'is-active-model' : ''}`;
-    labelRow.innerHTML = `
-      <div class="diar-compare-label-left">
-        <span class="diar-compare-model-name">
-          <span class="badge ${isCurrentActive ? 'badge-accent' : 'badge-info'} badge-sm">${escapeHtml(modelTag)}</span>
-          ${isCurrentActive ? '<span class="text-xs text-success" title="Active in editor">●</span>' : ''}
-        </span>
-        <span class="diar-compare-stats-sub">${spkCount} Spk • ${turnCount} Turns • ${speechPct}%</span>
-      </div>
-      <div class="diar-compare-label-controls">
-        <button class="btn btn-xs ${isCurrentActive ? 'btn-ghost' : 'btn-secondary'} btn-set-active-model" title="${isCurrentActive ? 'Currently active in editor' : 'Load this model into the editor & table'}">${isCurrentActive ? 'Editing' : '⚡ Edit'}</button>
-      </div>
-    `;
-
-    const editBtn = labelRow.querySelector('.btn-set-active-model');
-    if (editBtn && !isCurrentActive && run.id !== "current_active_session") {
-      editBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        loadHistorySession(run.id);
-      });
-    }
-
-    el.diarCompareLabelsWrap.appendChild(labelRow);
-
-    // 2. Right Track Lane
-    const track = document.createElement("div");
-    track.className = `diar-compare-lane-track ${isCurrentActive ? 'is-active-track' : ''}`;
-    track.title = `Model: ${modelTag} (${spkCount} speakers, ${turnCount} turns). Click to seek playhead.`;
-
-    (run.turns || []).forEach(turn => {
-      const startS = Number(turn.start_s) || 0;
-      const endS = Number(turn.end_s) || 0;
-      const leftPct = (startS / dur) * 100;
-      const widthPct = Math.max(0.4, ((endS - startS) / dur) * 100);
-      const spkId = turn.speaker_id || "spk_00";
-      const spkColor = (run.colors && run.colors[spkId]) || getSpeakerColor(spkId);
-      const spkName = (run.customNames && run.customNames[spkId]) || spkId;
-
-      const block = document.createElement("div");
-      block.className = "diar-compare-turn-block";
-      block.style.left = `${leftPct}%`;
-      block.style.width = `${widthPct}%`;
-      block.style.backgroundColor = `${spkColor}cc`;
-      block.style.border = `1px solid ${spkColor}`;
-      block.innerHTML = `<span style="pointer-events:none;">${escapeHtml(spkName)} (${(endS - startS).toFixed(1)}s)</span>`;
-
-      block.addEventListener('mouseenter', (e) => {
-        showTurnTooltip(e, {
-          speaker_id: `${spkName} [${modelTag}]`,
-          start_s: startS,
-          end_s: endS,
-          confidence: turn.confidence,
-        });
-      });
-      block.addEventListener('mouseleave', () => {
-        hideTurnTooltip();
-      });
-      block.addEventListener('click', (e) => {
-        e.stopPropagation();
-        seekDiarAudio(startS);
-      });
-
-      track.appendChild(block);
-    });
-
-    track.addEventListener('click', (e) => {
-      if (e.target.classList.contains('diar-compare-turn-block')) return;
-      const rect = track.getBoundingClientRect();
-      const clickX = e.clientX - rect.left;
-      const pct = Math.max(0, Math.min(1, clickX / rect.width));
-      seekDiarAudio(pct * dur);
-    });
-
-    el.diarCompareLanesWrap.appendChild(track);
-  });
 }
 
 function attachTurnSegmentEvents(segEl, turn, idx) {
   segEl.addEventListener('mouseenter', (e) => {
-    if (!state.diarization.dragTurnInfo) {
-      showTurnTooltip(e, turn);
-    }
+    showTurnTooltip(e, turn);
   });
 
   segEl.addEventListener('mouseleave', () => {
@@ -3936,12 +2810,10 @@ function attachTurnSegmentEvents(segEl, turn, idx) {
   });
 
   segEl.addEventListener('click', (e) => {
-    if (e.target.classList.contains('turn-handle')) return;
     e.stopPropagation();
     state.diarization.activeTurnIndex = idx;
     highlightActiveTurn(idx);
 
-    // Also highlight row in turns table
     const row = document.getElementById(`turn-row-${idx}`);
     if (row) {
       document.querySelectorAll('.diar-turns-table tr').forEach(r => r.classList.remove('selected-row'));
@@ -3951,251 +2823,11 @@ function attachTurnSegmentEvents(segEl, turn, idx) {
 
     const audioId = state.diarization.audioId || el.diarInputSelect.value;
     if (audioId) {
-      if (el.audio.src.indexOf(audioId) === -1) loadAudioIntoPlayer(audioId);
+      if (!el.audio.src || el.audio.src.indexOf(audioId) === -1) loadAudioIntoPlayer(audioId);
       seekTo(turn.start_s);
       el.audio.play().catch(() => {});
     }
   });
-
-  segEl.addEventListener('dblclick', (e) => {
-    e.stopPropagation();
-    state.diarization.activeTurnIndex = idx;
-    highlightActiveTurn(idx);
-    const row = document.getElementById(`turn-row-${idx}`);
-    if (row) {
-      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      row.classList.add('selected-row');
-      setTimeout(() => row.classList.remove('selected-row'), 1500);
-    }
-  });
-
-  // Drag Resize and Move Handler Initialization
-  const leftHandle = segEl.querySelector('.turn-handle-left');
-  const rightHandle = segEl.querySelector('.turn-handle-right');
-
-  if (leftHandle) {
-    leftHandle.addEventListener('mousedown', (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      startTurnDrag(idx, 'resize-left', e.clientX);
-    });
-  }
-
-  if (rightHandle) {
-    rightHandle.addEventListener('mousedown', (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      startTurnDrag(idx, 'resize-right', e.clientX);
-    });
-  }
-
-  segEl.addEventListener('mousedown', (e) => {
-    if (e.target.classList.contains('turn-handle')) return;
-    e.stopPropagation();
-    startTurnDrag(idx, 'move', e.clientX);
-  });
-}
-
-function startTurnDrag(turnIndex, action, clientX) {
-  const turn = state.diarization.turns[turnIndex];
-  if (!turn) return;
-
-  state.diarization.dragTurnInfo = {
-    turnIndex,
-    action,
-    origStart: turn.start_s,
-    origEnd: turn.end_s,
-    startClientX: clientX,
-    hasMoved: false,
-  };
-  document.body.style.userSelect = 'none';
-  if (action === 'move') {
-    document.body.style.cursor = 'grabbing';
-  } else if (action === 'resize-left' || action === 'resize-right') {
-    document.body.style.cursor = 'col-resize';
-  }
-}
-
-function getTrackTimeFromClientX(clientX) {
-  const tracksArea = el.diarTracksArea;
-  if (!tracksArea) return 0;
-  const rect = tracksArea.getBoundingClientRect();
-  const dur = state.diarization.duration || 1;
-  const relX = Math.max(0, Math.min(rect.width, clientX - rect.left));
-  return (relX / rect.width) * dur;
-}
-
-function setupTimelineDragListeners() {
-  const tracksArea = el.diarTracksArea;
-  const viewport = el.diarMultitrackViewport;
-  if (!tracksArea || !viewport) return;
-
-  let isSelectingRegion = false;
-  let selectionStartSec = 0;
-
-  // Window mousemove for turn dragging, playhead scrubbing, or region selection
-  window.addEventListener('mousemove', (e) => {
-    const dur = state.diarization.duration || 1;
-    const tracksRect = tracksArea.getBoundingClientRect();
-    const trackWidth = tracksRect.width || 800;
-
-    // 1. Playhead Scrubbing
-    if (state.diarization.isScrubbing) {
-      const scrubSec = getTrackTimeFromClientX(e.clientX);
-      updateDiarizationPlayhead(scrubSec, dur);
-      if (el.audio && !isNaN(scrubSec)) {
-        el.audio.currentTime = Math.max(0, Math.min(scrubSec, dur));
-      }
-      return;
-    }
-
-    // 2. Handling Turn Resizing or Moving
-    if (state.diarization.dragTurnInfo) {
-      const { turnIndex, action, origStart, origEnd, startClientX } = state.diarization.dragTurnInfo;
-      const turn = state.diarization.turns[turnIndex];
-      if (!turn) return;
-
-      const deltaPx = e.clientX - startClientX;
-      if (!state.diarization.dragTurnInfo.hasMoved && Math.abs(deltaPx) > 3) {
-        state.diarization.dragTurnInfo.hasMoved = true;
-      }
-      if (!state.diarization.dragTurnInfo.hasMoved) return;
-
-      const deltaSec = (deltaPx / trackWidth) * dur;
-
-      let tempStart = origStart;
-      let tempEnd = origEnd;
-
-      if (action === 'resize-left') {
-        tempStart = Math.max(0, Math.min(origEnd - 0.1, origStart + deltaSec));
-        if (e.shiftKey) tempStart = Math.round(tempStart * 10) / 10;
-        turn.start_s = roundNum(tempStart, 2);
-      } else if (action === 'resize-right') {
-        tempEnd = Math.max(origStart + 0.1, Math.min(dur, origEnd + deltaSec));
-        if (e.shiftKey) tempEnd = Math.round(tempEnd * 10) / 10;
-        turn.end_s = roundNum(tempEnd, 2);
-      } else if (action === 'move') {
-        const segDur = origEnd - origStart;
-        tempStart = Math.max(0, Math.min(dur - segDur, origStart + deltaSec));
-        if (e.shiftKey) tempStart = Math.round(tempStart * 10) / 10;
-        turn.start_s = roundNum(tempStart, 2);
-        turn.end_s = roundNum(tempStart + segDur, 2);
-      }
-
-      // Update segment elements directly in DOM
-      const leftPct = (turn.start_s / dur) * 100;
-      const widthPct = Math.max(0.4, ((turn.end_s - turn.start_s) / dur) * 100);
-      const durText = `${(turn.end_s - turn.start_s).toFixed(1)}s`;
-
-      const matchingSegs = tracksArea.querySelectorAll(`.diar-turn-segment[data-index="${turnIndex}"]`);
-      matchingSegs.forEach(seg => {
-        seg.style.left = `${leftPct}%`;
-        seg.style.width = `${widthPct}%`;
-        const label = seg.querySelector('.turn-label-text');
-        if (label) {
-          if (seg.closest('.composite-row') || seg.closest('.diar-composite-track')) {
-            label.textContent = `${getSpeakerName(turn.speaker_id)} (${durText})`;
-          } else {
-            label.textContent = durText;
-          }
-        }
-      });
-
-      showTurnTooltip(e, turn);
-      return;
-    }
-
-    // 3. Handling Region Selection Dragging
-    if (isSelectingRegion && el.diarSelectionOverlay) {
-      const currentSec = getTrackTimeFromClientX(e.clientX);
-      const s = Math.min(selectionStartSec, currentSec);
-      const end = Math.max(selectionStartSec, currentSec);
-
-      state.diarization.selectionRange = { start_s: s, end_s: end };
-      const leftPct = (s / dur) * 100;
-      const widthPct = ((end - s) / dur) * 100;
-
-      el.diarSelectionOverlay.classList.remove('hidden');
-      el.diarSelectionOverlay.style.left = `${leftPct}%`;
-      el.diarSelectionOverlay.style.width = `${widthPct}%`;
-    }
-  });
-
-  window.addEventListener('mouseup', () => {
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-
-    if (state.diarization.isScrubbing) {
-      state.diarization.isScrubbing = false;
-    }
-
-    if (state.diarization.dragTurnInfo) {
-      const { hasMoved, turnIndex } = state.diarization.dragTurnInfo;
-      const activeTurnObj = turnIndex !== null ? state.diarization.turns[turnIndex] : null;
-      state.diarization.dragTurnInfo = null;
-      hideTurnTooltip();
-
-      if (hasMoved) {
-        state.diarization.turns.sort((a, b) => a.start_s - b.start_s);
-        if (activeTurnObj) {
-          state.diarization.activeTurnIndex = state.diarization.turns.indexOf(activeTurnObj);
-        }
-        detectTurnOverlaps();
-        renderSpeakerSwimlanes();
-        renderCompositeLane();
-        renderSpeakerProfiles();
-        renderTurnsTable();
-        renderDiarMinimap();
-        updateExportPreview();
-      }
-    }
-
-    if (isSelectingRegion) {
-      isSelectingRegion = false;
-      if (state.diarization.selectionRange && (state.diarization.selectionRange.end_s - state.diarization.selectionRange.start_s) > 0.15) {
-        if (el.diarSelectionActionsBar) el.diarSelectionActionsBar.classList.remove('hidden');
-      } else {
-        clearTimelineSelection();
-      }
-    }
-  });
-
-  // Track area mousedown for scrubbing / seeking or region selecting
-  tracksArea.addEventListener('mousedown', (e) => {
-    if (e.target.closest('.diar-turn-segment') || e.target.closest('.diar-selection-actions-bar')) {
-      return;
-    }
-
-    const clickSec = getTrackTimeFromClientX(e.clientX);
-
-    if (e.shiftKey) {
-      // Shift+Click drag initiates range selection
-      isSelectingRegion = true;
-      selectionStartSec = clickSec;
-    } else {
-      // Direct click or scrub
-      state.diarization.isScrubbing = true;
-      document.body.style.cursor = 'ew-resize';
-      document.body.style.userSelect = 'none';
-      seekDiarAudio(clickSec);
-    }
-  });
-
-  // Playhead scrubber handle mousedown
-  if (el.diarPlayheadHandle) {
-    el.diarPlayheadHandle.addEventListener('mousedown', (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      state.diarization.isScrubbing = true;
-      document.body.style.cursor = 'ew-resize';
-      document.body.style.userSelect = 'none';
-    });
-  }
-}
-
-function clearTimelineSelection() {
-  state.diarization.selectionRange = null;
-  if (el.diarSelectionOverlay) el.diarSelectionOverlay.classList.add('hidden');
 }
 
 function showTurnTooltip(e, turn) {
@@ -4233,7 +2865,7 @@ function hideTurnTooltip() {
 
 function highlightActiveTurn(idx) {
   document.querySelectorAll('.diar-turn-segment').forEach(s => {
-    s.classList.toggle('active-turn', parseInt(s.dataset.index) === idx);
+    s.classList.toggle('active-turn', parseInt(s.dataset.index, 10) === idx);
   });
 }
 
@@ -4243,20 +2875,10 @@ function updateDiarizationPlayhead(currentTime, totalDuration) {
   const pct = Math.min(100, Math.max(0, (currentTime / dur) * 100));
 
   el.diarPlayheadLine.style.left = `${pct}%`;
-  if (el.diarMinimapPlayhead) el.diarMinimapPlayhead.style.left = `${pct}%`;
 
   if (el.diarTimeCurrent) el.diarTimeCurrent.textContent = formatTimePrecise(currentTime);
   if (el.diarTimeTotal) el.diarTimeTotal.textContent = formatTimePrecise(dur);
 
-  // Turn looping handler
-  if (state.diarization.loopTurn && state.diarization.activeTurnIndex !== null) {
-    const turn = state.diarization.turns[state.diarization.activeTurnIndex];
-    if (turn && currentTime >= turn.end_s) {
-      seekTo(turn.start_s);
-    }
-  }
-
-  // Active turn segment and table row tracking
   const activeTurn = state.diarization.turns.find(t => currentTime >= t.start_s && currentTime <= t.end_s);
   if (activeTurn) {
     const idx = state.diarization.turns.indexOf(activeTurn);
@@ -4266,123 +2888,6 @@ function updateDiarizationPlayhead(currentTime, totalDuration) {
     const activeRow = document.getElementById(`turn-row-${idx}`);
     if (activeRow) activeRow.classList.add('playing-row');
   }
-
-  // Speaker Solo / Mute Audio Handling
-  applyDiarSoloMuteAudio(currentTime);
-
-  // Follow Playhead Auto-Scroll
-  if (state.diarization.followPlayhead && !el.audio.paused && el.diarMultitrackViewport) {
-    const viewport = el.diarMultitrackViewport;
-    const labelColWidth = el.diarLaneLabelsCol ? el.diarLaneLabelsCol.offsetWidth : 200;
-    const visibleTrackWidth = Math.max(1, viewport.clientWidth - labelColWidth);
-    const tracksArea = el.diarTracksArea;
-    const totalTrackWidth = tracksArea ? tracksArea.offsetWidth : visibleTrackWidth;
-
-    const playheadPx = (pct / 100) * totalTrackWidth;
-    const scrollLeft = viewport.scrollLeft;
-
-    if (playheadPx > scrollLeft + visibleTrackWidth - 60 || playheadPx < scrollLeft) {
-      viewport.scrollLeft = Math.max(0, playheadPx - visibleTrackWidth / 3);
-      updateMinimapViewport();
-    }
-  }
-}
-
-function applyDiarSoloMuteAudio(currentTime) {
-  if (state.activeTab !== 'tab-diarization') return;
-
-  const isSoloActive = Boolean(state.diarization.soloSpeaker);
-  const hasMuted = state.diarization.mutedSpeakers && state.diarization.mutedSpeakers.size > 0;
-  const allSpeakers = state.diarization.speakers || [];
-  const allMuted = allSpeakers.length > 0 && allSpeakers.every(s => state.diarization.mutedSpeakers.has(s.speaker_id));
-
-  if (allMuted) {
-    el.audio.muted = true;
-    return;
-  }
-
-  if (isSoloActive || hasMuted) {
-    const activeTurns = (state.diarization.turns || []).filter(t => currentTime >= t.start_s && currentTime <= t.end_s);
-    if (activeTurns.length > 0) {
-      if (isSoloActive) {
-        const hasSoloMatch = activeTurns.some(t => t.speaker_id === state.diarization.soloSpeaker);
-        el.audio.muted = !hasSoloMatch;
-      } else {
-        const hasUnmutedTurn = activeTurns.some(t => !state.diarization.mutedSpeakers.has(t.speaker_id));
-        el.audio.muted = !hasUnmutedTurn;
-      }
-    } else {
-      // In silence gaps: if solo is active, silence gaps so only the solo speaker's voice is heard
-      if (isSoloActive) {
-        el.audio.muted = true;
-      } else {
-        el.audio.muted = false;
-      }
-    }
-  } else {
-    el.audio.muted = false;
-  }
-}
-
-function toggleSpeakerSolo(speakerId) {
-  if (state.diarization.soloSpeaker === speakerId) {
-    state.diarization.soloSpeaker = null;
-    showToast(`Solo disabled for ${getSpeakerName(speakerId)}`, 'info');
-  } else {
-    state.diarization.soloSpeaker = speakerId;
-    if (state.diarization.mutedSpeakers) {
-      state.diarization.mutedSpeakers.delete(speakerId);
-    }
-    showToast(`Soloing ${getSpeakerName(speakerId)} [S]`, 'success');
-  }
-  applyDiarSoloMuteAudio(el.audio.currentTime || 0);
-  renderSpeakerSwimlanes();
-  renderCompositeLane();
-  renderSpeakerProfiles();
-}
-
-function toggleSpeakerMute(speakerId) {
-  if (state.diarization.mutedSpeakers.has(speakerId)) {
-    state.diarization.mutedSpeakers.delete(speakerId);
-    showToast(`Unmuted ${getSpeakerName(speakerId)}`, 'info');
-  } else {
-    state.diarization.mutedSpeakers.add(speakerId);
-    if (state.diarization.soloSpeaker === speakerId) {
-      state.diarization.soloSpeaker = null;
-    }
-    showToast(`Muted ${getSpeakerName(speakerId)} [M]`, 'info');
-  }
-  applyDiarSoloMuteAudio(el.audio.currentTime || 0);
-  renderSpeakerSwimlanes();
-  renderCompositeLane();
-  renderSpeakerProfiles();
-}
-
-function toggleMuteAllSpeakers() {
-  const allSpeakers = state.diarization.speakers || [];
-  if (allSpeakers.length === 0) return;
-
-  const allMuted = allSpeakers.length > 0 && allSpeakers.every(s => state.diarization.mutedSpeakers.has(s.speaker_id));
-
-  if (allMuted) {
-    state.diarization.mutedSpeakers.clear();
-    if (el.iconDiarMuteAll) el.iconDiarMuteAll.textContent = "🔇";
-    if (el.diarMuteAllLabel) el.diarMuteAllLabel.textContent = "Mute All";
-    if (el.btnDiarMuteAll) el.btnDiarMuteAll.classList.remove('active');
-    showToast("Unmuted all speakers", "info");
-  } else {
-    allSpeakers.forEach(s => state.diarization.mutedSpeakers.add(s.speaker_id));
-    state.diarization.soloSpeaker = null;
-    if (el.iconDiarMuteAll) el.iconDiarMuteAll.textContent = "🔊";
-    if (el.diarMuteAllLabel) el.diarMuteAllLabel.textContent = "Unmute All";
-    if (el.btnDiarMuteAll) el.btnDiarMuteAll.classList.add('active');
-    showToast("Muted all speakers", "info");
-  }
-
-  applyDiarSoloMuteAudio(el.audio.currentTime || 0);
-  renderSpeakerSwimlanes();
-  renderCompositeLane();
-  renderSpeakerProfiles();
 }
 
 function renderSpeakerProfiles() {
@@ -4396,9 +2901,6 @@ function renderSpeakerProfiles() {
     const color = getSpeakerColor(spkId);
     const spkTurns = state.diarization.turns.filter(t => t.speaker_id === spkId);
 
-    const isSolo = state.diarization.soloSpeaker === spkId;
-    const isMuted = state.diarization.mutedSpeakers.has(spkId);
-
     const totalSpeechS = spkTurns.reduce((acc, t) => acc + Math.max(0, t.end_s - t.start_s), 0);
     const turnsCount = spkTurns.length;
     const talkPct = ((totalSpeechS / totalDur) * 100).toFixed(1);
@@ -4410,8 +2912,7 @@ function renderSpeakerProfiles() {
     card.innerHTML = `
       <div class="diar-spk-header">
         <span class="diar-spk-avatar" style="background-color: ${color};"></span>
-        <input type="text" class="diar-spk-name-input" value="${escapeHtml(spkName)}" title="Click to rename speaker" data-speaker="${spkId}">
-        <input type="color" class="diar-spk-color-picker" value="${hslToHex(color)}" title="Change speaker color" data-speaker="${spkId}">
+        <input type="text" class="diar-spk-name-input" value="${escapeHtml(spkName)}" title="Display name for export" data-speaker="${spkId}">
       </div>
 
       <div class="diar-spk-share-bar-track">
@@ -4438,41 +2939,20 @@ function renderSpeakerProfiles() {
       </div>
 
       <div class="diar-spk-actions-row">
-        <button class="btn btn-xs btn-secondary btn-audition-spk" data-speaker="${spkId}" title="Play all turns of this speaker sequentially">▶ Audition</button>
-        <button class="btn btn-xs ${isSolo ? 'btn-warning' : 'btn-ghost'} btn-solo-spk" data-speaker="${spkId}" title="Solo Speaker">Solo</button>
-        <button class="btn btn-xs ${isMuted ? 'btn-destructive' : 'btn-ghost'} btn-mute-spk" data-speaker="${spkId}" title="Mute Speaker">Mute</button>
         <button class="btn btn-xs btn-ghost btn-filter-spk" data-speaker="${spkId}" title="Filter turns table">🔍 Filter</button>
-        <button class="btn btn-xs btn-ghost btn-merge-spk" data-speaker="${spkId}" title="Merge into another speaker">🔀 Merge</button>
         <button class="btn btn-xs btn-primary btn-extract-spk" data-speaker="${spkId}" title="Extract and save speaker audio to workspace">✂ Extract</button>
       </div>
     `;
 
-    // Event listeners
     const nameInput = card.querySelector('.diar-spk-name-input');
     nameInput.addEventListener('change', (e) => {
       const val = e.target.value.trim() || spkId;
       state.diarization.customNames[spkId] = val;
       renderSpeakerSwimlanes();
-      renderCompositeLane();
       renderTurnsTable();
-      updateExportPreview();
       showToast(`Speaker ${spkId} renamed to "${val}"`, "success");
     });
 
-    const colorPicker = card.querySelector('.diar-spk-color-picker');
-    colorPicker.addEventListener('input', (e) => {
-      state.diarization.colors[spkId] = e.target.value;
-      card.querySelector('.diar-spk-avatar').style.backgroundColor = e.target.value;
-      card.querySelector('.diar-spk-share-bar-fill').style.backgroundColor = e.target.value;
-      renderSpeakerSwimlanes();
-      renderCompositeLane();
-      renderTurnsTable();
-      renderDiarMinimap();
-    });
-
-    card.querySelector('.btn-audition-spk').addEventListener('click', () => auditionSpeakerTurns(spkId));
-    card.querySelector('.btn-solo-spk').addEventListener('click', () => toggleSpeakerSolo(spkId));
-    card.querySelector('.btn-mute-spk').addEventListener('click', () => toggleSpeakerMute(spkId));
     card.querySelector('.btn-filter-spk').addEventListener('click', () => {
       switchDiarSubtab('turns');
       if (el.diarFilterSpeakerSelect) {
@@ -4481,7 +2961,6 @@ function renderSpeakerProfiles() {
         renderTurnsTable();
       }
     });
-    card.querySelector('.btn-merge-spk').addEventListener('click', () => openMergeModal(spkId));
     card.querySelector('.btn-extract-spk').addEventListener('click', () => extractSpeakerAudio(spkId, spkName));
 
     el.diarSpeakersGrid.appendChild(card);
@@ -4491,12 +2970,10 @@ function renderSpeakerProfiles() {
 function getFilteredAndSortedTurns() {
   let turns = state.diarization.turns.map((t, idx) => ({ ...t, originalIndex: idx }));
 
-  // Filter by Speaker
   if (state.diarization.activeSpeakerFilter && state.diarization.activeSpeakerFilter !== 'all') {
     turns = turns.filter(t => t.speaker_id === state.diarization.activeSpeakerFilter);
   }
 
-  // Filter by Search Query
   if (state.diarization.searchQuery) {
     const q = state.diarization.searchQuery;
     turns = turns.filter(t => {
@@ -4505,12 +2982,10 @@ function getFilteredAndSortedTurns() {
     });
   }
 
-  // Filter by Min Duration
   if (state.diarization.minDurFilter > 0) {
     turns = turns.filter(t => (t.end_s - t.start_s) >= state.diarization.minDurFilter);
   }
 
-  // Sort
   if (state.diarization.sortMode === 'time-desc') {
     turns.sort((a, b) => b.start_s - a.start_s);
   } else if (state.diarization.sortMode === 'dur-desc') {
@@ -4524,14 +2999,6 @@ function getFilteredAndSortedTurns() {
   return turns;
 }
 
-function updateBatchBar() {
-  const count = state.diarization.selectedTurnIndices.size;
-  if (el.diarBatchCount) el.diarBatchCount.textContent = count;
-  if (el.diarBatchBar) {
-    el.diarBatchBar.classList.toggle('hidden', count === 0);
-  }
-}
-
 function renderTurnsTable() {
   if (!el.turnsTableBody) return;
   el.turnsTableBody.innerHTML = "";
@@ -4543,7 +3010,7 @@ function renderTurnsTable() {
   }
 
   if (turns.length === 0) {
-    el.turnsTableBody.innerHTML = `<tr><td colspan="8" class="text-center text-muted" style="padding: 24px;">No turns match the active filter criteria.</td></tr>`;
+    el.turnsTableBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted" style="padding: 24px;">No turns match the active filter criteria.</td></tr>`;
     return;
   }
 
@@ -4551,126 +3018,33 @@ function renderTurnsTable() {
     const idx = turn.originalIndex;
     const color = getSpeakerColor(turn.speaker_id);
     const duration = Math.max(0, turn.end_s - turn.start_s).toFixed(2);
-    const isSelected = state.diarization.selectedTurnIndices.has(idx);
 
     const tr = document.createElement("tr");
     tr.id = `turn-row-${idx}`;
-    if (isSelected) tr.classList.add('selected-row');
+    if (state.diarization.activeTurnIndex === idx) tr.classList.add('selected-row');
 
     tr.innerHTML = `
-      <td style="text-align: center;">
-        <input type="checkbox" class="turn-select-checkbox" data-index="${idx}" ${isSelected ? 'checked' : ''}>
-      </td>
       <td><span class="text-muted font-mono">#${idx + 1}</span></td>
-      <td>
-        <select class="turn-speaker-select" data-index="${idx}" style="color: ${color}; font-weight: 700;">
-          ${state.diarization.speakers.map(s => `
-            <option value="${s.speaker_id}" ${s.speaker_id === turn.speaker_id ? 'selected' : ''}>
-              ${escapeHtml(getSpeakerName(s.speaker_id))}
-            </option>
-          `).join('')}
-        </select>
-      </td>
-      <td>
-        <div class="flex-row items-center gap-1">
-          <button class="btn btn-ghost turn-nudge-btn" data-index="${idx}" data-field="start" data-delta="-0.1">-0.1</button>
-          <input type="number" step="0.05" class="turn-time-input turn-start-input" data-index="${idx}" value="${turn.start_s.toFixed(2)}">
-          <button class="btn btn-ghost turn-nudge-btn" data-index="${idx}" data-field="start" data-delta="0.1">+0.1</button>
-        </div>
-      </td>
-      <td>
-        <div class="flex-row items-center gap-1">
-          <button class="btn btn-ghost turn-nudge-btn" data-index="${idx}" data-field="end" data-delta="-0.1">-0.1</button>
-          <input type="number" step="0.05" class="turn-time-input turn-end-input" data-index="${idx}" value="${turn.end_s.toFixed(2)}">
-          <button class="btn btn-ghost turn-nudge-btn" data-index="${idx}" data-field="end" data-delta="0.1">+0.1</button>
-        </div>
-      </td>
+      <td><span style="color: ${color}; font-weight: 700;">${escapeHtml(getSpeakerName(turn.speaker_id))}</span></td>
+      <td><code>${turn.start_s.toFixed(2)}s</code></td>
+      <td><code>${turn.end_s.toFixed(2)}s</code></td>
       <td><span class="badge badge-ghost">${duration}s</span></td>
-      <td>${turn.has_overlap ? '<span class="badge badge-warning">⚠️ Overlap</span>' : '<span class="text-muted text-xs">Clean</span>'}</td>
       <td class="table-actions">
         <button class="btn btn-sm btn-ghost btn-play-turn" data-index="${idx}" title="Play turn segment">▶ Play</button>
-        <button class="btn btn-sm btn-ghost btn-loop-turn" data-index="${idx}" title="Loop turn segment">🔁 Loop</button>
-        <button class="btn btn-sm btn-secondary btn-cut-turn" data-index="${idx}" title="Send segment to Clips library">✂ Cut</button>
-        <button class="btn btn-sm btn-ghost btn-split-turn" data-index="${idx}" title="Split turn into two">✂ Split</button>
-        <button class="btn btn-sm btn-ghost btn-merge-next-turn" data-index="${idx}" title="Merge with next chronological turn">🔗 Merge</button>
-        <button class="btn btn-sm btn-ghost btn-delete-turn text-destructive" data-index="${idx}" title="Delete turn">🗑</button>
       </td>
     `;
 
-    // Row selection checkbox
-    tr.querySelector('.turn-select-checkbox').addEventListener('change', (e) => {
-      if (e.target.checked) {
-        state.diarization.selectedTurnIndices.add(idx);
-        tr.classList.add('selected-row');
-      } else {
-        state.diarization.selectedTurnIndices.delete(idx);
-        tr.classList.remove('selected-row');
-      }
-      updateBatchBar();
+    tr.addEventListener('click', (e) => {
+      if (e.target.closest('.btn-play-turn')) return;
+      state.diarization.activeTurnIndex = idx;
+      highlightActiveTurn(idx);
+      document.querySelectorAll('.diar-turns-table tr').forEach(r => r.classList.remove('selected-row'));
+      tr.classList.add('selected-row');
+      seekDiarAudio(turn.start_s, true);
     });
 
-    // Reassign Speaker
-    tr.querySelector('.turn-speaker-select').addEventListener('change', (e) => {
-      state.diarization.turns[idx].speaker_id = e.target.value;
-      renderSpeakerSwimlanes();
-      renderCompositeLane();
-      renderSpeakerProfiles();
-      renderDiarMinimap();
-      updateExportPreview();
-    });
-
-    // Start / End inputs
-    const startInput = tr.querySelector('.turn-start-input');
-    startInput.addEventListener('change', (e) => {
-      const val = Math.max(0, parseFloat(e.target.value) || 0);
-      state.diarization.turns[idx].start_s = val;
-      if (state.diarization.turns[idx].end_s <= val) {
-        state.diarization.turns[idx].end_s = val + 0.1;
-      }
-      detectTurnOverlaps();
-      renderSpeakerSwimlanes();
-      renderCompositeLane();
-      renderSpeakerProfiles();
-      renderDiarMinimap();
-      renderTurnsTable();
-      updateExportPreview();
-    });
-
-    const endInput = tr.querySelector('.turn-end-input');
-    endInput.addEventListener('change', (e) => {
-      const val = Math.max(state.diarization.turns[idx].start_s + 0.05, parseFloat(e.target.value) || 0);
-      state.diarization.turns[idx].end_s = val;
-      detectTurnOverlaps();
-      renderSpeakerSwimlanes();
-      renderCompositeLane();
-      renderSpeakerProfiles();
-      renderDiarMinimap();
-      renderTurnsTable();
-      updateExportPreview();
-    });
-
-    // Nudge buttons
-    tr.querySelectorAll('.turn-nudge-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const field = btn.dataset.field;
-        const delta = parseFloat(btn.dataset.delta);
-        if (field === 'start') {
-          state.diarization.turns[idx].start_s = Math.max(0, roundNum(state.diarization.turns[idx].start_s + delta, 2));
-        } else {
-          state.diarization.turns[idx].end_s = Math.max(state.diarization.turns[idx].start_s + 0.05, roundNum(state.diarization.turns[idx].end_s + delta, 2));
-        }
-        detectTurnOverlaps();
-        renderTurnsTable();
-        renderSpeakerSwimlanes();
-        renderCompositeLane();
-        renderSpeakerProfiles();
-        renderDiarMinimap();
-        updateExportPreview();
-      });
-    });
-
-    // Action buttons
-    tr.querySelector('.btn-play-turn').addEventListener('click', () => {
+    tr.querySelector('.btn-play-turn').addEventListener('click', (e) => {
+      e.stopPropagation();
       const audioId = state.diarization.audioId || el.diarInputSelect.value;
       loadAudioIntoPlayer(audioId);
       seekTo(turn.start_s);
@@ -4678,334 +3052,23 @@ function renderTurnsTable() {
       el.audio.play();
     });
 
-    tr.querySelector('.btn-loop-turn').addEventListener('click', () => {
-      state.diarization.activeTurnIndex = idx;
-      state.diarization.loopTurn = true;
-      if (el.btnDiarLoopTurn) el.btnDiarLoopTurn.classList.add('active');
-      const audioId = state.diarization.audioId || el.diarInputSelect.value;
-      loadAudioIntoPlayer(audioId);
-      seekTo(turn.start_s);
-      el.audio.play();
-      showToast(`Looping turn #${idx + 1} (${turn.start_s.toFixed(2)}s - ${turn.end_s.toFixed(2)}s)`, 'info');
-    });
-
-    tr.querySelector('.btn-cut-turn').addEventListener('click', () => {
-      const audioId = state.diarization.audioId || el.diarInputSelect.value;
-      addCutToRegistry(audioId, turn.start_s, turn.end_s, 'seconds');
-      showToast(`Added turn #${idx + 1} to Clips registry!`, 'success');
-    });
-
-    tr.querySelector('.btn-split-turn').addEventListener('click', () => {
-      const mid = roundNum(turn.start_s + (turn.end_s - turn.start_s) / 2, 2);
-      const turn1 = { ...turn, end_s: mid };
-      const turn2 = { ...turn, start_s: mid };
-      state.diarization.turns.splice(idx, 1, turn1, turn2);
-      detectTurnOverlaps();
-      renderDiarizationWorkspace(state.diarization.data, state.diarization.audioId, true);
-      showToast(`Turn #${idx + 1} split into two segments`, 'success');
-    });
-
-    tr.querySelector('.btn-merge-next-turn').addEventListener('click', () => {
-      // Find next chronological turn
-      const nextIdx = state.diarization.turns.findIndex(t => t.start_s >= turn.start_s && t !== state.diarization.turns[idx]);
-      if (nextIdx === -1) {
-        showToast("No subsequent chronological turn found to merge with", "info");
-        return;
-      }
-      const nextTurn = state.diarization.turns[nextIdx];
-      turn.end_s = Math.max(turn.end_s, nextTurn.end_s);
-      state.diarization.turns.splice(nextIdx, 1);
-      detectTurnOverlaps();
-      renderDiarizationWorkspace(state.diarization.data, state.diarization.audioId, true);
-      showToast(`Merged turn #${idx + 1} with subsequent turn`, 'success');
-    });
-
-    tr.querySelector('.btn-delete-turn').addEventListener('click', () => {
-      state.diarization.turns.splice(idx, 1);
-      state.diarization.selectedTurnIndices.delete(idx);
-      detectTurnOverlaps();
-      renderDiarizationWorkspace(state.diarization.data, state.diarization.audioId, true);
-      showToast(`Turn #${idx + 1} removed`, 'info');
-    });
-
     el.turnsTableBody.appendChild(tr);
   });
 }
 
-function addTurnAtCursor() {
-  const curTime = state.player.currentTime || 0;
-  const dur = state.diarization.duration || 10;
-  const start = Math.max(0, Math.min(curTime, dur - 1));
-  const end = Math.min(dur, start + 2.0);
-  const spkId = state.diarization.speakers[0]?.speaker_id || "spk_00";
-
-  const newTurn = {
-    speaker_id: spkId,
-    start_s: roundNum(start, 2),
-    end_s: roundNum(end, 2),
-    confidence: 1.0,
-  };
-
-  state.diarization.turns.push(newTurn);
-  state.diarization.turns.sort((a, b) => a.start_s - b.start_s);
-  detectTurnOverlaps();
-  renderDiarizationWorkspace(state.diarization.data, state.diarization.audioId, true);
-  showToast(`Added new turn at ${start.toFixed(2)}s`, 'success');
-}
-
-function navigateToAdjacentTurn(delta) {
-  const turns = state.diarization.turns;
-  if (!turns || turns.length === 0) return;
-  let nextIdx = 0;
-  if (state.diarization.activeTurnIndex !== null) {
-    nextIdx = (state.diarization.activeTurnIndex + delta + turns.length) % turns.length;
-  } else {
-    nextIdx = delta > 0 ? 0 : turns.length - 1;
-  }
-  state.diarization.activeTurnIndex = nextIdx;
-  const turn = turns[nextIdx];
-  highlightActiveTurn(nextIdx);
-  seekTo(turn.start_s);
-  const row = document.getElementById(`turn-row-${nextIdx}`);
-  if (row) {
-    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    row.classList.add('selected-row');
-    setTimeout(() => row.classList.remove('selected-row'), 1000);
-  }
-  showToast(`Selected Turn #${nextIdx + 1} (${getSpeakerName(turn.speaker_id)})`, 'info');
-}
-
-function splitActiveTurnAtPlayhead() {
-  const curTime = state.player.currentTime || 0;
-  const turns = state.diarization.turns;
-  let targetIdx = state.diarization.activeTurnIndex;
-  if (targetIdx === null) {
-    targetIdx = turns.findIndex(t => curTime > t.start_s + 0.1 && curTime < t.end_s - 0.1);
-  }
-  if (targetIdx === -1 || targetIdx === null || !turns[targetIdx]) {
-    showToast("Place playhead inside a turn segment to split it", "info");
-    return;
-  }
-  const turn = turns[targetIdx];
-  if (curTime <= turn.start_s + 0.05 || curTime >= turn.end_s - 0.05) {
-    showToast("Playhead is at boundary of turn", "info");
-    return;
-  }
-  const turn1 = { ...turn, end_s: roundNum(curTime, 2) };
-  const turn2 = { ...turn, start_s: roundNum(curTime, 2) };
-  turns.splice(targetIdx, 1, turn1, turn2);
-  detectTurnOverlaps();
-  renderDiarizationWorkspace(state.diarization.data, state.diarization.audioId, true);
-  showToast(`Split turn #${targetIdx + 1} at ${curTime.toFixed(2)}s`, 'success');
-}
-
-function deleteActiveTurn() {
-  if (state.diarization.activeTurnIndex === null) {
-    showToast("No turn selected to delete", "info");
-    return;
-  }
-  const idx = state.diarization.activeTurnIndex;
-  state.diarization.turns.splice(idx, 1);
-  state.diarization.selectedTurnIndices.delete(idx);
-  state.diarization.activeTurnIndex = null;
-  detectTurnOverlaps();
-  renderDiarizationWorkspace(state.diarization.data, state.diarization.audioId, true);
-  showToast(`Turn #${idx + 1} deleted`, 'info');
-}
-
-function runAutoMergeMicroGaps(thresholdSec) {
-  const turns = state.diarization.turns;
-  if (turns.length <= 1) {
-    showToast("Not enough turns to merge", "info");
-    return;
-  }
-
-  turns.sort((a, b) => a.start_s - b.start_s);
-  let mergedCount = 0;
-  const merged = [];
-
-  for (let i = 0; i < turns.length; i++) {
-    const cur = { ...turns[i] };
-    if (merged.length > 0) {
-      const prev = merged[merged.length - 1];
-      if (prev.speaker_id === cur.speaker_id && (cur.start_s - prev.end_s) <= thresholdSec && cur.start_s >= prev.end_s) {
-        prev.end_s = Math.max(prev.end_s, cur.end_s);
-        mergedCount++;
-        continue;
-      }
-    }
-    merged.push(cur);
-  }
-
-  state.diarization.turns = merged;
-  detectTurnOverlaps();
-  renderDiarizationWorkspace(state.diarization.data, state.diarization.audioId, true);
-  showToast(`Merged ${mergedCount} micro-gaps (≤ ${thresholdSec}s)!`, 'success');
-}
-
-function auditionSpeakerTurns(speakerId) {
-  const turns = state.diarization.turns.filter(t => t.speaker_id === speakerId);
-  if (turns.length === 0) {
-    showToast("No turns found for this speaker", "info");
-    return;
-  }
-
-  diarAuditionQueue = [...turns];
-  diarAuditionIndex = 0;
-  diarAuditionActive = true;
-
-  playNextAuditionTurn();
-  showToast(`Auditioning ${turns.length} turns for ${getSpeakerName(speakerId)}...`, 'info');
-}
-
-function playNextAuditionTurn() {
-  if (diarAuditionIndex >= diarAuditionQueue.length) {
-    diarAuditionActive = false;
-    showToast("Speaker audition finished", "success");
-    return;
-  }
-
-  const turn = diarAuditionQueue[diarAuditionIndex];
-  const audioId = state.diarization.audioId || el.diarInputSelect.value;
-  loadAudioIntoPlayer(audioId);
-  seekTo(turn.start_s);
-  state.player.previewEnd = turn.end_s;
-  el.audio.play();
-
-  // Monitor end of turn
-  const checkTurnEnd = () => {
-    if (el.audio.currentTime >= turn.end_s - 0.05 || el.audio.paused) {
-      el.audio.removeEventListener('timeupdate', checkTurnEnd);
-      diarAuditionIndex++;
-      setTimeout(playNextAuditionTurn, 400);
-    }
-  };
-  el.audio.addEventListener('timeupdate', checkTurnEnd);
-}
-
-// Modal Merge Speaker
-let activeMergeSourceSpeaker = null;
-
-function openMergeModal(sourceSpeakerId) {
-  activeMergeSourceSpeaker = sourceSpeakerId;
-  if (!el.modalMergeSpeaker) return;
-
-  const spkName = getSpeakerName(sourceSpeakerId);
-  if (el.mergeSourceSpkName) el.mergeSourceSpkName.textContent = `${spkName} (${sourceSpeakerId})`;
-
-  if (el.mergeTargetSpkSelect) {
-    const targets = state.diarization.speakers.filter(s => s.speaker_id !== sourceSpeakerId);
-    el.mergeTargetSpkSelect.innerHTML = targets.map(s => `
-      <option value="${s.speaker_id}">${escapeHtml(getSpeakerName(s.speaker_id))} (${s.speaker_id})</option>
-    `).join('');
-  }
-
-  el.modalMergeSpeaker.classList.remove('hidden');
-}
-
-function closeMergeModal() {
-  if (el.modalMergeSpeaker) el.modalMergeSpeaker.classList.add('hidden');
-  activeMergeSourceSpeaker = null;
-}
-
-function confirmMergeSpeakers() {
-  const targetSpkId = el.mergeTargetSpkSelect?.value;
-  if (!activeMergeSourceSpeaker || !targetSpkId) return;
-
-  const srcName = getSpeakerName(activeMergeSourceSpeaker);
-  const tgtName = getSpeakerName(targetSpkId);
-
-  state.diarization.turns.forEach(t => {
-    if (t.speaker_id === activeMergeSourceSpeaker) {
-      t.speaker_id = targetSpkId;
-    }
-  });
-
-  // Remove source speaker from list
-  state.diarization.speakers = state.diarization.speakers.filter(s => s.speaker_id !== activeMergeSourceSpeaker);
-
-  closeMergeModal();
-  detectTurnOverlaps();
-  renderDiarizationWorkspace(state.diarization.data, state.diarization.audioId, true);
-  showToast(`Merged all turns of ${srcName} into ${tgtName}!`, 'success');
-}
-
-// Export Studio Generator
-function updateExportPreview() {
-  if (!el.exportPreviewTextarea) return;
-  const format = state.diarization.activeExportTab || 'rttm';
+function downloadDiarizationRttm() {
   const audioId = state.diarization.audioId || 'audio_sample';
   const turns = state.diarization.turns || [];
-  const totalDur = state.diarization.duration || 60;
-
-  let content = "";
-  let filename = `diarization_${audioId}.${format}`;
-
-  if (format === 'rttm') {
-    filename = `diarization_${audioId}.rttm`;
-    content = turns.map(t => {
-      const dur = (t.end_s - t.start_s).toFixed(3);
-      const spkName = getSpeakerName(t.speaker_id);
-      return `SPEAKER ${audioId} 1 ${t.start_s.toFixed(3)} ${dur} <NA> <NA> ${spkName} <NA> <NA>`;
-    }).join('\n');
-  } else if (format === 'json') {
-    filename = `diarization_${audioId}.json`;
-    const jsonOutput = {
-      schema_version: "1.0",
-      audio_id: audioId,
-      model: state.diarization.data?.model || { backend: "pyannote", model_id: "pyannote/speaker-diarization-community-1" },
-      speaker_count: state.diarization.speakers.length,
-      speakers: state.diarization.speakers.map(s => ({
-        speaker_id: s.speaker_id,
-        display_name: getSpeakerName(s.speaker_id),
-      })),
-      turns: turns.map(t => ({
-        speaker_id: t.speaker_id,
-        speaker_name: getSpeakerName(t.speaker_id),
-        start_s: roundNum(t.start_s, 3),
-        end_s: roundNum(t.end_s, 3),
-        duration_s: roundNum(t.end_s - t.start_s, 3),
-        confidence: t.confidence || null,
-        has_overlap: Boolean(t.has_overlap),
-      })),
-    };
-    content = JSON.stringify(jsonOutput, null, 2);
-  } else if (format === 'csv') {
-    filename = `diarization_${audioId}.csv`;
-    content = "turn_index,speaker_id,speaker_name,start_seconds,end_seconds,duration_seconds,has_overlap\n" +
-      turns.map((t, idx) => `${idx + 1},${t.speaker_id},"${getSpeakerName(t.speaker_id)}",${t.start_s.toFixed(3)},${t.end_s.toFixed(3)},${(t.end_s - t.start_s).toFixed(3)},${t.has_overlap ? 1 : 0}`).join('\n');
-  } else if (format === 'srt') {
-    filename = `diarization_${audioId}.srt`;
-    content = turns.map((t, idx) => {
-      const srtStart = secondsToSrtTime(t.start_s);
-      const srtEnd = secondsToSrtTime(t.end_s);
-      return `${idx + 1}\n${srtStart} --> ${srtEnd}\n[${getSpeakerName(t.speaker_id)}]: Speech turn\n`;
-    }).join('\n');
-  } else if (format === 'vtt') {
-    filename = `diarization_${audioId}.vtt`;
-    content = "WEBVTT\n\n" + turns.map((t, idx) => {
-      const vttStart = secondsToVttTime(t.start_s);
-      const vttEnd = secondsToVttTime(t.end_s);
-      return `${idx + 1}\n${vttStart} --> ${vttEnd}\n<v ${getSpeakerName(t.speaker_id)}>Speech turn</v>\n`;
-    }).join('\n');
-  } else if (format === 'audacity') {
-    filename = `diarization_${audioId}_labels.txt`;
-    content = turns.map(t => `${t.start_s.toFixed(6)}\t${t.end_s.toFixed(6)}\t${getSpeakerName(t.speaker_id)}`).join('\n');
-  } else if (format === 'praat') {
-    filename = `diarization_${audioId}.TextGrid`;
-    content = `File type = "ooTextFile"\nObject class = "TextGrid"\n\nxmin = 0.0\nxmax = ${totalDur.toFixed(3)}\ntiers? <exists>\nsize = 1\nitem []:\n    item [1]:\n        class = "IntervalTier"\n        name = "speakers"\n        xmin = 0.0\n        xmax = ${totalDur.toFixed(3)}\n        intervals: size = ${turns.length}\n` +
-      turns.map((t, idx) => `        intervals [${idx + 1}]:\n            xmin = ${t.start_s.toFixed(3)}\n            xmax = ${t.end_s.toFixed(3)}\n            text = "${getSpeakerName(t.speaker_id)}"\n`).join('');
+  if (turns.length === 0) {
+    showToast("No diarization turns to export", "info");
+    return;
   }
-
-  el.exportPreviewTextarea.value = content;
-  if (el.exportFilenameLabel) el.exportFilenameLabel.textContent = filename;
-}
-
-function downloadActiveExport() {
-  const content = el.exportPreviewTextarea?.value;
-  const filename = el.exportFilenameLabel?.textContent || "diarization.rttm";
-  if (!content) return;
-
+  const content = turns.map(t => {
+    const dur = (t.end_s - t.start_s).toFixed(3);
+    const spkName = getSpeakerName(t.speaker_id);
+    return `SPEAKER ${audioId} 1 ${t.start_s.toFixed(3)} ${dur} <NA> <NA> ${spkName} <NA> <NA>`;
+  }).join('\n');
+  const filename = `diarization_${audioId}.rttm`;
   const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -5018,166 +3081,6 @@ function downloadActiveExport() {
   showToast(`Downloaded ${filename}`, 'success');
 }
 
-function secondsToSrtTime(seconds) {
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-  const millis = Math.floor((seconds % 1) * 1000);
-  return `${padZero(hrs, 2)}:${padZero(mins, 2)}:${padZero(secs, 2)},${padZero(millis, 3)}`;
-}
-
-function secondsToVttTime(seconds) {
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-  const millis = Math.floor((seconds % 1) * 1000);
-  return `${padZero(hrs, 2)}:${padZero(mins, 2)}:${padZero(secs, 2)}.${padZero(millis, 3)}`;
-}
-
-function padZero(num, size) {
-  let s = String(num);
-  while (s.length < size) s = "0" + s;
-  return s;
-}
-
-function roundNum(num, decimals) {
-  return Number(Math.round(num + "e" + decimals) + "e-" + decimals);
-}
-
-function hslToHex(hslStr) {
-  if (!hslStr) return "#00e5ff";
-  if (hslStr.startsWith('#')) return hslStr;
-  if (!hslStr.startsWith('hsl')) return "#00e5ff";
-  const match = hslStr.match(/\d+(\.\d+)?/g);
-  if (!match || match.length < 3) return "#00e5ff";
-  let h = parseFloat(match[0]) / 360;
-  let s = parseFloat(match[1]) / 100;
-  let l = parseFloat(match[2]) / 100;
-  let r, g, b;
-  if (s === 0) {
-    r = g = b = l;
-  } else {
-    const hue2rgb = (p, q, t) => {
-      if (t < 0) t += 1;
-      if (t > 1) t -= 1;
-      if (t < 1/6) return p + (q - p) * 6 * t;
-      if (t < 1/2) return q;
-      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
-      return p;
-    };
-    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-    const p = 2 * l - q;
-    r = hue2rgb(p, q, h + 1/3);
-    g = hue2rgb(p, q, h);
-    b = hue2rgb(p, q, h - 1/3);
-  }
-  const toHex = x => {
-    const hex = Math.round(x * 255).toString(16);
-    return hex.length === 1 ? '0' + hex : hex;
-  };
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-}
-
-// Annotation File Parser
-function importAnnotationFile(file) {
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    try {
-      const text = e.target.result;
-      const audioId = state.activeAudio?.id || (state.audioList[0] ? state.audioList[0].id : "imported_track");
-      let turns = [];
-      let speakers = new Set();
-
-      if (file.name.endsWith('.json')) {
-        const json = JSON.parse(text);
-        turns = json.turns || [];
-        if (json.speakers) {
-          json.speakers.forEach(s => speakers.add(s.speaker_id || s));
-        }
-      } else if (file.name.endsWith('.rttm') || text.includes('SPEAKER')) {
-        const lines = text.split('\n');
-        lines.forEach(line => {
-          const parts = line.trim().split(/\s+/);
-          if (parts[0] === 'SPEAKER' && parts.length >= 8) {
-            const start = parseFloat(parts[3]);
-            const dur = parseFloat(parts[4]);
-            const spkId = parts[7];
-            if (!isNaN(start) && !isNaN(dur) && spkId) {
-              speakers.add(spkId);
-              turns.push({
-                speaker_id: spkId,
-                start_s: start,
-                end_s: start + dur,
-              });
-            }
-          }
-        });
-      } else if (file.name.endsWith('.csv')) {
-        const lines = text.split('\n');
-        lines.slice(1).forEach(line => {
-          const parts = line.split(',');
-          if (parts.length >= 5) {
-            const spkId = parts[1].trim();
-            const start = parseFloat(parts[3]);
-            const end = parseFloat(parts[4]);
-            if (spkId && !isNaN(start) && !isNaN(end)) {
-              speakers.add(spkId);
-              turns.push({ speaker_id: spkId, start_s: start, end_s: end });
-            }
-          }
-        });
-      } else if (file.name.endsWith('.txt') || file.name.endsWith('.labels')) {
-        // Audacity Tab-delimited label format: start \t end \t label
-        const lines = text.split('\n');
-        lines.forEach(line => {
-          const parts = line.trim().split('\t');
-          if (parts.length >= 3) {
-            const start = parseFloat(parts[0]);
-            const end = parseFloat(parts[1]);
-            const spkId = parts[2].trim();
-            if (!isNaN(start) && !isNaN(end) && spkId) {
-              speakers.add(spkId);
-              turns.push({ speaker_id: spkId, start_s: start, end_s: end });
-            }
-          }
-        });
-      } else if (file.name.endsWith('.TextGrid')) {
-        // Praat TextGrid parsing
-        const intervalMatches = [...text.matchAll(/xmin\s*=\s*([\d\.]+)\s*xmax\s*=\s*([\d\.]+)\s*text\s*=\s*"([^"]+)"/g)];
-        intervalMatches.forEach(m => {
-          const start = parseFloat(m[1]);
-          const end = parseFloat(m[2]);
-          const spkId = m[3].trim();
-          if (!isNaN(start) && !isNaN(end) && spkId) {
-            speakers.add(spkId);
-            turns.push({ speaker_id: spkId, start_s: start, end_s: end });
-          }
-        });
-      }
-
-      if (turns.length === 0) {
-        throw new Error("No valid speaker turns could be parsed from this file");
-      }
-
-      turns.sort((a, b) => a.start_s - b.start_s);
-      const diarResult = {
-        schema_version: "1.0",
-        audio_id: audioId,
-        speakers: Array.from(speakers).map(id => ({ speaker_id: id })),
-        turns: turns,
-        model: { backend: "import", model_id: file.name },
-      };
-
-      renderDiarizationWorkspace(diarResult, audioId, true);
-      showToast(`Imported ${turns.length} turns across ${speakers.size} speakers!`, 'success');
-    } catch (err) {
-      showToast(`Failed to parse annotation: ${err.message}`, 'error');
-    }
-  };
-  reader.readAsText(file);
-}
-
-// Extract Speaker Audio Handlers
 async function extractSpeakerAudio(speakerId, speakerName) {
   const audioId = state.diarization.audioId || el.diarInputSelect.value;
   if (!audioId) {
@@ -5246,366 +3149,6 @@ async function extractAllSpeakers() {
     showToast(`Extraction failed: ${err.message}`, "error");
   }
 }
-
-function generateDemoDiarization(audioId) {
-  const audioItem = state.audioList.find(a => a.id === audioId) || state.activeAudio;
-  const dur = (audioItem ? audioItem.duration_s : 0) || 60;
-
-  const demoTurns = [
-    { speaker_id: "spk_00", start_s: 0.5, end_s: Math.min(dur * 0.15, 6.2), confidence: 0.95 },
-    { speaker_id: "spk_01", start_s: Math.min(dur * 0.16, 6.5), end_s: Math.min(dur * 0.35, 14.8), confidence: 0.92 },
-    { speaker_id: "spk_00", start_s: Math.min(dur * 0.36, 15.2), end_s: Math.min(dur * 0.55, 23.5), confidence: 0.96 },
-    { speaker_id: "spk_02", start_s: Math.min(dur * 0.52, 22.0), end_s: Math.min(dur * 0.72, 31.0), confidence: 0.89 },
-    { speaker_id: "spk_01", start_s: Math.min(dur * 0.73, 31.5), end_s: Math.min(dur * 0.88, 38.0), confidence: 0.94 },
-    { speaker_id: "spk_00", start_s: Math.min(dur * 0.89, 38.5), end_s: Math.min(dur * 0.98, 42.0), confidence: 0.97 },
-  ];
-
-  state.diarization.customNames = {
-    "spk_00": "Host / Interviewer",
-    "spk_01": "Guest 1 (Alice)",
-    "spk_02": "Guest 2 (Bob)",
-  };
-
-  const demoData = {
-    schema_version: "1.0",
-    audio_id: audioId,
-    speakers: [
-      { speaker_id: "spk_00" },
-      { speaker_id: "spk_01" },
-      { speaker_id: "spk_02" },
-    ],
-    turns: demoTurns,
-    model: { backend: "pyannote", model_id: "pyannote/speaker-diarization-community-1" },
-  };
-
-  renderDiarizationWorkspace(demoData, audioId, true);
-}
-
-// ==================== DIARIZATION HISTORY & SESSION MANAGER ====================
-
-function saveDiarizationToHistory(diarization, audioId) {
-  if (!diarization || !diarization.turns || diarization.turns.length === 0) return;
-
-  const audioItem = state.audioList.find(a => a.id === audioId) || state.activeAudio;
-  const totalDur = state.diarization.duration || 60;
-  const totalSpeechS = state.diarization.turns.reduce((acc, t) => acc + Math.max(0, t.end_s - t.start_s), 0);
-  const speechRatioPct = ((totalSpeechS / totalDur) * 100).toFixed(1);
-
-  const historyItem = {
-    id: `diar_hist_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-    timestamp: Date.now(),
-    audio_id: audioId,
-    audio_title: audioItem?.title || audioItem?.source_id || audioId,
-    duration_s: totalDur,
-    model_backend: diarization.model?.backend || diarization.model?.model_id || 'Pyannote',
-    speaker_count: state.diarization.speakers.length,
-    turn_count: state.diarization.turns.length,
-    speech_ratio_pct: speechRatioPct,
-    total_speech_s: totalSpeechS,
-    speakers: JSON.parse(JSON.stringify(state.diarization.speakers)),
-    turns: JSON.parse(JSON.stringify(state.diarization.turns)),
-    customNames: { ...state.diarization.customNames },
-    colors: { ...state.diarization.colors },
-  };
-
-  if (!state.diarization.history) state.diarization.history = [];
-  // Avoid duplicate immediately identical entries
-  const existingIdx = state.diarization.history.findIndex(h => h.audio_id === audioId && h.turn_count === historyItem.turn_count);
-  if (existingIdx !== -1) {
-    state.diarization.history.splice(existingIdx, 1);
-  }
-
-  state.diarization.history.unshift(historyItem);
-  if (state.diarization.history.length > 30) {
-    state.diarization.history = state.diarization.history.slice(0, 30);
-  }
-
-  try {
-    localStorage.setItem('sonic_diarization_history', JSON.stringify(state.diarization.history));
-  } catch (err) {
-    console.warn("Failed to persist diarization history in localStorage:", err);
-  }
-
-  renderDiarizationHistory();
-}
-
-function loadDiarizationHistory() {
-  try {
-    const raw = localStorage.getItem('sonic_diarization_history');
-    if (raw) {
-      state.diarization.history = JSON.parse(raw);
-    }
-  } catch (err) {
-    console.warn("Could not load diarization history from localStorage:", err);
-    state.diarization.history = [];
-  }
-  renderDiarizationHistory();
-}
-
-function renderDiarizationHistory() {
-  const container = el.diarHistoryList;
-  if (!container) return;
-  container.innerHTML = "";
-
-  let items = state.diarization.history || [];
-
-  // Filter if search query active
-  if (state.diarization.historySearch) {
-    const q = state.diarization.historySearch;
-    items = items.filter(item => {
-      const title = (item.audio_title || '').toLowerCase();
-      const model = (item.model_backend || '').toLowerCase();
-      const spkNames = Object.values(item.customNames || {}).join(' ').toLowerCase();
-      const dateStr = new Date(item.timestamp).toLocaleString().toLowerCase();
-      return title.includes(q) || model.includes(q) || spkNames.includes(q) || dateStr.includes(q);
-    });
-  }
-
-  if (el.diarHistoryCountBadge) {
-    el.diarHistoryCountBadge.textContent = `${items.length} saved run${items.length === 1 ? '' : 's'}`;
-  }
-
-  if (items.length === 0) {
-    container.innerHTML = `
-      <div class="empty-placeholder">
-        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-        <span>${state.diarization.historySearch ? 'No saved sessions match your search query.' : 'No diarization sessions saved yet. Run diarization or import annotations above.'}</span>
-      </div>
-    `;
-    return;
-  }
-
-  items.forEach(item => {
-    const isCurrentActive = state.diarization.audioId === item.audio_id && state.diarization.turns.length === item.turn_count;
-    const dateStr = new Date(item.timestamp).toLocaleString();
-    const timeAgo = formatTimeAgo(item.timestamp);
-    const modelTag = diarizationModelLabel(item.model_backend);
-
-    const card = document.createElement("div");
-    card.className = `diar-history-item ${isCurrentActive ? 'active-session' : ''}`;
-    card.dataset.historyId = item.id;
-
-    card.innerHTML = `
-      <div class="diar-hist-top">
-        <div class="diar-hist-title-wrap">
-          <span class="badge ${isCurrentActive ? 'badge-accent' : 'badge-info'}">${escapeHtml(modelTag)}</span>
-          <span class="diar-hist-title" title="${escapeHtml(item.audio_title)}">${escapeHtml(item.audio_title)}</span>
-          ${isCurrentActive ? '<span class="badge badge-success badge-sm">Active Session</span>' : ''}
-        </div>
-        <span class="diar-hist-time" title="${dateStr}">🕒 ${timeAgo}</span>
-      </div>
-
-      <div class="diar-hist-meta-row">
-        <span><strong>${item.speaker_count}</strong> Speakers</span>
-        <span>•</span>
-        <span><strong>${item.turn_count}</strong> Turns</span>
-        <span>•</span>
-        <span><strong>${item.speech_ratio_pct}%</strong> Speech (${(item.total_speech_s || 0).toFixed(1)}s)</span>
-        <span>•</span>
-        <span>Duration: <strong>${formatTime(item.duration_s || 0)}</strong></span>
-      </div>
-
-      <div class="diar-hist-spk-chips">
-        ${(item.speakers || []).map(s => {
-          const name = (item.customNames && item.customNames[s.speaker_id]) || s.speaker_id;
-          const color = (item.colors && item.colors[s.speaker_id]) || getSpeakerColor(s.speaker_id);
-          return `
-            <span class="diar-hist-spk-chip" style="border-left: 3px solid ${color};">
-              <span style="color:${color}; font-weight:700;">●</span>
-              <span>${escapeHtml(name)}</span>
-            </span>
-          `;
-        }).join('')}
-      </div>
-
-      <div class="diar-hist-actions">
-        <button class="btn btn-xs btn-primary btn-load-hist" data-id="${item.id}" title="Restore this diarization into the interactive workspace">⚡ Load Session</button>
-        <button class="btn btn-xs btn-secondary btn-export-rttm-hist" data-id="${item.id}" title="Download NIST RTTM file">RTTM</button>
-        <button class="btn btn-xs btn-secondary btn-export-json-hist" data-id="${item.id}" title="Download Pipeline JSON file">JSON</button>
-        <button class="btn btn-xs btn-ghost btn-delete-hist text-destructive" data-id="${item.id}" title="Delete this history entry">🗑</button>
-      </div>
-    `;
-
-    // Event Listeners
-    card.querySelector('.btn-load-hist').addEventListener('click', () => loadHistorySession(item.id));
-    card.querySelector('.btn-export-rttm-hist').addEventListener('click', () => downloadHistoryExport(item, 'rttm'));
-    card.querySelector('.btn-export-json-hist').addEventListener('click', () => downloadHistoryExport(item, 'json'));
-    card.querySelector('.btn-delete-hist').addEventListener('click', () => deleteHistoryItem(item.id));
-
-    container.appendChild(card);
-  });
-}
-
-function loadHistorySession(historyId) {
-  const item = state.diarization.history?.find(h => h.id === historyId);
-  if (!item) {
-    showToast("Session not found in history", "error");
-    return;
-  }
-
-  // Clear selections & muting
-  state.diarization.activeTurnIndex = null;
-  state.diarization.selectedTurnIndices.clear();
-  state.diarization.soloSpeaker = null;
-  state.diarization.mutedSpeakers.clear();
-
-  // Restore custom names & colors
-  if (item.customNames) state.diarization.customNames = { ...item.customNames };
-  if (item.colors) state.diarization.colors = { ...item.colors };
-
-  const restoredData = {
-    schema_version: "1.0",
-    audio_id: item.audio_id,
-    duration_s: item.duration_s || 0,
-    speakers: (item.speakers || []).map(s => typeof s === 'string' ? { speaker_id: s } : (s && s.speaker_id ? s : { speaker_id: s?.id || String(s) })),
-    turns: (item.turns || []).map(t => ({
-      speaker_id: t.speaker_id || "spk_00",
-      start_s: roundNum(Math.max(0, Number(t.start_s) || 0), 2),
-      end_s: roundNum(Math.max(0.05, Number(t.end_s) || 0), 2),
-      confidence: t.confidence ?? 1.0,
-      has_overlap: Boolean(t.has_overlap),
-    })),
-    model: { backend: item.model_backend, model_id: item.model_id },
-  };
-
-  // Sync Input Select Dropdown
-  if (el.diarInputSelect) {
-    const exists = Array.from(el.diarInputSelect.options).some(opt => opt.value === item.audio_id);
-    if (!exists && item.audio_id) {
-      const opt = document.createElement("option");
-      opt.value = item.audio_id;
-      opt.textContent = `${item.audio_title || item.audio_id} (${formatTime(item.duration_s || 0)}, Restored Track)`;
-      el.diarInputSelect.appendChild(opt);
-    }
-    el.diarInputSelect.value = item.audio_id;
-    updateDiarInputMeta(item.audio_id);
-    renderDiarizationChildren(item.audio_id);
-  }
-
-  // Render without pushing duplicate to history
-  renderDiarizationWorkspace(restoredData, item.audio_id, false);
-
-  // Safely load into player if audio exists on server
-  try {
-    loadAudioIntoPlayer(item.audio_id, false);
-  } catch (err) {
-    console.warn("Could not load audio file into player:", err);
-  }
-
-  // Scroll to workspace
-  if (el.diarResultsWrapper) {
-    el.diarResultsWrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-
-  showToast(`Restored diarization session for "${item.audio_title}" (${item.turn_count} turns)!`, "success");
-}
-
-function deleteHistoryItem(historyId) {
-  state.diarization.history = (state.diarization.history || []).filter(h => h.id !== historyId);
-  try {
-    localStorage.setItem('sonic_diarization_history', JSON.stringify(state.diarization.history));
-  } catch (_) {}
-  renderDiarizationHistory();
-  showToast("History entry deleted", "info");
-}
-
-function clearDiarizationHistory() {
-  if (!state.diarization.history || state.diarization.history.length === 0) return;
-  const count = state.diarization.history.length;
-  if (!confirm(`Clear all ${count} saved diarization session${count === 1 ? '' : 's'}? This cannot be undone.`)) {
-    return;
-  }
-  state.diarization.history = [];
-  try {
-    localStorage.removeItem('sonic_diarization_history');
-  } catch (_) {}
-  renderDiarizationHistory();
-  showToast("Diarization history cleared", "info");
-}
-
-function downloadHistoryExport(item, format) {
-  const turns = item.turns || [];
-  const audioId = item.audio_id || "audio";
-  let content = "";
-  let filename = `diarization_${audioId}.${format}`;
-
-  if (format === 'rttm') {
-    filename = `diarization_${audioId}.rttm`;
-    content = turns.map(t => {
-      const dur = (t.end_s - t.start_s).toFixed(3);
-      const spkName = (item.customNames && item.customNames[t.speaker_id]) || t.speaker_id;
-      return `SPEAKER ${audioId} 1 ${t.start_s.toFixed(3)} ${dur} <NA> <NA> ${spkName} <NA> <NA>`;
-    }).join('\n');
-  } else {
-    filename = `diarization_${audioId}.json`;
-    const jsonOutput = {
-      schema_version: "1.0",
-      audio_id: audioId,
-      model: { backend: item.model_backend, model_id: item.model_id },
-      speaker_count: item.speaker_count,
-      speakers: item.speakers || [],
-      turns: turns.map(t => ({
-        speaker_id: t.speaker_id,
-        speaker_name: (item.customNames && item.customNames[t.speaker_id]) || t.speaker_id,
-        start_s: roundNum(t.start_s, 3),
-        end_s: roundNum(t.end_s, 3),
-        duration_s: roundNum(t.end_s - t.start_s, 3),
-        has_overlap: Boolean(t.has_overlap),
-      })),
-    };
-    content = JSON.stringify(jsonOutput, null, 2);
-  }
-
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  showToast(`Downloaded ${filename}`, 'success');
-}
-
-function exportAllDiarizationHistory() {
-  const history = state.diarization.history || [];
-  if (history.length === 0) {
-    showToast("No history entries to export", "info");
-    return;
-  }
-  const content = JSON.stringify({
-    schema_version: "1.0",
-    exported_at: new Date().toISOString(),
-    total_sessions: history.length,
-    sessions: history,
-  }, null, 2);
-
-  const filename = `sonic_diarization_history_${new Date().toISOString().slice(0, 10)}.json`;
-  const blob = new Blob([content], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  showToast(`Exported all history to ${filename}`, 'success');
-}
-
-function formatTimeAgo(timestamp) {
-  const sec = Math.floor((Date.now() - timestamp) / 1000);
-  if (sec < 10) return "Just now";
-  if (sec < 60) return `${sec}s ago`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const days = Math.floor(hr / 24);
-  return `${days}d ago`;
-}
-
 // ==================== CUTS MANAGER ====================
 
 function initCutsManager() {
@@ -5681,10 +3224,6 @@ const auditionAudio = new Audio();
 let auditionTracks = [];
 let activeAuditionIndex = 0;
 let activeScoreOverall = 5.0;
-let activeScoreClarity = 5;
-let activeScoreBleed = 5;
-let activeScoreArtifacts = 5;
-let activeSelectedTags = new Set();
 
 function initAuditionHub() {
   auditionAudio.loop = true;
@@ -5823,40 +3362,6 @@ function initAuditionHub() {
     });
     el.starRatingWidget.addEventListener('mouseleave', () => {
       highlightStars(activeScoreOverall);
-    });
-  }
-
-  if (el.sliderSubmetricClarity) {
-    el.sliderSubmetricClarity.addEventListener('input', (e) => {
-      activeScoreClarity = parseInt(e.target.value);
-      if (el.valSubmetricClarity) el.valSubmetricClarity.textContent = `${activeScoreClarity} / 5`;
-    });
-  }
-  if (el.sliderSubmetricBleed) {
-    el.sliderSubmetricBleed.addEventListener('input', (e) => {
-      activeScoreBleed = parseInt(e.target.value);
-      if (el.valSubmetricBleed) el.valSubmetricBleed.textContent = `${activeScoreBleed} / 5`;
-    });
-  }
-  if (el.sliderSubmetricArtifacts) {
-    el.sliderSubmetricArtifacts.addEventListener('input', (e) => {
-      activeScoreArtifacts = parseInt(e.target.value);
-      if (el.valSubmetricArtifacts) el.valSubmetricArtifacts.textContent = `${activeScoreArtifacts} / 5`;
-    });
-  }
-
-  if (el.evalTagChips) {
-    el.evalTagChips.addEventListener('click', (e) => {
-      const chip = e.target.closest('.tag-chip');
-      if (!chip) return;
-      const tag = chip.dataset.tag;
-      if (activeSelectedTags.has(tag)) {
-        activeSelectedTags.delete(tag);
-        chip.classList.remove('selected');
-      } else {
-        activeSelectedTags.add(tag);
-        chip.classList.add('selected');
-      }
     });
   }
 
@@ -6150,7 +3655,7 @@ function renderSideBySideDeck() {
           score_vocal_clarity: scoreVal,
           score_bleed: scoreVal,
           score_artifacts: scoreVal,
-          tags: Array.from(activeSelectedTags),
+          tags: [],
           notes: notesText,
           stem_audio_id: track.id,
         };
@@ -6244,48 +3749,14 @@ function switchAuditionTrack(idx, autoplay = false) {
   const existing = (state.evaluations || []).find(e => e.clip_id === clipId && e.model_id === track.modelId);
   if (existing) {
     setStarRating(existing.score_overall);
-    if (el.sliderSubmetricClarity) {
-      el.sliderSubmetricClarity.value = existing.score_vocal_clarity;
-      if (el.valSubmetricClarity) el.valSubmetricClarity.textContent = `${existing.score_vocal_clarity} / 5`;
-    }
-    if (el.sliderSubmetricBleed) {
-      el.sliderSubmetricBleed.value = existing.score_bleed;
-      if (el.valSubmetricBleed) el.valSubmetricBleed.textContent = `${existing.score_bleed} / 5`;
-    }
-    if (el.sliderSubmetricArtifacts) {
-      el.sliderSubmetricArtifacts.value = existing.score_artifacts;
-      if (el.valSubmetricArtifacts) el.valSubmetricArtifacts.textContent = `${existing.score_artifacts} / 5`;
-    }
     if (el.evalNotesInput) el.evalNotesInput.value = existing.notes || "";
-    activeSelectedTags = new Set(existing.tags || []);
-    if (el.evalTagChips) {
-      el.evalTagChips.querySelectorAll('.tag-chip').forEach(c => {
-        c.classList.toggle('selected', activeSelectedTags.has(c.dataset.tag));
-      });
-    }
     if (el.currentEvalScoreBadge) {
       el.currentEvalScoreBadge.textContent = `★ ${existing.score_overall.toFixed(1)} Saved`;
       el.currentEvalScoreBadge.style.color = "#4ade80";
     }
   } else {
     setStarRating(5.0);
-    if (el.sliderSubmetricClarity) {
-      el.sliderSubmetricClarity.value = 5;
-      if (el.valSubmetricClarity) el.valSubmetricClarity.textContent = "5 / 5";
-    }
-    if (el.sliderSubmetricBleed) {
-      el.sliderSubmetricBleed.value = 5;
-      if (el.valSubmetricBleed) el.valSubmetricBleed.textContent = "5 / 5";
-    }
-    if (el.sliderSubmetricArtifacts) {
-      el.sliderSubmetricArtifacts.value = 5;
-      if (el.valSubmetricArtifacts) el.valSubmetricArtifacts.textContent = "5 / 5";
-    }
     if (el.evalNotesInput) el.evalNotesInput.value = "";
-    activeSelectedTags.clear();
-    if (el.evalTagChips) {
-      el.evalTagChips.querySelectorAll('.tag-chip').forEach(c => c.classList.remove('selected'));
-    }
     if (el.currentEvalScoreBadge) {
       el.currentEvalScoreBadge.textContent = "Unrated";
       el.currentEvalScoreBadge.style.color = "#fbbf24";
@@ -6315,11 +3786,11 @@ async function saveCurrentEvaluation() {
     separated_audio_id: activeTrack.id,
     separated_audio_path: activeTrack.path,
     score_overall: activeScoreOverall,
-    score_vocal_clarity: activeScoreClarity,
-    score_bleed: activeScoreBleed,
-    score_artifacts: activeScoreArtifacts,
+    score_vocal_clarity: 5,
+    score_bleed: 5,
+    score_artifacts: 5,
     notes: el.evalNotesInput ? el.evalNotesInput.value.trim() : "",
-    tags: Array.from(activeSelectedTags),
+    tags: [],
   };
 
   try {
@@ -6383,168 +3854,14 @@ async function runBatchMultiModelSeparation(audioId, jumpToAudition = false) {
   }
 }
 
-// ==================== EVALUATION MATRIX & EXPORTS ====================
-
-function initEvaluationMatrix() {
-  if (el.btnExportEvalCsv) {
-    el.btnExportEvalCsv.addEventListener('click', () => {
-      window.location.href = "/api/evaluations/export?format=csv";
-      showToast("Downloading evaluations CSV...", "info");
-    });
-  }
-
-  if (el.btnExportEvalJson) {
-    el.btnExportEvalJson.addEventListener('click', () => {
-      window.location.href = "/api/evaluations/export?format=json";
-      showToast("Downloading evaluations JSON...", "info");
-    });
-  }
-
-  if (el.btnRefreshEvalMatrix) {
-    el.btnRefreshEvalMatrix.addEventListener('click', fetchEvaluations);
-  }
-
-  if (el.evalSearchInput) {
-    el.evalSearchInput.addEventListener('input', renderEvaluationsTable);
-  }
-
-  if (el.evalModelFilterPills) {
-    el.evalModelFilterPills.addEventListener('click', (e) => {
-      const pill = e.target.closest('.filter-pill');
-      if (!pill) return;
-      el.evalModelFilterPills.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
-      pill.classList.add('active');
-      renderEvaluationsTable();
-    });
-  }
-}
-
 async function fetchEvaluations() {
   try {
     const res = await fetch("/api/evaluations");
     const data = await parseJsonResponse(res);
     state.evaluations = data.evaluations || [];
-    updateMatrixKPIs();
-    renderEvaluationsTable();
   } catch (err) {
     console.error("Failed to fetch evaluations:", err);
   }
-}
-
-function updateMatrixKPIs() {
-  const evals = state.evaluations || [];
-  if (el.kpiTotalEvals) el.kpiTotalEvals.textContent = evals.length;
-
-  const uniqueClips = new Set(evals.map(e => e.clip_id)).size;
-  if (el.kpiTotalClips) el.kpiTotalClips.textContent = uniqueClips;
-
-  if (evals.length > 0) {
-    const avg = evals.reduce((sum, e) => sum + (e.score_overall || 0), 0) / evals.length;
-    if (el.kpiAvgScore) el.kpiAvgScore.textContent = `${avg.toFixed(2)} ★`;
-
-    const modelScores = {};
-    evals.forEach(e => {
-      if (!modelScores[e.model_name]) modelScores[e.model_name] = [];
-      modelScores[e.model_name].push(e.score_overall || 0);
-    });
-
-    let bestModel = "—";
-    let bestAvg = -1;
-    for (const [mName, scores] of Object.entries(modelScores)) {
-      const mAvg = scores.reduce((a, b) => a + b, 0) / scores.length;
-      if (mAvg > bestAvg) {
-        bestAvg = mAvg;
-        bestModel = `${mName} (${bestAvg.toFixed(1)}★)`;
-      }
-    }
-    if (el.kpiTopModel) el.kpiTopModel.textContent = bestModel;
-  } else {
-    if (el.kpiAvgScore) el.kpiAvgScore.textContent = "0.0 ★";
-    if (el.kpiTopModel) el.kpiTopModel.textContent = "—";
-  }
-}
-
-function renderEvaluationsTable() {
-  if (!el.evaluationsTableBody) return;
-  const evals = state.evaluations || [];
-  const query = el.evalSearchInput ? el.evalSearchInput.value.toLowerCase().trim() : "";
-  const activePill = el.evalModelFilterPills ? el.evalModelFilterPills.querySelector('.filter-pill.active') : null;
-  const filter = activePill ? activePill.dataset.filter : "all";
-
-  const filtered = evals.filter(e => {
-    const matchesQuery = !query ||
-      (e.clip_title || "").toLowerCase().includes(query) ||
-      (e.model_name || "").toLowerCase().includes(query) ||
-      (e.notes || "").toLowerCase().includes(query) ||
-      (e.tags || []).some(t => String(t).toLowerCase().includes(query));
-
-    const matchesModel = filter === "all" || (e.model_id || "").toLowerCase().includes(filter);
-    return matchesQuery && matchesModel;
-  });
-
-  if (filtered.length === 0) {
-    el.evaluationsTableBody.innerHTML = `<tr><td colspan="9" class="empty-table-msg">No evaluations match your search filter.</td></tr>`;
-    return;
-  }
-
-  el.evaluationsTableBody.innerHTML = "";
-  filtered.forEach(item => {
-    const tr = document.createElement("tr");
-    const dateStr = item.updated_at ? new Date(item.updated_at * 1000).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : "—";
-    const tagsHtml = (item.tags || []).map(t => `<span class="history-tag" style="margin-right:3px;">#${escapeHtml(t)}</span>`).join("");
-
-    tr.innerHTML = `
-      <td>
-        <div style="font-weight:600; color:var(--text-primary);">${escapeHtml(item.clip_title || item.clip_id)}</div>
-      </td>
-      <td>
-        <span class="badge badge-accent">${escapeHtml(item.model_name || item.model_id)}</span>
-      </td>
-      <td>
-        <span style="color:#fbbf24; font-weight:800; font-size:1rem;">★ ${Number(item.score_overall).toFixed(1)}</span>
-      </td>
-      <td><code>${item.score_vocal_clarity}/5</code></td>
-      <td><code>${item.score_bleed}/5</code></td>
-      <td><code>${item.score_artifacts}/5</code></td>
-      <td>
-        <div style="max-width:280px; font-size:0.82rem; color:var(--text-secondary); line-height:1.3;">
-          ${escapeHtml(item.notes || "—")}
-          <div style="margin-top:4px;">${tagsHtml}</div>
-        </div>
-      </td>
-      <td><span style="font-size:0.75rem; color:var(--text-muted);">${dateStr}</span></td>
-      <td class="table-actions">
-        <button class="btn btn-sm btn-ghost btn-play-stem" title="Play Stem">▶</button>
-        <button class="btn btn-sm btn-secondary btn-rescore" title="Open in Audition Hub">⚖️</button>
-        <button class="btn btn-sm btn-danger btn-delete-eval" title="Delete record">🗑️</button>
-      </td>
-    `;
-
-    tr.querySelector('.btn-play-stem').addEventListener('click', () => {
-      if (item.separated_audio_id) {
-        loadAudioIntoPlayer(item.separated_audio_id, true);
-      }
-    });
-
-    tr.querySelector('.btn-rescore').addEventListener('click', async () => {
-      switchTab('tab-comparison');
-      await loadClipForAudition(item.clip_id);
-    });
-
-    tr.querySelector('.btn-delete-eval').addEventListener('click', async () => {
-      if (!confirm(`Delete evaluation for "${item.clip_title}" (${item.model_name})?`)) return;
-      try {
-        const res = await fetch(`/api/evaluations/${item.id}`, { method: "DELETE" });
-        await parseJsonResponse(res);
-        showToast("Deleted evaluation record", "info");
-        await fetchEvaluations();
-      } catch (err) {
-        showToast(err.message, "error");
-      }
-    });
-
-    el.evaluationsTableBody.appendChild(tr);
-  });
 }
 
 // ==================== LIBRARY & HISTORY ====================
@@ -6753,15 +4070,15 @@ function renderSessionHistory() {
     });
     card.querySelector('.btn-session-speech')?.addEventListener('click', () => {
       popupMenu.classList.add('hidden');
-      switchTab('tab-bench-mixer');
-      if (el.mixSpeechSelect) el.mixSpeechSelect.value = item.id;
-      showToast(`Set "${item.title}" as Speech source!`, "success");
+      switchTab('tab-separation');
+      if (el.sepInputSelect) el.sepInputSelect.value = item.id;
+      showToast(`Selected "${item.title}" for Separation!`, "success");
     });
-    card.querySelector('.btn-session-music')?.addEventListener('click', () => {
+    card.querySelector('.btn-session-music')?.addEventListener('click', async () => {
       popupMenu.classList.add('hidden');
-      switchTab('tab-bench-mixer');
-      if (el.mixMusicSelect) el.mixMusicSelect.value = item.id;
-      showToast(`Set "${item.title}" as Music source!`, "success");
+      switchTab('tab-workspace');
+      await setActiveAudio(item.id, { play: true });
+      showToast(`Loaded "${item.title}" into Workspace!`, "success");
     });
 
     card.querySelector('.btn-delete-session').addEventListener('click', async () => {
@@ -6992,13 +4309,13 @@ async function loadLibraryFileTo(filePath, target = 'workspace') {
         }
         showToast(`Selected "${data.metadata?.title || filePath}" for Diarization!`, "success");
       } else if (target === 'speech') {
-        switchTab('tab-bench-mixer');
-        if (el.mixSpeechSelect) el.mixSpeechSelect.value = data.audio_id;
-        showToast(`Set "${data.metadata?.title || filePath}" as Speech source!`, "success");
+        switchTab('tab-separation');
+        if (el.sepInputSelect) el.sepInputSelect.value = data.audio_id;
+        showToast(`Selected "${data.metadata?.title || filePath}" for Separation!`, "success");
       } else if (target === 'music') {
-        switchTab('tab-bench-mixer');
-        if (el.mixMusicSelect) el.mixMusicSelect.value = data.audio_id;
-        showToast(`Set "${data.metadata?.title || filePath}" as Music source!`, "success");
+        switchTab('tab-workspace');
+        await setActiveAudio(data.audio_id, { play: true });
+        showToast(`Loaded "${data.metadata?.title || filePath}" into Workspace!`, "success");
       }
     }
   } catch (err) {
@@ -7202,12 +4519,19 @@ async function loadAndRenderQueueModal() {
         : '-- / -- W';
     }
     if (el.queueActiveSplit) {
-      el.queueActiveSplit.textContent = `Studio: ${summary.studio_running} active • Pipeline: ${summary.pipeline_running} active`;
+      const lanes = data.device_queues || {};
+      const laneText = Object.keys(lanes).length
+        ? Object.entries(lanes)
+            .map(([dev, lane]) => `${dev}: ${lane.running || 0} run / ${lane.queued || 0} q`)
+            .join(' · ')
+        : `Studio: ${summary.studio_running} active • Pipeline: ${summary.pipeline_running} active`;
+      el.queueActiveSplit.textContent = laneText;
     }
 
     // Render multi-GPU cards if 2+ GPUs detected
     if (el.queueGpuDevicesGrid) {
       const devList = device.devices || (data.telemetry && data.telemetry.gpu && data.telemetry.gpu.devices) || [];
+      const lanes = data.device_queues || {};
       if (devList.length > 1) {
         el.queueGpuDevicesGrid.style.display = 'grid';
         el.queueGpuDevicesGrid.innerHTML = devList.map((d, i) => {
@@ -7215,6 +4539,9 @@ async function loadAndRenderQueueModal() {
           const dVram = (d.used_vram_mb != null && d.total_vram_mb != null) ? `${d.used_vram_mb} / ${d.total_vram_mb} MB (${Math.round(d.vram_percent || 0)}%)` : '-- MB';
           const dTemp = d.temperature_c != null ? `${Math.round(d.temperature_c)}°C` : '';
           const dPower = d.power_w != null ? `${d.power_w} / ${d.power_limit_w ?? '--'} W` : '';
+          const lane = lanes[d.id] || lanes[`cuda:${i}`] || {};
+          const qRunning = lane.running || 0;
+          const qQueued = lane.queued || 0;
           return `
             <div class="gpu-device-card">
               <div class="gpu-device-card-header">
@@ -7228,6 +4555,7 @@ async function loadAndRenderQueueModal() {
                 <span>Load: <strong>${dLoad}%</strong></span>
                 <span>VRAM: ${dVram}</span>
                 ${dPower ? `<span>Power: <strong>${dPower}</strong></span>` : ''}
+                <span>Queue: <strong>${qRunning} run / ${qQueued} wait</strong></span>
               </div>
             </div>
           `;
@@ -7251,7 +4579,7 @@ async function loadAndRenderQueueModal() {
     if (el.queueStatFailed) el.queueStatFailed.textContent = failedCount;
 
     if (el.queueModalSubtitle) {
-      el.queueModalSubtitle.textContent = `Shared GPU Queue: ${summary.total_running} running, ${summary.total_queued} queued across Studio & Pipeline`;
+      el.queueModalSubtitle.textContent = `Per-GPU queues: ${summary.total_running} running, ${summary.total_queued} queued (Studio + Pipeline)`;
     }
 
     // Filter items according to state.queueModalFilter
@@ -7269,12 +4597,21 @@ async function loadAndRenderQueueModal() {
       filteredItems = items.filter(t => t.status === 'failed' || t.status === 'cancelled');
     }
 
+    if (el.studioQueueTaskList) {
+      filteredItems = filteredItems.slice().sort((a, b) => {
+        const da = a.device || a.metadata?.queue_device || a.metadata?.device || '';
+        const db = b.device || b.metadata?.queue_device || b.metadata?.device || '';
+        if (da !== db) return String(da).localeCompare(String(db));
+        return (b.created_at || 0) - (a.created_at || 0);
+      });
+    }
+
     if (filteredItems.length === 0) {
       el.studioQueueTaskList.innerHTML = `
         <div class="queue-empty-state">
           <div class="queue-empty-icon">☕</div>
-          <div class="queue-empty-title">${filter === 'all' ? 'Shared GPU Queue is Idle' : 'No workloads in this view'}</div>
-          <div class="queue-empty-sub">${filter === 'all' ? 'All model separations, YouTube downloads, diarizations, and batch jobs across Studio & Pipeline will appear here in real-time.' : 'No workloads match the selected filter.'}</div>
+          <div class="queue-empty-title">${filter === 'all' ? 'All GPU queues are idle' : 'No workloads in this view'}</div>
+          <div class="queue-empty-sub">${filter === 'all' ? 'Each GPU has its own queue. Studio and Pipeline jobs appear here when routed to a device.' : 'No workloads match the selected filter.'}</div>
         </div>
       `;
       return;
@@ -7340,7 +4677,7 @@ async function loadAndRenderQueueModal() {
       if (item.title && item.title !== typeLabel) metaSummary.push(item.title);
       if (meta.model) metaSummary.push(`Model: ${meta.model}`);
       if (meta.backend) metaSummary.push(`Backend: ${meta.backend}`);
-      const itemDevice = meta.device || item.params?.device || (item.result && item.result.device);
+      const itemDevice = item.device || meta.queue_device || meta.device || item.params?.device || (item.result && item.result.device);
       const itemPower = meta.power_w ?? (item.result && item.result.power_w);
       if (itemDevice) metaSummary.push(`🖥️ ${itemDevice}`);
       if (itemPower != null) metaSummary.push(`⚡ ${itemPower}W`);
@@ -7353,6 +4690,7 @@ async function loadAndRenderQueueModal() {
           <div class="task-card-meta">
             ${sourceBadgeHtml}
             <span class="task-type-badge">${typeLabel}</span>
+            ${itemDevice ? `<span class="workload-source-badge" style="background:hsla(200,80%,45%,0.15);color:var(--text-secondary);">${escapeHtml(itemDevice)}</span>` : ''}
             <span class="task-id-label">${item.id}</span>
           </div>
           <div class="task-card-status-wrap">
@@ -7779,22 +5117,6 @@ function pollTask(taskId, onComplete, onError) {
   poll();
 }
 
-// ==================== LIVE RELOAD SSE ====================
-
-function initLiveReload() {
-  const evtSource = new EventSource("/api/live-reload");
-  evtSource.onmessage = (event) => {
-    if (event.data === "reload") {
-      console.log("Hot reload triggered from server!");
-      window.location.reload();
-    }
-  };
-  evtSource.onerror = () => {
-    const badge = document.getElementById('live-reload-badge');
-    if (badge) badge.style.opacity = '0.5';
-  };
-}
-
 // ==================== SYSTEM STATUS & TELEMETRY ====================
 
 function setTargetGpu(gpuId, notify = true) {
@@ -8169,9 +5491,6 @@ function switchTab(tabId) {
     setDiarZoom(state.diarization.zoom || 1.0);
     renderDiarWaveform();
     renderDiarRuler();
-    updateMinimapViewport();
-  } else if (tabId === 'tab-matrix') {
-    fetchEvaluations();
   }
 
   if (tabId !== 'tab-diarization' && el.audio) {
@@ -8220,15 +5539,12 @@ async function initApp() {
   try { initAudioCutter(); } catch (e) { console.error("initAudioCutter error:", e); }
   try { initCutsManager(); } catch (e) { console.error("initCutsManager error:", e); }
   try { initIngestAndSaves(); } catch (e) { console.error("initIngestAndSaves error:", e); }
-  try { initYouTubeCrawler(); } catch (e) { console.error("initYouTubeCrawler error:", e); }
   try { initSeparationStudio(); } catch (e) { console.error("initSeparationStudio error:", e); }
   try { initDiarizationStudio(); } catch (e) { console.error("initDiarizationStudio error:", e); }
   try { initAuditionHub(); } catch (e) { console.error("initAuditionHub error:", e); }
-  try { initEvaluationMatrix(); } catch (e) { console.error("initEvaluationMatrix error:", e); }
   try { initKeyboardShortcuts(); } catch (e) { console.error("initKeyboardShortcuts error:", e); }
   try { initNavigation(); } catch (e) { console.error("initNavigation error:", e); }
   try { initModals(); } catch (e) { console.error("initModals error:", e); }
-  try { initLiveReload(); } catch (e) { console.error("initLiveReload error:", e); }
 
   if (el.btnRefreshLibrary) {
     el.btnRefreshLibrary.addEventListener('click', fetchServerFiles);
@@ -8260,7 +5576,6 @@ async function initApp() {
   window.setInterval(fetchSystemStatus, 2000);
   try { await fetchServerFiles(); } catch (e) { console.error("fetchServerFiles error:", e); }
   try { await fetchAudioList(); } catch (e) { console.error("fetchAudioList error:", e); }
-  try { await fetchYouTubeVault(); } catch (e) { console.error("fetchYouTubeVault error:", e); }
   try { await fetchEvaluations(); } catch (e) { console.error("fetchEvaluations error:", e); }
 
   // Restore saved active tab
