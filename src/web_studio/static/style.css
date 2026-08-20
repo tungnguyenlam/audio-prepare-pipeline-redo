@@ -2386,6 +2386,35 @@ html, body {
   margin-left: 8px;
 }
 
+.diar-auto-next-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 4px 0 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.diar-auto-next-label:has(input:checked) {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.18);
+  color: var(--text-primary);
+}
+
+.diar-auto-next-label input {
+  margin: 0;
+  accent-color: #f59e0b;
+  cursor: pointer;
+}
+
 .diar-zoom-wrap {
   display: flex;
   align-items: center;
@@ -2969,6 +2998,15 @@ html, body {
   font-size: 0.76rem;
   font-family: var(--font-mono);
   box-shadow: var(--shadow-card);
+}
+
+.diar-timeline-speakers {
+  margin-top: 1.1rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 
 /* Speaker Profiles Grid */

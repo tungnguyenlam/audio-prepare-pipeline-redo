@@ -58,6 +58,7 @@ const state = {
     isScrubbing: false,
     soloSpeaker: null,
     mutedSpeakers: new Set(),
+    autoAdvance: false,
   },
 };
 
@@ -216,7 +217,6 @@ const el = {
   diarSubtabBtns: document.querySelectorAll('.diar-subtab-btn'),
   diarSubviews: document.querySelectorAll('.diar-subview-panel'),
   diarSubtabTurnsCount: document.getElementById('diar-subtab-turns-count'),
-  diarSubtabSpkCount: document.getElementById('diar-subtab-spk-count'),
   btnDiarSkipBack: document.getElementById('btn-diar-skip-back'),
   btnDiarPlayToggle: document.getElementById('btn-diar-play-toggle'),
   iconDiarPlay: document.getElementById('icon-diar-play'),
@@ -229,6 +229,7 @@ const el = {
   btnDiarZoomFit: document.getElementById('btn-diar-zoom-fit'),
   diarZoomLevel: document.getElementById('diar-zoom-level'),
   diarSpeedSelect: document.getElementById('diar-speed-select'),
+  diarAutoNext: document.getElementById('diar-auto-next'),
   diarMultitrackViewport: document.getElementById('diar-multitrack-viewport'),
   diarLaneLabelsCol: document.getElementById('diar-lane-labels-col'),
   diarSpkLabelsWrap: document.getElementById('diar-spk-labels-wrap'),
@@ -584,9 +585,11 @@ function initPlayer() {
     el.audio.addEventListener('ended', onEnded);
     el.audio.addEventListener('play', () => {
       if (!isAuditionPlaybackActive()) setPlayingUI(true);
+      startDiarPlaybackWatch();
     });
     el.audio.addEventListener('pause', () => {
       if (!isAuditionPlaybackActive()) setPlayingUI(false);
+      stopDiarPlaybackWatch();
     });
     el.audio.addEventListener('error', () => {
       const mediaError = el.audio.error;
@@ -783,6 +786,10 @@ function togglePlayPause() {
 }
 
 function playCurrentAudio() {
+  if (prepareDiarPlaybackGate() === false) {
+    showToast("No more speaker segments", "info");
+    return Promise.resolve();
+  }
   return el.audio.play().catch(err => {
     console.error("Play error:", err);
     if (err.name === "NotAllowedError") {
@@ -853,6 +860,14 @@ function onTimeUpdate() {
 
 function onEnded() {
   if (isAuditionPlaybackActive()) return;
+  if (state.diarization.autoAdvance && state.diarization.turns.length && state.player.loop) {
+    const first = findNextAudibleTurn(-1, { wrap: true });
+    if (first) {
+      jumpToDiarTurn(first);
+      playCurrentAudio();
+      return;
+    }
+  }
   if (!state.player.loop) {
     setPlayingUI(false);
     seekTo(0);
@@ -2380,6 +2395,19 @@ function initDiarizationStudio() {
   if (el.btnDiarSkipBack) el.btnDiarSkipBack.addEventListener('click', () => seekRelative(-5));
   if (el.btnDiarSkipFwd) el.btnDiarSkipFwd.addEventListener('click', () => seekRelative(5));
 
+  if (el.diarAutoNext) {
+    el.diarAutoNext.checked = Boolean(state.diarization.autoAdvance);
+    el.diarAutoNext.addEventListener('change', () => {
+      state.diarization.autoAdvance = el.diarAutoNext.checked;
+      const t = el.audio?.currentTime || 0;
+      applySpeakerSoloMuteAudio(t);
+      if (state.diarization.autoAdvance) {
+        maybeAutoAdvanceSegment(t);
+        startDiarPlaybackWatch();
+      }
+    });
+  }
+
   if (el.diarSpeedSelect) {
     el.diarSpeedSelect.addEventListener('change', (e) => {
       setPlaybackRate(parseFloat(e.target.value) || 1.0);
@@ -2619,7 +2647,6 @@ function renderDiarizationWorkspace(diarization, audioId) {
   }
 
   if (el.diarSubtabTurnsCount) el.diarSubtabTurnsCount.textContent = state.diarization.turns.length;
-  if (el.diarSubtabSpkCount) el.diarSubtabSpkCount.textContent = state.diarization.speakers.length;
 
   if (el.diarFilterSpeakerSelect) {
     el.diarFilterSpeakerSelect.innerHTML = `<option value="all">All Speakers (${state.diarization.speakers.length})</option>` +
@@ -2952,6 +2979,111 @@ function highlightActiveTurn(idx) {
   });
 }
 
+function isSpeakerLaneAudible(speakerId) {
+  if (state.diarization.soloSpeaker && state.diarization.soloSpeaker !== speakerId) {
+    return false;
+  }
+  if (state.diarization.mutedSpeakers.has(speakerId)) {
+    return false;
+  }
+  return true;
+}
+
+function turnContainsTime(turn, timeSec) {
+  return timeSec >= turn.start_s && timeSec < turn.end_s;
+}
+
+function audibleTurnsAtTime(timeSec) {
+  return state.diarization.turns.filter(
+    (turn) => turnContainsTime(turn, timeSec) && isSpeakerLaneAudible(turn.speaker_id),
+  );
+}
+
+function isDiarTimeAudible(timeSec) {
+  return audibleTurnsAtTime(timeSec).length > 0;
+}
+
+function diarIsolationActive() {
+  return Boolean(state.diarization.soloSpeaker)
+    || state.diarization.mutedSpeakers.size > 0
+    || Boolean(state.diarization.autoAdvance);
+}
+
+function findNextAudibleTurn(afterTime, { wrap = false } = {}) {
+  const audible = state.diarization.turns
+    .filter((turn) => isSpeakerLaneAudible(turn.speaker_id) && turn.end_s - turn.start_s > 0.02)
+    .sort((a, b) => a.start_s - b.start_s || a.end_s - b.end_s);
+  if (audible.length === 0) return null;
+  const next = audible.find((turn) => turn.start_s > afterTime + 0.02);
+  if (next) return next;
+  return wrap ? audible[0] : null;
+}
+
+let diarPlayRaf = 0;
+let diarSegmentJumping = false;
+
+function stopDiarPlaybackWatch() {
+  if (diarPlayRaf) {
+    cancelAnimationFrame(diarPlayRaf);
+    diarPlayRaf = 0;
+  }
+}
+
+function startDiarPlaybackWatch() {
+  if (diarPlayRaf || !el.audio || el.audio.paused) return;
+  if (!state.diarization.turns.length || !diarIsolationActive()) return;
+
+  const tick = () => {
+    diarPlayRaf = 0;
+    if (!el.audio || el.audio.paused) return;
+    if (!state.diarization.turns.length || !diarIsolationActive()) return;
+    const t = el.audio.currentTime || 0;
+    const dur = state.diarization.duration || state.player.duration || 1;
+    updateDiarizationPlayhead(t, dur);
+    diarPlayRaf = requestAnimationFrame(tick);
+  };
+  diarPlayRaf = requestAnimationFrame(tick);
+}
+
+function prepareDiarPlaybackGate() {
+  if (!el.audio || !state.diarization.turns.length) return true;
+  const t = el.audio.currentTime || 0;
+  applySpeakerSoloMuteAudio(t);
+  return maybeAutoAdvanceSegment(t, { evenIfPaused: true });
+}
+
+function jumpToDiarTurn(turn) {
+  if (!el.audio || !turn) return;
+  diarSegmentJumping = true;
+  el.audio.muted = true;
+  seekTo(turn.start_s);
+  applySpeakerSoloMuteAudio(turn.start_s);
+  const idx = state.diarization.turns.indexOf(turn);
+  if (idx >= 0) {
+    state.diarization.activeTurnIndex = idx;
+    highlightActiveTurn(idx);
+  }
+  requestAnimationFrame(() => {
+    diarSegmentJumping = false;
+  });
+}
+
+function maybeAutoAdvanceSegment(currentTime, { evenIfPaused = false } = {}) {
+  if (!state.diarization.autoAdvance) return true;
+  if (!el.audio || state.diarization.isScrubbing || diarSegmentJumping) return true;
+  if (!evenIfPaused && el.audio.paused) return true;
+  if (isDiarTimeAudible(currentTime)) return true;
+
+  const next = findNextAudibleTurn(currentTime, { wrap: Boolean(state.player.loop) });
+  if (next) {
+    jumpToDiarTurn(next);
+    return true;
+  }
+  if (!el.audio.paused) el.audio.pause();
+  applySpeakerSoloMuteAudio(currentTime);
+  return false;
+}
+
 function updateDiarizationPlayhead(currentTime, totalDuration) {
   if (!el.diarPlayheadLine) return;
   const dur = totalDuration || state.diarization.duration || 1;
@@ -2962,7 +3094,8 @@ function updateDiarizationPlayhead(currentTime, totalDuration) {
   if (el.diarTimeCurrent) el.diarTimeCurrent.textContent = formatTimePrecise(currentTime);
   if (el.diarTimeTotal) el.diarTimeTotal.textContent = formatTimePrecise(dur);
 
-  const activeTurn = state.diarization.turns.find(t => currentTime >= t.start_s && currentTime <= t.end_s);
+  const activeTurn = audibleTurnsAtTime(currentTime)[0]
+    || state.diarization.turns.find((t) => turnContainsTime(t, currentTime));
   if (activeTurn) {
     const idx = state.diarization.turns.indexOf(activeTurn);
     highlightActiveTurn(idx);
@@ -2973,37 +3106,27 @@ function updateDiarizationPlayhead(currentTime, totalDuration) {
   }
 
   applySpeakerSoloMuteAudio(currentTime);
+  maybeAutoAdvanceSegment(currentTime);
 }
 
 function applySpeakerSoloMuteAudio(currentTime) {
   if (!el.audio) return;
-  const isSoloActive = Boolean(state.diarization.soloSpeaker);
-  const hasMuted = state.diarization.mutedSpeakers.size > 0;
-
-  if (!isSoloActive && !hasMuted) {
-    el.audio.muted = false;
+  const isolationOn = Boolean(state.diarization.soloSpeaker) || state.diarization.mutedSpeakers.size > 0;
+  if (!isolationOn) {
+    if (!state.diarization.autoAdvance) {
+      el.audio.muted = false;
+    } else if (!isDiarTimeAudible(currentTime)) {
+      el.audio.muted = true;
+    } else {
+      el.audio.muted = false;
+    }
     return;
   }
 
-  const turnsAtTime = state.diarization.turns.filter(
-    (t) => currentTime >= t.start_s && currentTime <= t.end_s,
-  );
-  if (turnsAtTime.length === 0) {
-    // Silence / gap: keep audible unless every speaker is muted.
-    el.audio.muted = false;
-    return;
-  }
-
-  const anyAudible = turnsAtTime.some((turn) => {
-    if (isSoloActive && state.diarization.soloSpeaker !== turn.speaker_id) {
-      return false;
-    }
-    if (state.diarization.mutedSpeakers.has(turn.speaker_id)) {
-      return false;
-    }
-    return true;
-  });
-  el.audio.muted = !anyAudible;
+  // Solo: mute unless that speaker is talking right now, including gaps.
+  // Mute-only: mute when every active turn belongs to a muted speaker, and
+  // also mute gaps if every speaker is muted.
+  el.audio.muted = !isDiarTimeAudible(currentTime);
 }
 
 function toggleSpeakerSolo(speakerId) {
@@ -3017,6 +3140,8 @@ function toggleSpeakerSolo(speakerId) {
   renderSpeakerSwimlanes();
   renderSpeakerProfiles();
   applySpeakerSoloMuteAudio(el.audio?.currentTime || 0);
+  maybeAutoAdvanceSegment(el.audio?.currentTime || 0);
+  startDiarPlaybackWatch();
 }
 
 function toggleSpeakerMute(speakerId) {
@@ -3030,6 +3155,8 @@ function toggleSpeakerMute(speakerId) {
   renderSpeakerSwimlanes();
   renderSpeakerProfiles();
   applySpeakerSoloMuteAudio(el.audio?.currentTime || 0);
+  maybeAutoAdvanceSegment(el.audio?.currentTime || 0);
+  startDiarPlaybackWatch();
 }
 
 function renderSpeakerProfiles() {
@@ -5647,10 +5774,12 @@ function switchTab(tabId) {
     setDiarZoom(state.diarization.zoom || 1.0);
     renderDiarWaveform();
     renderDiarRuler();
+    startDiarPlaybackWatch();
   }
 
   if (tabId !== 'tab-diarization' && el.audio) {
     el.audio.muted = false;
+    stopDiarPlaybackWatch();
   }
 
   if (tabId !== 'tab-comparison') syncActivePlaybackControls();

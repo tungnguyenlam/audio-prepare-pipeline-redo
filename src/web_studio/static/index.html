@@ -905,8 +905,10 @@
                   <span>+5s</span>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
                 </button>
-                
-                
+                <label class="diar-auto-next-label" title="When the current speaker segment ends, jump to the next audible segment">
+                  <input type="checkbox" id="diar-auto-next">
+                  <span>Auto-next</span>
+                </label>
                 <div class="diar-time-readout">
                   <span id="diar-time-current">00:00.00</span> / <span id="diar-time-total">00:00.00</span>
                 </div>
@@ -984,6 +986,30 @@
 
             <!-- Hover Tooltip -->
             <div id="diar-turn-tooltip" class="diar-turn-tooltip hidden"></div>
+
+            <div class="diar-timeline-speakers" id="diar-subview-speakers">
+              <div class="subview-header">
+                <div>
+                  <h3 class="subview-title">Speakers</h3>
+                  <p class="subview-desc">Rename speakers, inspect speech metrics, or extract isolated speaker audio stems.</p>
+                </div>
+                <div class="subview-actions flex-wrap gap-2">
+                  <div class="flex-row items-center gap-1">
+                    <label class="text-xs text-muted" for="diar-extract-mode-select">Stem Mode:</label>
+                    <select id="diar-extract-mode-select" class="select-input select-sm" title="Extraction mode for speaker audio files">
+                      <option value="concatenated">Concatenated Speech</option>
+                      <option value="time_aligned">Time-Aligned Stems (Muted Silence)</option>
+                    </select>
+                  </div>
+                  <button class="btn btn-secondary btn-sm" id="btn-extract-all-speakers" title="Extract all speaker stems as separate audio files">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    <span>Extract All Speaker Stems</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="diar-speakers-grid" id="diar-speakers-grid"></div>
+            </div>
           </div>
 
           <!-- Studio Workstation Modular Navigation & Panels -->
@@ -994,11 +1020,6 @@
                 <span class="subtab-icon">📑</span>
                 <span class="subtab-label">Turns Inspector</span>
                 <span class="subtab-chip" id="diar-subtab-turns-count">0</span>
-              </button>
-              <button class="diar-subtab-btn" data-subtab="speakers">
-                <span class="subtab-icon">👥</span>
-                <span class="subtab-label">Speaker Profiles</span>
-                <span class="subtab-chip" id="diar-subtab-spk-count">0</span>
               </button>
               <button class="diar-subtab-btn" data-subtab="export">
                 <span class="subtab-icon">💾</span>
@@ -1094,32 +1115,7 @@
               </div>
             </div>
 
-            <!-- Subview 2: Speaker Profiles & Speech Distribution -->
-            <div class="diar-subview-panel hidden" id="diar-subview-speakers">
-              <div class="subview-header">
-                <div>
-                  <h3 class="subview-title">Speaker Profiles & Speech Analytics</h3>
-                  <p class="subview-desc">Rename speakers, customize color palettes, inspect speech metrics, or extract isolated speaker audio stems.</p>
-                </div>
-                <div class="subview-actions flex-wrap gap-2">
-                  <div class="flex-row items-center gap-1">
-                    <label class="text-xs text-muted" for="diar-extract-mode-select">Stem Mode:</label>
-                    <select id="diar-extract-mode-select" class="select-input select-sm" title="Extraction mode for speaker audio files">
-                      <option value="concatenated">Concatenated Speech</option>
-                      <option value="time_aligned">Time-Aligned Stems (Muted Silence)</option>
-                    </select>
-                  </div>
-                  <button class="btn btn-secondary btn-sm" id="btn-extract-all-speakers" title="Extract all speaker stems as separate audio files">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                    <span>Extract All Speaker Stems</span>
-                  </button>
-                </div>
-              </div>
-
-              <div class="diar-speakers-grid" id="diar-speakers-grid"></div>
-            </div>
-
-            <!-- Subview 3: Multi-Format Export Studio -->
+            <!-- Subview 2: Multi-Format Export Studio -->
             <div class="diar-subview-panel hidden" id="diar-subview-export">
               <div class="subview-header">
                 <div>
