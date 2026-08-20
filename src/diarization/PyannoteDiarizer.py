@@ -177,6 +177,11 @@ class PyannoteDiarizer(BaseDiarizer, ManagedModel):
         turns: list[SpeakerTurn] = []
 
         for segment, _, pyannote_label in annotation.itertracks(yield_label=True):
+            start_s = float(segment.start)
+            end_s = float(segment.end)
+            if end_s <= start_s:
+                continue
+
             speaker_id = label_to_speaker_id.get(pyannote_label)
             if speaker_id is None:
                 speaker_id = f"spk_{len(label_to_speaker_id):02d}"
@@ -186,8 +191,8 @@ class PyannoteDiarizer(BaseDiarizer, ManagedModel):
             turns.append(
                 SpeakerTurn(
                     speaker_id=speaker_id,
-                    start_s=float(segment.start),
-                    end_s=float(segment.end),
+                    start_s=start_s,
+                    end_s=end_s,
                     confidence=None,
                 )
             )

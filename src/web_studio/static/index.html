@@ -1025,12 +1025,22 @@
                     <input type="text" id="diar-turns-search-input" class="text-input text-sm" placeholder="Search turn #, speaker name, or timestamp...">
                   </div>
                   <div class="form-group mb-0">
-                    <select id="diar-filter-min-dur" class="select-input select-sm">
-                      <option value="0">All Durations</option>
-                      <option value="0.5">> 0.5s</option>
-                      <option value="1.0">> 1.0s</option>
-                      <option value="2.0">> 2.0s</option>
-                      <option value="5.0">> 5.0s</option>
+                    <select id="diar-filter-min-dur" class="select-input select-sm" title="Hide turns shorter than this duration">
+                      <option value="0">Min duration: none</option>
+                      <option value="0.5">Min ≥ 0.5s</option>
+                      <option value="1.0">Min ≥ 1.0s</option>
+                      <option value="2.0">Min ≥ 2.0s</option>
+                      <option value="5.0">Min ≥ 5.0s</option>
+                    </select>
+                  </div>
+                  <div class="form-group mb-0">
+                    <select id="diar-filter-max-dur" class="select-input select-sm" title="Hide turns longer than this duration">
+                      <option value="0">Max duration: none</option>
+                      <option value="2.0">Max ≤ 2.0s</option>
+                      <option value="5.0">Max ≤ 5.0s</option>
+                      <option value="10.0">Max ≤ 10.0s</option>
+                      <option value="30.0">Max ≤ 30.0s</option>
+                      <option value="60.0">Max ≤ 60.0s</option>
                     </select>
                   </div>
                 </div>

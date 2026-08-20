@@ -260,11 +260,18 @@ class ClusteringDiarizer(BaseDiarizer, ManagedModel):
         if hasattr(torch, "mps") and torch.backends.mps.is_available():
             torch.mps.empty_cache()
 
-    def diarize(self, audio: Audio) -> DiarizationResult:
+    def diarize(
+        self,
+        audio: Audio,
+        *,
+        num_speakers: int | None = None,
+    ) -> DiarizationResult:
         """Diarize ``audio`` while preserving the schema 1.0 result contract.
 
         Args:
             audio: File-backed audio item to diarize.
+            num_speakers: Optional per-call oracle speaker count. When omitted,
+                uses the value configured at construction time.
 
         Returns:
             Speaker identities and turns with local ``spk_NN`` labels.
@@ -284,6 +291,12 @@ class ClusteringDiarizer(BaseDiarizer, ManagedModel):
         if not source_path.is_file():
             raise FileNotFoundError(f"Audio file does not exist: {source_path}")
 
+        oracle_speakers = (
+            num_speakers if num_speakers is not None else self.num_speakers
+        )
+        if oracle_speakers is not None and oracle_speakers < 1:
+            raise ValueError("num_speakers must be at least 1")
+
         with tempfile.TemporaryDirectory(prefix="nemo-clustering-") as temp_dir_name:
             temp_dir = Path(temp_dir_name)
             normalized_path = temp_dir / "normalized.wav"
@@ -298,8 +311,8 @@ class ClusteringDiarizer(BaseDiarizer, ManagedModel):
                 raise ValueError(f"Audio source is empty: {source_path}")
 
             manifest_path = temp_dir / "manifest.json"
-            self._write_manifest(manifest_path, normalized_path)
-            self._prepare_inference(temp_dir, manifest_path)
+            self._write_manifest(manifest_path, normalized_path, oracle_speakers)
+            self._prepare_inference(temp_dir, manifest_path, oracle_speakers)
 
             try:
                 self._model.diarize()
@@ -317,10 +330,11 @@ class ClusteringDiarizer(BaseDiarizer, ManagedModel):
 
             rttm_path = self._find_rttm(temp_dir)
             if rttm_path is None:
-                turns: list[SpeakerTurn] = []
-                speakers: list[Speaker] = []
-            else:
-                turns, speakers = self._turns_from_rttm(rttm_path)
+                raise RuntimeError(
+                    "NeMo clustering diarization finished without writing an "
+                    "RTTM file under pred_rttms/"
+                )
+            turns, speakers = self._turns_from_rttm(rttm_path)
 
         return DiarizationResult(
             schema_version="1.0",
@@ -333,20 +347,30 @@ class ClusteringDiarizer(BaseDiarizer, ManagedModel):
             ),
         )
 
-    def _write_manifest(self, manifest_path: Path, audio_path: Path) -> None:
+    def _write_manifest(
+        self,
+        manifest_path: Path,
+        audio_path: Path,
+        oracle_speakers: int | None,
+    ) -> None:
         entry = {
             "audio_filepath": str(audio_path),
             "offset": 0,
             "duration": None,
             "label": "infer",
             "text": "-",
-            "num_speakers": self.num_speakers,
+            "num_speakers": oracle_speakers,
             "rttm_filepath": None,
             "uem_filepath": None,
         }
         manifest_path.write_text(json.dumps(entry) + "\n", encoding="utf-8")
 
-    def _prepare_inference(self, out_dir: Path, manifest_path: Path) -> None:
+    def _prepare_inference(
+        self,
+        out_dir: Path,
+        manifest_path: Path,
+        oracle_speakers: int | None,
+    ) -> None:
         if self._model is None:
             raise RuntimeError("Clustering model is unavailable")
 
@@ -358,8 +382,12 @@ class ClusteringDiarizer(BaseDiarizer, ManagedModel):
             params.manifest_filepath = str(manifest_path)
             params.out_dir = str(out_dir)
         with open_dict(cluster_params):
-            cluster_params.oracle_num_speakers = self.num_speakers is not None
-            cluster_params.max_num_speakers = self.max_num_speakers
+            cluster_params.oracle_num_speakers = oracle_speakers is not None
+            cluster_params.max_num_speakers = (
+                max(self.max_num_speakers, oracle_speakers)
+                if oracle_speakers is not None
+                else self.max_num_speakers
+            )
 
     @staticmethod
     def _find_rttm(out_dir: Path) -> Path | None:

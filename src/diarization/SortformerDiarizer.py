@@ -341,15 +341,13 @@ class SortformerDiarizer(BaseDiarizer, ManagedModel):
                     temp_dir,
                 )
 
-            turns, speaker_count = self._stitch_windows(windows)
+            turns = self._stitch_windows(windows)
 
+        speakers = self._speakers_from_turns(turns)
         return DiarizationResult(
             schema_version="1.0",
             audio_id=audio.source_id,
-            speakers=[
-                Speaker(speaker_id=f"spk_{index:02d}")
-                for index in range(speaker_count)
-            ],
+            speakers=speakers,
             turns=turns,
             model=DiarizationModelInfo(
                 backend="nemo-sortformer",
@@ -743,10 +741,7 @@ class SortformerDiarizer(BaseDiarizer, ManagedModel):
         ends = np.flatnonzero(changes == -1)
         return list(zip(starts.tolist(), ends.tolist(), strict=True))
 
-    def _stitch_windows(
-        self,
-        windows: list[_WindowResult],
-    ) -> tuple[list[SpeakerTurn], int]:
+    def _stitch_windows(self, windows: list[_WindowResult]) -> list[SpeakerTurn]:
         profiles: dict[int, _SpeakerProfile] = {}
         next_global_index = 0
 
@@ -812,7 +807,27 @@ class SortformerDiarizer(BaseDiarizer, ManagedModel):
 
         turns = self._merge_adjacent_turns(turns)
         turns.sort(key=lambda turn: (turn.start_s, turn.end_s, turn.speaker_id))
-        return turns, next_global_index
+        return turns
+
+    @staticmethod
+    def _speakers_from_turns(turns: list[SpeakerTurn]) -> list[Speaker]:
+        """Build speaker records from turns that survived ownership clipping."""
+        speakers: list[Speaker] = []
+        seen: set[str] = set()
+        for turn in turns:
+            if turn.speaker_id in seen:
+                continue
+            seen.add(turn.speaker_id)
+            speakers.append(Speaker(speaker_id=turn.speaker_id))
+
+        def sort_key(speaker: Speaker) -> tuple[int, str]:
+            match = re.fullmatch(r"spk_(\d+)", speaker.speaker_id)
+            if match is not None:
+                return (int(match.group(1)), speaker.speaker_id)
+            return (10**9, speaker.speaker_id)
+
+        speakers.sort(key=sort_key)
+        return speakers
 
     def _speaker_match_scores(
         self,

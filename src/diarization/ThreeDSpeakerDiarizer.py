@@ -336,11 +336,18 @@ class ThreeDSpeakerDiarizer(BaseDiarizer, ManagedModel):
         if hasattr(torch, "mps") and torch.backends.mps.is_available():
             torch.mps.empty_cache()
 
-    def diarize(self, audio: Audio) -> DiarizationResult:
+    def diarize(
+        self,
+        audio: Audio,
+        *,
+        num_speakers: int | None = None,
+    ) -> DiarizationResult:
         """Diarize ``audio`` while preserving the schema 1.0 result contract.
 
         Args:
             audio: File-backed audio item to diarize.
+            num_speakers: Optional per-call oracle speaker count. When omitted,
+                uses the value configured at construction time.
 
         Returns:
             Speaker identities and turns with local ``spk_NN`` labels.
@@ -360,6 +367,12 @@ class ThreeDSpeakerDiarizer(BaseDiarizer, ManagedModel):
         if not source_path.is_file():
             raise FileNotFoundError(f"Audio file does not exist: {source_path}")
 
+        oracle_speakers = (
+            num_speakers if num_speakers is not None else self.num_speakers
+        )
+        if oracle_speakers is not None and oracle_speakers < 1:
+            raise ValueError("num_speakers must be at least 1")
+
         with tempfile.TemporaryDirectory(prefix="3d-speaker-") as temp_dir_name:
             temp_dir = Path(temp_dir_name)
             normalized_path = temp_dir / "normalized.wav"
@@ -377,7 +390,7 @@ class ThreeDSpeakerDiarizer(BaseDiarizer, ManagedModel):
                 segments = self._pipeline(
                     str(normalized_path),
                     wav_fs=SAMPLE_RATE,
-                    speaker_num=self.num_speakers,
+                    speaker_num=oracle_speakers,
                 )
             except Exception as exc:
                 raise RuntimeError(

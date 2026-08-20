@@ -159,7 +159,12 @@ class ClusteringWorkerDiarizer(BaseDiarizer, ManagedModel):
         self._stop_process(process)
         self._process = None
 
-    def diarize(self, audio: Audio) -> DiarizationResult:
+    def diarize(
+        self,
+        audio: Audio,
+        *,
+        num_speakers: int | None = None,
+    ) -> DiarizationResult:
         """Diarize ``audio`` through the persistent isolated worker."""
         if not self.is_loaded or self._process is None:
             raise RuntimeError(
@@ -168,12 +173,13 @@ class ClusteringWorkerDiarizer(BaseDiarizer, ManagedModel):
             )
         if not Path(audio.path).is_file():
             raise FileNotFoundError(f"Audio file does not exist: {audio.path}")
-        payload = self._request(
-            {
-                "action": "diarize",
-                "audio": audio.metadata(),
-            }
-        )
+        request: dict[str, Any] = {
+            "action": "diarize",
+            "audio": audio.metadata(),
+        }
+        if num_speakers is not None:
+            request["num_speakers"] = int(num_speakers)
+        payload = self._request(request)
         return self._result_from_dict(payload)
 
     def cancel(self) -> None:

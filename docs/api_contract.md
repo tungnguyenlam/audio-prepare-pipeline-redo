@@ -297,6 +297,7 @@ Requires the Pyannote pipeline to be loaded first.
   decoding independent of Pyannote's optional `torchcodec` integration.
 - Passes `num_speakers`, `min_speakers`, `max_speakers`, and `hook` if specified.
 - Extracts speaker turns from both `output.speaker_diarization` (pyannote 3.3/4.0+ and community models) or direct Annotation outputs (pyannote 3.1).
+- Skips zero- or negative-duration segments so they cannot fail schema validation.
 - Converts backend speaker labels into result-local IDs such as `spk_00`.
 - Creates one `Speaker` record for each distinct label.
 - Creates one `SpeakerTurn` record for each annotated segment.
@@ -346,7 +347,8 @@ starts. Hugging Face downloads use `.data/huggingface` as the default cache
   overlap, unless speaker similarity is disabled.
 - Resolves duplicate predictions in shared regions at the overlap midpoint,
   preserves simultaneous speakers, sorts turns chronologically, and emits
-  result-local IDs such as `spk_00`.
+  result-local IDs such as `spk_00`. Speaker records are built only from
+  speakers that retain at least one turn after overlap ownership clipping.
 - May produce more than four speakers in the complete result. The hard limit of
   four distinct speakers applies independently to each inference window.
 - Retries with three-minute windows by default when a six-minute inference
@@ -384,7 +386,7 @@ worker inference.
 - TitaNet is loaded lazily only when a recording needs multiple windows.
 - `_unload()` releases both models and clears available accelerator caches.
 
-### `ClusteringDiarizer.diarize(audio: Audio) -> DiarizationResult`
+### `ClusteringDiarizer.diarize(audio: Audio, *, num_speakers=None) -> DiarizationResult`
 
 **Defined in:** `src/diarization/ClusteringDiarizer.py`
 
@@ -400,8 +402,10 @@ Default models are `vad_multilingual_marblenet` and `titanet_large`.
 - Writes a one-file NeMo manifest and runs `ClusteringDiarizer.diarize()`.
 - Parses predicted RTTM into result-local IDs such as `spk_00`, preserving
   first-seen speaker order.
-- When `num_speakers` is set, or when min and max speaker bounds are equal,
-  clustering uses that exact count. Otherwise it estimates the count up to
+- Per-call `num_speakers` overrides the constructor value for that inference.
+  When an oracle count is set (constructor or call), or when min and max
+  speaker bounds are equal via `resolve_speaker_settings`, clustering uses
+  that exact count. Otherwise it estimates the count up to
   `max_num_speakers` (default 8).
 - Includes `DiarizationModelInfo` with backend `"nemo-clustering"` and a
   `model_id` of `{vad_model}+{speaker_model}`.
@@ -410,14 +414,15 @@ Default models are `vad_multilingual_marblenet` and `titanet_large`.
 explicitly requested unavailable device raises `RuntimeError`.
 
 **Raises:** `RuntimeError` when the model is not loaded, optional NeMo support
-is unavailable, clustering fails without writing RTTM, or the selected device
-cannot be initialized. Audio conversion and file errors are propagated.
+is unavailable, clustering fails without writing RTTM, diarization finishes
+without an RTTM under `pred_rttms/`, or the selected device cannot be
+initialized. Audio conversion and file errors are propagated.
 
 ### `ClusteringWorkerDiarizer`
 
 The web applications use `ClusteringWorkerDiarizer` from the primary `.venv`.
-Its public lifecycle and `diarize(audio) -> DiarizationResult` contract match
-`ClusteringDiarizer`, but `load()` starts
+Its public lifecycle and `diarize(audio, *, num_speakers=None) -> DiarizationResult`
+contract match `ClusteringDiarizer`, but `load()` starts
 `.venv-sortformer/bin/python -m src.diarization.clustering_worker`. The worker
 loads MarbleNet and TitaNet once and reuses them until `unload()` or
 `close()`. `CLUSTERING_PYTHON`, `SORTFORMER_PYTHON`, or the `worker_python`
@@ -430,7 +435,7 @@ constructor option can point to a non-default isolated interpreter.
   speaker-embedding models and places them on the selected device.
 - `_unload()` releases both models and clears available accelerator caches.
 
-### `ThreeDSpeakerDiarizer.diarize(audio: Audio) -> DiarizationResult`
+### `ThreeDSpeakerDiarizer.diarize(audio: Audio, *, num_speakers=None) -> DiarizationResult`
 
 **Defined in:** `src/diarization/ThreeDSpeakerDiarizer.py`
 
@@ -449,8 +454,10 @@ missing (override with `THREEDSPEAKER_ROOT`). Model downloads default to
 - Runs `speakerlab.bin.infer_diarization.Diarization3Dspeaker` and converts
   `[[start, end, speaker_id], ...]` segments into result-local IDs such as
   `spk_00`, preserving first-seen speaker order.
-- When `num_speakers` is set, or when min and max speaker bounds are equal,
-  clustering uses that exact count. Otherwise it estimates the count.
+- Per-call `num_speakers` overrides the constructor value for that inference.
+  When an oracle count is set (constructor or call), or when min and max
+  speaker bounds are equal via `resolve_speaker_settings`, clustering uses
+  that exact count. Otherwise it estimates the count.
 - When `include_overlap=True`, enables pyannote `segmentation-3.0` overlap
   refinement and requires `token` or `HF_TOKEN`.
 - `chunk_duration_s` / `chunk_step_s` control embedding subsegment window and
@@ -470,8 +477,9 @@ Audio conversion and file errors are propagated.
 ### `ThreeDSpeakerWorkerDiarizer`
 
 The web applications use `ThreeDSpeakerWorkerDiarizer` from the primary
-`.venv`. Its public lifecycle and `diarize(audio) -> DiarizationResult`
-contract match `ThreeDSpeakerDiarizer`, but `load()` starts
+`.venv`. Its public lifecycle and
+`diarize(audio, *, num_speakers=None) -> DiarizationResult` contract match
+`ThreeDSpeakerDiarizer`, but `load()` starts
 `.venv-3dspeaker/bin/python -m src.diarization.threed_speaker_worker`. The
 worker loads ModelScope/speakerlab models once and reuses them until
 `unload()` or `close()`. `THREEDSPEAKER_PYTHON` or the `worker_python`

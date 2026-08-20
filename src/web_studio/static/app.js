@@ -51,6 +51,7 @@ const state = {
     activeTurnIndex: null,
     activeSpeakerFilter: 'all',
     minDurFilter: 0,
+    maxDurFilter: 0,
     searchQuery: '',
     sortMode: 'time-asc',
     isScrubbing: false,
@@ -240,6 +241,7 @@ const el = {
   diarFilterSpeakerSelect: document.getElementById('diar-filter-speaker-select'),
   diarTurnsSearchInput: document.getElementById('diar-turns-search-input'),
   diarFilterMinDur: document.getElementById('diar-filter-min-dur'),
+  diarFilterMaxDur: document.getElementById('diar-filter-max-dur'),
   diarSortTurnsSelect: document.getElementById('diar-sort-turns-select'),
   diarFilteredTurnsCount: document.getElementById('diar-filtered-turns-count'),
   turnsTableBody: document.getElementById('turns-table-body'),
@@ -2378,6 +2380,13 @@ function initDiarizationStudio() {
     });
   }
 
+  if (el.diarFilterMaxDur) {
+    el.diarFilterMaxDur.addEventListener('change', (e) => {
+      state.diarization.maxDurFilter = parseFloat(e.target.value) || 0;
+      renderTurnsTable();
+    });
+  }
+
   if (el.diarSortTurnsSelect) {
     el.diarSortTurnsSelect.addEventListener('change', (e) => {
       state.diarization.sortMode = e.target.value;
@@ -2984,6 +2993,10 @@ function getFilteredAndSortedTurns() {
 
   if (state.diarization.minDurFilter > 0) {
     turns = turns.filter(t => (t.end_s - t.start_s) >= state.diarization.minDurFilter);
+  }
+
+  if (state.diarization.maxDurFilter > 0) {
+    turns = turns.filter(t => (t.end_s - t.start_s) <= state.diarization.maxDurFilter);
   }
 
   if (state.diarization.sortMode === 'time-desc') {

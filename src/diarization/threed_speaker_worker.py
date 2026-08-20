@@ -77,7 +77,13 @@ def main() -> None:
                 elif action == "diarize":
                     if diarizer is None or not diarizer.is_loaded:
                         raise RuntimeError("3D-Speaker worker is not loaded")
-                    result = diarizer.diarize(_audio_from_dict(request["audio"]))
+                    kwargs: dict[str, Any] = {}
+                    if "num_speakers" in request:
+                        kwargs["num_speakers"] = request["num_speakers"]
+                    result = diarizer.diarize(
+                        _audio_from_dict(request["audio"]),
+                        **kwargs,
+                    )
                     _respond(result=asdict(result))
                 elif action == "close":
                     if diarizer is not None:
