@@ -2855,6 +2855,7 @@ html, body {
   position: absolute;
   top: 2px;
   bottom: 2px;
+  min-width: 1px;
   border-radius: 4px;
   cursor: grab;
   transition: opacity var(--transition-fast), box-shadow var(--transition-fast), outline var(--transition-fast);

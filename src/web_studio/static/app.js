@@ -3259,7 +3259,7 @@ function renderSpeakerSwimlanes() {
     spkTurns.forEach(turn => {
       const idx = turn.originalIndex;
       const leftPct = (turn.start_s / dur) * 100;
-      const widthPct = Math.max(0.4, ((turn.end_s - turn.start_s) / dur) * 100);
+      const widthPct = (Math.max(0, turn.end_s - turn.start_s) / dur) * 100;
 
       const seg = document.createElement("div");
       seg.className = `diar-turn-segment ${turn.has_overlap ? 'has-overlap' : ''} ${state.diarization.activeTurnIndex === idx ? 'active-turn' : ''} ${isDimmed ? 'turn-dimmed' : ''}`;
