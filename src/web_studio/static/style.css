@@ -3113,6 +3113,13 @@ html, body {
   flex-wrap: wrap;
 }
 
+.diar-overlap-filter-btn.active {
+  background-color: #f59e0b;
+  border-color: #f59e0b;
+  color: #000;
+  font-weight: 700;
+}
+
 .diar-turns-table-wrapper {
   max-height: 380px;
   overflow-y: auto;

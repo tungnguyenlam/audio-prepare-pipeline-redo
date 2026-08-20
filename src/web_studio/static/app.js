@@ -52,6 +52,7 @@ const state = {
     activeSpeakerFilter: 'all',
     minDurFilter: 0,
     maxDurFilter: 0,
+    overlapFilter: false,
     searchQuery: '',
     sortMode: 'time-asc',
     isScrubbing: false,
@@ -244,6 +245,7 @@ const el = {
   diarTurnsSearchInput: document.getElementById('diar-turns-search-input'),
   diarFilterMinDur: document.getElementById('diar-filter-min-dur'),
   diarFilterMaxDur: document.getElementById('diar-filter-max-dur'),
+  btnDiarFilterOverlaps: document.getElementById('btn-diar-filter-overlaps'),
   diarSortTurnsSelect: document.getElementById('diar-sort-turns-select'),
   diarFilteredTurnsCount: document.getElementById('diar-filtered-turns-count'),
   turnsTableBody: document.getElementById('turns-table-body'),
@@ -2326,6 +2328,11 @@ function initDiarizationStudio() {
       state.diarization.activeTurnIndex = null;
       state.diarization.soloSpeaker = null;
       state.diarization.mutedSpeakers.clear();
+      state.diarization.overlapFilter = false;
+      if (el.btnDiarFilterOverlaps) {
+        el.btnDiarFilterOverlaps.classList.remove('active');
+        el.btnDiarFilterOverlaps.setAttribute('aria-pressed', 'false');
+      }
       if (el.audio) el.audio.muted = false;
       if (el.diarResultsWrapper) el.diarResultsWrapper.classList.add('hidden');
       if (el.diarEmptyPlaceholder) el.diarEmptyPlaceholder.classList.remove('hidden');
@@ -2388,6 +2395,18 @@ function initDiarizationStudio() {
   if (el.diarFilterMaxDur) {
     el.diarFilterMaxDur.addEventListener('change', (e) => {
       state.diarization.maxDurFilter = parseFloat(e.target.value) || 0;
+      renderTurnsTable();
+    });
+  }
+
+  if (el.btnDiarFilterOverlaps) {
+    el.btnDiarFilterOverlaps.addEventListener('click', () => {
+      state.diarization.overlapFilter = !state.diarization.overlapFilter;
+      el.btnDiarFilterOverlaps.classList.toggle('active', state.diarization.overlapFilter);
+      el.btnDiarFilterOverlaps.setAttribute(
+        'aria-pressed',
+        state.diarization.overlapFilter ? 'true' : 'false',
+      );
       renderTurnsTable();
     });
   }
@@ -2507,6 +2526,11 @@ function renderDiarizationWorkspace(diarization, audioId) {
   state.diarization.data = diarization || state.diarization.data || {};
   state.diarization.soloSpeaker = null;
   state.diarization.mutedSpeakers.clear();
+  state.diarization.overlapFilter = false;
+  if (el.btnDiarFilterOverlaps) {
+    el.btnDiarFilterOverlaps.classList.remove('active');
+    el.btnDiarFilterOverlaps.setAttribute('aria-pressed', 'false');
+  }
   if (el.audio) el.audio.muted = false;
 
   const rawSpeakers = (diarization && diarization.speakers) || state.diarization.speakers || [];
@@ -2593,6 +2617,7 @@ function detectTurnOverlaps() {
     for (let j = i + 1; j < turns.length; j++) {
       const a = turns[i];
       const b = turns[j];
+      if (a.speaker_id === b.speaker_id) continue;
       const overlapStart = Math.max(a.start_s, b.start_s);
       const overlapEnd = Math.min(a.end_s, b.end_s);
       if (overlapEnd > overlapStart + 0.02) {
@@ -3086,6 +3111,10 @@ function getFilteredAndSortedTurns() {
 
   if (state.diarization.maxDurFilter > 0) {
     turns = turns.filter(t => (t.end_s - t.start_s) <= state.diarization.maxDurFilter);
+  }
+
+  if (state.diarization.overlapFilter) {
+    turns = turns.filter(t => t.has_overlap);
   }
 
   if (state.diarization.sortMode === 'time-desc') {
