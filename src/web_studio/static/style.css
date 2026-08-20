@@ -2558,6 +2558,20 @@ html, body {
   box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
 }
 
+.btn-solo-spk.active {
+  background-color: #f59e0b;
+  border-color: #f59e0b;
+  color: #000;
+  font-weight: 700;
+}
+
+.btn-mute-spk.active {
+  background-color: #ef4444;
+  border-color: #ef4444;
+  color: #fff;
+  font-weight: 700;
+}
+
 .spk-ctrl-btn.btn-audition:hover {
   background-color: var(--accent-cyan);
   border-color: var(--accent-cyan);

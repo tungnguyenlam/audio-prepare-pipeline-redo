@@ -55,6 +55,8 @@ const state = {
     searchQuery: '',
     sortMode: 'time-asc',
     isScrubbing: false,
+    soloSpeaker: null,
+    mutedSpeakers: new Set(),
   },
 };
 
@@ -2322,6 +2324,9 @@ function initDiarizationStudio() {
       state.diarization.turns = [];
       state.diarization.speakers = [];
       state.diarization.activeTurnIndex = null;
+      state.diarization.soloSpeaker = null;
+      state.diarization.mutedSpeakers.clear();
+      if (el.audio) el.audio.muted = false;
       if (el.diarResultsWrapper) el.diarResultsWrapper.classList.add('hidden');
       if (el.diarEmptyPlaceholder) el.diarEmptyPlaceholder.classList.remove('hidden');
       showToast("Diarization workspace reset", "info");
@@ -2500,6 +2505,9 @@ function setDiarZoom(zoom) {
 function renderDiarizationWorkspace(diarization, audioId) {
   state.diarization.audioId = audioId;
   state.diarization.data = diarization || state.diarization.data || {};
+  state.diarization.soloSpeaker = null;
+  state.diarization.mutedSpeakers.clear();
+  if (el.audio) el.audio.muted = false;
 
   const rawSpeakers = (diarization && diarization.speakers) || state.diarization.speakers || [];
   state.diarization.speakers = rawSpeakers.map(s => {
@@ -2757,6 +2765,7 @@ function renderSpeakerSwimlanes() {
   el.diarSpeakerLanesWrap.innerHTML = "";
   el.diarSpkLabelsWrap.innerHTML = "";
   const dur = state.diarization.duration || 1;
+  const isSoloActive = Boolean(state.diarization.soloSpeaker);
 
   state.diarization.speakers.forEach(spk => {
     const spkId = spk.speaker_id;
@@ -2764,9 +2773,12 @@ function renderSpeakerSwimlanes() {
     const spkName = getSpeakerName(spkId);
     const spkTurns = state.diarization.turns.filter(t => t.speaker_id === spkId);
     const spkTotalSpeech = spkTurns.reduce((acc, t) => acc + Math.max(0, t.end_s - t.start_s), 0);
+    const isSolo = state.diarization.soloSpeaker === spkId;
+    const isMuted = state.diarization.mutedSpeakers.has(spkId);
+    const isDimmed = (isSoloActive && !isSolo) || isMuted;
 
     const labelRow = document.createElement("div");
-    labelRow.className = "diar-spk-label-row";
+    labelRow.className = `diar-spk-label-row ${isDimmed ? 'lane-dimmed' : ''}`;
     labelRow.dataset.speakerId = spkId;
     labelRow.innerHTML = `
       <div class="spk-label-left" title="${escapeHtml(spkName)}">
@@ -2776,11 +2788,23 @@ function renderSpeakerSwimlanes() {
           <span class="spk-stats-sub">${spkTurns.length} turns • ${spkTotalSpeech.toFixed(1)}s</span>
         </div>
       </div>
+      <div class="spk-label-controls">
+        <button type="button" class="spk-ctrl-btn btn-solo ${isSolo ? 'active' : ''}" data-speaker="${spkId}" title="Solo speaker">S</button>
+        <button type="button" class="spk-ctrl-btn btn-mute ${isMuted ? 'active' : ''}" data-speaker="${spkId}" title="Mute speaker">M</button>
+      </div>
     `;
+    labelRow.querySelector('.btn-solo').addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleSpeakerSolo(spkId);
+    });
+    labelRow.querySelector('.btn-mute').addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleSpeakerMute(spkId);
+    });
     el.diarSpkLabelsWrap.appendChild(labelRow);
 
     const track = document.createElement("div");
-    track.className = "diar-speaker-lane-track";
+    track.className = `diar-speaker-lane-track ${isDimmed ? 'lane-dimmed' : ''}`;
     track.dataset.speaker = spkId;
 
     spkTurns.forEach(turn => {
@@ -2789,7 +2813,7 @@ function renderSpeakerSwimlanes() {
       const widthPct = Math.max(0.4, ((turn.end_s - turn.start_s) / dur) * 100);
 
       const seg = document.createElement("div");
-      seg.className = `diar-turn-segment ${turn.has_overlap ? 'has-overlap' : ''} ${state.diarization.activeTurnIndex === idx ? 'active-turn' : ''}`;
+      seg.className = `diar-turn-segment ${turn.has_overlap ? 'has-overlap' : ''} ${state.diarization.activeTurnIndex === idx ? 'active-turn' : ''} ${isDimmed ? 'turn-dimmed' : ''}`;
       seg.style.left = `${leftPct}%`;
       seg.style.width = `${widthPct}%`;
       seg.style.borderTop = `3px solid ${color}`;
@@ -2897,6 +2921,65 @@ function updateDiarizationPlayhead(currentTime, totalDuration) {
     const activeRow = document.getElementById(`turn-row-${idx}`);
     if (activeRow) activeRow.classList.add('playing-row');
   }
+
+  applySpeakerSoloMuteAudio(currentTime);
+}
+
+function applySpeakerSoloMuteAudio(currentTime) {
+  if (!el.audio) return;
+  const isSoloActive = Boolean(state.diarization.soloSpeaker);
+  const hasMuted = state.diarization.mutedSpeakers.size > 0;
+
+  if (!isSoloActive && !hasMuted) {
+    el.audio.muted = false;
+    return;
+  }
+
+  const turnsAtTime = state.diarization.turns.filter(
+    (t) => currentTime >= t.start_s && currentTime <= t.end_s,
+  );
+  if (turnsAtTime.length === 0) {
+    // Silence / gap: keep audible unless every speaker is muted.
+    el.audio.muted = false;
+    return;
+  }
+
+  const anyAudible = turnsAtTime.some((turn) => {
+    if (isSoloActive && state.diarization.soloSpeaker !== turn.speaker_id) {
+      return false;
+    }
+    if (state.diarization.mutedSpeakers.has(turn.speaker_id)) {
+      return false;
+    }
+    return true;
+  });
+  el.audio.muted = !anyAudible;
+}
+
+function toggleSpeakerSolo(speakerId) {
+  if (state.diarization.soloSpeaker === speakerId) {
+    state.diarization.soloSpeaker = null;
+    showToast(`Solo disabled for ${getSpeakerName(speakerId)}`, 'info');
+  } else {
+    state.diarization.soloSpeaker = speakerId;
+    showToast(`Soloing ${getSpeakerName(speakerId)}`, 'success');
+  }
+  renderSpeakerSwimlanes();
+  renderSpeakerProfiles();
+  applySpeakerSoloMuteAudio(el.audio?.currentTime || 0);
+}
+
+function toggleSpeakerMute(speakerId) {
+  if (state.diarization.mutedSpeakers.has(speakerId)) {
+    state.diarization.mutedSpeakers.delete(speakerId);
+    showToast(`Unmuted ${getSpeakerName(speakerId)}`, 'info');
+  } else {
+    state.diarization.mutedSpeakers.add(speakerId);
+    showToast(`Muted ${getSpeakerName(speakerId)}`, 'info');
+  }
+  renderSpeakerSwimlanes();
+  renderSpeakerProfiles();
+  applySpeakerSoloMuteAudio(el.audio?.currentTime || 0);
 }
 
 function renderSpeakerProfiles() {
@@ -2909,6 +2992,8 @@ function renderSpeakerProfiles() {
     const spkName = getSpeakerName(spkId);
     const color = getSpeakerColor(spkId);
     const spkTurns = state.diarization.turns.filter(t => t.speaker_id === spkId);
+    const isSolo = state.diarization.soloSpeaker === spkId;
+    const isMuted = state.diarization.mutedSpeakers.has(spkId);
 
     const totalSpeechS = spkTurns.reduce((acc, t) => acc + Math.max(0, t.end_s - t.start_s), 0);
     const turnsCount = spkTurns.length;
@@ -2948,8 +3033,10 @@ function renderSpeakerProfiles() {
       </div>
 
       <div class="diar-spk-actions-row">
-        <button class="btn btn-xs btn-ghost btn-filter-spk" data-speaker="${spkId}" title="Filter turns table">🔍 Filter</button>
-        <button class="btn btn-xs btn-primary btn-extract-spk" data-speaker="${spkId}" title="Extract and save speaker audio to workspace">✂ Extract</button>
+        <button type="button" class="btn btn-xs ${isSolo ? 'btn-solo-spk active' : 'btn-ghost'} btn-solo-spk" data-speaker="${spkId}" title="Solo speaker">Solo</button>
+        <button type="button" class="btn btn-xs ${isMuted ? 'btn-mute-spk active' : 'btn-ghost'} btn-mute-spk" data-speaker="${spkId}" title="Mute speaker">Mute</button>
+        <button type="button" class="btn btn-xs btn-ghost btn-filter-spk" data-speaker="${spkId}" title="Filter turns table">🔍 Filter</button>
+        <button type="button" class="btn btn-xs btn-primary btn-extract-spk" data-speaker="${spkId}" title="Extract and save speaker audio to workspace">✂ Extract</button>
       </div>
     `;
 
@@ -2962,6 +3049,8 @@ function renderSpeakerProfiles() {
       showToast(`Speaker ${spkId} renamed to "${val}"`, "success");
     });
 
+    card.querySelector('.btn-solo-spk').addEventListener('click', () => toggleSpeakerSolo(spkId));
+    card.querySelector('.btn-mute-spk').addEventListener('click', () => toggleSpeakerMute(spkId));
     card.querySelector('.btn-filter-spk').addEventListener('click', () => {
       switchDiarSubtab('turns');
       if (el.diarFilterSpeakerSelect) {
