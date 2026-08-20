@@ -1122,7 +1122,8 @@
         e.preventDefault();
         const urls = els.ytUrls.value.trim();
         const dataset = els.ytDataset.value;
-        const sampleRate = parseInt(els.ytSampleRate.value, 10);
+        const rawRate = els.ytSampleRate.value;
+        const sampleRate = rawRate === 'native' ? 'native' : parseInt(rawRate, 10);
         const tags = els.ytTags.value.split(',').map((t) => t.trim()).filter(Boolean);
 
         if (!urls) {

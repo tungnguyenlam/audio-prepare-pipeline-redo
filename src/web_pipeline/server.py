@@ -25,6 +25,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 load_dotenv(ROOT_DIR / ".env", override=False)
 os.environ.setdefault("HF_HOME", str(ROOT_DIR / ".data" / "huggingface"))
 
+from src.yt_crawler.YtCrawlerClass import parse_crawl_sample_rate
 from src.utils.AudioClass import DEFAULT_SAMPLE_RATE, Audio
 from src.web_pipeline.batch_processors import register_all_handlers
 from src.web_pipeline.dataset_manager import dataset_manager
@@ -381,7 +382,12 @@ async def handle_submit_ingest_yt(request: web.Request) -> web.Response:
         urls = body.get("urls", [])
         dataset = body.get("dataset", "Default")
         tags = body.get("tags", [])
-        sample_rate = int(body.get("sample_rate", DEFAULT_SAMPLE_RATE))
+        try:
+            sample_rate = parse_crawl_sample_rate(body.get("sample_rate", DEFAULT_SAMPLE_RATE))
+        except (TypeError, ValueError):
+            return json_error("sample_rate must be 'native', 16000, or 44100")
+        if sample_rate not in (None, 16000, DEFAULT_SAMPLE_RATE):
+            return json_error("sample_rate must be 'native', 16000, or 44100")
         max_duration = body.get("max_duration_seconds")
 
         if isinstance(urls, str):
@@ -390,7 +396,8 @@ async def handle_submit_ingest_yt(request: web.Request) -> web.Response:
         if not urls:
             return json_error("No YouTube URLs provided")
 
-        title = f"YouTube Batch Ingest ({len(urls)} items) -> {dataset}"
+        rate_label = "native" if sample_rate is None else f"{sample_rate}Hz"
+        title = f"YouTube Batch Ingest ({len(urls)} items, {rate_label}) -> {dataset}"
         job = queue_manager.submit_job(
             job_type="batch_ingest_yt",
             title=title,

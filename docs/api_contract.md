@@ -36,7 +36,9 @@ A convenience class method that creates a crawler and delegates to
 
 - `link: str` — YouTube URL.
 - Optional output/work directories and normalization settings.
-  Default channel count is 1 (mono).
+  Default channel count is 1 (mono). Default sample rate is 44,100 Hz.
+  Pass `sample_rate=None` to keep the source/native rate (format + mono
+  conversion still apply).
 - Additional crawler options through `**kwargs`, such as cookies or proxy.
 
 **Returns:** One `Audio` instance representing the normalized downloaded file.
@@ -55,14 +57,23 @@ Downloads one URL and returns an `Audio` object.
 2. Runs `yt-dlp` without downloading a playlist.
 3. Reads the generated `.info.json` metadata.
 4. Selects an audio file rather than a video artifact.
-5. Normalizes the file to the crawler's configured format, sample rate, and
-   channel count (default 1 / mono), saved as `<sanitized_title>__<source_id>.<format>`.
+5. Records `native_sample_rate` from the pre-normalize source (or yt-dlp
+   `asr`), then normalizes to the crawler's configured format and channel
+   count (default 1 / mono). When `sample_rate` is an int, ffmpeg resamples
+   to that rate; when `sample_rate` is `None`, the source rate is kept.
+   Saved as `<sanitized_title>__<source_id>.<format>`.
 6. Generates companion identity metadata sidecar JSON (`<stem>.json`) alongside the audio file.
 7. Returns an `Audio` object whose `path` points to the final output.
 8. Removes the temporary session directory even if processing fails.
 
 **Raises:** `DownloadError` when `yt-dlp`, metadata parsing, audio discovery,
 or `ffmpeg` processing fails.
+
+### `parse_crawl_sample_rate(value, *, default=44100) -> int | None`
+
+Parses a UI/API sample-rate choice. Accepts `"native"` / `0` / missing empty
+values (falls back to `default`), or a positive Hz int/string. Returns
+`None` for native-rate crawls.
 
 ### `YtCrawler.build_command(url: str, target_work_dir: Path) -> list[str]`
 

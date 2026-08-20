@@ -179,10 +179,18 @@
                   <span>Paste</span>
                 </button>
                 <button class="btn btn-primary" id="btn-yt-download">
-                  <span>Fetch & Normalize</span>
+                  <span>Fetch Audio</span>
                 </button>
               </div>
-              <p class="input-hint">Downloads, extracts audio & standardizes to 44.1kHz mono WAV.</p>
+              <div class="yt-rate-row">
+                <label class="input-label yt-rate-label" for="yt-sample-rate">Sample rate</label>
+                <select id="yt-sample-rate" class="select-input yt-rate-select" aria-label="YouTube crawl sample rate">
+                  <option value="44100" selected>44.1 kHz (pipeline default)</option>
+                  <option value="16000">16 kHz (speech / ASR)</option>
+                  <option value="native">Native (keep source rate)</option>
+                </select>
+              </div>
+              <p class="input-hint" id="yt-ingest-hint">Downloads audio to mono WAV at 44.1 kHz.</p>
             </div>
           </div>
         </div>

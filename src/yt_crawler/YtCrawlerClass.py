@@ -16,7 +16,7 @@ import threading
 import uuid
 import wave
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from src.utils.AudioClass import (
     DEFAULT_SAMPLE_RATE,
@@ -36,6 +36,38 @@ class DownloadError(RuntimeError):
     """Raised when yt-dlp or ffmpeg fails during download or post-processing."""
 
 
+def parse_crawl_sample_rate(
+    value: Any,
+    *,
+    default: int | None = DEFAULT_SAMPLE_RATE,
+) -> int | None:
+    """Parse a UI/API sample-rate choice into Hz, or ``None`` for native rate.
+
+    Accepts ``None`` / empty (uses ``default``), ``"native"``, ``0``, or a
+    positive int/string Hz value.
+
+    Args:
+        value: Raw request or form value.
+        default: Fallback when the value is missing/empty.
+
+    Returns:
+        Target sample rate in Hz, or ``None`` to preserve the source rate.
+    """
+    if value is None or value == "":
+        return default
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if not normalized:
+            return default
+        if normalized == "native":
+            return None
+        value = normalized
+    rate = int(value)
+    if rate <= 0:
+        return None
+    return rate
+
+
 def probe_wav(path: Path) -> tuple[int, float, int]:
     """Extract sample rate, duration (seconds), and channels count from a WAV file."""
     with wave.open(str(path), "rb") as wf:
@@ -49,7 +81,8 @@ def probe_wav(path: Path) -> tuple[int, float, int]:
 class YtCrawler:
     """Crawls YouTube audio using yt-dlp and normalizes audio output using ffmpeg.
 
-    Default output is WAV, 44,100 Hz, mono (1 channel).
+    Default output is WAV, 44,100 Hz, mono (1 channel). Pass ``sample_rate=None``
+    to keep the source/native rate while still converting format and channels.
     """
 
     def __init__(
@@ -57,7 +90,7 @@ class YtCrawler:
         output_dir: str | Path = ".data/yt_crawler/downloads",
         work_dir: str | Path = ".data/yt_crawler/work",
         audio_format: str = "wav",
-        sample_rate: int = DEFAULT_SAMPLE_RATE,
+        sample_rate: int | None = DEFAULT_SAMPLE_RATE,
         channels: int = 1,
         retries: int = 3,
         yt_dlp_bin: Optional[str] = None,
@@ -90,7 +123,7 @@ class YtCrawler:
         output_dir: str | Path = ".data/yt_crawler/downloads",
         work_dir: str | Path = ".data/yt_crawler/work",
         audio_format: str = "wav",
-        sample_rate: int = DEFAULT_SAMPLE_RATE,
+        sample_rate: int | None = DEFAULT_SAMPLE_RATE,
         channels: int = 1,
         **kwargs,
     ) -> Audio:
@@ -288,7 +321,7 @@ class YtCrawler:
             self._ensure_standard_audio(src_audio, final_dest)
 
             duration_s = info.get("duration")
-            sample_rate = self.sample_rate
+            sample_rate = self.sample_rate if self.sample_rate is not None else native_sample_rate
             channels = self.channels
 
             if final_dest.suffix.lower() == ".wav" and final_dest.exists():
@@ -301,6 +334,8 @@ class YtCrawler:
 
             if native_sample_rate is None:
                 native_sample_rate = sample_rate
+            if sample_rate is None:
+                sample_rate = native_sample_rate or DEFAULT_SAMPLE_RATE
 
             for path in self.output_dir.glob(f"*{source_id}.*"):
                 if path.suffix.lower() in _VIDEO_SUFFIXES:
@@ -325,12 +360,18 @@ class YtCrawler:
             shutil.rmtree(session_dir, ignore_errors=True)
 
     def _ensure_standard_audio(self, src: Path, dest: Path) -> None:
-        """Convert audio to required format, sample rate, and channel count using ffmpeg."""
+        """Convert audio to required format/channels; resample only when sample_rate is set.
+
+        When ``self.sample_rate`` is ``None``, the source rate is preserved
+        (native-rate crawl). Format and channel conversion still run via ffmpeg
+        when needed.
+        """
         needs_ffmpeg = True
         if src.suffix.lower() == f".{self.audio_format}" and self.audio_format == "wav":
             try:
                 rate, _, ch = probe_wav(src)
-                if rate == self.sample_rate and ch == self.channels:
+                rate_ok = self.sample_rate is None or rate == self.sample_rate
+                if rate_ok and ch == self.channels:
                     needs_ffmpeg = False
             except wave.Error:
                 needs_ffmpeg = True
@@ -345,11 +386,11 @@ class YtCrawler:
             "-y",
             "-i",
             str(src),
-            "-ar",
-            str(self.sample_rate),
             "-ac",
             str(self.channels),
         ]
+        if self.sample_rate is not None:
+            cmd.extend(["-ar", str(self.sample_rate)])
         if self.audio_format == "wav":
             cmd.extend(["-c:a", "pcm_s16le"])
 

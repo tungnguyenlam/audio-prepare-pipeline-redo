@@ -101,6 +101,8 @@ const el = {
   dropzone: document.getElementById('audio-dropzone'),
   fileInput: document.getElementById('file-input'),
   ytUrlInput: document.getElementById('yt-url-input'),
+  ytSampleRate: document.getElementById('yt-sample-rate'),
+  ytIngestHint: document.getElementById('yt-ingest-hint'),
   btnYtDownload: document.getElementById('btn-yt-download'),
   btnYtPasteWorkspace: document.getElementById('btn-yt-paste-workspace'),
   btnBrowseLibrary: document.getElementById('btn-browse-library-modal'),
@@ -1525,12 +1527,35 @@ function initIngestAndSaves() {
   }
 
   // YouTube Ingest
+  function ytCrawlSampleRatePayload() {
+    const raw = el.ytSampleRate?.value || "44100";
+    return raw === "native" ? "native" : parseInt(raw, 10);
+  }
+
+  function updateYtIngestHint() {
+    if (!el.ytIngestHint || !el.ytSampleRate) return;
+    const raw = el.ytSampleRate.value;
+    if (raw === "native") {
+      el.ytIngestHint.textContent = "Downloads audio to mono WAV at the source/native sample rate.";
+    } else if (raw === "16000") {
+      el.ytIngestHint.textContent = "Downloads audio to mono WAV at 16 kHz (speech / ASR).";
+    } else {
+      el.ytIngestHint.textContent = "Downloads audio to mono WAV at 44.1 kHz.";
+    }
+  }
+
+  if (el.ytSampleRate) {
+    el.ytSampleRate.addEventListener("change", updateYtIngestHint);
+    updateYtIngestHint();
+  }
+
   el.btnYtDownload.addEventListener('click', async () => {
     const url = el.ytUrlInput.value.trim();
     if (!url) {
       showToast("Please enter a YouTube video URL", "error");
       return;
     }
+    const sampleRate = ytCrawlSampleRatePayload();
     el.btnYtDownload.disabled = true;
     el.btnYtDownload.innerHTML = `<span class="dot dot-pulse"></span> Fetching...`;
 
@@ -1538,7 +1563,7 @@ function initIngestAndSaves() {
       const res = await fetch("/api/audio/youtube", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, sample_rate: sampleRate }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to start YouTube crawl");
@@ -1554,7 +1579,7 @@ function initIngestAndSaves() {
       showToast(err.message, "error");
     } finally {
       el.btnYtDownload.disabled = false;
-      el.btnYtDownload.textContent = "Fetch & Normalize";
+      el.btnYtDownload.textContent = "Fetch Audio";
     }
   });
 

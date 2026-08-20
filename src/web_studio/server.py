@@ -48,7 +48,7 @@ from src.diarization import (
     ThreeDSpeakerDiarizer,
     ThreeDSpeakerWorkerDiarizer,
 )
-from src.yt_crawler.YtCrawlerClass import YtCrawler
+from src.yt_crawler.YtCrawlerClass import YtCrawler, parse_crawl_sample_rate
 
 # Setup logging
 logging.basicConfig(
@@ -1240,16 +1240,35 @@ async def handle_youtube_ingest(request: web.Request) -> web.Response:
     """Start asynchronous YouTube audio ingestion."""
     data = await request.json()
     url = data.get("url")
-    sample_rate = int(data.get("sample_rate", DEFAULT_SAMPLE_RATE))
+    try:
+        sample_rate = parse_crawl_sample_rate(data.get("sample_rate", DEFAULT_SAMPLE_RATE))
+    except (TypeError, ValueError):
+        return web.json_response(
+            {"error": "sample_rate must be 'native', 16000, or 44100"},
+            status=400,
+        )
+    if sample_rate not in (None, 16000, DEFAULT_SAMPLE_RATE):
+        return web.json_response(
+            {"error": "sample_rate must be 'native', 16000, or 44100"},
+            status=400,
+        )
     audio_format = data.get("audio_format", "wav")
 
     if not url:
         return web.json_response({"error": "URL is required"}, status=400)
 
-    task_id = task_manager.create_task("youtube_crawl", {"url": url, "sample_rate": sample_rate})
+    rate_label = "native" if sample_rate is None else f"{sample_rate}Hz"
+    task_id = task_manager.create_task(
+        "youtube_crawl",
+        {"url": url, "sample_rate": sample_rate, "sample_rate_label": rate_label},
+    )
 
     async def run_crawler():
-        task_manager.update_task(task_id, status="running", message="Downloading YouTube audio with yt-dlp...")
+        task_manager.update_task(
+            task_id,
+            status="running",
+            message=f"Downloading YouTube audio ({rate_label}) with yt-dlp...",
+        )
         loop = asyncio.get_running_loop()
         try:
             crawler = YtCrawler(
@@ -1267,7 +1286,11 @@ async def handle_youtube_ingest(request: web.Request) -> web.Response:
                 task_manager.set_cancel_callback(task_id, None)
             if _task_is_cancelled(task_id):
                 return
-            audio_id = registry.register(audio, source_type="youtube", tags=["youtube", "crawled", f"{sample_rate}Hz"])
+            audio_id = registry.register(
+                audio,
+                source_type="youtube",
+                tags=["youtube", "crawled", rate_label],
+            )
             task_manager.update_task(
                 task_id,
                 status="completed",

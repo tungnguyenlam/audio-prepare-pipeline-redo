@@ -549,11 +549,11 @@
                   </div>
 
                   <div class="form-item flex-1">
-                    <label class="form-label" for="yt-sample-rate">Normalization Sample Rate</label>
+                    <label class="form-label" for="yt-sample-rate">Sample Rate</label>
                     <select id="yt-sample-rate" class="form-select">
-                      <option value="44100" selected>44,100 Hz (Standard Production)</option>
-                      <option value="48000">48,000 Hz (Broadcast Quality)</option>
-                      <option value="16000">16,000 Hz (Speech / ASR Optimized)</option>
+                      <option value="44100" selected>44.1 kHz (pipeline default)</option>
+                      <option value="16000">16 kHz (speech / ASR)</option>
+                      <option value="native">Native (keep source rate)</option>
                     </select>
                   </div>
                 </div>

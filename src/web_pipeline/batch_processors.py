@@ -140,13 +140,18 @@ async def process_batch_ingest_yt(job: PipelineJob, queue: JobQueueManager) -> N
     urls = job.params.get("urls", [])
     target_dataset = job.params.get("dataset", "Default")
     tags = list(job.params.get("tags", []))
-    target_sr = int(job.params.get("sample_rate", DEFAULT_SAMPLE_RATE))
+    raw_sr = job.params.get("sample_rate", DEFAULT_SAMPLE_RATE)
+    if raw_sr in (None, "", "native", 0, "0"):
+        target_sr = None
+    else:
+        target_sr = int(raw_sr)
 
     if isinstance(urls, str):
         urls = [u.strip() for u in urls.replace(",", "\n").splitlines() if u.strip()]
 
     resolved_entries: List[Dict[str, Any]] = [{"type": "url", "url": url} for url in urls]
-    job.add_log(f"Resolving {len(urls)} input URL(s)...", "info")
+    rate_label = "native" if target_sr is None else f"{target_sr}Hz"
+    job.add_log(f"Resolving {len(urls)} input URL(s) at {rate_label}...", "info")
     queue.update_job_progress(job.id, current_step="Preparing YouTube ingest...")
 
     def report_yt_progress(message: str) -> None:
