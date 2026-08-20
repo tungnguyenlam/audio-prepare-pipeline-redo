@@ -1,19 +1,18 @@
-"""Source-separation backends for music/background removal."""
+"""Audio Source Separation module (Stage 2 in Audio Processing Pipeline)."""
 
-from src.separation.BaseSeparator import BaseSeparator
-from src.separation.BSRoFormer import BSRoFormer, BSRoFormerError
-from src.separation.HTDemucs import DemucsError, HTDemucs
-from src.separation.MelRoFormer import MelRoFormer, MelRoFormerError
-from src.separation.MVSepMDX23 import MVSepMDX23, MVSepMDX23Error
+from src.separation.base import BaseSeparator, SeparationError, SeparationResult, SeparationStem
+from src.separation.htdemucs import HTDemucsSeparator
+from src.separation.mel_roformer import MelRoFormerSeparator
+from src.separation.deepfilternet import DeepFilterNetSeparator
+from src.separation.manager import SeparationManager
 
 __all__ = [
     "BaseSeparator",
-    "BSRoFormer",
-    "BSRoFormerError",
-    "DemucsError",
-    "HTDemucs",
-    "MelRoFormer",
-    "MelRoFormerError",
-    "MVSepMDX23",
-    "MVSepMDX23Error",
+    "SeparationError",
+    "SeparationResult",
+    "SeparationStem",
+    "HTDemucsSeparator",
+    "MelRoFormerSeparator",
+    "DeepFilterNetSeparator",
+    "SeparationManager",
 ]

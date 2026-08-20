@@ -1,45 +1,34 @@
 [project]
-name = "audio-prepare-pipeline-redo"
+name = "audio-crawler-pipeline"
 version = "0.1.0"
-description = "Add your description here"
+description = "YouTube Audio Crawler & Preprocessing Pipeline for TTS / ASR"
 readme = "README.md"
-authors = [
-    { name = "tungnl5", email = "nguyenlamtung2005@gmail.com" }
-]
-requires-python = ">=3.13"
+requires-python = ">=3.10"
 dependencies = [
-    "bs-roformer-infer",
-    "demucs>=4.0.1",
-    "ipykernel>=7.3.0",
-    "ipywidgets>=8.1.8",
-    "librosa>=0.11.0",
-    "matplotlib>=3.11.1",
-    "melband-roformer-infer",
-    "numpy>=2.4.6",
-    "onnxruntime>=1.20.0",
-    "pip>=26.2.1",
-    "pyannote.audio",
-    "soundfile>=0.14.0",
-    "torch>=2.13.0",
-    "torchaudio>=2.11.0",
-    "yt-dlp>=2026.8.4.234419.dev0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "python-multipart>=0.0.9",
+    "yt-dlp>=2025.1.15",
+    "aiofiles>=24.1.0",
+    "pydantic>=2.10.0",
+    "numpy>=1.26.0",
+    "soundfile>=0.12.0",
+    "scipy>=1.11.0",
+    "demucs>=4.1.0",
+    "melband-roformer-infer>=0.1.5",
+    "deepfilternet>=0.5.6",
 ]
 
-[dependency-groups]
-dev = [
-    "pytest>=8.0",
+[project.optional-dependencies]
+separation = [
+    "demucs>=4.1.0",
+    "melband-roformer-infer>=0.1.5",
+    "deepfilternet>=0.5.6",
 ]
-
-[tool.pytest.ini_options]
-pythonpath = ["."]
 
 [build-system]
-requires = ["uv_build>=0.12.2,<0.13.0"]
-build-backend = "uv_build"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.uv]
-package = false
-
-[tool.uv.sources]
-bs-roformer-infer = { git = "https://github.com/openmirlab/bs-roformer-infer.git" }
-melband-roformer-infer = { git = "https://github.com/openmirlab/melband-roformer-infer.git" }
+[tool.hatch.build.targets.wheel]
+packages = ["src"]

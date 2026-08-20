@@ -1,19 +1,20 @@
 """YouTube Audio Crawler and Extraction Module.
 
-Extracted from audio-prepare-pipeline ingestion logic.
+Extracted from audio-prepare-pipeline ingestion logic with robust anti-bot & 403 fallback handling.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import subprocess
 import sys
 import uuid
 import wave
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from src.utils.AudioClass import (
     DEFAULT_SAMPLE_RATE,
@@ -43,24 +44,22 @@ def probe_wav(path: Path) -> tuple[int, float, int]:
 
 
 class YtCrawler:
-    """Crawls YouTube audio using yt-dlp and normalizes audio output using ffmpeg.
-
-    Default output is WAV, 44,100 Hz, mono (1 channel).
-    """
+    """Download and normalize audio from YouTube links into standardized WAV."""
 
     def __init__(
         self,
-        output_dir: str | Path = ".data/yt_crawler/downloads",
-        work_dir: str | Path = ".data/yt_crawler/work",
+        output_dir: str | Path = "audio_crawl",
+        work_dir: str | Path = "temp",
         audio_format: str = "wav",
         sample_rate: int = DEFAULT_SAMPLE_RATE,
-        channels: int = 1,
+        channels: int = 2,
         retries: int = 3,
         yt_dlp_bin: Optional[str] = None,
         ffmpeg_bin: Optional[str] = None,
         cookies_file: Optional[str] = None,
         cookies_from_browser: Optional[str] = None,
         proxy: Optional[str] = None,
+        extractor_args: Optional[str] = None,
     ) -> None:
         self.output_dir = Path(output_dir)
         self.work_dir = Path(work_dir)
@@ -73,23 +72,20 @@ class YtCrawler:
         self.cookies_file = cookies_file
         self.cookies_from_browser = cookies_from_browser
         self.proxy = proxy
+        self.extractor_args = extractor_args
 
     @classmethod
     def ingest(
         cls,
         link: str,
-        output_dir: str | Path = ".data/yt_crawler/downloads",
-        work_dir: str | Path = ".data/yt_crawler/work",
+        output_dir: str | Path = "audio_crawl",
+        work_dir: str | Path = "temp",
         audio_format: str = "wav",
-        sample_rate: int = DEFAULT_SAMPLE_RATE,
-        channels: int = 1,
+        sample_rate: int = 44100,
+        channels: int = 2,
         **kwargs,
     ) -> Audio:
-        """Class method to directly ingest a YouTube link and return an Audio instance.
-
-        Usage:
-            audio = YoutubeCrawler.ingest("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
-        """
+        """Class method to directly ingest a YouTube link and return an Audio instance."""
         crawler = cls(
             output_dir=output_dir,
             work_dir=work_dir,
@@ -106,7 +102,13 @@ class YtCrawler:
             return [self.yt_dlp_bin]
         return [sys.executable, "-m", "yt_dlp"]
 
-    def build_command(self, url: str, target_work_dir: Path) -> list[str]:
+    def build_command(
+        self, 
+        url: str, 
+        target_work_dir: Path,
+        override_extractor_args: Optional[str] = None,
+        use_browser_cookies: Optional[str] = None
+    ) -> list[str]:
         """Construct the yt-dlp command-line arguments."""
         out_template = str(target_work_dir / "%(id)s.%(ext)s")
         cmd = self._yt_dlp_prefix() + [
@@ -128,52 +130,91 @@ class YtCrawler:
             "--postprocessor-args",
             f"ExtractAudio:-ac {self.channels}",
         ]
+        
+        # Add JS runtimes if node exists
+        node_path = shutil.which("node") or "/home/vsf/.nvm/versions/node/v18.20.8/bin/node"
+        if os.path.exists(node_path):
+            cmd.extend(["--js-runtimes", f"node:{node_path}"])
+            
+        ext_args = override_extractor_args or self.extractor_args
+        if ext_args:
+            cmd.extend(["--extractor-args", ext_args])
+            
         if self.proxy:
             cmd.extend(["--proxy", self.proxy])
-        if self.cookies_file:
+            
+        if self.cookies_file and os.path.exists(self.cookies_file):
             cmd.extend(["--cookies", self.cookies_file])
-        elif self.cookies_from_browser:
-            cmd.extend(["--cookies-from-browser", self.cookies_from_browser])
+        else:
+            browser = use_browser_cookies or self.cookies_from_browser
+            if browser:
+                cmd.extend(["--cookies-from-browser", browser])
+                
         cmd.append(url)
         return cmd
 
     def download(self, url: str) -> Audio:
-        """Download audio from ``url``, convert to target specs, and return an Audio object."""
+        """Download audio from url, convert to target specs with multi-strategy fallback."""
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.work_dir.mkdir(parents=True, exist_ok=True)
 
-        # Isolate each download so leftover files from prior runs cannot be selected.
         session_dir = self.work_dir / f"job-{uuid.uuid4().hex}"
         session_dir.mkdir(parents=True, exist_ok=False)
 
-        try:
-            cmd = self.build_command(url, session_dir)
-            logger.info(f"Running yt-dlp command: {' '.join(cmd)}")
-            completed = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+        # Multi-strategy retry list to handle 403 / anti-bot restrictions
+        strategies = [
+            {"extractor_args": "youtube:player_client=android,web", "browser": self.cookies_from_browser},
+            {"extractor_args": "youtube:player_client=web,android,ios", "browser": self.cookies_from_browser},
+            {"extractor_args": "youtube:player_client=android_vr,web", "browser": self.cookies_from_browser},
+        ]
+        
+        # If firefox or chrome available, add as fallback
+        if shutil.which("firefox"):
+            strategies.append({"extractor_args": "youtube:player_client=web,android", "browser": "firefox"})
 
-            if completed.returncode != 0:
-                detail = (completed.stderr or completed.stdout or "").strip()
-                raise DownloadError(
-                    f"yt-dlp failed (exit code {completed.returncode}): {detail[:1000] or 'No error output'}"
+        last_error = ""
+        success = False
+
+        try:
+            for i, strat in enumerate(strategies):
+                cmd = self.build_command(
+                    url, 
+                    session_dir, 
+                    override_extractor_args=strat["extractor_args"],
+                    use_browser_cookies=strat["browser"]
                 )
+                logger.info(f"Running yt-dlp strategy {i+1}: {' '.join(cmd)}")
+                
+                completed = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+
+                if completed.returncode == 0:
+                    success = True
+                    break
+                else:
+                    detail = (completed.stderr or completed.stdout or "").strip()
+                    last_error = detail
+                    logger.warning(f"Strategy {i+1} failed: {detail[:200]}")
+                    
+            if not success:
+                raise DownloadError(f"Tải video thất bại: {last_error[:800] or 'Unknown error'}")
 
             info_paths = sorted(
                 session_dir.glob("*.info.json"),
                 key=lambda p: p.stat().st_mtime,
             )
             if not info_paths:
-                raise DownloadError("yt-dlp completed but no *.info.json file was generated.")
+                raise DownloadError("yt-dlp hoàn thành nhưng không tìm thấy metadata *.info.json.")
 
             info_file = info_paths[-1]
             try:
                 info = json.loads(info_file.read_text(encoding="utf-8"))
             except Exception as err:
-                raise DownloadError(f"Failed to parse yt-dlp metadata JSON: {err}") from err
+                raise DownloadError(f"Lỗi parse JSON metadata: {err}") from err
 
             source_id = str(info.get("id") or info_file.name.removesuffix(".info.json"))
             title = info.get("title")
@@ -191,7 +232,7 @@ class YtCrawler:
 
             if not audio_candidates:
                 raise DownloadError(
-                    f"yt-dlp completed but no audio file found for source_id={source_id}"
+                    f"yt-dlp hoàn thành nhưng không tìm thấy file audio cho source_id={source_id}"
                 )
 
             preferred = [
@@ -203,8 +244,8 @@ class YtCrawler:
             # Construct output filename: <sanitized_title>__<source_id>.<format>
             sanitized_title = _sanitize_filename_component(title) if title else ""
             if sanitized_title:
-                if len(sanitized_title) > 100:
-                    sanitized_title = sanitized_title[:100].rstrip("._")
+                if len(sanitized_title) > 80:
+                    sanitized_title = sanitized_title[:80].rstrip("._")
                 file_stem = f"{sanitized_title}__{source_id}"
             else:
                 file_stem = source_id
@@ -290,7 +331,7 @@ class YtCrawler:
 
 
 def _native_sample_rate(src_audio: Path, info: dict) -> Optional[int]:
-    """Best-effort original rate: pre-normalize WAV, else yt-dlp ``asr``."""
+    """Best-effort original rate: pre-normalize WAV, else yt-dlp asr."""
     if src_audio.suffix.lower() == ".wav":
         try:
             rate, _, _ = probe_wav(src_audio)

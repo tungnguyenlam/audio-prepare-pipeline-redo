@@ -42,6 +42,9 @@ def _probe_wav(path: Path) -> tuple[int, float, int]:
     return rate, duration, channels
 
 
+probe_wav = _probe_wav
+
+
 def _sidecar_path(audio_path: Path) -> Path:
     """Return the JSON sidecar path sharing the audio file's stem."""
     return Path(audio_path).with_suffix(".json")

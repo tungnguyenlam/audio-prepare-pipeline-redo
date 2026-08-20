@@ -1,22 +1,15 @@
-"""Speaker diarization interfaces, schemas, and backends."""
+"""Speaker Diarization module (Stage 4 in TTS Data Pipeline)."""
 
-from src.diarization.BaseDiarizer import BaseDiarizer
-from src.diarization.PyannoteDiarizer import PyannoteDiarizer
-from src.diarization.SortformerDiarizer import SortformerDiarizer
-
-from src.diarization.schemas import (
-    DiarizationModelInfo,
-    DiarizationResult,
-    Speaker,
-    SpeakerTurn,
-)
+from src.diarization.base import DiarizationResult, SpeakerStats, SpeakerTurn
+from src.diarization.clustering_diarizer import OfflineClusteringDiarizer
+from src.diarization.manager import DiarizationManager
+from src.diarization.pyannote_diarizer import PyannoteDiarizer
 
 __all__ = [
-    "BaseDiarizer",
-    "DiarizationModelInfo",
-    "DiarizationResult",
+    "DiarizationManager",
     "PyannoteDiarizer",
-    "Speaker",
+    "OfflineClusteringDiarizer",
     "SpeakerTurn",
-    "SortformerDiarizer",
+    "SpeakerStats",
+    "DiarizationResult",
 ]

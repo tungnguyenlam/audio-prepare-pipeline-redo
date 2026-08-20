@@ -1,4 +1,0 @@
-# Keep NeMo isolated from the primary uv environment: its shared dependency
-# constraints otherwise alter the existing Pyannote/separation stack.
-huggingface-hub==0.36.2
-nemo-toolkit[asr]==2.7.3

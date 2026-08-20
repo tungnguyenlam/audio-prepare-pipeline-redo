@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SonicStudio • Audio Processing Pipeline</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=10.0">
+    <!-- Chart.js for High-Fidelity Time-Series Benchmark Charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <!-- Background Glow Elements -->
+    <div class="glow-sphere glow-1"></div>
+    <div class="glow-sphere glow-2"></div>
+    
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="brand-group">
+                <div class="brand-icon">
+                    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M2 10v3"></path>
+                        <path d="M6 6v11"></path>
+                        <path d="M10 3v18"></path>
+                        <path d="M14 8v7"></path>
+                        <path d="M18 5v13"></path>
+                        <path d="M22 10v4"></path>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="brand-title">SonicStudio <span class="badge-tag">v0.1</span></h1>
+                    <p class="brand-subtitle">YouTube Audio Crawler & Preprocessing Pipeline for TTS / ASR</p>
+                </div>
+            </div>
+
+            <div class="header-right">
+                <div class="header-stats" id="headerStats">
+                    <div class="stat-pill">
+                        <span class="stat-label">Tổng File</span>
+                        <span class="stat-value" id="statTotalFiles">0</span>
+                    </div>
+                    <div class="stat-pill">
+                        <span class="stat-label">Thời Lượng</span>
+                        <span class="stat-value" id="statTotalDuration">00:00</span>
+                    </div>
+                    <div class="stat-pill">
+                        <span class="stat-label">Dung Lượng</span>
+                        <span class="stat-value" id="statTotalSize">0 MB</span>
+                    </div>
+                </div>
+
+                <!-- Theme Toggle Button (Light/Dark Mode) -->
+                <button id="themeToggleBtn" class="btn-theme-toggle" title="Chuyển chế độ Sáng / Tối">
+                    <!-- Sun Icon (shown in Dark mode) -->
+                    <svg class="icon-sun" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                    <!-- Moon Icon (shown in Light mode) -->
+                    <svg class="icon-moon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- Pipeline Navigation Tabs (7 Modules arranged according to pipeline stages) -->
+        <nav class="tabs-navigation">
+            <button class="tab-btn active" data-tab="crawler">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span>1. Crawl YouTube</span>
+                <span class="tab-tag">src/crawler</span>
+            </button>
+
+            <button class="tab-btn" data-tab="separation">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <path d="M8 12h8M12 8v8"></path>
+                </svg>
+                <span>2. Source Separation</span>
+                <span class="tab-tag">src/separation</span>
+            </button>
+
+            <button class="tab-btn" data-tab="benchmark">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 20V10M12 20V4M6 20v-6"></path>
+                </svg>
+                <span>3. Separation Benchmark</span>
+                <span class="tab-tag">src/benchmark</span>
+            </button>
+
+            <button class="tab-btn" data-tab="diarization">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="9" cy="7" r="4"></circle>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                </svg>
+                <span>4. Diarization</span>
+                <span class="tab-tag">src/diarization</span>
+            </button>
+
+            <button class="tab-btn" data-tab="alignment">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                <span>5. Word Alignment</span>
+                <span class="tab-tag">src/alignment</span>
+            </button>
+
+            <button class="tab-btn" data-tab="chunking">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="6" cy="6" r="3"></circle>
+                    <circle cx="6" cy="18" r="3"></circle>
+                    <line x1="20" y1="4" x2="8.12" y2="15.88"></line>
+                    <line x1="14.47" y1="14.48" x2="20" y2="20"></line>
+                    <line x1="8.12" y1="8.12" x2="12" y2="12"></line>
+                </svg>
+                <span>6. Smart Chunking</span>
+                <span class="tab-tag">src/chunking</span>
+            </button>
+
+            <button class="tab-btn" data-tab="denoise">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                </svg>
+                <span>7. Denoise & Enhance</span>
+                <span class="tab-tag">src/denoise</span>
+            </button>
+        </nav>
+
+        <!-- Tab Contents Area -->
+        <main class="tab-content-area">
+            <!-- ====================================================================
+                 STAGE 1: CRAWLER (src/crawler)
+                 ==================================================================== -->
+            <div id="tab-crawler" class="tab-pane active">
+                <section class="card crawl-card">
+                    <div class="card-header">
+                        <div class="card-title-group">
+                            <span class="icon-circle">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="7 10 12 15 17 10"></polyline>
+                                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
+                            </span>
+                            <div>
+                                <h2 class="card-title">Stage 1: Crawl Audio từ YouTube (`src/crawler`)</h2>
+                                <p class="card-desc">Nhập đường dẫn video/shorts để tự động trích xuất sang chuẩn WAV PCM 16-bit</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <form id="crawlForm" class="crawl-form">
+                        <div class="input-wrapper">
+                            <div class="input-icon">
+                                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                                </svg>
+                            </div>
+                            <input 
+                                type="text" 
+                                id="youtubeUrl" 
+                                class="text-input" 
+                                placeholder="Dán đường dẫn YouTube (ví dụ: https://www.youtube.com/watch?v=... hoặc youtu.be/...)"
+                                required
+                                autocomplete="off"
+                            >
+                            <div class="input-actions">
+                                <button type="button" id="pasteBtn" class="btn-icon" title="Dán từ Clipboard">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                                        <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+                                    </svg>
+                                    <span>Paste</span>
+                                </button>
+                                <button type="button" id="clearInputBtn" class="btn-icon hidden" title="Xóa">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Config Settings Row -->
+                        <div class="config-row">
+                            <div class="config-item">
+                                <label class="config-label" for="sampleRateSelect">Tần số mẫu (Sample Rate)</label>
+                                <select id="sampleRateSelect" class="custom-select">
+                                    <option value="16000">16,000 Hz (Khuyên dùng TTS / ASR)</option>
+                                    <option value="24000">24,000 Hz (TTS High-Fidelity)</option>
+                                    <option value="44100" selected>44,100 Hz (Khuyên dùng Source Separation)</option>
+                                    <option value="48000">48,000 Hz (Studio Broadcast)</option>
+                                </select>
+                            </div>
+
+                            <div class="config-item">
+                                <label class="config-label" for="channelSelect">Kênh âm thanh (Channel)</label>
+                                <select id="channelSelect" class="custom-select">
+                                    <option value="true">Mono (1 kênh - Tiêu chuẩn Speech)</option>
+                                    <option value="false" selected>Stereo (2 kênh - Khuyên dùng Source Separation)</option>
+                                </select>
+                            </div>
+
+                            <div class="config-item">
+                                <label class="config-label" for="bypassSelect">Chống 403 / Cookies</label>
+                                <select id="bypassSelect" class="custom-select">
+                                    <option value="" selected>Auto (Multi-Strategy Fallback)</option>
+                                    <option value="firefox">Firefox Browser Session</option>
+                                    <option value="chrome">Chrome Browser Session</option>
+                                </select>
+                            </div>
+
+                            <div class="config-submit">
+                                <button type="submit" id="submitCrawlBtn" class="btn-primary">
+                                    <span class="btn-text">
+                                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5">
+                                            <polyline points="20 6 9 17 4 12"></polyline>
+                                        </svg>
+                                        Tải & Trích Xuất .WAV
+                                    </span>
+                                    <div class="btn-spinner hidden"></div>
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+
+                    <!-- Active Progress Box -->
+                    <div id="progressBox" class="progress-box hidden">
+                        <div class="progress-header">
+                            <div class="progress-spin"></div>
+                            <div>
+                                <div class="progress-title">Đang kết nối & tải dữ liệu từ YouTube...</div>
+                                <div class="progress-subtitle">yt-dlp đang lấy audio stream và ffmpeg đang convert sang chuẩn PCM 16-bit WAV</div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Audio Library Section -->
+                <section class="card library-card">
+                    <div class="card-header library-header">
+                        <div class="card-title-group">
+                            <span class="icon-circle icon-library">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M9 18V5l12-2v13"></path>
+                                    <circle cx="6" cy="18" r="3"></circle>
+                                    <circle cx="18" cy="16" r="3"></circle>
+                                </svg>
+                            </span>
+                            <div>
+                                <h2 class="card-title">Thư Viện Audio Crawled (`audio_crawl/`)</h2>
+                                <p class="card-desc">Danh sách các file âm thanh đã tải và đồng bộ trên ổ cứng</p>
+                            </div>
+                        </div>
+
+                        <div class="library-toolbar">
+                            <div class="search-box">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="11" cy="11" r="8"></circle>
+                                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                                </svg>
+                                <input type="text" id="searchInput" placeholder="Tìm theo tên video hoặc tác giả...">
+                            </div>
+                            <button id="refreshBtn" class="btn-secondary" title="Làm mới danh sách">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="23 4 23 10 17 10"></polyline>
+                                    <polyline points="1 20 1 14 7 14"></polyline>
+                                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                                </svg>
+                                <span>Làm mới</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Audio List Container -->
+                    <div id="audioListContainer" class="audio-list">
+                        <!-- Dynamic audio cards injected via JS -->
+                    </div>
+
+                    <!-- Empty State -->
+                    <div id="emptyState" class="empty-state hidden">
+                        <div class="empty-icon">
+                            <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                            </svg>
+                        </div>
+                        <h3>Chưa có audio nào trong `audio_crawl/`</h3>
+                        <p>Hãy nhập một đường dẫn YouTube ở trên để bắt đầu crawl dữ liệu âm thanh đầu tiên.</p>
+                    </div>
+                </section>
+            </div>
+
+            <!-- ====================================================================
+                 STAGE 2: SOURCE SEPARATION (src/separation)
+                 ==================================================================== -->
+            <div id="tab-separation" class="tab-pane">
+                <section class="card">
+                    <div class="card-header">
+                        <div class="card-title-group">
+                            <span class="icon-circle icon-separation">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <path d="M8 12h8M12 8v8"></path>
+                                </svg>
+                            </span>
+                            <div>
+                                <h2 class="card-title">Stage 2: Source Separation (`src/separation`)</h2>
+                                <p class="card-desc">Tách vocal độc lập khỏi nhạc nền (BGM) bằng HT Demucs hoặc Mel-RoFormer</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <form id="separationForm" class="separation-form">
+                        <!-- Input Selection Row -->
+                        <div class="separation-input-grid">
+                            <div class="config-item" style="flex: 1;">
+                                <label class="config-label" for="separationInputSelect">
+                                    <span>Chọn Audio Từ Thư Viện</span>
+                                </label>
+                                <select id="separationInputSelect" class="custom-select" required>
+                                    <option value="">Đang tải thư viện audio…</option>
+                                </select>
+                            </div>
+
+                            <div class="upload-inline-container">
+                                <label class="config-label">Hoặc tải file từ máy tính (.wav, .mp3, .flac, .m4a)</label>
+                                <input type="file" id="directAudioUpload" accept="audio/*" class="hidden">
+                                <button type="button" id="uploadAudioBtn" class="btn-secondary upload-btn-trigger">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                        <polyline points="17 8 12 3 7 8"></polyline>
+                                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                                    </svg>
+                                    <span>Upload Tệp Audio</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Model Selection Area -->
+                        <div class="model-selection-box">
+                            <label class="config-label">Lựa chọn mô hình tách nguồn (Chạy độc lập hoặc Cascade 2-Pass tối ưu):</label>
+                            <div class="model-cards-grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));">
+                                <!-- 1. HT Demucs -->
+                                <label class="model-select-card" for="model_htdemucs">
+                                    <input type="checkbox" id="model_htdemucs" name="separationModel" value="htdemucs" checked>
+                                    <div class="card-inner">
+                                        <div class="card-top">
+                                            <span class="model-badge badge-ht">⚡ HT Demucs</span>
+                                            <span class="status-chip" id="htdemucsStatus">Đang kiểm tra…</span>
+                                        </div>
+                                        <div class="model-title">HT Demucs (v4)</div>
+                                        <div class="model-desc">Trích xuất Vocal 1-Pass tốc độ cao, giữ dày âm sắc người nói.</div>
+                                    </div>
+                                </label>
+
+                                <!-- 2. Mel-Band RoFormer -->
+                                <label class="model-select-card" for="model_mel_roformer">
+                                    <input type="checkbox" id="model_mel_roformer" name="separationModel" value="mel_roformer">
+                                    <div class="card-inner">
+                                        <div class="card-top">
+                                            <span class="model-badge badge-roformer">💎 Mel-RoFormer</span>
+                                            <span class="status-chip" id="melRoformerStatus">Đang kiểm tra…</span>
+                                        </div>
+                                        <div class="model-title">Mel-Band RoFormer</div>
+                                        <div class="model-desc">Mô hình Transformer SOTA gọt sạch triệt để tạp âm và nhạc nền BGM.</div>
+                                    </div>
+                                </label>
+
+                                <!-- 3. DeepFilterNet3 -->
+                                <label class="model-select-card" for="model_deepfilternet">
+                                    <input type="checkbox" id="model_deepfilternet" name="separationModel" value="deepfilternet">
+                                    <div class="card-inner">
+                                        <div class="card-top">
+                                            <span class="model-badge badge-df">🛡️ DeepFilterNet3</span>
+                                            <span class="status-chip" id="deepfilternetStatus">Đang kiểm tra…</span>
+                                        </div>
+                                        <div class="model-title">DeepFilterNet (v3)</div>
+                                        <div class="model-desc">Lọc tạp âm môi trường, khử ồn phòng & tăng cường độ trong trẻo cho giọng nói.</div>
+                                    </div>
+                                </label>
+
+                                <!-- 3. Cascade: HT -> Mel -->
+                                <label class="model-select-card" for="model_ht_then_mel">
+                                    <input type="checkbox" id="model_ht_then_mel" name="separationModel" value="ht_then_mel">
+                                    <div class="card-inner">
+                                        <div class="card-top">
+                                            <span class="model-badge badge-cascade">🔄 HT ➔ Mel</span>
+                                            <span class="status-chip" id="htThenMelStatus">Sẵn sàng</span>
+                                        </div>
+                                        <div class="model-title">HT Demucs ➔ Mel-RoFormer</div>
+                                        <div class="model-desc">Cascade 2-Pass: Tự dùng kết quả HT Demucs có sẵn rồi lọc sâu bằng Mel-RoFormer.</div>
+                                    </div>
+                                </label>
+
+                                <!-- 4. Cascade: Mel -> HT -->
+                                <label class="model-select-card" for="model_mel_then_ht">
+                                    <input type="checkbox" id="model_mel_then_ht" name="separationModel" value="mel_then_ht">
+                                    <div class="card-inner">
+                                        <div class="card-top">
+                                            <span class="model-badge badge-cascade">🔁 Mel ➔ HT</span>
+                                            <span class="status-chip" id="melThenHtStatus">Sẵn sàng</span>
+                                        </div>
+                                        <div class="model-title">Mel-RoFormer ➔ HT Demucs</div>
+                                        <div class="model-desc">Cascade 2-Pass: Tự dùng kết quả Mel-RoFormer có sẵn rồi tinh chỉnh bằng HT Demucs.</div>
+                                    </div>
+                                </label>
+                            </div>
+
+                            <!-- DeepFilterNet Advanced Denoising Controls -->
+                            <div id="deepfilterConfigBox" class="deepfilter-config-box">
+                                <div class="df-config-header">
+                                    <div class="df-config-header-left">
+                                        <span class="df-config-icon">🛡️</span>
+                                        <div>
+                                            <span class="df-config-title">Cấu Hình Mức Lọc Tạp Âm DeepFilterNet3</span>
+                                            <span class="df-config-subtitle">Tùy chỉnh ngưỡng suy hao nhiễu (Attenuation Limit) và bộ lọc tần số</span>
+                                        </div>
+                                    </div>
+                                    <span class="df-config-badge">DeepFilterNet3 Config</span>
+                                </div>
+                                
+                                <div class="df-config-grid">
+                                    <!-- 1. Attenuation Slider & Presets -->
+                                    <div class="df-config-col">
+                                        <div class="df-slider-header">
+                                            <label for="dfAttenSlider" class="df-label">
+                                                <span>Mức Giới Hạn Suy Hao Nhiễu:</span>
+                                                <strong id="dfAttenVal" class="df-val-badge">⚡ Tối đa (Max 100 dB)</strong>
+                                            </label>
+                                        </div>
+                                        <div class="range-wrapper">
+                                            <input type="range" id="dfAttenSlider" min="6" max="100" step="2" value="100" class="df-range-slider" oninput="updateDFAttenDisplay(this.value)">
+                                            <div class="range-ticks">
+                                                <span>6 dB (Nhẹ)</span>
+                                                <span>20 dB</span>
+                                                <span>40 dB</span>
+                                                <span>60 dB</span>
+                                                <span>100 dB (Max)</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="df-presets-row">
+                                            <button type="button" class="df-preset-btn" onclick="setDFAttenPreset(12)">🌱 Nhẹ (12 dB)</button>
+                                            <button type="button" class="df-preset-btn" onclick="setDFAttenPreset(24)">⚖️ Vừa (24 dB)</button>
+                                            <button type="button" class="df-preset-btn" onclick="setDFAttenPreset(40)">🔥 Mạnh (40 dB)</button>
+                                            <button type="button" class="df-preset-btn active" onclick="setDFAttenPreset(100)">⚡ Tối đa (Max)</button>
+                                        </div>
+                                        <div class="df-hint">💡 <em>Mức 100 dB (Max) triệt tiêu toàn bộ tạp âm nền; mức 12-24 dB giữ độ dày âm thanh và tiếng thở tự nhiên.</em></div>
+                                    </div>
+
+                                    <!-- 2. Post-Filter Toggle -->
+                                    <div class="df-config-col df-config-side">
+                                        <label class="df-label">Bộ Lọc Hậu Kỳ (Post-Filter):</label>
+                                        <label class="df-switch-label">
+                                            <input type="checkbox" id="dfPostFilter">
+                                            <span class="df-switch-track"></span>
+                                            <span class="df-switch-text">Bật Post-Filter</span>
+                                        </label>
+                                        <div class="df-hint" style="margin-top: 8px;">Tăng cường lọc sàn nhiễu và tần số cao (nên bật nếu audio có tiếng rít micro).</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="separation-submit-bar">
+                            <p class="separation-note">
+                                💡 <em>Chỉ trích xuất và lưu trữ stem Vocal sạch để chuyển tiếp sang Stage 3 (tự động loại bỏ accompaniment để tiết kiệm dung lượng).</em>
+                            </p>
+                            <button id="runSeparationBtn" class="btn-primary btn-run-separation" type="submit">
+                                <span class="btn-text">
+                                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <path d="M10 8l6 4-6 4V8z" fill="currentColor"></path>
+                                    </svg>
+                                    Bắt Đầu Tách Vocal
+                                </span>
+                                <span class="btn-spinner hidden"></span>
+                            </button>
+                        </div>
+                    </form>
+
+                    <!-- Active Separation Progress -->
+                    <div id="separationProgress" class="progress-box hidden">
+                        <div class="progress-header">
+                            <div class="progress-spin"></div>
+                            <div>
+                                <div class="progress-title" id="sepProgressTitle">Đang chạy Source Separation trên GPU...</div>
+                                <div class="progress-subtitle">Thời gian đã chạy: <strong id="sepProgressTimer" class="timer-badge">00:00</strong> • Đang xử lý tách stem vocal chất lượng cao</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Separation Results Container -->
+                    <div id="separationResults" class="separation-results hidden" aria-live="polite">
+                        <!-- Injected dynamically by app.js -->
+                    </div>
+                </section>
+
+                <!-- Separation History Section -->
+                <section class="card history-card">
+                    <div class="card-header">
+                        <div class="card-title-group">
+                            <span class="icon-circle icon-library">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <polyline points="12 6 12 12 16 14"></polyline>
+                                </svg>
+                            </span>
+                            <div>
+                                <h2 class="card-title">Lịch Sử Tách Nguồn (`processed_audio/`)</h2>
+                                <p class="card-desc">Các phiên tách vocal đã lưu trên máy chủ, sẵn sàng nghe thử hoặc tải về</p>
+                            </div>
+                        </div>
+                        <button id="refreshHistoryBtn" class="btn-secondary" title="Làm mới lịch sử">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="23 4 23 10 17 10"></polyline>
+                                <polyline points="1 20 1 14 7 14"></polyline>
+                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                            </svg>
+                            <span>Làm mới</span>
+                        </button>
+                    </div>
+
+                    <div id="separationHistoryContainer" class="history-list">
+                        <!-- Injected dynamically by app.js -->
+                    </div>
+                </section>
+            </div>
+
+            <!-- ====================================================================
+                 STAGE 3: SEPARATION BENCHMARK (src/benchmark)
+                 ==================================================================== -->
+            <div id="tab-benchmark" class="tab-pane">
+                <section class="card">
+                    <div class="card-header">
+                        <div class="card-title-group">
+                            <span class="icon-circle icon-benchmark">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M18 20V10M12 20V4M6 20v-6"></path>
+                                </svg>
+                            </span>
+                            <div>
+                                <h2 class="card-title">Stage 3: Separation Benchmark (`src/benchmark`)</h2>
+                                <p class="card-desc">Đánh giá & So sánh đối đầu giữa HT Demucs và Mel-RoFormer bằng 2 thang đo: Speaker Similarity và DNSMOS P.835</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <form id="benchmarkForm" class="separation-form">
+                        <div class="config-item" style="margin-bottom: 16px;">
+                            <label class="config-label" for="benchmarkInputSelect">
+                                <span>Chọn Bản Tách Vocal Từ Tab 2 (processed_audio/) Để Chấm Điểm:</span>
+                            </label>
+                            <select id="benchmarkInputSelect" class="custom-select" required>
+                                <option value="">Đang tìm các bản audio đã tách từ Tab 2…</option>
+                            </select>
+                            <div id="benchmarkSourceMeta" class="source-status-badge hidden" style="margin-top: 8px; font-size: 0.82rem; color: var(--text-dim);"></div>
+                        </div>
+
+                        <div class="separation-submit-bar">
+                            <p class="separation-note">
+                                💡 <em>Chấm điểm trực tiếp trên các stem Vocal đã bóc tách từ Tab 2, không cần chạy lại mô hình (trả kết quả so sánh ngay lập tức).</em>
+                            </p>
+                            <button id="runBenchmarkBtn" class="btn-primary btn-run-separation" type="submit">
+                                <span class="btn-text">
+                                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M18 20V10M12 20V4M6 20v-6"></path>
+                                    </svg>
+                                    Chấm Điểm Benchmark Ngay
+                                </span>
+                                <span class="btn-spinner hidden"></span>
+                            </button>
+                        </div>
+                    </form>
+
+                    <!-- Benchmark Active Progress -->
+                    <div id="benchmarkProgress" class="progress-box hidden">
+                        <div class="progress-header">
+                            <div class="progress-spin"></div>
+                            <div>
+                                <div class="progress-title" id="benchProgressTitle">Đang chạy Benchmark So Sánh trên GPU...</div>
+                                <div class="progress-subtitle">Thời gian đã chạy: <strong id="benchProgressTimer" class="timer-badge">00:00</strong> • Đang đo tốc độ và tính toán chỉ số chất lượng</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Benchmark Results Container -->
+                    <div id="benchmarkResults" class="benchmark-results-container hidden" aria-live="polite">
+                        <!-- Injected dynamically by app.js -->
+                    </div>
+                </section>
+
+                <!-- Benchmark History Section -->
+                <section class="card history-card">
+                    <div class="card-header">
+                        <div class="card-title-group">
+                            <span class="icon-circle icon-library">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                    <polyline points="14 2 14 8 20 8"></polyline>
+                                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                                    <polyline points="10 9 9 9 8 9"></polyline>
+                                </svg>
+                            </span>
+                            <div>
+                                <h2 class="card-title">Bảng Xếp Hạng & Lịch Sử Benchmark (`benchmark_results/`)</h2>
+                                <p class="card-desc">Bảng tổng kết các lần đánh giá đối đầu trước đây</p>
+                            </div>
+                        </div>
+                        <button id="refreshBenchmarkHistoryBtn" class="btn-secondary" title="Làm mới lịch sử benchmark">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="23 4 23 10 17 10"></polyline>
+                                <polyline points="1 20 1 14 7 14"></polyline>
+                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                            </svg>
+                            <span>Làm mới</span>
+                        </button>
+                    </div>
+
+                    <div id="benchmarkHistoryContainer" class="history-list">
+                        <!-- Injected dynamically by app.js -->
+                    </div>
+                </section>
+            </div>
+
+            <!-- ====================================================================
+                 STAGE 4: DIARIZATION (src/diarization)
+                 ==================================================================== -->
+            <div id="tab-diarization" class="tab-pane">
+                <section class="card">
+                    <div class="card-header">
+                        <div class="card-title-group">
+                            <span class="icon-circle icon-diarization">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                    <circle cx="9" cy="7" r="4"></circle>
+                                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                                </svg>
+                            </span>
+                            <div>
+                                <h2 class="card-title">Stage 4: Speaker Diarization (`src/diarization`)</h2>
+                                <p class="card-desc">Tách và phân loại từng người nói, trích xuất riêng biệt từng giọng và lọc bỏ triệt để đoạn overlap (nói đè)</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <form id="diarizationForm" class="diarization-form">
+                        <!-- 1. Source Selection: Vocal Stem vs Crawl Audio -->
+                        <div class="diarization-source-box">
+                            <div class="source-toggle-group">
+                                <label class="source-radio-label">
+                                    <input type="radio" name="diarSourceType" value="processed" checked onchange="toggleDiarSourceType(this.value)">
+                                    <span class="source-radio-custom"></span>
+                                    <span>🎙️ Dùng Vocal Đã Tách (Stage 2 - Khuyên dùng)</span>
+                                </label>
+                                <label class="source-radio-label">
+                                    <input type="radio" name="diarSourceType" value="crawl" onchange="toggleDiarSourceType(this.value)">
+                                    <span class="source-radio-custom"></span>
+                                    <span>📁 Dùng File Crawl Gốc (Stage 1)</span>
+                                </label>
+                            </div>
+
+                            <!-- Dropdown 1: Processed Vocals -->
+                            <div id="diarProcessedSourceContainer" class="config-item" style="margin-top: 14px;">
+                                <label class="config-label" for="diarVocalSelect">
+                                    <span>Chọn Bản Tách Vocal Cần Phân Đoạn:</span>
+                                    <button type="button" class="btn-refresh-inline" onclick="loadDiarizationSources()" title="Làm mới danh sách">🔄 Làm mới</button>
+                                </label>
+                                <select id="diarVocalSelect" class="custom-select" required>
+                                    <option value="">Đang tải danh sách vocal...</option>
+                                </select>
+                            </div>
+
+                            <!-- Dropdown 2: Crawled Audios -->
+                            <div id="diarCrawlSourceContainer" class="config-item hidden" style="margin-top: 14px;">
+                                <label class="config-label" for="diarCrawlSelect">
+                                    <span>Chọn File Audio Gốc (audio_crawl/):</span>
+                                </label>
+                                <select id="diarCrawlSelect" class="custom-select">
+                                    <option value="">Đang tải thư viện audio...</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- 2. Engine & Parameters Grid -->
+                        <div class="diarization-config-grid">
+                            <!-- Engine Selector Card -->
+                            <div class="diar-engine-card">
+                                <label class="config-label">Mô Hình Diarization:</label>
+                                <div class="engine-options-group">
+                                    <label class="engine-option-label active" id="labelEngineOffline">
+                                        <input type="radio" name="diarEngine" value="offline_clustering" checked onchange="toggleDiarEngine(this.value)">
+                                        <div class="engine-info">
+                                            <div class="engine-name">🚀 SpeechBrain ECAPA-TDNN (Offline SOTA)</div>
+                                            <div class="engine-sub">Chạy offline 100%, không cần token Hugging Face, tốc độ cao.</div>
+                                        </div>
+                                    </label>
+
+                                    <label class="engine-option-label" id="labelEnginePyannote">
+                                        <input type="radio" name="diarEngine" value="pyannote" onchange="toggleDiarEngine(this.value)">
+                                        <div class="engine-info">
+                                            <div class="engine-name">🧠 PyAnnote Audio 3.1 / 4.0 (Neural SOTA)</div>
+                                            <div class="engine-sub">Độ chính xác cao nhất thế giới, hỗ trợ lọc Overlap chính xác (cần HF Token).</div>
+                                        </div>
+                                    </label>
+                                </div>
+
+                                <!-- HF Token Input Container -->
+                                <div id="hfTokenContainer" class="hf-token-box hidden">
+                                    <label class="config-label" for="hfTokenInput">
+                                        <span>Hugging Face Access Token:</span>
+                                        <a href="https://huggingface.co/settings/tokens" target="_blank" class="hf-token-link">Lấy token tại đây ↗</a>
+                                    </label>
+                                    <div class="token-input-wrapper">
+                                        <input type="password" id="hfTokenInput" placeholder="hf_xxxxxxxxxxxxxxxxxxxxxxxxx" class="custom-input">
+                                        <button type="button" class="btn-toggle-token" onclick="toggleTokenVisibility()" title="Hiện/ẩn token">👁️</button>
+                                    </div>
+                                    <div class="df-hint" style="margin-top: 4px;">Token sẽ được lưu an toàn trong trình duyệt của bạn cho các lần chạy sau.</div>
+                                </div>
+                            </div>
+
+                            <!-- Parameters Card -->
+                            <div class="diar-params-card">
+                                <label class="config-label">Tùy Chọn Phân Đoạn & Lọc Trùng Lắp:</label>
+                                
+                                <div class="params-row">
+                                    <div class="param-item">
+                                        <label class="param-label" for="diarNumSpeakers">Số lượng người nói:</label>
+                                        <select id="diarNumSpeakers" class="custom-select param-select">
+                                            <option value="">✨ Tự động nhận diện (Auto)</option>
+                                            <option value="1">1 Người nói (Single Speaker)</option>
+                                            <option value="2">2 Người nói (Đối thoại / Phỏng vấn)</option>
+                                            <option value="3">3 Người nói</option>
+                                            <option value="4">4 Người nói</option>
+                                            <option value="5">5+ Người nói</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="param-item">
+                                        <label class="param-label" for="diarMinDuration">Độ dài tối thiểu 1 câu (s):</label>
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <input type="range" id="diarMinDuration" min="0.3" max="2.0" step="0.1" value="0.5" class="df-range-slider" oninput="document.getElementById('diarMinDurVal').textContent = this.value + 's'">
+                                            <span id="diarMinDurVal" class="df-val-badge">0.5s</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="overlap-toggle-box">
+                                    <label class="df-switch-label">
+                                        <input type="checkbox" id="diarFilterOverlap" checked>
+                                        <span class="df-switch-track"></span>
+                                        <span class="df-switch-text">🛡️ Tự động lọc bỏ các đoạn nói đè (Overlap Rejection)</span>
+                                    </label>
+                                    <div class="df-hint" style="margin-top: 4px; margin-left: 28px;">Đảm bảo 100% dữ liệu TTS của từng Speaker sạch sẽ, không lẫn giọng của người khác.</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="separation-submit-bar" style="margin-top: 18px;">
+                            <p class="separation-note">
+                                💡 <em>Hệ thống sẽ tự động cắt nhỏ từng câu thoại và tạo file âm thanh tổng hợp cho từng Speaker độc lập.</em>
+                            </p>
+                            <button id="runDiarizationBtn" class="btn-primary btn-run-separation" type="submit">
+                                <span class="btn-text">
+                                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <path d="M10 8l6 4-6 4V8z" fill="currentColor"></path>
+                                    </svg>
+                                    Bắt Đầu Phân Đoạn Diarization
+                                </span>
+                                <span class="btn-spinner hidden"></span>
+                            </button>
+                        </div>
+                    </form>
+
+                    <!-- Active Progress Box -->
+                    <div id="diarizationProgress" class="progress-box hidden">
+                        <div class="progress-header">
+                            <div class="progress-spin"></div>
+                            <div>
+                                <div class="progress-title">Đang phân đoạn người nói (Speaker Diarization)...</div>
+                                <div class="progress-subtitle">Đang trích xuất đặc trưng giọng nói, phân cụm d-vectors và cắt nhỏ các đoạn hội thoại</div>
+                            </div>
+                            <div id="diarProgressTimer" class="progress-timer">00:00</div>
+                        </div>
+                    </div>
+
+                    <!-- Diarization Results Area -->
+                    <div id="diarizationResults" class="diarization-results-wrapper hidden">
+                        <!-- Dynamic content injected via JS -->
+                    </div>
+                </section>
+
+                <!-- Diarization History Section -->
+                <section class="card library-card" style="margin-top: 24px;">
+                    <div class="card-header library-header">
+                        <div class="card-title-group">
+                            <span class="icon-circle icon-library">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 8v4l3 3"></path>
+                                    <circle cx="12" cy="12" r="9"></circle>
+                                </svg>
+                            </span>
+                            <div>
+                                <h2 class="card-title">Lịch Sử Phân Đoạn Diarization (`diarized_audio/`)</h2>
+                                <p class="card-desc">Danh sách các phiên phân cụm người nói và file âm thanh đã trích xuất</p>
+                            </div>
+                        </div>
+                        <button id="refreshDiarHistoryBtn" class="btn-secondary" title="Làm mới lịch sử">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="23 4 23 10 17 10"></polyline>
+                                <polyline points="1 20 1 14 7 14"></polyline>
+                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                            </svg>
+                            <span>Làm mới</span>
+                        </button>
+                    </div>
+
+                    <div id="diarizationHistoryContainer" class="separation-history-list">
+                        <!-- Injected via JS -->
+                    </div>
+                </section>
+            </div>
+
+            <!-- ====================================================================
+                 STAGE 5: ALIGNMENT (src/alignment)
+                 ==================================================================== -->
+            <div id="tab-alignment" class="tab-pane">
+                <section class="card">
+                    <div class="card-header">
+                        <div class="card-title-group">
+                            <span class="icon-circle icon-alignment">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <polyline points="12 6 12 12 16 14"></polyline>
+                                </svg>
+                            </span>
+                            <div>
+                                <h2 class="card-title">Stage 5: Word Alignment & VAD (`src/alignment`)</h2>
+                                <p class="card-desc">Nhận diện giọng nói (ASR) và gióng hàng timestamp chính xác tới từng từ bằng Faster-Whisper Large-v3 + Silero VAD</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <form id="alignmentForm">
+                        <!-- Source Selection Mode -->
+                        <div class="form-group">
+                            <label class="form-label">Chọn Nguồn Âm Thanh Đầu Vào:</label>
+                            <div class="source-type-selector">
+                                <label class="radio-label">
+                                    <input type="radio" name="alignSourceType" value="diarized" checked>
+                                    <span>🎙️ Dùng Giọng Speaker Đã Phân Đoạn (Stage 4 - Khuyên dùng)</span>
+                                </label>
+                                <label class="radio-label">
+                                    <input type="radio" name="alignSourceType" value="processed">
+                                    <span>🎚️ Dùng Bản Tách Vocal (Stage 2)</span>
+                                </label>
+                                <label class="radio-label">
+                                    <input type="radio" name="alignSourceType" value="crawl">
+                                    <span>📁 Dùng File Crawl Gốc (Stage 1)</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Dropdown for Stage 4 Diarized Speaker -->
+                        <div class="form-group" id="alignDiarizedGroup">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                <label class="form-label" style="margin-bottom: 0;">Chọn Giọng Speaker Cần Gióng Hàng Từ:</label>
+                                <button type="button" class="btn-text-action" onclick="loadAlignmentSources()">🔄 Làm mới</button>
+                            </div>
+                            <select id="alignDiarizedSelect" class="form-control">
+                                <option value="">-- Đang tải danh sách giọng Speaker... --</option>
+                            </select>
+                        </div>
+
+                        <!-- Dropdown for Stage 2 Vocal Stem -->
+                        <div class="form-group hidden" id="alignProcessedGroup">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                <label class="form-label" style="margin-bottom: 0;">Chọn Bản Tách Vocal:</label>
+                                <button type="button" class="btn-text-action" onclick="loadAlignmentSources()">🔄 Làm mới</button>
+                            </div>
+                            <select id="alignProcessedSelect" class="form-control">
+                                <option value="">-- Chọn bản tách vocal... --</option>
+                            </select>
+                        </div>
+
+                        <!-- Dropdown for Stage 1 Crawled Audio -->
+                        <div class="form-group hidden" id="alignCrawlGroup">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                <label class="form-label" style="margin-bottom: 0;">Chọn File Từ Thư Viện Crawl:</label>
+                                <button type="button" class="btn-text-action" onclick="loadAlignmentSources()">🔄 Làm mới</button>
+                            </div>
+                            <select id="alignCrawlSelect" class="form-control">
+                                <option value="">-- Chọn file audio crawl... --</option>
+                            </select>
+                        </div>
+
+                        <!-- Model & Parameter Selection Grid -->
+                        <div class="diar-options-grid" style="margin-top: 18px;">
+                            <!-- Model Size -->
+                            <div>
+                                <label class="form-label">Mô Hình Whisper ASR:</label>
+                                <div class="model-selection-cards">
+                                    <label class="model-card active" style="margin-bottom: 8px;">
+                                        <input type="radio" name="alignModelSize" value="large-v3" checked>
+                                        <div class="model-card-content">
+                                            <div class="model-card-title">
+                                                <span>🚀 Faster-Whisper Large-v3</span>
+                                                <span class="badge badge-accent">SOTA Khuyên Dùng</span>
+                                            </div>
+                                            <div class="model-card-desc">Độ chính xác cao nhất thế giới cho Tiếng Việt & Đa ngôn ngữ, GPU CTranslate2 siêu nhanh.</div>
+                                        </div>
+                                    </label>
+                                    <label class="model-card" style="margin-bottom: 8px;">
+                                        <input type="radio" name="alignModelSize" value="large-v2">
+                                        <div class="model-card-content">
+                                            <div class="model-card-title">
+                                                <span>⚡ Faster-Whisper Large-v2</span>
+                                            </div>
+                                            <div class="model-card-desc">Cực kỳ ổn định và chính xác cao cho audio đàm thoại thông thường.</div>
+                                        </div>
+                                    </label>
+                                    <label class="model-card" style="margin-bottom: 8px;">
+                                        <input type="radio" name="alignModelSize" value="medium">
+                                        <div class="model-card-content">
+                                            <div class="model-card-title">
+                                                <span>⚡ Faster-Whisper Medium</span>
+                                                <span class="badge badge-subtle">1.5 GB</span>
+                                            </div>
+                                            <div class="model-card-desc">Cân bằng tốc độ và chất lượng cho GPU tầm trung.</div>
+                                        </div>
+                                    </label>
+                                    <label class="model-card">
+                                        <input type="radio" name="alignModelSize" value="base">
+                                        <div class="model-card-content">
+                                            <div class="model-card-title">
+                                                <span>⚡ Faster-Whisper Base</span>
+                                                <span class="badge badge-accent" style="background: rgba(16, 185, 129, 0.2); color: #34d399; border-color: rgba(52, 211, 153, 0.4);">Đã Sẵn Sàng (145MB)</span>
+                                            </div>
+                                            <div class="model-card-desc">Siêu nhanh, chạy tức thì trong 1 giây, lý tưởng kiểm tra nhanh pipeline.</div>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Language & VAD Settings -->
+                            <div>
+                                <label class="form-label">Ngôn Ngữ & Bộ Lọc VAD:</label>
+                                <div class="form-group">
+                                    <select id="alignLanguage" class="form-control" style="font-weight: 500;">
+                                        <option value="auto">✨ Tự động nhận diện (Auto Detect Language)</option>
+                                        <option value="vi" selected>🇻🇳 Tiếng Việt (Vietnamese)</option>
+                                        <option value="en">🇬🇧 Tiếng Anh (English)</option>
+                                        <option value="ja">🇯🇵 Tiếng Nhật (Japanese)</option>
+                                        <option value="zh">🇨🇳 Tiếng Trung (Chinese)</option>
+                                        <option value="ko">🇰🇷 Tiếng Hàn (Korean)</option>
+                                        <option value="fr">🇫🇷 Tiếng Pháp (French)</option>
+                                        <option value="de">🇩🇪 Tiếng Đức (German)</option>
+                                        <option value="es">🇪🇸 Tiếng Tây Ban Nha (Spanish)</option>
+                                    </select>
+                                </div>
+
+                                <div class="form-group" style="margin-top: 14px;">
+                                    <label class="checkbox-label" style="margin-bottom: 10px;">
+                                        <input type="checkbox" id="alignVadFilter" checked>
+                                        <span>🛡️ <strong>Lọc khoảng lặng bằng Silero VAD</strong> (Loại bỏ triệt để đoạn không có tiếng nói)</span>
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="alignWordTimestamps" checked>
+                                        <span>⏱️ <strong>Trích xuất Timestamp chính xác từng từ</strong> (Word-level timestamps)</span>
+                                    </label>
+                                </div>
+
+                                <div class="form-group" style="margin-top: 14px;">
+                                    <label class="form-label" style="font-size: 0.8rem; color: var(--text-dim);">Gợi ý ngữ cảnh / Từ chuyên ngành (Initial Prompt - Tùy chọn):</label>
+                                    <input type="text" id="alignInitialPrompt" class="form-control" placeholder="Ví dụ: Hoàng Nam Tiến, FPT, AI, chuyển đổi số, Viettel..." style="font-size: 0.82rem;">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-actions" style="margin-top: 24px;">
+                            <button type="submit" id="runAlignmentBtn" class="btn btn-primary" style="padding: 12px 28px; font-size: 0.95rem;">
+                                <span class="btn-text">🚀 Bắt Đầu Word Alignment (Gióng Hàng Từ)</span>
+                                <span class="btn-spinner hidden">
+                                    <svg class="animate-spin" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor">
+                                        <circle cx="12" cy="12" r="10" stroke-width="4" style="opacity: 0.25;"></circle>
+                                        <path d="M4 12a8 8 0 018-8v8H4z" fill="currentColor" style="opacity: 0.75;"></path>
+                                    </svg>
+                                    Đang nhận diện & gióng hàng từng từ...
+                                </span>
+                            </button>
+                        </div>
+                    </form>
+
+                    <!-- Alignment Realtime Progress Box -->
+                    <div id="alignmentProgress" class="progress-box hidden" style="margin-top: 24px; padding: 22px 26px; border-radius: var(--radius-md); background: rgba(15, 23, 42, 0.9); border: 1.5px solid rgba(99, 102, 241, 0.4); box-shadow: 0 8px 30px rgba(0,0,0,0.4);">
+                        <!-- Header & Live Status -->
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <div class="progress-spin" style="width: 24px; height: 24px; border-width: 3px;"></div>
+                                <div>
+                                    <div id="alignProgressStatusText" style="font-weight: 700; font-size: 0.98rem; color: var(--text-main);">Đang khởi động Word Alignment...</div>
+                                    <div id="alignProgressDetailText" style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">Đang nạp mô hình Whisper và phân tích phổ âm thanh...</div>
+                                </div>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <span id="alignProgressSpeedBadge" class="badge" style="background: rgba(16, 185, 129, 0.15); color: #10b981; font-family: var(--font-mono); font-weight: 700;">⚡ 0.0x GPU</span>
+                                <span id="alignProgressPctBadge" class="badge badge-accent" style="font-family: var(--font-mono); font-size: 0.95rem; font-weight: 700; padding: 4px 12px;">0%</span>
+                            </div>
+                        </div>
+
+                        <!-- Progress Bar Track -->
+                        <div class="progress-bar-track" style="width: 100%; height: 12px; background: rgba(255, 255, 255, 0.08); border-radius: 6px; overflow: hidden; position: relative; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);">
+                            <div id="alignProgressBarFill" style="width: 0%; height: 100%; background: linear-gradient(90deg, #6366f1 0%, #06b6d4 100%); border-radius: 6px; transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 0 12px rgba(6, 182, 212, 0.6);"></div>
+                        </div>
+
+                        <!-- 4 Realtime Metrics Grid -->
+                        <div class="align-metrics-grid" style="margin-top: 16px; margin-bottom: 14px; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px;">
+                            <div class="align-metric-card" style="padding: 10px; background: rgba(30, 41, 59, 0.4);">
+                                <div class="align-metric-label">⏱️ Đã Xử Lý</div>
+                                <div id="alignStatAudioTime" class="align-metric-val" style="font-size: 1.05rem;">00:00 / 00:00</div>
+                            </div>
+                            <div class="align-metric-card" style="padding: 10px; background: rgba(30, 41, 59, 0.4);">
+                                <div class="align-metric-label">🔤 Số Từ Đã Gióng</div>
+                                <div id="alignStatWordsCount" class="align-metric-val" style="font-size: 1.05rem; color: #38bdf8;">0 từ</div>
+                            </div>
+                            <div class="align-metric-card" style="padding: 10px; background: rgba(30, 41, 59, 0.4);">
+                                <div class="align-metric-label">⏳ Ước Tính Còn Lại</div>
+                                <div id="alignStatEta" class="align-metric-val" style="font-size: 1.05rem; color: #fbbf24;">~0s</div>
+                            </div>
+                            <div class="align-metric-card" style="padding: 10px; background: rgba(30, 41, 59, 0.4);">
+                                <div class="align-metric-label">⌛ Thời Gian Chạy</div>
+                                <div id="alignProgressTimer" class="align-metric-val" style="font-size: 1.05rem; color: var(--text-main);">00:00</div>
+                            </div>
+                        </div>
+
+                        <!-- Live Recognition Snippet Streamer Box -->
+                        <div id="alignLiveStreamBox" style="background: rgba(0, 0, 0, 0.35); border: 1px dashed rgba(255, 255, 255, 0.12); border-radius: 8px; padding: 10px 14px; font-size: 0.84rem; display: flex; align-items: baseline; gap: 8px;">
+                            <span style="font-size: 0.74rem; font-weight: 700; color: var(--accent-cyan); text-transform: uppercase; letter-spacing: 0.05em; flex-shrink: 0;">🔴 Live Text:</span>
+                            <span id="alignLiveSnippetText" style="color: #e2e8f0; font-style: italic;">Đang chờ dữ liệu nhận diện đầu tiên...</span>
+                        </div>
+                    </div>
+
+                    <!-- Alignment Results Container -->
+                    <div id="alignmentResults" class="hidden" style="margin-top: 28px;"></div>
+                </section>
+
+                <!-- Alignment History -->
+                <section class="card" style="margin-top: 24px;">
+                    <div class="card-header">
+                        <div class="card-title-group">
+                            <span class="icon-circle icon-history">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <polyline points="12 6 12 12 16 14"></polyline>
+                                </svg>
+                            </span>
+                            <div>
+                                <h2 class="card-title">Lịch Sử Gióng Hàng Word Alignment (`aligned_audio/`)</h2>
+                                <p class="card-desc">Danh sách các phiên nhận diện chữ và timestamp từng từ đã trích xuất</p>
+                            </div>
+                        </div>
+                        <button type="button" id="refreshAlignHistoryBtn" class="btn-secondary" style="font-size: 0.78rem; padding: 6px 12px;">
+                            🔄 Làm mới
+                        </button>
+                    </div>
+                    <div id="alignmentHistoryContainer" class="separation-history-list">
+                        <div class="empty-state" style="padding: 24px 0;">
+                            <p>Đang tải lịch sử word alignment...</p>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- ====================================================================
+                 STAGE 6: CHUNKING (src/chunking)
+                 ==================================================================== -->
+            <div id="tab-chunking" class="tab-pane">
+                <section class="card">
+                    <div class="card-header">
+                        <div class="card-title-group">
+                            <span class="icon-circle icon-chunking">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="6" cy="6" r="3"></circle>
+                                    <circle cx="6" cy="18" r="3"></circle>
+                                    <line x1="20" y1="4" x2="8.12" y2="15.88"></line>
+                                    <line x1="14.47" y1="14.48" x2="20" y2="20"></line>
+                                    <line x1="8.12" y1="8.12" x2="12" y2="12"></line>
+                                </svg>
+                            </span>
+                            <div>
+                                <h2 class="card-title">Stage 6: Smart Chunking (`src/chunking`)</h2>
+                                <p class="card-desc">Gom từ thành các đoạn speech 3s &lt; x &lt; 30s chuẩn ranh giới từ, không cắt cụt âm</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="empty-state" style="padding: 36px 0;">
+                        <div class="empty-icon">
+                            <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <circle cx="6" cy="6" r="3"></circle>
+                                <circle cx="6" cy="18" r="3"></circle>
+                                <line x1="20" y1="4" x2="8.12" y2="15.88"></line>
+                            </svg>
+                        </div>
+                        <h3>Module Smart Chunking</h3>
+                        <p>Code module backend đã hoàn thiện tại `src/chunking/smart_chunker.py`.</p>
+                    </div>
+                </section>
+            </div>
+
+            <!-- ====================================================================
+                 STAGE 7: DENOISE & ENHANCE (src/denoise)
+                 ==================================================================== -->
+            <div id="tab-denoise" class="tab-pane">
+                <section class="card">
+                    <div class="card-header">
+                        <div class="card-title-group">
+                            <span class="icon-circle icon-denoise">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                                </svg>
+                            </span>
+                            <div>
+                                <h2 class="card-title">Stage 7: Denoise & Audio Enhancement (`src/denoise`)</h2>
+                                <p class="card-desc">Lọc bỏ tạp âm còn sót lại (reverb, hiss, noise) ở mức chunk nhỏ bằng DeepFilterNet3</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="empty-state" style="padding: 36px 0;">
+                        <div class="empty-icon">
+                            <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                            </svg>
+                        </div>
+                        <h3>Module DeepFilterNet3</h3>
+                        <p>Code module backend đã hoàn thiện tại `src/denoise/deepfilter.py`.</p>
+                    </div>
+                </section>
+            </div>
+        </main>
+
+        <!-- Sticky Floating Custom Audio Player -->
+        <footer id="playerBar" class="player-bar hidden">
+            <div class="player-left">
+                <img id="playerThumb" class="player-thumb" src="" alt="Thumbnail">
+                <div class="player-info">
+                    <div id="playerTitle" class="player-title">Chưa chọn audio</div>
+                    <div id="playerUploader" class="player-uploader">--</div>
+                </div>
+            </div>
+
+            <div class="player-center">
+                <div class="player-controls">
+                    <button id="playerSeekBack" class="player-btn-sub" title="Lùi 5s">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="11 17 6 12 11 7"></polyline>
+                            <polyline points="18 17 13 12 18 7"></polyline>
+                        </svg>
+                    </button>
+                    <button id="playerPlayBtn" class="player-btn-main" title="Play / Pause">
+                        <svg id="playIcon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                        </svg>
+                        <svg id="pauseIcon" class="hidden" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                            <rect x="6" y="4" width="4" height="16"></rect>
+                            <rect x="14" y="4" width="4" height="16"></rect>
+                        </svg>
+                    </button>
+                    <button id="playerSeekFwd" class="player-btn-sub" title="Tiến 5s">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="13 17 18 12 13 7"></polyline>
+                            <polyline points="6 17 11 12 6 7"></polyline>
+                        </svg>
+                    </button>
+                </div>
+                
+                <div class="player-scrubber-wrapper">
+                    <span id="playerCurrentTime" class="time-label">00:00</span>
+                    <div class="scrubber-bar" id="scrubberBar">
+                        <div class="scrubber-fill" id="scrubberFill"></div>
+                        <div class="scrubber-handle" id="scrubberHandle"></div>
+                    </div>
+                    <span id="playerTotalTime" class="time-label">00:00</span>
+                </div>
+            </div>
+
+            <div class="player-right">
+                <div class="volume-group">
+                    <button id="playerMuteBtn" class="btn-icon-sub" title="Mute">
+                        <svg id="volHighIcon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                        </svg>
+                    </button>
+                    <input type="range" id="playerVolume" class="volume-slider" min="0" max="1" step="0.05" value="0.9">
+                </div>
+                <a id="playerDownloadBtn" href="#" download class="btn-icon-sub" title="Tải file .wav">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                </a>
+            </div>
+        </footer>
+
+        <!-- Toast Notifications Container -->
+        <div id="toastContainer" class="toast-container"></div>
+    </div>
+
+    <!-- Hidden HTML5 Audio Element -->
+    <audio id="globalAudio"></audio>
+
+    <script src="app.js?v=10.0"></script>
+</body>
+</html>

@@ -1,21 +1,12 @@
-"""Schemas for the separation golden benchmark."""
+"""Separation Benchmark Subpackage."""
 
-from src.benchmark.separation.mixer import AudioMixer
-from src.benchmark.separation.schemas import (
-    AudioMixResult,
-    BenchmarkDefinition,
-    Difficulty,
-    MixingParameters,
-    MusicCategory,
-    SeparationBenchmarkSample,
-)
+from src.benchmark.separation.dnsmos import DNSMOSEvaluator
+from src.benchmark.separation.speaker_similarity import SpeakerSimilarityEvaluator
+from src.benchmark.separation.runner import SeparationBenchmarkRunner, BENCHMARK_RESULTS_DIR
 
 __all__ = [
-    "AudioMixer",
-    "AudioMixResult",
-    "BenchmarkDefinition",
-    "Difficulty",
-    "MixingParameters",
-    "MusicCategory",
-    "SeparationBenchmarkSample",
+    "DNSMOSEvaluator",
+    "SpeakerSimilarityEvaluator",
+    "SeparationBenchmarkRunner",
+    "BENCHMARK_RESULTS_DIR",
 ]

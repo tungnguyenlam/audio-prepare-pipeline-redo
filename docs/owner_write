@@ -1,0 +1,13 @@
+Thay vì dùng một mô hình lọc "mạnh tay" duy nhất (dễ gây cắt lẹm giọng nói), ta chia quá trình xử lý thành 2 tầng nhẹ nhàng hơn:
+
+Plaintext[Audio Crawl từ YT] ──> [Tầng 1: DeepFilterNet3 (Lọc nhẹ)] ──> [Tầng 2: Adaptive Noise Gate / De-transient] ──> [File đầu ra]
+
+
+Tầng 1: Lọc nhiễu bằng DeepFilterNet3 (Mô hình AI bảo toàn giọng tốt nhất)
+Tại sao chọn DeepFilterNet3? 
+Đây là mô hình mã nguồn mở hiện đại nhất hiện nay cho bài toán Speech Enhancement. Nó nổi tiếng với khả năng bảo tồn đặc trưng giọng nói (High Speech Intelligibility / Naturalness) tốt hơn nhiều so with các mô hình cắt nén sâu như Demucs hay RNNoise.
+Cách cấu hình: Thiết lập tham số attenuation (mức độ triệt nhiễu) ở mức vừa phải (ví dụ: -20dB đến -25dB) thay vì triệt tiêu hoàn toàn (-100dB). Điều này giữ lại trọn vẹn $95\%+$ tần số giọng nói, dù có thể còn sót lại một tiếng cạch nhẹ ở nền.
+
+Tầng 2: Loại bỏ tiếng gõ phím còn sót bằng Transient Removal (Thuật toán DSP)
+
+Tiếng gõ bàn phím/tiếng nhấp chuột có bản chất là Transient Noise (các đỉnh năng lượng tăng đột ngột trong thời gian rất ngắn vài mili giây).Sử dụng thuật toán De-transient hoặc De-click chuyên dụng của phần mềm/thư viện DSP (như pedalboard hoặc librosa).Thuật toán này chỉ phát hiện các đỉnh nhọn năng lượng đột ngột và nén nốt phần tiếng gõ phím còn sót lại mà hoàn toàn không can thiệp vào dải tần số liên tục của giọng nói.
