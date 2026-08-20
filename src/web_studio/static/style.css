@@ -2428,7 +2428,7 @@ html, body {
 }
 
 .diar-zoom-wrap .zoom-label {
-  margin-right: 4px;
+  margin-right: 2px;
   font-size: 0.75rem;
   color: var(--text-muted);
 }
@@ -2439,6 +2439,108 @@ html, body {
   font-weight: 600;
   min-width: 32px;
   text-align: center;
+}
+
+.diar-zoom-input-group,
+.ws-zoom-input-group {
+  display: inline-flex;
+  align-items: center;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+  gap: 2px;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.diar-zoom-input-group:focus-within,
+.ws-zoom-input-group:focus-within {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+}
+
+.zoom-number-input {
+  width: 38px;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 2px 0;
+  outline: none;
+  text-align: right;
+  -moz-appearance: textfield;
+}
+
+.zoom-number-input::-webkit-outer-spin-button,
+.zoom-number-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.zoom-unit {
+  font-size: 0.74rem;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.filter-num-group {
+  display: inline-flex;
+  align-items: center;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  gap: 4px;
+  height: 28px;
+  box-sizing: border-box;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.filter-num-group:focus-within {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+}
+
+.filter-num-label {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.filter-num-input {
+  width: 44px;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0;
+  outline: none;
+  text-align: right;
+  -moz-appearance: textfield;
+}
+
+.filter-num-input::-webkit-outer-spin-button,
+.filter-num-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.filter-num-input::placeholder {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.filter-num-unit {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  user-select: none;
 }
 
 .diar-multitrack-viewport {

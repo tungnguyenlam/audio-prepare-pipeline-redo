@@ -144,6 +144,7 @@ const el = {
   btnZoomOut: document.getElementById('btn-zoom-out'),
   btnResetZoom: document.getElementById('btn-reset-zoom'),
   zoomLabel: document.getElementById('zoom-level-label'),
+  wsZoomInput: document.getElementById('ws-zoom-input'),
   btnToggleSpec: document.getElementById('btn-toggle-spectrogram'),
   spectrogramPanel: document.getElementById('spectrogram-panel'),
   specImage: document.getElementById('spec-image'),
@@ -234,6 +235,7 @@ const el = {
   btnDiarZoomIn: document.getElementById('btn-diar-zoom-in'),
   btnDiarZoomFit: document.getElementById('btn-diar-zoom-fit'),
   diarZoomLevel: document.getElementById('diar-zoom-level'),
+  diarZoomInput: document.getElementById('diar-zoom-input'),
   diarSpeedSelect: document.getElementById('diar-speed-select'),
   diarAutoNext: document.getElementById('diar-auto-next'),
   diarMultitrackViewport: document.getElementById('diar-multitrack-viewport'),
@@ -1209,6 +1211,20 @@ function initWaveformInteractions() {
   if (el.btnZoomIn) el.btnZoomIn.addEventListener('click', () => setZoom(state.zoom * 1.5));
   if (el.btnZoomOut) el.btnZoomOut.addEventListener('click', () => setZoom(Math.max(1.0, state.zoom / 1.5)));
   if (el.btnResetZoom) el.btnResetZoom.addEventListener('click', () => setZoom(1.0));
+  if (el.wsZoomInput) {
+    const handleWsZoom = (e) => {
+      const val = parseFloat(e.target.value);
+      if (!isNaN(val) && val > 0) setZoom(val);
+    };
+    el.wsZoomInput.addEventListener('input', handleWsZoom);
+    el.wsZoomInput.addEventListener('change', handleWsZoom);
+    el.wsZoomInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        handleWsZoom(e);
+        el.wsZoomInput.blur();
+      }
+    });
+  }
 
   // Spectrogram Toggle
   if (el.btnToggleSpec) el.btnToggleSpec.addEventListener('click', toggleSpectrogramPanel);
@@ -1223,8 +1239,12 @@ function initWaveformInteractions() {
 }
 
 function setZoom(newZoom) {
-  state.zoom = Math.min(8.0, Math.max(1.0, newZoom));
-  el.zoomLabel.textContent = `${Math.round(state.zoom * 100)}%`;
+  const parsedZoom = parseFloat(newZoom);
+  state.zoom = Math.min(20.0, Math.max(0.5, !isNaN(parsedZoom) && parsedZoom > 0 ? parsedZoom : 1.0));
+  if (el.zoomLabel) el.zoomLabel.textContent = `${Math.round(state.zoom * 100)}%`;
+  if (el.wsZoomInput && document.activeElement !== el.wsZoomInput) {
+    el.wsZoomInput.value = Number.isInteger(state.zoom) ? state.zoom.toFixed(0) : state.zoom.toFixed(1);
+  }
   renderWaveform();
   updatePlayheadPosition(state.player.currentTime);
 }
@@ -2426,13 +2446,27 @@ function initDiarizationStudio() {
   }
 
   if (el.btnDiarZoomIn) {
-    el.btnDiarZoomIn.addEventListener('click', () => setDiarZoom(Math.min(10.0, state.diarization.zoom * 1.5)));
+    el.btnDiarZoomIn.addEventListener('click', () => setDiarZoom(Math.min(30.0, (state.diarization.zoom || 1.0) * 1.5)));
   }
   if (el.btnDiarZoomOut) {
-    el.btnDiarZoomOut.addEventListener('click', () => setDiarZoom(Math.max(1.0, state.diarization.zoom / 1.5)));
+    el.btnDiarZoomOut.addEventListener('click', () => setDiarZoom(Math.max(0.2, (state.diarization.zoom || 1.0) / 1.5)));
   }
   if (el.btnDiarZoomFit) {
     el.btnDiarZoomFit.addEventListener('click', () => setDiarZoom(1.0));
+  }
+  if (el.diarZoomInput) {
+    const handleZoomInput = (e) => {
+      const val = parseFloat(e.target.value);
+      if (!isNaN(val) && val > 0) setDiarZoom(val);
+    };
+    el.diarZoomInput.addEventListener('input', handleZoomInput);
+    el.diarZoomInput.addEventListener('change', handleZoomInput);
+    el.diarZoomInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        handleZoomInput(e);
+        el.diarZoomInput.blur();
+      }
+    });
   }
 
   if (el.diarFilterSpeakerSelect) {
@@ -2450,17 +2484,23 @@ function initDiarizationStudio() {
   }
 
   if (el.diarFilterMinDur) {
-    el.diarFilterMinDur.addEventListener('change', (e) => {
-      state.diarization.minDurFilter = parseFloat(e.target.value) || 0;
+    const handleMinDur = (e) => {
+      const val = parseFloat(e.target.value);
+      state.diarization.minDurFilter = (!isNaN(val) && val > 0) ? val : 0;
       renderDiarizationFilteredViews();
-    });
+    };
+    el.diarFilterMinDur.addEventListener('input', handleMinDur);
+    el.diarFilterMinDur.addEventListener('change', handleMinDur);
   }
 
   if (el.diarFilterMaxDur) {
-    el.diarFilterMaxDur.addEventListener('change', (e) => {
-      state.diarization.maxDurFilter = parseFloat(e.target.value) || 0;
+    const handleMaxDur = (e) => {
+      const val = parseFloat(e.target.value);
+      state.diarization.maxDurFilter = (!isNaN(val) && val > 0) ? val : 0;
       renderDiarizationFilteredViews();
-    });
+    };
+    el.diarFilterMaxDur.addEventListener('input', handleMaxDur);
+    el.diarFilterMaxDur.addEventListener('change', handleMaxDur);
   }
 
   if (el.btnDiarFilterOverlaps) {
@@ -2871,13 +2911,18 @@ function clearDiarizationHistory() {
 }
 
 function setDiarZoom(zoom) {
-  state.diarization.zoom = zoom;
-  if (el.diarZoomLevel) el.diarZoomLevel.textContent = `${zoom.toFixed(1)}x`;
+  const parsedZoom = parseFloat(zoom);
+  const clampedZoom = Math.min(50.0, Math.max(0.2, !isNaN(parsedZoom) && parsedZoom > 0 ? parsedZoom : 1.0));
+  state.diarization.zoom = clampedZoom;
+  if (el.diarZoomInput && document.activeElement !== el.diarZoomInput) {
+    el.diarZoomInput.value = Number.isInteger(clampedZoom) ? clampedZoom.toFixed(0) : clampedZoom.toFixed(1);
+  }
+  if (el.diarZoomLevel) el.diarZoomLevel.textContent = `${clampedZoom.toFixed(1)}x`;
 
   const viewportWidth = el.diarMultitrackViewport ? el.diarMultitrackViewport.clientWidth : 1000;
   const labelColWidth = el.diarLaneLabelsCol ? el.diarLaneLabelsCol.offsetWidth : 200;
   const visibleTrackWidth = Math.max(300, viewportWidth - labelColWidth);
-  const targetWidth = Math.round(visibleTrackWidth * zoom);
+  const targetWidth = Math.round(visibleTrackWidth * clampedZoom);
   if (el.diarTracksArea) {
     el.diarTracksArea.style.width = `${targetWidth}px`;
     el.diarTracksArea.style.minWidth = `${targetWidth}px`;
@@ -2898,8 +2943,8 @@ function renderDiarizationWorkspace(diarization, audioId) {
   state.diarization.maxDurFilter = 0;
   state.diarization.overlapFilter = false;
   if (el.diarTurnsSearchInput) el.diarTurnsSearchInput.value = '';
-  if (el.diarFilterMinDur) el.diarFilterMinDur.value = '0';
-  if (el.diarFilterMaxDur) el.diarFilterMaxDur.value = '0';
+  if (el.diarFilterMinDur) el.diarFilterMinDur.value = '';
+  if (el.diarFilterMaxDur) el.diarFilterMaxDur.value = '';
   if (el.btnDiarFilterOverlaps) {
     el.btnDiarFilterOverlaps.classList.remove('active');
     el.btnDiarFilterOverlaps.setAttribute('aria-pressed', 'false');
@@ -2995,10 +3040,9 @@ function detectTurnOverlaps() {
     for (let j = i + 1; j < turns.length; j++) {
       const a = turns[i];
       const b = turns[j];
-      if (a.speaker_id === b.speaker_id) continue;
       const overlapStart = Math.max(a.start_s, b.start_s);
       const overlapEnd = Math.min(a.end_s, b.end_s);
-      if (overlapEnd > overlapStart + 0.02) {
+      if (overlapEnd > overlapStart + 0.01) {
         a.has_overlap = true;
         b.has_overlap = true;
       }

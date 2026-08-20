@@ -315,7 +315,11 @@
 
               <div class="waveform-controls-top">
                 <button class="btn btn-sm btn-ghost" id="btn-zoom-out" title="Zoom Out">−</button>
-                <span class="zoom-label" id="zoom-level-label">100%</span>
+                <div class="ws-zoom-input-group" title="Type zoom multiplier (e.g. 1.0, 2.5, 4.0)">
+                  <input type="number" id="ws-zoom-input" class="zoom-number-input" min="1" max="20" step="0.5" value="1.0">
+                  <span class="zoom-unit">x</span>
+                </div>
+                <span class="zoom-label hidden" id="zoom-level-label">100%</span>
                 <button class="btn btn-sm btn-ghost" id="btn-zoom-in" title="Zoom In">+</button>
                 <button class="btn btn-sm btn-ghost" id="btn-reset-zoom" title="Reset Zoom">Fit</button>
                 <div class="divider-v"></div>
@@ -897,26 +901,21 @@
                   <input type="text" id="diar-turns-search-input" class="text-input text-sm" placeholder="Search turn #, speaker name, or timestamp...">
                 </div>
                 <div class="form-group mb-0">
-                  <select id="diar-filter-min-dur" class="select-input select-sm" title="Hide turns shorter than this duration">
-                    <option value="0">Min duration: none</option>
-                    <option value="0.5">Min ≥ 0.5s</option>
-                    <option value="1.0">Min ≥ 1.0s</option>
-                    <option value="2.0">Min ≥ 2.0s</option>
-                    <option value="5.0">Min ≥ 5.0s</option>
-                  </select>
+                  <div class="filter-num-group" title="Hide turns shorter than minimum duration in seconds (type any value)">
+                    <span class="filter-num-label">Min ≥</span>
+                    <input type="number" id="diar-filter-min-dur" class="filter-num-input" min="0" max="3600" step="0.5" placeholder="0" value="">
+                    <span class="filter-num-unit">s</span>
+                  </div>
                 </div>
                 <div class="form-group mb-0">
-                  <select id="diar-filter-max-dur" class="select-input select-sm" title="Hide turns longer than this duration">
-                    <option value="0">Max duration: none</option>
-                    <option value="2.0">Max ≤ 2.0s</option>
-                    <option value="5.0">Max ≤ 5.0s</option>
-                    <option value="10.0">Max ≤ 10.0s</option>
-                    <option value="30.0">Max ≤ 30.0s</option>
-                    <option value="60.0">Max ≤ 60.0s</option>
-                  </select>
+                  <div class="filter-num-group" title="Hide turns longer than maximum duration in seconds (type any value)">
+                    <span class="filter-num-label">Max ≤</span>
+                    <input type="number" id="diar-filter-max-dur" class="filter-num-input" min="0" max="3600" step="1" placeholder="∞" value="">
+                    <span class="filter-num-unit">s</span>
+                  </div>
                 </div>
                 <div class="form-group mb-0">
-                  <button type="button" id="btn-diar-filter-overlaps" class="btn btn-xs btn-ghost diar-overlap-filter-btn" title="Hide turns that overlap another speaker" aria-pressed="false">
+                  <button type="button" id="btn-diar-filter-overlaps" class="btn btn-xs btn-ghost diar-overlap-filter-btn" title="Hide turns that overlap another turn" aria-pressed="false">
                     Exclude Overlaps
                   </button>
                 </div>
@@ -958,9 +957,13 @@
                 <div class="diar-zoom-wrap">
                   <span class="zoom-label">Zoom:</span>
                   <button class="btn btn-xs btn-ghost" id="btn-diar-zoom-out" title="Zoom Out">-</button>
-                  <span class="zoom-val" id="diar-zoom-level">1.0x</span>
+                  <div class="diar-zoom-input-group" title="Type zoom multiplier (e.g. 1.0, 2.5, 10.0)">
+                    <input type="number" id="diar-zoom-input" class="zoom-number-input" min="0.2" max="50" step="0.5" value="1.0">
+                    <span class="zoom-unit">x</span>
+                  </div>
+                  <span class="zoom-val hidden" id="diar-zoom-level">1.0x</span>
                   <button class="btn btn-xs btn-ghost" id="btn-diar-zoom-in" title="Zoom In">+</button>
-                  <button class="btn btn-xs btn-secondary" id="btn-diar-zoom-fit" title="Fit to Container">Fit</button>
+                  <button class="btn btn-xs btn-secondary" id="btn-diar-zoom-fit" title="Fit to Container (1.0x)">Fit</button>
                 </div>
                 <!-- Speed selector -->
                 <select id="diar-speed-select" class="select-mini" title="Playback Speed">
