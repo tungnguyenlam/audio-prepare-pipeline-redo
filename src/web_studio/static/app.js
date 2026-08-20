@@ -59,6 +59,9 @@ const state = {
     soloSpeaker: null,
     mutedSpeakers: new Set(),
     autoAdvance: false,
+    history: [],
+    historySearch: '',
+    activeHistoryId: null,
   },
 };
 
@@ -190,6 +193,9 @@ const el = {
   diarSetupToggleText: document.getElementById('diar-setup-toggle-text'),
   diarInputSelect: document.getElementById('diar-input-select'),
   btnDiarBrowseLibrary: document.getElementById('btn-diar-browse-library'),
+  diarSavedNoticePill: document.getElementById('diar-saved-notice-pill'),
+  diarSavedNoticeText: document.getElementById('diar-saved-notice-text'),
+  btnLoadSavedForTrack: document.getElementById('btn-load-saved-for-track'),
   diarAudioMetaChip: document.getElementById('diar-audio-meta-chip'),
   diarChildrenBox: document.getElementById('diar-children-box'),
   diarChildrenCount: document.getElementById('diar-children-count'),
@@ -253,6 +259,10 @@ const el = {
   diarFilteredTurnsCount: document.getElementById('diar-filtered-turns-count'),
   turnsTableBody: document.getElementById('turns-table-body'),
   btnDownloadExport: document.getElementById('btn-download-export'),
+  diarHistoryCountBadge: document.getElementById('diar-history-count-badge'),
+  btnClearDiarHistory: document.getElementById('btn-clear-diar-history'),
+  diarHistorySearchInput: document.getElementById('diar-history-search-input'),
+  diarHistoryList: document.getElementById('diar-history-list'),
 
   // Audition & Scoring Hub
   auditionClipSelect: document.getElementById('audition-clip-select'),
@@ -2206,6 +2216,7 @@ function initDiarizationStudio() {
       if (!audioId) {
         updateDiarInputMeta(null);
         renderDiarizationChildren(null);
+        hideSavedDiarizationNotice();
         return;
       }
       if (audioId.startsWith('lib:')) {
@@ -2213,11 +2224,7 @@ function initDiarizationStudio() {
         await loadLibraryFileTo(filePath, 'diarization');
         return;
       }
-      renderDiarizationChildren(audioId);
-      updateDiarInputMeta(audioId);
-      loadDiarWaveform(audioId);
-      loadAudioIntoPlayer(audioId, false);
-      state.diarization.audioId = audioId;
+      openDiarizationAudio(audioId, { restoreHistory: true });
     });
   }
 
@@ -2344,7 +2351,11 @@ function initDiarizationStudio() {
           el.diarTaskProgressBox.classList.add('hidden');
           el.btnRunDiarization.disabled = false;
           showToast(`Speaker Diarization completed in ${result.elapsed_s}s!`, "success");
+          state.diarization.customNames = {};
+          state.diarization.colors = {};
+          state.diarization.activeHistoryId = null;
           renderDiarizationWorkspace(result.diarization, audioId);
+          saveDiarizationToHistory(result.diarization, audioId, result);
         }, (err) => {
           clearInterval(timerInterval);
           el.diarTaskProgressBox.classList.add('hidden');
@@ -2362,23 +2373,23 @@ function initDiarizationStudio() {
 
   if (el.btnDiarReset) {
     el.btnDiarReset.addEventListener('click', () => {
-      state.diarization.data = null;
-      state.diarization.turns = [];
-      state.diarization.speakers = [];
-      state.diarization.activeTurnIndex = null;
-      state.diarization.soloSpeaker = null;
-      state.diarization.mutedSpeakers.clear();
-      state.diarization.overlapFilter = false;
-      if (el.btnDiarFilterOverlaps) {
-        el.btnDiarFilterOverlaps.classList.remove('active');
-        el.btnDiarFilterOverlaps.setAttribute('aria-pressed', 'false');
-      }
-      if (el.audio) el.audio.muted = false;
-      if (el.diarResultsWrapper) el.diarResultsWrapper.classList.add('hidden');
-      if (el.diarEmptyPlaceholder) el.diarEmptyPlaceholder.classList.remove('hidden');
+      clearDiarizationWorkspace();
       showToast("Diarization workspace reset", "info");
     });
   }
+
+  if (el.diarHistorySearchInput) {
+    el.diarHistorySearchInput.addEventListener('input', (event) => {
+      state.diarization.historySearch = event.target.value.toLowerCase().trim();
+      renderDiarizationHistory();
+    });
+  }
+
+  if (el.btnClearDiarHistory) {
+    el.btnClearDiarHistory.addEventListener('click', clearDiarizationHistory);
+  }
+
+  loadDiarizationHistory();
 
   if (el.btnDiarPlayToggle) {
     el.btnDiarPlayToggle.addEventListener('click', () => {
@@ -2427,28 +2438,28 @@ function initDiarizationStudio() {
   if (el.diarFilterSpeakerSelect) {
     el.diarFilterSpeakerSelect.addEventListener('change', (e) => {
       state.diarization.activeSpeakerFilter = e.target.value;
-      renderTurnsTable();
+      renderDiarizationFilteredViews();
     });
   }
 
   if (el.diarTurnsSearchInput) {
     el.diarTurnsSearchInput.addEventListener('input', (e) => {
       state.diarization.searchQuery = e.target.value.toLowerCase().trim();
-      renderTurnsTable();
+      renderDiarizationFilteredViews();
     });
   }
 
   if (el.diarFilterMinDur) {
     el.diarFilterMinDur.addEventListener('change', (e) => {
       state.diarization.minDurFilter = parseFloat(e.target.value) || 0;
-      renderTurnsTable();
+      renderDiarizationFilteredViews();
     });
   }
 
   if (el.diarFilterMaxDur) {
     el.diarFilterMaxDur.addEventListener('change', (e) => {
       state.diarization.maxDurFilter = parseFloat(e.target.value) || 0;
-      renderTurnsTable();
+      renderDiarizationFilteredViews();
     });
   }
 
@@ -2460,7 +2471,7 @@ function initDiarizationStudio() {
         'aria-pressed',
         state.diarization.overlapFilter ? 'true' : 'false',
       );
-      renderTurnsTable();
+      renderDiarizationFilteredViews();
     });
   }
 
@@ -2557,6 +2568,308 @@ function updateDiarInputMeta(audioId) {
   }
 }
 
+function clearDiarizationWorkspace() {
+  state.diarization.data = null;
+  state.diarization.turns = [];
+  state.diarization.speakers = [];
+  state.diarization.customNames = {};
+  state.diarization.colors = {};
+  state.diarization.activeTurnIndex = null;
+  state.diarization.activeHistoryId = null;
+  state.diarization.soloSpeaker = null;
+  state.diarization.mutedSpeakers.clear();
+  state.diarization.overlapFilter = false;
+  if (el.btnDiarFilterOverlaps) {
+    el.btnDiarFilterOverlaps.classList.remove('active');
+    el.btnDiarFilterOverlaps.setAttribute('aria-pressed', 'false');
+  }
+  if (el.audio) el.audio.muted = false;
+  if (el.diarResultsWrapper) el.diarResultsWrapper.classList.add('hidden');
+  if (el.diarEmptyPlaceholder) el.diarEmptyPlaceholder.classList.remove('hidden');
+  renderDiarizationHistory();
+}
+
+function diarizationHistoryMatch(item, audio) {
+  if (!item || !audio) return false;
+  if (item.audio_id && item.audio_id === audio.id) return true;
+  if (item.audio_fingerprint && audio.fingerprint && item.audio_fingerprint === audio.fingerprint) return true;
+  if (item.audio_path && audio.path && item.audio_path === audio.path) return true;
+  return false;
+}
+
+function findDiarizationHistoryForAudio(audioId) {
+  const audio = state.audioList.find(item => item.id === audioId);
+  if (!audio) return null;
+  return (state.diarization.history || []).find(item => diarizationHistoryMatch(item, audio)) || null;
+}
+
+function resolveDiarizationHistoryAudio(item) {
+  return state.audioList.find(audio => diarizationHistoryMatch(item, audio)) || null;
+}
+
+function hideSavedDiarizationNotice() {
+  if (el.diarSavedNoticePill) el.diarSavedNoticePill.classList.add('hidden');
+}
+
+function showSavedDiarizationNotice(item, audioId) {
+  if (!item || !el.diarSavedNoticePill) return;
+  el.diarSavedNoticePill.classList.remove('hidden');
+  if (el.diarSavedNoticeText) {
+    el.diarSavedNoticeText.textContent = `Restored ${item.turn_count || 0} turns across ${item.speaker_count || 0} speakers from history`;
+  }
+  if (el.btnLoadSavedForTrack) {
+    el.btnLoadSavedForTrack.textContent = 'Reload Session';
+    el.btnLoadSavedForTrack.onclick = () => restoreDiarizationHistoryItem(item, audioId, { notify: true, scroll: true });
+  }
+}
+
+function openDiarizationAudio(audioId, { restoreHistory = false } = {}) {
+  const previousAudioId = state.diarization.audioId;
+  renderDiarizationChildren(audioId);
+  updateDiarInputMeta(audioId);
+  loadDiarWaveform(audioId);
+  loadAudioIntoPlayer(audioId, false);
+
+  const historyItem = findDiarizationHistoryForAudio(audioId);
+  if (restoreHistory && historyItem) {
+    restoreDiarizationHistoryItem(historyItem, audioId, { notify: true, scroll: false });
+    return;
+  }
+
+  if (previousAudioId && previousAudioId !== audioId && state.diarization.data) {
+    clearDiarizationWorkspace();
+  }
+  state.diarization.audioId = audioId;
+  if (historyItem) showSavedDiarizationNotice(historyItem, audioId);
+  else hideSavedDiarizationNotice();
+}
+
+function cloneDiarizationData(data) {
+  return JSON.parse(JSON.stringify(data || {}));
+}
+
+function saveDiarizationToHistory(diarization, audioId, runResult = {}) {
+  if (!diarization || !Array.isArray(state.diarization.turns)) return;
+
+  const audio = state.audioList.find(item => item.id === audioId) || {};
+  const completeData = cloneDiarizationData(state.diarization.data || diarization);
+  completeData.turns = cloneDiarizationData(state.diarization.turns);
+  completeData.speakers = cloneDiarizationData(state.diarization.speakers);
+  completeData.duration_s = state.diarization.duration;
+
+  const totalSpeechS = state.diarization.turns.reduce(
+    (total, turn) => total + Math.max(0, turn.end_s - turn.start_s),
+    0,
+  );
+  const modelBackend = completeData.model?.backend || completeData.model?.model_id || 'Pyannote';
+  const historyItem = {
+    id: `diar_hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    timestamp: Date.now(),
+    audio_id: audioId,
+    audio_title: audio.title || audio.source_id || audioId,
+    audio_path: audio.path || null,
+    audio_fingerprint: audio.fingerprint || null,
+    audio_source_id: audio.source_id || null,
+    duration_s: state.diarization.duration,
+    model_backend: modelBackend,
+    model_id: completeData.model?.model_id || null,
+    speaker_count: state.diarization.speakers.length,
+    turn_count: state.diarization.turns.length,
+    total_speech_s: totalSpeechS,
+    speech_ratio_pct: state.diarization.duration > 0
+      ? Number(((totalSpeechS / state.diarization.duration) * 100).toFixed(1))
+      : 0,
+    diarization: completeData,
+    custom_names: { ...state.diarization.customNames },
+    colors: { ...state.diarization.colors },
+    run: {
+      elapsed_s: runResult.elapsed_s ?? null,
+      device: runResult.device ?? null,
+      power_w: runResult.power_w ?? null,
+    },
+  };
+
+  state.diarization.history.unshift(historyItem);
+  state.diarization.history = state.diarization.history.slice(0, 30);
+  state.diarization.activeHistoryId = historyItem.id;
+  persistDiarizationHistory();
+  renderDiarizationHistory();
+  showSavedDiarizationNotice(historyItem, audioId);
+}
+
+function persistDiarizationHistory() {
+  try {
+    localStorage.setItem('sonic_diarization_history', JSON.stringify(state.diarization.history || []));
+  } catch (err) {
+    console.warn('Could not persist diarization history:', err);
+  }
+}
+
+function updateActiveDiarizationHistory() {
+  const item = state.diarization.history.find(entry => entry.id === state.diarization.activeHistoryId);
+  if (!item || !state.diarization.data) return;
+  item.diarization = cloneDiarizationData(state.diarization.data);
+  item.diarization.turns = cloneDiarizationData(state.diarization.turns);
+  item.diarization.speakers = cloneDiarizationData(state.diarization.speakers);
+  item.custom_names = { ...state.diarization.customNames };
+  item.colors = { ...state.diarization.colors };
+  persistDiarizationHistory();
+  renderDiarizationHistory();
+}
+
+function normalizeDiarizationHistoryItem(item) {
+  if (!item || typeof item !== 'object') return null;
+  const legacyNames = item.customNames || item.custom_names || {};
+  const diarization = item.diarization || {
+    schema_version: '1.0',
+    audio_id: item.audio_id,
+    duration_s: item.duration_s || 0,
+    speakers: item.speakers || [],
+    turns: item.turns || [],
+    model: { backend: item.model_backend, model_id: item.model_id },
+  };
+  const speakers = Array.isArray(diarization.speakers) ? diarization.speakers : [];
+  const turns = Array.isArray(diarization.turns) ? diarization.turns : [];
+  return {
+    ...item,
+    id: item.id || `diar_hist_${item.timestamp || Date.now()}`,
+    timestamp: Number(item.timestamp) || Date.now(),
+    speaker_count: Number(item.speaker_count) || speakers.length,
+    turn_count: Number(item.turn_count) || turns.length,
+    diarization,
+    custom_names: legacyNames,
+    colors: item.colors || {},
+  };
+}
+
+function loadDiarizationHistory() {
+  try {
+    const stored = JSON.parse(localStorage.getItem('sonic_diarization_history') || '[]');
+    state.diarization.history = Array.isArray(stored)
+      ? stored.map(normalizeDiarizationHistoryItem).filter(Boolean)
+      : [];
+  } catch (err) {
+    console.warn('Could not load diarization history:', err);
+    state.diarization.history = [];
+  }
+  renderDiarizationHistory();
+}
+
+function historyDiarizationData(item) {
+  return cloneDiarizationData(normalizeDiarizationHistoryItem(item)?.diarization || {});
+}
+
+function restoreDiarizationHistoryItem(item, targetAudioId = null, { notify = false, scroll = false } = {}) {
+  const normalized = normalizeDiarizationHistoryItem(item);
+  if (!normalized) return;
+  const matchedAudio = targetAudioId
+    ? state.audioList.find(audio => audio.id === targetAudioId)
+    : resolveDiarizationHistoryAudio(normalized);
+  const audioId = matchedAudio?.id || targetAudioId || normalized.audio_id;
+
+  state.diarization.customNames = { ...normalized.custom_names };
+  state.diarization.colors = { ...normalized.colors };
+  state.diarization.activeHistoryId = normalized.id;
+  renderDiarizationWorkspace(historyDiarizationData(normalized), audioId);
+
+  if (matchedAudio) {
+    if (el.diarInputSelect) el.diarInputSelect.value = matchedAudio.id;
+    renderDiarizationChildren(matchedAudio.id);
+    updateDiarInputMeta(matchedAudio.id);
+    loadAudioIntoPlayer(matchedAudio.id, false);
+  }
+  showSavedDiarizationNotice(normalized, audioId);
+  renderDiarizationHistory();
+
+  if (scroll && el.diarResultsWrapper) {
+    el.diarResultsWrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  if (notify) {
+    showToast(`Restored diarization for "${normalized.audio_title || audioId}"`, 'success');
+  }
+}
+
+function formatDiarizationHistoryAge(timestamp) {
+  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (seconds < 10) return 'Just now';
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function renderDiarizationHistory() {
+  if (!el.diarHistoryList) return;
+  const query = state.diarization.historySearch;
+  const items = (state.diarization.history || []).filter(item => {
+    if (!query) return true;
+    const names = Object.values(item.custom_names || {}).join(' ');
+    const searchable = `${item.audio_title || ''} ${item.model_backend || ''} ${names} ${new Date(item.timestamp).toLocaleString()}`.toLowerCase();
+    return searchable.includes(query);
+  });
+
+  if (el.diarHistoryCountBadge) {
+    const total = state.diarization.history.length;
+    el.diarHistoryCountBadge.textContent = `${total} session${total === 1 ? '' : 's'}`;
+  }
+  if (items.length === 0) {
+    el.diarHistoryList.innerHTML = `<div class="empty-placeholder">${query ? 'No saved sessions match this filter.' : 'No diarization sessions yet.'}</div>`;
+    return;
+  }
+
+  el.diarHistoryList.innerHTML = '';
+  items.forEach(item => {
+    const active = state.diarization.activeHistoryId === item.id;
+    const sourceAvailable = Boolean(resolveDiarizationHistoryAudio(item));
+    const card = document.createElement('div');
+    card.className = `diar-history-item ${active ? 'active-session' : ''}`;
+    card.innerHTML = `
+      <div class="diar-hist-top">
+        <div class="diar-hist-title-wrap">
+          <span class="badge ${active ? 'badge-accent' : 'badge-info'}">${escapeHtml(diarizationModelLabel(item.model_backend))}</span>
+          <span class="diar-hist-title" title="${escapeHtml(item.audio_title || item.audio_id)}">${escapeHtml(item.audio_title || item.audio_id)}</span>
+          ${active ? '<span class="badge badge-success badge-sm">Open</span>' : ''}
+        </div>
+        <span class="diar-hist-time" title="${escapeHtml(new Date(item.timestamp).toLocaleString())}">${formatDiarizationHistoryAge(item.timestamp)}</span>
+      </div>
+      <div class="diar-hist-meta-row">
+        <span><strong>${item.speaker_count}</strong> speakers</span>
+        <span><strong>${item.turn_count}</strong> turns</span>
+        <span><strong>${Number(item.speech_ratio_pct || 0).toFixed(1)}%</strong> speech</span>
+        <span>${formatTime(item.duration_s || 0)}</span>
+        <span class="badge badge-sm ${sourceAvailable ? 'badge-success' : 'badge-ghost'}">${sourceAvailable ? 'Audio available' : 'Annotations only'}</span>
+      </div>
+      <div class="diar-hist-actions">
+        <button class="btn btn-xs btn-primary btn-load-diar-history">Open Viewer</button>
+        <button class="btn btn-xs btn-ghost text-destructive btn-delete-diar-history" title="Delete this history entry">Delete</button>
+      </div>
+    `;
+    card.querySelector('.btn-load-diar-history').addEventListener('click', () => {
+      restoreDiarizationHistoryItem(item, null, { notify: true, scroll: true });
+    });
+    card.querySelector('.btn-delete-diar-history').addEventListener('click', () => {
+      state.diarization.history = state.diarization.history.filter(entry => entry.id !== item.id);
+      if (state.diarization.activeHistoryId === item.id) state.diarization.activeHistoryId = null;
+      persistDiarizationHistory();
+      renderDiarizationHistory();
+    });
+    el.diarHistoryList.appendChild(card);
+  });
+}
+
+function clearDiarizationHistory() {
+  const count = state.diarization.history.length;
+  if (!count || !confirm(`Clear all ${count} saved diarization session${count === 1 ? '' : 's'}?`)) return;
+  state.diarization.history = [];
+  state.diarization.activeHistoryId = null;
+  localStorage.removeItem('sonic_diarization_history');
+  hideSavedDiarizationNotice();
+  renderDiarizationHistory();
+  showToast('Diarization history cleared', 'info');
+}
+
 function setDiarZoom(zoom) {
   state.diarization.zoom = zoom;
   if (el.diarZoomLevel) el.diarZoomLevel.textContent = `${zoom.toFixed(1)}x`;
@@ -2579,7 +2892,14 @@ function renderDiarizationWorkspace(diarization, audioId) {
   state.diarization.data = diarization || state.diarization.data || {};
   state.diarization.soloSpeaker = null;
   state.diarization.mutedSpeakers.clear();
+  state.diarization.activeSpeakerFilter = 'all';
+  state.diarization.searchQuery = '';
+  state.diarization.minDurFilter = 0;
+  state.diarization.maxDurFilter = 0;
   state.diarization.overlapFilter = false;
+  if (el.diarTurnsSearchInput) el.diarTurnsSearchInput.value = '';
+  if (el.diarFilterMinDur) el.diarFilterMinDur.value = '0';
+  if (el.diarFilterMaxDur) el.diarFilterMaxDur.value = '0';
   if (el.btnDiarFilterOverlaps) {
     el.btnDiarFilterOverlaps.classList.remove('active');
     el.btnDiarFilterOverlaps.setAttribute('aria-pressed', 'false');
@@ -2651,6 +2971,12 @@ function renderDiarizationWorkspace(diarization, audioId) {
   if (el.diarFilterSpeakerSelect) {
     el.diarFilterSpeakerSelect.innerHTML = `<option value="all">All Speakers (${state.diarization.speakers.length})</option>` +
       state.diarization.speakers.map(s => `<option value="${s.speaker_id}">${escapeHtml(getSpeakerName(s.speaker_id))}</option>`).join('');
+    if (Array.from(el.diarFilterSpeakerSelect.options).some(option => option.value === state.diarization.activeSpeakerFilter)) {
+      el.diarFilterSpeakerSelect.value = state.diarization.activeSpeakerFilter;
+    } else {
+      state.diarization.activeSpeakerFilter = 'all';
+      el.diarFilterSpeakerSelect.value = 'all';
+    }
   }
 
   loadDiarWaveform(audioId);
@@ -2843,12 +3169,14 @@ function renderSpeakerSwimlanes() {
   el.diarSpkLabelsWrap.innerHTML = "";
   const dur = state.diarization.duration || 1;
   const isSoloActive = Boolean(state.diarization.soloSpeaker);
+  const visibleTurns = getFilteredAndSortedTurns();
+  const visibleSpeakerIds = new Set(visibleTurns.map(turn => turn.speaker_id));
 
-  state.diarization.speakers.forEach(spk => {
+  state.diarization.speakers.filter(spk => visibleSpeakerIds.has(spk.speaker_id)).forEach(spk => {
     const spkId = spk.speaker_id;
     const color = getSpeakerColor(spkId);
     const spkName = getSpeakerName(spkId);
-    const spkTurns = state.diarization.turns.filter(t => t.speaker_id === spkId);
+    const spkTurns = visibleTurns.filter(t => t.speaker_id === spkId);
     const spkTotalSpeech = spkTurns.reduce((acc, t) => acc + Math.max(0, t.end_s - t.start_s), 0);
     const isSolo = state.diarization.soloSpeaker === spkId;
     const isMuted = state.diarization.mutedSpeakers.has(spkId);
@@ -2885,7 +3213,7 @@ function renderSpeakerSwimlanes() {
     track.dataset.speaker = spkId;
 
     spkTurns.forEach(turn => {
-      const idx = state.diarization.turns.indexOf(turn);
+      const idx = turn.originalIndex;
       const leftPct = (turn.start_s / dur) * 100;
       const widthPct = Math.max(0.4, ((turn.end_s - turn.start_s) / dur) * 100);
 
@@ -3212,7 +3540,7 @@ function renderSpeakerProfiles() {
       <div class="diar-spk-actions-row">
         <button type="button" class="btn btn-xs ${isSolo ? 'btn-solo-spk active' : 'btn-ghost'} btn-solo-spk" data-speaker="${spkId}" title="Solo speaker">Solo</button>
         <button type="button" class="btn btn-xs ${isMuted ? 'btn-mute-spk active' : 'btn-ghost'} btn-mute-spk" data-speaker="${spkId}" title="Mute speaker">Mute</button>
-        <button type="button" class="btn btn-xs btn-ghost btn-filter-spk" data-speaker="${spkId}" title="Filter turns table">🔍 Filter</button>
+        <button type="button" class="btn btn-xs btn-ghost btn-filter-spk" data-speaker="${spkId}" title="Filter timeline and turns">🔍 Filter</button>
         <button type="button" class="btn btn-xs btn-primary btn-extract-spk" data-speaker="${spkId}" title="Extract and save speaker audio to workspace">✂ Extract</button>
       </div>
     `;
@@ -3223,17 +3551,17 @@ function renderSpeakerProfiles() {
       state.diarization.customNames[spkId] = val;
       renderSpeakerSwimlanes();
       renderTurnsTable();
+      updateActiveDiarizationHistory();
       showToast(`Speaker ${spkId} renamed to "${val}"`, "success");
     });
 
     card.querySelector('.btn-solo-spk').addEventListener('click', () => toggleSpeakerSolo(spkId));
     card.querySelector('.btn-mute-spk').addEventListener('click', () => toggleSpeakerMute(spkId));
     card.querySelector('.btn-filter-spk').addEventListener('click', () => {
-      switchDiarSubtab('turns');
       if (el.diarFilterSpeakerSelect) {
         el.diarFilterSpeakerSelect.value = spkId;
         state.diarization.activeSpeakerFilter = spkId;
-        renderTurnsTable();
+        renderDiarizationFilteredViews();
       }
     });
     card.querySelector('.btn-extract-spk').addEventListener('click', () => extractSpeakerAudio(spkId, spkName));
@@ -3266,7 +3594,7 @@ function getFilteredAndSortedTurns() {
   }
 
   if (state.diarization.overlapFilter) {
-    turns = turns.filter(t => t.has_overlap);
+    turns = turns.filter(t => !t.has_overlap);
   }
 
   if (state.diarization.sortMode === 'time-desc') {
@@ -3280,6 +3608,11 @@ function getFilteredAndSortedTurns() {
   }
 
   return turns;
+}
+
+function renderDiarizationFilteredViews() {
+  renderSpeakerSwimlanes();
+  renderTurnsTable();
 }
 
 function renderTurnsTable() {
@@ -5763,12 +6096,13 @@ function switchTab(tabId) {
     if (el.diarInputSelect) {
       if (!el.diarInputSelect.value && state.activeAudio) {
         el.diarInputSelect.value = state.activeAudio.id;
-        renderDiarizationChildren(state.activeAudio.id);
-        updateDiarInputMeta(state.activeAudio.id);
-        loadDiarWaveform(state.activeAudio.id);
-      } else if (el.diarInputSelect.value) {
-        updateDiarInputMeta(el.diarInputSelect.value);
-        renderDiarizationChildren(el.diarInputSelect.value);
+      }
+      const audioId = el.diarInputSelect.value;
+      if (audioId && !audioId.startsWith('lib:') && (!state.diarization.data || state.diarization.audioId !== audioId)) {
+        openDiarizationAudio(audioId, { restoreHistory: true });
+      } else if (audioId) {
+        updateDiarInputMeta(audioId);
+        renderDiarizationChildren(audioId);
       }
     }
     setDiarZoom(state.diarization.zoom || 1.0);
@@ -5893,6 +6227,10 @@ async function initApp() {
     }
   } catch (e) {
     console.error("Audio auto-load error:", e);
+  }
+
+  if (state.activeTab === 'tab-diarization' && el.diarInputSelect?.value && !state.diarization.data) {
+    openDiarizationAudio(el.diarInputSelect.value, { restoreHistory: true });
   }
 
   console.log("SonicStudio initialized successfully!");

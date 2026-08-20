@@ -1100,8 +1100,12 @@ html, body {
 /* Grid Layouts */
 .grid-2col {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1.25rem;
+}
+
+.grid-2col > * {
+  min-width: 0;
 }
 
 @media (max-width: 960px) {
@@ -3175,6 +3179,112 @@ html, body {
   border-color: #f59e0b;
   color: #000;
   font-weight: 700;
+}
+
+.diar-timeline-filter-toolbar {
+  background-color: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+}
+
+.diar-timeline-filter-toolbar .toolbar-left {
+  flex: 1;
+}
+
+.diar-timeline-filter-toolbar input[type="text"] {
+  min-width: 220px;
+}
+
+/* Diarization session history */
+.diar-history-card {
+  background-color: var(--bg-surface);
+  margin-top: 0.25rem;
+}
+
+.diar-history-filter-bar {
+  margin-bottom: 0.8rem;
+}
+
+.diar-history-filter-bar .text-input {
+  width: 100%;
+}
+
+.diar-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.diar-history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem;
+  background-color: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+}
+
+.diar-history-item:hover {
+  background-color: var(--bg-surface-hover);
+  border-color: var(--border-muted);
+}
+
+.diar-history-item.active-session {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.14);
+}
+
+.diar-hist-top,
+.diar-hist-title-wrap,
+.diar-hist-meta-row,
+.diar-hist-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.diar-hist-top {
+  justify-content: space-between;
+}
+
+.diar-hist-title-wrap {
+  min-width: 0;
+  flex: 1;
+}
+
+.diar-hist-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diar-hist-time {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.diar-hist-meta-row {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  gap: 12px;
+}
+
+.diar-hist-actions {
+  justify-content: flex-end;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .diar-turns-table-wrapper {

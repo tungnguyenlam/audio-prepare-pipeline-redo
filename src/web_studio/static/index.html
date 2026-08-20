@@ -885,6 +885,45 @@
               </div>
             </div>
 
+            <!-- Shared Timeline & Turn Filters -->
+            <div class="diar-inspector-toolbar diar-timeline-filter-toolbar">
+              <div class="toolbar-left">
+                <div class="form-group mb-0">
+                  <select id="diar-filter-speaker-select" class="select-input select-sm">
+                    <option value="all">All Speakers</option>
+                  </select>
+                </div>
+                <div class="form-group mb-0 flex-1">
+                  <input type="text" id="diar-turns-search-input" class="text-input text-sm" placeholder="Search turn #, speaker name, or timestamp...">
+                </div>
+                <div class="form-group mb-0">
+                  <select id="diar-filter-min-dur" class="select-input select-sm" title="Hide turns shorter than this duration">
+                    <option value="0">Min duration: none</option>
+                    <option value="0.5">Min ≥ 0.5s</option>
+                    <option value="1.0">Min ≥ 1.0s</option>
+                    <option value="2.0">Min ≥ 2.0s</option>
+                    <option value="5.0">Min ≥ 5.0s</option>
+                  </select>
+                </div>
+                <div class="form-group mb-0">
+                  <select id="diar-filter-max-dur" class="select-input select-sm" title="Hide turns longer than this duration">
+                    <option value="0">Max duration: none</option>
+                    <option value="2.0">Max ≤ 2.0s</option>
+                    <option value="5.0">Max ≤ 5.0s</option>
+                    <option value="10.0">Max ≤ 10.0s</option>
+                    <option value="30.0">Max ≤ 30.0s</option>
+                    <option value="60.0">Max ≤ 60.0s</option>
+                  </select>
+                </div>
+                <div class="form-group mb-0">
+                  <button type="button" id="btn-diar-filter-overlaps" class="btn btn-xs btn-ghost diar-overlap-filter-btn" title="Hide turns that overlap another speaker" aria-pressed="false">
+                    Exclude Overlaps
+                  </button>
+                </div>
+              </div>
+              <span class="badge badge-info" id="diar-filtered-turns-count">0 turns</span>
+            </div>
+
             <!-- Visual Minimap Overview Strip -->
             
 
@@ -1044,41 +1083,6 @@
 
               <!-- Filters & Search Toolbar -->
               <div class="diar-inspector-toolbar">
-                <div class="toolbar-left">
-                  <div class="form-group mb-0">
-                    <select id="diar-filter-speaker-select" class="select-input select-sm">
-                      <option value="all">All Speakers</option>
-                    </select>
-                  </div>
-                  <div class="form-group mb-0 flex-1">
-                    <input type="text" id="diar-turns-search-input" class="text-input text-sm" placeholder="Search turn #, speaker name, or timestamp...">
-                  </div>
-                  <div class="form-group mb-0">
-                    <select id="diar-filter-min-dur" class="select-input select-sm" title="Hide turns shorter than this duration">
-                      <option value="0">Min duration: none</option>
-                      <option value="0.5">Min ≥ 0.5s</option>
-                      <option value="1.0">Min ≥ 1.0s</option>
-                      <option value="2.0">Min ≥ 2.0s</option>
-                      <option value="5.0">Min ≥ 5.0s</option>
-                    </select>
-                  </div>
-                  <div class="form-group mb-0">
-                    <select id="diar-filter-max-dur" class="select-input select-sm" title="Hide turns longer than this duration">
-                      <option value="0">Max duration: none</option>
-                      <option value="2.0">Max ≤ 2.0s</option>
-                      <option value="5.0">Max ≤ 5.0s</option>
-                      <option value="10.0">Max ≤ 10.0s</option>
-                      <option value="30.0">Max ≤ 30.0s</option>
-                      <option value="60.0">Max ≤ 60.0s</option>
-                    </select>
-                  </div>
-                  <div class="form-group mb-0">
-                    <button type="button" id="btn-diar-filter-overlaps" class="btn btn-xs btn-ghost diar-overlap-filter-btn" title="Show only turns that overlap another speaker">
-                      Overlaps
-                    </button>
-                  </div>
-                </div>
-
                 <div class="toolbar-right">
                   <div class="form-group mb-0 flex-row items-center gap-2">
                     <label class="text-xs text-muted">Sort:</label>
@@ -1089,7 +1093,6 @@
                       <option value="speaker">Speaker</option>
                     </select>
                   </div>
-                  <span class="badge badge-info" id="diar-filtered-turns-count">0 turns</span>
                 </div>
               </div>
 
@@ -1157,7 +1160,29 @@
         </div>
 
         <!-- Saved Runs History (always visible — outside results wrapper) -->
-        
+        <div class="card diar-history-card" id="diar-history-card">
+          <div class="card-header">
+            <div>
+              <div class="flex-row items-center gap-2">
+                <h2 class="card-title">Diarization History</h2>
+                <span class="badge badge-info" id="diar-history-count-badge">0 sessions</span>
+              </div>
+              <p class="card-subtitle">Reopen complete speaker timelines saved in this browser.</p>
+            </div>
+            <button class="btn btn-ghost btn-sm text-destructive" id="btn-clear-diar-history" title="Clear all saved diarization sessions">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+              <span>Clear History</span>
+            </button>
+          </div>
+
+          <div class="diar-history-filter-bar">
+            <input type="search" id="diar-history-search-input" class="text-input text-sm" placeholder="Filter by audio title, model, speaker, or date...">
+          </div>
+
+          <div class="diar-history-list" id="diar-history-list">
+            <div class="empty-placeholder">No diarization sessions yet.</div>
+          </div>
+        </div>
 
         <!-- Merge Speaker Modal -->
         
