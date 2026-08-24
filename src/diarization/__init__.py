@@ -16,6 +16,9 @@ from src.diarization.SortformerDiarizer import SortformerDiarizer
 from src.diarization.SortformerWorkerDiarizer import SortformerWorkerDiarizer
 from src.diarization.SpeakerVerifier import (
     DEFAULT_EMBEDDING_MODEL_ID,
+    DEFAULT_MAX_OVERLAP_DURATION_S,
+    DEFAULT_PURITY_WINDOW_DURATION_S,
+    DEFAULT_PURITY_WINDOW_HOP_S,
     SpeakerProfile,
     SpeakerVerifier,
     SpeakerVerifierError,
@@ -28,6 +31,8 @@ from src.diarization.schemas import (
     DiarizationResult,
     ScoredSegment,
     Speaker,
+    SpeakerPurityResult,
+    SpeakerSimilarityWindow,
     SpeakerTurn,
     TargetSpeakerResult,
 )
@@ -38,7 +43,10 @@ __all__ = [
     "ClusteringWorkerDiarizer",
     "DEFAULT_DIARIZEN_MODEL_ID",
     "DEFAULT_EMBEDDING_MODEL_ID",
+    "DEFAULT_MAX_OVERLAP_DURATION_S",
     "DEFAULT_PYANNOTE_MODEL_ID",
+    "DEFAULT_PURITY_WINDOW_DURATION_S",
+    "DEFAULT_PURITY_WINDOW_HOP_S",
     "DiarizationModelInfo",
     "DiarizationResult",
     "DiariZenDiarizer",
@@ -47,6 +55,8 @@ __all__ = [
     "ScoredSegment",
     "Speaker",
     "SpeakerProfile",
+    "SpeakerPurityResult",
+    "SpeakerSimilarityWindow",
     "SpeakerTurn",
     "SpeakerVerifier",
     "SpeakerVerifierError",

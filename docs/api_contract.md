@@ -636,6 +636,46 @@ segments with `similarity >= threshold`, duration `>= min_duration_s`, and
 different thresholds can be tried cheaply on one `score` result. Channel
 identity is preserved from the scored result.
 
+### `SpeakerVerifier.verify_purity(audio, result, profile, *, similarity_threshold, min_candidate_duration_s=1.5, max_overlap_duration_s=0.05, window_duration_s=2.0, window_hop_s=0.75) -> list[SpeakerPurityResult]`
+
+Requires `load()` (or a `with` block) first. Treats every diarization turn as
+one candidate and returns one decision in input order.
+
+**Behavior contract:**
+
+- Requires `result.audio_id == audio.source_id` so timestamps cannot silently
+  be applied to the wrong file.
+- Rejects candidates shorter than `min_candidate_duration_s` with reason
+  `candidate_too_short`.
+- Computes the union duration of other-speaker turns intersecting each
+  candidate. It rejects when that duration exceeds
+  `max_overlap_duration_s`, with reason `overlap_detected`. Callers requiring
+  simultaneous-speaker protection must supply results from an overlap-aware
+  diarizer.
+- Scores the remaining candidate in sliding `window_duration_s` windows at
+  `window_hop_s`; the final window is end-anchored so the candidate tail is
+  always covered. Candidates shorter than the configured window use one
+  whole-candidate window.
+- Rejects when any window has cosine similarity below
+  `similarity_threshold`, with reason
+  `target_similarity_below_threshold`.
+- Returns `decision="error"` and reason `embedding_failed` when any required
+  identity window cannot be embedded. Error results never pass but remain
+  distinguishable from semantic contamination for retry/reporting.
+- Short-circuits identity inference after a duration or overlap veto. This
+  follows the precision-first rule that one calibrated contamination signal
+  is sufficient to reject.
+- Stores the decision reason, overlap measurements, every successful window
+  score, and embedding model metadata in each `SpeakerPurityResult`. Its
+  `passed` property is true only for `decision="pass"`;
+  `min_target_similarity` is derived from its window evidence. Callers should
+  persist the call thresholds alongside batch results.
+
+The current embedding backend remains
+`pyannote/wespeaker-voxceleb-resnet34-LM`. Enrollment clips are still the
+model-independent source of truth, so another verified embedding backend can
+consume the same profiles without changing their on-disk schema.
+
 ### `SpeakerVerifier._load() -> None` and `_unload() -> None`
 
 - `_load()` loads the pyannote embedding model (`Model.from_pretrained` with

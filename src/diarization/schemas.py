@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
+from typing import Literal
 
 
 def _validate_non_empty_string(value: str, field_name: str) -> None:
@@ -125,6 +126,98 @@ class TargetSpeakerResult:
         _validate_non_empty_string(self.profile_name, "profile_name")
         if not isinstance(self.segments, list):
             raise TypeError("segments must be a list")
+
+
+@dataclass(frozen=True)
+class SpeakerSimilarityWindow:
+    """One candidate sub-window scored against an enrolled speaker."""
+
+    start_s: float
+    end_s: float
+    similarity: float
+
+    def __post_init__(self) -> None:
+        _validate_timestamp(self.start_s, "start_s")
+        _validate_timestamp(self.end_s, "end_s")
+        if self.end_s <= self.start_s:
+            raise ValueError("end_s must be greater than start_s")
+        if isinstance(self.similarity, bool) or not isinstance(
+            self.similarity, (int, float)
+        ):
+            raise TypeError("similarity must be a number")
+        if not isfinite(self.similarity) or not -1 <= self.similarity <= 1:
+            raise ValueError("similarity must be between -1 and 1")
+
+
+@dataclass(frozen=True)
+class SpeakerPurityResult:
+    """Speaker-purity decision and evidence for one candidate segment."""
+
+    schema_version: str
+    audio_id: str
+    profile_name: str
+    speaker_id: str
+    start_s: float
+    end_s: float
+    decision: Literal["pass", "reject", "error"]
+    overlap_duration_s: float
+    overlap_ratio: float
+    windows: tuple[SpeakerSimilarityWindow, ...]
+    reason: str | None = None
+    model: DiarizationModelInfo | None = None
+    error: str | None = None
+
+    def __post_init__(self) -> None:
+        _validate_non_empty_string(self.schema_version, "schema_version")
+        _validate_non_empty_string(self.audio_id, "audio_id")
+        _validate_non_empty_string(self.profile_name, "profile_name")
+        _validate_non_empty_string(self.speaker_id, "speaker_id")
+        _validate_timestamp(self.start_s, "start_s")
+        _validate_timestamp(self.end_s, "end_s")
+        if self.end_s <= self.start_s:
+            raise ValueError("end_s must be greater than start_s")
+        if self.decision not in {"pass", "reject", "error"}:
+            raise ValueError("decision must be 'pass', 'reject', or 'error'")
+        if self.decision == "pass" and self.reason is not None:
+            raise ValueError("passing results cannot contain a reason")
+        if self.decision != "pass":
+            if not isinstance(self.reason, str) or not self.reason:
+                raise ValueError("rejected and error results require a reason")
+        if self.decision == "error":
+            if not isinstance(self.error, str) or not self.error:
+                raise ValueError("error results require a non-empty error message")
+        elif self.error is not None:
+            raise ValueError("only error results may contain an error message")
+
+        _validate_timestamp(self.overlap_duration_s, "overlap_duration_s")
+        if (
+            isinstance(self.overlap_ratio, bool)
+            or not isinstance(self.overlap_ratio, (int, float))
+            or not isfinite(self.overlap_ratio)
+            or not 0 <= self.overlap_ratio <= 1
+        ):
+            raise ValueError("overlap_ratio must be between 0 and 1")
+        if not isinstance(self.windows, tuple) or not all(
+            isinstance(window, SpeakerSimilarityWindow) for window in self.windows
+        ):
+            raise TypeError("windows must be a tuple of SpeakerSimilarityWindow")
+
+    @property
+    def passed(self) -> bool:
+        """Whether this candidate is safe to admit to the dataset."""
+        return self.decision == "pass"
+
+    @property
+    def duration_s(self) -> float:
+        """Candidate duration in seconds."""
+        return self.end_s - self.start_s
+
+    @property
+    def min_target_similarity(self) -> float | None:
+        """Lowest target similarity across successfully embedded windows."""
+        if not self.windows:
+            return None
+        return min(window.similarity for window in self.windows)
 
 
 @dataclass

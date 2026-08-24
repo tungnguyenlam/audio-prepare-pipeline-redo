@@ -4,13 +4,15 @@ Enroll a target speaker from a few manually cut single-speaker reference
 clips, then score diarization turns against the enrollment centroid with a
 speaker-verification embedding model. Filtering is precision-first: keep only
 segments whose embedding is close enough to the target, optionally excluding
-anything that overlaps another speaker's turns.
+anything that overlaps another speaker's turns. Candidate-level purity checks
+add overlap-duration vetoes and sliding identity windows.
 """
 
 from __future__ import annotations
 
 import gc
 import json
+import math
 import os
 import shutil
 from dataclasses import dataclass
@@ -23,6 +25,8 @@ from src.diarization.schemas import (
     DiarizationModelInfo,
     DiarizationResult,
     ScoredSegment,
+    SpeakerPurityResult,
+    SpeakerSimilarityWindow,
     TargetSpeakerResult,
 )
 from src.utils.AudioClass import Audio, _sanitize_filename_component
@@ -30,6 +34,9 @@ from src.utils.AudioClass import Audio, _sanitize_filename_component
 DEFAULT_EMBEDDING_MODEL_ID = "pyannote/wespeaker-voxceleb-resnet34-LM"
 PROFILE_SCHEMA_VERSION = "2.0"
 MIN_EMBEDDING_DURATION_S = 0.15
+DEFAULT_PURITY_WINDOW_DURATION_S = 2.0
+DEFAULT_PURITY_WINDOW_HOP_S = 0.75
+DEFAULT_MAX_OVERLAP_DURATION_S = 0.05
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -63,7 +70,9 @@ class SpeakerVerifier(ManagedModel):
     ``.data/speaker_profiles/<name>/``) as copied reference clips plus a
     ``profile.json`` manifest. ``enroll``, ``load_profile``, ``list_profiles``
     and ``delete_profile`` work without loading the model; ``score`` requires
-    ``load()`` or a ``with`` block. ``filter`` is a pure post-processing step.
+    ``load()`` or a ``with`` block. ``verify_purity`` applies strict candidate
+    overlap and sliding-window identity checks. ``filter`` is a pure
+    post-processing step.
 
     Example::
 
@@ -512,6 +521,290 @@ class SpeakerVerifier(ManagedModel):
             channel_name=scored.channel_name,
             channel_url=scored.channel_url,
         )
+
+    def verify_purity(
+        self,
+        audio: Audio,
+        result: DiarizationResult,
+        profile: SpeakerProfile,
+        *,
+        similarity_threshold: float,
+        min_candidate_duration_s: float = 1.5,
+        max_overlap_duration_s: float = DEFAULT_MAX_OVERLAP_DURATION_S,
+        window_duration_s: float = DEFAULT_PURITY_WINDOW_DURATION_S,
+        window_hop_s: float = DEFAULT_PURITY_WINDOW_HOP_S,
+    ) -> list[SpeakerPurityResult]:
+        """Verify every diarization turn as a speaker-pure candidate.
+
+        A candidate is rejected when an overlap-aware diarization result shows
+        meaningful activity from another speaker or when any sliding embedding
+        window falls below ``similarity_threshold``. Candidates that cannot be
+        embedded return ``decision="error"`` and therefore never pass.
+
+        The diarization result is the overlap authority for this method. Use an
+        overlap-aware backend, such as 3D-Speaker with ``include_overlap=True``
+        or Sortformer, when simultaneous-speaker vetoes are required.
+
+        Args:
+            audio: File-backed speech audio on the same timeline as ``result``.
+            result: Diarization candidates and overlap activity for ``audio``.
+            profile: Enrolled target-speaker profile.
+            similarity_threshold: Minimum cosine similarity for every window.
+            min_candidate_duration_s: Shorter turns are rejected without
+                attempting an unreliable speaker embedding.
+            max_overlap_duration_s: Maximum tolerated union duration of other
+                speakers intersecting a candidate turn.
+            window_duration_s: Sliding identity window length.
+            window_hop_s: Hop between identity windows.
+
+        Returns:
+            One evidence-rich purity result per diarization turn, in input
+            order. Only results with ``decision="pass"`` are dataset-safe.
+
+        Raises:
+            RuntimeError: If the embedding model is not loaded.
+            FileNotFoundError: If the audio file does not exist.
+            ValueError: If settings are invalid or audio identities differ.
+            SpeakerVerifierError: If the profile cannot be embedded.
+        """
+        if not self.is_loaded or self._inference is None:
+            raise RuntimeError(
+                "SpeakerVerifier is not loaded. Call load() before "
+                "verify_purity(), or use it as a context manager."
+            )
+        source_path = Path(audio.path)
+        if not source_path.is_file():
+            raise FileNotFoundError(f"Audio file does not exist: {source_path}")
+        if result.audio_id != audio.source_id:
+            raise ValueError(
+                "DiarizationResult audio_id does not match Audio source_id: "
+                f"{result.audio_id!r} != {audio.source_id!r}"
+            )
+
+        settings = self._validate_purity_settings(
+            similarity_threshold=similarity_threshold,
+            min_candidate_duration_s=min_candidate_duration_s,
+            max_overlap_duration_s=max_overlap_duration_s,
+            window_duration_s=window_duration_s,
+            window_hop_s=window_hop_s,
+        )
+        (
+            threshold,
+            minimum_duration,
+            maximum_overlap,
+            window_duration,
+            window_hop,
+        ) = settings
+        model_info = DiarizationModelInfo(
+            backend="pyannote-embedding",
+            model_id=self.model_id,
+        )
+        import numpy as np
+
+        centroid: Any | None = None
+        purity_results: list[SpeakerPurityResult] = []
+
+        for turn in result.turns:
+            duration_s = turn.end_s - turn.start_s
+            overlap_duration_s = self._other_speaker_overlap_duration(
+                result,
+                speaker_id=turn.speaker_id,
+                start_s=turn.start_s,
+                end_s=turn.end_s,
+            )
+            overlap_ratio = min(1.0, overlap_duration_s / duration_s)
+            common = {
+                "schema_version": "1.0",
+                "audio_id": audio.source_id,
+                "profile_name": profile.name,
+                "speaker_id": turn.speaker_id,
+                "start_s": turn.start_s,
+                "end_s": turn.end_s,
+                "overlap_duration_s": overlap_duration_s,
+                "overlap_ratio": overlap_ratio,
+                "model": model_info,
+            }
+
+            if duration_s < minimum_duration:
+                purity_results.append(
+                    SpeakerPurityResult(
+                        **common,
+                        decision="reject",
+                        reason="candidate_too_short",
+                        windows=(),
+                    )
+                )
+                continue
+
+            if overlap_duration_s > maximum_overlap:
+                purity_results.append(
+                    SpeakerPurityResult(
+                        **common,
+                        decision="reject",
+                        reason="overlap_detected",
+                        windows=(),
+                    )
+                )
+                continue
+
+            if centroid is None:
+                centroid = self._profile_centroid(profile)
+
+            windows: list[SpeakerSimilarityWindow] = []
+            embedding_error: str | None = None
+            for window_start_s, window_end_s in self._candidate_windows(
+                turn.start_s,
+                turn.end_s,
+                window_duration_s=window_duration,
+                window_hop_s=window_hop,
+            ):
+                try:
+                    vector = self._embed(source_path, window_start_s, window_end_s)
+                    similarity = float(
+                        np.clip(np.dot(centroid, vector), -1.0, 1.0)
+                    )
+                except Exception as exc:
+                    embedding_error = f"{type(exc).__name__}: {exc}"
+                    break
+                windows.append(
+                    SpeakerSimilarityWindow(
+                        start_s=window_start_s,
+                        end_s=window_end_s,
+                        similarity=similarity,
+                    )
+                )
+
+            if embedding_error is not None or not windows:
+                decision = "error"
+                reason = "embedding_failed"
+                error = embedding_error or "No identity windows were generated"
+            elif any(window.similarity < threshold for window in windows):
+                decision = "reject"
+                reason = "target_similarity_below_threshold"
+                error = None
+            else:
+                decision = "pass"
+                reason = None
+                error = None
+
+            purity_results.append(
+                SpeakerPurityResult(
+                    **common,
+                    decision=decision,
+                    reason=reason,
+                    windows=tuple(windows),
+                    error=error,
+                )
+            )
+
+        return purity_results
+
+    @staticmethod
+    def _validate_purity_settings(
+        *,
+        similarity_threshold: float,
+        min_candidate_duration_s: float,
+        max_overlap_duration_s: float,
+        window_duration_s: float,
+        window_hop_s: float,
+    ) -> tuple[float, float, float, float, float]:
+        """Validate and normalize candidate-level purity settings."""
+        values = {
+            "similarity_threshold": similarity_threshold,
+            "min_candidate_duration_s": min_candidate_duration_s,
+            "max_overlap_duration_s": max_overlap_duration_s,
+            "window_duration_s": window_duration_s,
+            "window_hop_s": window_hop_s,
+        }
+        for name, value in values.items():
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise TypeError(f"{name} must be a number")
+            if not math.isfinite(value):
+                raise ValueError(f"{name} must be finite")
+
+        threshold = float(similarity_threshold)
+        minimum_duration = float(min_candidate_duration_s)
+        maximum_overlap = float(max_overlap_duration_s)
+        window_duration = float(window_duration_s)
+        window_hop = float(window_hop_s)
+        if not -1 <= threshold <= 1:
+            raise ValueError("similarity_threshold must be between -1 and 1")
+        if minimum_duration <= 0:
+            raise ValueError("min_candidate_duration_s must be greater than zero")
+        if maximum_overlap < 0:
+            raise ValueError("max_overlap_duration_s must be non-negative")
+        if window_duration <= 0:
+            raise ValueError("window_duration_s must be greater than zero")
+        if window_hop <= 0 or window_hop > window_duration:
+            raise ValueError(
+                "window_hop_s must be greater than zero and no larger than "
+                "window_duration_s"
+            )
+        return (
+            threshold,
+            minimum_duration,
+            maximum_overlap,
+            window_duration,
+            window_hop,
+        )
+
+    @staticmethod
+    def _candidate_windows(
+        start_s: float,
+        end_s: float,
+        *,
+        window_duration_s: float,
+        window_hop_s: float,
+    ) -> list[tuple[float, float]]:
+        """Return sliding windows with an end-anchored final window."""
+        duration_s = end_s - start_s
+        if duration_s <= window_duration_s:
+            return [(start_s, end_s)]
+
+        starts: list[float] = []
+        cursor = start_s
+        last_full_start = end_s - window_duration_s
+        while cursor <= last_full_start:
+            starts.append(cursor)
+            cursor += window_hop_s
+        if not math.isclose(starts[-1], last_full_start, abs_tol=1e-9):
+            starts.append(last_full_start)
+        return [
+            (window_start, window_start + window_duration_s)
+            for window_start in starts
+        ]
+
+    @staticmethod
+    def _other_speaker_overlap_duration(
+        result: DiarizationResult,
+        *,
+        speaker_id: str,
+        start_s: float,
+        end_s: float,
+    ) -> float:
+        """Return union duration of other-speaker activity in a candidate."""
+        intervals = sorted(
+            (
+                max(start_s, other.start_s),
+                min(end_s, other.end_s),
+            )
+            for other in result.turns
+            if other.speaker_id != speaker_id
+            and other.start_s < end_s
+            and other.end_s > start_s
+        )
+        if not intervals:
+            return 0.0
+
+        merged_duration_s = 0.0
+        merged_start, merged_end = intervals[0]
+        for interval_start, interval_end in intervals[1:]:
+            if interval_start <= merged_end:
+                merged_end = max(merged_end, interval_end)
+            else:
+                merged_duration_s += merged_end - merged_start
+                merged_start, merged_end = interval_start, interval_end
+        return merged_duration_s + merged_end - merged_start
 
     def _profile_centroid(self, profile: SpeakerProfile) -> Any:
         """L2-normalized mean embedding of the profile clips."""

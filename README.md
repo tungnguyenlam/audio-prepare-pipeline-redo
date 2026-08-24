@@ -17,6 +17,20 @@ inference (typically the model server). Development-only machines can stop after
 installing the primary environment and editing code; see
 [Development and model-server roles](#development-and-model-server-roles).
 
+### Quick setup
+
+For a fresh checkout, the minimum setup for the shared web application is:
+
+```bash
+cd /path/to/audio-prepare-pipeline-redo
+uv sync
+./scripts/start_web.sh
+```
+
+Add `HF_TOKEN=hf_...` to the repository-root `.env` before using gated Hugging
+Face models. Diarization backends with incompatible dependencies also need the
+isolated environments described in step 3 below.
+
 ### Prerequisites
 
 - Python >= 3.13
@@ -77,12 +91,37 @@ uv pip install --python .venv-sortformer/bin/python -r requirements-sortformer.t
 and DiariZen's Pyannote fork:
 
 ```bash
+# Run these commands from the repository root on the model server.
+uv python install 3.10
 uv venv --python 3.10 .venv-diarizen
 uv pip install --python .venv-diarizen/bin/python \
   torch==2.1.1 torchvision==0.16.1 torchaudio==2.1.1 \
   --index-url https://download.pytorch.org/whl/cu121
 uv pip install --python .venv-diarizen/bin/python -r requirements-diarizen.txt
+
+# Confirm that the worker interpreter and packages are available.
+.venv-diarizen/bin/python -c "import torch, diarizen; print(torch.__version__)"
 ```
+
+The commands above are the direct fix for an error like:
+
+```text
+DiariZen worker Python does not exist: .../.venv-diarizen/bin/python
+```
+
+The default location is `<repo-root>/.venv-diarizen/bin/python`, so no
+additional configuration is needed when the environment is created there. If
+an existing DiariZen environment lives elsewhere, set its absolute interpreter
+path in the repository-root `.env` instead:
+
+```env
+DIARIZEN_PYTHON=/absolute/path/to/diarizen-venv/bin/python
+```
+
+Restart the web backend after creating the environment or changing `.env`.
+The source synchronization scripts deliberately exclude `.venv` and
+`.venv-*`, so each isolated environment must be created separately on the
+model server; it is not copied from the development machine.
 
 **3D-Speaker** ([modelscope/3D-Speaker](https://github.com/modelscope/3D-Speaker);
 `speakerlab` is not on PyPI). Toolkit sources are shallow-cloned into

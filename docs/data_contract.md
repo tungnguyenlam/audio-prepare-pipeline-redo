@@ -44,6 +44,22 @@ optional channel provenance. Profiles are global identities reusable across
 channels. Reference clips are the portable source of truth; each supporting
 diarization pipeline builds its own enrollment representation before inference.
 
+## `SpeakerPurityResult`
+
+Each result covers one diarization-turn candidate and records:
+
+- candidate identity (`audio_id`, `speaker_id`, `start_s`, `end_s`,
+  `profile_name`);
+- `decision` (`pass`, `reject`, or `error`) plus a stable `reason`;
+- union overlap duration and ratio from other-speaker turns;
+- every successfully computed `SpeakerSimilarityWindow` and embedding model
+  metadata;
+- an operational error message only when `decision == "error"`.
+
+`passed` and `min_target_similarity` are derived properties rather than stored
+state. Only `pass` enters the dataset. Both `reject` and `error` fail closed,
+while `error` remains distinguishable so callers may retry it.
+
 ## Pipeline `AudioItem`
 
 Pipeline registry items expose the `Audio` source/channel fields directly in
