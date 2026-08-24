@@ -442,14 +442,19 @@ class SpeakerVerifier(ManagedModel):
         import numpy as np
 
         vectors = []
+        failures = []
         for clip_path in profile.clip_paths:
             try:
                 vectors.append(self._embed(clip_path))
-            except Exception:
-                continue
+            except Exception as exc:
+                failures.append(
+                    f"{clip_path.name}: {type(exc).__name__}: {exc}"
+                )
         if not vectors:
+            details = "; ".join(failures)
             raise SpeakerVerifierError(
-                f"No profile clip could be embedded for {profile.name!r}"
+                f"None of {len(profile.clip_paths)} profile clips could be embedded "
+                f"for {profile.name!r}. {details}"
             )
 
         centroid = np.mean(np.stack(vectors), axis=0)
@@ -468,15 +473,51 @@ class SpeakerVerifier(ManagedModel):
     ) -> Any:
         """L2-normalized embedding of a whole file or a time slice of it."""
         import numpy as np
-        from pyannote.core import Segment
+        import soundfile as sf
+        import torch
 
-        if start_s is None:
-            raw = self._inference(str(path))
-        else:
-            raw = self._inference.crop(str(path), Segment(start_s, end_s))
+        path = Path(path)
+        if not path.is_file():
+            raise FileNotFoundError(f"Audio file does not exist: {path}")
+
+        info = sf.info(str(path))
+        start_frame = 0
+        stop_frame = info.frames
+        if start_s is not None:
+            if end_s is None or end_s <= start_s:
+                raise SpeakerVerifierError(
+                    f"Invalid embedding interval for {path}: {start_s}–{end_s}"
+                )
+            start_frame = max(0, round(start_s * info.samplerate))
+            stop_frame = min(info.frames, round(end_s * info.samplerate))
+
+        if stop_frame <= start_frame:
+            raise SpeakerVerifierError(
+                f"Embedding interval is empty for {path}: {start_s}–{end_s}"
+            )
+
+        waveform, sample_rate = sf.read(
+            str(path),
+            start=start_frame,
+            stop=stop_frame,
+            dtype="float32",
+            always_2d=True,
+        )
+        if waveform.shape[0] == 0:
+            raise SpeakerVerifierError(f"Cannot embed empty audio file: {path}")
+
+        if waveform.shape[1] > 1:
+            waveform = waveform.mean(axis=1, keepdims=True)
+
+        raw = self._inference(
+            {
+                "waveform": torch.from_numpy(waveform.T.copy()),
+                "sample_rate": int(sample_rate),
+            }
+        )
 
         vector = np.asarray(raw, dtype=np.float64).reshape(-1)
         norm = float(np.linalg.norm(vector))
-        if norm == 0:
-            raise SpeakerVerifierError(f"Zero embedding for {path}")
+        if not np.isfinite(norm) or norm == 0:
+            raise SpeakerVerifierError(f"Invalid embedding for {path}")
         return vector / norm
