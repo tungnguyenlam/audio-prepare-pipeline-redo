@@ -6081,6 +6081,113 @@ button {
   .target-workflow-rail { grid-template-columns: 1fr 1fr; }
 }
 
+/* Post-diarization target-speaker review */
+.target-eval-setup {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(300px, 1.4fr) auto;
+  align-items: end;
+  gap: 14px;
+  padding: 16px;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+
+.target-eval-setup > .btn {
+  min-height: 40px;
+  margin-bottom: 22px;
+}
+
+.target-eval-context,
+.target-evaluation-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--accent-primary) 8%, var(--bg-surface-elevated));
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 35%, var(--border-color));
+  border-radius: 10px;
+}
+
+.target-eval-context > span:last-child,
+.target-evaluation-summary span {
+  color: var(--text-secondary);
+  font-size: .78rem;
+}
+
+.target-evaluation-card {
+  overflow: hidden;
+  margin-top: 14px;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+}
+
+.target-settings-grid,
+.target-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.target-settings-grid label {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7px;
+  color: var(--text-secondary);
+  font-size: .76rem;
+}
+
+.target-settings-grid .checkbox-pill {
+  flex-direction: row;
+  align-items: center;
+}
+
+.target-metrics-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  background: color-mix(in srgb, var(--success, #22c55e) 7%, transparent);
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.target-metrics-grid div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.target-metrics-grid strong { font-size: 1rem; }
+.target-metrics-grid span { color: var(--text-secondary); font-size: .7rem; }
+
+.target-segments-scroll {
+  max-height: 460px;
+  overflow: auto;
+}
+
+.target-segments-scroll table { min-width: 900px; }
+.target-row-dropped { opacity: .48; }
+.target-label-actions { display: flex; gap: 4px; }
+.target-local-id { display: block; margin-top: 2px; color: var(--text-muted); font-family: var(--font-mono); }
+
+.target-evaluation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+@media (max-width: 900px) {
+  .target-eval-setup { grid-template-columns: 1fr; }
+  .target-eval-setup > .btn { margin-bottom: 0; }
+  .target-settings-grid { grid-template-columns: 1fr; }
+  .target-metrics-grid { grid-template-columns: 1fr 1fr; }
+}
+
 .diar-nav-btn {
   display: inline-flex;
   align-items: center;

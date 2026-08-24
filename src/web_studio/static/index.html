@@ -1134,6 +1134,11 @@
                 <span class="subtab-label">Turns Inspector</span>
                 <span class="subtab-chip" id="diar-subtab-turns-count">0</span>
               </button>
+              <button class="diar-subtab-btn" data-subtab="target">
+                <span class="subtab-icon">🎯</span>
+                <span class="subtab-label">Target Speaker & Evaluation</span>
+                <span class="subtab-chip" id="ts-kept-chip">—</span>
+              </button>
               <button class="diar-subtab-btn" data-subtab="export">
                 <span class="subtab-icon">💾</span>
                 <span class="subtab-label">Export & Annotations</span>
@@ -1190,6 +1195,46 @@
                   <tbody id="turns-table-body"></tbody>
                 </table>
               </div>
+            </div>
+
+            <!-- Subview: Target Speaker Verification & Evaluation -->
+            <div class="diar-subview-panel hidden" id="diar-subview-target">
+              <div class="subview-header">
+                <div>
+                  <h3 class="subview-title">Target Speaker Verification & Evaluation</h3>
+                  <p class="subview-desc">Score every diarized turn against a known speaker, review the proposed matches, and save a reusable human evaluation.</p>
+                </div>
+              </div>
+
+              <div class="target-eval-setup">
+                <div class="form-group mb-0">
+                  <label class="form-label" for="ts-eval-profile-select">Target Speaker</label>
+                  <select id="ts-eval-profile-select" class="select-input">
+                    <option value="">No known speakers enrolled</option>
+                  </select>
+                  <p class="text-xs text-muted">Uses the clean reference clips managed above.</p>
+                </div>
+                <div class="form-group mb-0">
+                  <label class="form-label" for="ts-eval-diar-speaker-select">Matching Diarized Speaker <span class="text-muted">(optional)</span></label>
+                  <select id="ts-eval-diar-speaker-select" class="select-input">
+                    <option value="">No named match — score all turns independently</option>
+                  </select>
+                  <p class="text-xs text-muted" id="ts-eval-assignment-help">Same-named enrolled identities are matched automatically, but remain tied to their local speaker ID.</p>
+                </div>
+                <button class="btn btn-primary" id="btn-ts-score" title="Embed every turn and compare it with the target speaker reference">
+                  🎯 Score & Review
+                </button>
+              </div>
+
+              <div class="target-eval-context" id="ts-eval-context">
+                <span class="badge badge-accent">Post-diarization</span>
+                <strong id="ts-eval-context-title">Run diarization first</strong>
+                <span id="ts-eval-context-detail">A completed speaker timeline is required before target-speaker scoring.</span>
+              </div>
+              <div class="text-xs text-muted" id="ts-score-status">Choose a target speaker after diarization.</div>
+
+              <div class="target-evaluation-summary" id="ts-evaluation-summary" hidden></div>
+              <div id="ts-evaluation-results"></div>
             </div>
 
             <!-- Subview 2: Multi-Format Export Studio -->

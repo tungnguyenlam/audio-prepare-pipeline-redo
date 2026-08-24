@@ -63,6 +63,18 @@ const state = {
     historySearch: '',
     activeHistoryId: null,
   },
+
+  // Post-diarization target-speaker review state
+  targetSpeaker: {
+    scored: null,
+    audioId: null,
+    profileName: '',
+    assignedSpeakerId: '',
+    threshold: 0.60,
+    minDur: 1.5,
+    excludeOverlap: true,
+    labels: {},
+  },
 };
 
 // DOM Elements Cache
@@ -2664,6 +2676,10 @@ function clearDiarizationWorkspace() {
   if (el.audio) el.audio.muted = false;
   if (el.diarResultsWrapper) el.diarResultsWrapper.classList.add('hidden');
   if (el.diarEmptyPlaceholder) el.diarEmptyPlaceholder.classList.remove('hidden');
+  resetTargetSpeakerEvaluation({ preserveSelection: true });
+  state.targetSpeaker.assignedSpeakerId = '';
+  renderTargetSpeakerAssignmentOptions();
+  renderTargetSpeakerContext();
   renderDiarizationHistory();
 }
 
@@ -2972,6 +2988,8 @@ function setDiarZoom(zoom) {
 }
 
 function renderDiarizationWorkspace(diarization, audioId) {
+  resetTargetSpeakerEvaluation({ preserveSelection: true });
+  state.targetSpeaker.assignedSpeakerId = '';
   state.diarization.audioId = audioId;
   state.diarization.data = diarization || state.diarization.data || {};
   state.diarization.soloSpeaker = null;
@@ -3068,6 +3086,8 @@ function renderDiarizationWorkspace(diarization, audioId) {
   renderSpeakerSwimlanes();
   renderSpeakerProfiles();
   renderTurnsTable();
+  renderTargetSpeakerAssignmentOptions({ autoMatch: true });
+  renderTargetSpeakerContext();
   updateDiarizationPlayhead(state.player.currentTime || 0, totalAudioDuration);
 }
 
@@ -3636,6 +3656,9 @@ function renderSpeakerProfiles() {
       state.diarization.customNames[spkId] = val;
       renderSpeakerSwimlanes();
       renderTurnsTable();
+      renderTargetSpeakerAssignmentOptions({ autoMatch: !state.targetSpeaker.assignedSpeakerId });
+      renderTargetSpeakerContext();
+      renderTargetSpeakerResults();
       updateActiveDiarizationHistory();
       showToast(`Speaker ${spkId} renamed to "${val}"`, "success");
     });
@@ -3927,8 +3950,10 @@ function populateTargetClipSelect() {
 async function loadSpeakerProfiles() {
   const profileSelect = document.getElementById('ts-profile-select');
   const enrollmentSelect = document.getElementById('diar-enrollment-profile-select');
+  const evaluationSelect = document.getElementById('ts-eval-profile-select');
   const previousProfile = profileSelect?.value || '';
   const previousEnrollment = enrollmentSelect?.value || '';
+  const previousEvaluation = evaluationSelect?.value || state.targetSpeaker.profileName || '';
 
   try {
     const res = await fetch('/api/speaker-profiles');
@@ -3954,7 +3979,21 @@ async function loadSpeakerProfiles() {
       }
     }
 
+    if (evaluationSelect) {
+      evaluationSelect.innerHTML = profiles.length
+        ? '<option value="">Select a target speaker</option>' + profiles.map(profile => `<option value="${escapeHtml(profile.name)}">${escapeHtml(profile.name)} · ${profile.num_clips} clips</option>`).join('')
+        : '<option value="">No known speakers enrolled</option>';
+      const nextEvaluation = profiles.some(profile => profile.name === previousEvaluation)
+        ? previousEvaluation
+        : (profiles.some(profile => profile.name === previousProfile) ? previousProfile : '');
+      evaluationSelect.value = nextEvaluation;
+      if (nextEvaluation !== previousEvaluation) state.targetSpeaker.assignedSpeakerId = '';
+      state.targetSpeaker.profileName = nextEvaluation;
+    }
+
     renderSelectedSpeakerClips();
+    renderTargetSpeakerAssignmentOptions({ autoMatch: true });
+    renderTargetSpeakerContext();
     const activeCard = document.querySelector('.model-card[data-diar-model].active');
     syncDiarModelOptions(activeCard?.dataset.diarModel || 'pyannote_community');
   } catch (err) {
@@ -4073,6 +4112,391 @@ async function deleteSelectedSpeakerProfile() {
     await loadSpeakerProfiles();
   } catch (err) {
     showToast(`Delete failed: ${err.message}`, 'error');
+  }
+}
+
+// ==================== TARGET SPEAKER EVALUATION ====================
+
+function initTargetSpeakerEvaluation() {
+  const profileSelect = document.getElementById('ts-eval-profile-select');
+  const assignmentSelect = document.getElementById('ts-eval-diar-speaker-select');
+  const scoreButton = document.getElementById('btn-ts-score');
+
+  profileSelect?.addEventListener('change', () => {
+    state.targetSpeaker.profileName = profileSelect.value;
+    resetTargetSpeakerEvaluation({ preserveSelection: true });
+    state.targetSpeaker.assignedSpeakerId = '';
+    renderTargetSpeakerAssignmentOptions({ autoMatch: true });
+    renderTargetSpeakerContext();
+  });
+  assignmentSelect?.addEventListener('change', () => {
+    state.targetSpeaker.assignedSpeakerId = assignmentSelect.value;
+    renderTargetSpeakerContext();
+    renderTargetSpeakerResults();
+  });
+  scoreButton?.addEventListener('click', runTargetSpeakerScore);
+
+  renderTargetSpeakerAssignmentOptions({ autoMatch: true });
+  renderTargetSpeakerContext();
+}
+
+function normalizedSpeakerName(value) {
+  return String(value || '').trim().toLocaleLowerCase();
+}
+
+function findNamedDiarizedSpeaker(profileName) {
+  const targetName = normalizedSpeakerName(profileName);
+  if (!targetName) return null;
+  const speakers = state.diarization.speakers || [];
+  return speakers.find(speaker => normalizedSpeakerName(speaker.global_speaker_id) === targetName)
+    || speakers.find(speaker => normalizedSpeakerName(getSpeakerName(speaker.speaker_id)) === targetName)
+    || speakers.find(speaker => normalizedSpeakerName(speaker.speaker_id) === targetName)
+    || null;
+}
+
+function renderTargetSpeakerAssignmentOptions({ autoMatch = false } = {}) {
+  const select = document.getElementById('ts-eval-diar-speaker-select');
+  if (!select) return;
+  const speakers = state.diarization.speakers || [];
+  const current = state.targetSpeaker.assignedSpeakerId;
+  const profileName = document.getElementById('ts-eval-profile-select')?.value || state.targetSpeaker.profileName;
+  const namedMatch = findNamedDiarizedSpeaker(profileName);
+  const currentIsValid = speakers.some(speaker => speaker.speaker_id === current);
+  const next = currentIsValid
+    ? current
+    : (autoMatch && namedMatch ? namedMatch.speaker_id : '');
+
+  select.innerHTML = '<option value="">No named match — score all turns independently</option>' + speakers.map(speaker => {
+    const displayName = getSpeakerName(speaker.speaker_id);
+    const identity = speaker.global_speaker_id ? ' · enrolled identity' : '';
+    return `<option value="${escapeHtml(speaker.speaker_id)}">${escapeHtml(displayName)} · local ${escapeHtml(speaker.speaker_id)}${identity}</option>`;
+  }).join('');
+  select.value = next;
+  state.targetSpeaker.assignedSpeakerId = next;
+
+  const help = document.getElementById('ts-eval-assignment-help');
+  if (help) {
+    help.textContent = namedMatch
+      ? `Matched “${profileName}” to local speaker ${namedMatch.speaker_id}. Verification still scores every turn independently.`
+      : 'Optional: identify which local diarized speaker represents the target. Display names never replace local speaker IDs.';
+  }
+}
+
+function renderTargetSpeakerContext() {
+  const title = document.getElementById('ts-eval-context-title');
+  const detail = document.getElementById('ts-eval-context-detail');
+  const status = document.getElementById('ts-score-status');
+  if (!title || !detail) return;
+  const turns = state.diarization.turns || [];
+  const speakers = state.diarization.speakers || [];
+  const profileName = document.getElementById('ts-eval-profile-select')?.value || state.targetSpeaker.profileName;
+  const assignedId = state.targetSpeaker.assignedSpeakerId;
+
+  if (!turns.length) {
+    title.textContent = 'Run diarization first';
+    detail.textContent = 'A completed speaker timeline is required before target-speaker scoring.';
+    if (status && !state.targetSpeaker.scored) status.textContent = 'Choose a target speaker after diarization.';
+    return;
+  }
+  if (!profileName) {
+    title.textContent = `${speakers.length} speakers · ${turns.length} turns ready`;
+    detail.textContent = 'Choose a known target speaker to begin verification.';
+    if (status && !state.targetSpeaker.scored) status.textContent = 'Choose a target speaker to score these turns.';
+    return;
+  }
+
+  title.textContent = `${profileName} · ${turns.length} turns ready`;
+  detail.textContent = assignedId
+    ? `Optional diarization reference: ${getSpeakerName(assignedId)} (local ${assignedId}).`
+    : 'No same-named diarized speaker is required; all turns will be verified against the reference clips.';
+  if (status && !state.targetSpeaker.scored) status.textContent = `Ready to score ${turns.length} turns against “${profileName}”.`;
+}
+
+function resetTargetSpeakerEvaluation({ preserveSelection = true } = {}) {
+  state.targetSpeaker.scored = null;
+  state.targetSpeaker.audioId = null;
+  state.targetSpeaker.labels = {};
+  state.targetSpeaker.threshold = 0.60;
+  state.targetSpeaker.minDur = 1.5;
+  state.targetSpeaker.excludeOverlap = true;
+  if (!preserveSelection) {
+    state.targetSpeaker.profileName = '';
+    state.targetSpeaker.assignedSpeakerId = '';
+  }
+  const summary = document.getElementById('ts-evaluation-summary');
+  const results = document.getElementById('ts-evaluation-results');
+  const chip = document.getElementById('ts-kept-chip');
+  if (summary) summary.hidden = true;
+  if (results) results.innerHTML = '';
+  if (chip) chip.textContent = '—';
+}
+
+async function runTargetSpeakerScore() {
+  const profileSelect = document.getElementById('ts-eval-profile-select');
+  const status = document.getElementById('ts-score-status');
+  const button = document.getElementById('btn-ts-score');
+  const profileName = profileSelect?.value || '';
+  const audioId = state.diarization.audioId || el.diarInputSelect?.value || '';
+  const turns = state.diarization.turns || [];
+
+  if (!profileName) { showToast('Choose a target speaker', 'error'); return; }
+  if (!audioId || !turns.length) { showToast('Run diarization first — scoring needs speaker turns', 'error'); return; }
+
+  state.targetSpeaker.profileName = profileName;
+  if (button) button.disabled = true;
+  if (status) status.textContent = `Scoring ${turns.length} turns against “${profileName}”…`;
+
+  try {
+    const response = await fetch('/api/diarization/target-speaker-score', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        audio_id: audioId,
+        profile: profileName,
+        turns: turns.map(turn => ({
+          speaker_id: turn.speaker_id,
+          start_s: turn.start_s,
+          end_s: turn.end_s,
+        })),
+        device: state.selectedGpu || el.diarDeviceSelect?.value || 'auto',
+        token: localStorage.getItem('sonic_hf_token') || undefined,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Target-speaker scoring could not start');
+    const result = await new Promise((resolve, reject) => pollTask(data.task_id, resolve, reject));
+
+    state.targetSpeaker.scored = result.scored;
+    state.targetSpeaker.audioId = result.audio_id;
+    state.targetSpeaker.labels = {};
+    const saved = (state.evaluations || []).find(evaluation =>
+      evaluation.evaluation_type === 'target_speaker'
+      && evaluation.clip_id === result.audio_id
+      && evaluation.profile_name === profileName
+    );
+    if (saved) {
+      state.targetSpeaker.threshold = Number(saved.threshold ?? 0.60);
+      state.targetSpeaker.minDur = Number(saved.min_duration_s ?? 1.5);
+      state.targetSpeaker.excludeOverlap = saved.exclude_overlap !== false;
+      state.targetSpeaker.labels = { ...(saved.segment_labels || {}) };
+      const assignedTag = (saved.tags || []).find(tag => String(tag).startsWith('diarized_speaker:'));
+      const savedSpeakerId = assignedTag ? assignedTag.slice('diarized_speaker:'.length) : '';
+      if ((state.diarization.speakers || []).some(speaker => speaker.speaker_id === savedSpeakerId)) {
+        state.targetSpeaker.assignedSpeakerId = savedSpeakerId;
+        renderTargetSpeakerAssignmentOptions();
+      }
+    }
+    renderTargetSpeakerResults();
+    renderTargetSpeakerContext();
+    if (status) status.textContent = `Scored ${result.scored.segments.length} turns in ${result.elapsed_s}s. Tune the filter, audition segments, and record your evaluation.`;
+    showToast(`Target-speaker scoring completed for “${profileName}”`, 'success');
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (status) status.textContent = `Scoring failed: ${message}`;
+    showToast(`Scoring failed: ${message}`, 'error');
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function targetSegmentKey(segment) {
+  return `${Number(segment.start_s).toFixed(3)}-${Number(segment.end_s).toFixed(3)}-${segment.speaker_id}`;
+}
+
+function targetSpeakerKeptSegments() {
+  const target = state.targetSpeaker;
+  return (target.scored?.segments || []).filter(segment =>
+    segment.similarity >= target.threshold
+    && (segment.end_s - segment.start_s) >= target.minDur
+    && !(target.excludeOverlap && segment.overlaps_other_speaker)
+  );
+}
+
+function renderTargetSpeakerResults() {
+  const target = state.targetSpeaker;
+  const scored = target.scored;
+  const results = document.getElementById('ts-evaluation-results');
+  const summary = document.getElementById('ts-evaluation-summary');
+  if (!results || !summary) return;
+  if (!scored) {
+    results.innerHTML = '';
+    summary.hidden = true;
+    return;
+  }
+
+  const kept = targetSpeakerKeptSegments();
+  const keptKeys = new Set(kept.map(targetSegmentKey));
+  const labels = target.labels || {};
+  const reviewed = Object.values(labels).filter(label => label === 'qualified' || label === 'rejected').length;
+  const qualified = Object.values(labels).filter(label => label === 'qualified').length;
+  const totalDuration = scored.segments.reduce((sum, segment) => sum + segment.end_s - segment.start_s, 0);
+  const keptDuration = kept.reduce((sum, segment) => sum + segment.end_s - segment.start_s, 0);
+  const assignedId = target.assignedSpeakerId;
+  const assignedSegments = assignedId ? scored.segments.filter(segment => segment.speaker_id === assignedId) : [];
+  const agreementCount = assignedId ? scored.segments.filter(segment =>
+    keptKeys.has(targetSegmentKey(segment)) === (segment.speaker_id === assignedId)
+  ).length : 0;
+  const agreementPercent = assignedId && scored.segments.length ? (agreementCount / scored.segments.length) * 100 : null;
+  const chip = document.getElementById('ts-kept-chip');
+  if (chip) chip.textContent = kept.length;
+
+  summary.hidden = false;
+  summary.innerHTML = `<strong>${escapeHtml(scored.profile_name)}</strong><span>${kept.length}/${scored.segments.length} proposed turns · ${keptDuration.toFixed(1)}s/${totalDuration.toFixed(1)}s diarized speech</span>`;
+
+  const rows = [...scored.segments]
+    .sort((a, b) => a.start_s - b.start_s)
+    .map((segment, index) => {
+      const key = targetSegmentKey(segment);
+      const proposed = keptKeys.has(key);
+      const label = labels[key] || 'unreviewed';
+      const assigned = Boolean(assignedId && segment.speaker_id === assignedId);
+      return `
+        <tr class="${proposed ? '' : 'target-row-dropped'}">
+          <td>${index + 1}</td>
+          <td><button class="btn btn-xs btn-ghost ts-play-segment" data-key="${key}">▶ ${segment.start_s.toFixed(1)}–${segment.end_s.toFixed(1)}s</button></td>
+          <td><strong>${escapeHtml(getSpeakerName(segment.speaker_id))}</strong><small class="target-local-id">${escapeHtml(segment.speaker_id)}</small></td>
+          <td><strong>${segment.similarity.toFixed(3)}</strong></td>
+          <td>${proposed ? '<span class="badge badge-success">Proposed</span>' : '<span class="badge badge-ghost">Filtered</span>'}</td>
+          <td>${assigned ? '<span class="badge badge-accent">Named target</span>' : '<span class="text-xs text-muted">—</span>'}</td>
+          <td class="target-label-actions">
+            <button class="btn btn-xs ${label === 'qualified' ? 'btn-primary' : 'btn-ghost'} ts-label-segment" data-key="${key}" data-label="qualified">✓ Qualify</button>
+            <button class="btn btn-xs ${label === 'rejected' ? 'btn-ghost text-destructive' : 'btn-ghost'} ts-label-segment" data-key="${key}" data-label="rejected">✕ Reject</button>
+          </td>
+        </tr>`;
+    }).join('');
+
+  results.innerHTML = `
+    <article class="target-evaluation-card">
+      <div class="target-settings-grid">
+        <label>Similarity ≥ <strong id="ts-threshold-value">${target.threshold.toFixed(2)}</strong><input id="ts-threshold" type="range" min="-1" max="1" step="0.01" value="${target.threshold}"></label>
+        <label>Minimum seconds<input id="ts-min-duration" class="text-input" type="number" min="0" step="0.25" value="${target.minDur}"></label>
+        <label class="checkbox-pill"><input id="ts-exclude-overlap" type="checkbox" ${target.excludeOverlap ? 'checked' : ''}> Exclude overlaps</label>
+      </div>
+      <div class="target-metrics-grid">
+        <div><strong>${kept.length}/${scored.segments.length}</strong><span>proposed turns</span></div>
+        <div><strong>${keptDuration.toFixed(1)}s</strong><span>proposed duration</span></div>
+        <div><strong>${qualified}/${reviewed || 0}</strong><span>qualified / reviewed</span></div>
+        <div><strong>${agreementPercent === null ? '—' : `${agreementPercent.toFixed(1)}%`}</strong><span>${assignedId ? `agreement with ${getSpeakerName(assignedId)} (${assignedSegments.length} turns)` : 'optional named-speaker agreement'}</span></div>
+      </div>
+      <div class="target-segments-scroll">
+        <table class="turns-table">
+          <thead><tr><th>#</th><th>Segment</th><th>Diarized speaker</th><th>Score</th><th>Verifier</th><th>Name match</th><th>Human evaluation</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <footer class="target-evaluation-actions">
+        <button class="btn btn-secondary btn-sm" id="btn-ts-export-qualified">Export qualified audio</button>
+        <button class="btn btn-primary btn-sm" id="btn-ts-save-evaluation">Save filter + evaluation</button>
+      </footer>
+    </article>`;
+
+  document.getElementById('ts-threshold')?.addEventListener('input', event => {
+    target.threshold = parseFloat(event.target.value);
+    renderTargetSpeakerResults();
+  });
+  document.getElementById('ts-min-duration')?.addEventListener('change', event => {
+    target.minDur = Math.max(0, parseFloat(event.target.value) || 0);
+    renderTargetSpeakerResults();
+  });
+  document.getElementById('ts-exclude-overlap')?.addEventListener('change', event => {
+    target.excludeOverlap = event.target.checked;
+    renderTargetSpeakerResults();
+  });
+  results.querySelectorAll('.ts-play-segment').forEach(button => button.addEventListener('click', () => {
+    const segment = scored.segments.find(item => targetSegmentKey(item) === button.dataset.key);
+    if (segment) seekDiarAudio(segment.start_s, true);
+  }));
+  results.querySelectorAll('.ts-label-segment').forEach(button => button.addEventListener('click', () => {
+    target.labels[button.dataset.key] = target.labels[button.dataset.key] === button.dataset.label
+      ? 'unreviewed'
+      : button.dataset.label;
+    renderTargetSpeakerResults();
+  }));
+  document.getElementById('btn-ts-save-evaluation')?.addEventListener('click', saveTargetSpeakerEvaluation);
+  document.getElementById('btn-ts-export-qualified')?.addEventListener('click', exportTargetSpeakerSegments);
+}
+
+async function saveTargetSpeakerEvaluation() {
+  const target = state.targetSpeaker;
+  const scored = target.scored;
+  if (!scored) { showToast('Score a target speaker first', 'error'); return; }
+  const audio = state.audioList.find(item => item.id === target.audioId) || {};
+  const labels = target.labels || {};
+  const reviewed = Object.values(labels).filter(label => label === 'qualified' || label === 'rejected').length;
+  const qualifiedSegments = scored.segments.filter(segment => labels[targetSegmentKey(segment)] === 'qualified');
+  const totalDuration = scored.segments.reduce((sum, segment) => sum + segment.end_s - segment.start_s, 0);
+  const qualifiedDuration = qualifiedSegments.reduce((sum, segment) => sum + segment.end_s - segment.start_s, 0);
+  const evalId = `target-${target.audioId}-${scored.profile_name}`.replace(/[^A-Za-z0-9_.-]/g, '_');
+  const tags = ['target_speaker', `profile:${scored.profile_name}`];
+  if (target.assignedSpeakerId) tags.push(`diarized_speaker:${target.assignedSpeakerId}`);
+
+  try {
+    const response = await fetch('/api/evaluations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: evalId,
+        evaluation_type: 'target_speaker',
+        clip_id: target.audioId,
+        clip_title: audio.title || target.audioId,
+        clip_path: audio.path || '',
+        model_id: scored.model?.model_id || 'speaker_verifier',
+        model_name: scored.model?.backend || 'Target speaker verifier',
+        profile_name: scored.profile_name,
+        channel_id: scored.channel_id || audio.channel_id || null,
+        channel_name: scored.channel_name || audio.channel_name || null,
+        threshold: target.threshold,
+        min_duration_s: target.minDur,
+        exclude_overlap: target.excludeOverlap,
+        qualified_segments: qualifiedSegments.length,
+        reviewed_segments: reviewed,
+        total_segments: scored.segments.length,
+        qualified_duration_s: qualifiedDuration,
+        total_duration_s: totalDuration,
+        qualified_percent: scored.segments.length ? (qualifiedSegments.length / scored.segments.length) * 100 : 0,
+        segment_labels: labels,
+        score_overall: reviewed ? (qualifiedSegments.length / reviewed) * 5 : 0,
+        tags,
+      }),
+    });
+    if (!response.ok) throw new Error('Could not save target-speaker evaluation');
+    await fetchEvaluations();
+    showToast(`Saved evaluation for “${scored.profile_name}”`, 'success');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function exportTargetSpeakerSegments() {
+  const target = state.targetSpeaker;
+  const scored = target.scored;
+  if (!scored) { showToast('Score a target speaker first', 'error'); return; }
+  const qualified = scored.segments.filter(segment => target.labels[targetSegmentKey(segment)] === 'qualified');
+  if (!qualified.length) { showToast('Qualify at least one segment before export', 'error'); return; }
+  const mode = el.diarExtractModeSelect?.value || 'concatenated';
+
+  try {
+    const response = await fetch('/api/diarization/extract-speaker', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        audio_id: target.audioId,
+        speaker_id: 'target',
+        speaker_name: scored.profile_name,
+        mode,
+        turns: qualified.map(segment => ({
+          speaker_id: 'target',
+          start_s: segment.start_s,
+          end_s: segment.end_s,
+        })),
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Export failed');
+    await fetchAudioList();
+    showToast(`Exported ${qualified.length} qualified target-speaker segments`, 'success');
+  } catch (err) {
+    showToast(`Export failed: ${err.message}`, 'error');
   }
 }
 // ==================== CUTS MANAGER ====================
@@ -6473,6 +6897,7 @@ async function initApp() {
   try { initSeparationStudio(); } catch (e) { console.error("initSeparationStudio error:", e); }
   try { initDiarizationStudio(); } catch (e) { console.error("initDiarizationStudio error:", e); }
   try { initKnownSpeakerManager(); } catch (e) { console.error("initKnownSpeakerManager error:", e); }
+  try { initTargetSpeakerEvaluation(); } catch (e) { console.error("initTargetSpeakerEvaluation error:", e); }
   try { initAuditionHub(); } catch (e) { console.error("initAuditionHub error:", e); }
   try { initKeyboardShortcuts(); } catch (e) { console.error("initKeyboardShortcuts error:", e); }
   try { initNavigation(); } catch (e) { console.error("initNavigation error:", e); }
