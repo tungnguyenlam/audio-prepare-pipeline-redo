@@ -49,6 +49,7 @@ from src.diarization import (
     SortformerWorkerDiarizer,
     SpeakerVerifier,
     SpeakerVerifierError,
+    SpeakerPurityResult,
     ThreeDSpeakerDiarizer,
     ThreeDSpeakerWorkerDiarizer,
 )
@@ -2448,6 +2449,284 @@ async def handle_target_speaker_score(request: web.Request) -> web.Response:
     )
 
 
+async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
+    """Verify speaker purity of diarization turns against an enrolled speaker profile."""
+    data = await request.json()
+    audio_id = data.get("audio_id")
+    profile_name = data.get("profile") or data.get("profile_name")
+    turns = data.get("turns", [])
+    device = data.get("device", "auto")
+    token = data.get("token") or os.getenv("HF_TOKEN")
+
+    similarity_threshold = float(data.get("similarity_threshold", 0.60))
+    min_candidate_duration_s = float(data.get("min_candidate_duration_s", 1.5))
+    max_overlap_duration_s = float(data.get("max_overlap_duration_s", 0.05))
+    window_duration_s = float(data.get("window_duration_s", 2.0))
+    window_hop_s = float(data.get("window_hop_s", 0.75))
+
+    if not audio_id or not profile_name:
+        return web.json_response(
+            {"error": "audio_id and profile are required"}, status=400
+        )
+
+    audio = registry.get_audio(audio_id)
+    if not audio:
+        return web.json_response({"error": "Audio not found"}, status=404)
+
+    if not turns:
+        return web.json_response(
+            {"error": "Diarization turns are required for speaker purity verification"},
+            status=400,
+        )
+
+    try:
+        speaker_turns = [
+            SpeakerTurn(
+                speaker_id=str(t["speaker_id"]),
+                start_s=float(t["start_s"]),
+                end_s=float(t["end_s"]),
+            )
+            for t in turns
+        ]
+    except (KeyError, TypeError, ValueError) as e:
+        return web.json_response({"error": f"Invalid turns: {e}"}, status=400)
+
+    diarization = DiarizationResult(
+        schema_version="1.0",
+        audio_id=audio.source_id,
+        speakers=[
+            Speaker(speaker_id=spk)
+            for spk in sorted({t.speaker_id for t in speaker_turns})
+        ],
+        turns=speaker_turns,
+        channel_id=audio.channel_id,
+        channel_name=audio.channel_name,
+        channel_url=audio.channel_url,
+    )
+
+    task_id = task_manager.create_task(
+        "speaker_purity_verify",
+        {
+            "audio_id": audio_id,
+            "profile": profile_name,
+            "device": device,
+            "similarity_threshold": similarity_threshold,
+            "turns_count": len(speaker_turns),
+        },
+    )
+
+    async def run_verify():
+        target_device = get_default_device() if device == "auto" else device
+        task_manager.update_task(
+            task_id,
+            status="running",
+            message=(
+                f"Verifying speaker purity for {len(speaker_turns)} turns against "
+                f"'{profile_name}' on {target_device}..."
+            ),
+        )
+        loop = asyncio.get_running_loop()
+
+        def do_verify():
+            verifier = SpeakerVerifier(device=target_device, token=token)
+            profile = verifier.load_profile(profile_name)
+            with verifier:
+                return verifier.verify_purity(
+                    audio,
+                    diarization,
+                    profile,
+                    similarity_threshold=similarity_threshold,
+                    min_candidate_duration_s=min_candidate_duration_s,
+                    max_overlap_duration_s=max_overlap_duration_s,
+                    window_duration_s=window_duration_s,
+                    window_hop_s=window_hop_s,
+                )
+
+        try:
+            start_time = time.time()
+            purity_results = await loop.run_in_executor(None, do_verify)
+            if _task_is_cancelled(task_id):
+                return
+            elapsed = time.time() - start_time
+
+            serialized_results = []
+            for r in purity_results:
+                item = asdict(r)
+                item["passed"] = r.passed
+                item["duration_s"] = r.duration_s
+                item["min_target_similarity"] = r.min_target_similarity
+                serialized_results.append(item)
+
+            passed_results = [r for r in purity_results if r.passed]
+            total_duration_s = sum(r.duration_s for r in purity_results)
+            passed_duration_s = sum(r.duration_s for r in passed_results)
+
+            reasons_count: dict[str, int] = {}
+            for r in purity_results:
+                if r.reason:
+                    reasons_count[r.reason] = reasons_count.get(r.reason, 0) + 1
+
+            passed_sims = [
+                w.similarity for r in passed_results for w in r.windows
+            ]
+            avg_passed_similarity = (
+                float(np.mean(passed_sims)) if passed_sims else None
+            )
+
+            task_manager.update_task(
+                task_id,
+                status="completed",
+                progress=1.0,
+                progress_known=True,
+                message=(
+                    f"Purity verification complete: {len(passed_results)}/{len(purity_results)} passed "
+                    f"({passed_duration_s:.1f}s pure speech) in {elapsed:.2f}s on {target_device}!"
+                ),
+                result={
+                    "purity_results": serialized_results,
+                    "audio_id": audio_id,
+                    "profile": profile_name,
+                    "elapsed_s": round(elapsed, 2),
+                    "device": target_device,
+                    "metrics": {
+                        "total_candidates": len(purity_results),
+                        "passed_candidates": len(passed_results),
+                        "pass_rate_percent": (
+                            (len(passed_results) / len(purity_results) * 100)
+                            if purity_results
+                            else 0.0
+                        ),
+                        "total_duration_s": round(total_duration_s, 2),
+                        "passed_duration_s": round(passed_duration_s, 2),
+                        "duration_pass_percent": (
+                            (passed_duration_s / total_duration_s * 100)
+                            if total_duration_s > 0
+                            else 0.0
+                        ),
+                        "reasons_breakdown": reasons_count,
+                        "avg_passed_similarity": (
+                            round(avg_passed_similarity, 3)
+                            if avg_passed_similarity is not None
+                            else None
+                        ),
+                    },
+                    "settings": {
+                        "similarity_threshold": similarity_threshold,
+                        "min_candidate_duration_s": min_candidate_duration_s,
+                        "max_overlap_duration_s": max_overlap_duration_s,
+                        "window_duration_s": window_duration_s,
+                        "window_hop_s": window_hop_s,
+                    },
+                },
+            )
+        except Exception as e:
+            task = task_manager.get_task(task_id)
+            if task and task["status"] == "cancelled":
+                return
+            logger.exception("Speaker purity verification failed")
+            task_manager.update_task(
+                task_id,
+                status="failed",
+                error=str(e),
+                message=f"Speaker purity verification failed: {e}",
+            )
+
+    task_manager.enqueue(task_id, run_verify)
+    return web.json_response(
+        {"task_id": task_id, "task": task_manager.get_task(task_id)}, status=202
+    )
+
+
+async def handle_export_purity_audio(request: web.Request) -> web.Response:
+    """Export passed or selected pure speaker segments into a concatenated or time-aligned audio file."""
+    data = await request.json()
+    audio_id = data.get("audio_id")
+    segments = data.get("segments", [])
+    mode = data.get("mode", "concat")  # 'concat' or 'time_aligned'
+    profile_name = data.get("profile_name", "pure_speaker")
+
+    if not audio_id:
+        return web.json_response({"error": "audio_id is required"}, status=400)
+    if not segments:
+        return web.json_response({"error": "segments list is empty"}, status=400)
+
+    audio = registry.get_audio(audio_id)
+    if not audio:
+        return web.json_response({"error": "Audio not found"}, status=404)
+
+    out_dir = DATA_DIR / "purity" / "extracted"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    def do_extract():
+        src_path = Path(audio.path)
+        waveform, sr = sf.read(str(src_path), always_2d=True)
+        total_frames = waveform.shape[0]
+
+        valid_intervals = []
+        for s in segments:
+            s_sec = float(s.get("start_s", 0))
+            e_sec = float(s.get("end_s", 0))
+            if e_sec > s_sec:
+                s_frame = max(0, min(int(round(s_sec * sr)), total_frames))
+                e_frame = max(0, min(int(round(e_sec * sr)), total_frames))
+                if e_frame > s_frame:
+                    valid_intervals.append((s_frame, e_frame))
+
+        if not valid_intervals:
+            raise ValueError("No valid audio intervals found in segments")
+
+        valid_intervals.sort(key=lambda x: x[0])
+        mode_suffix = "aligned" if mode == "time_aligned" else "concat"
+
+        if mode == "time_aligned":
+            combined = np.zeros_like(waveform)
+            for s_f, e_f in valid_intervals:
+                combined[s_f:e_f] = waveform[s_f:e_f]
+        else:
+            slices = [waveform[s_f:e_f] for s_f, e_f in valid_intervals]
+            combined = np.concatenate(slices, axis=0)
+
+        sanitized_title = _sanitize_filename_component(audio.title or audio.source_id)
+        sanitized_profile = _sanitize_filename_component(profile_name)
+        out_filename = f"{sanitized_title}_{sanitized_profile}_pure_{mode_suffix}.wav"
+        out_path = out_dir / out_filename
+        sf.write(str(out_path), combined, sr)
+
+        pure_audio = Audio.from_file(
+            out_path,
+            source_id=f"{audio.source_id}_{sanitized_profile}_pure_{mode_suffix}",
+            title=f"{audio.title or audio.source_id} [Pure {profile_name}] ({mode_suffix})",
+            source_url=audio.source_url,
+            channel_id=audio.channel_id,
+            channel_name=audio.channel_name,
+            channel_url=audio.channel_url,
+            native_sample_rate=audio.native_sample_rate,
+            history=(*audio.history, f"purity_extract_{profile_name}_{mode}"),
+        )
+        return pure_audio
+
+    try:
+        loop = asyncio.get_running_loop()
+        extracted_audio = await loop.run_in_executor(None, do_extract)
+        new_id = registry.register(
+            extracted_audio,
+            source_type="purity_stem",
+            parent_id=audio_id,
+            tags=["purity", f"profile:{profile_name}"],
+        )
+        return web.json_response({
+            "audio_id": new_id,
+            "profile_name": profile_name,
+            "metadata": extracted_audio.metadata(),
+            "duration_s": extracted_audio.duration_s,
+            "segments_count": len(segments),
+            "status": "success",
+        })
+    except Exception as e:
+        logger.exception("Purity audio export failed")
+        return web.json_response({"error": str(e)}, status=500)
+
+
 async def handle_compare_spectrogram(request: web.Request) -> web.Response:
     """Run SpectrogramComparer on two audio objects and return comparison image."""
     data = await request.json()
@@ -3042,6 +3321,8 @@ def register_api_routes(app: web.Application) -> None:
     )
     app.router.add_delete("/api/speaker-profiles/{name}", handle_delete_speaker_profile)
     app.router.add_post("/api/diarization/target-speaker-score", handle_target_speaker_score)
+    app.router.add_post("/api/purity/verify", handle_verify_speaker_purity)
+    app.router.add_post("/api/purity/export-audio", handle_export_purity_audio)
     app.router.add_post("/api/compare/spectrogram", handle_compare_spectrogram)
     app.router.add_get("/api/tasks", handle_list_tasks)
     app.router.add_post("/api/tasks/clear", handle_clear_tasks)

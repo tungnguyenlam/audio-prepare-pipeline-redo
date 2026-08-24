@@ -58,6 +58,10 @@
             <span class="tab-icon">👥</span>
             <span class="nav-text">Diarization</span>
           </button>
+          <button class="nav-tab" data-tab="tab-purity" id="btn-tab-purity">
+            <span class="tab-icon">🛡️</span>
+            <span class="nav-text">Speaker Purity</span>
+          </button>
           <button class="nav-tab" data-tab="tab-comparison" id="btn-tab-comparison">
             <span class="tab-icon">⚖️</span>
             <span class="nav-text">Audition</span>
@@ -1322,7 +1326,326 @@
         
       </section>
 
-              <section id="tab-comparison" class="tab-pane">
+      <!-- ==================== TAB: SPEAKER PURITY ==================== -->
+      <section id="tab-purity" class="tab-pane">
+        <!-- Master Setup & Parameter Configuration Card -->
+        <div class="card purity-setup-card" id="purity-setup-card">
+          <div class="card-header">
+            <div>
+              <div class="purity-header-title-row">
+                <span class="workflow-step">Precision Dataset Gate</span>
+                <h2 class="card-title">Speaker Purity Verification Workbench</h2>
+                <span class="badge badge-success">Sliding-Window Verification</span>
+              </div>
+              <p class="card-subtitle">Verify candidate speech turns against an enrolled speaker profile using multi-window sliding identity verification, strict overlap veto, and cosine similarity checking to extract pristine single-speaker training data.</p>
+            </div>
+            <div class="card-actions">
+              <button class="btn btn-ghost btn-sm" id="btn-purity-reset" title="Clear Current Purity Analysis">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                <span>Reset</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Setup 2-Column Grid -->
+          <div class="purity-setup-grid" id="purity-setup-body">
+            <!-- Left: Audio Source, Diarization Timeline & Profile Selection -->
+            <div class="purity-source-panel">
+              <div class="form-group">
+                <div class="label-with-tool">
+                  <label class="form-label" for="purity-input-select">1. Select Target Audio Track:</label>
+                  <div class="flex-row items-center gap-2">
+                    <span class="text-xs text-muted" id="purity-audio-meta-chip">No track selected</span>
+                    <button type="button" class="btn btn-ghost btn-xs" id="btn-purity-browse-library" title="Browse and load from the sample library">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                      <span>Library</span>
+                    </button>
+                  </div>
+                </div>
+                <select id="purity-input-select" class="select-input">
+                  <option value="">-- Select session or library track --</option>
+                </select>
+              </div>
+
+              <!-- Quick Audio Preview / Playback Pill -->
+              <div id="purity-input-preview-pill" class="purity-input-preview-pill hidden">
+                <button class="btn btn-xs btn-primary" id="btn-purity-preview-input">▶ Play Track</button>
+                <span class="purity-track-title-text" id="purity-track-title-text">audio_title</span>
+                <span class="purity-track-spec-chip" id="purity-track-spec-chip">44.1kHz • Mono • 0:00</span>
+              </div>
+
+              <!-- Diarization Timeline Status Box -->
+              <div class="purity-diar-status-box" id="purity-diar-status-box">
+                <div class="purity-diar-status-header">
+                  <div class="flex-row items-center gap-2">
+                    <span class="diar-icon">👥</span>
+                    <strong id="purity-diar-title">Diarization Timeline</strong>
+                  </div>
+                  <span class="badge badge-sm badge-accent" id="purity-diar-turns-chip">0 turns available</span>
+                </div>
+                <p class="text-xs text-muted" id="purity-diar-desc" style="margin: 6px 0 0;">Candidate turns from Diarization Studio will be verified for single-speaker purity.</p>
+              </div>
+
+              <!-- Target Speaker Profile Selection -->
+              <div class="form-group" style="margin-top: 12px;">
+                <div class="label-with-tool">
+                  <label class="form-label" for="purity-profile-select">2. Target Speaker Profile (Identity Source):</label>
+                  <button type="button" class="btn btn-ghost btn-xs" id="btn-purity-refresh-profiles" title="Refresh speaker profiles list">↻ Refresh</button>
+                </div>
+                <select id="purity-profile-select" class="select-input">
+                  <option value="">-- Select enrolled speaker profile --</option>
+                </select>
+                <p class="text-xs text-muted" style="margin: 5px 0 0;">Profile centroid is computed from clean enrolled reference clips.</p>
+              </div>
+            </div>
+
+            <!-- Right: Purity Parameters & Accelerator Controls -->
+            <div class="purity-params-panel">
+              <label class="form-label">3. Sliding-Window Purity Verification Parameters:</label>
+              
+              <div class="purity-params-grid">
+                <!-- Similarity Threshold -->
+                <div class="form-group purity-param-card">
+                  <div class="label-with-tool">
+                    <label class="form-label font-bold" for="purity-threshold-slider">Cosine Similarity Threshold</label>
+                    <span class="badge badge-sm badge-primary font-mono" id="purity-threshold-val-badge">0.60</span>
+                  </div>
+                  <input type="range" id="purity-threshold-slider" min="0.0" max="1.0" step="0.01" value="0.60" class="range-slider">
+                  <p class="text-xs text-muted">Every sliding identity window must achieve at least this cosine similarity.</p>
+                </div>
+
+                <!-- Min Candidate Duration -->
+                <div class="form-group purity-param-card">
+                  <div class="label-with-tool">
+                    <label class="form-label font-bold" for="purity-min-duration">Min Candidate Duration (s)</label>
+                  </div>
+                  <input type="number" id="purity-min-duration" class="text-input" min="0.25" max="30" step="0.25" value="1.5">
+                  <p class="text-xs text-muted">Turns shorter than this are rejected immediately without noisy embeddings.</p>
+                </div>
+
+                <!-- Max Overlap Duration -->
+                <div class="form-group purity-param-card">
+                  <div class="label-with-tool">
+                    <label class="form-label font-bold" for="purity-max-overlap">Max Overlap Duration (s)</label>
+                  </div>
+                  <input type="number" id="purity-max-overlap" class="text-input" min="0.0" max="5.0" step="0.01" value="0.05">
+                  <p class="text-xs text-muted">Maximum allowed overlapping duration with other speakers before vetoing.</p>
+                </div>
+
+                <!-- Window Duration & Hop -->
+                <div class="form-group purity-param-card">
+                  <div class="flex-row gap-3">
+                    <div class="flex-1">
+                      <label class="form-label font-bold" for="purity-window-duration">Window (s)</label>
+                      <input type="number" id="purity-window-duration" class="text-input" min="0.5" max="10.0" step="0.25" value="2.0">
+                    </div>
+                    <div class="flex-1">
+                      <label class="form-label font-bold" for="purity-window-hop">Hop / Step (s)</label>
+                      <input type="number" id="purity-window-hop" class="text-input" min="0.1" max="5.0" step="0.05" value="0.75">
+                    </div>
+                  </div>
+                  <p class="text-xs text-muted" style="margin-top: 4px;">Sliding identity window size and stride across candidate turns.</p>
+                </div>
+              </div>
+
+              <!-- Hardware Device & HF Token Row -->
+              <div class="purity-params-row" style="margin-top: 12px;">
+                <div class="form-group flex-1">
+                  <label class="form-label" for="purity-device-select">Compute Device:</label>
+                  <select id="purity-device-select" class="select-input">
+                    <option value="auto">Auto (Best Available GPU/MPS)</option>
+                    <option value="cuda">CUDA (NVIDIA GPU)</option>
+                    <option value="mps">MPS (Apple Silicon)</option>
+                    <option value="cpu">CPU Only</option>
+                  </select>
+                </div>
+
+                <div class="form-group flex-2">
+                  <div class="label-with-tool">
+                    <label class="form-label" for="purity-hf-token-input">HuggingFace Token (Optional):</label>
+                    <button type="button" class="btn btn-ghost btn-xs" id="btn-toggle-purity-hf-vis">Show</button>
+                  </div>
+                  <input type="password" id="purity-hf-token-input" class="text-input font-mono" placeholder="hf_xxxxxxxxxxxxxxxxxxxx">
+                </div>
+              </div>
+
+              <div class="purity-actions" style="margin-top: 14px;">
+                <button class="btn btn-primary btn-lg w-full" id="btn-run-purity">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                  <span>Run Speaker Purity Verification</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Execution Progress Box -->
+          <div id="purity-task-progress-box" class="task-progress-box hidden">
+            <div class="task-header">
+              <div class="flex-row items-center gap-2">
+                <span class="spinner-sm"></span>
+                <span class="task-title">Purity Verification in progress...</span>
+              </div>
+              <span class="task-timer" id="purity-task-timer">0.0s</span>
+            </div>
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill progress-animated" id="purity-progress-bar"></div>
+            </div>
+            <div class="task-status-text" id="purity-task-status-text">Embedding sliding windows and evaluating overlap vetoes...</div>
+          </div>
+        </div>
+
+        <!-- Empty State Placeholder -->
+        <div id="purity-empty-placeholder" class="card empty-placeholder">
+          <div class="empty-icon-wrap">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+          </div>
+          <h3 class="empty-title">No Speaker Purity Analysis Yet</h3>
+          <p class="empty-desc">Select a target audio track, ensure a diarization timeline is loaded, choose an enrolled target speaker profile above, and click <strong>Run Speaker Purity Verification</strong>.</p>
+        </div>
+
+        <!-- Results & Analytics Container -->
+        <div id="purity-results-wrapper" class="purity-results-wrapper hidden">
+          <!-- Summary Metrics Banner -->
+          <div class="card purity-summary-card">
+            <div class="purity-summary-header">
+              <div class="purity-summary-title-wrap">
+                <span class="badge badge-primary font-mono" id="purity-profile-badge">Target Profile</span>
+                <h3 class="purity-summary-title" id="purity-results-title">Purity Verification Report</h3>
+              </div>
+              <div class="purity-summary-meta" id="purity-results-meta">
+                <span>0 candidates evaluated in 0.0s</span>
+              </div>
+            </div>
+
+            <div class="purity-metrics-grid">
+              <!-- Pass Rate -->
+              <div class="purity-metric-box metric-pass">
+                <div class="metric-label">Admitted Candidates</div>
+                <div class="metric-value" id="purity-metric-pass-count">0 / 0</div>
+                <div class="metric-sub" id="purity-metric-pass-pct">0.0% pass rate</div>
+              </div>
+
+              <!-- Pure Duration -->
+              <div class="purity-metric-box metric-duration">
+                <div class="metric-label">Clean Speech Yield</div>
+                <div class="metric-value" id="purity-metric-pass-duration">0.0s</div>
+                <div class="metric-sub" id="purity-metric-total-duration">of 0.0s total candidate speech</div>
+              </div>
+
+              <!-- Rejection Reasons Breakdown -->
+              <div class="purity-metric-box metric-rejections">
+                <div class="metric-label">Rejection Breakdown</div>
+                <div class="purity-reasons-pills" id="purity-reasons-pills">
+                  <span class="badge badge-xs badge-ghost">No rejections</span>
+                </div>
+              </div>
+
+              <!-- Quality / Cosine Similarity Score -->
+              <div class="purity-metric-box metric-quality">
+                <div class="metric-label">Average Target Similarity</div>
+                <div class="metric-value font-mono" id="purity-metric-avg-similarity">—</div>
+                <div class="metric-sub" id="purity-metric-min-similarity">Min threshold: 0.60</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Candidates Table & Inspector Card -->
+          <div class="card purity-table-card" style="margin-top: 1.25rem;">
+            <!-- Filters Toolbar -->
+            <div class="purity-toolbar">
+              <div class="purity-filter-tabs">
+                <button type="button" class="purity-tab-btn active" data-filter="all" id="btn-purity-filter-all">
+                  <span>All Candidates</span>
+                  <span class="badge badge-xs" id="purity-count-all">0</span>
+                </button>
+                <button type="button" class="purity-tab-btn" data-filter="pass" id="btn-purity-filter-pass">
+                  <span class="text-success">✓ Passed</span>
+                  <span class="badge badge-xs badge-success" id="purity-count-pass">0</span>
+                </button>
+                <button type="button" class="purity-tab-btn" data-filter="reject" id="btn-purity-filter-reject">
+                  <span class="text-danger">✕ Rejected</span>
+                  <span class="badge badge-xs badge-danger" id="purity-count-reject">0</span>
+                </button>
+                <button type="button" class="purity-tab-btn" data-filter="error" id="btn-purity-filter-error">
+                  <span class="text-warning">⚠ Errors</span>
+                  <span class="badge badge-xs badge-warning" id="purity-count-error">0</span>
+                </button>
+              </div>
+
+              <div class="purity-toolbar-controls">
+                <!-- Speaker filter -->
+                <div class="form-group mb-0">
+                  <select id="purity-speaker-filter" class="select-input select-sm">
+                    <option value="all">All Diarized Speakers</option>
+                  </select>
+                </div>
+
+                <!-- Sort select -->
+                <div class="form-group mb-0">
+                  <select id="purity-sort-select" class="select-input select-sm">
+                    <option value="time-asc">Start Time (Ascending)</option>
+                    <option value="time-desc">Start Time (Descending)</option>
+                    <option value="dur-desc">Duration (Longest)</option>
+                    <option value="sim-asc">Min Similarity (Lowest)</option>
+                    <option value="sim-desc">Min Similarity (Highest)</option>
+                    <option value="overlap-desc">Overlap (Highest)</option>
+                  </select>
+                </div>
+
+                <!-- Toggle details -->
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-purity-toggle-all-windows">
+                  <span>Expand Windows</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Table Container -->
+            <div class="purity-table-wrapper">
+              <table class="turns-table purity-table">
+                <thead>
+                  <tr>
+                    <th style="width: 45px;">#</th>
+                    <th style="width: 170px;">Segment & Audition</th>
+                    <th style="width: 140px;">Diarized Speaker</th>
+                    <th style="width: 90px;">Duration</th>
+                    <th style="width: 130px;">Overlap</th>
+                    <th style="width: 170px;">Decision & Reason</th>
+                    <th style="width: 100px;">Min Sim</th>
+                    <th>Sliding Identity Windows (2.0s window / 0.75s hop)</th>
+                  </tr>
+                </thead>
+                <tbody id="purity-table-body"></tbody>
+              </table>
+            </div>
+
+            <!-- Export & Action Footer -->
+            <div class="purity-actions-footer">
+              <div class="flex-row items-center gap-2">
+                <span class="text-xs text-muted" id="purity-footer-selection-info">0 passed candidates ready for export</span>
+              </div>
+              <div class="flex-row items-center gap-2">
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-purity-download-json" title="Download standard SpeakerPurityResult JSON">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                  <span>JSON Report</span>
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-purity-download-csv" title="Download CSV Spreadsheet">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                  <span>CSV Report</span>
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-purity-save-eval" title="Save this purity verification to the evaluation vault">
+                  <span>💾 Save Evaluation</span>
+                </button>
+                <button type="button" class="btn btn-primary btn-sm" id="btn-purity-export-audio" title="Export concatenated clean audio stem from all passed candidates">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                  <span>Export Pure Audio Stem</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-comparison" class="tab-pane">
         <!-- Master Audition Setup Card -->
         <div class="card audition-setup-card">
           <div class="card-header">

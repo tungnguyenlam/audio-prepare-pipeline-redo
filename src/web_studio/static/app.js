@@ -76,12 +76,38 @@ const state = {
     hideFiltered: false,
     labels: {},
   },
+
+  // Speaker Purity Workbench state
+  purity: {
+    audioId: null,
+    profileName: '',
+    results: null,
+    metrics: null,
+    settings: {
+      similarityThreshold: 0.60,
+      minDuration: 1.5,
+      maxOverlap: 0.05,
+      windowDuration: 2.0,
+      windowHop: 0.75,
+    },
+    filterStatus: 'all',
+    filterSpeaker: 'all',
+    filterReason: 'all',
+    sortMode: 'time-asc',
+    searchQuery: '',
+    allWindowsExpanded: false,
+  },
 };
 
 const targetSegmentAudio = new Audio();
 let activeTargetSegmentKey = null;
 let targetSegmentPlayRaf = 0;
 targetSegmentAudio.addEventListener('ended', stopTargetSegmentPreview);
+
+const puritySegmentAudio = new Audio();
+let activePuritySegmentKey = null;
+let puritySegmentPlayRaf = 0;
+puritySegmentAudio.addEventListener('ended', stopPuritySegmentPreview);
 
 // DOM Elements Cache
 const el = {
@@ -285,6 +311,53 @@ const el = {
   btnClearDiarHistory: document.getElementById('btn-clear-diar-history'),
   diarHistorySearchInput: document.getElementById('diar-history-search-input'),
   diarHistoryList: document.getElementById('diar-history-list'),
+
+  // Speaker Purity Workbench
+  purityInputSelect: document.getElementById('purity-input-select'),
+  btnPurityBrowseLibrary: document.getElementById('btn-purity-browse-library'),
+  purityAudioMetaChip: document.getElementById('purity-audio-meta-chip'),
+  purityInputPreviewPill: document.getElementById('purity-input-preview-pill'),
+  btnPurityPreviewInput: document.getElementById('btn-purity-preview-input'),
+  purityTrackTitleText: document.getElementById('purity-track-title-text'),
+  purityTrackSpecChip: document.getElementById('purity-track-spec-chip'),
+  purityDiarStatusBox: document.getElementById('purity-diar-status-box'),
+  purityDiarTurnsChip: document.getElementById('purity-diar-turns-chip'),
+  purityDiarDesc: document.getElementById('purity-diar-desc'),
+  purityProfileSelect: document.getElementById('purity-profile-select'),
+  btnPurityRefreshProfiles: document.getElementById('btn-purity-refresh-profiles'),
+  purityThresholdSlider: document.getElementById('purity-threshold-slider'),
+  purityThresholdValBadge: document.getElementById('purity-threshold-val-badge'),
+  purityMinDuration: document.getElementById('purity-min-duration'),
+  purityMaxOverlap: document.getElementById('purity-max-overlap'),
+  purityWindowDuration: document.getElementById('purity-window-duration'),
+  purityWindowHop: document.getElementById('purity-window-hop'),
+  purityDeviceSelect: document.getElementById('purity-device-select'),
+  purityHfTokenInput: document.getElementById('purity-hf-token-input'),
+  btnTogglePurityHfVis: document.getElementById('btn-toggle-purity-hf-vis'),
+  btnRunPurity: document.getElementById('btn-run-purity'),
+  btnPurityReset: document.getElementById('btn-purity-reset'),
+  purityTaskProgressBox: document.getElementById('purity-task-progress-box'),
+  purityTaskTimer: document.getElementById('purity-task-timer'),
+  purityProgressBar: document.getElementById('purity-progress-bar'),
+  purityTaskStatusText: document.getElementById('purity-task-status-text'),
+  purityEmptyPlaceholder: document.getElementById('purity-empty-placeholder'),
+  purityResultsWrapper: document.getElementById('purity-results-wrapper'),
+  purityProfileBadge: document.getElementById('purity-profile-badge'),
+  purityResultsTitle: document.getElementById('purity-results-title'),
+  purityResultsMeta: document.getElementById('purity-results-meta'),
+  purityMetricPassCount: document.getElementById('purity-metric-pass-count'),
+  purityMetricPassPct: document.getElementById('purity-metric-pass-pct'),
+  purityMetricPassDuration: document.getElementById('purity-metric-pass-duration'),
+  purityMetricTotalDuration: document.getElementById('purity-metric-total-duration'),
+  purityReasonsPills: document.getElementById('purity-reasons-pills'),
+  purityMetricAvgSimilarity: document.getElementById('purity-metric-avg-similarity'),
+  purityMetricMinSimilarity: document.getElementById('purity-metric-min-similarity'),
+  purityTableBody: document.getElementById('purity-table-body'),
+  purityCountAll: document.getElementById('purity-count-all'),
+  purityCountPass: document.getElementById('purity-count-pass'),
+  purityCountReject: document.getElementById('purity-count-reject'),
+  purityCountError: document.getElementById('purity-count-error'),
+  purityFooterSelectionInfo: document.getElementById('purity-footer-selection-info'),
 
   // Audition & Scoring Hub
   auditionClipSelect: document.getElementById('audition-clip-select'),
@@ -4598,7 +4671,714 @@ async function exportTargetSpeakerSegments() {
   } catch (err) {
     showToast(`Export failed: ${err.message}`, 'error');
   }
+// ==================== SPEAKER PURITY WORKBENCH ====================
+
+function initPurityTab() {
+  if (el.purityThresholdSlider) {
+    el.purityThresholdSlider.addEventListener('input', e => {
+      const val = parseFloat(e.target.value);
+      state.purity.settings.similarityThreshold = val;
+      if (el.purityThresholdValBadge) el.purityThresholdValBadge.textContent = val.toFixed(2);
+      if (state.purity.results) {
+        renderPurityResults();
+      }
+    });
+  }
+
+  if (el.purityMinDuration) {
+    el.purityMinDuration.addEventListener('change', e => {
+      state.purity.settings.minDuration = Math.max(0.1, parseFloat(e.target.value) || 1.5);
+    });
+  }
+
+  if (el.purityMaxOverlap) {
+    el.purityMaxOverlap.addEventListener('change', e => {
+      state.purity.settings.maxOverlap = Math.max(0, parseFloat(e.target.value) || 0.05);
+    });
+  }
+
+  if (el.purityWindowDuration) {
+    el.purityWindowDuration.addEventListener('change', e => {
+      state.purity.settings.windowDuration = Math.max(0.2, parseFloat(e.target.value) || 2.0);
+    });
+  }
+
+  if (el.purityWindowHop) {
+    el.purityWindowHop.addEventListener('change', e => {
+      state.purity.settings.windowHop = Math.max(0.05, parseFloat(e.target.value) || 0.75);
+    });
+  }
+
+  if (el.purityInputSelect) {
+    el.purityInputSelect.addEventListener('change', () => {
+      const audioId = el.purityInputSelect.value;
+      updatePurityInputMeta(audioId);
+      syncPurityDiarizationStatus();
+    });
+  }
+
+  if (el.btnPurityBrowseLibrary) {
+    el.btnPurityBrowseLibrary.addEventListener('click', () => {
+      state.libraryLoadTarget = 'purity';
+      openLibraryModal();
+    });
+  }
+
+  if (el.btnPurityPreviewInput) {
+    el.btnPurityPreviewInput.addEventListener('click', () => {
+      const audioId = el.purityInputSelect?.value;
+      if (audioId) playAudioItem(audioId);
+    });
+  }
+
+  if (el.btnPurityRefreshProfiles) {
+    el.btnPurityRefreshProfiles.addEventListener('click', async () => {
+      await loadSpeakerProfiles();
+      syncPurityProfileSelect();
+      showToast('Speaker profiles refreshed', 'info');
+    });
+  }
+
+  if (el.btnTogglePurityHfVis && el.purityHfTokenInput) {
+    el.btnTogglePurityHfVis.addEventListener('click', () => {
+      const isPass = el.purityHfTokenInput.type === 'password';
+      el.purityHfTokenInput.type = isPass ? 'text' : 'password';
+      el.btnTogglePurityHfVis.textContent = isPass ? 'Hide' : 'Show';
+    });
+  }
+
+  if (el.btnRunPurity) {
+    el.btnRunPurity.addEventListener('click', runSpeakerPurityVerification);
+  }
+
+  if (el.btnPurityReset) {
+    el.btnPurityReset.addEventListener('click', resetPurityTab);
+  }
+
+  document.querySelectorAll('.purity-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.purity-tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.purity.filterStatus = btn.dataset.filter || 'all';
+      renderPurityResults();
+    });
+  });
+
+  const speakerFilter = document.getElementById('purity-speaker-filter');
+  if (speakerFilter) {
+    speakerFilter.addEventListener('change', e => {
+      state.purity.filterSpeaker = e.target.value;
+      renderPurityResults();
+    });
+  }
+
+  const sortSelect = document.getElementById('purity-sort-select');
+  if (sortSelect) {
+    sortSelect.addEventListener('change', e => {
+      state.purity.sortMode = e.target.value;
+      renderPurityResults();
+    });
+  }
+
+  const btnToggleAllWindows = document.getElementById('btn-purity-toggle-all-windows');
+  if (btnToggleAllWindows) {
+    btnToggleAllWindows.addEventListener('click', () => {
+      state.purity.allWindowsExpanded = !state.purity.allWindowsExpanded;
+      btnToggleAllWindows.querySelector('span').textContent = state.purity.allWindowsExpanded ? 'Collapse Windows' : 'Expand Windows';
+      renderPurityResults();
+    });
+  }
+
+  document.getElementById('btn-purity-export-audio')?.addEventListener('click', () => exportPurityAudio('concat'));
+  document.getElementById('btn-purity-download-json')?.addEventListener('click', downloadPurityReportJSON);
+  document.getElementById('btn-purity-download-csv')?.addEventListener('click', downloadPurityReportCSV);
+  document.getElementById('btn-purity-save-eval')?.addEventListener('click', savePurityEvaluation);
 }
+
+function syncPurityProfileSelect() {
+  if (!el.purityProfileSelect) return;
+  const profiles = state.knownSpeakers?.profiles || [];
+  const current = el.purityProfileSelect.value;
+  el.purityProfileSelect.innerHTML = '<option value="">-- Select enrolled speaker profile --</option>';
+  profiles.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.name;
+    opt.textContent = `${p.name} (${p.num_clips} clip${p.num_clips === 1 ? '' : 's'})`;
+    el.purityProfileSelect.appendChild(opt);
+  });
+  if (current && profiles.some(p => p.name === current)) {
+    el.purityProfileSelect.value = current;
+  } else if (profiles.length > 0 && !el.purityProfileSelect.value) {
+    el.purityProfileSelect.value = profiles[0].name;
+  }
+}
+
+function updatePurityInputMeta(audioId) {
+  if (!audioId) {
+    if (el.purityAudioMetaChip) el.purityAudioMetaChip.textContent = 'No track selected';
+    if (el.purityInputPreviewPill) el.purityInputPreviewPill.classList.add('hidden');
+    return;
+  }
+  const item = state.audioList.find(a => a.id === audioId);
+  if (!item) {
+    if (el.purityAudioMetaChip) el.purityAudioMetaChip.textContent = audioId.startsWith('lib:') ? 'Library track' : 'Session track';
+    if (el.purityInputPreviewPill) el.purityInputPreviewPill.classList.add('hidden');
+    return;
+  }
+  const sr = item.sample_rate ? `${(item.sample_rate / 1000).toFixed(1)}kHz` : '44.1kHz';
+  const ch = item.channels === 1 ? 'Mono' : item.channels === 2 ? 'Stereo' : `${item.channels || 1}ch`;
+  const dur = formatTime(item.duration_s || 0);
+  if (el.purityAudioMetaChip) el.purityAudioMetaChip.textContent = `${sr} • ${ch} • ${dur}`;
+  if (el.purityTrackTitleText) el.purityTrackTitleText.textContent = item.title || item.id;
+  if (el.purityTrackSpecChip) el.purityTrackSpecChip.textContent = `${sr} • ${ch} • ${dur}`;
+  if (el.purityInputPreviewPill) el.purityInputPreviewPill.classList.remove('hidden');
+}
+
+function syncPurityDiarizationStatus() {
+  const audioId = el.purityInputSelect?.value;
+  if (!el.purityDiarTurnsChip) return;
+  if (!audioId) {
+    el.purityDiarTurnsChip.textContent = 'No track selected';
+    el.purityDiarTurnsChip.className = 'badge badge-sm badge-ghost';
+    if (el.purityDiarDesc) el.purityDiarDesc.textContent = 'Select a target audio track first.';
+    return;
+  }
+  const hasCurrentDiar = (state.diarization.audioId === audioId && (state.diarization.turns?.length > 0));
+  if (hasCurrentDiar) {
+    const count = state.diarization.turns.length;
+    const dur = state.diarization.turns.reduce((sum, t) => sum + (t.end_s - t.start_s), 0);
+    el.purityDiarTurnsChip.textContent = `${count} turns ready (${dur.toFixed(1)}s)`;
+    el.purityDiarTurnsChip.className = 'badge badge-sm badge-success';
+    if (el.purityDiarDesc) el.purityDiarDesc.textContent = `Using ${count} diarized speaker turns from active timeline.`;
+  } else {
+    el.purityDiarTurnsChip.textContent = 'No turns in memory';
+    el.purityDiarTurnsChip.className = 'badge badge-sm badge-warning';
+    if (el.purityDiarDesc) el.purityDiarDesc.textContent = 'Switch to Diarization tab to run or load turns for this track, then verify purity.';
+  }
+}
+
+async function runSpeakerPurityVerification() {
+  const audioId = el.purityInputSelect?.value;
+  const profileName = el.purityProfileSelect?.value;
+
+  if (!audioId) {
+    showToast('Please select a target audio track', 'error');
+    return;
+  }
+  if (!profileName) {
+    showToast('Please select an enrolled target speaker profile', 'error');
+    return;
+  }
+
+  let turns = [];
+  if (state.diarization.audioId === audioId && state.diarization.turns?.length > 0) {
+    turns = state.diarization.turns;
+  } else if (state.diarization.turns?.length > 0) {
+    turns = state.diarization.turns;
+  }
+
+  if (!turns || turns.length === 0) {
+    showToast('No diarization turns available. Please run Diarization on this track first.', 'error');
+    return;
+  }
+
+  const threshold = state.purity.settings.similarityThreshold;
+  const minDuration = state.purity.settings.minDuration;
+  const maxOverlap = state.purity.settings.maxOverlap;
+  const windowDuration = state.purity.settings.windowDuration;
+  const windowHop = state.purity.settings.windowHop;
+  const device = el.purityDeviceSelect?.value || 'auto';
+  const token = el.purityHfTokenInput?.value || localStorage.getItem('sonic_hf_token') || undefined;
+
+  state.purity.audioId = audioId;
+  state.purity.profileName = profileName;
+
+  if (el.btnRunPurity) el.btnRunPurity.disabled = true;
+  if (el.purityTaskProgressBox) el.purityTaskProgressBox.classList.remove('hidden');
+  if (el.purityTaskStatusText) el.purityTaskStatusText.textContent = `Verifying ${turns.length} turns against “${profileName}” on ${device}...`;
+
+  let timerInterval = null;
+  const startTime = Date.now();
+  if (el.purityTaskTimer) {
+    el.purityTaskTimer.textContent = '0.0s';
+    timerInterval = setInterval(() => {
+      const elapsed = (Date.now() - startTime) / 1000;
+      el.purityTaskTimer.textContent = `${elapsed.toFixed(1)}s`;
+    }, 100);
+  }
+
+  try {
+    const response = await fetch('/api/purity/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        audio_id: audioId,
+        profile: profileName,
+        turns: turns.map(t => ({
+          speaker_id: t.speaker_id,
+          start_s: t.start_s,
+          end_s: t.end_s,
+        })),
+        similarity_threshold: threshold,
+        min_candidate_duration_s: minDuration,
+        max_overlap_duration_s: maxOverlap,
+        window_duration_s: windowDuration,
+        window_hop_s: windowHop,
+        device: device,
+        token: token,
+      }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Purity verification failed to start');
+
+    const result = await new Promise((resolve, reject) => pollTask(data.task_id, resolve, reject));
+    if (timerInterval) clearInterval(timerInterval);
+
+    state.purity.results = result.purity_results || [];
+    state.purity.metrics = result.metrics || {};
+    state.purity.audioId = result.audio_id;
+    state.purity.profileName = result.profile;
+
+    if (el.purityTaskProgressBox) el.purityTaskProgressBox.classList.add('hidden');
+    if (el.purityEmptyPlaceholder) el.purityEmptyPlaceholder.classList.add('hidden');
+    if (el.purityResultsWrapper) el.purityResultsWrapper.classList.remove('hidden');
+
+    renderPurityResults();
+    showToast(`Speaker purity verification complete: ${result.metrics?.passed_candidates || 0}/${result.purity_results?.length || 0} passed`, 'success');
+  } catch (err) {
+    if (timerInterval) clearInterval(timerInterval);
+    if (el.purityTaskProgressBox) el.purityTaskProgressBox.classList.add('hidden');
+    const msg = err instanceof Error ? err.message : String(err);
+    showToast(`Purity verification failed: ${msg}`, 'error');
+  } finally {
+    if (el.btnRunPurity) el.btnRunPurity.disabled = false;
+  }
+}
+
+function purityTurnKey(turn) {
+  return `${Number(turn.start_s).toFixed(3)}-${Number(turn.end_s).toFixed(3)}-${turn.speaker_id}`;
+}
+
+function stopPuritySegmentPreview() {
+  if (puritySegmentPlayRaf) {
+    cancelAnimationFrame(puritySegmentPlayRaf);
+    puritySegmentPlayRaf = 0;
+  }
+  puritySegmentAudio.pause();
+  activePuritySegmentKey = null;
+  updatePuritySegmentPlaybackButtons();
+}
+
+function updatePuritySegmentPlaybackButtons() {
+  document.querySelectorAll('.purity-play-segment').forEach(btn => {
+    const isActive = btn.dataset.key === activePuritySegmentKey;
+    btn.innerHTML = `${isActive ? '■' : '▶'} ${escapeHtml(btn.dataset.range || '')}`;
+    btn.setAttribute('aria-pressed', String(isActive));
+  });
+}
+
+function watchPuritySegmentEnd(endSec, key) {
+  const tick = () => {
+    puritySegmentPlayRaf = 0;
+    if (activePuritySegmentKey !== key || puritySegmentAudio.paused) return;
+    if (puritySegmentAudio.currentTime >= endSec - 0.01) {
+      stopPuritySegmentPreview();
+      return;
+    }
+    puritySegmentPlayRaf = requestAnimationFrame(tick);
+  };
+  puritySegmentPlayRaf = requestAnimationFrame(tick);
+}
+
+function togglePuritySegmentPreview(turn) {
+  const audioId = state.purity.audioId || state.diarization.audioId;
+  if (!audioId) return;
+
+  const key = purityTurnKey(turn);
+  if (activePuritySegmentKey === key) {
+    stopPuritySegmentPreview();
+    return;
+  }
+
+  stopPuritySegmentPreview();
+  if (el.audio && !el.audio.paused) el.audio.pause();
+
+  activePuritySegmentKey = key;
+  puritySegmentAudio.volume = state.player.volume;
+  puritySegmentAudio.playbackRate = state.player.playbackRate;
+  updatePuritySegmentPlaybackButtons();
+
+  const beginPlayback = () => {
+    if (activePuritySegmentKey !== key) return;
+    puritySegmentAudio.currentTime = turn.start_s;
+    puritySegmentAudio.play()
+      .then(() => watchPuritySegmentEnd(turn.end_s, key))
+      .catch(err => {
+        console.error('Segment preview error:', err);
+        stopPuritySegmentPreview();
+        showToast('Unable to play this segment', 'error');
+      });
+  };
+
+  const streamUrl = `/api/audio/${audioId}/stream`;
+  if (!puritySegmentAudio.src.endsWith(streamUrl)) {
+    puritySegmentAudio.src = streamUrl;
+    puritySegmentAudio.addEventListener('loadedmetadata', beginPlayback, { once: true });
+    puritySegmentAudio.load();
+  } else if (puritySegmentAudio.readyState >= 1) {
+    beginPlayback();
+  } else {
+    puritySegmentAudio.addEventListener('loadedmetadata', beginPlayback, { once: true });
+  }
+}
+
+function formatPurityReason(reason) {
+  if (!reason) return '';
+  switch (reason) {
+    case 'candidate_too_short': return 'Candidate Too Short';
+    case 'overlap_detected': return 'Overlap Detected';
+    case 'target_similarity_below_threshold': return 'Target Sim < Threshold';
+    case 'embedding_failed': return 'Embedding Failed';
+    default: return reason.replace(/_/g, ' ');
+  }
+}
+
+function renderPurityResults() {
+  const results = state.purity.results;
+  if (!results || results.length === 0) {
+    if (el.purityResultsWrapper) el.purityResultsWrapper.classList.add('hidden');
+    if (el.purityEmptyPlaceholder) el.purityEmptyPlaceholder.classList.remove('hidden');
+    return;
+  }
+
+  const threshold = state.purity.settings.similarityThreshold;
+  const passed = results.filter(r => r.decision === 'pass');
+  const rejected = results.filter(r => r.decision === 'reject');
+  const errors = results.filter(r => r.decision === 'error');
+
+  const totalDur = results.reduce((sum, r) => sum + (r.duration_s || (r.end_s - r.start_s)), 0);
+  const passDur = passed.reduce((sum, r) => sum + (r.duration_s || (r.end_s - r.start_s)), 0);
+  const passPct = results.length ? (passed.length / results.length * 100) : 0;
+  const durPct = totalDur > 0 ? (passDur / totalDur * 100) : 0;
+
+  // Header & Profile Badge
+  if (el.purityProfileBadge) el.purityProfileBadge.textContent = state.purity.profileName || 'Target Speaker';
+  if (el.purityResultsTitle) el.purityResultsTitle.textContent = `Purity Verification — ${state.purity.profileName}`;
+  if (el.purityResultsMeta) el.purityResultsMeta.textContent = `${results.length} candidates evaluated (${passDur.toFixed(1)}s pure speech)`;
+
+  // Summary Metrics
+  if (el.purityMetricPassCount) el.purityMetricPassCount.textContent = `${passed.length} / ${results.length}`;
+  if (el.purityMetricPassPct) el.purityMetricPassPct.textContent = `${passPct.toFixed(1)}% candidate pass rate`;
+  if (el.purityMetricPassDuration) el.purityMetricPassDuration.textContent = `${passDur.toFixed(1)}s`;
+  if (el.purityMetricTotalDuration) el.purityMetricTotalDuration.textContent = `of ${totalDur.toFixed(1)}s total candidate speech (${durPct.toFixed(1)}%)`;
+
+  // Quality metrics
+  const passedWindows = passed.flatMap(r => r.windows || []);
+  const avgSim = passedWindows.length > 0 ? (passedWindows.reduce((s, w) => s + w.similarity, 0) / passedWindows.length) : null;
+  if (el.purityMetricAvgSimilarity) el.purityMetricAvgSimilarity.textContent = avgSim !== null ? avgSim.toFixed(3) : '—';
+  if (el.purityMetricMinSimilarity) el.purityMetricMinSimilarity.textContent = `Threshold: ≥ ${threshold.toFixed(2)}`;
+
+  // Rejection Breakdown Pills
+  if (el.purityReasonsPills) {
+    const reasonsMap = {};
+    results.forEach(r => {
+      if (r.reason) reasonsMap[r.reason] = (reasonsMap[r.reason] || 0) + 1;
+    });
+    if (Object.keys(reasonsMap).length === 0) {
+      el.purityReasonsPills.innerHTML = '<span class="badge badge-xs badge-success">Zero rejections</span>';
+    } else {
+      el.purityReasonsPills.innerHTML = Object.entries(reasonsMap).map(([reason, count]) => {
+        const label = formatPurityReason(reason);
+        return `<span class="badge badge-xs badge-danger font-mono">${label}: ${count}</span>`;
+      }).join('');
+    }
+  }
+
+  // Filter counters
+  if (el.purityCountAll) el.purityCountAll.textContent = results.length;
+  if (el.purityCountPass) el.purityCountPass.textContent = passed.length;
+  if (el.purityCountReject) el.purityCountReject.textContent = rejected.length;
+  if (el.purityCountError) el.purityCountError.textContent = errors.length;
+  if (el.purityFooterSelectionInfo) el.purityFooterSelectionInfo.textContent = `${passed.length} passed pure candidates (${passDur.toFixed(1)}s) ready for export`;
+
+  // Speaker filter options update
+  const speakerFilter = document.getElementById('purity-speaker-filter');
+  if (speakerFilter) {
+    const currentSpk = speakerFilter.value;
+    const uniqueSpks = [...new Set(results.map(r => r.speaker_id))].sort();
+    speakerFilter.innerHTML = '<option value="all">All Diarized Speakers</option>' +
+      uniqueSpks.map(spk => `<option value="${escapeHtml(spk)}">${escapeHtml(getSpeakerName(spk))} (${spk})</option>`).join('');
+    if (currentSpk && (currentSpk === 'all' || uniqueSpks.includes(currentSpk))) {
+      speakerFilter.value = currentSpk;
+    }
+  }
+
+  // Filter and sort items
+  let filtered = [...results];
+  if (state.purity.filterStatus === 'pass') filtered = filtered.filter(r => r.decision === 'pass');
+  else if (state.purity.filterStatus === 'reject') filtered = filtered.filter(r => r.decision === 'reject');
+  else if (state.purity.filterStatus === 'error') filtered = filtered.filter(r => r.decision === 'error');
+
+  if (state.purity.filterSpeaker && state.purity.filterSpeaker !== 'all') {
+    filtered = filtered.filter(r => r.speaker_id === state.purity.filterSpeaker);
+  }
+
+  switch (state.purity.sortMode) {
+    case 'time-desc': filtered.sort((a, b) => b.start_s - a.start_s); break;
+    case 'dur-desc': filtered.sort((a, b) => (b.end_s - b.start_s) - (a.end_s - a.start_s)); break;
+    case 'sim-asc': filtered.sort((a, b) => (a.min_target_similarity ?? 1) - (b.min_target_similarity ?? 1)); break;
+    case 'sim-desc': filtered.sort((a, b) => (b.min_target_similarity ?? -1) - (a.min_target_similarity ?? -1)); break;
+    case 'overlap-desc': filtered.sort((a, b) => b.overlap_duration_s - a.overlap_duration_s); break;
+    default: filtered.sort((a, b) => a.start_s - b.start_s); break;
+  }
+
+  if (!el.purityTableBody) return;
+  if (filtered.length === 0) {
+    el.purityTableBody.innerHTML = `<tr><td colspan="8" class="empty-table-msg">No candidates match current filter criteria.</td></tr>`;
+    return;
+  }
+
+  el.purityTableBody.innerHTML = filtered.map((r, index) => {
+    const key = purityTurnKey(r);
+    const dur = r.duration_s || (r.end_s - r.start_s);
+    const rangeLabel = `${r.start_s.toFixed(2)}s – ${r.end_s.toFixed(2)}s`;
+    const isPlaying = activePuritySegmentKey === key;
+    const spkName = getSpeakerName(r.speaker_id);
+    const overlapStr = `${r.overlap_duration_s.toFixed(2)}s (${(r.overlap_ratio * 100).toFixed(0)}%)`;
+    const hasOverlap = r.overlap_duration_s > 0.05;
+
+    let decisionHtml = '';
+    let rowClass = '';
+    if (r.decision === 'pass') {
+      decisionHtml = `<span class="badge badge-success font-mono font-bold">✓ PASS</span>`;
+    } else if (r.decision === 'reject') {
+      rowClass = 'purity-row-rejected';
+      decisionHtml = `<span class="badge badge-danger font-mono font-bold">✕ REJECT</span> <small class="text-xs text-muted block" style="margin-top:2px;">${formatPurityReason(r.reason)}</small>`;
+    } else {
+      rowClass = 'purity-row-error';
+      decisionHtml = `<span class="badge badge-warning font-mono font-bold">⚠ ERROR</span> <small class="text-xs text-muted block" style="margin-top:2px;">${escapeHtml(r.error || r.reason || '')}</small>`;
+    }
+
+    const minSimStr = r.min_target_similarity !== null && r.min_target_similarity !== undefined
+      ? `<strong class="font-mono ${r.min_target_similarity >= threshold ? 'text-success' : 'text-danger'}">${r.min_target_similarity.toFixed(3)}</strong>`
+      : '<span class="text-muted">—</span>';
+
+    // Sliding Windows visualization
+    const windows = r.windows || [];
+    let windowsHtml = '';
+    if (windows.length > 0) {
+      const windowChips = windows.map(w => {
+        const isWinPass = w.similarity >= threshold;
+        return `<span class="purity-window-chip ${isWinPass ? 'win-pass' : 'win-fail'}" title="Window: ${w.start_s.toFixed(2)}s–${w.end_s.toFixed(2)}s | Similarity: ${w.similarity.toFixed(3)}">` +
+          `<span>${w.start_s.toFixed(1)}–${w.end_s.toFixed(1)}s</span>` +
+          `<strong>${w.similarity.toFixed(2)}</strong>` +
+        `</span>`;
+      }).join('');
+
+      let expandedDetail = '';
+      if (state.purity.allWindowsExpanded) {
+        expandedDetail = `<div class="purity-windows-detail-box">` +
+          windows.map((w, wIdx) => `
+            <div class="font-mono text-xs">
+              <span class="text-muted">#${wIdx+1}:</span> ${w.start_s.toFixed(2)}s–${w.end_s.toFixed(2)}s 
+              <strong class="${w.similarity >= threshold ? 'text-success' : 'text-danger'}">${w.similarity.toFixed(3)}</strong>
+            </div>
+          `).join('') +
+        `</div>`;
+      }
+
+      windowsHtml = `<div class="purity-windows-preview">${windowChips}</div>${expandedDetail}`;
+    } else {
+      windowsHtml = `<span class="text-xs text-muted font-mono">${r.reason === 'candidate_too_short' ? 'Skipped (duration < 1.5s)' : (r.reason === 'overlap_detected' ? 'Vetoed by overlap' : 'No windows')}</span>`;
+    }
+
+    return `
+      <tr class="${rowClass}">
+        <td>${index + 1}</td>
+        <td>
+          <button class="btn btn-xs btn-ghost purity-play-segment" data-key="${key}" data-range="${rangeLabel}">
+            ${isPlaying ? '■' : '▶'} ${rangeLabel}
+          </button>
+        </td>
+        <td>
+          <strong>${escapeHtml(spkName)}</strong>
+          <small class="target-local-id">${escapeHtml(r.speaker_id)}</small>
+        </td>
+        <td class="font-mono">${dur.toFixed(2)}s</td>
+        <td class="font-mono ${hasOverlap ? 'text-danger font-bold' : 'text-muted'}">${overlapStr}</td>
+        <td>${decisionHtml}</td>
+        <td>${minSimStr}</td>
+        <td class="purity-windows-cell">${windowsHtml}</td>
+      </tr>
+    `;
+  }).join('');
+
+  el.purityTableBody.querySelectorAll('.purity-play-segment').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const turn = results.find(item => purityTurnKey(item) === btn.dataset.key);
+      if (turn) togglePuritySegmentPreview(turn);
+    });
+  });
+}
+
+async function exportPurityAudio(mode = 'concat') {
+  const results = state.purity.results;
+  const audioId = state.purity.audioId;
+  const profileName = state.purity.profileName || 'pure_speaker';
+
+  if (!results || results.length === 0 || !audioId) {
+    showToast('No purity results to export', 'error');
+    return;
+  }
+
+  const passed = results.filter(r => r.decision === 'pass');
+  if (passed.length === 0) {
+    showToast('No candidates passed purity verification to export', 'warning');
+    return;
+  }
+
+  try {
+    const response = await fetch('/api/purity/export-audio', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        audio_id: audioId,
+        profile_name: profileName,
+        mode: mode,
+        segments: passed.map(r => ({
+          start_s: r.start_s,
+          end_s: r.end_s,
+        })),
+      }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to export pure audio');
+
+    await fetchAudioList();
+    showToast(`Exported ${passed.length} pure segments (${data.duration_s?.toFixed(1)}s) to workspace audio!`, 'success');
+  } catch (err) {
+    showToast(`Export failed: ${err.message}`, 'error');
+  }
+}
+
+function downloadPurityReportJSON() {
+  const results = state.purity.results;
+  if (!results || results.length === 0) {
+    showToast('No purity results to download', 'error');
+    return;
+  }
+  const payload = {
+    schema_version: '1.0',
+    export_type: 'speaker_purity_report',
+    exported_at: new Date().toISOString(),
+    audio_id: state.purity.audioId,
+    profile_name: state.purity.profileName,
+    settings: state.purity.settings,
+    metrics: state.purity.metrics,
+    candidates: results,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `purity_${state.purity.audioId}_${state.purity.profileName}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('Downloaded Purity Report JSON', 'success');
+}
+
+function downloadPurityReportCSV() {
+  const results = state.purity.results;
+  if (!results || results.length === 0) {
+    showToast('No purity results to download', 'error');
+    return;
+  }
+  const headers = ['index', 'audio_id', 'profile_name', 'speaker_id', 'start_s', 'end_s', 'duration_s', 'decision', 'reason', 'overlap_duration_s', 'overlap_ratio', 'min_target_similarity', 'window_count', 'error'];
+  const rows = results.map((r, i) => [
+    i + 1,
+    r.audio_id,
+    r.profile_name,
+    r.speaker_id,
+    r.start_s.toFixed(3),
+    r.end_s.toFixed(3),
+    (r.duration_s || (r.end_s - r.start_s)).toFixed(3),
+    r.decision,
+    r.reason || '',
+    r.overlap_duration_s.toFixed(3),
+    r.overlap_ratio.toFixed(4),
+    r.min_target_similarity != null ? r.min_target_similarity.toFixed(4) : '',
+    (r.windows || []).length,
+    r.error ? `"${r.error.replace(/"/g, '""')}"` : ''
+  ]);
+  const csvContent = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `purity_${state.purity.audioId}_${state.purity.profileName}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('Downloaded Purity Report CSV', 'success');
+}
+
+async function savePurityEvaluation() {
+  const results = state.purity.results;
+  if (!results || results.length === 0) {
+    showToast('Run purity verification first', 'error');
+    return;
+  }
+  const audio = state.audioList.find(a => a.id === state.purity.audioId) || {};
+  const passed = results.filter(r => r.decision === 'pass');
+  const totalDur = results.reduce((sum, r) => sum + (r.duration_s || (r.end_s - r.start_s)), 0);
+  const passDur = passed.reduce((sum, r) => sum + (r.duration_s || (r.end_s - r.start_s)), 0);
+  const evalId = `purity-${state.purity.audioId}-${state.purity.profileName}`.replace(/[^A-Za-z0-9_.-]/g, '_');
+
+  try {
+    const response = await fetch('/api/evaluations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: evalId,
+        evaluation_type: 'speaker_purity',
+        clip_id: state.purity.audioId,
+        clip_title: audio.title || state.purity.audioId,
+        clip_path: audio.path || '',
+        profile_name: state.purity.profileName,
+        model_id: 'pyannote/wespeaker-voxceleb-resnet34-LM',
+        model_name: 'Pyannote Speaker Purity Verifier',
+        threshold: state.purity.settings.similarityThreshold,
+        min_duration_s: state.purity.settings.minDuration,
+        max_overlap_duration_s: state.purity.settings.maxOverlap,
+        window_duration_s: state.purity.settings.windowDuration,
+        window_hop_s: state.purity.settings.windowHop,
+        qualified_segments: passed.length,
+        total_segments: results.length,
+        qualified_duration_s: passDur,
+        total_duration_s: totalDur,
+        qualified_percent: results.length ? (passed.length / results.length * 100) : 0,
+        score_overall: results.length ? (passed.length / results.length * 5) : 0,
+        tags: ['speaker_purity', `profile:${state.purity.profileName}`],
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to save evaluation');
+    showToast('Saved Speaker Purity evaluation to vault', 'success');
+  } catch (err) {
+    showToast(`Failed to save evaluation: ${err.message}`, 'error');
+  }
+}
+
+function resetPurityTab() {
+  state.purity.results = null;
+  state.purity.metrics = null;
+  stopPuritySegmentPreview();
+  if (el.purityResultsWrapper) el.purityResultsWrapper.classList.add('hidden');
+  if (el.purityEmptyPlaceholder) el.purityEmptyPlaceholder.classList.remove('hidden');
+  showToast('Purity analysis reset', 'info');
+}
+
 // ==================== CUTS MANAGER ====================
 
 function initCutsManager() {
@@ -6360,6 +7140,7 @@ function populateAllAudioSelects() {
   const standardSelects = [
     el.sepInputSelect,
     el.diarInputSelect,
+    el.purityInputSelect,
   ];
 
   standardSelects.forEach(select => {
@@ -6630,6 +7411,7 @@ function setTargetGpu(gpuId, notify = true) {
 
   syncSelect(el.sepDeviceSelect);
   syncSelect(el.diarDeviceSelect);
+  syncSelect(el.purityDeviceSelect);
   
   if (notify) {
     showToast(`⚡ Target compute device set to ${selectedDeviceName}`, 'info');
@@ -6950,11 +7732,27 @@ function switchTab(tabId) {
     renderDiarWaveform();
     renderDiarRuler();
     startDiarPlaybackWatch();
+  } else if (tabId === 'tab-purity') {
+    loadSpeakerProfiles().then(() => syncPurityProfileSelect());
+    if (el.purityInputSelect) {
+      if (!el.purityInputSelect.value && state.activeAudio) {
+        el.purityInputSelect.value = state.activeAudio.id;
+      }
+      const audioId = el.purityInputSelect.value;
+      if (audioId) {
+        updatePurityInputMeta(audioId);
+        syncPurityDiarizationStatus();
+      }
+    }
   }
 
   if (tabId !== 'tab-diarization' && el.audio) {
     el.audio.muted = false;
     stopDiarPlaybackWatch();
+  }
+
+  if (tabId !== 'tab-purity') {
+    stopPuritySegmentPreview();
   }
 
   if (tabId !== 'tab-comparison') syncActivePlaybackControls();
@@ -6998,6 +7796,7 @@ async function initApp() {
   try { initDiarizationStudio(); } catch (e) { console.error("initDiarizationStudio error:", e); }
   try { initKnownSpeakerManager(); } catch (e) { console.error("initKnownSpeakerManager error:", e); }
   try { initTargetSpeakerEvaluation(); } catch (e) { console.error("initTargetSpeakerEvaluation error:", e); }
+  try { initPurityTab(); } catch (e) { console.error("initPurityTab error:", e); }
   try { initAuditionHub(); } catch (e) { console.error("initAuditionHub error:", e); }
   try { initKeyboardShortcuts(); } catch (e) { console.error("initKeyboardShortcuts error:", e); }
   try { initNavigation(); } catch (e) { console.error("initNavigation error:", e); }
