@@ -1,4 +1,6 @@
-I checked the current `src/diarization/` on `main`. You currently have **4 actual diarization systems**; the `*WorkerDiarizer` files are only execution wrappers, not additional models. ([GitHub][1])
+The repository now has **5 actual diarization systems**; the
+`*WorkerDiarizer` files are execution wrappers, not additional models.
+([GitHub][1])
 
 ### Public DER benchmarks for models currently in the repo
 
@@ -10,12 +12,18 @@ I checked the current `src/diarization/` on `main`. You currently have **4 actua
 | **3D-Speaker (FSMN + CAM++)**                 | **10.30** |  **19.73** |       - |    21.76 |       - |                     - |          - |       - |      - |       11.75 |     - |    - |     - |
 | **NeMo Sortformer `diar_sortformer_4spk-v1`** |         - |          - |       - |        - |       - | 6.49 / 10.01 / 14.14* | **16.28†** |       - |      - |           - |     - |    - |  6.27 |
 | **NeMo Clustering (MarbleNet + TitaNet)**     |         - |          - |       - |        - |       - |                     - |          - |       - |      - |           - |     - |    - |     - |
+| **DiariZen Large s80-v2**                     |      10.1 |       10.8 |       - |     13.9 |       - |                     - |       14.5 |    15.8 |      - |         9.1 |     - | 11.0 |     - |
 
 Pyannote's current code uses `pyannote/speaker-diarization-community-1`. ([GitHub][2]) Its official model card reports the full benchmark row above under **fully automatic processing, 0 s collar, overlap included**, making that row internally consistent. ([Hugging Face][3])
 
 Your 3D-Speaker implementation uses the upstream **FSMN VAD + CAM++ embedding + spectral clustering** setup, with CAM++ model `speech_campplus_sv_zh_en_16k-common_advanced`. ([GitHub][4]) The upstream 3D-Speaker repo publishes DER for AISHELL-4, AliMeeting, AMI-SDM and VoxConverse. ([GitHub][5])
 
 Your Sortformer is exactly NVIDIA's offline **`nvidia/diar_sortformer_4spk-v1`** checkpoint. ([GitHub][6]) NVIDIA publishes 16.28 DER on its DIHARD3-Eval subset, 6.27 on CH109, and separate CALLHOME part-2 numbers for 2-, 3-, and 4-speaker recordings. ([Hugging Face][7])
+
+The DiariZen backend uses the released
+`BUT-FIT/diarizen-wavlm-large-s80-md-v2` overlap-aware WavLM + WeSpeaker + VBx
+pipeline. The upstream table reports the row above with no collar and no
+per-domain adaptation. Its weights are CC BY-NC 4.0. ([GitHub][11])
 
 * CALLHOME Sortformer = **6.49 / 10.01 / 14.14** for 2 / 3 / 4 speakers respectively.
 
@@ -44,16 +52,18 @@ Those numbers look extremely good because VAD errors are removed entirely, so I 
 
 ### What the table actually tells us
 
-The only genuinely useful head-to-head overlap at the moment is:
+The common benchmarks now provide a useful three-way comparison:
 
-| Benchmark   | Pyannote Community-1 | 3D-Speaker |                   Difference |
-| ----------- | -------------------: | ---------: | ---------------------------: |
-| AISHELL-4   |                 11.7 |  **10.30** | 3D-Speaker better by 1.40 pp |
-| AliMeeting  |                 20.3 |  **19.73** | 3D-Speaker better by 0.57 pp |
-| AMI SDM     |             **19.9** |      21.76 |   Pyannote better by 1.86 pp |
-| VoxConverse |             **11.2** |      11.75 |   Pyannote better by 0.55 pp |
+| Benchmark   | Pyannote Community-1 | 3D-Speaker | DiariZen Large s80-v2 |
+| ----------- | -------------------: | ---------: | ---------------------: |
+| AISHELL-4   |                 11.7 |      10.30 |                   10.1 |
+| AliMeeting  |                 20.3 |      19.73 |                   10.8 |
+| AMI SDM     |                 19.9 |      21.76 |                   13.9 |
+| VoxConverse |                 11.2 |      11.75 |                    9.1 |
 
-So **Pyannote and 3D-Speaker are actually quite close overall** on common public benchmarks. 3D-Speaker looks better on the Chinese meeting sets; Pyannote slightly better on AMI-SDM and VoxConverse. ([GitHub][5])
+The published DiariZen v2 results are substantially stronger on these common
+sets, though the repository's ViYT-Diar run remains the relevant Vietnamese
+comparison. ([GitHub][11])
 
 And critically, **none of these exact current checkpoints has a published ViYT-Diar number that I could verify**, so the Vietnamese column would currently be:
 
@@ -63,6 +73,7 @@ And critically, **none of these exact current checkpoints has a published ViYT-D
 | 3D-Speaker               |             - |
 | Sortformer 4spk-v1       |             - |
 | NeMo MarbleNet + TitaNet |             - |
+| DiariZen Large s80-v2    |             - |
 
 That is therefore probably the benchmark **you should run yourself next**, because it will be much more informative for this project than trying to infer Vietnamese performance from AMI or DIHARD. ViYT-Diar gives 100 manually annotated Vietnamese YouTube files specifically for diarization evaluation. ([Hugging Face][10])
 
@@ -76,4 +87,5 @@ That is therefore probably the benchmark **you should run yourself next**, becau
 [8]: https://github.com/tungnguyenlam/audio-prepare-pipeline-redo/blob/main/src/diarization/ClusteringDiarizer.py "audio-prepare-pipeline-redo/src/diarization/ClusteringDiarizer.py at main · tungnguyenlam/audio-prepare-pipeline-redo · GitHub"
 [9]: https://github.com/NVIDIA-NeMo/Speech/blob/main/examples/speaker_tasks/diarization/README.md?utm_source=chatgpt.com "Speech/examples/speaker_tasks/diarization/README.md at main · NVIDIA-NeMo/Speech · GitHub"
 [10]: https://huggingface.co/datasets/tuanduy1612/ViYT-Diar?utm_source=chatgpt.com "tuanduy1612/ViYT-Diar · Datasets at Hugging Face"
+[11]: https://github.com/BUTSpeechFIT/DiariZen "GitHub - BUTSpeechFIT/DiariZen"
 s

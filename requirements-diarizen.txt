@@ -1,0 +1,11 @@
+# DiariZen requires Python 3.10 and an older Torch/Pyannote stack. Keep it in
+# .venv-diarizen rather than changing the primary uv environment.
+numpy==1.26.4
+torch==2.1.1
+torchaudio==2.1.1
+torchvision==0.16.1
+scipy>=1.11,<1.14
+toml>=0.10.2
+huggingface-hub==0.36.2
+diarizen @ git+https://github.com/BUTSpeechFIT/DiariZen.git@844f5555b0a98acd0931511fc641a8c5b8ba92c7
+pyannote.audio @ git+https://github.com/BUTSpeechFIT/DiariZen.git@844f5555b0a98acd0931511fc641a8c5b8ba92c7#subdirectory=pyannote-audio

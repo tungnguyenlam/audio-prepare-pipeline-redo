@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from src.diarization.BaseDiarizer import BaseDiarizer
 from src.diarization.ClusteringWorkerDiarizer import ClusteringWorkerDiarizer
+from src.diarization.DiariZenWorkerDiarizer import DiariZenWorkerDiarizer
 from src.diarization.PyannoteDiarizer import PyannoteDiarizer
 from src.diarization.SortformerWorkerDiarizer import SortformerWorkerDiarizer
 from src.diarization.ThreeDSpeakerWorkerDiarizer import ThreeDSpeakerWorkerDiarizer
@@ -44,6 +45,12 @@ def _sortformer(*, device: str, **_: Any) -> BaseDiarizer:
 
 def _clustering(*, device: str, **_: Any) -> BaseDiarizer:
     return ClusteringWorkerDiarizer(device=device)
+
+
+def _diarizen(
+    *, device: str, token: str | None, **_: Any
+) -> BaseDiarizer:
+    return DiariZenWorkerDiarizer(device=device, token=token)
 
 
 def _three_d_speaker(
@@ -85,6 +92,12 @@ SYSTEM_REGISTRY: dict[str, SystemSpec] = {
         label="NeMo Clustering",
         env_hint=".venv-sortformer",
         factory=_clustering,
+    ),
+    "diarizen": SystemSpec(
+        key="diarizen",
+        label="DiariZen Large s80-v2",
+        env_hint=".venv-diarizen",
+        factory=_diarizen,
     ),
     "3d_speaker": SystemSpec(
         key="3d_speaker",

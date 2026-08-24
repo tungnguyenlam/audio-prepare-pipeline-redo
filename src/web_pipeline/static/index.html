@@ -908,6 +908,19 @@
                   </label>
 
                   <label class="model-pro-card">
+                    <input type="radio" name="diar-backend-radio" value="diarizen" class="hidden-radio">
+                    <div class="pro-card-top">
+                      <span class="pro-card-title">DiariZen Large s80-v2</span>
+                      <span class="badge-sota-glow">Cross-Domain</span>
+                    </div>
+                    <p class="pro-card-desc">Overlap-aware WavLM Large segmentation + WeSpeaker embeddings + VBx clustering.</p>
+                    <div class="pro-card-specs">
+                      <span class="spec-chip">WavLM Large</span>
+                      <span class="spec-chip">Non-commercial Weights</span>
+                    </div>
+                  </label>
+
+                  <label class="model-pro-card">
                     <input type="radio" name="diar-backend-radio" value="pyannote_community" class="hidden-radio">
                     <div class="pro-card-top">
                       <span class="pro-card-title">Pyannote Community-1</span>
@@ -992,7 +1005,7 @@
 
               <div class="form-item">
                 <div class="label-with-tool">
-                  <label class="form-label" for="diar-hf-token">HuggingFace Token (Required only for Pyannote)</label>
+                  <label class="form-label" for="diar-hf-token">HuggingFace Token (Pyannote / DiariZen)</label>
                   <button type="button" class="btn btn-ghost btn-xs" id="btn-toggle-token-vis">Show</button>
                 </div>
                 <input type="password" id="diar-hf-token" class="form-input font-mono" placeholder="hf_xxxxxxxxxxxxxxxxxxxx">

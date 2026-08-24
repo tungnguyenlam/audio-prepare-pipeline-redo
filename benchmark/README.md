@@ -25,6 +25,7 @@ JSON and comparison figures are written under `benchmark/figures/`.
 | `pyannote_31` | Pyannote 3.1 | primary `.venv` |
 | `sortformer` | NeMo Sortformer | `.venv-sortformer` |
 | `clustering` | NeMo Clustering | `.venv-sortformer` |
+| `diarizen` | DiariZen Large s80-v2 | `.venv-diarizen` |
 | `3d_speaker` | 3D-Speaker | `.venv-3dspeaker` |
 
 Run on the **model server** (not the development laptop):
@@ -46,12 +47,13 @@ uv run python -m benchmark.diarization.run_viyt_benchmark --all
 
 # Subset comparison
 uv run python -m benchmark.diarization.run_viyt_benchmark \
-  --systems pyannote_community,pyannote_31,sortformer,clustering,3d_speaker
+  --systems pyannote_community,pyannote_31,sortformer,clustering,diarizen,3d_speaker
 ```
 
-Requires `HF_TOKEN` in the repo-root `.env` for Pyannote (and for 3D-Speaker
-overlap refinement). Sortformer / Clustering need `.venv-sortformer`;
-3D-Speaker needs `.venv-3dspeaker` (see root README).
+Requires `HF_TOKEN` in the repo-root `.env` for Pyannote and DiariZen (and for
+3D-Speaker overlap refinement). Sortformer / Clustering need
+`.venv-sortformer`; DiariZen needs `.venv-diarizen`; 3D-Speaker needs
+`.venv-3dspeaker` (see root README). DiariZen weights are CC BY-NC 4.0.
 
 ### Outputs
 

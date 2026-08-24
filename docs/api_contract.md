@@ -252,7 +252,8 @@ active Demucs process group.
 **Defined in:** `src/base/model.py`
 
 `ManagedModel` is used by `PyannoteDiarizer`, `SortformerDiarizer`,
-`ClusteringDiarizer`, `ThreeDSpeakerDiarizer`, `BSRoFormer`, and `MelRoFormer`.
+`ClusteringDiarizer`, `DiariZenDiarizer`, `ThreeDSpeakerDiarizer`, `BSRoFormer`,
+and `MelRoFormer`.
 
 ### `is_loaded -> bool`
 
@@ -456,6 +457,51 @@ constructor option can point to a non-default isolated interpreter.
 - `_load()` constructs NeMo `ClusteringDiarizer` with the configured VAD and
   speaker-embedding models and places them on the selected device.
 - `_unload()` releases both models and clears available accelerator caches.
+
+### `DiariZenDiarizer.diarize(audio: Audio, *, num_speakers=None, min_speakers=None, max_speakers=None) -> DiarizationResult`
+
+**Defined in:** `src/diarization/DiariZenDiarizer.py`
+
+DiariZen's overlap-aware pipeline: WavLM Large neural segmentation, WeSpeaker
+speaker embeddings, and VBx clustering. The default checkpoint is
+`BUT-FIT/diarizen-wavlm-large-s80-md-v2`. Its weights are CC BY-NC 4.0 and are
+limited to research and other non-commercial use. Dependencies are isolated in
+`.venv-diarizen` using `requirements-diarizen.txt`.
+
+**Behavior contract:**
+
+- Normalizes input to mono, 16 kHz PCM WAV before inference.
+- Converts the returned Pyannote Annotation into result-local `spk_NN` labels,
+  preserving simultaneous turns for overlapping speakers.
+- Constructor speaker bounds are used unless a corresponding per-call override
+  is supplied. An exact speaker count sets both clustering bounds for that call.
+- Includes `DiarizationModelInfo` with backend `"diarizen"` and the configured
+  Hugging Face model ID.
+
+**Device behavior:** `device="auto"` selects CUDA and then CPU. CUDA and CPU
+are supported; other device types raise `RuntimeError`.
+
+**Raises:** `RuntimeError` when the model is not loaded, dependencies are
+unavailable, model loading fails, or inference fails; `FileNotFoundError` for a
+missing source; `ValueError` for invalid speaker bounds or empty audio.
+
+### `DiariZenWorkerDiarizer`
+
+The web applications and benchmark use `DiariZenWorkerDiarizer` from the
+primary `.venv`. It starts
+`.venv-diarizen/bin/python -m src.diarization.diarizen_worker`, loads the model
+once, and reuses it until `unload()` or `close()`. `DIARIZEN_PYTHON` or the
+`worker_python` constructor option can select another interpreter. A requested
+`cuda:N` is isolated with `CUDA_VISIBLE_DEVICES` so DiariZen's upstream
+`cuda:0` initialization runs on the selected physical GPU. `cancel()`
+terminates active worker inference.
+
+### `DiariZenDiarizer._load() -> None` and `_unload() -> None`
+
+- `_load()` authenticates from `token` or `HF_TOKEN`, downloads the configured
+  checkpoint through the upstream pipeline, and moves it to the selected
+  device.
+- `_unload()` releases the pipeline and clears available CUDA allocations.
 
 ### `ThreeDSpeakerDiarizer.diarize(audio: Audio, *, num_speakers=None) -> DiarizationResult`
 

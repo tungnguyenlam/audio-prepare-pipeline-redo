@@ -44,6 +44,7 @@ from src.separation import HTDemucs, BSRoFormer, MelRoFormer, MVSepMDX23
 from src.diarization import (
     ClusteringDiarizer,
     ClusteringWorkerDiarizer,
+    DiariZenWorkerDiarizer,
     PyannoteDiarizer,
     SortformerWorkerDiarizer,
     SpeakerVerifier,
@@ -1756,7 +1757,7 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
     """Run speaker diarization in background."""
     data = await request.json()
     audio_id = data.get("audio_id")
-    model_type = data.get("model_type", "pyannote").lower()  # pyannote, sortformer, clustering, 3d_speaker
+    model_type = data.get("model_type", "pyannote").lower()
     model_id = data.get("model_id")
     device = data.get("device", "auto")
     token = data.get("token") or os.getenv("HF_TOKEN")
@@ -1916,6 +1917,24 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
                     chunk_duration_s=chunk_duration_s,
                     chunk_step_s=chunk_step_s,
                     token=token if include_overlap else None,
+                )
+                task_manager.set_cancel_callback(task_id, diarizer.cancel)
+                try:
+                    with diarizer:
+                        return diarizer.diarize(audio)
+                finally:
+                    task_manager.set_cancel_callback(task_id, None)
+            elif model_type in {"diarizen", "diarizen_large_s80_v2"}:
+                diarizer = DiariZenWorkerDiarizer(
+                    model_id=(
+                        model_id
+                        or "BUT-FIT/diarizen-wavlm-large-s80-md-v2"
+                    ),
+                    device=target_device,
+                    token=token,
+                    num_speakers=num_speakers,
+                    min_speakers=min_speakers,
+                    max_speakers=max_speakers,
                 )
                 task_manager.set_cancel_callback(task_id, diarizer.cancel)
                 try:

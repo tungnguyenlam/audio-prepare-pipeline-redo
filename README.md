@@ -7,7 +7,7 @@ High-throughput audio preparation, YouTube crawling, stem separation, speaker di
 This repository provides modular, file-backed audio processing utilities, one
 shared web backend, and two dedicated frontends:
 
-1. **⚡ SonicPipeline (Large-Scale Processing Engine):** High-throughput batch audio ingestion (playlists, multi-URLs, folder scans), asynchronous worker task queue, dataset management, bulk stem separation (`BS-RoFormer`, `Mel-RoFormer`, `HTDemucs`, `MVSep-MDX23`), batch speaker diarization (`Sortformer`, `3D-Speaker`, `Pyannote`), separation benchmark matrix evaluation, hardware telemetry monitoring, and JSONL/CSV manifest exports.
+1. **⚡ SonicPipeline (Large-Scale Processing Engine):** High-throughput batch audio ingestion (playlists, multi-URLs, folder scans), asynchronous worker task queue, dataset management, bulk stem separation (`BS-RoFormer`, `Mel-RoFormer`, `HTDemucs`, `MVSep-MDX23`), batch speaker diarization (`Sortformer`, `DiariZen`, `3D-Speaker`, `Pyannote`), separation benchmark matrix evaluation, hardware telemetry monitoring, and JSONL/CSV manifest exports.
 2. **🎙️ SonicStudio (Interactive Exploration Studio):** Single-track audio workstation for manual audio cutting, waveform and spectrogram side-by-side visual comparison, model stem auditioning, and quick parameter exploration.
 
 ## Setup guide
@@ -50,7 +50,9 @@ Create a repository-root `.env` (loaded automatically at server startup):
 HF_TOKEN=hf_...
 ```
 
-`HF_TOKEN` is required for Pyannote (and for 3D-Speaker overlap refinement).
+`HF_TOKEN` is required for Pyannote and DiariZen (and for 3D-Speaker overlap
+refinement). DiariZen's released weights are CC BY-NC 4.0 and therefore only
+suitable for research and other non-commercial use.
 Hugging Face caches default to `.data/huggingface`. Set `HF_HOME` in `.env`
 only when a different writable cache location is needed.
 
@@ -59,7 +61,7 @@ and are gitignored — do not commit media or caches.
 
 ### 3. Optional isolated diarizer environments
 
-Sortformer/Clustering and 3D-Speaker pin packages that conflict with the
+Sortformer/Clustering, DiariZen, and 3D-Speaker pin packages that conflict with the
 primary stack. Create these only on the model server, and only if you need
 those backends.
 
@@ -69,6 +71,17 @@ those backends.
 uv venv --python .venv/bin/python .venv-sortformer
 UV_PROJECT_ENVIRONMENT=.venv-sortformer uv sync --frozen --no-dev
 uv pip install --python .venv-sortformer/bin/python -r requirements-sortformer.txt
+```
+
+**DiariZen Large s80-v2** — uses the upstream Python 3.10 / Torch 2.1 stack
+and DiariZen's Pyannote fork:
+
+```bash
+uv venv --python 3.10 .venv-diarizen
+uv pip install --python .venv-diarizen/bin/python \
+  torch==2.1.1 torchvision==0.16.1 torchaudio==2.1.1 \
+  --index-url https://download.pytorch.org/whl/cu121
+uv pip install --python .venv-diarizen/bin/python -r requirements-diarizen.txt
 ```
 
 **3D-Speaker** ([modelscope/3D-Speaker](https://github.com/modelscope/3D-Speaker);
@@ -81,16 +94,16 @@ UV_PROJECT_ENVIRONMENT=.venv-3dspeaker uv sync --frozen --no-dev
 uv pip install --python .venv-3dspeaker/bin/python -r requirements-3dspeaker.txt
 ```
 
-When Sortformer is selected, the backend starts a persistent worker with
-`.venv-sortformer/bin/python`. When 3D-Speaker is selected, it uses
-`.venv-3dspeaker/bin/python` the same way. Other models stay in the primary
-`.venv`; you do not need to restart the server when switching models.
+When an isolated backend is selected, the server starts a persistent worker in
+its corresponding environment and reuses the loaded model. Other models stay
+in the primary `.venv`; you do not need to restart the server when switching.
 
 Optional overrides:
 
 | Variable | Purpose |
 |---|---|
 | `SORTFORMER_PYTHON` | Path to the Sortformer/Clustering interpreter if not `.venv-sortformer` |
+| `DIARIZEN_PYTHON` | Path to the DiariZen interpreter if not `.venv-diarizen` |
 | `THREEDSPEAKER_PYTHON` | Path to the 3D-Speaker interpreter if not `.venv-3dspeaker` |
 | `THREEDSPEAKER_ROOT` | 3D-Speaker checkout path if not `.data/3d-speaker` |
 
@@ -147,7 +160,7 @@ uv run python -m benchmark.diarization --systems pyannote_community
 
 # Compare multiple systems (isolated worker venvs when needed)
 uv run python -m benchmark.diarization \
-  --systems pyannote_community,pyannote_31,sortformer,clustering,3d_speaker
+  --systems pyannote_community,pyannote_31,sortformer,clustering,diarizen,3d_speaker
 ```
 
 | System key | Backend | Environment |
@@ -156,6 +169,7 @@ uv run python -m benchmark.diarization \
 | `pyannote_31` | Pyannote 3.1 | primary `.venv` |
 | `sortformer` | NeMo Sortformer | `.venv-sortformer` |
 | `clustering` | NeMo Clustering | `.venv-sortformer` |
+| `diarizen` | DiariZen Large s80-v2 | `.venv-diarizen` |
 | `3d_speaker` | 3D-Speaker | `.venv-3dspeaker` |
 
 Metrics: Diarization Error Rate (DER) with a 0.25 s collar (`pyannote.metrics`),
@@ -167,8 +181,9 @@ plus mean speaker-count absolute error. Outputs (gitignored):
 | `benchmark/results/` | Per-run JSON metrics |
 | `benchmark/figures/` | Comparison plots (mean DER, boxplot, speaker-count error) |
 
-Requires `HF_TOKEN` in `.env` for Pyannote. Sortformer / Clustering /
-3D-Speaker need their optional environments from step 3. More detail:
+Requires `HF_TOKEN` in `.env` for Pyannote and DiariZen. Sortformer /
+Clustering / DiariZen / 3D-Speaker need their optional environments from step
+3. More detail:
 [`benchmark/README.md`](benchmark/README.md).
 
 ---
@@ -182,7 +197,8 @@ do not run model inference on it. The web backend and model inference run on
 Synchronize source changes with the scripts in `scripts/sync/` (credentials and
 runtime `.data/` stay machine-local). Install and maintain the model-serving
 environments (primary `.venv` plus optional `.venv-sortformer` /
-`.venv-3dspeaker`) on the server rather than on the development machine.
+`.venv-diarizen` / `.venv-3dspeaker`) on the server rather than on the
+development machine.
 
 ---
 
@@ -194,7 +210,7 @@ environments (primary `.venv` plus optional `.venv-sortformer` /
 ├── src/
 │   ├── base/               # ManagedModel lifecycle (load/unload)
 │   ├── benchmark/          # AudioMixer and separation benchmark schemas
-│   ├── diarization/        # BaseDiarizer, Sortformer, Clustering, 3D-Speaker, Pyannote backends
+│   ├── diarization/        # BaseDiarizer, Sortformer, Clustering, DiariZen, 3D-Speaker, Pyannote backends
 │   ├── notebooks/          # Interactive Jupyter callers (pipeline1, benchmark, mixer)
 │   ├── separation/         # BaseSeparator, BSRoFormer, MelRoFormer, HTDemucs, MVSepMDX23
 │   ├── utils/              # File-backed Audio class, AudioCutter, Comparers

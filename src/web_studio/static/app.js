@@ -2192,6 +2192,7 @@ function getSpeakerName(speakerId) {
 function diarizationModelLabel(modelTypeOrBackend) {
   const key = String(modelTypeOrBackend || "").toLowerCase();
   if (key.includes("sortformer")) return "NeMo Sortformer";
+  if (key.includes("diarizen")) return "DiariZen Large s80-v2";
   if (key.includes("clustering") || key.includes("cluster")) return "NeMo Clustering";
   if (key.includes("3d") || key.includes("speakerlab") || key.includes("threed")) return "3D-Speaker";
   if (key.includes("3.1") || key.includes("pyannote_31") || key.includes("pyannote_3")) return "Pyannote 3.1";
@@ -2202,12 +2203,13 @@ function diarizationModelLabel(modelTypeOrBackend) {
 
 function syncDiarModelOptions(modelType) {
   const isPyannote = modelType && modelType.startsWith("pyannote");
+  const isDiariZen = modelType === "diarizen" || modelType === "diarizen_large_s80_v2";
   const is3d = modelType === "3d_speaker" || modelType === "3d-speaker" || modelType === "threed_speaker";
   const isClustering = modelType === "clustering" || modelType === "nemo-clustering" || modelType === "nemo_clustering";
 
   const hfGroup = document.getElementById("hf-token-group");
   const overlapCheck = document.getElementById("diar-3d-overlap");
-  const needsHf = isPyannote || (is3d && overlapCheck && overlapCheck.checked);
+  const needsHf = isPyannote || isDiariZen || (is3d && overlapCheck && overlapCheck.checked);
   if (hfGroup) {
     hfGroup.style.display = needsHf ? "" : "none";
   }

@@ -3,6 +3,11 @@
 from src.diarization.BaseDiarizer import BaseDiarizer
 from src.diarization.ClusteringDiarizer import ClusteringDiarizer
 from src.diarization.ClusteringWorkerDiarizer import ClusteringWorkerDiarizer
+from src.diarization.DiariZenDiarizer import (
+    DEFAULT_DIARIZEN_MODEL_ID,
+    DiariZenDiarizer,
+)
+from src.diarization.DiariZenWorkerDiarizer import DiariZenWorkerDiarizer
 from src.diarization.PyannoteDiarizer import (
     DEFAULT_PYANNOTE_MODEL_ID,
     PyannoteDiarizer,
@@ -31,10 +36,13 @@ __all__ = [
     "BaseDiarizer",
     "ClusteringDiarizer",
     "ClusteringWorkerDiarizer",
+    "DEFAULT_DIARIZEN_MODEL_ID",
     "DEFAULT_EMBEDDING_MODEL_ID",
     "DEFAULT_PYANNOTE_MODEL_ID",
     "DiarizationModelInfo",
     "DiarizationResult",
+    "DiariZenDiarizer",
+    "DiariZenWorkerDiarizer",
     "PyannoteDiarizer",
     "ScoredSegment",
     "Speaker",

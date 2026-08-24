@@ -22,6 +22,7 @@ from src.benchmark.separation.mixer import AudioMixer
 from src.diarization import (
     ClusteringDiarizer,
     ClusteringWorkerDiarizer,
+    DiariZenWorkerDiarizer,
     PyannoteDiarizer,
     SortformerWorkerDiarizer,
     SpeakerVerifier,
@@ -543,6 +544,18 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
                 chunk_duration_s=chunk_duration_s,
                 chunk_step_s=chunk_step_s,
                 token=hf_token if include_overlap else None,
+            )
+        elif backend_key in {"diarizen", "diarizen_large_s80_v2"}:
+            diarizer = DiariZenWorkerDiarizer(
+                model_id=(
+                    model_id
+                    or "BUT-FIT/diarizen-wavlm-large-s80-md-v2"
+                ),
+                device=device,
+                token=hf_token,
+                num_speakers=num_speakers,
+                min_speakers=min_speakers,
+                max_speakers=max_speakers,
             )
         elif backend_key in {"pyannote_31", "pyannote_3", "pyannote_3.1"}:
             diarizer = PyannoteDiarizer(
