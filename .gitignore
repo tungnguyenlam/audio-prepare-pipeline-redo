@@ -31,6 +31,8 @@ audio_crawl/
 processed_audio/
 diarized_audio/
 aligned_audio/
+pipeline_outputs/
+final_dataset/
 benchmark_results/
 temp/
 .data/

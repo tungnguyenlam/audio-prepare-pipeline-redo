@@ -19,6 +19,22 @@ from src.separation.base import BaseSeparator, SeparationError, SeparationResult
 logger = logging.getLogger(__name__)
 
 
+def _ensure_torchaudio_compat():
+    """Shim torchaudio.backend for torchaudio 2.x+ compatibility with DeepFilterNet."""
+    import types
+    try:
+        import torchaudio
+        if not hasattr(torchaudio, "backend") or "torchaudio.backend" not in sys.modules:
+            backend_mod = types.ModuleType("torchaudio.backend")
+            common_mod = types.ModuleType("torchaudio.backend.common")
+            common_mod.AudioMetaData = getattr(torchaudio, "AudioMetaData", None)
+            backend_mod.common = common_mod
+            sys.modules["torchaudio.backend"] = backend_mod
+            sys.modules["torchaudio.backend.common"] = common_mod
+    except Exception:
+        pass
+
+
 class DeepFilterNetSeparator(BaseSeparator):
     """DeepFilterNet3 speech enhancement and noise suppression wrapper (Rikorose).
 
@@ -48,6 +64,7 @@ class DeepFilterNetSeparator(BaseSeparator):
         if self._model is not None and self._df_state is not None:
             return self._model, self._df_state
 
+        _ensure_torchaudio_compat()
         try:
             from df.enhance import init_df
             logger.info("Initializing DeepFilterNet model (%s)...", self.model_name)
@@ -66,6 +83,7 @@ class DeepFilterNetSeparator(BaseSeparator):
 
     def check_status(self) -> dict[str, Union[bool, str]]:
         """Check if DeepFilterNet is installed and ready."""
+        _ensure_torchaudio_compat()
         try:
             import df
             from df.enhance import init_df
@@ -74,7 +92,7 @@ class DeepFilterNetSeparator(BaseSeparator):
                 "message": "Sẵn sàng (DeepFilterNet3 SOTA Denoising & Enhancement)",
                 "model": self.model_name,
             }
-        except ImportError as e:
+        except Exception as e:
             return {
                 "available": False,
                 "message": f"Chưa cài DeepFilterNet: {e}",

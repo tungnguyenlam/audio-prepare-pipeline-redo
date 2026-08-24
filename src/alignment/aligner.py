@@ -177,18 +177,47 @@ class WordAlignmentEngine:
         monitor_thread = threading.Thread(target=_monitor_loop, daemon=True)
         monitor_thread.start()
 
+        # Setup LD_LIBRARY_PATH for NVIDIA CUDA runtime libs if bundled
+        import os
+        import sys
+        for p in sys.path:
+            nvidia_dir = Path(p) / "nvidia"
+            if nvidia_dir.is_dir():
+                for sub in nvidia_dir.iterdir():
+                    lib_dir = sub / "lib"
+                    if lib_dir.is_dir():
+                        cur_ld = os.environ.get("LD_LIBRARY_PATH", "")
+                        if str(lib_dir) not in cur_ld:
+                            os.environ["LD_LIBRARY_PATH"] = f"{lib_dir}:{cur_ld}" if cur_ld else str(lib_dir)
+
         model_local_dir = local_cache_dir / model_size
         model_target = str(model_local_dir) if (model_local_dir / "model.bin").is_file() else model_size
 
         device_index = 0 if self.device == "cuda" else 0
         try:
-            model = WhisperModel(
-                model_size_or_path=model_target,
-                device=self.device,
-                device_index=device_index,
-                compute_type=self.compute_type,
-                download_root=str(local_cache_dir),
-            )
+            try:
+                model = WhisperModel(
+                    model_size_or_path=model_target,
+                    device=self.device,
+                    device_index=device_index,
+                    compute_type=self.compute_type,
+                    download_root=str(local_cache_dir),
+                )
+            except Exception as cuda_exc:
+                if self.device == "cuda":
+                    logger.warning(
+                        "Không thể nạp WhisperModel trên GPU CUDA (%s). Tự động chuyển sang CPU int8 (12 threads)...",
+                        cuda_exc
+                    )
+                    model = WhisperModel(
+                        model_size_or_path=model_target,
+                        device="cpu",
+                        compute_type="int8",
+                        cpu_threads=min(12, os.cpu_count() or 4),
+                        download_root=str(local_cache_dir),
+                    )
+                else:
+                    raise
         finally:
             stop_monitor.set()
 
@@ -197,7 +226,7 @@ class WordAlignmentEngine:
                 "status": "model_ready",
                 "progress_percent": 5.0,
                 "model_size": model_size,
-                "message": f"Mô hình '{model_size}' đã sẵn sàng trên GPU RTX 3090!",
+                "message": f"Mô hình '{model_size}' đã sẵn sàng!",
             })
 
         self._models[model_size] = model
@@ -256,15 +285,41 @@ class WordAlignmentEngine:
                 "message": "Bắt đầu nhận diện và gióng hàng timestamp từng từ...",
             })
 
-        segments_iter, info = model.transcribe(
-            str(audio_path),
-            language=lang_code,
-            beam_size=beam_size,
-            word_timestamps=word_timestamps,
-            vad_filter=vad_filter,
-            vad_parameters=vad_params,
-            initial_prompt=initial_prompt,
-        )
+        try:
+            segments_iter, info = model.transcribe(
+                str(audio_path),
+                language=lang_code,
+                beam_size=beam_size,
+                word_timestamps=word_timestamps,
+                vad_filter=vad_filter,
+                vad_parameters=vad_params,
+                initial_prompt=initial_prompt,
+            )
+            # Test generator
+            segments_list = []
+            for s in segments_iter:
+                segments_list.append(s)
+        except Exception as trans_exc:
+            logger.warning("Lỗi chạy Faster-Whisper trên GPU (%s). Chuyển sang CPU int8...", trans_exc)
+            from faster_whisper import WhisperModel
+            model = WhisperModel(
+                model_size_or_path=model_size,
+                device="cpu",
+                compute_type="int8",
+                cpu_threads=min(12, os.cpu_count() or 4),
+                download_root=str(local_cache_dir),
+            )
+            self._models[model_size] = model
+            segments_iter, info = model.transcribe(
+                str(audio_path),
+                language=lang_code,
+                beam_size=beam_size,
+                word_timestamps=word_timestamps,
+                vad_filter=vad_filter,
+                vad_parameters=vad_params,
+                initial_prompt=initial_prompt,
+            )
+            segments_list = list(segments_iter)
 
         detected_lang = info.language
         lang_prob = info.language_probability
@@ -278,7 +333,7 @@ class WordAlignmentEngine:
 
         t_infer_start = time.time()
 
-        for seg_idx, segment in enumerate(segments_iter, 1):
+        for seg_idx, segment in enumerate(segments_list, 1):
             seg_text = segment.text.strip()
             if not seg_text:
                 continue

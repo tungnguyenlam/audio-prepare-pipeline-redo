@@ -68,7 +68,15 @@ class YtCrawler:
         self.channels = channels
         self.retries = retries
         self.yt_dlp_bin = yt_dlp_bin
-        self.ffmpeg_bin = ffmpeg_bin or shutil.which("ffmpeg") or "ffmpeg"
+
+        venv_bin = Path(sys.executable).parent
+        resolved_ffmpeg = (
+            ffmpeg_bin
+            or shutil.which("ffmpeg")
+            or (str(venv_bin / "ffmpeg") if (venv_bin / "ffmpeg").exists() else None)
+            or "ffmpeg"
+        )
+        self.ffmpeg_bin = resolved_ffmpeg
         self.cookies_file = cookies_file
         self.cookies_from_browser = cookies_from_browser
         self.proxy = proxy
@@ -131,6 +139,11 @@ class YtCrawler:
             f"ExtractAudio:-ac {self.channels}",
         ]
         
+        # Add ffmpeg location if known
+        ffmpeg_dir = Path(self.ffmpeg_bin).parent if self.ffmpeg_bin and Path(self.ffmpeg_bin).is_file() else Path(sys.executable).parent
+        if ffmpeg_dir.exists():
+            cmd.extend(["--ffmpeg-location", str(ffmpeg_dir)])
+        
         # Add JS runtimes if node exists
         node_path = shutil.which("node") or "/home/vsf/.nvm/versions/node/v18.20.8/bin/node"
         if os.path.exists(node_path):
@@ -175,6 +188,11 @@ class YtCrawler:
         last_error = ""
         success = False
 
+        env = os.environ.copy()
+        venv_bin = str(Path(sys.executable).parent)
+        if venv_bin not in env.get("PATH", ""):
+            env["PATH"] = f"{venv_bin}:{env.get('PATH', '')}"
+
         try:
             for i, strat in enumerate(strategies):
                 cmd = self.build_command(
@@ -190,6 +208,7 @@ class YtCrawler:
                     capture_output=True,
                     text=True,
                     check=False,
+                    env=env,
                 )
 
                 if completed.returncode == 0:
