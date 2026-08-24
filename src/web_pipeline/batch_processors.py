@@ -24,9 +24,11 @@ from src.diarization import (
     ClusteringWorkerDiarizer,
     PyannoteDiarizer,
     SortformerWorkerDiarizer,
+    SpeakerVerifier,
     ThreeDSpeakerDiarizer,
     ThreeDSpeakerWorkerDiarizer,
 )
+from src.diarization.schemas import DiarizationResult, Speaker, SpeakerTurn
 from src.separation import BSRoFormer, HTDemucs, MelRoFormer, MVSepMDX23
 from src.utils.AudioClass import DEFAULT_SAMPLE_RATE, Audio
 from src.web_pipeline.dataset_manager import dataset_manager
@@ -45,11 +47,13 @@ DATA_DIR = ROOT_DIR / ".data" / "pipeline"
 INGEST_DIR = DATA_DIR / "ingest"
 STEMS_DIR = DATA_DIR / "stems"
 DIARIZATION_DIR = DATA_DIR / "diarization"
+TARGET_SPEAKER_DIR = DATA_DIR / "target_speaker"
 BENCHMARK_DIR = DATA_DIR / "benchmarks"
 
 INGEST_DIR.mkdir(parents=True, exist_ok=True)
 STEMS_DIR.mkdir(parents=True, exist_ok=True)
 DIARIZATION_DIR.mkdir(parents=True, exist_ok=True)
+TARGET_SPEAKER_DIR.mkdir(parents=True, exist_ok=True)
 
 def _setup_device(device_str: str) -> tuple[str, Optional[float]]:
     """Configure torch active device if CUDA is selected and query current wattage."""
@@ -638,6 +642,179 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
             await asyncio.to_thread(diarizer.close)
 
 
+async def process_target_speaker_filter(job: PipelineJob, queue: JobQueueManager) -> None:
+    """Score diarized items against a speaker profile and keep confident matches.
+
+    Requires items with attached diarization (``batch_diarization`` first).
+    Writes per-item ``target_speaker.json`` (all scored segments plus the kept
+    subset) and optionally exports kept segments as wav cuts.
+    """
+    item_ids: List[str] = job.params.get("item_ids", [])
+    profile_name: str = job.params.get("profile", "")
+    threshold: float = float(job.params.get("threshold", 0.6))
+    min_duration_s: float = float(job.params.get("min_duration_s", 1.5))
+    exclude_overlap: bool = bool(job.params.get("exclude_overlap", True))
+    export_cuts: bool = bool(job.params.get("export_cuts", False))
+    device: str = job.params.get("device", "cuda" if torch.cuda.is_available() else "cpu")
+    hf_token: Optional[str] = job.params.get("hf_token")
+
+    if not profile_name:
+        raise ValueError("Target speaker filter requires a profile name")
+
+    device, cur_pwr = _setup_device(device)
+    pwr_str = f" (⚡ {cur_pwr} W)" if cur_pwr is not None else ""
+
+    items = [dataset_manager.get_item(iid) for iid in item_ids if dataset_manager.get_item(iid)]
+    job.total_items = len(items)
+    job.add_log(
+        f"Target speaker filter '{profile_name}' on '{device}'{pwr_str} for "
+        f"{len(items)} items (threshold={threshold}, min_dur={min_duration_s}s, "
+        f"exclude_overlap={exclude_overlap})",
+        "info",
+    )
+    queue.update_job_progress(job.id, current_step=f"Loading speaker verifier on {device}...")
+
+    verifier = SpeakerVerifier(device=device, token=hf_token)
+    profile = verifier.load_profile(profile_name)
+    await asyncio.to_thread(verifier.load)
+
+    processed = 0
+    failed = 0
+
+    try:
+        for idx, it in enumerate(items, start=1):
+            if queue.is_cancelled(job.id):
+                break
+
+            queue.update_job_progress(
+                job.id,
+                processed_items=processed,
+                failed_items=failed,
+                current_step=f"[{idx}/{job.total_items}] Verifying {it.title} vs '{profile_name}'",
+            )
+
+            t0 = time.time()
+            try:
+                diar = it.diarization
+                if not diar or not diar.get("turns"):
+                    raise ValueError("Item has no attached diarization; run batch diarization first")
+
+                turns = [
+                    SpeakerTurn(
+                        speaker_id=str(t["speaker_id"]),
+                        start_s=float(t["start_s"]),
+                        end_s=float(t["end_s"]),
+                    )
+                    for t in diar["turns"]
+                ]
+                diarization = DiarizationResult(
+                    schema_version="1.0",
+                    audio_id=it.source_id or it.id,
+                    speakers=[
+                        Speaker(speaker_id=spk)
+                        for spk in sorted({t.speaker_id for t in turns})
+                    ],
+                    turns=turns,
+                )
+
+                audio = it.to_audio()
+                scored = await asyncio.to_thread(verifier.score, audio, diarization, profile)
+                kept = SpeakerVerifier.filter(
+                    scored,
+                    threshold=threshold,
+                    min_duration_s=min_duration_s,
+                    exclude_overlap=exclude_overlap,
+                )
+
+                item_dir = TARGET_SPEAKER_DIR / it.id
+                item_dir.mkdir(parents=True, exist_ok=True)
+                json_path = item_dir / "target_speaker.json"
+
+                def _segment_dict(seg) -> Dict[str, Any]:
+                    return {
+                        "speaker_id": seg.speaker_id,
+                        "start_s": round(seg.start_s, 3),
+                        "end_s": round(seg.end_s, 3),
+                        "duration_s": round(seg.end_s - seg.start_s, 3),
+                        "similarity": round(seg.similarity, 4),
+                        "overlaps_other_speaker": seg.overlaps_other_speaker,
+                    }
+
+                kept_duration = sum(seg.end_s - seg.start_s for seg in kept.segments)
+                report = {
+                    "profile": profile_name,
+                    "model_id": scored.model.model_id if scored.model else None,
+                    "threshold": threshold,
+                    "min_duration_s": min_duration_s,
+                    "exclude_overlap": exclude_overlap,
+                    "num_scored": len(scored.segments),
+                    "num_kept": len(kept.segments),
+                    "kept_duration_s": round(kept_duration, 2),
+                    "kept_segments": [_segment_dict(seg) for seg in kept.segments],
+                    "all_segments": [_segment_dict(seg) for seg in scored.segments],
+                }
+                with open(json_path, "w", encoding="utf-8") as f:
+                    json.dump(report, f, indent=2)
+
+                exported_paths: List[str] = []
+                if export_cuts and kept.segments:
+                    from src.utils.AudioCutter import AudioCutter
+
+                    cutter = AudioCutter(output_dir=item_dir / "segments")
+                    for seg in kept.segments:
+                        clip = await asyncio.to_thread(
+                            cutter.cut, audio, seg.start_s, seg.end_s
+                        )
+                        exported_paths.append(str(clip.path))
+
+                summary = {key: value for key, value in report.items() if key != "all_segments"}
+                summary["json_path"] = str(json_path)
+                if exported_paths:
+                    summary["exported_cuts"] = exported_paths
+                dataset_manager.attach_target_speaker(it.id, summary)
+
+                wall_time = time.time() - t0
+                hardware_monitor.record_item_processed(it.duration, wall_time)
+
+                job.item_results.append({
+                    "item_id": it.id,
+                    "title": it.title,
+                    "num_scored": len(scored.segments),
+                    "num_kept": len(kept.segments),
+                    "kept_duration_s": round(kept_duration, 2),
+                    "device": device,
+                    "wall_time": round(wall_time, 2),
+                    "status": "success",
+                })
+                processed += 1
+                job.add_log(
+                    f"[{idx}/{job.total_items}] {it.title}: kept "
+                    f"{len(kept.segments)}/{len(scored.segments)} segments "
+                    f"({kept_duration:.1f}s of '{profile_name}' speech)",
+                    "info",
+                )
+
+            except Exception as e:
+                failed += 1
+                job.item_results.append({
+                    "item_id": it.id,
+                    "title": it.title,
+                    "status": "failed",
+                    "error": str(e),
+                })
+                job.add_log(f"Target speaker filter error for {it.title}: {e}", "error")
+
+            finally:
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
+            queue.update_job_progress(job.id, processed_items=processed, failed_items=failed)
+
+    finally:
+        await asyncio.to_thread(verifier.unload)
+
+
 async def process_batch_benchmark(job: PipelineJob, queue: JobQueueManager) -> None:
     """Execute separation benchmark suite across speech and music datasets."""
     event_loop = asyncio.get_running_loop()
@@ -874,4 +1051,5 @@ def register_all_handlers(queue: JobQueueManager) -> None:
     queue.register_handler("batch_ingest_files", process_batch_ingest_files)
     queue.register_handler("batch_separation", process_batch_separation)
     queue.register_handler("batch_diarization", process_batch_diarization)
+    queue.register_handler("target_speaker_filter", process_target_speaker_filter)
     queue.register_handler("batch_benchmark", process_batch_benchmark)

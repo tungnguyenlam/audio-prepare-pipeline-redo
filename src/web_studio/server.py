@@ -45,9 +45,12 @@ from src.diarization import (
     ClusteringWorkerDiarizer,
     PyannoteDiarizer,
     SortformerWorkerDiarizer,
+    SpeakerVerifier,
+    SpeakerVerifierError,
     ThreeDSpeakerDiarizer,
     ThreeDSpeakerWorkerDiarizer,
 )
+from src.diarization.schemas import DiarizationResult, Speaker, SpeakerTurn
 from src.yt_crawler.YtCrawlerClass import YtCrawler, parse_crawl_sample_rate
 
 # Setup logging
@@ -2066,6 +2069,181 @@ async def handle_extract_all_speakers(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=500)
 
 
+# ==================== TARGET SPEAKER (ENROLLMENT + VERIFICATION) ====================
+
+
+def _profile_summary(verifier: SpeakerVerifier, name: str) -> dict[str, Any]:
+    profile = verifier.load_profile(name)
+    return {
+        "name": profile.name,
+        "num_clips": len(profile.clip_paths),
+        "created_at": profile.created_at,
+    }
+
+
+async def handle_list_speaker_profiles(request: web.Request) -> web.Response:
+    """List enrolled target speaker profiles."""
+    verifier = SpeakerVerifier()
+    profiles = []
+    for name in verifier.list_profiles():
+        try:
+            profiles.append(_profile_summary(verifier, name))
+        except SpeakerVerifierError:
+            continue
+    return web.json_response({"profiles": profiles})
+
+
+async def handle_create_speaker_profile(request: web.Request) -> web.Response:
+    """Enroll a target speaker profile from cut reference clips."""
+    data = await request.json()
+    name = data.get("name")
+    clip_audio_ids = data.get("clip_audio_ids", [])
+    overwrite = bool(data.get("overwrite", False))
+
+    if not name or not clip_audio_ids:
+        return web.json_response(
+            {"error": "name and clip_audio_ids are required"}, status=400
+        )
+
+    clips = []
+    for clip_id in clip_audio_ids:
+        clip = registry.get_audio(clip_id)
+        if not clip:
+            return web.json_response(
+                {"error": f"Audio not found: {clip_id}"}, status=404
+            )
+        clips.append(clip)
+
+    verifier = SpeakerVerifier()
+    try:
+        profile = verifier.enroll(name, clips, overwrite=overwrite)
+    except SpeakerVerifierError as e:
+        return web.json_response({"error": str(e)}, status=409)
+    return web.json_response(
+        {
+            "name": profile.name,
+            "num_clips": len(profile.clip_paths),
+            "created_at": profile.created_at,
+        },
+        status=201,
+    )
+
+
+async def handle_delete_speaker_profile(request: web.Request) -> web.Response:
+    """Delete an enrolled target speaker profile."""
+    name = request.match_info["name"]
+    verifier = SpeakerVerifier()
+    try:
+        verifier.delete_profile(name)
+    except SpeakerVerifierError as e:
+        return web.json_response({"error": str(e)}, status=404)
+    return web.json_response({"deleted": name})
+
+
+async def handle_target_speaker_score(request: web.Request) -> web.Response:
+    """Score diarization turns against a target speaker profile in background."""
+    data = await request.json()
+    audio_id = data.get("audio_id")
+    profile_name = data.get("profile")
+    turns = data.get("turns", [])
+    device = data.get("device", "auto")
+    token = data.get("token") or os.getenv("HF_TOKEN")
+
+    if not audio_id or not profile_name or not turns:
+        return web.json_response(
+            {"error": "audio_id, profile, and turns are required"}, status=400
+        )
+
+    audio = registry.get_audio(audio_id)
+    if not audio:
+        return web.json_response({"error": "Audio not found"}, status=404)
+
+    try:
+        speaker_turns = [
+            SpeakerTurn(
+                speaker_id=str(t["speaker_id"]),
+                start_s=float(t["start_s"]),
+                end_s=float(t["end_s"]),
+            )
+            for t in turns
+        ]
+    except (KeyError, TypeError, ValueError) as e:
+        return web.json_response({"error": f"Invalid turns: {e}"}, status=400)
+
+    diarization = DiarizationResult(
+        schema_version="1.0",
+        audio_id=audio.source_id,
+        speakers=[
+            Speaker(speaker_id=spk)
+            for spk in sorted({t.speaker_id for t in speaker_turns})
+        ],
+        turns=speaker_turns,
+    )
+
+    task_id = task_manager.create_task(
+        "target_speaker_score",
+        {"audio_id": audio_id, "profile": profile_name, "device": device},
+    )
+
+    async def run_score():
+        target_device = get_default_device() if device == "auto" else device
+        task_manager.update_task(
+            task_id,
+            status="running",
+            message=(
+                f"Scoring {len(speaker_turns)} segments against profile "
+                f"'{profile_name}' on {target_device}..."
+            ),
+        )
+        loop = asyncio.get_running_loop()
+
+        def do_score():
+            verifier = SpeakerVerifier(device=target_device, token=token)
+            profile = verifier.load_profile(profile_name)
+            with verifier:
+                return verifier.score(audio, diarization, profile)
+
+        try:
+            start_time = time.time()
+            scored = await loop.run_in_executor(None, do_score)
+            if _task_is_cancelled(task_id):
+                return
+            elapsed = time.time() - start_time
+            task_manager.update_task(
+                task_id,
+                status="completed",
+                progress=1.0,
+                progress_known=True,
+                message=(
+                    f"Scored {len(scored.segments)} segments in {elapsed:.2f}s "
+                    f"on {target_device}!"
+                ),
+                result={
+                    "scored": asdict(scored),
+                    "audio_id": audio_id,
+                    "profile": profile_name,
+                    "elapsed_s": round(elapsed, 2),
+                    "device": target_device,
+                },
+            )
+        except Exception as e:
+            task = task_manager.get_task(task_id)
+            if task and task["status"] == "cancelled":
+                return
+            logger.exception("Target speaker scoring failed")
+            task_manager.update_task(
+                task_id,
+                status="failed",
+                error=str(e),
+                message=f"Target speaker scoring failed: {e}",
+            )
+
+    task_manager.enqueue(task_id, run_score)
+    return web.json_response(
+        {"task_id": task_id, "task": task_manager.get_task(task_id)}, status=202
+    )
+
+
 async def handle_compare_spectrogram(request: web.Request) -> web.Response:
     """Run SpectrogramComparer on two audio objects and return comparison image."""
     data = await request.json()
@@ -2643,6 +2821,10 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_post("/api/diarization/run", handle_run_diarization)
     app.router.add_post("/api/diarization/extract-speaker", handle_extract_speaker_audio)
     app.router.add_post("/api/diarization/extract-all-speakers", handle_extract_all_speakers)
+    app.router.add_get("/api/speaker-profiles", handle_list_speaker_profiles)
+    app.router.add_post("/api/speaker-profiles", handle_create_speaker_profile)
+    app.router.add_delete("/api/speaker-profiles/{name}", handle_delete_speaker_profile)
+    app.router.add_post("/api/diarization/target-speaker-score", handle_target_speaker_score)
     app.router.add_post("/api/compare/spectrogram", handle_compare_spectrogram)
     app.router.add_get("/api/tasks", handle_list_tasks)
     app.router.add_post("/api/tasks/clear", handle_clear_tasks)

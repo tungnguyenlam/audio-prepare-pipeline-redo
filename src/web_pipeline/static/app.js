@@ -803,7 +803,7 @@
     const dropdowns = document.querySelectorAll('.select-dataset-list');
     dropdowns.forEach((dd) => {
       const currentVal = dd.value;
-      const allowAll = dd.id === 'sep-dataset-select' || dd.id === 'item-filter-dataset' || dd.id === 'diar-dataset-select';
+      const allowAll = dd.id === 'sep-dataset-select' || dd.id === 'item-filter-dataset' || dd.id === 'diar-dataset-select' || dd.id === 'ts-dataset-select';
       
       let html = '';
       if (allowAll) {
@@ -1413,6 +1413,87 @@
   }
 
   // -----------------------------------------------------------------------
+  // Target Speaker Filter Handlers
+  // -----------------------------------------------------------------------
+  async function loadTargetSpeakerProfiles() {
+    const select = document.getElementById('ts-pipe-profile-select');
+    if (!select) return;
+    try {
+      const res = await fetch('/api/speaker-profiles');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to load profiles');
+      const previous = select.value;
+      select.innerHTML = '';
+      const profiles = data.profiles || [];
+      if (profiles.length === 0) {
+        select.innerHTML = '<option value="">No profiles enrolled</option>';
+        return;
+      }
+      profiles.forEach((p) => {
+        const opt = document.createElement('option');
+        opt.value = p.name;
+        opt.textContent = `${p.name} (${p.num_clips} clips)`;
+        select.appendChild(opt);
+      });
+      if (previous && profiles.some((p) => p.name === previous)) select.value = previous;
+    } catch (err) {
+      showToast(`Could not load speaker profiles: ${err.message}`, 'warning');
+    }
+  }
+
+  function initTargetSpeakerForm() {
+    const form = document.getElementById('form-target-speaker');
+    const refreshBtn = document.getElementById('btn-ts-pipe-refresh');
+    if (refreshBtn) refreshBtn.addEventListener('click', loadTargetSpeakerProfiles);
+    loadTargetSpeakerProfiles();
+
+    if (!form) return;
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const dataset = document.getElementById('ts-dataset-select').value;
+      const profile = document.getElementById('ts-pipe-profile-select').value;
+      const threshold = parseFloat(document.getElementById('ts-pipe-threshold').value);
+      const minDur = parseFloat(document.getElementById('ts-pipe-min-dur').value);
+      const excludeOverlap = document.getElementById('ts-pipe-exclude-overlap').checked;
+      const exportCuts = document.getElementById('ts-pipe-export-cuts').checked;
+      const deviceSel = document.getElementById('ts-pipe-device');
+      const device = state.selectedGpu || (deviceSel ? deviceSel.value : 'cuda');
+      const token = els.diarHfToken ? els.diarHfToken.value.trim() || null : null;
+
+      if (!profile) {
+        showToast('Select a speaker profile (enroll one in SonicStudio first)', 'warning');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/jobs/target_speaker_filter', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dataset: dataset === 'all' ? null : dataset,
+            profile,
+            threshold: Number.isFinite(threshold) ? threshold : 0.6,
+            min_duration_s: Number.isFinite(minDur) ? minDur : 1.5,
+            exclude_overlap: excludeOverlap,
+            export_cuts: exportCuts,
+            device,
+            hf_token: token,
+          }),
+        });
+        const job = await res.json();
+        if (res.ok) {
+          showToast(`Target speaker filter job enqueued for '${profile}'!`, 'success');
+          switchTab('tab-queue');
+        } else {
+          showToast(job.error || 'Target speaker job failed to start', 'danger');
+        }
+      } catch (err) {
+        showToast('Error submitting target speaker job', 'danger');
+      }
+    });
+  }
+
+  // -----------------------------------------------------------------------
   // Benchmark Handlers
   // -----------------------------------------------------------------------
   function initBenchmark() {
@@ -1985,6 +2066,7 @@
     initIngestForms();
     initSeparationForm();
     initDiarizationForm();
+    initTargetSpeakerForm();
     initBenchmark();
     initManifestAndExport();
     initBulkActions();

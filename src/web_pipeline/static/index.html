@@ -989,6 +989,64 @@
               </button>
             </form>
           </div>
+
+          <!-- Target Speaker Filter (verification gating on diarized items) -->
+          <div class="form-panel-centered" style="margin-top: 24px;">
+            <form id="form-target-speaker" class="form-vertical">
+              <div class="form-item">
+                <div class="label-with-tool">
+                  <label class="form-label">Target Speaker Filter</label>
+                </div>
+                <p class="view-subtitle" style="margin: 0 0 8px;">Keep only segments confidently matching an enrolled speaker profile. Requires items already diarized. Enroll profiles in SonicStudio (Diarization → Target Speaker) or via <code>scripts/target_speaker.py</code>.</p>
+              </div>
+
+              <div class="form-row">
+                <div class="form-item flex-1">
+                  <label class="form-label" for="ts-dataset-select">Target Dataset (diarized items)</label>
+                  <select id="ts-dataset-select" class="form-select select-dataset-list">
+                    <option value="all">Entire Library</option>
+                  </select>
+                </div>
+                <div class="form-item flex-1">
+                  <label class="form-label" for="ts-pipe-profile-select">Speaker Profile</label>
+                  <div class="label-with-tool" style="gap: 6px;">
+                    <select id="ts-pipe-profile-select" class="form-select" style="flex: 1;">
+                      <option value="">No profiles enrolled</option>
+                    </select>
+                    <button type="button" class="btn btn-ghost btn-xs" id="btn-ts-pipe-refresh">↻</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-item flex-1">
+                  <label class="form-label" for="ts-pipe-threshold">Similarity Threshold</label>
+                  <input type="number" id="ts-pipe-threshold" class="form-input" min="0" max="1" step="0.01" value="0.60">
+                </div>
+                <div class="form-item flex-1">
+                  <label class="form-label" for="ts-pipe-min-dur">Min Segment Duration (s)</label>
+                  <input type="number" id="ts-pipe-min-dur" class="form-input" min="0" max="60" step="0.5" value="1.5">
+                </div>
+                <div class="form-item flex-1">
+                  <label class="form-label" for="ts-pipe-device">Compute Device</label>
+                  <select id="ts-pipe-device" class="form-select">
+                    <option value="cuda">CUDA GPU</option>
+                    <option value="cpu">CPU Only</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <label class="checkbox-pill"><input type="checkbox" id="ts-pipe-exclude-overlap" checked> Exclude overlapping-speaker segments</label>
+                <label class="checkbox-pill"><input type="checkbox" id="ts-pipe-export-cuts"> Export kept segments as wav cuts</label>
+              </div>
+
+              <button type="submit" class="btn btn-primary btn-lg" id="btn-submit-target-speaker">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>
+                <span>Launch Target Speaker Filter Job</span>
+              </button>
+            </form>
+          </div>
         </section>
 
                 <section id="tab-benchmark" class="tab-pane">

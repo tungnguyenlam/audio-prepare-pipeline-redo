@@ -507,6 +507,74 @@ constructor option can point to a non-default isolated interpreter.
   `.data/modelscope`.
 - `_unload()` releases the pipeline and clears available accelerator caches.
 
+### `SpeakerVerifier(*, model_id=..., device=..., token=..., profiles_dir=...)`
+
+**Defined in:** `src/diarization/SpeakerVerifier.py`
+
+Target-speaker enrollment and verification-based segment filtering. Wraps a
+pyannote speaker-embedding model (default `DEFAULT_EMBEDDING_MODEL_ID`,
+`"pyannote/wespeaker-voxceleb-resnet34-LM"`) behind the `ManagedModel`
+lifecycle. Profiles are stored under `profiles_dir` (default
+`.data/speaker_profiles/<name>/`) as copied reference clips plus a
+`profile.json` manifest; clips are the source of truth and embeddings are
+recomputed at scoring time.
+
+### `SpeakerVerifier.enroll(name, clips, *, overwrite=False) -> SpeakerProfile`
+
+Does **not** require the model to be loaded.
+
+**Behavior contract:**
+
+- Sanitizes `name` to a filesystem-safe identifier.
+- Copies each clip file into `<profiles_dir>/<name>/clips/clip_NN.<ext>` and
+  writes `profile.json` (schema version, name, created_at, clip names).
+- Replaces an existing profile only when `overwrite=True`.
+
+**Raises:** `SpeakerVerifierError` for empty clip lists, invalid names, or an
+existing profile without `overwrite`; `FileNotFoundError` for missing clip
+files.
+
+### `SpeakerVerifier.load_profile(name) -> SpeakerProfile`, `list_profiles() -> list[str]`, `delete_profile(name) -> None`
+
+Profile management; none of these require the model to be loaded.
+`load_profile` and `delete_profile` raise `SpeakerVerifierError` when the
+profile or any of its clips is missing.
+
+### `SpeakerVerifier.score(audio, result: DiarizationResult, profile) -> TargetSpeakerResult`
+
+Requires `load()` (or a `with` block) first.
+
+**Behavior contract:**
+
+- Computes the profile centroid as the L2-normalized mean of the clip
+  embeddings.
+- Embeds every diarization turn independently (`Inference.crop` on the file
+  slice) and stores the cosine similarity to the centroid.
+- Turns shorter than `MIN_EMBEDDING_DURATION_S` (0.15 s) or failing embedding
+  get similarity `-1.0` so they can never pass a threshold.
+- Sets `overlaps_other_speaker` on turns intersecting a turn of a different
+  speaker.
+- Returns **all** turns scored; no filtering is applied.
+- Includes `DiarizationModelInfo` with backend `"pyannote-embedding"`.
+
+**Raises:** `RuntimeError` if not loaded; `FileNotFoundError` for a missing
+audio file; `SpeakerVerifierError` if no profile clip can be embedded.
+
+### `SpeakerVerifier.filter(scored, *, threshold, min_duration_s=1.5, exclude_overlap=True) -> TargetSpeakerResult` (static)
+
+Pure post-processing; no model needed. Returns a new result keeping only
+segments with `similarity >= threshold`, duration `>= min_duration_s`, and
+(when `exclude_overlap`) no overlap with other speakers' turns. Precision-first:
+different thresholds can be tried cheaply on one `score` result.
+
+### `SpeakerVerifier._load() -> None` and `_unload() -> None`
+
+- `_load()` loads the pyannote embedding model (`Model.from_pretrained` with
+  `token` or `HF_TOKEN`) wrapped in `Inference(window="whole")` and moves it to
+  the resolved device.
+- `_unload()` releases the inference wrapper and clears CUDA cache when
+  available.
+
 ## 6. Benchmark mixing API
 
 ### `AudioMixer.mix(...) -> AudioMixResult`
@@ -550,6 +618,7 @@ classes.
 ## 8. Dataclass method note
 
 `Speaker`, `SpeakerTurn`, `DiarizationModelInfo`, `DiarizationResult`,
+`ScoredSegment`, `TargetSpeakerResult`, `SpeakerProfile`,
 `BenchmarkDefinition`, `MixingParameters`, `AudioMixResult`, and
 `SeparationBenchmarkSample` are dataclasses. Apart from validation in the
 `Speaker*`, `DiarizationModelInfo`, and `DiarizationResult` constructors, they
@@ -606,6 +675,14 @@ The repository provides two specialized web platforms:
   `POST /api/queue/shared/{id}/cancel` cancel a workload in either domain.
 - **Telemetry:** `GET /api/telemetry` is owned by the Studio route table and
   returns host/GPU metrics from `hardware_monitor`.
+- **Target speaker endpoints (registered once by Studio, shared by both
+  frontends):** `GET/POST /api/speaker-profiles` list/enroll profiles
+  (enrollment takes `name` + `clip_audio_ids` of session cuts),
+  `DELETE /api/speaker-profiles/{name}` removes one, and
+  `POST /api/diarization/target-speaker-score` scores client-supplied turns
+  against a profile as a background task (`SpeakerVerifier.score`). Threshold
+  filtering and export happen client-side in the Diarization tab's
+  "Target Speaker" panel (export reuses `/api/diarization/extract-speaker`).
 
 ### `src/web_pipeline/` (SonicPipeline API domain and frontend)
 - **Role:** Large-scale batch engine for high-throughput ingestion, task queue orchestration, dataset curation, bulk separation, batch diarization, separation benchmark matrix evaluation, and ML manifest generation (JSONL/CSV).
@@ -616,6 +693,14 @@ The repository provides two specialized web platforms:
   lanes (same model as Studio). Ingest/upload jobs use the `cpu` lane.
   `POST /api/queue/controls` `set_concurrency` sets **workers per GPU**
   (default 1), not a single global worker pool.
+- **Target speaker filter job:** `POST /api/jobs/target_speaker_filter`
+  (params: `item_ids`/`dataset`, `profile`, `threshold`, `min_duration_s`,
+  `exclude_overlap`, `export_cuts`, `device`, `hf_token`) scores items with
+  attached diarization against an enrolled profile, writes
+  `.data/pipeline/target_speaker/<item_id>/target_speaker.json` (kept plus all
+  scored segments), optionally exports kept segments as wav cuts, and attaches
+  a summary to the registry entry under `metadata["target_speaker"]` with a
+  `target:<profile>` tag.
 
 **Telemetry payload:** The `gpu` object includes `load_percent`, host-level
 `used_vram_mb`, `free_vram_mb`, and `total_vram_mb`, plus the current process's

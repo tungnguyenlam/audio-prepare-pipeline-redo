@@ -573,6 +573,52 @@ async def handle_submit_diarization(request: web.Request) -> web.Response:
         return json_error(str(e))
 
 
+async def handle_submit_target_speaker(request: web.Request) -> web.Response:
+    """Submit a target speaker verification / filtering job."""
+    try:
+        body = await request.json()
+        item_ids = body.get("item_ids", [])
+        dataset = body.get("dataset")
+        profile = body.get("profile")
+        threshold = float(body.get("threshold", 0.6))
+        min_duration_s = float(body.get("min_duration_s", 1.5))
+        exclude_overlap = bool(body.get("exclude_overlap", True))
+        export_cuts = bool(body.get("export_cuts", False))
+        device = body.get("device", "cuda" if torch.cuda.is_available() else "cpu")
+        hf_token = body.get("hf_token")
+
+        if not profile:
+            return json_error("A speaker profile name is required")
+
+        if not item_ids and (dataset or "dataset" in body):
+            target_ds = None if (not dataset or dataset == "all") else dataset
+            matched = dataset_manager.list_items(dataset=target_ds, limit=10000)
+            item_ids = [it["id"] for it in matched["items"]]
+
+        if not item_ids:
+            return json_error("No audio items selected for target speaker filtering")
+
+        title = f"Target Speaker Filter ({len(item_ids)} items) [{profile}]"
+        job = queue_manager.submit_job(
+            job_type="target_speaker_filter",
+            title=title,
+            params={
+                "item_ids": item_ids,
+                "profile": profile,
+                "threshold": threshold,
+                "min_duration_s": min_duration_s,
+                "exclude_overlap": exclude_overlap,
+                "export_cuts": export_cuts,
+                "device": device,
+                "hf_token": hf_token,
+            },
+            total_items=len(item_ids),
+        )
+        return json_response(job.to_dict())
+    except Exception as e:
+        return json_error(str(e))
+
+
 async def handle_submit_benchmark(request: web.Request) -> web.Response:
     """Submit separation benchmark job across speech and music pools."""
     try:
@@ -802,6 +848,7 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_post("/api/jobs/batch_upload", handle_upload_batch_files)
     app.router.add_post("/api/jobs/batch_separation", handle_submit_separation)
     app.router.add_post("/api/jobs/batch_diarization", handle_submit_diarization)
+    app.router.add_post("/api/jobs/target_speaker_filter", handle_submit_target_speaker)
     app.router.add_post("/api/jobs/batch_benchmark", handle_submit_benchmark)
 
     # Manifests and exports

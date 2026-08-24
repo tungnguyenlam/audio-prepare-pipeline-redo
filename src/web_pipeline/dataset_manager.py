@@ -308,6 +308,23 @@ class DatasetManager:
             item.tags.append("diarized")
         self._save_items()
 
+    def attach_target_speaker(self, item_id: str, summary: Dict[str, Any]) -> None:
+        """Attach a target-speaker verification summary to an audio item.
+
+        Stored under ``metadata["target_speaker"]`` and tagged
+        ``target:<profile>`` so manifest exports can filter verified items.
+        """
+        item = self._items.get(item_id)
+        if not item:
+            return
+        item.metadata["target_speaker"] = summary
+        profile = summary.get("profile")
+        if profile:
+            tag_name = f"target:{profile}"
+            if tag_name not in item.tags:
+                item.tags.append(tag_name)
+        self._save_items()
+
     def delete_items(self, item_ids: List[str], delete_files: bool = False) -> int:
         """Delete multiple audio items from registry, optionally deleting source files."""
         deleted = 0

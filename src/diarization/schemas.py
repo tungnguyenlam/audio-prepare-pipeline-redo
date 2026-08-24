@@ -74,6 +74,57 @@ class DiarizationModelInfo:
 
 
 @dataclass
+class ScoredSegment:
+    """One diarization turn scored against a target speaker profile."""
+
+    speaker_id: str
+    start_s: float
+    end_s: float
+    similarity: float
+    overlaps_other_speaker: bool = False
+
+    def __post_init__(self) -> None:
+        _validate_non_empty_string(self.speaker_id, "speaker_id")
+        _validate_timestamp(self.start_s, "start_s")
+        _validate_timestamp(self.end_s, "end_s")
+        if self.end_s <= self.start_s:
+            raise ValueError("end_s must be greater than start_s")
+
+        if isinstance(self.similarity, bool) or not isinstance(
+            self.similarity, (int, float)
+        ):
+            raise TypeError("similarity must be a number")
+        if not isfinite(self.similarity) or not -1 <= self.similarity <= 1:
+            raise ValueError("similarity must be between -1 and 1")
+
+        if not isinstance(self.overlaps_other_speaker, bool):
+            raise TypeError("overlaps_other_speaker must be a bool")
+
+    @property
+    def duration_s(self) -> float:
+        """Length of the segment in seconds."""
+        return self.end_s - self.start_s
+
+
+@dataclass
+class TargetSpeakerResult:
+    """Diarization turns of one audio item scored against a speaker profile."""
+
+    schema_version: str
+    audio_id: str
+    profile_name: str
+    segments: list[ScoredSegment]
+    model: DiarizationModelInfo | None = None
+
+    def __post_init__(self) -> None:
+        _validate_non_empty_string(self.schema_version, "schema_version")
+        _validate_non_empty_string(self.audio_id, "audio_id")
+        _validate_non_empty_string(self.profile_name, "profile_name")
+        if not isinstance(self.segments, list):
+            raise TypeError("segments must be a list")
+
+
+@dataclass
 class DiarizationResult:
     """Complete speaker and activity information for one audio item."""
 

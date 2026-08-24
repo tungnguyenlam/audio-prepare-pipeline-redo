@@ -3809,6 +3809,304 @@ async function extractAllSpeakers() {
     showToast(`Extraction failed: ${err.message}`, "error");
   }
 }
+// ==================== TARGET SPEAKER VERIFICATION ====================
+
+function initTargetSpeaker() {
+  state.targetSpeaker = {
+    scored: null,          // TargetSpeakerResult from the backend
+    audioId: null,         // audio the scores belong to
+    threshold: 0.60,
+    minDur: 1.5,
+    excludeOverlap: true,
+  };
+
+  const profileSelect = document.getElementById('ts-profile-select');
+  const refreshBtn = document.getElementById('btn-ts-refresh-profiles');
+  const deleteBtn = document.getElementById('btn-ts-delete-profile');
+  const createBtn = document.getElementById('btn-ts-create-profile');
+  const scoreBtn = document.getElementById('btn-ts-score');
+  const thresholdSlider = document.getElementById('ts-threshold-slider');
+  const minDurInput = document.getElementById('ts-min-dur');
+  const overlapBtn = document.getElementById('btn-ts-exclude-overlap');
+  const exportBtn = document.getElementById('btn-ts-export-kept');
+  const enrollDetails = document.getElementById('ts-enroll-details');
+
+  if (refreshBtn) refreshBtn.addEventListener('click', loadSpeakerProfiles);
+  if (deleteBtn) deleteBtn.addEventListener('click', deleteSelectedSpeakerProfile);
+  if (createBtn) createBtn.addEventListener('click', createSpeakerProfile);
+  if (scoreBtn) scoreBtn.addEventListener('click', runTargetSpeakerScore);
+  if (exportBtn) exportBtn.addEventListener('click', exportTargetSpeakerSegments);
+
+  if (thresholdSlider) {
+    thresholdSlider.addEventListener('input', () => {
+      state.targetSpeaker.threshold = parseFloat(thresholdSlider.value);
+      const label = document.getElementById('ts-threshold-value');
+      if (label) label.textContent = state.targetSpeaker.threshold.toFixed(2);
+      renderTargetSpeakerResults();
+    });
+  }
+  if (minDurInput) {
+    minDurInput.addEventListener('input', () => {
+      const val = parseFloat(minDurInput.value);
+      state.targetSpeaker.minDur = (!isNaN(val) && val > 0) ? val : 0;
+      renderTargetSpeakerResults();
+    });
+  }
+  if (overlapBtn) {
+    overlapBtn.addEventListener('click', () => {
+      state.targetSpeaker.excludeOverlap = !state.targetSpeaker.excludeOverlap;
+      overlapBtn.classList.toggle('active', state.targetSpeaker.excludeOverlap);
+      overlapBtn.setAttribute('aria-pressed', String(state.targetSpeaker.excludeOverlap));
+      renderTargetSpeakerResults();
+    });
+  }
+  if (enrollDetails) {
+    enrollDetails.addEventListener('toggle', () => {
+      if (enrollDetails.open) populateTargetClipSelect();
+    });
+  }
+  if (profileSelect) {
+    // Populate profiles once at startup so the dropdown is ready.
+    loadSpeakerProfiles();
+  }
+}
+
+function populateTargetClipSelect() {
+  const clipSelect = document.getElementById('ts-clip-select');
+  if (!clipSelect) return;
+  const previous = new Set(Array.from(clipSelect.selectedOptions).map(o => o.value));
+  clipSelect.innerHTML = '';
+  (state.audioList || []).forEach(item => {
+    const opt = document.createElement('option');
+    opt.value = item.id;
+    const dur = item.duration_s ? ` (${item.duration_s.toFixed(1)}s)` : '';
+    opt.textContent = `${item.title || item.id}${dur}`;
+    if (previous.has(item.id)) opt.selected = true;
+    clipSelect.appendChild(opt);
+  });
+  if (clipSelect.options.length === 0) {
+    const opt = document.createElement('option');
+    opt.disabled = true;
+    opt.textContent = 'No session audio — cut reference clips in the Workspace tab first';
+    clipSelect.appendChild(opt);
+  }
+}
+
+async function loadSpeakerProfiles() {
+  const profileSelect = document.getElementById('ts-profile-select');
+  if (!profileSelect) return;
+  try {
+    const res = await fetch('/api/speaker-profiles');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load profiles');
+    const previous = profileSelect.value;
+    profileSelect.innerHTML = '';
+    const profiles = data.profiles || [];
+    if (profiles.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'No profiles enrolled';
+      profileSelect.appendChild(opt);
+      return;
+    }
+    profiles.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.name;
+      opt.textContent = `${p.name} (${p.num_clips} clips)`;
+      profileSelect.appendChild(opt);
+    });
+    if (previous && profiles.some(p => p.name === previous)) {
+      profileSelect.value = previous;
+    }
+  } catch (err) {
+    showToast(`Failed to load speaker profiles: ${err.message}`, 'error');
+  }
+}
+
+async function createSpeakerProfile() {
+  const nameInput = document.getElementById('ts-new-profile-name');
+  const clipSelect = document.getElementById('ts-clip-select');
+  const overwriteCheck = document.getElementById('ts-overwrite-check');
+  const name = nameInput ? nameInput.value.trim() : '';
+  const clipIds = clipSelect ? Array.from(clipSelect.selectedOptions).map(o => o.value) : [];
+
+  if (!name) { showToast('Enter a profile name', 'error'); return; }
+  if (clipIds.length === 0) { showToast('Select at least one reference clip', 'error'); return; }
+
+  try {
+    const res = await fetch('/api/speaker-profiles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: name,
+        clip_audio_ids: clipIds,
+        overwrite: overwriteCheck ? overwriteCheck.checked : false,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Enrollment failed');
+    showToast(`Profile "${data.name}" enrolled with ${data.num_clips} clips`, 'success');
+    await loadSpeakerProfiles();
+    const profileSelect = document.getElementById('ts-profile-select');
+    if (profileSelect) profileSelect.value = data.name;
+  } catch (err) {
+    showToast(`Enrollment failed: ${err.message}`, 'error');
+  }
+}
+
+async function deleteSelectedSpeakerProfile() {
+  const profileSelect = document.getElementById('ts-profile-select');
+  const name = profileSelect ? profileSelect.value : '';
+  if (!name) { showToast('No profile selected', 'error'); return; }
+  if (!confirm(`Delete speaker profile "${name}" and its reference clips?`)) return;
+  try {
+    const res = await fetch(`/api/speaker-profiles/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Delete failed');
+    showToast(`Profile "${name}" deleted`, 'success');
+    await loadSpeakerProfiles();
+  } catch (err) {
+    showToast(`Delete failed: ${err.message}`, 'error');
+  }
+}
+
+async function runTargetSpeakerScore() {
+  const profileSelect = document.getElementById('ts-profile-select');
+  const statusEl = document.getElementById('ts-score-status');
+  const profile = profileSelect ? profileSelect.value : '';
+  const audioId = state.diarization.audioId || (el.diarInputSelect ? el.diarInputSelect.value : null);
+
+  if (!profile) { showToast('Enroll and select a speaker profile first', 'error'); return; }
+  if (!audioId || !state.diarization.turns || state.diarization.turns.length === 0) {
+    showToast('Run diarization first — scoring needs speaker turns', 'error');
+    return;
+  }
+
+  const device = el.diarDeviceSelect ? el.diarDeviceSelect.value : 'auto';
+  const token = localStorage.getItem('sonic_hf_token') || undefined;
+  const turns = state.diarization.turns.map(t => ({
+    speaker_id: t.speaker_id,
+    start_s: t.start_s,
+    end_s: t.end_s,
+  }));
+
+  if (statusEl) statusEl.textContent = `Scoring ${turns.length} segments against "${profile}"...`;
+  showToast(`Scoring ${turns.length} segments against "${profile}"...`, 'info');
+
+  try {
+    const res = await fetch('/api/diarization/target-speaker-score', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audio_id: audioId, profile: profile, turns: turns, device: device, token: token }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Scoring request failed');
+
+    pollTask(data.task_id, (result) => {
+      state.targetSpeaker.scored = result.scored;
+      state.targetSpeaker.audioId = result.audio_id;
+      if (statusEl) {
+        statusEl.textContent = `Scored ${result.scored.segments.length} segments in ${result.elapsed_s}s on ${result.device}. Tune the threshold below.`;
+      }
+      const toolbar = document.getElementById('ts-filter-toolbar');
+      const wrapper = document.getElementById('ts-table-wrapper');
+      if (toolbar) toolbar.style.display = '';
+      if (wrapper) wrapper.style.display = '';
+      renderTargetSpeakerResults();
+      showToast('Target speaker scoring completed', 'success');
+    }, (err) => {
+      if (statusEl) statusEl.textContent = `Scoring failed: ${err}`;
+      showToast(`Scoring failed: ${err}`, 'error');
+    });
+  } catch (err) {
+    if (statusEl) statusEl.textContent = `Scoring failed: ${err.message}`;
+    showToast(`Scoring failed: ${err.message}`, 'error');
+  }
+}
+
+function targetSpeakerKeptSegments() {
+  const ts = state.targetSpeaker;
+  if (!ts || !ts.scored) return [];
+  return ts.scored.segments.filter(seg =>
+    seg.similarity >= ts.threshold &&
+    (seg.end_s - seg.start_s) >= ts.minDur &&
+    !(ts.excludeOverlap && seg.overlaps_other_speaker)
+  );
+}
+
+function renderTargetSpeakerResults() {
+  const ts = state.targetSpeaker;
+  const body = document.getElementById('ts-table-body');
+  if (!ts || !ts.scored || !body) return;
+
+  const kept = new Set(targetSpeakerKeptSegments());
+  const keptDuration = Array.from(kept).reduce((sum, seg) => sum + (seg.end_s - seg.start_s), 0);
+
+  const keptBadge = document.getElementById('ts-kept-badge');
+  const durBadge = document.getElementById('ts-kept-duration-badge');
+  const chip = document.getElementById('ts-kept-chip');
+  if (keptBadge) keptBadge.textContent = `${kept.size} / ${ts.scored.segments.length} kept`;
+  if (durBadge) durBadge.textContent = `${keptDuration.toFixed(1)}s speech`;
+  if (chip) chip.textContent = kept.size;
+
+  // Sort by similarity descending so confident matches surface first.
+  const sorted = [...ts.scored.segments].sort((a, b) => b.similarity - a.similarity);
+  body.innerHTML = '';
+  sorted.forEach((seg, idx) => {
+    const isKept = kept.has(seg);
+    const row = document.createElement('tr');
+    row.style.opacity = isKept ? '1' : '0.45';
+    row.innerHTML = `
+      <td>${idx + 1}</td>
+      <td>${seg.start_s.toFixed(2)}</td>
+      <td>${seg.end_s.toFixed(2)}</td>
+      <td>${(seg.end_s - seg.start_s).toFixed(2)}s</td>
+      <td><strong>${seg.similarity.toFixed(3)}</strong></td>
+      <td>${seg.speaker_id}</td>
+      <td>${seg.overlaps_other_speaker ? '⚠️ Yes' : '—'}</td>
+      <td>${isKept ? '<span class="badge badge-success">Kept</span>' : '<span class="badge badge-ghost">Dropped</span>'}</td>
+      <td><button class="btn btn-xs btn-ghost ts-play-seg" title="Audition this segment">▶</button></td>
+    `;
+    row.querySelector('.ts-play-seg').addEventListener('click', () => {
+      seekDiarAudio(seg.start_s, true);
+    });
+    body.appendChild(row);
+  });
+}
+
+async function exportTargetSpeakerSegments() {
+  const ts = state.targetSpeaker;
+  const kept = targetSpeakerKeptSegments();
+  if (kept.length === 0) { showToast('No kept segments to export', 'error'); return; }
+  const audioId = ts.audioId || state.diarization.audioId;
+  if (!audioId) { showToast('No source audio for export', 'error'); return; }
+
+  const profileName = ts.scored.profile_name || 'target';
+  const mode = el.diarExtractModeSelect ? el.diarExtractModeSelect.value : 'concatenated';
+  showToast(`Exporting ${kept.length} verified segments (${mode})...`, 'info');
+
+  try {
+    // Reuse the extract-speaker endpoint: label every kept segment as one pseudo-speaker.
+    const res = await fetch('/api/diarization/extract-speaker', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        audio_id: audioId,
+        speaker_id: 'target',
+        speaker_name: profileName,
+        mode: mode,
+        turns: kept.map(seg => ({ speaker_id: 'target', start_s: seg.start_s, end_s: seg.end_s })),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Export failed');
+    await fetchAudioList();
+    showToast(`Exported verified audio: "${data.metadata?.title || profileName}" (${data.duration_s?.toFixed(2)}s)`, 'success');
+  } catch (err) {
+    showToast(`Export failed: ${err.message}`, 'error');
+  }
+}
+
 // ==================== CUTS MANAGER ====================
 
 function initCutsManager() {
@@ -6204,6 +6502,7 @@ async function initApp() {
   try { initIngestAndSaves(); } catch (e) { console.error("initIngestAndSaves error:", e); }
   try { initSeparationStudio(); } catch (e) { console.error("initSeparationStudio error:", e); }
   try { initDiarizationStudio(); } catch (e) { console.error("initDiarizationStudio error:", e); }
+  try { initTargetSpeaker(); } catch (e) { console.error("initTargetSpeaker error:", e); }
   try { initAuditionHub(); } catch (e) { console.error("initAuditionHub error:", e); }
   try { initKeyboardShortcuts(); } catch (e) { console.error("initKeyboardShortcuts error:", e); }
   try { initNavigation(); } catch (e) { console.error("initNavigation error:", e); }

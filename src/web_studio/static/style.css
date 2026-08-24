@@ -5989,3 +5989,27 @@ html, body {
   transform: translateY(-1px);
   box-shadow: 0 2px 10px rgba(0, 229, 255, 0.35);
 }
+
+/* ==================== TARGET SPEAKER VERIFICATION ==================== */
+
+.ts-enroll-details {
+  border: 1px dashed var(--border-color, #333a4d);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 10px 0;
+}
+
+.ts-enroll-details summary {
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-secondary, #9aa3b8);
+}
+
+.ts-enroll-details[open] summary {
+  margin-bottom: 8px;
+}
+
+#ts-clip-select {
+  min-height: 120px;
+  font-size: 0.8rem;
+}
