@@ -333,7 +333,7 @@ methods:
   on the requested device.
 - `_unload()` releases the pipeline and clears CUDA cache when available.
 
-### `SortformerDiarizer.diarize(audio: Audio) -> DiarizationResult`
+### `SortformerDiarizer.diarize(audio: Audio, *, enrollment_name=None, enrollment_clips=None) -> DiarizationResult`
 
 Requires the dependencies pinned in `requirements-sortformer.txt` and a
 completed `load()`. They are intentionally kept out of the primary `uv.lock`
@@ -360,10 +360,17 @@ starts. Hugging Face downloads use `.data/huggingface` as the default cache
 - Aligns speaker slots between windows using activity in the shared region.
 - Uses TitaNet embeddings as a fallback when a speaker is absent from the
   overlap, unless speaker similarity is disabled.
+- When one enrollment identity is supplied, embeds its clean reference clips
+  with the pipeline's own TitaNet encoder before target-audio inference. The
+  normalized enrollment centroid seeds global speaker zero during window
+  stitching. A matching result speaker carries the profile name in
+  `global_speaker_id`; the enrollment anchor is not updated from target-audio
+  observations. The enrolled speaker record remains present with zero turns
+  when no window clears the identity threshold, making non-detection explicit.
 - Resolves duplicate predictions in shared regions at the overlap midpoint,
   preserves simultaneous speakers, sorts turns chronologically, and emits
-  result-local IDs such as `spk_00`. Speaker records are built only from
-  speakers that retain at least one turn after overlap ownership clipping.
+  result-local IDs such as `spk_00`. Anonymous speaker records are built only
+  from speakers that retain at least one turn after overlap ownership clipping.
 - May produce more than four speakers in the complete result. The hard limit of
   four distinct speakers applies independently to each inference window.
 - Retries with three-minute windows by default when a six-minute inference
@@ -383,8 +390,8 @@ be initialized. Audio conversion and file errors are propagated.
 ### `SortformerWorkerDiarizer`
 
 The web applications use `SortformerWorkerDiarizer` from the primary `.venv`.
-Its public lifecycle and `diarize(audio) -> DiarizationResult` contract match
-`SortformerDiarizer`, but `load()` starts
+Its public lifecycle and enrollment-aware `diarize(...) -> DiarizationResult`
+contract match `SortformerDiarizer`, but `load()` starts
 `.venv-sortformer/bin/python -m src.diarization.sortformer_worker`. The worker
 loads NeMo once and is reused across all `diarize()` calls until `unload()` or
 `close()`. This keeps NeMo's dependency pins out of the web server process and
@@ -515,7 +522,8 @@ constructor option can point to a non-default isolated interpreter.
 
 **Defined in:** `src/diarization/SpeakerVerifier.py`
 
-Target-speaker enrollment and verification-based segment filtering. Wraps a
+Global speaker-profile storage plus compatibility verification-based segment
+filtering. Wraps a
 pyannote speaker-embedding model (default `DEFAULT_EMBEDDING_MODEL_ID`,
 `"pyannote/wespeaker-voxceleb-resnet34-LM"`) behind the `ManagedModel`
 lifecycle. Profiles are stored under `profiles_dir` (default
@@ -531,9 +539,9 @@ Does **not** require the model to be loaded.
 
 - Sanitizes `name` to a filesystem-safe identifier.
 - Copies each clip file into `<profiles_dir>/<name>/clips/clip_NN.<ext>` and
-  writes `profile.json` (schema version, name, created_at, clip names, and
-  channel identity). Channel fields are inferred from the clips when omitted;
-  clips from multiple channels are rejected unless the channel is explicit.
+  writes `profile.json` (schema version, name, timestamps, clip names, and
+  optional source-channel provenance). Profiles are globally reusable and are
+  not restricted to one channel.
 - Replaces an existing profile only when `overwrite=True`.
 
 **Raises:** `SpeakerVerifierError` for empty clip lists, invalid names, or an
@@ -545,6 +553,13 @@ files.
 Profile management; none of these require the model to be loaded.
 `load_profile` and `delete_profile` raise `SpeakerVerifierError` when the
 profile or any of its clips is missing.
+
+### `SpeakerVerifier.add_clips(name, clips) -> SpeakerProfile`, `remove_clip(name, clip_name) -> SpeakerProfile`
+
+Append or remove clean source clips without rebuilding the identity. Clips
+remain the source of truth; adding or removing one updates the profile
+timestamp. Removing the final clip is rejected—delete the speaker profile
+instead.
 
 ### `SpeakerVerifier.score(audio, result: DiarizationResult, profile) -> TargetSpeakerResult`
 
@@ -653,10 +668,9 @@ The repository provides two specialized web platforms:
   launchers start the same unified backend.
 
 ### `src/web_studio/` (SonicStudio API domain and frontend)
-- **Role:** Interactive, channel-first target-speaker workbench for YouTube
-  ingest, vocal separation, reference cutting/enrollment, diarization,
-  multi-profile threshold comparison, manual segment qualification, A/B
-  audition, and library browsing.
+- **Role:** Interactive audio workbench for ingest, vocal separation, global
+  known-speaker management, enrollment-aware diarization, A/B audition, and
+  library browsing.
 - **Frontend layout:** Flat `static/index.html` + `app.js` + `style.css` (no
   HTML partial composer). Tabs: Workspace, Separation, Diarization, Audition,
   Library.
@@ -685,17 +699,17 @@ The repository provides two specialized web platforms:
   `POST /api/queue/shared/{id}/cancel` cancel a workload in either domain.
 - **Telemetry:** `GET /api/telemetry` is owned by the Studio route table and
   returns host/GPU metrics from `hardware_monitor`.
-- **Target speaker endpoints (registered once by Studio, shared by both
-  frontends):** `GET/POST /api/speaker-profiles` list/enroll profiles
-  (enrollment takes `name` + `clip_audio_ids` of session cuts and optional
-  channel fields),
-  `DELETE /api/speaker-profiles/{name}` removes one, and
-  `POST /api/diarization/target-speaker-score` scores client-supplied turns
-  against a profile as a background task (`SpeakerVerifier.score`). Threshold
-  filtering and export happen client-side in the Diarization tab's
-  "Target Speaker & Evaluation" panel. Multiple profiles can be scored and
-  tuned side by side; manual segment labels and the percentage qualified over
-  all diarized segments are persisted through `POST /api/evaluations`.
+- **Known-speaker endpoints (registered once by Studio, shared by both
+  frontends):** `GET/POST /api/speaker-profiles` list/create global profiles;
+  `GET/DELETE /api/speaker-profiles/{name}` inspect/delete one;
+  `POST /api/speaker-profiles/{name}/clips` appends session cuts; and
+  `GET/DELETE /api/speaker-profiles/{name}/clips/{clip_name}` auditions/removes
+  a stored reference. `POST /api/diarization/run` accepts one optional
+  `enrollment_profile`; currently NeMo Sortformer supports this genuine
+  pre-inference anchor. Other backends reject enrollment instead of silently
+  substituting post-diarization similarity scoring. The legacy
+  `POST /api/diarization/target-speaker-score` endpoint remains for Pipeline's
+  explicit target-filter jobs, but is not part of Studio's interactive flow.
 
 ### `src/web_pipeline/` (SonicPipeline API domain and frontend)
 - **Role:** Large-scale channel-oriented batch engine for high-throughput

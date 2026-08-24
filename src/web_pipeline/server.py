@@ -645,26 +645,25 @@ async def handle_submit_target_speaker(request: web.Request) -> web.Response:
 
 
 async def handle_list_speaker_profiles(request: web.Request) -> web.Response:
-    """List enrolled target speaker profiles."""
+    """List globally reusable enrolled speaker profiles."""
     from src.diarization.SpeakerVerifier import SpeakerVerifier, SpeakerVerifierError
 
     verifier = SpeakerVerifier()
-    channel_id = request.query.get("channel_id")
     profiles = []
     for name in verifier.list_profiles():
         try:
             p = verifier.load_profile(name)
-            if not channel_id or not p.channel_id or p.channel_id == channel_id:
-                profiles.append(
-                    {
-                        "name": p.name,
-                        "num_clips": len(p.clip_paths),
-                        "created_at": p.created_at,
-                        "channel_id": p.channel_id,
-                        "channel_name": p.channel_name,
-                        "channel_url": p.channel_url,
-                    }
-                )
+            profiles.append(
+                {
+                    "name": p.name,
+                    "num_clips": len(p.clip_paths),
+                    "created_at": p.created_at,
+                    "updated_at": p.updated_at,
+                    "channel_id": p.channel_id,
+                    "channel_name": p.channel_name,
+                    "channel_url": p.channel_url,
+                }
+            )
         except SpeakerVerifierError:
             continue
     return json_response({"profiles": profiles})

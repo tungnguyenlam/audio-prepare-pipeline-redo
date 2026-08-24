@@ -720,11 +720,6 @@ async def process_target_speaker_filter(job: PipelineJob, queue: JobQueueManager
 
             t0 = time.time()
             try:
-                if profile.channel_id and it.channel_id and profile.channel_id != it.channel_id:
-                    raise ValueError(
-                        f"Profile '{profile_name}' belongs to channel "
-                        f"'{profile.channel_name or profile.channel_id}', not '{it.channel_name or it.channel_id}'"
-                    )
                 diar = it.diarization
                 if not diar or not diar.get("turns"):
                     raise ValueError("Item has no attached diarization; run batch diarization first")

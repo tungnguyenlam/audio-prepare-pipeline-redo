@@ -22,6 +22,7 @@ import wave
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional
+from urllib.parse import quote
 
 import aiohttp
 from aiohttp import web
@@ -1745,6 +1746,7 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
     num_speakers = data.get("num_speakers")
     min_speakers = data.get("min_speakers")
     max_speakers = data.get("max_speakers")
+    enrollment_profile_name = data.get("enrollment_profile")
     include_overlap = bool(data.get("include_overlap", False))
     try:
         vad_onset = float(data.get("vad_onset", 0.5)) if data.get("vad_onset") is not None else 0.5
@@ -1764,9 +1766,33 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
     if not audio:
         return web.json_response({"error": "Audio not found"}, status=404)
 
+    enrollment_profile = None
+    if enrollment_profile_name:
+        if model_type != "sortformer":
+            return web.json_response(
+                {
+                    "error": (
+                        f"{model_type} does not support pre-inference speaker "
+                        "enrollment. Select NeMo Sortformer or run without an "
+                        "enrolled speaker."
+                    )
+                },
+                status=400,
+            )
+        verifier = SpeakerVerifier()
+        try:
+            enrollment_profile = verifier.load_profile(enrollment_profile_name)
+        except SpeakerVerifierError as exc:
+            return web.json_response({"error": str(exc)}, status=404)
+
     task_id = task_manager.create_task(
         "diarization",
-        {"audio_id": audio_id, "model_type": model_type, "device": device},
+        {
+            "audio_id": audio_id,
+            "model_type": model_type,
+            "device": device,
+            "enrollment_profile": enrollment_profile_name,
+        },
     )
 
     async def run_diar():
@@ -1776,7 +1802,15 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
         task_manager.update_task(
             task_id,
             status="running",
-            message=f"Running speaker diarization with {model_type} on {target_device}{power_msg}...",
+            message=(
+                f"Running speaker diarization with {model_type} on "
+                f"{target_device}{power_msg}"
+                + (
+                    f" using enrolled speaker '{enrollment_profile_name}'..."
+                    if enrollment_profile_name
+                    else "..."
+                )
+            ),
         )
         loop = asyncio.get_running_loop()
 
@@ -1816,7 +1850,19 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
                 task_manager.set_cancel_callback(task_id, diarizer.cancel)
                 try:
                     with diarizer:
-                        return diarizer.diarize(audio)
+                        return diarizer.diarize(
+                            audio,
+                            enrollment_name=(
+                                enrollment_profile.name
+                                if enrollment_profile is not None
+                                else None
+                            ),
+                            enrollment_clips=(
+                                enrollment_profile.clip_paths
+                                if enrollment_profile is not None
+                                else None
+                            ),
+                        )
                 finally:
                     task_manager.set_cancel_callback(task_id, None)
             elif model_type in {"clustering", "nemo-clustering"}:
@@ -1890,6 +1936,7 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
                     "audio_id": audio_id,
                     "device": target_device,
                     "power_w": end_power_w,
+                    "enrollment_profile": enrollment_profile_name,
                 },
             )
         except Exception as e:
@@ -2103,7 +2150,7 @@ async def handle_extract_all_speakers(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=500)
 
 
-# ==================== TARGET SPEAKER (ENROLLMENT + VERIFICATION) ====================
+# ==================== KNOWN SPEAKERS ====================
 
 
 def _profile_summary(verifier: SpeakerVerifier, name: str) -> dict[str, Any]:
@@ -2112,6 +2159,17 @@ def _profile_summary(verifier: SpeakerVerifier, name: str) -> dict[str, Any]:
         "name": profile.name,
         "num_clips": len(profile.clip_paths),
         "created_at": profile.created_at,
+        "updated_at": profile.updated_at,
+        "clips": [
+            {
+                "name": path.name,
+                "stream_url": (
+                    f"/api/speaker-profiles/{quote(profile.name, safe='')}/clips/"
+                    f"{quote(path.name, safe='')}"
+                ),
+            }
+            for path in profile.clip_paths
+        ],
         "channel_id": profile.channel_id,
         "channel_name": profile.channel_name,
         "channel_url": profile.channel_url,
@@ -2119,22 +2177,28 @@ def _profile_summary(verifier: SpeakerVerifier, name: str) -> dict[str, Any]:
 
 
 async def handle_list_speaker_profiles(request: web.Request) -> web.Response:
-    """List enrolled target speaker profiles."""
+    """List globally reusable enrolled speaker profiles."""
     verifier = SpeakerVerifier()
-    channel_id = request.query.get("channel_id")
     profiles = []
     for name in verifier.list_profiles():
         try:
-            summary = _profile_summary(verifier, name)
-            if not channel_id or not summary["channel_id"] or summary["channel_id"] == channel_id:
-                profiles.append(summary)
+            profiles.append(_profile_summary(verifier, name))
         except SpeakerVerifierError:
             continue
     return web.json_response({"profiles": profiles})
 
 
+async def handle_get_speaker_profile(request: web.Request) -> web.Response:
+    """Return one speaker profile and its manageable reference clips."""
+    verifier = SpeakerVerifier()
+    try:
+        return web.json_response(_profile_summary(verifier, request.match_info["name"]))
+    except SpeakerVerifierError as exc:
+        return web.json_response({"error": str(exc)}, status=404)
+
+
 async def handle_create_speaker_profile(request: web.Request) -> web.Response:
-    """Enroll a target speaker profile from cut reference clips."""
+    """Create a global speaker profile from clean reference clips."""
     data = await request.json()
     name = data.get("name")
     clip_audio_ids = data.get("clip_audio_ids", [])
@@ -2170,16 +2234,64 @@ async def handle_create_speaker_profile(request: web.Request) -> web.Response:
     except SpeakerVerifierError as e:
         return web.json_response({"error": str(e)}, status=409)
     return web.json_response(
-        {
-            "name": profile.name,
-            "num_clips": len(profile.clip_paths),
-            "created_at": profile.created_at,
-            "channel_id": profile.channel_id,
-            "channel_name": profile.channel_name,
-            "channel_url": profile.channel_url,
-        },
+        _profile_summary(verifier, profile.name),
         status=201,
     )
+
+
+async def handle_add_speaker_profile_clips(request: web.Request) -> web.Response:
+    """Append selected session clips to an existing speaker profile."""
+    data = await request.json()
+    clip_audio_ids = data.get("clip_audio_ids", [])
+    if not clip_audio_ids:
+        return web.json_response({"error": "clip_audio_ids is required"}, status=400)
+
+    clips = []
+    for clip_id in clip_audio_ids:
+        clip = registry.get_audio(clip_id)
+        if not clip:
+            return web.json_response(
+                {"error": f"Audio not found: {clip_id}"}, status=404
+            )
+        clips.append(clip)
+
+    verifier = SpeakerVerifier()
+    try:
+        profile = verifier.add_clips(request.match_info["name"], clips)
+    except SpeakerVerifierError as exc:
+        return web.json_response({"error": str(exc)}, status=409)
+    return web.json_response(_profile_summary(verifier, profile.name))
+
+
+async def handle_stream_speaker_profile_clip(request: web.Request) -> web.StreamResponse:
+    """Stream one stored enrollment clip for auditioning."""
+    verifier = SpeakerVerifier()
+    try:
+        profile = verifier.load_profile(request.match_info["name"])
+    except SpeakerVerifierError as exc:
+        return web.json_response({"error": str(exc)}, status=404)
+
+    clip_name = Path(request.match_info["clip_name"]).name
+    clip_path = next(
+        (path for path in profile.clip_paths if path.name == clip_name),
+        None,
+    )
+    if clip_path is None:
+        return web.json_response({"error": "Profile clip not found"}, status=404)
+    return web.FileResponse(clip_path)
+
+
+async def handle_delete_speaker_profile_clip(request: web.Request) -> web.Response:
+    """Remove one bad enrollment clip from a speaker profile."""
+    verifier = SpeakerVerifier()
+    try:
+        profile = verifier.remove_clip(
+            request.match_info["name"],
+            request.match_info["clip_name"],
+        )
+    except SpeakerVerifierError as exc:
+        return web.json_response({"error": str(exc)}, status=409)
+    return web.json_response(_profile_summary(verifier, profile.name))
 
 
 async def handle_delete_speaker_profile(request: web.Request) -> web.Response:
@@ -2256,12 +2368,6 @@ async def handle_target_speaker_score(request: web.Request) -> web.Response:
         def do_score():
             verifier = SpeakerVerifier(device=target_device, token=token)
             profile = verifier.load_profile(profile_name)
-            if profile.channel_id and audio.channel_id and profile.channel_id != audio.channel_id:
-                raise SpeakerVerifierError(
-                    f"Profile '{profile_name}' belongs to channel "
-                    f"'{profile.channel_name or profile.channel_id}', not "
-                    f"'{audio.channel_name or audio.channel_id}'"
-                )
             with verifier:
                 return verifier.score(audio, diarization, profile)
 
@@ -2885,6 +2991,19 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_post("/api/diarization/extract-all-speakers", handle_extract_all_speakers)
     app.router.add_get("/api/speaker-profiles", handle_list_speaker_profiles)
     app.router.add_post("/api/speaker-profiles", handle_create_speaker_profile)
+    app.router.add_get("/api/speaker-profiles/{name}", handle_get_speaker_profile)
+    app.router.add_post(
+        "/api/speaker-profiles/{name}/clips",
+        handle_add_speaker_profile_clips,
+    )
+    app.router.add_get(
+        "/api/speaker-profiles/{name}/clips/{clip_name}",
+        handle_stream_speaker_profile_clip,
+    )
+    app.router.add_delete(
+        "/api/speaker-profiles/{name}/clips/{clip_name}",
+        handle_delete_speaker_profile_clip,
+    )
     app.router.add_delete("/api/speaker-profiles/{name}", handle_delete_speaker_profile)
     app.router.add_post("/api/diarization/target-speaker-score", handle_target_speaker_score)
     app.router.add_post("/api/compare/spectrogram", handle_compare_spectrogram)

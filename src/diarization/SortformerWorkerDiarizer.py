@@ -168,8 +168,14 @@ class SortformerWorkerDiarizer(BaseDiarizer, ManagedModel):
         self._stop_process(process)
         self._process = None
 
-    def diarize(self, audio: Audio) -> DiarizationResult:
-        """Diarize ``audio`` through the persistent isolated worker."""
+    def diarize(
+        self,
+        audio: Audio,
+        *,
+        enrollment_name: str | None = None,
+        enrollment_clips: list[str | Path] | None = None,
+    ) -> DiarizationResult:
+        """Diarize audio with optional pipeline-owned speaker enrollment."""
         if not self.is_loaded or self._process is None:
             raise RuntimeError(
                 "Sortformer worker is not loaded. Call load() before diarize(), "
@@ -177,12 +183,16 @@ class SortformerWorkerDiarizer(BaseDiarizer, ManagedModel):
             )
         if not Path(audio.path).is_file():
             raise FileNotFoundError(f"Audio file does not exist: {audio.path}")
-        payload = self._request(
-            {
-                "action": "diarize",
-                "audio": audio.metadata(),
-            }
-        )
+        request: dict[str, Any] = {
+            "action": "diarize",
+            "audio": audio.metadata(),
+        }
+        if enrollment_name or enrollment_clips:
+            request["enrollment_name"] = enrollment_name
+            request["enrollment_clips"] = [
+                str(Path(path)) for path in (enrollment_clips or [])
+            ]
+        payload = self._request(request)
         return self._result_from_dict(payload)
 
     def cancel(self) -> None:

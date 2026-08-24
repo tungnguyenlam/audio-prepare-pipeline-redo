@@ -28,7 +28,7 @@ from src.diarization.schemas import (
 from src.utils.AudioClass import Audio, _sanitize_filename_component
 
 DEFAULT_EMBEDDING_MODEL_ID = "pyannote/wespeaker-voxceleb-resnet34-LM"
-PROFILE_SCHEMA_VERSION = "1.1"
+PROFILE_SCHEMA_VERSION = "2.0"
 MIN_EMBEDDING_DURATION_S = 0.15
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -42,14 +42,15 @@ class SpeakerVerifierError(RuntimeError):
 class SpeakerProfile:
     """A named target speaker backed by reference clips on disk.
 
-    Clips are the source of truth; embeddings are recomputed at scoring time
-    so profiles stay valid across embedding-model changes and machines.
+    Clips are the source of truth; each consuming pipeline computes its own
+    enrollment representation so profiles remain model-independent.
     """
 
     name: str
     clip_paths: list[Path]
     created_at: str
     profile_dir: Path
+    updated_at: str | None = None
     channel_id: str | None = None
     channel_name: str | None = None
     channel_url: str | None = None
@@ -118,17 +119,16 @@ class SpeakerVerifier(ManagedModel):
     ) -> SpeakerProfile:
         """Create a speaker profile from manually cut reference clips.
 
-        Each clip must contain only the target speaker. Two or three clips of
-        roughly 10 seconds from different videos work well.
+        Each clip must contain only the target speaker. Profiles are global;
+        channel fields are retained only as optional provenance metadata.
 
         Args:
             name: Profile name (sanitized to a filesystem-safe identifier).
             clips: Single-speaker reference clips (file-backed).
             overwrite: Replace an existing profile with the same name.
-            channel_id: Channel this target identity belongs to. When omitted,
-                it is inferred from the reference clips.
-            channel_name: Human-readable channel name; inferred when omitted.
-            channel_url: Canonical channel URL; inferred when omitted.
+            channel_id: Optional source-channel provenance.
+            channel_name: Optional human-readable source-channel provenance.
+            channel_url: Optional canonical source-channel provenance.
 
         Returns:
             The stored profile.
@@ -141,26 +141,12 @@ class SpeakerVerifier(ManagedModel):
         safe_name = _sanitize_filename_component(name)
         if not safe_name:
             raise SpeakerVerifierError(f"Invalid profile name: {name!r}")
+        display_name = str(name).strip()
         if not clips:
             raise SpeakerVerifierError("enroll requires at least one clip")
         for clip in clips:
             if not Path(clip.path).is_file():
                 raise FileNotFoundError(f"Clip file does not exist: {clip.path}")
-
-        def infer_channel(field: str, explicit: str | None) -> str | None:
-            if explicit:
-                return str(explicit)
-            values = {str(getattr(clip, field)) for clip in clips if getattr(clip, field)}
-            if len(values) > 1:
-                raise SpeakerVerifierError(
-                    f"Reference clips span multiple {field.replace('_', ' ')} values; "
-                    "enroll one channel-specific profile at a time"
-                )
-            return next(iter(values), None)
-
-        resolved_channel_id = infer_channel("channel_id", channel_id)
-        resolved_channel_name = infer_channel("channel_name", channel_name)
-        resolved_channel_url = infer_channel("channel_url", channel_url)
 
         profile_dir = self.profiles_dir / safe_name
         if profile_dir.exists():
@@ -183,12 +169,13 @@ class SpeakerVerifier(ManagedModel):
         created_at = datetime.now(timezone.utc).isoformat()
         manifest = {
             "schema_version": PROFILE_SCHEMA_VERSION,
-            "name": safe_name,
+            "name": display_name,
             "created_at": created_at,
+            "updated_at": created_at,
             "clips": clip_names,
-            "channel_id": resolved_channel_id,
-            "channel_name": resolved_channel_name,
-            "channel_url": resolved_channel_url,
+            "channel_id": str(channel_id) if channel_id else None,
+            "channel_name": str(channel_name) if channel_name else None,
+            "channel_url": str(channel_url) if channel_url else None,
         }
         (profile_dir / "profile.json").write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2),
@@ -196,13 +183,14 @@ class SpeakerVerifier(ManagedModel):
         )
 
         return SpeakerProfile(
-            name=safe_name,
+            name=display_name,
             clip_paths=[clips_dir / clip_name for clip_name in clip_names],
             created_at=created_at,
             profile_dir=profile_dir,
-            channel_id=resolved_channel_id,
-            channel_name=resolved_channel_name,
-            channel_url=resolved_channel_url,
+            updated_at=created_at,
+            channel_id=str(channel_id) if channel_id else None,
+            channel_name=str(channel_name) if channel_name else None,
+            channel_url=str(channel_url) if channel_url else None,
         )
 
     def load_profile(self, name: str) -> SpeakerProfile:
@@ -222,8 +210,10 @@ class SpeakerVerifier(ManagedModel):
 
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            display_name = str(manifest.get("name") or safe_name).strip()
             clip_names = list(manifest["clips"])
             created_at = str(manifest.get("created_at", ""))
+            updated_at = str(manifest.get("updated_at") or created_at)
             channel_id = manifest.get("channel_id")
             channel_name = manifest.get("channel_name")
             channel_url = manifest.get("channel_url")
@@ -240,14 +230,100 @@ class SpeakerVerifier(ManagedModel):
             )
 
         return SpeakerProfile(
-            name=safe_name,
+            name=display_name,
             clip_paths=clip_paths,
             created_at=created_at,
             profile_dir=profile_dir,
+            updated_at=updated_at,
             channel_id=str(channel_id) if channel_id else None,
             channel_name=str(channel_name) if channel_name else None,
             channel_url=str(channel_url) if channel_url else None,
         )
+
+    def add_clips(self, name: str, clips: list[Audio]) -> SpeakerProfile:
+        """Append clean reference clips to an existing global profile.
+
+        Args:
+            name: Existing speaker profile name.
+            clips: Additional single-speaker reference clips.
+
+        Returns:
+            The updated profile.
+
+        Raises:
+            SpeakerVerifierError: If the profile is missing or ``clips`` is empty.
+            FileNotFoundError: If an input clip file does not exist.
+        """
+        if not clips:
+            raise SpeakerVerifierError("add_clips requires at least one clip")
+        profile = self.load_profile(name)
+        for clip in clips:
+            if not Path(clip.path).is_file():
+                raise FileNotFoundError(f"Clip file does not exist: {clip.path}")
+
+        manifest_path = profile.profile_dir / "profile.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        clip_names = list(manifest["clips"])
+        clips_dir = profile.profile_dir / "clips"
+        next_index = 0
+        for clip in clips:
+            suffix = Path(clip.path).suffix or ".wav"
+            while (clips_dir / f"clip_{next_index:02d}{suffix}").exists():
+                next_index += 1
+            clip_name = f"clip_{next_index:02d}{suffix}"
+            shutil.copy2(clip.path, clips_dir / clip_name)
+            clip_names.append(clip_name)
+            next_index += 1
+
+        manifest["schema_version"] = PROFILE_SCHEMA_VERSION
+        manifest["clips"] = clip_names
+        manifest["updated_at"] = datetime.now(timezone.utc).isoformat()
+        manifest_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return self.load_profile(profile.name)
+
+    def remove_clip(self, name: str, clip_name: str) -> SpeakerProfile:
+        """Remove one reference clip while keeping at least one enrollment clip.
+
+        Args:
+            name: Existing speaker profile name.
+            clip_name: Basename of a clip listed by the profile.
+
+        Returns:
+            The updated profile.
+
+        Raises:
+            SpeakerVerifierError: If the clip is missing or is the last clip.
+        """
+        profile = self.load_profile(name)
+        safe_clip_name = Path(clip_name).name
+        if safe_clip_name != clip_name:
+            raise SpeakerVerifierError(f"Invalid clip name: {clip_name!r}")
+
+        manifest_path = profile.profile_dir / "profile.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        clip_names = list(manifest["clips"])
+        if safe_clip_name not in clip_names:
+            raise SpeakerVerifierError(
+                f"Clip {safe_clip_name!r} is not part of profile {profile.name!r}"
+            )
+        if len(clip_names) == 1:
+            raise SpeakerVerifierError(
+                "A speaker profile must keep at least one clip; delete the profile instead"
+            )
+
+        clip_path = profile.profile_dir / "clips" / safe_clip_name
+        clip_path.unlink()
+        manifest["schema_version"] = PROFILE_SCHEMA_VERSION
+        manifest["clips"] = [item for item in clip_names if item != safe_clip_name]
+        manifest["updated_at"] = datetime.now(timezone.utc).isoformat()
+        manifest_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return self.load_profile(profile.name)
 
     def list_profiles(self) -> list[str]:
         """Return the names of all stored profiles, sorted."""

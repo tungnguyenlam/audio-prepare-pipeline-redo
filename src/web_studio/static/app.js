@@ -2191,6 +2191,19 @@ function syncDiarModelOptions(modelType) {
   if (clusteringGroup) {
     clusteringGroup.style.display = isClustering ? "" : "none";
   }
+
+  const enrollmentSelect = document.getElementById('diar-enrollment-profile-select');
+  const enrollmentSupport = document.getElementById('diar-enrollment-support');
+  const supportsEnrollment = modelType === 'sortformer';
+  if (enrollmentSelect) {
+    enrollmentSelect.disabled = !supportsEnrollment;
+    if (!supportsEnrollment) enrollmentSelect.value = '';
+  }
+  if (enrollmentSupport) {
+    enrollmentSupport.textContent = supportsEnrollment
+      ? 'The selected clips are embedded with Sortformer’s TitaNet encoder before target-audio inference and anchor speaker assignment.'
+      : 'This pipeline does not expose genuine pre-inference enrollment; choose NeMo Sortformer or run ordinary diarization.';
+  }
 }
 
 function initDiarizationStudio() {
@@ -2247,7 +2260,6 @@ function initDiarizationStudio() {
         return;
       }
       openDiarizationAudio(audioId, { restoreHistory: true });
-      renderTargetChannelContext();
       loadSpeakerProfiles();
     });
   }
@@ -2323,6 +2335,10 @@ function initDiarizationStudio() {
 
       const overlapEl = document.getElementById('diar-3d-overlap');
       const includeOverlap = overlapEl ? overlapEl.checked : false;
+      const enrollmentSelect = document.getElementById('diar-enrollment-profile-select');
+      const enrollmentProfile = enrollmentSelect && !enrollmentSelect.disabled
+        ? enrollmentSelect.value || undefined
+        : undefined;
 
       const vadOnsetEl = document.getElementById('diar-vad-onset');
       const vadOffsetEl = document.getElementById('diar-vad-offset');
@@ -2337,7 +2353,9 @@ function initDiarizationStudio() {
       el.btnRunDiarization.disabled = true;
       el.diarTaskProgressBox.classList.remove('hidden');
       if (el.diarTaskStatusText) {
-        el.diarTaskStatusText.textContent = `Running ${diarizationModelLabel(modelType)} diarization...`;
+        el.diarTaskStatusText.textContent = enrollmentProfile
+          ? `Building ${enrollmentProfile} enrollment, then running ${diarizationModelLabel(modelType)}...`
+          : `Running ${diarizationModelLabel(modelType)} diarization...`;
       }
 
       let startTime = Date.now();
@@ -2365,6 +2383,7 @@ function initDiarizationStudio() {
             vad_offset: Number.isFinite(vadOffset) ? vadOffset : 0.3,
             chunk_duration_s: Number.isFinite(chunkDuration) ? chunkDuration : 1.5,
             chunk_step_s: Number.isFinite(chunkStep) ? chunkStep : 0.75,
+            enrollment_profile: enrollmentProfile,
           }),
         });
         const data = await res.json();
@@ -2374,7 +2393,12 @@ function initDiarizationStudio() {
           clearInterval(timerInterval);
           el.diarTaskProgressBox.classList.add('hidden');
           el.btnRunDiarization.disabled = false;
-          showToast(`Speaker Diarization completed in ${result.elapsed_s}s!`, "success");
+          showToast(
+            result.enrollment_profile
+              ? `Diarization completed with enrolled speaker "${result.enrollment_profile}" in ${result.elapsed_s}s!`
+              : `Speaker Diarization completed in ${result.elapsed_s}s!`,
+            "success",
+          );
           state.diarization.customNames = {};
           state.diarization.colors = {};
           state.diarization.activeHistoryId = null;
@@ -2730,6 +2754,7 @@ function saveDiarizationToHistory(diarization, audioId, runResult = {}) {
       elapsed_s: runResult.elapsed_s ?? null,
       device: runResult.device ?? null,
       power_w: runResult.power_w ?? null,
+      enrollment_profile: runResult.enrollment_profile ?? null,
     },
   };
 
@@ -2992,7 +3017,7 @@ function renderDiarizationWorkspace(diarization, audioId) {
       state.diarization.colors[spk.speaker_id] = DIAR_PALETTE[idx % DIAR_PALETTE.length];
     }
     if (!state.diarization.customNames[spk.speaker_id]) {
-      state.diarization.customNames[spk.speaker_id] = spk.speaker_id;
+      state.diarization.customNames[spk.speaker_id] = spk.global_speaker_id || spk.speaker_id;
     }
   });
 
@@ -3543,6 +3568,7 @@ function renderSpeakerProfiles() {
   state.diarization.speakers.forEach(spk => {
     const spkId = spk.speaker_id;
     const spkName = getSpeakerName(spkId);
+    const isEnrolled = Boolean(spk.global_speaker_id);
     const color = getSpeakerColor(spkId);
     const spkTurns = state.diarization.turns.filter(t => t.speaker_id === spkId);
     const isSolo = state.diarization.soloSpeaker === spkId;
@@ -3559,7 +3585,8 @@ function renderSpeakerProfiles() {
     card.innerHTML = `
       <div class="diar-spk-header">
         <span class="diar-spk-avatar" style="background-color: ${color};"></span>
-        <input type="text" class="diar-spk-name-input" value="${escapeHtml(spkName)}" title="Display name for export" data-speaker="${spkId}">
+        <input type="text" class="diar-spk-name-input" value="${escapeHtml(spkName)}" title="${isEnrolled ? 'Injected enrolled identity' : 'Display name for export'}" data-speaker="${spkId}" ${isEnrolled ? 'readonly' : ''}>
+        ${isEnrolled ? '<span class="badge badge-accent">Enrolled</span>' : ''}
       </div>
 
       <div class="diar-spk-share-bar-track">
@@ -3813,36 +3840,30 @@ async function extractAllSpeakers() {
     showToast(`Extraction failed: ${err.message}`, "error");
   }
 }
-// ==================== TARGET SPEAKER VERIFICATION ====================
+// ==================== KNOWN SPEAKER MANAGEMENT ====================
 
-function initTargetSpeaker() {
-  state.targetSpeaker = {
-    scored: null,
-    results: {},
-    settings: {},
-    labels: {},
-    audioId: null,
-    profiles: [],
-  };
+function initKnownSpeakerManager() {
+  state.knownSpeakers = { profiles: [] };
 
   const profileSelect = document.getElementById('ts-profile-select');
   const refreshBtn = document.getElementById('btn-ts-refresh-profiles');
   const deleteBtn = document.getElementById('btn-ts-delete-profile');
   const createBtn = document.getElementById('btn-ts-create-profile');
-  const scoreBtn = document.getElementById('btn-ts-score');
+  const addBtn = document.getElementById('btn-ts-add-clips');
   const enrollDetails = document.getElementById('ts-enroll-details');
 
   if (refreshBtn) refreshBtn.addEventListener('click', loadSpeakerProfiles);
   if (deleteBtn) deleteBtn.addEventListener('click', deleteSelectedSpeakerProfile);
   if (createBtn) createBtn.addEventListener('click', createSpeakerProfile);
-  if (scoreBtn) scoreBtn.addEventListener('click', runTargetSpeakerScore);
+  if (addBtn) addBtn.addEventListener('click', addClipsToSelectedSpeaker);
+  if (profileSelect) {
+    profileSelect.addEventListener('change', renderSelectedSpeakerClips);
+    loadSpeakerProfiles();
+  }
   if (enrollDetails) {
     enrollDetails.addEventListener('toggle', () => {
       if (enrollDetails.open) populateTargetClipSelect();
     });
-  }
-  if (profileSelect) {
-    loadSpeakerProfiles();
   }
 
   document.getElementById('btn-ts-go-source')?.addEventListener('click', () => switchTab('tab-workspace'));
@@ -3855,431 +3876,195 @@ function initTargetSpeaker() {
     }
   });
   document.getElementById('btn-ts-go-enroll')?.addEventListener('click', () => {
-    enrollDetails.open = true;
-    populateTargetClipSelect();
-    enrollDetails.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (enrollDetails) {
+      enrollDetails.open = true;
+      populateTargetClipSelect();
+      enrollDetails.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
   });
   document.getElementById('btn-ts-open-cutter')?.addEventListener('click', () => {
     switchTab('tab-workspace');
-    showToast('Cut 2–3 clean single-speaker references, then return to Diarization to enroll them.', 'info');
+    showToast('Cut clean single-speaker references, then return here to create or update the identity.', 'info');
   });
   document.getElementById('btn-ts-go-results')?.addEventListener('click', () => {
-    document.querySelector('.diar-subtab-btn[data-subtab="target"]')?.click();
+    document.getElementById('diar-enrollment-group')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
+
+  populateTargetClipSelect();
 }
 
 function populateTargetClipSelect() {
   const clipSelect = document.getElementById('ts-clip-select');
   if (!clipSelect) return;
-  const previous = new Set(Array.from(clipSelect.selectedOptions).map(o => o.value));
+  const previous = new Set(Array.from(clipSelect.selectedOptions).map(option => option.value));
   clipSelect.innerHTML = '';
-  const context = currentTargetChannel();
-  const candidates = (state.audioList || []).filter(item =>
-    !context.channelId || !item.channel_id || item.channel_id === context.channelId
-  );
-  candidates.forEach(item => {
-    const opt = document.createElement('option');
-    opt.value = item.id;
-    const dur = item.duration_s ? ` (${item.duration_s.toFixed(1)}s)` : '';
-    const channel = item.channel_name ? ` · ${item.channel_name}` : '';
-    opt.textContent = `${item.title || item.id}${dur}${channel}`;
-    if (previous.has(item.id)) opt.selected = true;
-    clipSelect.appendChild(opt);
+  (state.audioList || []).forEach(item => {
+    const option = document.createElement('option');
+    option.value = item.id;
+    const duration = item.duration_s ? ` (${item.duration_s.toFixed(1)}s)` : '';
+    option.textContent = `${item.title || item.id}${duration}`;
+    option.selected = previous.has(item.id);
+    clipSelect.appendChild(option);
   });
   if (clipSelect.options.length === 0) {
-    const opt = document.createElement('option');
-    opt.disabled = true;
-    opt.textContent = 'No session audio — cut reference clips in the Workspace tab first';
-    clipSelect.appendChild(opt);
+    const option = document.createElement('option');
+    option.disabled = true;
+    option.textContent = 'No session audio — cut reference clips in Workspace first';
+    clipSelect.appendChild(option);
   }
-}
-
-function currentTargetChannel() {
-  const audioId = state.diarization.audioId || el.diarInputSelect?.value || state.activeAudio?.id;
-  const audio = (state.audioList || []).find(item => item.id === audioId) || state.activeAudio || {};
-  return {
-    audio,
-    channelId: audio.channel_id || null,
-    channelName: audio.channel_name || null,
-    channelUrl: audio.channel_url || null,
-  };
-}
-
-function renderTargetChannelContext() {
-  const context = currentTargetChannel();
-  const name = context.channelName || 'Local / unassigned source';
-  const detail = context.channelId
-    ? `${context.channelId} · profiles and evaluation are scoped to this channel`
-    : 'No channel metadata is attached; profiles from every channel remain available.';
-  const nameEl = document.getElementById('ts-channel-context-name');
-  const detailEl = document.getElementById('ts-channel-context-detail');
-  const workflowEl = document.getElementById('ts-workflow-channel');
-  const profileChannel = document.getElementById('ts-profile-channel');
-  if (nameEl) nameEl.textContent = name;
-  if (detailEl) detailEl.textContent = detail;
-  if (workflowEl) workflowEl.textContent = context.channelName ? `Channel: ${context.channelName}` : 'Choose a YouTube source';
-  if (profileChannel) profileChannel.value = context.channelName || '';
 }
 
 async function loadSpeakerProfiles() {
   const profileSelect = document.getElementById('ts-profile-select');
-  if (!profileSelect) return;
+  const enrollmentSelect = document.getElementById('diar-enrollment-profile-select');
+  const previousProfile = profileSelect?.value || '';
+  const previousEnrollment = enrollmentSelect?.value || '';
+
   try {
-    const context = currentTargetChannel();
-    const params = context.channelId ? `?channel_id=${encodeURIComponent(context.channelId)}` : '';
-    const res = await fetch(`/api/speaker-profiles${params}`);
+    const res = await fetch('/api/speaker-profiles');
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to load profiles');
-    const previous = new Set(Array.from(profileSelect.selectedOptions).map(o => o.value));
-    profileSelect.innerHTML = '';
+    if (!res.ok) throw new Error(data.error || 'Failed to load speakers');
     const profiles = data.profiles || [];
-    state.targetSpeaker.profiles = profiles;
-    if (profiles.length === 0) {
-      const opt = document.createElement('option');
-      opt.value = '';
-      opt.textContent = 'No profiles enrolled';
-      profileSelect.appendChild(opt);
-      return;
+    state.knownSpeakers.profiles = profiles;
+
+    if (profileSelect) {
+      profileSelect.innerHTML = profiles.length
+        ? profiles.map(profile => `<option value="${escapeHtml(profile.name)}">${escapeHtml(profile.name)} (${profile.num_clips} clips)</option>`).join('')
+        : '<option value="">No speakers enrolled</option>';
+      if (profiles.some(profile => profile.name === previousProfile)) {
+        profileSelect.value = previousProfile;
+      }
     }
-    profiles.forEach(p => {
-      const opt = document.createElement('option');
-      opt.value = p.name;
-      const channel = p.channel_name ? ` · ${p.channel_name}` : ' · unscoped';
-      opt.textContent = `${p.name} (${p.num_clips} clips${channel})`;
-      opt.selected = previous.has(p.name) || (previous.size === 0 && profiles.length === 1);
-      profileSelect.appendChild(opt);
-    });
-    renderTargetChannelContext();
+
+    if (enrollmentSelect) {
+      enrollmentSelect.innerHTML = '<option value="">No known speaker (ordinary diarization)</option>' +
+        profiles.map(profile => `<option value="${escapeHtml(profile.name)}">${escapeHtml(profile.name)} · ${profile.num_clips} clips</option>`).join('');
+      if (profiles.some(profile => profile.name === previousEnrollment)) {
+        enrollmentSelect.value = previousEnrollment;
+      }
+    }
+
+    renderSelectedSpeakerClips();
+    const activeCard = document.querySelector('.model-card[data-diar-model].active');
+    syncDiarModelOptions(activeCard?.dataset.diarModel || 'pyannote_community');
   } catch (err) {
-    showToast(`Failed to load speaker profiles: ${err.message}`, 'error');
+    showToast(`Failed to load known speakers: ${err.message}`, 'error');
   }
+}
+
+function renderSelectedSpeakerClips() {
+  const profileSelect = document.getElementById('ts-profile-select');
+  const container = document.getElementById('ts-profile-clips');
+  if (!container) return;
+  const profile = (state.knownSpeakers?.profiles || []).find(item => item.name === profileSelect?.value);
+  if (!profile) {
+    container.innerHTML = '<span class="text-xs text-muted">Select a speaker to inspect their clips.</span>';
+    return;
+  }
+
+  container.innerHTML = (profile.clips || []).map((clip, index) => `
+    <div class="speaker-profile-clip">
+      <div><strong>Clip ${index + 1}</strong><small>${escapeHtml(clip.name)}</small></div>
+      <audio controls preload="none" src="${clip.stream_url}"></audio>
+      <button type="button" class="btn btn-xs btn-ghost text-destructive ts-remove-clip" data-clip="${escapeHtml(clip.name)}">Remove</button>
+    </div>
+  `).join('');
+  container.querySelectorAll('.ts-remove-clip').forEach(button => {
+    button.addEventListener('click', () => removeSpeakerClip(profile.name, button.dataset.clip));
+  });
+}
+
+function selectedReferenceClipIds() {
+  const clipSelect = document.getElementById('ts-clip-select');
+  return clipSelect
+    ? Array.from(clipSelect.selectedOptions).map(option => option.value).filter(Boolean)
+    : [];
 }
 
 async function createSpeakerProfile() {
   const nameInput = document.getElementById('ts-new-profile-name');
-  const clipSelect = document.getElementById('ts-clip-select');
-  const overwriteCheck = document.getElementById('ts-overwrite-check');
-  const name = nameInput ? nameInput.value.trim() : '';
-  const clipIds = clipSelect ? Array.from(clipSelect.selectedOptions).map(o => o.value) : [];
-  const context = currentTargetChannel();
-
-  if (!name) { showToast('Enter a profile name', 'error'); return; }
-  if (clipIds.length === 0) { showToast('Select at least one reference clip', 'error'); return; }
+  const name = nameInput?.value.trim() || '';
+  const clipIds = selectedReferenceClipIds();
+  if (!name) { showToast('Enter a speaker name', 'error'); return; }
+  if (clipIds.length === 0) { showToast('Select at least one clean reference clip', 'error'); return; }
 
   try {
     const res = await fetch('/api/speaker-profiles', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: name,
-        clip_audio_ids: clipIds,
-        overwrite: overwriteCheck ? overwriteCheck.checked : false,
-        channel_id: context.channelId,
-        channel_name: context.channelName,
-        channel_url: context.channelUrl,
-      }),
+      body: JSON.stringify({ name, clip_audio_ids: clipIds }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Enrollment failed');
-    showToast(`Profile "${data.name}" enrolled with ${data.num_clips} clips`, 'success');
+    if (!res.ok) throw new Error(data.error || 'Speaker creation failed');
+    showToast(`Speaker "${data.name}" created with ${data.num_clips} clips`, 'success');
+    if (nameInput) nameInput.value = '';
     await loadSpeakerProfiles();
     const profileSelect = document.getElementById('ts-profile-select');
-    if (profileSelect) {
-      Array.from(profileSelect.options).forEach(option => { option.selected = option.value === data.name; });
-    }
+    if (profileSelect) profileSelect.value = data.name;
+    renderSelectedSpeakerClips();
   } catch (err) {
-    showToast(`Enrollment failed: ${err.message}`, 'error');
+    showToast(`Speaker creation failed: ${err.message}`, 'error');
+  }
+}
+
+async function addClipsToSelectedSpeaker() {
+  const profileSelect = document.getElementById('ts-profile-select');
+  const name = profileSelect?.value || '';
+  const clipIds = selectedReferenceClipIds();
+  if (!name) { showToast('Select a speaker first', 'error'); return; }
+  if (clipIds.length === 0) { showToast('Select at least one clean reference clip', 'error'); return; }
+
+  try {
+    const res = await fetch(`/api/speaker-profiles/${encodeURIComponent(name)}/clips`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clip_audio_ids: clipIds }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Adding clips failed');
+    showToast(`Added clips to "${name}" · ${data.num_clips} total`, 'success');
+    await loadSpeakerProfiles();
+    if (profileSelect) profileSelect.value = name;
+    renderSelectedSpeakerClips();
+  } catch (err) {
+    showToast(`Adding clips failed: ${err.message}`, 'error');
+  }
+}
+
+async function removeSpeakerClip(name, clipName) {
+  if (!confirm(`Remove "${clipName}" from speaker "${name}"?`)) return;
+  try {
+    const res = await fetch(
+      `/api/speaker-profiles/${encodeURIComponent(name)}/clips/${encodeURIComponent(clipName)}`,
+      { method: 'DELETE' },
+    );
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Clip removal failed');
+    showToast(`Removed clip from "${name}"`, 'success');
+    await loadSpeakerProfiles();
+    const profileSelect = document.getElementById('ts-profile-select');
+    if (profileSelect) profileSelect.value = name;
+    renderSelectedSpeakerClips();
+  } catch (err) {
+    showToast(`Clip removal failed: ${err.message}`, 'error');
   }
 }
 
 async function deleteSelectedSpeakerProfile() {
   const profileSelect = document.getElementById('ts-profile-select');
-  const selected = profileSelect ? Array.from(profileSelect.selectedOptions).map(option => option.value) : [];
-  const name = selected.length === 1 ? selected[0] : '';
-  if (!name) { showToast('Select exactly one profile to delete', 'error'); return; }
-  if (!confirm(`Delete speaker profile "${name}" and its reference clips?`)) return;
+  const name = profileSelect?.value || '';
+  if (!name) { showToast('Select a speaker to delete', 'error'); return; }
+  if (!confirm(`Delete speaker "${name}" and all reference clips?`)) return;
   try {
     const res = await fetch(`/api/speaker-profiles/${encodeURIComponent(name)}`, { method: 'DELETE' });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Delete failed');
-    showToast(`Profile "${name}" deleted`, 'success');
+    showToast(`Speaker "${name}" deleted`, 'success');
     await loadSpeakerProfiles();
   } catch (err) {
     showToast(`Delete failed: ${err.message}`, 'error');
   }
 }
-
-async function runTargetSpeakerScore() {
-  const profileSelect = document.getElementById('ts-profile-select');
-  const statusEl = document.getElementById('ts-score-status');
-  const profiles = profileSelect
-    ? Array.from(profileSelect.selectedOptions).map(option => option.value).filter(Boolean)
-    : [];
-  const audioId = state.diarization.audioId || (el.diarInputSelect ? el.diarInputSelect.value : null);
-
-  if (profiles.length === 0) { showToast('Select at least one target profile', 'error'); return; }
-  if (!audioId || !state.diarization.turns || state.diarization.turns.length === 0) {
-    showToast('Run diarization first — scoring needs speaker turns', 'error');
-    return;
-  }
-
-  const device = el.diarDeviceSelect ? el.diarDeviceSelect.value : 'auto';
-  const token = localStorage.getItem('sonic_hf_token') || undefined;
-  const turns = state.diarization.turns.map(t => ({
-    speaker_id: t.speaker_id,
-    start_s: t.start_s,
-    end_s: t.end_s,
-  }));
-
-  if (statusEl) statusEl.textContent = `Scoring ${turns.length} segments against ${profiles.length} target profile(s)...`;
-  showToast(`Queued ${profiles.length} target-speaker comparison(s)`, 'info');
-
-  const sameAudio = state.targetSpeaker.audioId === audioId;
-  state.targetSpeaker.results = {};
-  if (!sameAudio) {
-    state.targetSpeaker.settings = {};
-    state.targetSpeaker.labels = {};
-  }
-  state.targetSpeaker.audioId = audioId;
-
-  try {
-    const scoreOne = async (profile) => {
-      const res = await fetch('/api/diarization/target-speaker-score', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audio_id: audioId, profile, turns, device, token }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `Scoring request failed for ${profile}`);
-      return new Promise((resolve, reject) => pollTask(data.task_id, resolve, reject));
-    };
-
-    const results = await Promise.all(profiles.map(scoreOne));
-    results.forEach(result => {
-      const profileName = result.scored.profile_name;
-      state.targetSpeaker.results[profileName] = result.scored;
-      state.targetSpeaker.settings[profileName] ||= { threshold: 0.60, minDur: 1.5, excludeOverlap: true };
-      state.targetSpeaker.labels[profileName] ||= {};
-      const saved = (state.evaluations || []).find(item =>
-        item.evaluation_type === 'target_speaker' &&
-        item.clip_id === result.audio_id &&
-        item.profile_name === profileName
-      );
-      if (saved) {
-        state.targetSpeaker.settings[profileName] = {
-          threshold: Number(saved.threshold ?? 0.60),
-          minDur: Number(saved.min_duration_s ?? 1.5),
-          excludeOverlap: saved.exclude_overlap !== false,
-        };
-        state.targetSpeaker.labels[profileName] = { ...(saved.segment_labels || {}) };
-      }
-      state.targetSpeaker.scored = result.scored;
-      state.targetSpeaker.audioId = result.audio_id;
-    });
-    if (statusEl) statusEl.textContent = `Compared ${profiles.length} target(s) across ${turns.length} segments. Tune each filter and label the proposed audio below.`;
-    renderTargetSpeakerResults();
-    showToast('Target speaker comparison completed', 'success');
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (statusEl) statusEl.textContent = `Scoring failed: ${message}`;
-    showToast(`Scoring failed: ${message}`, 'error');
-  }
-}
-
-function targetSegmentKey(seg) {
-  return `${seg.start_s.toFixed(3)}-${seg.end_s.toFixed(3)}-${seg.speaker_id}`;
-}
-
-function targetSpeakerKeptSegments(profileName) {
-  const ts = state.targetSpeaker;
-  const scored = ts?.results?.[profileName] || ts?.scored;
-  if (!scored) return [];
-  const settings = ts.settings?.[profileName] || { threshold: 0.60, minDur: 1.5, excludeOverlap: true };
-  return scored.segments.filter(seg =>
-    seg.similarity >= settings.threshold &&
-    (seg.end_s - seg.start_s) >= settings.minDur &&
-    !(settings.excludeOverlap && seg.overlaps_other_speaker)
-  );
-}
-
-function renderTargetSpeakerResults() {
-  const ts = state.targetSpeaker;
-  const grid = document.getElementById('ts-comparison-grid');
-  const summary = document.getElementById('ts-evaluation-summary');
-  const entries = Object.entries(ts?.results || {});
-  if (!ts || !grid || entries.length === 0) return;
-
-  const totalKept = entries.reduce((sum, [profile]) => sum + targetSpeakerKeptSegments(profile).length, 0);
-  const chip = document.getElementById('ts-kept-chip');
-  if (chip) chip.textContent = totalKept;
-  if (summary) {
-    summary.style.display = '';
-    summary.innerHTML = `<strong>${entries.length} target filter${entries.length === 1 ? '' : 's'} compared</strong><span>${totalKept} proposed segments · percentages use all diarized segments/duration as the denominator</span>`;
-  }
-
-  grid.innerHTML = entries.map(([profileName, scored]) => {
-    const settings = ts.settings[profileName];
-    const kept = targetSpeakerKeptSegments(profileName);
-    const keptKeys = new Set(kept.map(targetSegmentKey));
-    const labels = ts.labels[profileName] || {};
-    const allDuration = scored.segments.reduce((sum, seg) => sum + seg.end_s - seg.start_s, 0);
-    const keptDuration = kept.reduce((sum, seg) => sum + seg.end_s - seg.start_s, 0);
-    const labelValues = Object.values(labels);
-    const reviewed = labelValues.filter(value => value === 'qualified' || value === 'rejected').length;
-    const qualified = labelValues.filter(value => value === 'qualified').length;
-    const proposalPct = scored.segments.length ? (kept.length / scored.segments.length) * 100 : 0;
-    const durationPct = allDuration ? (keptDuration / allDuration) * 100 : 0;
-    const qualifiedAllPct = scored.segments.length ? (qualified / scored.segments.length) * 100 : 0;
-    const profileMeta = (ts.profiles || []).find(profile => profile.name === profileName) || {};
-    const rows = [...scored.segments]
-      .sort((a, b) => b.similarity - a.similarity)
-      .map((seg, index) => {
-        const key = targetSegmentKey(seg);
-        const proposed = keptKeys.has(key);
-        const label = labels[key] || 'unreviewed';
-        return `
-          <tr class="${proposed ? '' : 'target-row-dropped'}">
-            <td>${index + 1}</td>
-            <td><button class="btn btn-xs btn-ghost ts-play-seg" data-profile="${escapeHtml(profileName)}" data-key="${key}">▶ ${seg.start_s.toFixed(1)}–${seg.end_s.toFixed(1)}s</button></td>
-            <td><strong>${seg.similarity.toFixed(3)}</strong></td>
-            <td>${proposed ? '<span class="badge badge-success">Proposed</span>' : '<span class="badge badge-ghost">Filtered</span>'}</td>
-            <td class="target-label-actions">
-              <button class="btn btn-xs ${label === 'qualified' ? 'btn-primary' : 'btn-ghost'} ts-label" data-profile="${escapeHtml(profileName)}" data-key="${key}" data-label="qualified">✓ Qualified</button>
-              <button class="btn btn-xs ${label === 'rejected' ? 'btn-danger' : 'btn-ghost'} ts-label" data-profile="${escapeHtml(profileName)}" data-key="${key}" data-label="rejected">✕ Reject</button>
-            </td>
-          </tr>`;
-      }).join('');
-
-    return `
-      <article class="target-comparison-card" data-profile="${escapeHtml(profileName)}">
-        <header class="target-card-header">
-          <div><span class="badge badge-accent">Target</span><h4>${escapeHtml(profileName)}</h4><small>${escapeHtml(profileMeta.channel_name || 'Unscoped profile')}</small></div>
-          <button class="btn btn-xs btn-secondary ts-export-profile" data-profile="${escapeHtml(profileName)}">Export qualified</button>
-        </header>
-        <div class="target-settings-grid">
-          <label>Similarity ≥ <strong>${settings.threshold.toFixed(2)}</strong><input class="ts-card-threshold" data-profile="${escapeHtml(profileName)}" type="range" min="0" max="1" step="0.01" value="${settings.threshold}"></label>
-          <label>Minimum seconds<input class="text-input ts-card-min-dur" data-profile="${escapeHtml(profileName)}" type="number" min="0" step="0.25" value="${settings.minDur}"></label>
-          <label class="checkbox-pill"><input class="ts-card-overlap" data-profile="${escapeHtml(profileName)}" type="checkbox" ${settings.excludeOverlap ? 'checked' : ''}> Exclude overlap</label>
-        </div>
-        <div class="target-metrics-grid">
-          <div><strong>${kept.length}/${scored.segments.length}</strong><span>proposed segments (${proposalPct.toFixed(1)}%)</span></div>
-          <div><strong>${keptDuration.toFixed(1)}s</strong><span>proposed duration (${durationPct.toFixed(1)}%)</span></div>
-          <div><strong>${qualified}/${scored.segments.length}</strong><span>manually qualified (${qualifiedAllPct.toFixed(1)}% of all)</span></div>
-          <div><strong>${reviewed}/${scored.segments.length}</strong><span>review coverage</span></div>
-        </div>
-        <div class="target-segments-scroll"><table class="turns-table"><thead><tr><th>#</th><th>Segment</th><th>Score</th><th>Filter</th><th>Manual label</th></tr></thead><tbody>${rows}</tbody></table></div>
-        <footer><button class="btn btn-primary btn-sm ts-save-evaluation" data-profile="${escapeHtml(profileName)}">Save filter + manual evaluation</button></footer>
-      </article>`;
-  }).join('');
-
-  grid.querySelectorAll('.ts-card-threshold').forEach(input => input.addEventListener('input', event => {
-    ts.settings[event.target.dataset.profile].threshold = parseFloat(event.target.value);
-    renderTargetSpeakerResults();
-  }));
-  grid.querySelectorAll('.ts-card-min-dur').forEach(input => input.addEventListener('change', event => {
-    ts.settings[event.target.dataset.profile].minDur = Math.max(0, parseFloat(event.target.value) || 0);
-    renderTargetSpeakerResults();
-  }));
-  grid.querySelectorAll('.ts-card-overlap').forEach(input => input.addEventListener('change', event => {
-    ts.settings[event.target.dataset.profile].excludeOverlap = event.target.checked;
-    renderTargetSpeakerResults();
-  }));
-  grid.querySelectorAll('.ts-play-seg').forEach(button => button.addEventListener('click', () => {
-    const seg = ts.results[button.dataset.profile].segments.find(item => targetSegmentKey(item) === button.dataset.key);
-    if (seg) seekDiarAudio(seg.start_s, true);
-  }));
-  grid.querySelectorAll('.ts-label').forEach(button => button.addEventListener('click', () => {
-    const labels = ts.labels[button.dataset.profile];
-    labels[button.dataset.key] = labels[button.dataset.key] === button.dataset.label ? 'unreviewed' : button.dataset.label;
-    renderTargetSpeakerResults();
-  }));
-  grid.querySelectorAll('.ts-export-profile').forEach(button => button.addEventListener('click', () => exportTargetSpeakerSegments(button.dataset.profile)));
-  grid.querySelectorAll('.ts-save-evaluation').forEach(button => button.addEventListener('click', () => saveTargetSpeakerEvaluation(button.dataset.profile)));
-}
-
-async function saveTargetSpeakerEvaluation(profileName) {
-  const ts = state.targetSpeaker;
-  const scored = ts.results[profileName];
-  const settings = ts.settings[profileName];
-  const labels = ts.labels[profileName] || {};
-  const context = currentTargetChannel();
-  const reviewed = Object.values(labels).filter(value => value === 'qualified' || value === 'rejected').length;
-  const qualified = Object.values(labels).filter(value => value === 'qualified').length;
-  const totalDuration = scored.segments.reduce((sum, seg) => sum + seg.end_s - seg.start_s, 0);
-  const qualifiedDuration = scored.segments
-    .filter(seg => labels[targetSegmentKey(seg)] === 'qualified')
-    .reduce((sum, seg) => sum + seg.end_s - seg.start_s, 0);
-  const evalId = `target-${ts.audioId}-${profileName}`.replace(/[^A-Za-z0-9_.-]/g, '_');
-  const payload = {
-    id: evalId,
-    evaluation_type: 'target_speaker',
-    clip_id: ts.audioId,
-    clip_title: context.audio.title || ts.audioId,
-    clip_path: context.audio.path || '',
-    model_id: scored.model?.model_id || 'speaker_verifier',
-    model_name: scored.model?.backend || 'Target speaker verifier',
-    profile_name: profileName,
-    channel_id: context.channelId,
-    channel_name: context.channelName,
-    threshold: settings.threshold,
-    min_duration_s: settings.minDur,
-    exclude_overlap: settings.excludeOverlap,
-    qualified_segments: qualified,
-    reviewed_segments: reviewed,
-    total_segments: scored.segments.length,
-    qualified_duration_s: qualifiedDuration,
-    total_duration_s: totalDuration,
-    qualified_percent: scored.segments.length ? (qualified / scored.segments.length) * 100 : 0,
-    segment_labels: labels,
-    score_overall: reviewed ? (qualified / reviewed) * 5 : 0,
-    tags: ['target_speaker', `profile:${profileName}`],
-  };
-  try {
-    const res = await fetch('/api/evaluations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    if (!res.ok) throw new Error('Could not save evaluation');
-    await fetchEvaluations();
-    showToast(`Saved ${profileName}: ${qualified}/${reviewed} reviewed segments qualified`, 'success');
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
-}
-
-async function exportTargetSpeakerSegments(profileName) {
-  const ts = state.targetSpeaker;
-  const resolvedProfile = profileName || ts.scored?.profile_name;
-  const scored = ts.results[resolvedProfile];
-  const labels = ts.labels[resolvedProfile] || {};
-  const qualified = (scored?.segments || []).filter(seg => labels[targetSegmentKey(seg)] === 'qualified');
-  if (qualified.length === 0) { showToast('Manually qualify at least one segment before export', 'error'); return; }
-  const audioId = ts.audioId || state.diarization.audioId;
-  if (!audioId) { showToast('No source audio for export', 'error'); return; }
-
-  profileName = resolvedProfile || 'target';
-  const mode = el.diarExtractModeSelect ? el.diarExtractModeSelect.value : 'concatenated';
-  showToast(`Exporting ${qualified.length} manually qualified segments (${mode})...`, 'info');
-
-  try {
-    // Reuse the extract-speaker endpoint: label every qualified segment as one pseudo-speaker.
-    const res = await fetch('/api/diarization/extract-speaker', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        audio_id: audioId,
-        speaker_id: 'target',
-        speaker_name: profileName,
-        mode: mode,
-        turns: qualified.map(seg => ({ speaker_id: 'target', start_s: seg.start_s, end_s: seg.end_s })),
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Export failed');
-    await fetchAudioList();
-    showToast(`Exported verified audio: "${data.metadata?.title || profileName}" (${data.duration_s?.toFixed(2)}s)`, 'success');
-  } catch (err) {
-    showToast(`Export failed: ${err.message}`, 'error');
-  }
-}
-
 // ==================== CUTS MANAGER ====================
 
 function initCutsManager() {
@@ -6168,6 +5953,7 @@ function populateAllAudioSelects() {
       updateDiarInputMeta(selected);
     }
   }
+  populateTargetClipSelect();
 }
 
 // ==================== KEYBOARD SHORTCUTS ====================
@@ -6609,7 +6395,6 @@ function switchTab(tabId) {
     }
     syncActivePlaybackControls();
   } else if (tabId === 'tab-diarization') {
-    renderTargetChannelContext();
     loadSpeakerProfiles();
     if (el.diarInputSelect) {
       if (!el.diarInputSelect.value && state.activeAudio) {
@@ -6673,7 +6458,7 @@ async function initApp() {
   try { initIngestAndSaves(); } catch (e) { console.error("initIngestAndSaves error:", e); }
   try { initSeparationStudio(); } catch (e) { console.error("initSeparationStudio error:", e); }
   try { initDiarizationStudio(); } catch (e) { console.error("initDiarizationStudio error:", e); }
-  try { initTargetSpeaker(); } catch (e) { console.error("initTargetSpeaker error:", e); }
+  try { initKnownSpeakerManager(); } catch (e) { console.error("initKnownSpeakerManager error:", e); }
   try { initAuditionHub(); } catch (e) { console.error("initAuditionHub error:", e); }
   try { initKeyboardShortcuts(); } catch (e) { console.error("initKeyboardShortcuts error:", e); }
   try { initNavigation(); } catch (e) { console.error("initNavigation error:", e); }

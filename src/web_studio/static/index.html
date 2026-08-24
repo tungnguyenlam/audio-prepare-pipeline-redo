@@ -646,10 +646,10 @@
             </div>
           </div>
 
-          <div class="target-workflow-rail" aria-label="Target speaker preparation workflow">
+          <div class="target-workflow-rail" aria-label="Known speaker preparation workflow">
             <button type="button" class="target-workflow-step" id="btn-ts-go-source">
               <span class="target-workflow-number">1</span>
-              <span><strong>Fetch channel video</strong><small id="ts-workflow-channel">Choose a YouTube source</small></span>
+              <span><strong>Choose source audio</strong><small>Load a recording or vocal stem</small></span>
             </button>
             <button type="button" class="target-workflow-step" id="btn-ts-go-separation">
               <span class="target-workflow-number">2</span>
@@ -657,35 +657,49 @@
             </button>
             <button type="button" class="target-workflow-step" id="btn-ts-go-enroll">
               <span class="target-workflow-number">3</span>
-              <span><strong>Cut & enroll targets</strong><small>Create clean clips for this channel</small></span>
+              <span><strong>Manage known speakers</strong><small>Create identities from clean clips</small></span>
             </button>
             <button type="button" class="target-workflow-step active" id="btn-ts-go-results">
               <span class="target-workflow-number">4</span>
-              <span><strong>Diarize & evaluate</strong><small>Compare targets, tune thresholds, label quality</small></span>
+              <span><strong>Inject & diarize</strong><small>Select one identity before inference</small></span>
             </button>
           </div>
 
-          <details class="ts-enroll-details" id="ts-enroll-details">
-            <summary class="text-sm">3 · Enroll a channel target from clean reference cuts</summary>
-            <p class="text-xs text-muted" style="margin: 8px 0;">Create 2–3 single-speaker cuts in Workspace, then bind them to the selected video's YouTube channel.</p>
-            <div class="diar-params-row" style="margin-top: 8px;">
+          <details class="ts-enroll-details" id="ts-enroll-details" open>
+            <summary class="text-sm">Known speaker manager</summary>
+            <p class="text-xs text-muted" style="margin: 8px 0;">Speaker identities are global and reusable. Their clean clips are the source of truth; each supported pipeline builds its own enrollment representation.</p>
+            <div class="speaker-manager-grid">
               <div class="form-group">
-                <label class="form-label" for="ts-new-profile-name">Profile Name</label>
-                <input type="text" id="ts-new-profile-name" class="text-input" placeholder="e.g. khanh_vy">
+                <label class="form-label" for="ts-profile-select">Known Speakers</label>
+                <select id="ts-profile-select" class="select-input" size="5">
+                  <option value="">No speakers enrolled</option>
+                </select>
+                <div class="flex-row items-center gap-2" style="margin-top: 6px;">
+                  <button class="btn btn-xs btn-ghost" id="btn-ts-refresh-profiles">↻ Refresh</button>
+                  <button class="btn btn-xs btn-ghost text-destructive" id="btn-ts-delete-profile">Delete speaker</button>
+                </div>
               </div>
               <div class="form-group flex-1">
-                <label class="form-label" for="ts-clip-select">Reference Clips (2-3 single-speaker cuts, ~10s each; Ctrl/Cmd-click to multi-select)</label>
-                <select id="ts-clip-select" class="select-input" multiple size="6"></select>
+                <label class="form-label">Enrollment Clips</label>
+                <div id="ts-profile-clips" class="speaker-profile-clips">
+                  <span class="text-xs text-muted">Select a speaker to inspect their clips.</span>
+                </div>
               </div>
+            </div>
+            <div class="diar-params-row" style="margin-top: 8px;">
               <div class="form-group">
-                <label class="form-label" for="ts-profile-channel">YouTube Channel</label>
-                <input type="text" id="ts-profile-channel" class="text-input" readonly placeholder="Inferred from selected video">
+                <label class="form-label" for="ts-new-profile-name">New Speaker Name</label>
+                <input type="text" id="ts-new-profile-name" class="text-input" placeholder="e.g. Khanh Vy">
+              </div>
+              <div class="form-group flex-1">
+                <label class="form-label" for="ts-clip-select">Clean Reference Clips (Ctrl/Cmd-click to multi-select)</label>
+                <select id="ts-clip-select" class="select-input" multiple size="6"></select>
               </div>
             </div>
             <div class="flex-row items-center gap-3">
               <button type="button" class="btn btn-ghost btn-sm" id="btn-ts-open-cutter">Open Workspace cutter</button>
-              <label class="text-xs text-muted"><input type="checkbox" id="ts-overwrite-check"> Overwrite existing profile</label>
-              <button class="btn btn-secondary btn-sm" id="btn-ts-create-profile">Enroll Profile</button>
+              <button class="btn btn-secondary btn-sm" id="btn-ts-create-profile">Create Speaker</button>
+              <button class="btn btn-primary btn-sm" id="btn-ts-add-clips">Add Clips to Selected Speaker</button>
             </div>
           </details>
 
@@ -774,6 +788,7 @@
                     <div class="model-specs">
                       <span class="spec-tag">Zero Token</span>
                       <span class="spec-tag">Streaming Speed</span>
+                      <span class="spec-tag">Known Speaker Anchor</span>
                     </div>
                   </div>
 
@@ -820,6 +835,16 @@
                     <button type="button" class="btn btn-ghost btn-xs" id="btn-toggle-hf-vis">Show</button>
                   </div>
                   <input type="password" id="hf-token-input" class="text-input font-mono" placeholder="hf_xxxxxxxxxxxxxxxxxxxx">
+                </div>
+              </div>
+
+              <div class="diar-params-row" id="diar-enrollment-group">
+                <div class="form-group flex-1">
+                  <label class="form-label" for="diar-enrollment-profile-select">Known Speaker Injection</label>
+                  <select id="diar-enrollment-profile-select" class="select-input">
+                    <option value="">No known speaker (ordinary diarization)</option>
+                  </select>
+                  <p class="text-xs text-muted" id="diar-enrollment-support" style="margin: 6px 0 0;">Select NeMo Sortformer to inject a known speaker before inference.</p>
                 </div>
               </div>
 
@@ -1103,11 +1128,6 @@
                 <span class="subtab-label">Turns Inspector</span>
                 <span class="subtab-chip" id="diar-subtab-turns-count">0</span>
               </button>
-              <button class="diar-subtab-btn" data-subtab="target">
-                <span class="subtab-icon">🎯</span>
-                <span class="subtab-label">Target Speaker & Evaluation</span>
-                <span class="subtab-chip" id="ts-kept-chip">—</span>
-              </button>
               <button class="diar-subtab-btn" data-subtab="export">
                 <span class="subtab-icon">💾</span>
                 <span class="subtab-label">Export & Annotations</span>
@@ -1164,43 +1184,6 @@
                   <tbody id="turns-table-body"></tbody>
                 </table>
               </div>
-            </div>
-
-            <!-- Subview: Target Speaker Verification -->
-            <div class="diar-subview-panel hidden" id="diar-subview-target">
-              <div class="subview-header">
-                <div>
-                  <h3 class="subview-title">Channel Target Speaker Evaluation</h3>
-                  <p class="subview-desc">Select one or more target identities for this video, compare their filters side by side, tune each threshold, and manually qualify every proposed segment.</p>
-                </div>
-              </div>
-
-              <!-- Profile Management Row -->
-              <div class="diar-inspector-toolbar">
-                <div class="toolbar-left">
-                  <div class="form-group mb-0">
-                    <label class="text-xs text-muted" for="ts-profile-select">Target profiles (multi-select):</label>
-                    <select id="ts-profile-select" class="select-input" multiple size="4">
-                      <option value="">No profiles enrolled</option>
-                    </select>
-                  </div>
-                  <button class="btn btn-xs btn-ghost" id="btn-ts-refresh-profiles" title="Reload profile list">↻ Refresh</button>
-                  <button class="btn btn-xs btn-ghost text-destructive" id="btn-ts-delete-profile" title="Delete the selected profile">Delete</button>
-                </div>
-                <button class="btn btn-primary btn-sm" id="btn-ts-score" title="Embed every turn and compare to the profile centroid">
-                  🎯 Score Selected Targets
-                </button>
-              </div>
-
-              <div class="target-channel-context" id="ts-channel-context">
-                <span class="badge badge-accent">Channel scope</span>
-                <strong id="ts-channel-context-name">No YouTube channel selected</strong>
-                <span id="ts-channel-context-detail">Choose a channel video or vocal stem above.</span>
-              </div>
-              <div class="text-xs text-muted" id="ts-score-status" style="margin: 8px 0;">Run diarization first, then select one or more channel profiles to compare.</div>
-
-              <div class="target-evaluation-summary" id="ts-evaluation-summary" style="display: none;"></div>
-              <div class="target-comparison-grid" id="ts-comparison-grid"></div>
             </div>
 
             <!-- Subview 2: Multi-Format Export Studio -->

@@ -32,12 +32,17 @@ separation, cutting, resampling, and other derived artifacts.
 Diarizer backends copy these fields from the input `Audio`; target-speaker
 filtering preserves them from the scored result.
 
+`Speaker.global_speaker_id` names a globally enrolled identity that was
+injected into a supporting diarization pipeline. Turns continue to reference
+the result-local `speaker_id`; clients render `global_speaker_id` as the
+speaker name when present.
+
 ## `SpeakerProfile`
 
-A profile stores `name`, reference `clip_paths`, `created_at`, and optional
-`channel_id`, `channel_name`, and `channel_url`. New profiles infer channel
-identity from their reference clips. A profile may be unscoped for local audio,
-but a channel-bound profile cannot be applied to audio from another channel.
+A profile stores `name`, reference `clip_paths`, `created_at`, `updated_at`, and
+optional channel provenance. Profiles are global identities reusable across
+channels. Reference clips are the portable source of truth; each supporting
+diarization pipeline builds its own enrollment representation before inference.
 
 ## Pipeline `AudioItem`
 

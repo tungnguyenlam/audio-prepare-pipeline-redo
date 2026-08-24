@@ -269,8 +269,29 @@ class SortformerDiarizer(BaseDiarizer, ManagedModel):
         self._embedding_model = model.to(self._target_device).eval()
         return self._embedding_model
 
-    def diarize(self, audio: Audio) -> DiarizationResult:
-        """Diarize ``audio`` while preserving the schema 1.0 result contract."""
+    def diarize(
+        self,
+        audio: Audio,
+        *,
+        enrollment_name: str | None = None,
+        enrollment_clips: list[str | Path] | None = None,
+    ) -> DiarizationResult:
+        """Diarize audio with an optional pre-inference speaker enrollment.
+
+        The enrollment clips are embedded with this pipeline's TitaNet model
+        before target-audio inference. Their centroid seeds global speaker zero
+        during window stitching, so the known identity participates in speaker
+        assignment instead of being scored after diarization.
+
+        Args:
+            audio: File-backed target audio.
+            enrollment_name: Global identity to assign to the enrolled speaker.
+            enrollment_clips: Clean single-speaker reference clip paths.
+
+        Returns:
+            Full diarization with the matched speaker carrying
+            ``global_speaker_id=enrollment_name``.
+        """
         if not self.is_loaded or self._model is None:
             raise RuntimeError(
                 "SortformerDiarizer is not loaded. Call load() before diarize(), "
@@ -280,6 +301,10 @@ class SortformerDiarizer(BaseDiarizer, ManagedModel):
         source_path = Path(audio.path)
         if not source_path.is_file():
             raise FileNotFoundError(f"Audio file does not exist: {source_path}")
+        if bool(enrollment_name) != bool(enrollment_clips):
+            raise ValueError(
+                "enrollment_name and enrollment_clips must be supplied together"
+            )
 
         logger.warning(
             "Sortformer supports at most %d distinct speakers per inference "
@@ -312,12 +337,19 @@ class SortformerDiarizer(BaseDiarizer, ManagedModel):
             if waveform.size == 0:
                 raise ValueError(f"Audio source is empty: {source_path}")
 
+            enrollment_centroid = (
+                self._build_enrollment_centroid(enrollment_clips or [], temp_dir)
+                if enrollment_name
+                else None
+            )
+
             try:
                 windows = self._process_windows(
                     waveform,
                     sample_rate,
                     self.window_duration_s,
                     temp_dir,
+                    extract_embeddings=enrollment_centroid is not None,
                 )
             except RuntimeError as exc:
                 retry_window = self.oom_retry_window_s
@@ -339,11 +371,12 @@ class SortformerDiarizer(BaseDiarizer, ManagedModel):
                     sample_rate,
                     retry_window,
                     temp_dir,
+                    extract_embeddings=enrollment_centroid is not None,
                 )
 
-            turns = self._stitch_windows(windows)
+            turns = self._stitch_windows(windows, enrollment_centroid)
 
-        speakers = self._speakers_from_turns(turns)
+        speakers = self._speakers_from_turns(turns, enrollment_name)
         return DiarizationResult(
             schema_version="1.0",
             audio_id=audio.source_id,
@@ -365,6 +398,8 @@ class SortformerDiarizer(BaseDiarizer, ManagedModel):
         sample_rate: int,
         window_duration_s: float,
         temp_dir: Path,
+        *,
+        extract_embeddings: bool = False,
     ) -> list[_WindowResult]:
         window_samples = max(1, round(window_duration_s * sample_rate))
         overlap_samples = round(self.overlap_duration_s * sample_rate)
@@ -409,7 +444,9 @@ class SortformerDiarizer(BaseDiarizer, ManagedModel):
             start_sample += stride_samples
             index += 1
 
-        if len(windows) > 1 and self.enable_speaker_similarity:
+        if extract_embeddings or (
+            len(windows) > 1 and self.enable_speaker_similarity
+        ):
             self._ensure_embedding_model()
             for index, window in enumerate(windows):
                 window.embeddings = self._extract_window_embeddings(
@@ -419,6 +456,43 @@ class SortformerDiarizer(BaseDiarizer, ManagedModel):
                     index,
                 )
         return windows
+
+    def _build_enrollment_centroid(
+        self,
+        clip_paths: list[str | Path],
+        temp_dir: Path,
+    ) -> np.ndarray:
+        """Build the TitaNet enrollment anchor before target-audio inference."""
+        model = self._ensure_embedding_model()
+        vectors: list[np.ndarray] = []
+        for index, raw_path in enumerate(clip_paths):
+            source_path = Path(raw_path)
+            if not source_path.is_file():
+                raise FileNotFoundError(
+                    f"Enrollment clip does not exist: {source_path}"
+                )
+            normalized_path = temp_dir / f"enrollment_{index:03d}.wav"
+            normalize_wav(
+                source_path,
+                normalized_path,
+                sample_rate=16000,
+                channels=1,
+                ffmpeg_bin=self.ffmpeg_bin,
+            )
+            embedding = model.get_embedding(str(normalized_path))
+            if hasattr(embedding, "detach"):
+                embedding = embedding.detach().cpu().numpy()
+            vector = np.asarray(embedding, dtype=np.float32).reshape(-1)
+            norm = float(np.linalg.norm(vector))
+            if norm > 0 and np.isfinite(vector).all():
+                vectors.append(vector / norm)
+        if not vectors:
+            raise RuntimeError("No enrollment clip produced a valid TitaNet embedding")
+        centroid = np.mean(vectors, axis=0)
+        norm = float(np.linalg.norm(centroid))
+        if norm <= 0 or not np.isfinite(centroid).all():
+            raise RuntimeError("Enrollment clips produced an invalid TitaNet centroid")
+        return centroid / norm
 
     def _run_model(self, chunk_path: Path) -> Any:
         if self._model is None:
@@ -744,16 +818,33 @@ class SortformerDiarizer(BaseDiarizer, ManagedModel):
         ends = np.flatnonzero(changes == -1)
         return list(zip(starts.tolist(), ends.tolist(), strict=True))
 
-    def _stitch_windows(self, windows: list[_WindowResult]) -> list[SpeakerTurn]:
-        profiles: dict[int, _SpeakerProfile] = {}
-        next_global_index = 0
+    def _stitch_windows(
+        self,
+        windows: list[_WindowResult],
+        enrollment_centroid: np.ndarray | None = None,
+    ) -> list[SpeakerTurn]:
+        profiles: dict[int, _SpeakerProfile] = (
+            {0: _SpeakerProfile(enrollment_centroid.copy())}
+            if enrollment_centroid is not None
+            else {}
+        )
+        enrollment_global_index = 0 if enrollment_centroid is not None else None
+        next_global_index = 1 if enrollment_centroid is not None else 0
 
         for window_index, window in enumerate(windows):
             active_speakers = sorted({turn.speaker_index for turn in window.turns})
             if window_index == 0:
+                assignment = self._enrollment_assignment(
+                    active_speakers,
+                    window.embeddings,
+                    enrollment_centroid,
+                )
                 for local_index in active_speakers:
-                    window.local_to_global[local_index] = next_global_index
-                    next_global_index += 1
+                    global_index = assignment.get(local_index)
+                    if global_index is None:
+                        global_index = next_global_index
+                        next_global_index += 1
+                    window.local_to_global[local_index] = global_index
             else:
                 previous = windows[window_index - 1]
                 scores = self._speaker_match_scores(previous, window, profiles)
@@ -768,6 +859,8 @@ class SortformerDiarizer(BaseDiarizer, ManagedModel):
             for local_index, embedding in window.embeddings.items():
                 global_index = window.local_to_global.get(local_index)
                 if global_index is None:
+                    continue
+                if global_index == enrollment_global_index:
                     continue
                 profile = profiles.get(global_index)
                 if profile is None:
@@ -812,8 +905,32 @@ class SortformerDiarizer(BaseDiarizer, ManagedModel):
         turns.sort(key=lambda turn: (turn.start_s, turn.end_s, turn.speaker_id))
         return turns
 
+    def _enrollment_assignment(
+        self,
+        local_speakers: list[int],
+        embeddings: dict[int, np.ndarray],
+        enrollment_centroid: np.ndarray | None,
+    ) -> dict[int, int]:
+        """Assign at most one first-window slot to the enrolled identity."""
+        if enrollment_centroid is None:
+            return {}
+        candidates = [
+            (float(np.dot(embedding, enrollment_centroid)), local_index)
+            for local_index, embedding in embeddings.items()
+            if local_index in local_speakers
+        ]
+        if not candidates:
+            return {}
+        similarity, local_index = max(candidates)
+        if similarity < self.embedding_similarity_threshold:
+            return {}
+        return {local_index: 0}
+
     @staticmethod
-    def _speakers_from_turns(turns: list[SpeakerTurn]) -> list[Speaker]:
+    def _speakers_from_turns(
+        turns: list[SpeakerTurn],
+        enrollment_name: str | None = None,
+    ) -> list[Speaker]:
         """Build speaker records from turns that survived ownership clipping."""
         speakers: list[Speaker] = []
         seen: set[str] = set()
@@ -821,7 +938,26 @@ class SortformerDiarizer(BaseDiarizer, ManagedModel):
             if turn.speaker_id in seen:
                 continue
             seen.add(turn.speaker_id)
-            speakers.append(Speaker(speaker_id=turn.speaker_id))
+            speakers.append(
+                Speaker(
+                    speaker_id=turn.speaker_id,
+                    global_speaker_id=(
+                        enrollment_name
+                        if enrollment_name and turn.speaker_id == "spk_00"
+                        else None
+                    ),
+                )
+            )
+
+        if enrollment_name and not any(
+            speaker.speaker_id == "spk_00" for speaker in speakers
+        ):
+            speakers.append(
+                Speaker(
+                    speaker_id="spk_00",
+                    global_speaker_id=enrollment_name,
+                )
+            )
 
         def sort_key(speaker: Speaker) -> tuple[int, str]:
             match = re.fullmatch(r"spk_(\d+)", speaker.speaker_id)

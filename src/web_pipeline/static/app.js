@@ -1450,9 +1450,7 @@
     const select = document.getElementById('ts-pipe-profile-select');
     if (!select) return;
     try {
-      const channelId = document.getElementById('ts-channel-select')?.value;
-      const query = channelId && channelId !== 'all' ? `?channel_id=${encodeURIComponent(channelId)}` : '';
-      const res = await fetch(`/api/speaker-profiles${query}`);
+      const res = await fetch('/api/speaker-profiles');
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load profiles');
       const previous = new Set(Array.from(select.selectedOptions).map(option => option.value));
@@ -1465,7 +1463,7 @@
       profiles.forEach((p) => {
         const opt = document.createElement('option');
         opt.value = p.name;
-        opt.textContent = `${p.name} (${p.num_clips} clips${p.channel_name ? ` · ${p.channel_name}` : ''})`;
+        opt.textContent = `${p.name} (${p.num_clips} clips)`;
         opt.selected = previous.has(p.name) || (previous.size === 0 && profiles.length === 1);
         select.appendChild(opt);
       });
@@ -1497,7 +1495,7 @@
       const token = els.diarHfToken ? els.diarHfToken.value.trim() || null : null;
 
       if (profiles.length === 0) {
-        showToast('Select one or more channel speaker profiles', 'warning');
+        showToast('Select one or more global speaker profiles', 'warning');
         return;
       }
 
@@ -1522,7 +1520,7 @@
           if (!res.ok) throw new Error(job.error || `Target speaker job failed for ${profile}`);
           return job;
         }));
-        showToast(`${jobs.length} channel target-speaker job(s) enqueued`, 'success');
+        showToast(`${jobs.length} target-speaker job(s) enqueued`, 'success');
         switchTab('tab-queue');
       } catch (err) {
         showToast(err.message || 'Error submitting target speaker jobs', 'danger');

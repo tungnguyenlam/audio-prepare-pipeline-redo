@@ -81,7 +81,11 @@ def main() -> None:
                 elif action == "diarize":
                     if diarizer is None or not diarizer.is_loaded:
                         raise RuntimeError("Sortformer worker is not loaded")
-                    result = diarizer.diarize(_audio_from_dict(request["audio"]))
+                    result = diarizer.diarize(
+                        _audio_from_dict(request["audio"]),
+                        enrollment_name=request.get("enrollment_name"),
+                        enrollment_clips=request.get("enrollment_clips"),
+                    )
                     _respond(result=asdict(result))
                 elif action == "close":
                     if diarizer is not None:
