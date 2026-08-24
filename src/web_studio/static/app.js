@@ -73,6 +73,7 @@ const state = {
     threshold: 0.60,
     minDur: 1.5,
     excludeOverlap: true,
+    hideFiltered: false,
     labels: {},
   },
 };
@@ -4225,6 +4226,7 @@ function resetTargetSpeakerEvaluation({ preserveSelection = true } = {}) {
   state.targetSpeaker.threshold = 0.60;
   state.targetSpeaker.minDur = 1.5;
   state.targetSpeaker.excludeOverlap = true;
+  state.targetSpeaker.hideFiltered = false;
   if (!preserveSelection) {
     state.targetSpeaker.profileName = '';
     state.targetSpeaker.assignedSpeakerId = '';
@@ -4406,6 +4408,7 @@ function renderTargetSpeakerResults() {
 
   const kept = targetSpeakerKeptSegments();
   const keptKeys = new Set(kept.map(targetSegmentKey));
+  const filteredCount = scored.segments.length - kept.length;
   const labels = target.labels || {};
   const reviewed = Object.values(labels).filter(label => label === 'qualified' || label === 'rejected').length;
   const qualified = Object.values(labels).filter(label => label === 'qualified').length;
@@ -4425,6 +4428,7 @@ function renderTargetSpeakerResults() {
 
   const rows = [...scored.segments]
     .sort((a, b) => a.start_s - b.start_s)
+    .filter(segment => !target.hideFiltered || keptKeys.has(targetSegmentKey(segment)))
     .map((segment, index) => {
       const key = targetSegmentKey(segment);
       const proposed = keptKeys.has(key);
@@ -4439,8 +4443,8 @@ function renderTargetSpeakerResults() {
           <td>${proposed ? '<span class="badge badge-success">Proposed</span>' : '<span class="badge badge-ghost">Filtered</span>'}</td>
           <td>${assigned ? '<span class="badge badge-accent">Named target</span>' : '<span class="text-xs text-muted">—</span>'}</td>
           <td class="target-label-actions">
-            <button class="btn btn-xs ${label === 'qualified' ? 'btn-primary' : 'btn-ghost'} ts-label-segment" data-key="${key}" data-label="qualified">✓ Qualify</button>
-            <button class="btn btn-xs ${label === 'rejected' ? 'btn-ghost text-destructive' : 'btn-ghost'} ts-label-segment" data-key="${key}" data-label="rejected">✕ Reject</button>
+            <button type="button" class="btn btn-xs ${label === 'qualified' ? 'btn-primary' : 'btn-ghost'} ts-label-segment" data-key="${key}" data-label="qualified" aria-pressed="${label === 'qualified'}">✓ Accept</button>
+            <button type="button" class="btn btn-xs ${label === 'rejected' ? 'target-label-rejected' : 'btn-ghost'} ts-label-segment" data-key="${key}" data-label="rejected" aria-pressed="${label === 'rejected'}">✕ Reject</button>
           </td>
         </tr>`;
     }).join('');
@@ -4455,8 +4459,14 @@ function renderTargetSpeakerResults() {
       <div class="target-metrics-grid">
         <div><strong>${kept.length}/${scored.segments.length}</strong><span>proposed turns</span></div>
         <div><strong>${keptDuration.toFixed(1)}s</strong><span>proposed duration</span></div>
-        <div><strong>${qualified}/${reviewed || 0}</strong><span>qualified / reviewed</span></div>
+        <div><strong>${qualified}/${reviewed || 0}</strong><span>accepted / reviewed</span></div>
         <div><strong>${agreementPercent === null ? '—' : `${agreementPercent.toFixed(1)}%`}</strong><span>${assignedId ? `agreement with ${getSpeakerName(assignedId)} (${assignedSegments.length} turns)` : 'optional named-speaker agreement'}</span></div>
+      </div>
+      <div class="target-segments-toolbar">
+        <span>${target.hideFiltered ? `Showing ${kept.length} proposed segments` : `Showing all ${scored.segments.length} segments`}</span>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-ts-toggle-filtered" aria-pressed="${target.hideFiltered}" ${filteredCount ? '' : 'disabled'}>
+          ${target.hideFiltered ? `Show ${filteredCount} filtered segments` : `Hide ${filteredCount} filtered segments`}
+        </button>
       </div>
       <div class="target-segments-scroll">
         <table class="turns-table">
@@ -4465,8 +4475,8 @@ function renderTargetSpeakerResults() {
         </table>
       </div>
       <footer class="target-evaluation-actions">
-        <button class="btn btn-secondary btn-sm" id="btn-ts-export-qualified">Export qualified audio</button>
-        <button class="btn btn-primary btn-sm" id="btn-ts-save-evaluation">Save filter + evaluation</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-ts-export-qualified">Export accepted audio</button>
+        <button type="button" class="btn btn-primary btn-sm" id="btn-ts-save-evaluation">Save filter + evaluation</button>
       </footer>
     </article>`;
 
@@ -4482,16 +4492,23 @@ function renderTargetSpeakerResults() {
     target.excludeOverlap = event.target.checked;
     renderTargetSpeakerResults();
   });
+  document.getElementById('btn-ts-toggle-filtered')?.addEventListener('click', () => {
+    target.hideFiltered = !target.hideFiltered;
+    renderTargetSpeakerResults();
+  });
   results.querySelectorAll('.ts-play-segment').forEach(button => button.addEventListener('click', () => {
     const segment = scored.segments.find(item => targetSegmentKey(item) === button.dataset.key);
     if (segment) toggleTargetSegmentPreview(segment);
   }));
   updateTargetSegmentPlaybackButtons();
   results.querySelectorAll('.ts-label-segment').forEach(button => button.addEventListener('click', () => {
+    const scrollTop = results.querySelector('.target-segments-scroll')?.scrollTop || 0;
     target.labels[button.dataset.key] = target.labels[button.dataset.key] === button.dataset.label
       ? 'unreviewed'
       : button.dataset.label;
     renderTargetSpeakerResults();
+    const scroll = results.querySelector('.target-segments-scroll');
+    if (scroll) scroll.scrollTop = scrollTop;
   }));
   document.getElementById('btn-ts-save-evaluation')?.addEventListener('click', saveTargetSpeakerEvaluation);
   document.getElementById('btn-ts-export-qualified')?.addEventListener('click', exportTargetSpeakerSegments);
@@ -4553,7 +4570,7 @@ async function exportTargetSpeakerSegments() {
   const scored = target.scored;
   if (!scored) { showToast('Score a target speaker first', 'error'); return; }
   const qualified = scored.segments.filter(segment => target.labels[targetSegmentKey(segment)] === 'qualified');
-  if (!qualified.length) { showToast('Qualify at least one segment before export', 'error'); return; }
+  if (!qualified.length) { showToast('Accept at least one segment before export', 'error'); return; }
   const mode = el.diarExtractModeSelect?.value || 'concatenated';
 
   try {
@@ -4575,7 +4592,7 @@ async function exportTargetSpeakerSegments() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Export failed');
     await fetchAudioList();
-    showToast(`Exported ${qualified.length} qualified target-speaker segments`, 'success');
+    showToast(`Exported ${qualified.length} accepted target-speaker segments`, 'success');
   } catch (err) {
     showToast(`Export failed: ${err.message}`, 'error');
   }

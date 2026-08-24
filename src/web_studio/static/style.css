@@ -6169,9 +6169,31 @@ button {
 }
 
 .target-segments-scroll table { min-width: 900px; }
-.target-row-dropped { opacity: .48; }
+.target-row-dropped > td:not(:last-child) { opacity: .48; }
 .target-label-actions { display: flex; gap: 4px; }
+.target-label-rejected {
+  color: #fff;
+  background: var(--danger, #ef4444);
+  border: 1px solid var(--danger, #ef4444);
+}
+.target-label-rejected:hover { background: #dc2626; }
 .target-local-id { display: block; margin-top: 2px; color: var(--text-muted); font-family: var(--font-mono); }
+
+.target-segments-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  color: var(--text-secondary);
+  font-size: .76rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.target-segments-toolbar .btn:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
 
 .target-evaluation-actions {
   display: flex;
