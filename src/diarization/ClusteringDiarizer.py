@@ -345,6 +345,9 @@ class ClusteringDiarizer(BaseDiarizer, ManagedModel):
                 backend="nemo-clustering",
                 model_id=f"{self.vad_model}+{self.speaker_model}",
             ),
+            channel_id=audio.channel_id,
+            channel_name=audio.channel_name,
+            channel_url=audio.channel_url,
         )
 
     def _write_manifest(

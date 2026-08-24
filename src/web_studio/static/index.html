@@ -276,6 +276,10 @@
                 <span class="pill-label">File Size</span>
                 <span class="pill-val" id="meta-size">0.0 MB</span>
               </div>
+              <div class="meta-pill meta-pill-channel">
+                <span class="pill-label">YouTube Channel</span>
+                <span class="pill-val" id="meta-channel">Unassigned</span>
+              </div>
             </div>
 
             <!-- Fingerprint Line -->
@@ -648,6 +652,49 @@
               </button>
             </div>
           </div>
+
+          <div class="target-workflow-rail" aria-label="Target speaker preparation workflow">
+            <button type="button" class="target-workflow-step" id="btn-ts-go-source">
+              <span class="target-workflow-number">1</span>
+              <span><strong>Fetch channel video</strong><small id="ts-workflow-channel">Choose a YouTube source</small></span>
+            </button>
+            <button type="button" class="target-workflow-step" id="btn-ts-go-separation">
+              <span class="target-workflow-number">2</span>
+              <span><strong>Isolate vocals</strong><small>Run HTDemucs, then use its vocal stem</small></span>
+            </button>
+            <button type="button" class="target-workflow-step" id="btn-ts-go-enroll">
+              <span class="target-workflow-number">3</span>
+              <span><strong>Cut & enroll targets</strong><small>Create clean clips for this channel</small></span>
+            </button>
+            <button type="button" class="target-workflow-step active" id="btn-ts-go-results">
+              <span class="target-workflow-number">4</span>
+              <span><strong>Diarize & evaluate</strong><small>Compare targets, tune thresholds, label quality</small></span>
+            </button>
+          </div>
+
+          <details class="ts-enroll-details" id="ts-enroll-details">
+            <summary class="text-sm">3 · Enroll a channel target from clean reference cuts</summary>
+            <p class="text-xs text-muted" style="margin: 8px 0;">Create 2–3 single-speaker cuts in Workspace, then bind them to the selected video's YouTube channel.</p>
+            <div class="diar-params-row" style="margin-top: 8px;">
+              <div class="form-group">
+                <label class="form-label" for="ts-new-profile-name">Profile Name</label>
+                <input type="text" id="ts-new-profile-name" class="text-input" placeholder="e.g. khanh_vy">
+              </div>
+              <div class="form-group flex-1">
+                <label class="form-label" for="ts-clip-select">Reference Clips (2-3 single-speaker cuts, ~10s each; Ctrl/Cmd-click to multi-select)</label>
+                <select id="ts-clip-select" class="select-input" multiple size="6"></select>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="ts-profile-channel">YouTube Channel</label>
+                <input type="text" id="ts-profile-channel" class="text-input" readonly placeholder="Inferred from selected video">
+              </div>
+            </div>
+            <div class="flex-row items-center gap-3">
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-ts-open-cutter">Open Workspace cutter</button>
+              <label class="text-xs text-muted"><input type="checkbox" id="ts-overwrite-check"> Overwrite existing profile</label>
+              <button class="btn btn-secondary btn-sm" id="btn-ts-create-profile">Enroll Profile</button>
+            </div>
+          </details>
 
           <!-- Setup 2-Column Grid -->
           <div class="diar-setup-grid" id="diar-setup-body">
@@ -1065,7 +1112,7 @@
               </button>
               <button class="diar-subtab-btn" data-subtab="target">
                 <span class="subtab-icon">🎯</span>
-                <span class="subtab-label">Target Speaker</span>
+                <span class="subtab-label">Target Speaker & Evaluation</span>
                 <span class="subtab-chip" id="ts-kept-chip">—</span>
               </button>
               <button class="diar-subtab-btn" data-subtab="export">
@@ -1130,8 +1177,8 @@
             <div class="diar-subview-panel hidden" id="diar-subview-target">
               <div class="subview-header">
                 <div>
-                  <h3 class="subview-title">Target Speaker Verification</h3>
-                  <p class="subview-desc">Enroll a speaker from clean single-speaker reference cuts, score every diarization turn by embedding similarity, and keep only confident matches (precision-first).</p>
+                  <h3 class="subview-title">Channel Target Speaker Evaluation</h3>
+                  <p class="subview-desc">Select one or more target identities for this video, compare their filters side by side, tune each threshold, and manually qualify every proposed segment.</p>
                 </div>
               </div>
 
@@ -1139,8 +1186,8 @@
               <div class="diar-inspector-toolbar">
                 <div class="toolbar-left">
                   <div class="form-group mb-0">
-                    <label class="text-xs text-muted" for="ts-profile-select">Profile:</label>
-                    <select id="ts-profile-select" class="select-input select-sm">
+                    <label class="text-xs text-muted" for="ts-profile-select">Target profiles (multi-select):</label>
+                    <select id="ts-profile-select" class="select-input" multiple size="4">
                       <option value="">No profiles enrolled</option>
                     </select>
                   </div>
@@ -1148,78 +1195,19 @@
                   <button class="btn btn-xs btn-ghost text-destructive" id="btn-ts-delete-profile" title="Delete the selected profile">Delete</button>
                 </div>
                 <button class="btn btn-primary btn-sm" id="btn-ts-score" title="Embed every turn and compare to the profile centroid">
-                  🎯 Score Turns Against Profile
+                  🎯 Score Selected Targets
                 </button>
               </div>
 
-              <!-- Enrollment Box -->
-              <details class="ts-enroll-details" id="ts-enroll-details">
-                <summary class="text-sm">➕ Enroll a new profile from session clips</summary>
-                <div class="diar-params-row" style="margin-top: 8px;">
-                  <div class="form-group">
-                    <label class="form-label" for="ts-new-profile-name">Profile Name</label>
-                    <input type="text" id="ts-new-profile-name" class="text-input" placeholder="e.g. khanh_vy">
-                  </div>
-                  <div class="form-group flex-1">
-                    <label class="form-label" for="ts-clip-select">Reference Clips (2-3 single-speaker cuts, ~10s each; Ctrl/Cmd-click to multi-select)</label>
-                    <select id="ts-clip-select" class="select-input" multiple size="6"></select>
-                  </div>
-                </div>
-                <div class="flex-row items-center gap-3">
-                  <label class="text-xs text-muted"><input type="checkbox" id="ts-overwrite-check"> Overwrite existing profile</label>
-                  <button class="btn btn-secondary btn-sm" id="btn-ts-create-profile">Enroll Profile</button>
-                </div>
-              </details>
-
-              <div class="text-xs text-muted" id="ts-score-status" style="margin: 8px 0;">Run diarization first, then score its turns against an enrolled profile.</div>
-
-              <!-- Threshold / Filter Toolbar (visible after scoring) -->
-              <div class="diar-inspector-toolbar" id="ts-filter-toolbar" style="display: none;">
-                <div class="toolbar-left">
-                  <div class="form-group mb-0 flex-row items-center gap-2" style="min-width: 260px;">
-                    <label class="text-xs text-muted" for="ts-threshold-slider">Similarity ≥</label>
-                    <input type="range" id="ts-threshold-slider" min="0" max="1" step="0.01" value="0.60" style="flex: 1;">
-                    <span class="badge badge-info" id="ts-threshold-value">0.60</span>
-                  </div>
-                  <div class="form-group mb-0">
-                    <div class="filter-num-group" title="Drop kept segments shorter than this duration">
-                      <span class="filter-num-label">Min ≥</span>
-                      <input type="number" id="ts-min-dur" class="filter-num-input" min="0" max="60" step="0.5" value="1.5">
-                      <span class="filter-num-unit">s</span>
-                    </div>
-                  </div>
-                  <div class="form-group mb-0">
-                    <button type="button" id="btn-ts-exclude-overlap" class="btn btn-xs btn-ghost diar-overlap-filter-btn active" title="Drop segments overlapping another speaker's turns" aria-pressed="true">
-                      Exclude Overlaps
-                    </button>
-                  </div>
-                  <span class="badge badge-accent" id="ts-kept-badge">0 kept</span>
-                  <span class="badge badge-ghost" id="ts-kept-duration-badge">0.0s speech</span>
-                </div>
-                <button class="btn btn-secondary btn-sm" id="btn-ts-export-kept" title="Extract kept segments as one audio item">
-                  💾 Export Kept Segments
-                </button>
+              <div class="target-channel-context" id="ts-channel-context">
+                <span class="badge badge-accent">Channel scope</span>
+                <strong id="ts-channel-context-name">No YouTube channel selected</strong>
+                <span id="ts-channel-context-detail">Choose a channel video or vocal stem above.</span>
               </div>
+              <div class="text-xs text-muted" id="ts-score-status" style="margin: 8px 0;">Run diarization first, then select one or more channel profiles to compare.</div>
 
-              <!-- Scored Segments Table -->
-              <div class="turns-table-wrapper diar-turns-table-wrapper" id="ts-table-wrapper" style="display: none;">
-                <table class="turns-table diar-turns-table">
-                  <thead>
-                    <tr>
-                      <th style="width: 50px;">#</th>
-                      <th style="width: 150px;">Start (s)</th>
-                      <th style="width: 150px;">End (s)</th>
-                      <th style="width: 90px;">Duration</th>
-                      <th style="width: 110px;">Similarity</th>
-                      <th style="width: 130px;">Speaker</th>
-                      <th style="width: 90px;">Overlap</th>
-                      <th style="width: 80px;">Kept</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody id="ts-table-body"></tbody>
-                </table>
-              </div>
+              <div class="target-evaluation-summary" id="ts-evaluation-summary" style="display: none;"></div>
+              <div class="target-comparison-grid" id="ts-comparison-grid"></div>
             </div>
 
             <!-- Subview 2: Multi-Format Export Studio -->

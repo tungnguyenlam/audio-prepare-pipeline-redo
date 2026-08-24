@@ -28,7 +28,7 @@ from src.diarization.schemas import (
 from src.utils.AudioClass import Audio, _sanitize_filename_component
 
 DEFAULT_EMBEDDING_MODEL_ID = "pyannote/wespeaker-voxceleb-resnet34-LM"
-PROFILE_SCHEMA_VERSION = "1.0"
+PROFILE_SCHEMA_VERSION = "1.1"
 MIN_EMBEDDING_DURATION_S = 0.15
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -50,6 +50,9 @@ class SpeakerProfile:
     clip_paths: list[Path]
     created_at: str
     profile_dir: Path
+    channel_id: str | None = None
+    channel_name: str | None = None
+    channel_url: str | None = None
 
 
 class SpeakerVerifier(ManagedModel):
@@ -109,6 +112,9 @@ class SpeakerVerifier(ManagedModel):
         clips: list[Audio],
         *,
         overwrite: bool = False,
+        channel_id: str | None = None,
+        channel_name: str | None = None,
+        channel_url: str | None = None,
     ) -> SpeakerProfile:
         """Create a speaker profile from manually cut reference clips.
 
@@ -119,6 +125,10 @@ class SpeakerVerifier(ManagedModel):
             name: Profile name (sanitized to a filesystem-safe identifier).
             clips: Single-speaker reference clips (file-backed).
             overwrite: Replace an existing profile with the same name.
+            channel_id: Channel this target identity belongs to. When omitted,
+                it is inferred from the reference clips.
+            channel_name: Human-readable channel name; inferred when omitted.
+            channel_url: Canonical channel URL; inferred when omitted.
 
         Returns:
             The stored profile.
@@ -136,6 +146,21 @@ class SpeakerVerifier(ManagedModel):
         for clip in clips:
             if not Path(clip.path).is_file():
                 raise FileNotFoundError(f"Clip file does not exist: {clip.path}")
+
+        def infer_channel(field: str, explicit: str | None) -> str | None:
+            if explicit:
+                return str(explicit)
+            values = {str(getattr(clip, field)) for clip in clips if getattr(clip, field)}
+            if len(values) > 1:
+                raise SpeakerVerifierError(
+                    f"Reference clips span multiple {field.replace('_', ' ')} values; "
+                    "enroll one channel-specific profile at a time"
+                )
+            return next(iter(values), None)
+
+        resolved_channel_id = infer_channel("channel_id", channel_id)
+        resolved_channel_name = infer_channel("channel_name", channel_name)
+        resolved_channel_url = infer_channel("channel_url", channel_url)
 
         profile_dir = self.profiles_dir / safe_name
         if profile_dir.exists():
@@ -161,6 +186,9 @@ class SpeakerVerifier(ManagedModel):
             "name": safe_name,
             "created_at": created_at,
             "clips": clip_names,
+            "channel_id": resolved_channel_id,
+            "channel_name": resolved_channel_name,
+            "channel_url": resolved_channel_url,
         }
         (profile_dir / "profile.json").write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2),
@@ -172,6 +200,9 @@ class SpeakerVerifier(ManagedModel):
             clip_paths=[clips_dir / clip_name for clip_name in clip_names],
             created_at=created_at,
             profile_dir=profile_dir,
+            channel_id=resolved_channel_id,
+            channel_name=resolved_channel_name,
+            channel_url=resolved_channel_url,
         )
 
     def load_profile(self, name: str) -> SpeakerProfile:
@@ -193,6 +224,9 @@ class SpeakerVerifier(ManagedModel):
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             clip_names = list(manifest["clips"])
             created_at = str(manifest.get("created_at", ""))
+            channel_id = manifest.get("channel_id")
+            channel_name = manifest.get("channel_name")
+            channel_url = manifest.get("channel_url")
         except (json.JSONDecodeError, KeyError, TypeError) as exc:
             raise SpeakerVerifierError(
                 f"Malformed profile manifest: {manifest_path}"
@@ -210,6 +244,9 @@ class SpeakerVerifier(ManagedModel):
             clip_paths=clip_paths,
             created_at=created_at,
             profile_dir=profile_dir,
+            channel_id=str(channel_id) if channel_id else None,
+            channel_name=str(channel_name) if channel_name else None,
+            channel_url=str(channel_url) if channel_url else None,
         )
 
     def list_profiles(self) -> list[str]:
@@ -354,6 +391,9 @@ class SpeakerVerifier(ManagedModel):
                 backend="pyannote-embedding",
                 model_id=self.model_id,
             ),
+            channel_id=audio.channel_id,
+            channel_name=audio.channel_name,
+            channel_url=audio.channel_url,
         )
 
     @staticmethod
@@ -392,6 +432,9 @@ class SpeakerVerifier(ManagedModel):
             profile_name=scored.profile_name,
             segments=kept,
             model=scored.model,
+            channel_id=scored.channel_id,
+            channel_name=scored.channel_name,
+            channel_url=scored.channel_url,
         )
 
     def _profile_centroid(self, profile: SpeakerProfile) -> Any:

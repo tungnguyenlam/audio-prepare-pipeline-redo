@@ -95,7 +95,7 @@
             <div class="nav-icon">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
             </div>
-            <span class="nav-text">Batch Diarization</span>
+            <span class="nav-text">Channel Speaker Pipeline</span>
           </button>
 
           <button class="sidebar-nav-item" data-tab="tab-benchmark" id="btn-tab-benchmark">
@@ -563,6 +563,11 @@
                   <input type="text" id="yt-tags" class="form-input" placeholder="e.g. podcast, clean_vocals, interview_2026">
                 </div>
 
+                <label class="checkbox-pill channel-scope-toggle">
+                  <input type="checkbox" id="yt-group-by-channel" checked>
+                  <span><strong>Organize by YouTube channel</strong><br><small>Creates one channel collection automatically and keeps every video, stem, diarization, and target-speaker result attached to it.</small></span>
+                </label>
+
                 <button type="submit" class="btn btn-primary w-full btn-lg" id="btn-submit-yt-ingest">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                   <span>Launch YouTube Batch Ingest</span>
@@ -665,6 +670,12 @@
                 <option value="all">All Datasets</option>
               </select>
             </div>
+            <div class="filter-group">
+              <label class="filter-label" for="item-filter-channel">Channel:</label>
+              <select id="item-filter-channel" class="form-select form-select-sm select-channel-list">
+                <option value="all">All channels</option>
+              </select>
+            </div>
             <div class="filter-group flex-1">
               <label class="filter-label" for="item-filter-query">Search:</label>
               <input type="text" id="item-filter-query" class="form-input form-input-sm" placeholder="Filter title, source ID, or tags...">
@@ -701,6 +712,7 @@
                   <th width="38"><input type="checkbox" id="check-select-all" aria-label="Select all rows"></th>
                   <th width="50">Audition</th>
                   <th>Title / Source ID</th>
+                  <th>YouTube Channel</th>
                   <th>Dataset</th>
                   <th>Duration</th>
                   <th>Sample Rate</th>
@@ -711,7 +723,7 @@
                 </tr>
               </thead>
               <tbody id="items-tbody">
-                <tr><td colspan="10" class="text-center text-muted">Loading dataset items...</td></tr>
+                <tr><td colspan="11" class="text-center text-muted">Loading channel items...</td></tr>
               </tbody>
             </table>
           </div>
@@ -734,6 +746,10 @@
                   <option value="Default">Default</option>
                   <option value="Speech Corpus">Speech Corpus</option>
                   <option value="Music BGM">Music BGM</option>
+                </select>
+                <label class="form-label" for="sep-channel-select" style="margin-top: 10px;">YouTube Channel Scope</label>
+                <select id="sep-channel-select" class="form-select select-channel-list">
+                  <option value="all">All channels</option>
                 </select>
                 <div class="scope-alert" id="sep-target-count-hint">
                   <span class="dot-pulse-green"></span>
@@ -845,6 +861,10 @@
                   <option value="Speech Corpus">Speech Corpus</option>
                   <option value="Default">Default</option>
                   <option value="all">Entire Library</option>
+                </select>
+                <label class="form-label" for="diar-channel-select" style="margin-top: 10px;">YouTube Channel Scope</label>
+                <select id="diar-channel-select" class="form-select select-channel-list">
+                  <option value="all">All channels</option>
                 </select>
               </div>
 
@@ -997,10 +1017,16 @@
                 <div class="label-with-tool">
                   <label class="form-label">Target Speaker Filter</label>
                 </div>
-                <p class="view-subtitle" style="margin: 0 0 8px;">Keep only segments confidently matching an enrolled speaker profile. Requires items already diarized. Enroll profiles in SonicStudio (Diarization → Target Speaker) or via <code>scripts/target_speaker.py</code>.</p>
+                <p class="view-subtitle" style="margin: 0 0 8px;">Channel workflow: select a YouTube channel, diarize its videos, then apply one or more channel-bound target identities. Use SonicStudio for threshold tuning and manual segment qualification.</p>
               </div>
 
               <div class="form-row">
+                <div class="form-item flex-1">
+                  <label class="form-label" for="ts-channel-select">YouTube Channel</label>
+                  <select id="ts-channel-select" class="form-select select-channel-list">
+                    <option value="all">All channels</option>
+                  </select>
+                </div>
                 <div class="form-item flex-1">
                   <label class="form-label" for="ts-dataset-select">Target Dataset (diarized items)</label>
                   <select id="ts-dataset-select" class="form-select select-dataset-list">
@@ -1010,7 +1036,7 @@
                 <div class="form-item flex-1">
                   <label class="form-label" for="ts-pipe-profile-select">Speaker Profile</label>
                   <div class="label-with-tool" style="gap: 6px;">
-                    <select id="ts-pipe-profile-select" class="form-select" style="flex: 1;">
+                    <select id="ts-pipe-profile-select" class="form-select" multiple size="4" style="flex: 1;">
                       <option value="">No profiles enrolled</option>
                     </select>
                     <button type="button" class="btn btn-ghost btn-xs" id="btn-ts-pipe-refresh">↻</button>
@@ -1043,7 +1069,7 @@
 
               <button type="submit" class="btn btn-primary btn-lg" id="btn-submit-target-speaker">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>
-                <span>Launch Target Speaker Filter Job</span>
+                <span>Launch Channel Target Filter Jobs</span>
               </button>
             </form>
           </div>

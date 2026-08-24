@@ -108,6 +108,10 @@ class AudioCutter:
             dest,
             source_id=f"{audio.source_id}_{start_s:.3f}-{end_s:.3f}",
             title=f"{audio.title or audio.source_id} [{start_s:.3f}s-{end_s:.3f}s]",
+            source_url=audio.source_url,
+            channel_id=audio.channel_id,
+            channel_name=audio.channel_name,
+            channel_url=audio.channel_url,
             native_sample_rate=audio.native_sample_rate,
             history=(*audio.history, f"cut_{start_s:.2f}s-{end_s:.2f}s"),
         )

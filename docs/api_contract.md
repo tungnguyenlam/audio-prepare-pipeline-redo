@@ -61,8 +61,10 @@ Downloads one URL and returns an `Audio` object.
    `asr`), then normalizes to the crawler's configured format and channel
    count (default 1 / mono). When `sample_rate` is an int, ffmpeg resamples
    to that rate; when `sample_rate` is `None`, the source rate is kept.
-   Saved as `<sanitized_title>__<source_id>.<format>`.
-6. Generates companion identity metadata sidecar JSON (`<stem>.json`) alongside the audio file.
+   Saved as `<channel_id-or-name>/<sanitized_title>__<source_id>.<format>`.
+6. Records `source_url`, `channel_id`, `channel_name`, and `channel_url` from
+   yt-dlp metadata, then generates a companion identity sidecar JSON
+   (`<stem>.json`) alongside the audio file.
 7. Returns an `Audio` object whose `path` points to the final output.
 8. Removes the temporary session directory even if processing fails.
 
@@ -92,7 +94,7 @@ yt-dlp process group.
 `Audio` is a file-backed dataclass. Its fields are documented in
 [`data_contract.md`](data_contract.md).
 
-### `Audio.from_file(path, *, source_id=None, title=None, native_sample_rate=None, history=None) -> Audio`
+### `Audio.from_file(path, *, source_id=None, title=None, source_url=None, channel_id=None, channel_name=None, channel_url=None, native_sample_rate=None, history=None) -> Audio`
 
 Creates an `Audio` object for an existing file.
 
@@ -100,8 +102,9 @@ Creates an `Audio` object for an existing file.
 
 - Resolves `path` to an absolute path.
 - If `{stem}.json` exists next to the audio (written by `save_to` /
-  `quick_save`), restores `source_id`, `title`, `native_sample_rate`, and
-  `history` from it. Explicit keyword arguments override the sidecar.
+  `quick_save`), restores video identity, source/channel URL and identity,
+  `native_sample_rate`, and `history` from it. Explicit keyword arguments
+  override the sidecar.
 - Uses the file stem as the default `source_id` and `title` when no sidecar
   is present.
 - Detects the extension as `format`.
@@ -286,7 +289,8 @@ Subclasses must implement `_load() -> None` and `_unload() -> None`.
 **Defined in:** `src/diarization/BaseDiarizer.py`
 
 Abstract interface for converting audio into backend-independent speaker
-information.
+information. Every backend copies the input audio's optional `channel_id`,
+`channel_name`, and `channel_url` into the result.
 
 ### `PyannoteDiarizer(model_id=..., device=..., token=..., num_speakers=..., min_speakers=..., max_speakers=...)`
 
@@ -519,7 +523,7 @@ lifecycle. Profiles are stored under `profiles_dir` (default
 `profile.json` manifest; clips are the source of truth and embeddings are
 recomputed at scoring time.
 
-### `SpeakerVerifier.enroll(name, clips, *, overwrite=False) -> SpeakerProfile`
+### `SpeakerVerifier.enroll(name, clips, *, overwrite=False, channel_id=None, channel_name=None, channel_url=None) -> SpeakerProfile`
 
 Does **not** require the model to be loaded.
 
@@ -527,7 +531,9 @@ Does **not** require the model to be loaded.
 
 - Sanitizes `name` to a filesystem-safe identifier.
 - Copies each clip file into `<profiles_dir>/<name>/clips/clip_NN.<ext>` and
-  writes `profile.json` (schema version, name, created_at, clip names).
+  writes `profile.json` (schema version, name, created_at, clip names, and
+  channel identity). Channel fields are inferred from the clips when omitted;
+  clips from multiple channels are rejected unless the channel is explicit.
 - Replaces an existing profile only when `overwrite=True`.
 
 **Raises:** `SpeakerVerifierError` for empty clip lists, invalid names, or an
@@ -556,6 +562,7 @@ Requires `load()` (or a `with` block) first.
   speaker.
 - Returns **all** turns scored; no filtering is applied.
 - Includes `DiarizationModelInfo` with backend `"pyannote-embedding"`.
+- Copies channel identity from the input `Audio` into the result.
 
 **Raises:** `RuntimeError` if not loaded; `FileNotFoundError` for a missing
 audio file; `SpeakerVerifierError` if no profile clip can be embedded.
@@ -565,7 +572,8 @@ audio file; `SpeakerVerifierError` if no profile clip can be embedded.
 Pure post-processing; no model needed. Returns a new result keeping only
 segments with `similarity >= threshold`, duration `>= min_duration_s`, and
 (when `exclude_overlap`) no overlap with other speakers' turns. Precision-first:
-different thresholds can be tried cheaply on one `score` result.
+different thresholds can be tried cheaply on one `score` result. Channel
+identity is preserved from the scored result.
 
 ### `SpeakerVerifier._load() -> None` and `_unload() -> None`
 
@@ -645,8 +653,10 @@ The repository provides two specialized web platforms:
   launchers start the same unified backend.
 
 ### `src/web_studio/` (SonicStudio API domain and frontend)
-- **Role:** Interactive workbench for upload/YouTube ingest, cutting, stem
-  separation, diarization, A/B audition, and library browsing.
+- **Role:** Interactive, channel-first target-speaker workbench for YouTube
+  ingest, vocal separation, reference cutting/enrollment, diarization,
+  multi-profile threshold comparison, manual segment qualification, A/B
+  audition, and library browsing.
 - **Frontend layout:** Flat `static/index.html` + `app.js` + `style.css` (no
   HTML partial composer). Tabs: Workspace, Separation, Diarization, Audition,
   Library.
@@ -677,15 +687,28 @@ The repository provides two specialized web platforms:
   returns host/GPU metrics from `hardware_monitor`.
 - **Target speaker endpoints (registered once by Studio, shared by both
   frontends):** `GET/POST /api/speaker-profiles` list/enroll profiles
-  (enrollment takes `name` + `clip_audio_ids` of session cuts),
+  (enrollment takes `name` + `clip_audio_ids` of session cuts and optional
+  channel fields),
   `DELETE /api/speaker-profiles/{name}` removes one, and
   `POST /api/diarization/target-speaker-score` scores client-supplied turns
   against a profile as a background task (`SpeakerVerifier.score`). Threshold
   filtering and export happen client-side in the Diarization tab's
-  "Target Speaker" panel (export reuses `/api/diarization/extract-speaker`).
+  "Target Speaker & Evaluation" panel. Multiple profiles can be scored and
+  tuned side by side; manual segment labels and the percentage qualified over
+  all diarized segments are persisted through `POST /api/evaluations`.
 
 ### `src/web_pipeline/` (SonicPipeline API domain and frontend)
-- **Role:** Large-scale batch engine for high-throughput ingestion, task queue orchestration, dataset curation, bulk separation, batch diarization, separation benchmark matrix evaluation, and ML manifest generation (JSONL/CSV).
+- **Role:** Large-scale channel-oriented batch engine for high-throughput
+  ingestion, task queue orchestration, dataset curation, bulk separation,
+  batch diarization, target filtering, benchmark evaluation, and manifests.
+- **Channel endpoints:** `GET /api/channels` returns per-channel item, duration,
+  separation, diarization, and target-filter coverage. `GET /api/items` accepts
+  `channel_id`. YouTube batch ingest groups items into `Channel · <name>`
+  collections by default while retaining the video `source_id`.
+- **Channel-scoped jobs:** `POST /api/jobs/batch_separation` and
+  `POST /api/jobs/batch_diarization` accept optional `channel_id` alongside
+  `dataset`; when item IDs are omitted, both filters are applied to resolve the
+  batch. Their Pipeline forms expose the same channel selector.
 - **Frontend layout:** Flat `static/index.html` + `app.js` + `style.css`.
 - **Job progress:** Server-Sent Events on `GET /api/events` (queue/job updates
   plus telemetry heartbeats). Initial hydrate still uses `GET /api/jobs`.
@@ -694,13 +717,14 @@ The repository provides two specialized web platforms:
   `POST /api/queue/controls` `set_concurrency` sets **workers per GPU**
   (default 1), not a single global worker pool.
 - **Target speaker filter job:** `POST /api/jobs/target_speaker_filter`
-  (params: `item_ids`/`dataset`, `profile`, `threshold`, `min_duration_s`,
+  (params: `item_ids`/`dataset`/`channel_id`, `profile`, `threshold`, `min_duration_s`,
   `exclude_overlap`, `export_cuts`, `device`, `hf_token`) scores items with
   attached diarization against an enrolled profile, writes
-  `.data/pipeline/target_speaker/<item_id>/target_speaker.json` (kept plus all
+  `.data/pipeline/target_speaker/<item_id>/target_speaker__<profile>.json` (kept plus all
   scored segments), optionally exports kept segments as wav cuts, and attaches
-  a summary to the registry entry under `metadata["target_speaker"]` with a
-  `target:<profile>` tag.
+  a summary (including qualified segment/duration percentages) under both the
+  last-result compatibility key `metadata["target_speaker"]` and the
+  per-profile map `metadata["target_speakers"]`, with a `target:<profile>` tag.
 
 **Telemetry payload:** The `gpu` object includes `load_percent`, host-level
 `used_vram_mb`, `free_vram_mb`, and `total_vram_mb`, plus the current process's

@@ -45,6 +45,10 @@ class AudioItem:
     channels: int
     native_sample_rate: int
     format: str
+    source_url: Optional[str] = None
+    channel_id: Optional[str] = None
+    channel_name: Optional[str] = None
+    channel_url: Optional[str] = None
     tags: List[str] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
     stems: Dict[str, Dict[str, str]] = field(default_factory=dict)  # model -> {stem_name: path}
@@ -67,6 +71,10 @@ class AudioItem:
             channels=int(data.get("channels", 1)),
             native_sample_rate=int(data.get("native_sample_rate", data.get("sample_rate", 44100))),
             format=data.get("format", "WAV"),
+            source_url=data.get("source_url") or data.get("metadata", {}).get("original_url"),
+            channel_id=data.get("channel_id") or data.get("metadata", {}).get("channel_id"),
+            channel_name=data.get("channel_name") or data.get("metadata", {}).get("channel_name"),
+            channel_url=data.get("channel_url") or data.get("metadata", {}).get("channel_url"),
             tags=list(data.get("tags", [])),
             created_at=float(data.get("created_at", time.time())),
             stems=dict(data.get("stems", {})),
@@ -85,6 +93,10 @@ class AudioItem:
             channels=self.channels,
             format=self.format,
             native_sample_rate=self.native_sample_rate,
+            source_url=self.source_url,
+            channel_id=self.channel_id,
+            channel_name=self.channel_name,
+            channel_url=self.channel_url,
         )
 
 
@@ -182,11 +194,15 @@ class DatasetManager:
             title=audio.title or Path(audio.path).stem,
             path=str(Path(audio.path).resolve()),
             dataset=dataset,
-            duration=round(audio.duration_seconds, 3),
+            duration=round(audio.duration_s or 0.0, 3),
             sample_rate=audio.sample_rate,
             channels=audio.channels,
             native_sample_rate=audio.native_sample_rate or audio.sample_rate,
             format=audio.format,
+            source_url=audio.source_url,
+            channel_id=audio.channel_id,
+            channel_name=audio.channel_name,
+            channel_url=audio.channel_url,
             tags=tags_list,
             created_at=time.time(),
             metadata=metadata or {},
@@ -204,6 +220,7 @@ class DatasetManager:
         dataset: Optional[str] = None,
         query: Optional[str] = None,
         tag: Optional[str] = None,
+        channel_id: Optional[str] = None,
         has_stems: Optional[bool] = None,
         has_diarization: Optional[bool] = None,
         min_duration: Optional[float] = None,
@@ -223,11 +240,18 @@ class DatasetManager:
             q_lower = query.lower()
             results = [
                 x for x in results
-                if q_lower in x.title.lower() or q_lower in x.source_id.lower() or any(q_lower in t.lower() for t in x.tags)
+                if q_lower in x.title.lower()
+                or q_lower in x.source_id.lower()
+                or q_lower in (x.channel_name or "").lower()
+                or q_lower in (x.channel_id or "").lower()
+                or any(q_lower in t.lower() for t in x.tags)
             ]
 
         if tag:
             results = [x for x in results if tag in x.tags]
+
+        if channel_id and channel_id != "all":
+            results = [x for x in results if x.channel_id == channel_id]
 
         if has_stems is not None:
             results = [x for x in results if (bool(x.stems) == has_stems)]
@@ -318,8 +342,10 @@ class DatasetManager:
         if not item:
             return
         item.metadata["target_speaker"] = summary
+        profiles = item.metadata.setdefault("target_speakers", {})
         profile = summary.get("profile")
         if profile:
+            profiles[str(profile)] = summary
             tag_name = f"target:{profile}"
             if tag_name not in item.tags:
                 item.tags.append(tag_name)
@@ -390,6 +416,36 @@ class DatasetManager:
             s["total_duration_hours"] = round(s["total_duration_seconds"] / 3600.0, 3)
 
         return list(stats.values())
+
+    def list_channels(self) -> List[Dict[str, Any]]:
+        """List YouTube channels with aggregate processing coverage."""
+        channels: Dict[str, Dict[str, Any]] = {}
+        for item in self._items.values():
+            if not item.channel_id and not item.channel_name:
+                continue
+            key = item.channel_id or item.channel_name or "unknown_channel"
+            summary = channels.setdefault(
+                key,
+                {
+                    "channel_id": item.channel_id,
+                    "channel_name": item.channel_name or item.channel_id or "Unknown channel",
+                    "channel_url": item.channel_url,
+                    "item_count": 0,
+                    "total_duration_seconds": 0.0,
+                    "separated_count": 0,
+                    "diarized_count": 0,
+                    "target_filtered_count": 0,
+                },
+            )
+            summary["item_count"] += 1
+            summary["total_duration_seconds"] += item.duration
+            summary["separated_count"] += int(bool(item.stems))
+            summary["diarized_count"] += int(bool(item.diarization))
+            summary["target_filtered_count"] += int(bool(item.metadata.get("target_speaker")))
+
+        for summary in channels.values():
+            summary["total_duration_seconds"] = round(summary["total_duration_seconds"], 1)
+        return sorted(channels.values(), key=lambda x: x["channel_name"].lower())
 
     def create_dataset(self, name: str, description: str = "", tags: Optional[List[str]] = None) -> Dict[str, Any]:
         """Create a new dataset collection."""

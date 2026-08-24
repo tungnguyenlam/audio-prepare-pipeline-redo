@@ -1,0 +1,51 @@
+# Data contract
+
+## `Audio`
+
+`Audio` is file-backed. Every derived file keeps the source video and YouTube
+channel identity unless a caller explicitly replaces it.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `path` | `Path` | Current audio artifact on disk. |
+| `source_id` | `str` | Video/file identity. A YouTube video's ID remains stable across derivatives. |
+| `title` | `str \| None` | Video/file display title. |
+| `source_url` | `str \| None` | Original video/source URL. |
+| `channel_id` | `str \| None` | Stable YouTube channel or uploader ID. |
+| `channel_name` | `str \| None` | Human-readable YouTube channel name. |
+| `channel_url` | `str \| None` | Canonical YouTube channel URL. |
+| `sample_rate` | `int \| None` | Current file rate. |
+| `native_sample_rate` | `int \| None` | Original capture rate. |
+| `duration_s` | `float \| None` | Current file duration. |
+| `channels` | `int \| None` | Current channel count. |
+| `format` | `str` | Current file extension/format. |
+| `history` | `tuple[str, ...]` | Ordered transformation fingerprints. |
+
+The adjacent `audio.sidecar` JSON stores the same identity and rate fields.
+`Audio.from_file()` restores them, and `Audio.with_file()` preserves them for
+separation, cutting, resampling, and other derived artifacts.
+
+## Diarization and target-speaker results
+
+`DiarizationResult` and `TargetSpeakerResult` expose optional `channel_id`,
+`channel_name`, and `channel_url` alongside their video-level `audio_id`.
+Diarizer backends copy these fields from the input `Audio`; target-speaker
+filtering preserves them from the scored result.
+
+## `SpeakerProfile`
+
+A profile stores `name`, reference `clip_paths`, `created_at`, and optional
+`channel_id`, `channel_name`, and `channel_url`. New profiles infer channel
+identity from their reference clips. A profile may be unscoped for local audio,
+but a channel-bound profile cannot be applied to audio from another channel.
+
+## Pipeline `AudioItem`
+
+Pipeline registry items expose the `Audio` source/channel fields directly in
+addition to dataset, tags, stems, diarization, and arbitrary metadata. Target
+speaker summaries are stored per profile under
+`metadata["target_speakers"][profile_name]`; `metadata["target_speaker"]`
+contains the most recent result for compatibility.
+
+Each target-speaker summary includes segment and duration denominators plus
+`qualified_segment_percent` and `qualified_duration_percent`.

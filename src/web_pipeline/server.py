@@ -118,6 +118,11 @@ async def handle_list_datasets(request: web.Request) -> web.Response:
     return json_response(dataset_manager.list_datasets())
 
 
+async def handle_list_channels(request: web.Request) -> web.Response:
+    """List channel-scoped audio groups and processing coverage."""
+    return json_response({"channels": dataset_manager.list_channels()})
+
+
 async def handle_create_dataset(request: web.Request) -> web.Response:
     """Create a new dataset collection."""
     try:
@@ -148,6 +153,7 @@ async def handle_list_items(request: web.Request) -> web.Response:
     dataset = request.query.get("dataset")
     query = request.query.get("query")
     tag = request.query.get("tag")
+    channel_id = request.query.get("channel_id")
     has_stems_param = request.query.get("has_stems")
     has_diar_param = request.query.get("has_diarization")
     min_dur = float(request.query.get("min_duration")) if request.query.get("min_duration") else None
@@ -169,6 +175,7 @@ async def handle_list_items(request: web.Request) -> web.Response:
         dataset=dataset,
         query=query,
         tag=tag,
+        channel_id=channel_id,
         has_stems=has_stems,
         has_diarization=has_diar,
         min_duration=min_dur,
@@ -381,6 +388,7 @@ async def handle_submit_ingest_yt(request: web.Request) -> web.Response:
         body = await request.json()
         urls = body.get("urls", [])
         dataset = body.get("dataset", "Default")
+        group_by_channel = bool(body.get("group_by_channel", True))
         tags = body.get("tags", [])
         try:
             sample_rate = parse_crawl_sample_rate(body.get("sample_rate", DEFAULT_SAMPLE_RATE))
@@ -404,6 +412,7 @@ async def handle_submit_ingest_yt(request: web.Request) -> web.Response:
             params={
                 "urls": urls,
                 "dataset": dataset,
+                "group_by_channel": group_by_channel,
                 "tags": tags,
                 "sample_rate": sample_rate,
                 "max_duration_seconds": max_duration,
@@ -495,12 +504,17 @@ async def handle_submit_separation(request: web.Request) -> web.Response:
         body = await request.json()
         item_ids = body.get("item_ids", [])
         dataset = body.get("dataset")
+        channel_id = body.get("channel_id")
         model = body.get("model", "BSRoFormer")
         device = body.get("device", "cuda" if torch.cuda.is_available() else "cpu")
 
-        if not item_ids and (dataset or "dataset" in body):
+        if not item_ids and (dataset or channel_id or "dataset" in body):
             target_ds = None if (not dataset or dataset == "all") else dataset
-            matched = dataset_manager.list_items(dataset=target_ds, limit=10000)
+            matched = dataset_manager.list_items(
+                dataset=target_ds,
+                channel_id=None if channel_id in (None, "", "all") else channel_id,
+                limit=10000,
+            )
             item_ids = [it["id"] for it in matched["items"]]
 
         if not item_ids:
@@ -528,6 +542,7 @@ async def handle_submit_diarization(request: web.Request) -> web.Response:
         body = await request.json()
         item_ids = body.get("item_ids", [])
         dataset = body.get("dataset")
+        channel_id = body.get("channel_id")
         backend = body.get("backend", "sortformer")
         device = body.get("device", "cuda" if torch.cuda.is_available() else "cpu")
         num_speakers = body.get("num_speakers")
@@ -540,9 +555,13 @@ async def handle_submit_diarization(request: web.Request) -> web.Response:
         chunk_duration_s = body.get("chunk_duration_s", 1.5)
         chunk_step_s = body.get("chunk_step_s", 0.75)
 
-        if not item_ids and (dataset or "dataset" in body):
+        if not item_ids and (dataset or channel_id or "dataset" in body):
             target_ds = None if (not dataset or dataset == "all") else dataset
-            matched = dataset_manager.list_items(dataset=target_ds, limit=10000)
+            matched = dataset_manager.list_items(
+                dataset=target_ds,
+                channel_id=None if channel_id in (None, "", "all") else channel_id,
+                limit=10000,
+            )
             item_ids = [it["id"] for it in matched["items"]]
 
         if not item_ids:
@@ -579,6 +598,7 @@ async def handle_submit_target_speaker(request: web.Request) -> web.Response:
         body = await request.json()
         item_ids = body.get("item_ids", [])
         dataset = body.get("dataset")
+        channel_id = body.get("channel_id")
         profile = body.get("profile")
         threshold = float(body.get("threshold", 0.6))
         min_duration_s = float(body.get("min_duration_s", 1.5))
@@ -590,9 +610,13 @@ async def handle_submit_target_speaker(request: web.Request) -> web.Response:
         if not profile:
             return json_error("A speaker profile name is required")
 
-        if not item_ids and (dataset or "dataset" in body):
+        if not item_ids and (dataset or channel_id or "dataset" in body):
             target_ds = None if (not dataset or dataset == "all") else dataset
-            matched = dataset_manager.list_items(dataset=target_ds, limit=10000)
+            matched = dataset_manager.list_items(
+                dataset=target_ds,
+                channel_id=None if channel_id in (None, "", "all") else channel_id,
+                limit=10000,
+            )
             item_ids = [it["id"] for it in matched["items"]]
 
         if not item_ids:
@@ -605,6 +629,7 @@ async def handle_submit_target_speaker(request: web.Request) -> web.Response:
             params={
                 "item_ids": item_ids,
                 "profile": profile,
+                "channel_id": channel_id,
                 "threshold": threshold,
                 "min_duration_s": min_duration_s,
                 "exclude_overlap": exclude_overlap,
@@ -624,17 +649,22 @@ async def handle_list_speaker_profiles(request: web.Request) -> web.Response:
     from src.diarization.SpeakerVerifier import SpeakerVerifier, SpeakerVerifierError
 
     verifier = SpeakerVerifier()
+    channel_id = request.query.get("channel_id")
     profiles = []
     for name in verifier.list_profiles():
         try:
             p = verifier.load_profile(name)
-            profiles.append(
-                {
-                    "name": p.name,
-                    "num_clips": len(p.clip_paths),
-                    "created_at": p.created_at,
-                }
-            )
+            if not channel_id or not p.channel_id or p.channel_id == channel_id:
+                profiles.append(
+                    {
+                        "name": p.name,
+                        "num_clips": len(p.clip_paths),
+                        "created_at": p.created_at,
+                        "channel_id": p.channel_id,
+                        "channel_name": p.channel_name,
+                        "channel_url": p.channel_url,
+                    }
+                )
         except SpeakerVerifierError:
             continue
     return json_response({"profiles": profiles})
@@ -843,6 +873,7 @@ def register_api_routes(app: web.Application) -> None:
 
     # Dataset & item routes
     app.router.add_get("/api/datasets", handle_list_datasets)
+    app.router.add_get("/api/channels", handle_list_channels)
     app.router.add_post("/api/datasets", handle_create_dataset)
     app.router.add_delete("/api/datasets/{name}", handle_delete_dataset)
     app.router.add_get("/api/items", handle_list_items)

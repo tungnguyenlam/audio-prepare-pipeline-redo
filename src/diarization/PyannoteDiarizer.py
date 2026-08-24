@@ -206,4 +206,7 @@ class PyannoteDiarizer(BaseDiarizer, ManagedModel):
                 backend="pyannote",
                 model_id=self.model_id,
             ),
+            channel_id=audio.channel_id,
+            channel_name=audio.channel_name,
+            channel_url=audio.channel_url,
         )

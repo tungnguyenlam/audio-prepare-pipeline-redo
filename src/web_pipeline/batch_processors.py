@@ -30,7 +30,11 @@ from src.diarization import (
 )
 from src.diarization.schemas import DiarizationResult, Speaker, SpeakerTurn
 from src.separation import BSRoFormer, HTDemucs, MelRoFormer, MVSepMDX23
-from src.utils.AudioClass import DEFAULT_SAMPLE_RATE, Audio
+from src.utils.AudioClass import (
+    DEFAULT_SAMPLE_RATE,
+    Audio,
+    _sanitize_filename_component,
+)
 from src.web_pipeline.dataset_manager import dataset_manager
 from src.web_pipeline.hardware_monitor import hardware_monitor
 from src.web_pipeline.queue_manager import PipelineJob, JobQueueManager
@@ -134,6 +138,10 @@ def normalize_ingested_audio(audio: Audio, target_sr: int) -> Audio:
         output_path,
         source_id=audio.source_id,
         title=audio.title,
+        source_url=audio.source_url,
+        channel_id=audio.channel_id,
+        channel_name=audio.channel_name,
+        channel_url=audio.channel_url,
         history=(*audio.history, f"resampled_{target_sr}hz"),
     )
 
@@ -143,6 +151,7 @@ async def process_batch_ingest_yt(job: PipelineJob, queue: JobQueueManager) -> N
     event_loop = asyncio.get_running_loop()
     urls = job.params.get("urls", [])
     target_dataset = job.params.get("dataset", "Default")
+    group_by_channel = bool(job.params.get("group_by_channel", True))
     tags = list(job.params.get("tags", []))
     raw_sr = job.params.get("sample_rate", DEFAULT_SAMPLE_RATE)
     if raw_sr in (None, "", "native", 0, "0"):
@@ -198,11 +207,20 @@ async def process_batch_ingest_yt(job: PipelineJob, queue: JobQueueManager) -> N
         try:
             audio = await asyncio.to_thread(crawler.download, entry["url"])
 
+            item_dataset = target_dataset
+            if group_by_channel and audio.channel_name:
+                item_dataset = f"Channel · {audio.channel_name}"
+
             item = dataset_manager.register_audio(
                 audio=audio,
-                dataset=target_dataset,
-                tags=tags + ["youtube"],
-                metadata={"original_url": entry.get("url", "")},
+                dataset=item_dataset,
+                tags=tags + ["youtube", "channel_scoped"],
+                metadata={
+                    "original_url": audio.source_url or entry.get("url", ""),
+                    "channel_id": audio.channel_id,
+                    "channel_name": audio.channel_name,
+                    "channel_url": audio.channel_url,
+                },
             )
             wall_time = time.time() - t0
             hardware_monitor.record_item_processed(item.duration, wall_time)
@@ -212,6 +230,9 @@ async def process_batch_ingest_yt(job: PipelineJob, queue: JobQueueManager) -> N
                 "title": item.title,
                 "duration": item.duration,
                 "sample_rate": item.sample_rate,
+                "channel_id": item.channel_id,
+                "channel_name": item.channel_name,
+                "dataset": item.dataset,
                 "status": "success",
             })
             processed += 1
@@ -586,6 +607,10 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
 
                 diar_summary = {
                     "backend": backend,
+                    "audio_id": res.audio_id,
+                    "channel_id": res.channel_id,
+                    "channel_name": res.channel_name,
+                    "channel_url": res.channel_url,
                     "speaker_count": len(res.speakers),
                     "num_turns": len(res.turns),
                     "total_speech_duration": round(sum(t["duration_s"] for t in turns_data), 2),
@@ -646,8 +671,8 @@ async def process_target_speaker_filter(job: PipelineJob, queue: JobQueueManager
     """Score diarized items against a speaker profile and keep confident matches.
 
     Requires items with attached diarization (``batch_diarization`` first).
-    Writes per-item ``target_speaker.json`` (all scored segments plus the kept
-    subset) and optionally exports kept segments as wav cuts.
+    Writes one per-profile target-speaker JSON report (all scored segments plus
+    the kept subset) and optionally exports kept segments as wav cuts.
     """
     item_ids: List[str] = job.params.get("item_ids", [])
     profile_name: str = job.params.get("profile", "")
@@ -695,6 +720,11 @@ async def process_target_speaker_filter(job: PipelineJob, queue: JobQueueManager
 
             t0 = time.time()
             try:
+                if profile.channel_id and it.channel_id and profile.channel_id != it.channel_id:
+                    raise ValueError(
+                        f"Profile '{profile_name}' belongs to channel "
+                        f"'{profile.channel_name or profile.channel_id}', not '{it.channel_name or it.channel_id}'"
+                    )
                 diar = it.diarization
                 if not diar or not diar.get("turns"):
                     raise ValueError("Item has no attached diarization; run batch diarization first")
@@ -715,6 +745,9 @@ async def process_target_speaker_filter(job: PipelineJob, queue: JobQueueManager
                         for spk in sorted({t.speaker_id for t in turns})
                     ],
                     turns=turns,
+                    channel_id=it.channel_id,
+                    channel_name=it.channel_name,
+                    channel_url=it.channel_url,
                 )
 
                 audio = it.to_audio()
@@ -728,7 +761,8 @@ async def process_target_speaker_filter(job: PipelineJob, queue: JobQueueManager
 
                 item_dir = TARGET_SPEAKER_DIR / it.id
                 item_dir.mkdir(parents=True, exist_ok=True)
-                json_path = item_dir / "target_speaker.json"
+                safe_profile = _sanitize_filename_component(profile_name) or "target"
+                json_path = item_dir / f"target_speaker__{safe_profile}.json"
 
                 def _segment_dict(seg) -> Dict[str, Any]:
                     return {
@@ -741,6 +775,7 @@ async def process_target_speaker_filter(job: PipelineJob, queue: JobQueueManager
                     }
 
                 kept_duration = sum(seg.end_s - seg.start_s for seg in kept.segments)
+                scored_duration = sum(seg.end_s - seg.start_s for seg in scored.segments)
                 report = {
                     "profile": profile_name,
                     "model_id": scored.model.model_id if scored.model else None,
@@ -750,6 +785,15 @@ async def process_target_speaker_filter(job: PipelineJob, queue: JobQueueManager
                     "num_scored": len(scored.segments),
                     "num_kept": len(kept.segments),
                     "kept_duration_s": round(kept_duration, 2),
+                    "scored_duration_s": round(scored_duration, 2),
+                    "qualified_segment_percent": round(
+                        100.0 * len(kept.segments) / len(scored.segments), 2
+                    ) if scored.segments else 0.0,
+                    "qualified_duration_percent": round(
+                        100.0 * kept_duration / scored_duration, 2
+                    ) if scored_duration else 0.0,
+                    "channel_id": it.channel_id,
+                    "channel_name": it.channel_name,
                     "kept_segments": [_segment_dict(seg) for seg in kept.segments],
                     "all_segments": [_segment_dict(seg) for seg in scored.segments],
                 }
@@ -782,6 +826,9 @@ async def process_target_speaker_filter(job: PipelineJob, queue: JobQueueManager
                     "num_scored": len(scored.segments),
                     "num_kept": len(kept.segments),
                     "kept_duration_s": round(kept_duration, 2),
+                    "qualified_segment_percent": report["qualified_segment_percent"],
+                    "qualified_duration_percent": report["qualified_duration_percent"],
+                    "channel_name": it.channel_name,
                     "device": device,
                     "wall_time": round(wall_time, 2),
                     "status": "success",

@@ -286,6 +286,14 @@ class YtCrawler:
             title = info.get("title")
             if title is not None:
                 title = str(title)
+            channel_id = info.get("channel_id") or info.get("uploader_id")
+            channel_name = info.get("channel") or info.get("uploader")
+            channel_url = info.get("channel_url") or info.get("uploader_url")
+            source_url = info.get("webpage_url") or info.get("original_url") or url
+            channel_id = str(channel_id) if channel_id is not None else None
+            channel_name = str(channel_name) if channel_name is not None else None
+            channel_url = str(channel_url) if channel_url is not None else None
+            source_url = str(source_url) if source_url is not None else None
 
             audio_candidates = [
                 p
@@ -316,7 +324,15 @@ class YtCrawler:
             else:
                 file_stem = source_id
 
-            final_dest = self.output_dir / f"{file_stem}.{self.audio_format}"
+            # YouTube artifacts are channel-scoped on disk. The video source_id
+            # remains the per-file identity while channel metadata groups every
+            # downstream derivative and target-speaker profile.
+            channel_dir_name = _sanitize_filename_component(
+                channel_id or channel_name or "unknown_channel"
+            )
+            channel_output_dir = self.output_dir / (channel_dir_name or "unknown_channel")
+            channel_output_dir.mkdir(parents=True, exist_ok=True)
+            final_dest = channel_output_dir / f"{file_stem}.{self.audio_format}"
 
             self._ensure_standard_audio(src_audio, final_dest)
 
@@ -345,6 +361,10 @@ class YtCrawler:
                 path=final_dest.resolve(),
                 source_id=source_id,
                 title=title,
+                source_url=source_url,
+                channel_id=channel_id,
+                channel_name=channel_name,
+                channel_url=channel_url,
                 sample_rate=sample_rate,
                 duration_s=float(duration_s) if duration_s is not None else None,
                 channels=channels,

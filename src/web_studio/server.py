@@ -306,6 +306,10 @@ class AudioRegistry:
                     "id": audio_id,
                     "source_id": audio.source_id,
                     "title": audio.title,
+                    "source_url": audio.source_url,
+                    "channel_id": audio.channel_id,
+                    "channel_name": audio.channel_name,
+                    "channel_url": audio.channel_url,
                     "path": str(audio.path),
                     "sample_rate": audio.sample_rate,
                     "native_sample_rate": audio.native_sample_rate,
@@ -735,6 +739,20 @@ class EvaluationManager:
             "score_artifacts": int(eval_data.get("score_artifacts", 5)),
             "notes": str(eval_data.get("notes", "")),
             "tags": list(eval_data.get("tags", [])),
+            "evaluation_type": str(eval_data.get("evaluation_type", "separation")),
+            "channel_id": eval_data.get("channel_id"),
+            "channel_name": eval_data.get("channel_name"),
+            "profile_name": eval_data.get("profile_name"),
+            "threshold": eval_data.get("threshold"),
+            "min_duration_s": eval_data.get("min_duration_s"),
+            "exclude_overlap": eval_data.get("exclude_overlap"),
+            "qualified_segments": eval_data.get("qualified_segments"),
+            "reviewed_segments": eval_data.get("reviewed_segments"),
+            "total_segments": eval_data.get("total_segments"),
+            "qualified_duration_s": eval_data.get("qualified_duration_s"),
+            "total_duration_s": eval_data.get("total_duration_s"),
+            "qualified_percent": eval_data.get("qualified_percent"),
+            "segment_labels": dict(eval_data.get("segment_labels", {})),
             "created_at": float(eval_data.get("created_at", now)),
             "updated_at": now,
         }
@@ -866,6 +884,10 @@ def probe_audio_file_info(path: Path) -> dict[str, Any]:
                     "channels": int(sidecar.get("channels", 1)) if sidecar.get("channels") is not None else 1,
                     "native_sample_rate": int(sidecar.get("native_sample_rate", sidecar.get("sample_rate", DEFAULT_SAMPLE_RATE))) if sidecar.get("native_sample_rate") is not None else DEFAULT_SAMPLE_RATE,
                     "history": sidecar.get("history", []),
+                    "source_url": sidecar.get("source_url"),
+                    "channel_id": sidecar.get("channel_id"),
+                    "channel_name": sidecar.get("channel_name"),
+                    "channel_url": sidecar.get("channel_url"),
                 }
         except Exception:
             pass
@@ -997,6 +1019,10 @@ async def handle_list_library(request: web.Request) -> web.Response:
                                 "sample_rate": probe_meta.get("sample_rate", DEFAULT_SAMPLE_RATE),
                                 "channels": probe_meta.get("channels", 1),
                                 "native_sample_rate": probe_meta.get("native_sample_rate", DEFAULT_SAMPLE_RATE),
+                                "source_url": probe_meta.get("source_url"),
+                                "channel_id": probe_meta.get("channel_id"),
+                                "channel_name": probe_meta.get("channel_name"),
+                                "channel_url": probe_meta.get("channel_url"),
                             }
                         )
                     except Exception:
@@ -1947,6 +1973,10 @@ async def handle_extract_speaker_audio(request: web.Request) -> web.Response:
             out_path,
             source_id=f"{audio.source_id}_{sanitized_spk}_{mode_suffix}",
             title=tag_title,
+            source_url=audio.source_url,
+            channel_id=audio.channel_id,
+            channel_name=audio.channel_name,
+            channel_url=audio.channel_url,
             native_sample_rate=audio.native_sample_rate,
             history=(*audio.history, f"diar_extract_{speaker_id}_{mode}"),
         )
@@ -2039,6 +2069,10 @@ async def handle_extract_all_speakers(request: web.Request) -> web.Response:
                 out_path,
                 source_id=f"{audio.source_id}_{sanitized_spk}_{mode_suffix}",
                 title=f"{audio.title or audio.source_id} [{spk_name}] ({mode_suffix})",
+                source_url=audio.source_url,
+                channel_id=audio.channel_id,
+                channel_name=audio.channel_name,
+                channel_url=audio.channel_url,
                 native_sample_rate=audio.native_sample_rate,
                 history=(*audio.history, f"diar_extract_{spk_id}_{mode}"),
             )
@@ -2078,16 +2112,22 @@ def _profile_summary(verifier: SpeakerVerifier, name: str) -> dict[str, Any]:
         "name": profile.name,
         "num_clips": len(profile.clip_paths),
         "created_at": profile.created_at,
+        "channel_id": profile.channel_id,
+        "channel_name": profile.channel_name,
+        "channel_url": profile.channel_url,
     }
 
 
 async def handle_list_speaker_profiles(request: web.Request) -> web.Response:
     """List enrolled target speaker profiles."""
     verifier = SpeakerVerifier()
+    channel_id = request.query.get("channel_id")
     profiles = []
     for name in verifier.list_profiles():
         try:
-            profiles.append(_profile_summary(verifier, name))
+            summary = _profile_summary(verifier, name)
+            if not channel_id or not summary["channel_id"] or summary["channel_id"] == channel_id:
+                profiles.append(summary)
         except SpeakerVerifierError:
             continue
     return web.json_response({"profiles": profiles})
@@ -2099,6 +2139,9 @@ async def handle_create_speaker_profile(request: web.Request) -> web.Response:
     name = data.get("name")
     clip_audio_ids = data.get("clip_audio_ids", [])
     overwrite = bool(data.get("overwrite", False))
+    channel_id = data.get("channel_id")
+    channel_name = data.get("channel_name")
+    channel_url = data.get("channel_url")
 
     if not name or not clip_audio_ids:
         return web.json_response(
@@ -2116,7 +2159,14 @@ async def handle_create_speaker_profile(request: web.Request) -> web.Response:
 
     verifier = SpeakerVerifier()
     try:
-        profile = verifier.enroll(name, clips, overwrite=overwrite)
+        profile = verifier.enroll(
+            name,
+            clips,
+            overwrite=overwrite,
+            channel_id=channel_id,
+            channel_name=channel_name,
+            channel_url=channel_url,
+        )
     except SpeakerVerifierError as e:
         return web.json_response({"error": str(e)}, status=409)
     return web.json_response(
@@ -2124,6 +2174,9 @@ async def handle_create_speaker_profile(request: web.Request) -> web.Response:
             "name": profile.name,
             "num_clips": len(profile.clip_paths),
             "created_at": profile.created_at,
+            "channel_id": profile.channel_id,
+            "channel_name": profile.channel_name,
+            "channel_url": profile.channel_url,
         },
         status=201,
     )
@@ -2178,6 +2231,9 @@ async def handle_target_speaker_score(request: web.Request) -> web.Response:
             for spk in sorted({t.speaker_id for t in speaker_turns})
         ],
         turns=speaker_turns,
+        channel_id=audio.channel_id,
+        channel_name=audio.channel_name,
+        channel_url=audio.channel_url,
     )
 
     task_id = task_manager.create_task(
@@ -2200,6 +2256,12 @@ async def handle_target_speaker_score(request: web.Request) -> web.Response:
         def do_score():
             verifier = SpeakerVerifier(device=target_device, token=token)
             profile = verifier.load_profile(profile_name)
+            if profile.channel_id and audio.channel_id and profile.channel_id != audio.channel_id:
+                raise SpeakerVerifierError(
+                    f"Profile '{profile_name}' belongs to channel "
+                    f"'{profile.channel_name or profile.channel_id}', not "
+                    f"'{audio.channel_name or audio.channel_id}'"
+                )
             with verifier:
                 return verifier.score(audio, diarization, profile)
 

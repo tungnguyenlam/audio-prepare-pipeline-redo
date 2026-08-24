@@ -17,6 +17,10 @@ _SIDECAR_KIND = "audio.sidecar"
 _SIDECAR_FIELDS = (
     "source_id",
     "title",
+    "source_url",
+    "channel_id",
+    "channel_name",
+    "channel_url",
     "sample_rate",
     "duration_s",
     "channels",
@@ -97,6 +101,10 @@ class Audio:
     format: str = DEFAULT_AUDIO_FORMAT
     native_sample_rate: Optional[int] = None
     history: tuple[str, ...] = ()
+    source_url: Optional[str] = None
+    channel_id: Optional[str] = None
+    channel_name: Optional[str] = None
+    channel_url: Optional[str] = None
 
     def __repr__(self) -> str:
         duration = (
@@ -105,6 +113,7 @@ class Audio:
         history_repr = f", history={list(self.history)!r}" if self.history else ""
         return (
             f"Audio(source_id={self.source_id!r}, title={self.title!r}, "
+            f"channel_id={self.channel_id!r}, channel_name={self.channel_name!r}, "
             f"path={str(self.path)!r}, sample_rate={self.sample_rate}, "
             f"native_sample_rate={self.native_sample_rate}, "
             f"duration_s={duration}, "
@@ -119,6 +128,10 @@ class Audio:
         *,
         source_id: Optional[str] = None,
         title: Optional[str] = None,
+        source_url: Optional[str] = None,
+        channel_id: Optional[str] = None,
+        channel_name: Optional[str] = None,
+        channel_url: Optional[str] = None,
         native_sample_rate: Optional[int] = None,
         history: Optional[tuple[str, ...] | list[str]] = None,
     ) -> Audio:
@@ -133,6 +146,10 @@ class Audio:
             path: Path to an existing audio file.
             source_id: Optional identifier; defaults to sidecar or the file stem.
             title: Optional display title; defaults to sidecar or the file stem.
+            source_url: Original source URL, when known.
+            channel_id: Stable YouTube channel/uploader identifier, when known.
+            channel_name: Human-readable YouTube channel name, when known.
+            channel_url: Canonical YouTube channel URL, when known.
             native_sample_rate: Original capture/source rate before pipeline
                 resampling. Defaults to sidecar, else the probed file rate.
             history: Optional list or tuple of step fingerprint strings.
@@ -196,10 +213,21 @@ class Audio:
         else:
             resolved_history = ()
 
+        def resolve_optional(explicit: Optional[str], field: str) -> Optional[str]:
+            if explicit is not None:
+                return explicit
+            if sidecar is not None and sidecar.get(field) is not None:
+                return str(sidecar[field])
+            return None
+
         return cls(
             path=file_path,
             source_id=resolved_source_id,
             title=resolved_title,
+            source_url=resolve_optional(source_url, "source_url"),
+            channel_id=resolve_optional(channel_id, "channel_id"),
+            channel_name=resolve_optional(channel_name, "channel_name"),
+            channel_url=resolve_optional(channel_url, "channel_url"),
             sample_rate=sample_rate,
             duration_s=duration_s,
             channels=channels,
@@ -506,4 +534,3 @@ class Audio:
         _write_sidecar(self)
         print(f"Quick saved to: {self.path}")
         return self
-

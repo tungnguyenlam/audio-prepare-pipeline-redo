@@ -290,4 +290,7 @@ class ClusteringWorkerDiarizer(BaseDiarizer, ManagedModel):
                 if model_payload is not None
                 else None
             ),
+            channel_id=payload.get("channel_id"),
+            channel_name=payload.get("channel_name"),
+            channel_url=payload.get("channel_url"),
         )

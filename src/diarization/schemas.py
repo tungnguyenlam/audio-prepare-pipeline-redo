@@ -115,6 +115,9 @@ class TargetSpeakerResult:
     profile_name: str
     segments: list[ScoredSegment]
     model: DiarizationModelInfo | None = None
+    channel_id: str | None = None
+    channel_name: str | None = None
+    channel_url: str | None = None
 
     def __post_init__(self) -> None:
         _validate_non_empty_string(self.schema_version, "schema_version")
@@ -133,6 +136,9 @@ class DiarizationResult:
     speakers: list[Speaker]
     turns: list[SpeakerTurn]
     model: DiarizationModelInfo | None = None
+    channel_id: str | None = None
+    channel_name: str | None = None
+    channel_url: str | None = None
 
     def __post_init__(self) -> None:
         _validate_non_empty_string(self.schema_version, "schema_version")

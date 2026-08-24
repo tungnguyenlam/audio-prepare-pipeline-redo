@@ -354,6 +354,9 @@ class SortformerDiarizer(BaseDiarizer, ManagedModel):
                 model_id=self.model_id,
                 revision=self.revision,
             ),
+            channel_id=audio.channel_id,
+            channel_name=audio.channel_name,
+            channel_url=audio.channel_url,
         )
 
     def _process_windows(

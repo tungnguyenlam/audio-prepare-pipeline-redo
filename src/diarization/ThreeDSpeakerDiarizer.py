@@ -407,6 +407,9 @@ class ThreeDSpeakerDiarizer(BaseDiarizer, ManagedModel):
                 backend="3d-speaker",
                 model_id=DEFAULT_MODEL_ID,
             ),
+            channel_id=audio.channel_id,
+            channel_name=audio.channel_name,
+            channel_url=audio.channel_url,
         )
 
     @staticmethod

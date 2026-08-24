@@ -10,6 +10,7 @@
   const state = {
     activeTab: 'tab-dashboard',
     datasets: [],
+    channels: [],
     items: [],
     selectedItemIds: new Set(),
     jobs: [],
@@ -134,6 +135,7 @@
     // Separation
     formBatchSeparation: document.getElementById('form-batch-separation'),
     sepDatasetSelect: document.getElementById('sep-dataset-select'),
+    sepChannelSelect: document.getElementById('sep-channel-select'),
     sepModel: document.getElementById('sep-model'),
     sepDevice: document.getElementById('sep-device'),
     sepTargetCountHint: document.getElementById('sep-target-count-hint'),
@@ -142,6 +144,7 @@
     // Diarization
     formBatchDiarization: document.getElementById('form-batch-diarization'),
     diarDatasetSelect: document.getElementById('diar-dataset-select'),
+    diarChannelSelect: document.getElementById('diar-channel-select'),
     diarBackend: document.getElementById('diar-backend'),
     diarDevice: document.getElementById('diar-device'),
     diarMinSpk: document.getElementById('diar-min-spk'),
@@ -169,6 +172,7 @@
 
     // Datasets & Manifests
     itemFilterDataset: document.getElementById('item-filter-dataset'),
+    itemFilterChannel: document.getElementById('item-filter-channel'),
     itemFilterQuery: document.getElementById('item-filter-query'),
     itemFilterStems: document.getElementById('item-filter-stems'),
     itemsTbody: document.getElementById('items-tbody'),
@@ -399,6 +403,7 @@
       updateDashboardCards();
     } else if (event === 'datasets_updated' || event === 'items_deleted' || event === 'items_tagged' || event === 'items_moved') {
       loadDatasets();
+      loadChannels();
       if (state.activeTab === 'tab-datasets') loadItems();
     }
   }
@@ -799,6 +804,27 @@
     }
   }
 
+  async function loadChannels() {
+    try {
+      const res = await fetch('/api/channels');
+      const data = await res.json();
+      state.channels = data.channels || [];
+      document.querySelectorAll('.select-channel-list').forEach(select => {
+        const previous = select.value;
+        select.innerHTML = '<option value="all">All channels</option>';
+        state.channels.forEach(channel => {
+          const option = document.createElement('option');
+          option.value = channel.channel_id || channel.channel_name;
+          option.textContent = `${channel.channel_name} (${channel.item_count} videos)`;
+          select.appendChild(option);
+        });
+        if (Array.from(select.options).some(option => option.value === previous)) select.value = previous;
+      });
+    } catch (err) {
+      console.error('Failed to load channels:', err);
+    }
+  }
+
   function populateDatasetDropdowns() {
     const dropdowns = document.querySelectorAll('.select-dataset-list');
     dropdowns.forEach((dd) => {
@@ -1135,7 +1161,13 @@
           const res = await fetch('/api/jobs/batch_ingest_yt', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ urls, dataset, sample_rate: sampleRate, tags }),
+            body: JSON.stringify({
+              urls,
+              dataset,
+              sample_rate: sampleRate,
+              tags,
+              group_by_channel: document.getElementById('yt-group-by-channel')?.checked !== false,
+            }),
           });
           const job = await res.json();
           if (res.ok) {
@@ -1285,6 +1317,7 @@
       els.formBatchSeparation.addEventListener('submit', async (e) => {
         e.preventDefault();
         const dataset = els.sepDatasetSelect.value;
+        const channelId = els.sepChannelSelect?.value || 'all';
         const model = els.sepModel.value;
         const device = state.selectedGpu || (els.sepDevice ? els.sepDevice.value : 'cuda');
 
@@ -1294,6 +1327,7 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               dataset: dataset === 'all' ? null : dataset,
+              channel_id: channelId === 'all' ? null : channelId,
               model,
               device,
             }),
@@ -1367,6 +1401,7 @@
       els.formBatchDiarization.addEventListener('submit', async (e) => {
         e.preventDefault();
         const dataset = els.diarDatasetSelect.value;
+        const channelId = els.diarChannelSelect?.value || 'all';
         const backend = els.diarBackend.value;
         const device = state.selectedGpu || (els.diarDevice ? els.diarDevice.value : 'cuda');
         const minSpk = els.diarMinSpk && els.diarMinSpk.value ? parseInt(els.diarMinSpk.value, 10) : null;
@@ -1385,6 +1420,7 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               dataset: dataset === 'all' ? null : dataset,
+              channel_id: channelId === 'all' ? null : channelId,
               backend,
               device,
               min_speakers: minSpk,
@@ -1419,10 +1455,12 @@
     const select = document.getElementById('ts-pipe-profile-select');
     if (!select) return;
     try {
-      const res = await fetch('/api/speaker-profiles');
+      const channelId = document.getElementById('ts-channel-select')?.value;
+      const query = channelId && channelId !== 'all' ? `?channel_id=${encodeURIComponent(channelId)}` : '';
+      const res = await fetch(`/api/speaker-profiles${query}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load profiles');
-      const previous = select.value;
+      const previous = new Set(Array.from(select.selectedOptions).map(option => option.value));
       select.innerHTML = '';
       const profiles = data.profiles || [];
       if (profiles.length === 0) {
@@ -1432,10 +1470,10 @@
       profiles.forEach((p) => {
         const opt = document.createElement('option');
         opt.value = p.name;
-        opt.textContent = `${p.name} (${p.num_clips} clips)`;
+        opt.textContent = `${p.name} (${p.num_clips} clips${p.channel_name ? ` · ${p.channel_name}` : ''})`;
+        opt.selected = previous.has(p.name) || (previous.size === 0 && profiles.length === 1);
         select.appendChild(opt);
       });
-      if (previous && profiles.some((p) => p.name === previous)) select.value = previous;
     } catch (err) {
       showToast(`Could not load speaker profiles: ${err.message}`, 'warning');
     }
@@ -1444,14 +1482,17 @@
   function initTargetSpeakerForm() {
     const form = document.getElementById('form-target-speaker');
     const refreshBtn = document.getElementById('btn-ts-pipe-refresh');
+    const channelSelect = document.getElementById('ts-channel-select');
     if (refreshBtn) refreshBtn.addEventListener('click', loadTargetSpeakerProfiles);
+    if (channelSelect) channelSelect.addEventListener('change', loadTargetSpeakerProfiles);
     loadTargetSpeakerProfiles();
 
     if (!form) return;
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const dataset = document.getElementById('ts-dataset-select').value;
-      const profile = document.getElementById('ts-pipe-profile-select').value;
+      const profiles = Array.from(document.getElementById('ts-pipe-profile-select').selectedOptions).map(option => option.value).filter(Boolean);
+      const channelId = document.getElementById('ts-channel-select')?.value || 'all';
       const threshold = parseFloat(document.getElementById('ts-pipe-threshold').value);
       const minDur = parseFloat(document.getElementById('ts-pipe-min-dur').value);
       const excludeOverlap = document.getElementById('ts-pipe-exclude-overlap').checked;
@@ -1460,35 +1501,36 @@
       const device = state.selectedGpu || (deviceSel ? deviceSel.value : 'cuda');
       const token = els.diarHfToken ? els.diarHfToken.value.trim() || null : null;
 
-      if (!profile) {
-        showToast('Select a speaker profile (enroll one in SonicStudio first)', 'warning');
+      if (profiles.length === 0) {
+        showToast('Select one or more channel speaker profiles', 'warning');
         return;
       }
 
       try {
-        const res = await fetch('/api/jobs/target_speaker_filter', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            dataset: dataset === 'all' ? null : dataset,
-            profile,
-            threshold: Number.isFinite(threshold) ? threshold : 0.6,
-            min_duration_s: Number.isFinite(minDur) ? minDur : 1.5,
-            exclude_overlap: excludeOverlap,
-            export_cuts: exportCuts,
-            device,
-            hf_token: token,
-          }),
-        });
-        const job = await res.json();
-        if (res.ok) {
-          showToast(`Target speaker filter job enqueued for '${profile}'!`, 'success');
-          switchTab('tab-queue');
-        } else {
-          showToast(job.error || 'Target speaker job failed to start', 'danger');
-        }
+        const jobs = await Promise.all(profiles.map(async profile => {
+          const res = await fetch('/api/jobs/target_speaker_filter', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              dataset: dataset === 'all' ? null : dataset,
+              channel_id: channelId === 'all' ? null : channelId,
+              profile,
+              threshold: Number.isFinite(threshold) ? threshold : 0.6,
+              min_duration_s: Number.isFinite(minDur) ? minDur : 1.5,
+              exclude_overlap: excludeOverlap,
+              export_cuts: exportCuts,
+              device,
+              hf_token: token,
+            }),
+          });
+          const job = await res.json();
+          if (!res.ok) throw new Error(job.error || `Target speaker job failed for ${profile}`);
+          return job;
+        }));
+        showToast(`${jobs.length} channel target-speaker job(s) enqueued`, 'success');
+        switchTab('tab-queue');
       } catch (err) {
-        showToast('Error submitting target speaker job', 'danger');
+        showToast(err.message || 'Error submitting target speaker jobs', 'danger');
       }
     });
   }
@@ -1596,11 +1638,13 @@
     const dataset = els.itemFilterDataset.value;
     const query = els.itemFilterQuery.value.trim();
     const stems = els.itemFilterStems.value;
+    const channel = els.itemFilterChannel?.value;
 
     const params = new URLSearchParams();
     if (dataset && dataset !== 'all') params.append('dataset', dataset);
     if (query) params.append('query', query);
     if (stems) params.append('has_stems', stems);
+    if (channel && channel !== 'all') params.append('channel_id', channel);
 
     try {
       const res = await fetch(`/api/items?${params.toString()}`);
@@ -1614,7 +1658,7 @@
 
   function renderItemsTable() {
     if (state.items.length === 0) {
-      els.itemsTbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted">No audio assets found. Ingest audio files or playlists to populate.</td></tr>';
+      els.itemsTbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">No audio assets found for this channel.</td></tr>';
       return;
     }
 
@@ -1638,6 +1682,7 @@
             <strong>${escapeHtml(item.title)}</strong><br>
             <small class="text-muted font-mono">${escapeHtml(item.id)}</small>
           </td>
+          <td><strong>${escapeHtml(item.channel_name || 'Unassigned')}</strong><br><small class="text-muted font-mono">${escapeHtml(item.channel_id || '')}</small></td>
           <td><span class="tag-pill">${escapeHtml(item.dataset)}</span></td>
           <td>${(item.duration || 0).toFixed(2)}s</td>
           <td>${item.sample_rate.toLocaleString()} Hz / ${item.channels === 1 ? 'Mono' : 'Stereo'}</td>
@@ -2075,6 +2120,7 @@
 
     // Filters and search
     if (els.itemFilterDataset) els.itemFilterDataset.addEventListener('change', loadItems);
+    if (els.itemFilterChannel) els.itemFilterChannel.addEventListener('change', loadItems);
     if (els.itemFilterStems) els.itemFilterStems.addEventListener('change', loadItems);
     if (els.itemFilterQuery) {
       els.itemFilterQuery.addEventListener('input', () => {
@@ -2201,6 +2247,7 @@
 
     // Initial load
     loadDatasets();
+    loadChannels();
     loadJobs();
   }
 
