@@ -77,6 +77,11 @@ const state = {
   },
 };
 
+const targetSegmentAudio = new Audio();
+let activeTargetSegmentKey = null;
+let targetSegmentPlayRaf = 0;
+targetSegmentAudio.addEventListener('ended', stopTargetSegmentPreview);
+
 // DOM Elements Cache
 const el = {
   // Navigation
@@ -4213,6 +4218,7 @@ function renderTargetSpeakerContext() {
 }
 
 function resetTargetSpeakerEvaluation({ preserveSelection = true } = {}) {
+  stopTargetSegmentPreview();
   state.targetSpeaker.scored = null;
   state.targetSpeaker.audioId = null;
   state.targetSpeaker.labels = {};
@@ -4303,6 +4309,80 @@ function targetSegmentKey(segment) {
   return `${Number(segment.start_s).toFixed(3)}-${Number(segment.end_s).toFixed(3)}-${segment.speaker_id}`;
 }
 
+function updateTargetSegmentPlaybackButtons() {
+  document.querySelectorAll('.ts-play-segment').forEach(button => {
+    const isActive = button.dataset.key === activeTargetSegmentKey;
+    button.textContent = `${isActive ? '■' : '▶'} ${button.dataset.range}`;
+    button.title = isActive ? 'Stop segment' : 'Play segment';
+    button.setAttribute('aria-pressed', String(isActive));
+  });
+}
+
+function stopTargetSegmentPreview() {
+  if (targetSegmentPlayRaf) {
+    cancelAnimationFrame(targetSegmentPlayRaf);
+    targetSegmentPlayRaf = 0;
+  }
+  targetSegmentAudio.pause();
+  activeTargetSegmentKey = null;
+  updateTargetSegmentPlaybackButtons();
+}
+
+function watchTargetSegmentEnd(endSec, key) {
+  const tick = () => {
+    targetSegmentPlayRaf = 0;
+    if (activeTargetSegmentKey !== key || targetSegmentAudio.paused) return;
+    if (targetSegmentAudio.currentTime >= endSec - 0.01) {
+      stopTargetSegmentPreview();
+      return;
+    }
+    targetSegmentPlayRaf = requestAnimationFrame(tick);
+  };
+  targetSegmentPlayRaf = requestAnimationFrame(tick);
+}
+
+function toggleTargetSegmentPreview(segment) {
+  const audioId = state.targetSpeaker.audioId || state.diarization.audioId;
+  if (!audioId) return;
+
+  const key = targetSegmentKey(segment);
+  if (activeTargetSegmentKey === key) {
+    stopTargetSegmentPreview();
+    return;
+  }
+
+  stopTargetSegmentPreview();
+  if (el.audio && !el.audio.paused) el.audio.pause();
+
+  activeTargetSegmentKey = key;
+  targetSegmentAudio.volume = state.player.volume;
+  targetSegmentAudio.playbackRate = state.player.playbackRate;
+  updateTargetSegmentPlaybackButtons();
+
+  const beginPlayback = () => {
+    if (activeTargetSegmentKey !== key) return;
+    targetSegmentAudio.currentTime = segment.start_s;
+    targetSegmentAudio.play()
+      .then(() => watchTargetSegmentEnd(segment.end_s, key))
+      .catch(err => {
+        console.error('Segment preview error:', err);
+        stopTargetSegmentPreview();
+        showToast('Unable to play this segment', 'error');
+      });
+  };
+
+  const streamUrl = `/api/audio/${audioId}/stream`;
+  if (!targetSegmentAudio.src.endsWith(streamUrl)) {
+    targetSegmentAudio.src = streamUrl;
+    targetSegmentAudio.addEventListener('loadedmetadata', beginPlayback, { once: true });
+    targetSegmentAudio.load();
+  } else if (targetSegmentAudio.readyState >= 1) {
+    beginPlayback();
+  } else {
+    targetSegmentAudio.addEventListener('loadedmetadata', beginPlayback, { once: true });
+  }
+}
+
 function targetSpeakerKeptSegments() {
   const target = state.targetSpeaker;
   return (target.scored?.segments || []).filter(segment =>
@@ -4353,7 +4433,7 @@ function renderTargetSpeakerResults() {
       return `
         <tr class="${proposed ? '' : 'target-row-dropped'}">
           <td>${index + 1}</td>
-          <td><button class="btn btn-xs btn-ghost ts-play-segment" data-key="${key}">▶ ${segment.start_s.toFixed(1)}–${segment.end_s.toFixed(1)}s</button></td>
+          <td><button class="btn btn-xs btn-ghost ts-play-segment" data-key="${key}" data-range="${segment.start_s.toFixed(1)}–${segment.end_s.toFixed(1)}s" title="Play segment" aria-pressed="false">▶ ${segment.start_s.toFixed(1)}–${segment.end_s.toFixed(1)}s</button></td>
           <td><strong>${escapeHtml(getSpeakerName(segment.speaker_id))}</strong><small class="target-local-id">${escapeHtml(segment.speaker_id)}</small></td>
           <td><strong>${segment.similarity.toFixed(3)}</strong></td>
           <td>${proposed ? '<span class="badge badge-success">Proposed</span>' : '<span class="badge badge-ghost">Filtered</span>'}</td>
@@ -4404,8 +4484,9 @@ function renderTargetSpeakerResults() {
   });
   results.querySelectorAll('.ts-play-segment').forEach(button => button.addEventListener('click', () => {
     const segment = scored.segments.find(item => targetSegmentKey(item) === button.dataset.key);
-    if (segment) seekDiarAudio(segment.start_s, true);
+    if (segment) toggleTargetSegmentPreview(segment);
   }));
+  updateTargetSegmentPlaybackButtons();
   results.querySelectorAll('.ts-label-segment').forEach(button => button.addEventListener('click', () => {
     target.labels[button.dataset.key] = target.labels[button.dataset.key] === button.dataset.label
       ? 'unreviewed'
