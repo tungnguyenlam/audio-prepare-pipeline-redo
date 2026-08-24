@@ -1,9 +1,11 @@
 /* ==========================================================================
    SonicPipeline — AI Audio Engineering & Batch Separation Suite
-   Sleek Pro-Audio Workstation Design System (Dark & Light)
+   Sleek Pro-Audio Workstation Design System (Light-only)
    ========================================================================== */
 
 :root {
+  color-scheme: light;
+
   /* Light Theme Default Surfaces */
   --bg-base: hsl(210, 25%, 97%);
   --bg-surface: hsl(0, 0%, 100%);
@@ -113,6 +115,13 @@ html, body {
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+input,
+textarea,
+select,
+button {
+  color-scheme: light;
 }
 
 /* App Main Flex Layout */

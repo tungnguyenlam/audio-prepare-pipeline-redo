@@ -1,8 +1,11 @@
 /* ==========================================================================
    SonicStudio — Premium Audio Engineering & Separation Workbench CSS
+   Light-only theme
    ========================================================================== */
 
 :root {
+  color-scheme: light;
+
   /* Surface colors (Light Theme Default) */
   --bg-app: hsl(210, 25%, 98%);
   --bg-surface: hsl(0, 0%, 100%);
@@ -11,6 +14,13 @@
   --bg-input: hsl(210, 18%, 96%);
   --bg-player: hsla(0, 0%, 100%, 0.92);
   --bg-modal-backdrop: hsla(222, 24%, 10%, 0.45);
+
+  /* Shared aliases used by newer workflow components. Keep these mapped to
+     the light palette so component-level fallbacks cannot introduce a dark
+     surface. */
+  --surface-raised: var(--bg-surface);
+  --border-color: var(--border-muted);
+  --border-hover: var(--border-focus);
 
   /* Border & Divider colors */
   --border-subtle: rgba(15, 23, 42, 0.08);
@@ -167,6 +177,13 @@ html, body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+input,
+textarea,
+select,
+button {
+  color-scheme: light;
 }
 
 /* Layout */
