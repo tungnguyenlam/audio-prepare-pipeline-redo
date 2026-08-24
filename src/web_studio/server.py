@@ -263,6 +263,14 @@ class AudioRegistry:
         """Retrieve the full registered item dictionary."""
         return self._items.get(audio_id)
 
+    def find_id_by_path(self, path: str | Path) -> str | None:
+        """Return the registered ID for a file path, if present."""
+        target = Path(path).resolve()
+        for audio_id, item in self._items.items():
+            if Path(item["audio"].path).resolve() == target:
+                return audio_id
+        return None
+
     def unregister(self, audio_id: str) -> bool:
         """Remove an audio object from the in-memory registry."""
         if audio_id in self._items:
@@ -1212,10 +1220,19 @@ async def handle_load_library_file(request: web.Request) -> web.Response:
         return web.json_response({"error": f"File not found: {resolved}"}, status=404)
 
     try:
+        existing_id = registry.find_id_by_path(resolved)
+        if existing_id:
+            audio = registry.get_audio(existing_id)
+            return web.json_response({
+                "audio_id": existing_id,
+                "metadata": audio.metadata() if audio else {},
+                "reused": True,
+            })
+
         audio = Audio.from_file(resolved)
         category = categorize_library_path(str(resolved.relative_to(ROOT_DIR)))
         audio_id = registry.register(audio, source_type="library", tags=["library", category.lower().replace(" ", "_")])
-        return web.json_response({"audio_id": audio_id, "metadata": audio.metadata()})
+        return web.json_response({"audio_id": audio_id, "metadata": audio.metadata(), "reused": False})
     except Exception as e:
         logger.exception("Error loading audio file")
         return web.json_response({"error": str(e)}, status=500)

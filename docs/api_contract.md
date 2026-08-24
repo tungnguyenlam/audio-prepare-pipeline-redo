@@ -674,6 +674,13 @@ The repository provides two specialized web platforms:
 - **Frontend layout:** Flat `static/index.html` + `app.js` + `style.css` (no
   HTML partial composer). Tabs: Workspace, Separation, Diarization, Audition,
   Library.
+- **Audio selection:** Separation and diarization selectors group active
+  in-memory audio objects with persistent project-library files. Selecting a
+  library file loads it into the active registry before processing. Repeated
+  loads of the same resolved file path reuse its existing audio ID.
+- **Library loading:** `POST /api/library/load` accepts `{"path": "..."}` and
+  returns `audio_id`, `metadata`, and `reused`. `reused` is `true` when that
+  resolved path was already present in the active registry.
 - **Background task queue:** YouTube ingestion, single-model separation,
   diarization, and multi-model comparison use **per-device FIFO queues**.
   Each GPU (`cuda:0`, `cuda:1`, …) and the `cpu`/`mps` lane have independent

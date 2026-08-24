@@ -171,6 +171,7 @@ const el = {
 
   // Separation Studio
   sepInputSelect: document.getElementById('sep-input-select'),
+  btnSepBrowseLibrary: document.getElementById('btn-sep-browse-library'),
   sepChildrenBox: document.getElementById('sep-children-box'),
   sepChildrenCount: document.getElementById('sep-children-count'),
   sepChildrenList: document.getElementById('sep-children-list'),
@@ -1995,9 +1996,18 @@ function renderDiarizationChildren(selectedAudioId) {
 function initSeparationStudio() {
   // Input track change listener
   if (el.sepInputSelect) {
-    el.sepInputSelect.addEventListener('change', () => {
-      renderSeparationChildren(el.sepInputSelect.value);
+    el.sepInputSelect.addEventListener('change', async () => {
+      const audioId = el.sepInputSelect.value;
+      if (audioId.startsWith('lib:')) {
+        await loadLibraryFileTo(audioId.slice(4), 'separation');
+        return;
+      }
+      renderSeparationChildren(audioId);
     });
+  }
+
+  if (el.btnSepBrowseLibrary) {
+    el.btnSepBrowseLibrary.addEventListener('click', () => openLibraryModal('separation'));
   }
 
   // Model Card Selection
@@ -5215,7 +5225,10 @@ async function loadLibraryFileTo(filePath, target = 'workspace') {
         showToast(`Loaded "${data.metadata?.title || filePath}" into Audio Cutter!`, "success");
       } else if (target === 'separation') {
         switchTab('tab-separation');
-        if (el.sepInputSelect) el.sepInputSelect.value = data.audio_id;
+        if (el.sepInputSelect) {
+          el.sepInputSelect.value = data.audio_id;
+          el.sepInputSelect.dispatchEvent(new Event('change'));
+        }
         showToast(`Selected "${data.metadata?.title || filePath}" for Separation!`, "success");
       } else if (target === 'diarization') {
         switchTab('tab-diarization');
@@ -5226,7 +5239,10 @@ async function loadLibraryFileTo(filePath, target = 'workspace') {
         showToast(`Selected "${data.metadata?.title || filePath}" for Diarization!`, "success");
       } else if (target === 'speech') {
         switchTab('tab-separation');
-        if (el.sepInputSelect) el.sepInputSelect.value = data.audio_id;
+        if (el.sepInputSelect) {
+          el.sepInputSelect.value = data.audio_id;
+          el.sepInputSelect.dispatchEvent(new Event('change'));
+        }
         showToast(`Selected "${data.metadata?.title || filePath}" for Separation!`, "success");
       } else if (target === 'music') {
         switchTab('tab-workspace');
@@ -5237,10 +5253,6 @@ async function loadLibraryFileTo(filePath, target = 'workspace') {
   } catch (err) {
     showToast(`Failed to load file: ${err.message}`, "error");
   }
-}
-
-async function loadServerFile(filePath) {
-  return loadLibraryFileTo(filePath, 'workspace');
 }
 
 async function openLibraryModal(loadTarget = 'workspace') {
@@ -5816,6 +5828,10 @@ function audioOptionLabel(item, { includeFormat = true } = {}) {
   return `${channel}${prefix}${title} (${dur.toFixed(1)}s)`;
 }
 
+function normalizedAudioPath(path) {
+  return String(path || "").replaceAll('\\', '/').replace(/\/{2,}/g, '/');
+}
+
 function populateAllAudioSelects() {
   const standardSelects = [
     el.sepInputSelect,
@@ -5826,9 +5842,7 @@ function populateAllAudioSelects() {
     if (!select) return;
     const currentVal = select.value;
     const isDiar = select === el.diarInputSelect;
-    select.innerHTML = isDiar
-      ? '<option value="">-- Select session or library track --</option>'
-      : '<option value="">-- Select Audio Track --</option>';
+    select.innerHTML = '<option value="">-- Select session or library track --</option>';
 
     const sessionGroup = document.createElement("optgroup");
     sessionGroup.label = `🎛️ Session Audio (${state.audioList.length})`;
@@ -5844,17 +5858,16 @@ function populateAllAudioSelects() {
       select.appendChild(sessionGroup);
     }
 
-    // Diarization: also list sample-library files so users can pick without
-    // pre-loading into the session from the Library tab.
-    if (isDiar && Array.isArray(state.serverFiles) && state.serverFiles.length > 0) {
+    // All processing selectors can load a library file into the active registry.
+    if (Array.isArray(state.serverFiles) && state.serverFiles.length > 0) {
       const sessionPaths = new Set(
-        state.audioList.map(a => a.path).filter(Boolean)
+        state.audioList.map(a => normalizedAudioPath(a.path)).filter(Boolean)
       );
       const libraryGroup = document.createElement("optgroup");
-      libraryGroup.label = `📁 Sample Library (${state.serverFiles.length})`;
 
       state.serverFiles.forEach(file => {
-        if (!file?.path || sessionPaths.has(file.path)) return;
+        const canonicalPath = normalizedAudioPath(file?.absolute_path || file?.path);
+        if (!file?.path || sessionPaths.has(canonicalPath)) return;
         const opt = document.createElement("option");
         opt.value = `lib:${file.path}`;
         const title = file.title || file.name || file.path;
@@ -5866,6 +5879,7 @@ function populateAllAudioSelects() {
       });
 
       if (libraryGroup.children.length > 0) {
+        libraryGroup.label = `📁 Sample Library (${libraryGroup.children.length})`;
         select.appendChild(libraryGroup);
       }
     }
@@ -6504,7 +6518,8 @@ async function initApp() {
     }
   } catch (_) {}
 
-  // Restore saved active audio or load first sample
+  // Restore saved active audio. An empty session stays empty until the user
+  // explicitly chooses a library file or creates a new audio object.
   let targetAudioId = null;
   try {
     const savedId = localStorage.getItem('sonic_active_audio_id');
@@ -6518,11 +6533,6 @@ async function initApp() {
       await setActiveAudio(targetAudioId);
     } else if (state.audioList.length > 0) {
       await setActiveAudio(state.audioList[0].id);
-    } else if (state.serverFiles.length > 0) {
-      const firstSample = state.serverFiles.find(f => f.category === "Benchmark Speech") || state.serverFiles[0];
-      if (firstSample) {
-        await loadServerFile(firstSample.path);
-      }
     }
   } catch (e) {
     console.error("Audio auto-load error:", e);

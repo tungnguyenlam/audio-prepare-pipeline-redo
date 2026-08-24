@@ -489,9 +489,15 @@
             </div>
 
             <div class="form-group">
-              <label class="form-label" for="sep-input-select">Input Audio Track:</label>
+              <div class="label-with-tool">
+                <label class="form-label" for="sep-input-select">Input Audio Track:</label>
+                <button type="button" class="btn btn-ghost btn-xs" id="btn-sep-browse-library" title="Browse and load from the sample library">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                  <span>Library</span>
+                </button>
+              </div>
               <select id="sep-input-select" class="select-input">
-                <option value="">-- Select Loaded Audio --</option>
+                <option value="">-- Select session or library track --</option>
               </select>
               <!-- Child files & existing stem derivatives -->
               <div id="sep-children-box" class="child-derivatives-box" style="display: none;">
