@@ -4671,6 +4671,8 @@ async function exportTargetSpeakerSegments() {
   } catch (err) {
     showToast(`Export failed: ${err.message}`, 'error');
   }
+}
+
 // ==================== SPEAKER PURITY WORKBENCH ====================
 
 function initPurityTab() {
