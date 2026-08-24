@@ -286,28 +286,23 @@
   // Theme Management
   // -----------------------------------------------------------------------
   function initTheme() {
-    const savedTheme = localStorage.getItem('sonic_pipeline_theme') || (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-    applyTheme(savedTheme);
+    applyTheme('light');
 
     if (els.btnThemeToggle) {
       els.btnThemeToggle.addEventListener('click', () => {
-        const current = document.documentElement.getAttribute('data-theme') || 'dark';
-        const next = current === 'dark' ? 'light' : 'dark';
-        applyTheme(next);
-        showToast(`Switched to ${next} theme`, 'info');
+        applyTheme('light');
       });
     }
   }
 
-  function applyTheme(theme) {
-    document.documentElement.setAttribute('data-theme', theme);
+  function applyTheme(theme = 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
     try {
-      localStorage.setItem('sonic_pipeline_theme', theme);
+      localStorage.setItem('sonic_pipeline_theme', 'light');
     } catch (_) {}
 
-    const isLight = theme === 'light';
-    if (els.iconThemeSun) els.iconThemeSun.classList.toggle('hidden', !isLight);
-    if (els.iconThemeMoon) els.iconThemeMoon.classList.toggle('hidden', isLight);
+    if (els.iconThemeSun) els.iconThemeSun.classList.remove('hidden');
+    if (els.iconThemeMoon) els.iconThemeMoon.classList.add('hidden');
   }
 
   // -----------------------------------------------------------------------

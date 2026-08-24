@@ -3,43 +3,43 @@
    ========================================================================== */
 
 :root {
-  /* Surface colors (Dark Theme Default) */
-  --bg-app: hsl(222, 28%, 8%);
-  --bg-surface: hsl(222, 24%, 12%);
-  --bg-surface-elevated: hsl(222, 22%, 16%);
-  --bg-surface-hover: hsl(222, 20%, 21%);
-  --bg-input: hsl(222, 26%, 10%);
-  --bg-player: hsla(222, 28%, 9%, 0.88);
-  --bg-modal-backdrop: hsla(222, 30%, 6%, 0.75);
+  /* Surface colors (Light Theme Default) */
+  --bg-app: hsl(210, 25%, 98%);
+  --bg-surface: hsl(0, 0%, 100%);
+  --bg-surface-elevated: hsl(210, 20%, 95%);
+  --bg-surface-hover: hsl(210, 20%, 91%);
+  --bg-input: hsl(210, 18%, 96%);
+  --bg-player: hsla(0, 0%, 100%, 0.92);
+  --bg-modal-backdrop: hsla(222, 24%, 10%, 0.45);
 
   /* Border & Divider colors */
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-muted: rgba(255, 255, 255, 0.14);
-  --border-focus: hsl(217, 91%, 60%);
+  --border-subtle: rgba(15, 23, 42, 0.08);
+  --border-muted: rgba(15, 23, 42, 0.16);
+  --border-focus: hsl(217, 91%, 50%);
 
   /* Text colors */
-  --text-primary: hsl(210, 24%, 96%);
-  --text-secondary: hsl(215, 16%, 74%);
-  --text-muted: hsl(215, 14%, 52%);
-  --text-disabled: hsl(215, 10%, 38%);
+  --text-primary: hsl(222, 47%, 11%);
+  --text-secondary: hsl(215, 25%, 32%);
+  --text-muted: hsl(215, 16%, 50%);
+  --text-disabled: hsl(215, 10%, 70%);
 
   /* Accent & Functional colors */
-  --accent-primary: hsl(217, 91%, 60%);       /* Electric Blue */
-  --accent-primary-hover: hsl(217, 91%, 66%);
-  --accent-cyan: hsl(188, 86%, 53%);          /* Waveform cyan */
-  --accent-emerald: hsl(158, 64%, 52%);       /* Success / Ready */
-  --accent-amber: hsl(38, 92%, 50%);          /* Warning / Running */
-  --accent-rose: hsl(348, 83%, 60%);          /* Residual / Destructive */
+  --accent-primary: hsl(217, 91%, 50%);       /* Electric Blue */
+  --accent-primary-hover: hsl(217, 91%, 44%);
+  --accent-cyan: hsl(190, 90%, 38%);          /* Waveform cyan */
+  --accent-emerald: hsl(158, 70%, 34%);       /* Success / Ready */
+  --accent-amber: hsl(38, 92%, 40%);          /* Warning / Running */
+  --accent-rose: hsl(348, 83%, 50%);          /* Residual / Destructive */
 
   /* Speaker Palette (for Diarization turns) */
-  --spk-0: hsl(188, 86%, 53%);
-  --spk-1: hsl(158, 64%, 52%);
-  --spk-2: hsl(38, 92%, 50%);
-  --spk-3: hsl(348, 83%, 60%);
-  --spk-4: hsl(270, 75%, 65%);
-  --spk-5: hsl(205, 90%, 55%);
-  --spk-6: hsl(84, 80%, 50%);
-  --spk-7: hsl(22, 90%, 55%);
+  --spk-0: hsl(190, 90%, 38%);
+  --spk-1: hsl(158, 70%, 34%);
+  --spk-2: hsl(38, 92%, 40%);
+  --spk-3: hsl(348, 83%, 50%);
+  --spk-4: hsl(270, 75%, 52%);
+  --spk-5: hsl(205, 90%, 42%);
+  --spk-6: hsl(84, 80%, 38%);
+  --spk-7: hsl(22, 90%, 45%);
 
   /* Typography */
   --font-main: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -54,8 +54,8 @@
   --radius-pill: 9999px;
   --transition-fast: 0.15s cubic-bezier(0.16, 1, 0.3, 1);
   --transition-normal: 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  --shadow-card: 0 4px 20px -2px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  --shadow-elevated: 0 12px 36px -6px rgba(0, 0, 0, 0.65), 0 0 0 1px var(--border-muted);
+  --shadow-card: 0 4px 16px -2px rgba(15, 23, 42, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --shadow-elevated: 0 14px 36px -6px rgba(15, 23, 42, 0.15), 0 0 0 1px var(--border-muted);
 }
 
 /* ==================== LIGHT THEME ==================== */
@@ -1635,7 +1635,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: #000;
+  background-color: var(--bg-surface-elevated, #f8fafc);
   border-radius: var(--radius-sm);
   overflow: hidden;
 }
@@ -2828,7 +2828,7 @@ html, body {
   height: 64px;
   position: relative;
   border-bottom: 1px solid var(--border-subtle);
-  background: #080c16;
+  background: var(--bg-surface, #ffffff);
   box-sizing: border-box;
   cursor: crosshair;
   overflow: hidden;

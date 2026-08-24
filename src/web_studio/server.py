@@ -1418,8 +1418,8 @@ async def handle_get_spectrogram(request: web.Request) -> web.Response:
             return buf.getvalue()
 
         import librosa.display
-        fig, ax = plt.subplots(figsize=(10, 3.5), facecolor="#141721")
-        ax.set_facecolor("#0e111a")
+        fig, ax = plt.subplots(figsize=(10, 3.5), facecolor="#ffffff")
+        ax.set_facecolor("#f8fafc")
         img = librosa.display.specshow(
             mel_db,
             sr=sr,
@@ -1430,16 +1430,16 @@ async def handle_get_spectrogram(request: web.Request) -> web.Response:
             cmap="magma",
         )
         cbar = fig.colorbar(img, ax=ax, format="%+2.0f dB")
-        cbar.ax.yaxis.set_tick_params(color="#94a3b8")
-        plt.setp(plt.getp(cbar.ax.axes, "yticklabels"), color="#94a3b8")
-        cbar.set_label("dB", color="#94a3b8")
+        cbar.ax.yaxis.set_tick_params(color="#64748b")
+        plt.setp(plt.getp(cbar.ax.axes, "yticklabels"), color="#334155")
+        cbar.set_label("dB", color="#334155")
 
-        ax.set_title(f"Mel Spectrogram: {audio.title}", color="#e2e8f0", fontsize=11)
-        ax.set_xlabel("Time (s)", color="#94a3b8")
-        ax.set_ylabel("Hz", color="#94a3b8")
-        ax.tick_params(colors="#94a3b8")
+        ax.set_title(f"Mel Spectrogram: {audio.title}", color="#0f172a", fontsize=11)
+        ax.set_xlabel("Time (s)", color="#334155")
+        ax.set_ylabel("Hz", color="#334155")
+        ax.tick_params(colors="#334155")
         for spine in ax.spines.values():
-            spine.set_color("#334155")
+            spine.set_color("#cbd5e1")
 
         fig.tight_layout()
         plt.savefig(buf, format="png", dpi=120, bbox_inches="tight", facecolor=fig.get_facecolor())
@@ -2334,16 +2334,16 @@ async def handle_compare_spectrogram(request: web.Request) -> web.Response:
         if fig is None:
             raise RuntimeError("Failed to generate figure")
 
-        # Dark theme styling for figure
-        fig.patch.set_facecolor("#141721")
+        # Light theme styling for figure
+        fig.patch.set_facecolor("#ffffff")
         for ax in fig.axes:
-            ax.set_facecolor("#0e111a")
-            ax.tick_params(colors="#94a3b8")
-            ax.xaxis.label.set_color("#94a3b8")
-            ax.yaxis.label.set_color("#94a3b8")
-            ax.title.set_color("#e2e8f0")
+            ax.set_facecolor("#f8fafc")
+            ax.tick_params(colors="#334155")
+            ax.xaxis.label.set_color("#334155")
+            ax.yaxis.label.set_color("#334155")
+            ax.title.set_color("#0f172a")
             for spine in ax.spines.values():
-                spine.set_color("#334155")
+                spine.set_color("#cbd5e1")
 
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=120, bbox_inches="tight", facecolor=fig.get_facecolor())

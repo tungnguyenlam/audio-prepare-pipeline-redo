@@ -6640,28 +6640,23 @@ function switchTab(tabId) {
 // ==================== THEME MANAGEMENT ====================
 
 function initTheme() {
-  const savedTheme = localStorage.getItem('sonic_theme') || 'dark';
-  applyTheme(savedTheme);
+  applyTheme('light');
 
   if (el.btnThemeToggle) {
     el.btnThemeToggle.addEventListener('click', () => {
-      const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
-      const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
-      applyTheme(nextTheme);
-      showToast(`Switched to ${nextTheme} theme`, "info");
+      applyTheme('light');
     });
   }
 }
 
-function applyTheme(theme) {
-  document.documentElement.setAttribute('data-theme', theme);
+function applyTheme(theme = 'light') {
+  document.documentElement.setAttribute('data-theme', 'light');
   try {
-    localStorage.setItem('sonic_theme', theme);
+    localStorage.setItem('sonic_theme', 'light');
   } catch (_) {}
 
-  const isLight = theme === 'light';
-  if (el.iconThemeSun) el.iconThemeSun.classList.toggle('hidden', !isLight);
-  if (el.iconThemeMoon) el.iconThemeMoon.classList.toggle('hidden', isLight);
+  if (el.iconThemeSun) el.iconThemeSun.classList.remove('hidden');
+  if (el.iconThemeMoon) el.iconThemeMoon.classList.add('hidden');
   renderWaveform();
 }
 

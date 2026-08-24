@@ -4,43 +4,43 @@
    ========================================================================== */
 
 :root {
-  /* Dark Theme Default Surfaces */
-  --bg-base: hsl(224, 28%, 6%);
-  --bg-surface: hsl(224, 24%, 9%);
-  --bg-sidebar: hsl(224, 28%, 5%);
-  --bg-panel: hsl(224, 22%, 12%);
-  --bg-card: hsl(224, 20%, 15%);
-  --bg-input: hsl(224, 26%, 8%);
-  --bg-hover: hsl(224, 18%, 16%);
-  --bg-active: hsl(224, 16%, 20%);
-  --bg-terminal: hsl(224, 32%, 4%);
-  --bg-modal-backdrop: hsla(224, 30%, 3%, 0.82);
+  /* Light Theme Default Surfaces */
+  --bg-base: hsl(210, 25%, 97%);
+  --bg-surface: hsl(0, 0%, 100%);
+  --bg-sidebar: hsl(210, 20%, 94%);
+  --bg-panel: hsl(210, 18%, 91%);
+  --bg-card: hsl(210, 16%, 88%);
+  --bg-input: hsl(210, 16%, 96%);
+  --bg-hover: hsl(210, 18%, 86%);
+  --bg-active: hsl(210, 16%, 80%);
+  --bg-terminal: hsl(222, 28%, 10%);
+  --bg-modal-backdrop: hsla(222, 24%, 10%, 0.5);
 
-  --border-subtle: rgba(255, 255, 255, 0.07);
-  --border-medium: rgba(255, 255, 255, 0.12);
-  --border-strong: rgba(255, 255, 255, 0.22);
-  --border-focus: hsl(217, 91%, 60%);
+  --border-subtle: rgba(15, 23, 42, 0.08);
+  --border-medium: rgba(15, 23, 42, 0.14);
+  --border-strong: rgba(15, 23, 42, 0.24);
+  --border-focus: hsl(217, 91%, 50%);
 
-  --text-main: hsl(210, 24%, 96%);
-  --text-muted: hsl(215, 16%, 74%);
-  --text-subtle: hsl(215, 14%, 52%);
+  --text-main: hsl(222, 47%, 11%);
+  --text-muted: hsl(215, 25%, 32%);
+  --text-subtle: hsl(215, 16%, 50%);
 
   /* Neon Radiant Accent Palette */
-  --color-primary: hsl(217, 91%, 60%);
-  --color-primary-hover: hsl(217, 91%, 66%);
-  --color-primary-glow: rgba(37, 99, 235, 0.25);
+  --color-primary: hsl(217, 91%, 50%);
+  --color-primary-hover: hsl(217, 91%, 44%);
+  --color-primary-glow: rgba(37, 99, 235, 0.12);
 
-  --color-cyan: hsl(188, 86%, 53%);
-  --color-cyan-glow: rgba(6, 182, 212, 0.22);
+  --color-cyan: hsl(190, 90%, 38%);
+  --color-cyan-glow: rgba(6, 182, 212, 0.15);
 
-  --color-emerald: hsl(158, 64%, 52%);
-  --color-emerald-glow: rgba(16, 185, 129, 0.2);
+  --color-emerald: hsl(158, 70%, 34%);
+  --color-emerald-glow: rgba(16, 185, 129, 0.15);
 
-  --color-violet: hsl(262, 83%, 65%);
-  --color-violet-glow: rgba(139, 92, 246, 0.2);
+  --color-violet: hsl(262, 83%, 55%);
+  --color-violet-glow: rgba(139, 92, 246, 0.15);
 
-  --color-warning: hsl(38, 92%, 50%);
-  --color-danger: hsl(348, 83%, 60%);
+  --color-warning: hsl(38, 92%, 40%);
+  --color-danger: hsl(348, 83%, 50%);
 
   --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -51,9 +51,9 @@
   --radius-lg: 16px;
   --radius-full: 9999px;
 
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.7), 0 0 0 1px var(--border-medium);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 18px rgba(15, 23, 42, 0.07), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --shadow-lg: 0 16px 40px rgba(15, 23, 42, 0.16), 0 0 0 1px var(--border-medium);
 
   --transition-fast: 0.15s cubic-bezier(0.16, 1, 0.3, 1);
   --transition-normal: 0.25s cubic-bezier(0.16, 1, 0.3, 1);
