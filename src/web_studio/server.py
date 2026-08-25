@@ -44,7 +44,13 @@ from src.separation import HTDemucs, BSRoFormer, MelRoFormer, MVSepMDX23
 from src.diarization import (
     ClusteringDiarizer,
     ClusteringWorkerDiarizer,
+    DEFAULT_GEMINI_MODEL_ID,
+    DEFAULT_EMBEDDING_MODEL_ID,
+    DEFAULT_GEMMA4_MODEL_ID,
+    DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS,
+    DEFAULT_UNSLOTH_ENDPOINT,
     DiariZenWorkerDiarizer,
+    OVERLAP_PROMPT,
     PyannoteDiarizer,
     SortformerWorkerDiarizer,
     SpeakerVerifier,
@@ -52,6 +58,7 @@ from src.diarization import (
     SpeakerPurityResult,
     ThreeDSpeakerDiarizer,
     ThreeDSpeakerWorkerDiarizer,
+    create_overlap_verifier,
 )
 from src.diarization.schemas import DiarizationResult, Speaker, SpeakerTurn
 from src.yt_crawler.YtCrawlerClass import YtCrawler, parse_crawl_sample_rate
@@ -2449,6 +2456,44 @@ async def handle_target_speaker_score(request: web.Request) -> web.Response:
     )
 
 
+async def handle_speaker_purity_config(request: web.Request) -> web.Response:
+    """Return non-secret speaker-purity defaults for the web workbench."""
+    configured_backend = os.getenv("OVERLAP_VERIFIER", "").strip().lower()
+    overlap_enabled = True
+    if configured_backend in {"gemma", "gemma4", "gemma-4", "unsloth"}:
+        configured_backend = "gemma4"
+    elif configured_backend in {"gemini", "gemini-3.1", "gemini-3.1-pro"}:
+        configured_backend = "gemini"
+    else:
+        configured_backend = "gemma4"
+        overlap_enabled = False
+
+    host = os.getenv("UNSLOTH_HOST", "localhost").strip() or "localhost"
+    port = os.getenv("UNSLOTH_PORT", "8888").strip() or "8888"
+    unsloth_endpoint = os.getenv("UNSLOTH_ENDPOINT") or (
+        f"http://{host}:{port}/v1/chat/completions"
+    )
+    return web.json_response(
+        {
+            "overlap_enabled": overlap_enabled,
+            "embedding_model_id": DEFAULT_EMBEDDING_MODEL_ID,
+            "overlap_backend": configured_backend,
+            "overlap_prompt": OVERLAP_PROMPT,
+            "overlap_timeout_s": 120.0,
+            "overlap_max_output_tokens": DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS,
+            "gemma4": {
+                "endpoint": unsloth_endpoint or DEFAULT_UNSLOTH_ENDPOINT,
+                "model": os.getenv("UNSLOTH_MODEL") or DEFAULT_GEMMA4_MODEL_ID,
+                "api_key_configured": bool(os.getenv("UNSLOTH_API_KEY")),
+            },
+            "gemini": {
+                "model": os.getenv("GEMINI_MODEL") or DEFAULT_GEMINI_MODEL_ID,
+                "api_key_configured": bool(os.getenv("GEMINI_API_KEY")),
+            },
+        }
+    )
+
+
 async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
     """Verify speaker purity of diarization turns against an enrolled speaker profile."""
     data = await request.json()
@@ -2457,12 +2502,76 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
     turns = data.get("turns", [])
     device = data.get("device", "auto")
     token = data.get("token") or os.getenv("HF_TOKEN")
+    model_id = str(data.get("model_id") or DEFAULT_EMBEDDING_MODEL_ID).strip()
+    if not model_id:
+        return web.json_response(
+            {"error": "model_id must not be empty"}, status=400
+        )
 
-    similarity_threshold = float(data.get("similarity_threshold", 0.60))
-    min_candidate_duration_s = float(data.get("min_candidate_duration_s", 1.5))
-    max_overlap_duration_s = float(data.get("max_overlap_duration_s", 0.05))
-    window_duration_s = float(data.get("window_duration_s", 2.0))
-    window_hop_s = float(data.get("window_hop_s", 0.75))
+    try:
+        similarity_threshold = float(data.get("similarity_threshold", 0.60))
+        min_candidate_duration_s = float(
+            data.get("min_candidate_duration_s", 1.5)
+        )
+        max_overlap_duration_s = float(data.get("max_overlap_duration_s", 0.05))
+        window_duration_s = float(data.get("window_duration_s", 2.0))
+        window_hop_s = float(data.get("window_hop_s", 0.75))
+    except (TypeError, ValueError) as e:
+        return web.json_response(
+            {"error": f"Invalid speaker purity numeric setting: {e}"}, status=400
+        )
+    overlap_settings = data.get("overlap_verifier") or {}
+    if not isinstance(overlap_settings, dict):
+        return web.json_response(
+            {"error": "overlap_verifier must be an object"}, status=400
+        )
+    overlap_enabled = overlap_settings.get("enabled") is True
+    overlap_failure_policy = str(
+        overlap_settings.get("failure_policy", "fail_closed")
+    )
+    if overlap_failure_policy not in {"fail_closed", "keep_embedding_decision"}:
+        return web.json_response(
+            {"error": "Invalid overlap verifier failure_policy"}, status=400
+        )
+
+    overlap_config: dict[str, Any] | None = None
+    if overlap_enabled:
+        try:
+            overlap_config = {
+                "backend": overlap_settings.get("backend", "gemma4"),
+                "model": overlap_settings.get("model") or None,
+                "api_key": overlap_settings.get("api_key") or None,
+                "timeout_s": float(overlap_settings.get("timeout_s", 120.0)),
+                "prompt": overlap_settings.get("prompt") or OVERLAP_PROMPT,
+                "max_output_tokens": int(
+                    overlap_settings.get(
+                        "max_output_tokens", DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS
+                    )
+                ),
+            }
+        except (TypeError, ValueError) as e:
+            return web.json_response(
+                {"error": f"Invalid overlap verifier numeric setting: {e}"},
+                status=400,
+            )
+        if str(overlap_config["backend"]).strip().lower() in {
+            "gemma",
+            "gemma4",
+            "gemma-4",
+            "unsloth",
+        }:
+            overlap_config["endpoint"] = (
+                overlap_settings.get("endpoint") or None
+            )
+        overlap_config = {
+            key: value for key, value in overlap_config.items() if value is not None
+        }
+        try:
+            create_overlap_verifier(overlap_config)
+        except (TypeError, ValueError) as e:
+            return web.json_response(
+                {"error": f"Invalid overlap verifier settings: {e}"}, status=400
+            )
 
     if not audio_id or not profile_name:
         return web.json_response(
@@ -2510,8 +2619,12 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
             "audio_id": audio_id,
             "profile": profile_name,
             "device": device,
+            "model_id": model_id,
+            "model": model_id,
             "similarity_threshold": similarity_threshold,
             "turns_count": len(speaker_turns),
+            "overlap_verifier": overlap_config.get("backend") if overlap_config else None,
+            "backend": overlap_config.get("backend") if overlap_config else None,
         },
     )
 
@@ -2520,6 +2633,8 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
         task_manager.update_task(
             task_id,
             status="running",
+            progress=0.05 if overlap_config else 0.0,
+            progress_known=bool(overlap_config),
             message=(
                 f"Verifying speaker purity for {len(speaker_turns)} turns against "
                 f"'{profile_name}' on {target_device}..."
@@ -2528,7 +2643,11 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
         loop = asyncio.get_running_loop()
 
         def do_verify():
-            verifier = SpeakerVerifier(device=target_device, token=token)
+            verifier = SpeakerVerifier(
+                model_id=model_id,
+                device=target_device,
+                token=token,
+            )
             profile = verifier.load_profile(profile_name)
             with verifier:
                 return verifier.verify_purity(
@@ -2547,7 +2666,6 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
             purity_results = await loop.run_in_executor(None, do_verify)
             if _task_is_cancelled(task_id):
                 return
-            elapsed = time.time() - start_time
 
             serialized_results = []
             for r in purity_results:
@@ -2555,19 +2673,110 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
                 item["passed"] = r.passed
                 item["duration_s"] = r.duration_s
                 item["min_target_similarity"] = r.min_target_similarity
+                if overlap_config:
+                    item["direct_overlap"] = None
                 serialized_results.append(item)
 
-            passed_results = [r for r in purity_results if r.passed]
-            total_duration_s = sum(r.duration_s for r in purity_results)
-            passed_duration_s = sum(r.duration_s for r in passed_results)
+            if overlap_config:
+                preliminary_passes = [
+                    index
+                    for index, item in enumerate(serialized_results)
+                    if item["decision"] == "pass"
+                ]
+                verifier = create_overlap_verifier(overlap_config)
+                backend = str(overlap_config["backend"])
+                model = str(getattr(verifier, "model", overlap_config.get("model", "")))
+                task_manager.update_task(
+                    task_id,
+                    progress=0.45,
+                    progress_known=True,
+                    message=(
+                        f"Identity stage complete. Checking {len(preliminary_passes)} "
+                        f"candidate(s) with {backend}..."
+                    ),
+                )
+                work_dir = DATA_DIR / "purity" / "work" / task_id
+                cutter = AudioCutter(output_dir=work_dir)
+                try:
+                    for position, result_index in enumerate(preliminary_passes, start=1):
+                        if _task_is_cancelled(task_id):
+                            return
+                        item = serialized_results[result_index]
+                        output_path = work_dir / f"candidate_{result_index:05d}.wav"
+
+                        def verify_candidate():
+                            segment = cutter.cut(
+                                audio,
+                                item["start_s"],
+                                item["end_s"],
+                                output_path=output_path,
+                            )
+                            return verifier.verify(segment)
+
+                        try:
+                            direct_result = await loop.run_in_executor(
+                                None, verify_candidate
+                            )
+                            item["direct_overlap"] = {
+                                "backend": backend,
+                                "model": model,
+                                "overlap": direct_result["overlap"],
+                                "reason": direct_result["reason"],
+                                "error": None,
+                            }
+                            if direct_result["overlap"]:
+                                item["decision"] = "reject"
+                                item["reason"] = "direct_overlap_detected"
+                        except Exception as e:
+                            item["direct_overlap"] = {
+                                "backend": backend,
+                                "model": model,
+                                "overlap": None,
+                                "reason": None,
+                                "error": f"{type(e).__name__}: {e}",
+                            }
+                            if overlap_failure_policy == "fail_closed":
+                                item["decision"] = "error"
+                                item["reason"] = "direct_overlap_verification_failed"
+                                item["error"] = str(e)
+
+                        completed_fraction = position / max(1, len(preliminary_passes))
+                        task_manager.update_task(
+                            task_id,
+                            progress=0.45 + (0.5 * completed_fraction),
+                            progress_known=True,
+                            message=(
+                                f"Direct overlap check {position}/{len(preliminary_passes)} "
+                                f"with {backend}"
+                            ),
+                        )
+                finally:
+                    shutil.rmtree(work_dir, ignore_errors=True)
+
+            for item in serialized_results:
+                item["passed"] = item["decision"] == "pass"
+            elapsed = time.time() - start_time
+
+            passed_results = [
+                item for item in serialized_results if item["decision"] == "pass"
+            ]
+            total_duration_s = sum(item["duration_s"] for item in serialized_results)
+            passed_duration_s = sum(item["duration_s"] for item in passed_results)
+            direct_overlap_results = [
+                item["direct_overlap"]
+                for item in serialized_results
+                if item.get("direct_overlap") is not None
+            ]
 
             reasons_count: dict[str, int] = {}
-            for r in purity_results:
-                if r.reason:
-                    reasons_count[r.reason] = reasons_count.get(r.reason, 0) + 1
+            for item in serialized_results:
+                if item["reason"]:
+                    reasons_count[item["reason"]] = reasons_count.get(item["reason"], 0) + 1
 
             passed_sims = [
-                w.similarity for r in passed_results for w in r.windows
+                window["similarity"]
+                for item in passed_results
+                for window in item["windows"]
             ]
             avg_passed_similarity = (
                 float(np.mean(passed_sims)) if passed_sims else None
@@ -2579,7 +2788,8 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
                 progress=1.0,
                 progress_known=True,
                 message=(
-                    f"Purity verification complete: {len(passed_results)}/{len(purity_results)} passed "
+                    f"Purity verification complete: {len(passed_results)}/"
+                    f"{len(serialized_results)} passed "
                     f"({passed_duration_s:.1f}s pure speech) in {elapsed:.2f}s on {target_device}!"
                 ),
                 result={
@@ -2589,11 +2799,11 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
                     "elapsed_s": round(elapsed, 2),
                     "device": target_device,
                     "metrics": {
-                        "total_candidates": len(purity_results),
+                        "total_candidates": len(serialized_results),
                         "passed_candidates": len(passed_results),
                         "pass_rate_percent": (
-                            (len(passed_results) / len(purity_results) * 100)
-                            if purity_results
+                            (len(passed_results) / len(serialized_results) * 100)
+                            if serialized_results
                             else 0.0
                         ),
                         "total_duration_s": round(total_duration_s, 2),
@@ -2604,6 +2814,15 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
                             else 0.0
                         ),
                         "reasons_breakdown": reasons_count,
+                        "direct_overlap_checked": len(direct_overlap_results),
+                        "direct_overlap_detected": sum(
+                            result["overlap"] is True
+                            for result in direct_overlap_results
+                        ),
+                        "direct_overlap_errors": sum(
+                            bool(result["error"])
+                            for result in direct_overlap_results
+                        ),
                         "avg_passed_similarity": (
                             round(avg_passed_similarity, 3)
                             if avg_passed_similarity is not None
@@ -2616,6 +2835,25 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
                         "max_overlap_duration_s": max_overlap_duration_s,
                         "window_duration_s": window_duration_s,
                         "window_hop_s": window_hop_s,
+                        "model_id": model_id,
+                        "overlap_verifier": (
+                            {
+                                "enabled": True,
+                                "backend": overlap_config["backend"],
+                                "model": getattr(verifier, "model", None),
+                                "endpoint": getattr(verifier, "endpoint", None),
+                                "timeout_s": overlap_config["timeout_s"],
+                                "prompt": overlap_config["prompt"],
+                                "max_output_tokens": overlap_config["max_output_tokens"],
+                                "failure_policy": overlap_failure_policy,
+                                "api_key_configured": bool(
+                                    overlap_config.get("api_key")
+                                    or getattr(verifier, "api_key", None)
+                                ),
+                            }
+                            if overlap_config
+                            else {"enabled": False}
+                        ),
                     },
                 },
             )
@@ -3321,6 +3559,7 @@ def register_api_routes(app: web.Application) -> None:
     )
     app.router.add_delete("/api/speaker-profiles/{name}", handle_delete_speaker_profile)
     app.router.add_post("/api/diarization/target-speaker-score", handle_target_speaker_score)
+    app.router.add_get("/api/purity/config", handle_speaker_purity_config)
     app.router.add_post("/api/purity/verify", handle_verify_speaker_purity)
     app.router.add_post("/api/purity/export-audio", handle_export_purity_audio)
     app.router.add_post("/api/compare/spectrogram", handle_compare_spectrogram)

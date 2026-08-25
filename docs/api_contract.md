@@ -692,9 +692,8 @@ consume the same profiles without changing their on-disk schema.
 
 `BaseOverlapVerifier.verify(audio: Audio) -> OverlapVerificationResult` is the
 shared interface. Both implementations read the file at `audio.path`, send the
-audio bytes directly to the selected multimodal model, ask exactly
-“Does this audio contain overlapping speech from two or more speakers at the
-same time?”, and normalize the structured answer to:
+audio bytes directly to the selected multimodal model, and normalize the
+structured answer to:
 
 ```python
 {"overlap": bool, "reason": str}
@@ -714,6 +713,11 @@ same time?”, and normalize the structured answer to:
 - Both validate the returned boolean and non-empty reason. Missing files,
   unsupported formats, HTTP failures, and malformed model responses fail
   explicitly rather than returning a guessed result.
+- Both constructors accept `prompt` (defaulting to `OVERLAP_PROMPT`) and
+  `max_output_tokens` (default `128`) in addition to `model`, `api_key`, and
+  `timeout_s`. The prompt is required to be non-empty and the token limit must
+  be a positive integer. The JSON response schema is fixed even when callers
+  customize the instruction.
 
 `create_overlap_verifier(config)` selects the backend from a flat mapping:
 
@@ -725,10 +729,21 @@ verifier = create_overlap_verifier(
         "backend": "gemma4",  # or "gemini"
         "endpoint": "http://localhost:8888/v1/chat/completions",
         "model": "unsloth/gemma-4-12b-it-GGUF",
+        "prompt": "Reject if simultaneous speakers are audible.",
+        "max_output_tokens": 128,
     }
 )
 result = verifier.verify(audio_segment)
 ```
+
+SonicStudio exposes this as an optional second stage in Speaker Purity. It
+checks only candidates that pass duration, diarization-overlap, and sliding
+identity checks. A positive direct-audio result changes the decision to
+`reject` with reason `direct_overlap_detected`. Request failures either become
+`error` with reason `direct_overlap_verification_failed` (the default
+fail-closed policy) or preserve the stage-one pass when explicitly configured.
+The web report records backend, model, endpoint, timeout, token budget, prompt,
+and failure policy but never returns the API key.
 
 When the mapping omits `backend`, selection falls back to
 `OVERLAP_VERIFIER`. Callers compose this verification step where needed; it is

@@ -11,6 +11,7 @@ from src.diarization.DiariZenWorkerDiarizer import DiariZenWorkerDiarizer
 from src.diarization.OverlapVerifier import (
     DEFAULT_GEMINI_MODEL_ID,
     DEFAULT_GEMMA4_MODEL_ID,
+    DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS,
     DEFAULT_UNSLOTH_ENDPOINT,
     DEFAULT_UNSLOTH_HOST,
     DEFAULT_UNSLOTH_PORT,
@@ -19,6 +20,7 @@ from src.diarization.OverlapVerifier import (
     GeminiOverlapVerifier,
     OverlapVerificationResult,
     OverlapVerifierError,
+    OVERLAP_PROMPT,
     create_overlap_verifier,
 )
 from src.diarization.PyannoteDiarizer import (
@@ -59,6 +61,7 @@ __all__ = [
     "DEFAULT_EMBEDDING_MODEL_ID",
     "DEFAULT_GEMINI_MODEL_ID",
     "DEFAULT_GEMMA4_MODEL_ID",
+    "DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS",
     "DEFAULT_MAX_OVERLAP_DURATION_S",
     "DEFAULT_PYANNOTE_MODEL_ID",
     "DEFAULT_PURITY_WINDOW_DURATION_S",
@@ -74,6 +77,7 @@ __all__ = [
     "Gemma4OverlapVerifier",
     "OverlapVerificationResult",
     "OverlapVerifierError",
+    "OVERLAP_PROMPT",
     "PyannoteDiarizer",
     "ScoredSegment",
     "Speaker",

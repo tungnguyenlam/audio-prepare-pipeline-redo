@@ -19,6 +19,7 @@ OVERLAP_PROMPT = (
     "Does this audio contain overlapping speech from two or more speakers "
     "at the same time?"
 )
+DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS = 128
 DEFAULT_UNSLOTH_HOST = "localhost"
 DEFAULT_UNSLOTH_PORT = 8888
 DEFAULT_UNSLOTH_ENDPOINT = (
@@ -80,6 +81,8 @@ class Gemma4OverlapVerifier(BaseOverlapVerifier):
         model: str | None = None,
         api_key: str | None = None,
         timeout_s: float = 120.0,
+        prompt: str = OVERLAP_PROMPT,
+        max_output_tokens: int = DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS,
     ) -> None:
         """Initialize the Unsloth-backed verifier.
 
@@ -92,6 +95,8 @@ class Gemma4OverlapVerifier(BaseOverlapVerifier):
             api_key: Unsloth API key. Defaults to ``UNSLOTH_API_KEY``. It is
                 optional for local servers configured without authentication.
             timeout_s: HTTP request timeout in seconds.
+            prompt: Instruction sent with every candidate audio segment.
+            max_output_tokens: Maximum tokens allowed for the JSON decision.
         """
         self.endpoint = (
             endpoint
@@ -101,6 +106,8 @@ class Gemma4OverlapVerifier(BaseOverlapVerifier):
         self.model = model or os.getenv("UNSLOTH_MODEL") or DEFAULT_GEMMA4_MODEL_ID
         self.api_key = api_key if api_key is not None else os.getenv("UNSLOTH_API_KEY")
         self.timeout_s = _validate_timeout(timeout_s)
+        self.prompt = _validate_prompt(prompt)
+        self.max_output_tokens = _validate_max_output_tokens(max_output_tokens)
 
     def verify(self, audio: Audio) -> OverlapVerificationResult:
         """Send the audio segment directly to the local Gemma model."""
@@ -117,7 +124,7 @@ class Gemma4OverlapVerifier(BaseOverlapVerifier):
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": OVERLAP_PROMPT},
+                        {"type": "text", "text": self.prompt},
                         {
                             "type": "input_audio",
                             "input_audio": {
@@ -136,7 +143,7 @@ class Gemma4OverlapVerifier(BaseOverlapVerifier):
                     "schema": _OVERLAP_SCHEMA,
                 },
             },
-            "max_tokens": 128,
+            "max_tokens": self.max_output_tokens,
             "stream": False,
         }
         headers = {}
@@ -168,6 +175,8 @@ class GeminiOverlapVerifier(BaseOverlapVerifier):
         model: str | None = None,
         api_key: str | None = None,
         timeout_s: float = 120.0,
+        prompt: str = OVERLAP_PROMPT,
+        max_output_tokens: int = DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS,
     ) -> None:
         """Initialize the Gemini-backed verifier.
 
@@ -176,10 +185,14 @@ class GeminiOverlapVerifier(BaseOverlapVerifier):
                 3.1 Pro Preview.
             api_key: Gemini API key. Defaults to ``GEMINI_API_KEY``.
             timeout_s: HTTP request timeout in seconds.
+            prompt: Instruction sent with every candidate audio segment.
+            max_output_tokens: Maximum tokens allowed for the JSON decision.
         """
         self.model = model or os.getenv("GEMINI_MODEL") or DEFAULT_GEMINI_MODEL_ID
         self.api_key = api_key if api_key is not None else os.getenv("GEMINI_API_KEY")
         self.timeout_s = _validate_timeout(timeout_s)
+        self.prompt = _validate_prompt(prompt)
+        self.max_output_tokens = _validate_max_output_tokens(max_output_tokens)
 
     def verify(self, audio: Audio) -> OverlapVerificationResult:
         """Send the audio segment directly to Gemini 3.1 Pro."""
@@ -198,7 +211,7 @@ class GeminiOverlapVerifier(BaseOverlapVerifier):
                 {
                     "role": "user",
                     "parts": [
-                        {"text": OVERLAP_PROMPT},
+                        {"text": self.prompt},
                         {
                             "inlineData": {
                                 "mimeType": mime_type,
@@ -215,7 +228,7 @@ class GeminiOverlapVerifier(BaseOverlapVerifier):
                         "schema": _OVERLAP_SCHEMA,
                     }
                 },
-                "maxOutputTokens": 128,
+                "maxOutputTokens": self.max_output_tokens,
             },
         }
         response = _post_json(
@@ -249,8 +262,9 @@ def create_overlap_verifier(
     Args:
         config: Settings containing ``backend`` (``"gemma4"`` or
             ``"gemini"``) and optional ``endpoint``, ``model``, ``api_key``,
-            and ``timeout_s`` values. ``backend`` falls back to the
-            ``OVERLAP_VERIFIER`` environment variable.
+            ``timeout_s``, ``prompt``, and ``max_output_tokens`` values.
+            ``backend`` falls back to the ``OVERLAP_VERIFIER`` environment
+            variable.
 
     Returns:
         The selected overlap verifier.
@@ -362,6 +376,27 @@ def _validate_timeout(timeout_s: float) -> float:
     if timeout <= 0:
         raise ValueError("timeout_s must be greater than zero")
     return timeout
+
+
+def _validate_prompt(prompt: str) -> str:
+    """Return a non-empty verifier instruction."""
+    if not isinstance(prompt, str):
+        raise TypeError("prompt must be a string")
+    normalized = prompt.strip()
+    if not normalized:
+        raise ValueError("prompt must not be empty")
+    return normalized
+
+
+def _validate_max_output_tokens(max_output_tokens: int) -> int:
+    """Return a positive structured-response token budget."""
+    if isinstance(max_output_tokens, bool) or not isinstance(
+        max_output_tokens, int
+    ):
+        raise TypeError("max_output_tokens must be an integer")
+    if max_output_tokens <= 0:
+        raise ValueError("max_output_tokens must be greater than zero")
+    return max_output_tokens
 
 
 def _default_unsloth_endpoint() -> str:

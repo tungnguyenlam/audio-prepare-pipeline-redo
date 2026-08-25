@@ -72,6 +72,13 @@ Every direct-audio overlap verifier returns the same two-field mapping:
 Malformed or incomplete model output raises `OverlapVerifierError` instead of
 being coerced into a decision.
 
+SonicStudio purity reports may attach a `direct_overlap` object to each
+serialized `SpeakerPurityResult`. It is `null` when the optional verifier was
+enabled but the candidate already failed stage one. Otherwise it records the
+backend, model, normalized `overlap` decision, model reason, and any request
+error. This web-report evidence does not change the core
+`SpeakerPurityResult` dataclass.
+
 ## Pipeline `AudioItem`
 
 Pipeline registry items expose the `Audio` source/channel fields directly in

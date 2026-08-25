@@ -1448,8 +1448,76 @@
                 </div>
               </div>
 
+              <div class="purity-overlap-panel" id="purity-overlap-panel">
+                <div class="purity-overlap-header">
+                  <label class="purity-overlap-toggle" for="purity-overlap-enabled">
+                    <input type="checkbox" id="purity-overlap-enabled">
+                    <span>
+                      <strong>Direct-audio overlap veto</strong>
+                      <small>Optionally send stage-one passes to Gemma or Gemini for a second opinion.</small>
+                    </span>
+                  </label>
+                  <span class="badge badge-sm badge-ghost" id="purity-overlap-status-badge">Off</span>
+                </div>
+
+                <div id="purity-overlap-config" class="purity-overlap-config hidden">
+                  <div class="purity-overlap-grid">
+                    <div class="form-group mb-0">
+                      <label class="form-label" for="purity-overlap-backend">Backend</label>
+                      <select id="purity-overlap-backend" class="select-input">
+                        <option value="gemma4">Gemma 4 via Unsloth</option>
+                        <option value="gemini">Gemini API</option>
+                      </select>
+                    </div>
+                    <div class="form-group mb-0 purity-overlap-model-field">
+                      <label class="form-label" for="purity-overlap-model">Model ID</label>
+                      <input id="purity-overlap-model" class="text-input font-mono" type="text" autocomplete="off">
+                    </div>
+                    <div class="form-group mb-0 purity-overlap-endpoint-field" id="purity-overlap-endpoint-field">
+                      <label class="form-label" for="purity-overlap-endpoint">OpenAI-compatible endpoint</label>
+                      <input id="purity-overlap-endpoint" class="text-input font-mono" type="url" autocomplete="off">
+                    </div>
+                    <div class="form-group mb-0">
+                      <div class="label-with-tool">
+                        <label class="form-label" for="purity-overlap-api-key">API key <span id="purity-overlap-key-status" class="text-muted">(optional)</span></label>
+                        <button type="button" class="btn btn-ghost btn-xs" id="btn-toggle-purity-overlap-key">Show</button>
+                      </div>
+                      <input id="purity-overlap-api-key" class="text-input font-mono" type="password" autocomplete="off" placeholder="Leave blank to use server .env">
+                    </div>
+                    <div class="form-group mb-0">
+                      <label class="form-label" for="purity-overlap-timeout">Request timeout (s)</label>
+                      <input id="purity-overlap-timeout" class="text-input" type="number" min="1" max="900" step="1" value="120">
+                    </div>
+                    <div class="form-group mb-0">
+                      <label class="form-label" for="purity-overlap-max-tokens">Max output tokens</label>
+                      <input id="purity-overlap-max-tokens" class="text-input" type="number" min="1" max="4096" step="1" value="128">
+                    </div>
+                    <div class="form-group mb-0">
+                      <label class="form-label" for="purity-overlap-failure-policy">If the verifier request fails</label>
+                      <select id="purity-overlap-failure-policy" class="select-input">
+                        <option value="fail_closed">Fail closed — mark candidate as error</option>
+                        <option value="keep_embedding_decision">Keep the stage-one pass</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="form-group mb-0 purity-prompt-field">
+                    <div class="label-with-tool">
+                      <label class="form-label" for="purity-overlap-prompt">Verifier prompt</label>
+                      <button type="button" class="btn btn-ghost btn-xs" id="btn-reset-purity-overlap">Restore server defaults</button>
+                    </div>
+                    <textarea id="purity-overlap-prompt" class="text-input purity-prompt-input" rows="4" spellcheck="true"></textarea>
+                    <p class="text-xs text-muted">The response shape remains fixed to <code>{ overlap: boolean, reason: string }</code>. Only stage-one passes are sent, one candidate at a time.</p>
+                  </div>
+                </div>
+              </div>
+
               <!-- Hardware Device & HF Token Row -->
               <div class="purity-params-row" style="margin-top: 12px;">
+                <div class="form-group flex-2">
+                  <label class="form-label" for="purity-embedding-model">Speaker embedding model:</label>
+                  <input type="text" id="purity-embedding-model" class="text-input font-mono" value="pyannote/wespeaker-voxceleb-resnet34-LM" autocomplete="off">
+                </div>
                 <div class="form-group flex-1">
                   <label class="form-label" for="purity-device-select">Compute Device:</label>
                   <select id="purity-device-select" class="select-input">
@@ -1608,10 +1676,11 @@
                     <th style="width: 170px;">Segment & Audition</th>
                     <th style="width: 140px;">Diarized Speaker</th>
                     <th style="width: 90px;">Duration</th>
-                    <th style="width: 130px;">Overlap</th>
+                    <th style="width: 130px;">Diarization Overlap</th>
+                    <th style="width: 180px;">Direct Audio Check</th>
                     <th style="width: 170px;">Decision & Reason</th>
                     <th style="width: 100px;">Min Sim</th>
-                    <th>Sliding Identity Windows (2.0s window / 0.75s hop)</th>
+                    <th id="purity-windows-heading">Sliding Identity Windows (2.0s window / 0.75s hop)</th>
                   </tr>
                 </thead>
                 <tbody id="purity-table-body"></tbody>

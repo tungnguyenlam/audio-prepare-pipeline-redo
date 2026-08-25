@@ -86,6 +86,9 @@ authentication. `UNSLOTH_HOST` defaults to `localhost` and `UNSLOTH_PORT`
 defaults to `8888`; set `UNSLOTH_ENDPOINT` when the server needs an otherwise
 custom full URL. The Gemini verifier reads `GEMINI_API_KEY` from `.env` and uses
 `gemini-3.1-pro-preview` by default. Set `GEMINI_MODEL` to override that model.
+SonicStudio's **Speaker Purity** tab uses these values as non-secret defaults
+for its optional direct-audio overlap stage; backend, model, endpoint, timeout,
+token budget, failure policy, and prompt can all be overridden per run.
 Hugging Face caches default to `.data/huggingface`. Set `HF_HOME` in `.env`
 only when a different writable cache location is needed.
 
