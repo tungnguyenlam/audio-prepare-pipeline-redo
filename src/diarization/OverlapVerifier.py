@@ -19,7 +19,10 @@ OVERLAP_PROMPT = (
     "Does this audio contain overlapping speech from two or more speakers "
     "at the same time?"
 )
-DEFAULT_UNSLOTH_ENDPOINT = "http://127.0.0.1:8888/v1/chat/completions"
+DEFAULT_UNSLOTH_PORT = 8888
+DEFAULT_UNSLOTH_ENDPOINT = (
+    f"http://127.0.0.1:{DEFAULT_UNSLOTH_PORT}/v1/chat/completions"
+)
 DEFAULT_GEMMA4_MODEL_ID = "unsloth/gemma-4-12b-it-GGUF"
 DEFAULT_GEMINI_MODEL_ID = "gemini-3.1-pro-preview"
 
@@ -81,7 +84,8 @@ class Gemma4OverlapVerifier(BaseOverlapVerifier):
 
         Args:
             endpoint: Full OpenAI-compatible chat-completions URL. Defaults to
-                ``UNSLOTH_ENDPOINT`` or the local Unsloth default.
+                ``UNSLOTH_ENDPOINT`` or a local URL using ``UNSLOTH_PORT``
+                (default: 8888).
             model: Loaded Unsloth model ID. Defaults to ``UNSLOTH_MODEL`` or
                 the Gemma 4 12B repository ID.
             api_key: Unsloth API key. Defaults to ``UNSLOTH_API_KEY``. It is
@@ -91,7 +95,7 @@ class Gemma4OverlapVerifier(BaseOverlapVerifier):
         self.endpoint = (
             endpoint
             or os.getenv("UNSLOTH_ENDPOINT")
-            or DEFAULT_UNSLOTH_ENDPOINT
+            or _default_unsloth_endpoint()
         )
         self.model = model or os.getenv("UNSLOTH_MODEL") or DEFAULT_GEMMA4_MODEL_ID
         self.api_key = api_key if api_key is not None else os.getenv("UNSLOTH_API_KEY")
@@ -357,3 +361,15 @@ def _validate_timeout(timeout_s: float) -> float:
     if timeout <= 0:
         raise ValueError("timeout_s must be greater than zero")
     return timeout
+
+
+def _default_unsloth_endpoint() -> str:
+    """Build the local Unsloth endpoint from ``UNSLOTH_PORT``."""
+    configured_port = os.getenv("UNSLOTH_PORT", str(DEFAULT_UNSLOTH_PORT)).strip()
+    try:
+        port = int(configured_port)
+    except ValueError as exc:
+        raise ValueError("UNSLOTH_PORT must be an integer") from exc
+    if not 1 <= port <= 65535:
+        raise ValueError("UNSLOTH_PORT must be between 1 and 65535")
+    return f"http://127.0.0.1:{port}/v1/chat/completions"

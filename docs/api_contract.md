@@ -703,11 +703,14 @@ same time?”, and normalize the structured answer to:
 - `Gemma4OverlapVerifier` calls an OpenAI-compatible Unsloth Studio
   `/v1/chat/completions` endpoint with an `input_audio` content block. WAV and
   MP3 are supported. Constructor values fall back to `UNSLOTH_ENDPOINT`,
-  `UNSLOTH_MODEL`, and optional `UNSLOTH_API_KEY` environment variables.
+  `UNSLOTH_MODEL`, and optional `UNSLOTH_API_KEY` environment variables. When
+  `UNSLOTH_ENDPOINT` is unset, the local URL uses `UNSLOTH_PORT`, which defaults
+  to `8888`.
 - `GeminiOverlapVerifier` calls Gemini `generateContent` with inline audio and
   a JSON response schema. It requires `GEMINI_API_KEY`; the model defaults to
   `gemini-3.1-pro-preview` and can be changed with `GEMINI_MODEL` or the
-  constructor.
+  constructor. Web entrypoints load these values from the repository-root
+  `.env` before constructing pipeline components.
 - Both validate the returned boolean and non-empty reason. Missing files,
   unsupported formats, HTTP failures, and malformed model responses fail
   explicitly rather than returning a guessed result.
