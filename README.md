@@ -99,8 +99,8 @@ uv pip install --python .venv-diarizen/bin/python \
   --index-url https://download.pytorch.org/whl/cu121
 uv pip install --python .venv-diarizen/bin/python -r requirements-diarizen.txt
 
-# Confirm that the worker interpreter and packages are available.
-.venv-diarizen/bin/python -c "import torch, diarizen; print(torch.__version__)"
+# Confirm the exact pipeline import used by the worker succeeds.
+.venv-diarizen/bin/python -c "import torch, psutil, accelerate; from diarizen.pipelines.inference import DiariZenPipeline; print(torch.__version__)"
 ```
 
 The commands above are the direct fix for an error like:

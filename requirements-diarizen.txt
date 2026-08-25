@@ -7,5 +7,7 @@ torchvision==0.16.1
 scipy>=1.11,<1.14
 toml>=0.10.2
 huggingface-hub==0.36.2
+psutil>=5.9
+accelerate==1.14.0
 diarizen @ git+https://github.com/BUTSpeechFIT/DiariZen.git@844f5555b0a98acd0931511fc641a8c5b8ba92c7
 pyannote.audio @ git+https://github.com/BUTSpeechFIT/DiariZen.git@844f5555b0a98acd0931511fc641a8c5b8ba92c7#subdirectory=pyannote-audio
