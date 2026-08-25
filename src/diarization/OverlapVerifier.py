@@ -19,9 +19,10 @@ OVERLAP_PROMPT = (
     "Does this audio contain overlapping speech from two or more speakers "
     "at the same time?"
 )
+DEFAULT_UNSLOTH_HOST = "localhost"
 DEFAULT_UNSLOTH_PORT = 8888
 DEFAULT_UNSLOTH_ENDPOINT = (
-    f"http://127.0.0.1:{DEFAULT_UNSLOTH_PORT}/v1/chat/completions"
+    f"http://{DEFAULT_UNSLOTH_HOST}:{DEFAULT_UNSLOTH_PORT}/v1/chat/completions"
 )
 DEFAULT_GEMMA4_MODEL_ID = "unsloth/gemma-4-12b-it-GGUF"
 DEFAULT_GEMINI_MODEL_ID = "gemini-3.1-pro-preview"
@@ -84,8 +85,8 @@ class Gemma4OverlapVerifier(BaseOverlapVerifier):
 
         Args:
             endpoint: Full OpenAI-compatible chat-completions URL. Defaults to
-                ``UNSLOTH_ENDPOINT`` or a local URL using ``UNSLOTH_PORT``
-                (default: 8888).
+                ``UNSLOTH_ENDPOINT`` or a URL using ``UNSLOTH_HOST`` (default:
+                localhost) and ``UNSLOTH_PORT`` (default: 8888).
             model: Loaded Unsloth model ID. Defaults to ``UNSLOTH_MODEL`` or
                 the Gemma 4 12B repository ID.
             api_key: Unsloth API key. Defaults to ``UNSLOTH_API_KEY``. It is
@@ -364,7 +365,10 @@ def _validate_timeout(timeout_s: float) -> float:
 
 
 def _default_unsloth_endpoint() -> str:
-    """Build the local Unsloth endpoint from ``UNSLOTH_PORT``."""
+    """Build the Unsloth endpoint from its configured host and port."""
+    host = os.getenv("UNSLOTH_HOST", DEFAULT_UNSLOTH_HOST).strip()
+    if not host:
+        raise ValueError("UNSLOTH_HOST must not be empty")
     configured_port = os.getenv("UNSLOTH_PORT", str(DEFAULT_UNSLOTH_PORT)).strip()
     try:
         port = int(configured_port)
@@ -372,4 +376,4 @@ def _default_unsloth_endpoint() -> str:
         raise ValueError("UNSLOTH_PORT must be an integer") from exc
     if not 1 <= port <= 65535:
         raise ValueError("UNSLOTH_PORT must be between 1 and 65535")
-    return f"http://127.0.0.1:{port}/v1/chat/completions"
+    return f"http://{host}:{port}/v1/chat/completions"

@@ -66,6 +66,7 @@ HF_TOKEN=hf_...
 
 # Optional: local Gemma 4 overlap verification
 OVERLAP_VERIFIER=gemma4
+UNSLOTH_HOST=localhost
 UNSLOTH_PORT=8888
 UNSLOTH_MODEL=unsloth/gemma-4-12b-it-GGUF
 UNSLOTH_API_KEY=sk-unsloth-...
@@ -81,9 +82,9 @@ suitable for research and other non-commercial use.
 `OVERLAP_VERIFIER` selects `gemma4` or `gemini`. The Gemma verifier sends WAV
 or MP3 segments to the configured Unsloth Studio chat-completions endpoint;
 `UNSLOTH_API_KEY` is optional only when that endpoint does not require
-authentication. `UNSLOTH_PORT` defaults to `8888`; set `UNSLOTH_ENDPOINT` when
-the server needs a non-local or otherwise custom full URL. The Gemini verifier
-reads `GEMINI_API_KEY` from `.env` and uses
+authentication. `UNSLOTH_HOST` defaults to `localhost` and `UNSLOTH_PORT`
+defaults to `8888`; set `UNSLOTH_ENDPOINT` when the server needs an otherwise
+custom full URL. The Gemini verifier reads `GEMINI_API_KEY` from `.env` and uses
 `gemini-3.1-pro-preview` by default. Set `GEMINI_MODEL` to override that model.
 Hugging Face caches default to `.data/huggingface`. Set `HF_HOME` in `.env`
 only when a different writable cache location is needed.

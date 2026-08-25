@@ -704,8 +704,8 @@ same time?”, and normalize the structured answer to:
   `/v1/chat/completions` endpoint with an `input_audio` content block. WAV and
   MP3 are supported. Constructor values fall back to `UNSLOTH_ENDPOINT`,
   `UNSLOTH_MODEL`, and optional `UNSLOTH_API_KEY` environment variables. When
-  `UNSLOTH_ENDPOINT` is unset, the local URL uses `UNSLOTH_PORT`, which defaults
-  to `8888`.
+  `UNSLOTH_ENDPOINT` is unset, the URL uses `UNSLOTH_HOST` and `UNSLOTH_PORT`,
+  which default to `localhost` and `8888`.
 - `GeminiOverlapVerifier` calls Gemini `generateContent` with inline audio and
   a JSON response schema. It requires `GEMINI_API_KEY`; the model defaults to
   `gemini-3.1-pro-preview` and can be changed with `GEMINI_MODEL` or the
@@ -723,7 +723,7 @@ from src.diarization import create_overlap_verifier
 verifier = create_overlap_verifier(
     {
         "backend": "gemma4",  # or "gemini"
-        "endpoint": "http://127.0.0.1:8888/v1/chat/completions",
+        "endpoint": "http://localhost:8888/v1/chat/completions",
         "model": "unsloth/gemma-4-12b-it-GGUF",
     }
 )
