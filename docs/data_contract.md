@@ -60,6 +60,18 @@ Each result covers one diarization-turn candidate and records:
 state. Only `pass` enters the dataset. Both `reject` and `error` fail closed,
 while `error` remains distinguishable so callers may retry it.
 
+## `OverlapVerificationResult`
+
+Every direct-audio overlap verifier returns the same two-field mapping:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `overlap` | `bool` | Whether speech from at least two speakers occurs simultaneously. |
+| `reason` | `str` | A short, non-empty explanation of the decision. |
+
+Malformed or incomplete model output raises `OverlapVerifierError` instead of
+being coerced into a decision.
+
 ## Pipeline `AudioItem`
 
 Pipeline registry items expose the `Audio` source/channel fields directly in

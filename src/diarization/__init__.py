@@ -8,6 +8,17 @@ from src.diarization.DiariZenDiarizer import (
     DiariZenDiarizer,
 )
 from src.diarization.DiariZenWorkerDiarizer import DiariZenWorkerDiarizer
+from src.diarization.OverlapVerifier import (
+    DEFAULT_GEMINI_MODEL_ID,
+    DEFAULT_GEMMA4_MODEL_ID,
+    DEFAULT_UNSLOTH_ENDPOINT,
+    BaseOverlapVerifier,
+    Gemma4OverlapVerifier,
+    GeminiOverlapVerifier,
+    OverlapVerificationResult,
+    OverlapVerifierError,
+    create_overlap_verifier,
+)
 from src.diarization.PyannoteDiarizer import (
     DEFAULT_PYANNOTE_MODEL_ID,
     PyannoteDiarizer,
@@ -39,18 +50,26 @@ from src.diarization.schemas import (
 
 __all__ = [
     "BaseDiarizer",
+    "BaseOverlapVerifier",
     "ClusteringDiarizer",
     "ClusteringWorkerDiarizer",
     "DEFAULT_DIARIZEN_MODEL_ID",
     "DEFAULT_EMBEDDING_MODEL_ID",
+    "DEFAULT_GEMINI_MODEL_ID",
+    "DEFAULT_GEMMA4_MODEL_ID",
     "DEFAULT_MAX_OVERLAP_DURATION_S",
     "DEFAULT_PYANNOTE_MODEL_ID",
     "DEFAULT_PURITY_WINDOW_DURATION_S",
     "DEFAULT_PURITY_WINDOW_HOP_S",
+    "DEFAULT_UNSLOTH_ENDPOINT",
     "DiarizationModelInfo",
     "DiarizationResult",
     "DiariZenDiarizer",
     "DiariZenWorkerDiarizer",
+    "GeminiOverlapVerifier",
+    "Gemma4OverlapVerifier",
+    "OverlapVerificationResult",
+    "OverlapVerifierError",
     "PyannoteDiarizer",
     "ScoredSegment",
     "Speaker",
@@ -65,4 +84,5 @@ __all__ = [
     "TargetSpeakerResult",
     "ThreeDSpeakerDiarizer",
     "ThreeDSpeakerWorkerDiarizer",
+    "create_overlap_verifier",
 ]

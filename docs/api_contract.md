@@ -8,6 +8,8 @@ flowchart TD
     SEPARATOR --> CLEAN_AUDIO[Audio]
     AUDIO --> DIARIZER[BaseDiarizer implementation]
     DIARIZER --> DIARIZATION[DiarizationResult]
+    AUDIO --> OVERLAP_VERIFIER[BaseOverlapVerifier implementation]
+    OVERLAP_VERIFIER --> OVERLAP_RESULT[OverlapVerificationResult]
     AUDIO --> MIXER[AudioMixer]
     CLEAN_AUDIO --> MIXER
     MIXER --> MIX_RESULT[AudioMixResult]
@@ -683,6 +685,51 @@ consume the same profiles without changing their on-disk schema.
   the resolved device.
 - `_unload()` releases the inference wrapper and clears CUDA cache when
   available.
+
+### Direct-audio overlap verifiers
+
+**Defined in:** `src/diarization/OverlapVerifier.py`
+
+`BaseOverlapVerifier.verify(audio: Audio) -> OverlapVerificationResult` is the
+shared interface. Both implementations read the file at `audio.path`, send the
+audio bytes directly to the selected multimodal model, ask exactly
+“Does this audio contain overlapping speech from two or more speakers at the
+same time?”, and normalize the structured answer to:
+
+```python
+{"overlap": bool, "reason": str}
+```
+
+- `Gemma4OverlapVerifier` calls an OpenAI-compatible Unsloth Studio
+  `/v1/chat/completions` endpoint with an `input_audio` content block. WAV and
+  MP3 are supported. Constructor values fall back to `UNSLOTH_ENDPOINT`,
+  `UNSLOTH_MODEL`, and optional `UNSLOTH_API_KEY` environment variables.
+- `GeminiOverlapVerifier` calls Gemini `generateContent` with inline audio and
+  a JSON response schema. It requires `GEMINI_API_KEY`; the model defaults to
+  `gemini-3.1-pro-preview` and can be changed with `GEMINI_MODEL` or the
+  constructor.
+- Both validate the returned boolean and non-empty reason. Missing files,
+  unsupported formats, HTTP failures, and malformed model responses fail
+  explicitly rather than returning a guessed result.
+
+`create_overlap_verifier(config)` selects the backend from a flat mapping:
+
+```python
+from src.diarization import create_overlap_verifier
+
+verifier = create_overlap_verifier(
+    {
+        "backend": "gemma4",  # or "gemini"
+        "endpoint": "http://127.0.0.1:8888/v1/chat/completions",
+        "model": "unsloth/gemma-4-12b-it-GGUF",
+    }
+)
+result = verifier.verify(audio_segment)
+```
+
+When the mapping omits `backend`, selection falls back to
+`OVERLAP_VERIFIER`. Callers compose this verification step where needed; it is
+not automatically chained to crawling, separation, or diarization.
 
 ## 6. Benchmark mixing API
 
