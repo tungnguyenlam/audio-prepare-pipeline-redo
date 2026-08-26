@@ -296,9 +296,6 @@ const el = {
   diarSpeakerCountBadge: document.getElementById('diar-speaker-count-badge'),
   diarTurnsCountBadge: document.getElementById('diar-turns-count-badge'),
   diarSpeechRatioBadge: document.getElementById('diar-speech-ratio-badge'),
-  diarSubtabBtns: document.querySelectorAll('.diar-subtab-btn'),
-  diarSubviews: document.querySelectorAll('.diar-subview-panel'),
-  diarSubtabTurnsCount: document.getElementById('diar-subtab-turns-count'),
   btnDiarSkipBack: document.getElementById('btn-diar-skip-back'),
   btnDiarPlayToggle: document.getElementById('btn-diar-play-toggle'),
   iconDiarPlay: document.getElementById('icon-diar-play'),
@@ -2417,27 +2414,6 @@ function syncDiarModelOptions(modelType) {
 }
 
 function initDiarizationStudio() {
-  if (el.diarSubtabBtns) {
-    el.diarSubtabBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        const subtab = btn.dataset.subtab;
-        el.diarSubtabBtns.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        if (el.diarSubviews) {
-          el.diarSubviews.forEach(panel => {
-            if (panel.id === `diar-subview-${subtab}`) {
-              panel.classList.remove('hidden');
-              panel.classList.add('active');
-            } else {
-              panel.classList.add('hidden');
-              panel.classList.remove('active');
-            }
-          });
-        }
-      });
-    });
-  }
-
   if (el.btnToggleDiarSetup) {
     el.btnToggleDiarSetup.addEventListener('click', () => {
       const body = el.diarSetupBody;
@@ -2849,23 +2825,6 @@ function initDiarizationStudio() {
     btnScrollTurns.addEventListener('click', () => {
       const turnsTarget = document.querySelector('#tab-diarization .diar-turns-card');
       if (turnsTarget) turnsTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  }
-}
-
-function switchDiarSubtab(subtabName) {
-  if (el.diarSubtabBtns) {
-    el.diarSubtabBtns.forEach(b => b.classList.toggle('active', b.dataset.subtab === subtabName));
-  }
-  if (el.diarSubviews) {
-    el.diarSubviews.forEach(panel => {
-      if (panel.id === `diar-subview-${subtabName}`) {
-        panel.classList.remove('hidden');
-        panel.classList.add('active');
-      } else {
-        panel.classList.add('hidden');
-        panel.classList.remove('active');
-      }
     });
   }
 }
@@ -3532,7 +3491,6 @@ function renderDiarizationWorkspace(diarization, audioId, options = {}) {
     el.diarSpeechRatioBadge.textContent = `${speechRatioPct}% Speech (${totalSpeechS.toFixed(1)}s)`;
   }
 
-  if (el.diarSubtabTurnsCount) el.diarSubtabTurnsCount.textContent = state.diarization.turns.length;
   updateDiarizationCleanTurnsControl();
 
   if (el.diarFilterSpeakerSelect) {

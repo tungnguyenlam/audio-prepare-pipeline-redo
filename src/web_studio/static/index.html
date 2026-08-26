@@ -1127,103 +1127,56 @@
               </div>
             </div>
 
-            <div class="diar-timeline-speakers" id="diar-subview-speakers">
+            <!-- Turns Inspector & Evaluation (shares filters with the timeline above) -->
+            <div class="diar-timeline-speakers" id="diar-subview-turns">
               <div class="subview-header">
                 <div>
-                  <h3 class="subview-title">Speakers</h3>
-                  <p class="subview-desc">Rename speakers, inspect speech metrics, or extract isolated speaker audio stems.</p>
-                </div>
-                <div class="subview-actions flex-wrap gap-2">
-                  <div class="flex-row items-center gap-1">
-                    <label class="text-xs text-muted" for="diar-extract-pre-roll">4. Export Pre-roll:</label>
-                    <input type="number" id="diar-extract-pre-roll" class="filter-num-input" min="0" max="2" step="0.01" value="0.12" title="Seconds included before every exported turn. Canonical timestamps are unchanged.">
-                    <span class="text-xs text-muted">s</span>
-                  </div>
-                  <div class="flex-row items-center gap-1">
-                    <label class="text-xs text-muted" for="diar-extract-post-roll">Post-roll:</label>
-                    <input type="number" id="diar-extract-post-roll" class="filter-num-input" min="0" max="2" step="0.01" value="0.20" title="Seconds included after every exported turn. Overlapping padded intervals are merged.">
-                    <span class="text-xs text-muted">s</span>
-                  </div>
-                  <div class="flex-row items-center gap-1">
-                    <label class="text-xs text-muted" for="diar-extract-mode-select">Stem Mode:</label>
-                    <select id="diar-extract-mode-select" class="select-input select-sm" title="Extraction mode for speaker audio files">
-                      <option value="concatenated">Concatenated Speech</option>
-                      <option value="time_aligned">Time-Aligned Stems (Muted Silence)</option>
-                    </select>
-                  </div>
-                  <button class="btn btn-secondary btn-sm" id="btn-extract-all-speakers" title="Extract all speaker stems as separate audio files">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                    <span>Extract All Speaker Stems</span>
-                  </button>
+                  <h3 class="subview-title">Turns Inspector & Evaluation</h3>
+                  <p class="subview-desc">Filters below apply to both the timeline lanes above and the turns table. Score a target speaker, audition each diarized turn, then accept or reject it.</p>
                 </div>
               </div>
 
-              <div class="diar-speakers-grid" id="diar-speakers-grid"></div>
-            </div>
-          </div>
-
-          <!-- Studio Workstation Modular Navigation & Panels -->
-          <div class="diar-studio-tabs-card card">
-            <!-- Studio Tab Switcher Bar -->
-            <div class="diar-subtabs-nav">
-              <button class="diar-subtab-btn active" data-subtab="turns">
-                <span class="subtab-icon">📑</span>
-                <span class="subtab-label">Turns Inspector & Evaluation</span>
-                <span class="subtab-chip" id="diar-subtab-turns-count">0</span>
-              </button>
-              <button class="diar-subtab-btn" data-subtab="export">
-                <span class="subtab-icon">💾</span>
-                <span class="subtab-label">Export & Annotations</span>
-              </button>
-            </div>
-
-            <!-- Subview 1: Precision Turn Inspector & Segment Editor -->
-            <div class="diar-subview-panel active" id="diar-subview-turns">
-              <div class="subview-header">
-                <div>
-                  <h3 class="subview-title">Speaker Turn Inspector & Target Evaluation</h3>
-                  <p class="subview-desc">Score a target speaker, audition each diarized turn, then accept or reject it in the same table.</p>
-                </div>
-              </div>
-
-              <section class="turn-target-evaluation" aria-labelledby="turn-target-evaluation-title">
-                <div class="turn-target-evaluation-header">
-                  <div>
-                    <h4 id="turn-target-evaluation-title">Target Speaker <span class="text-muted">(optional)</span></h4>
-                    <p>Review turns manually, or score a known voice to unlock target-match filtering.</p>
+              <details class="ts-enroll-details" id="diar-target-eval-details">
+                <summary class="text-sm">🎯 Target Speaker Scoring <span class="text-muted">(optional)</span></summary>
+                <section class="turn-target-evaluation" aria-labelledby="turn-target-evaluation-title">
+                  <div class="turn-target-evaluation-header">
+                    <div>
+                      <h4 id="turn-target-evaluation-title">Target Speaker <span class="text-muted">(optional)</span></h4>
+                      <p>Review turns manually, or score a known voice to unlock target-match filtering.</p>
+                    </div>
+                    <span class="badge badge-ghost" id="ts-kept-chip">Not scored</span>
                   </div>
-                  <span class="badge badge-ghost" id="ts-kept-chip">Not scored</span>
-                </div>
 
-                <div class="target-eval-setup">
-                  <div class="form-group mb-0">
-                    <label class="form-label" for="ts-eval-profile-select">Target Speaker</label>
-                    <select id="ts-eval-profile-select" class="select-input">
-                      <option value="">No known speakers enrolled</option>
-                    </select>
-                    <p class="text-xs text-muted">Uses the clean reference clips managed above.</p>
+                  <div class="target-eval-setup">
+                    <div class="form-group mb-0">
+                      <label class="form-label" for="ts-eval-profile-select">Target Speaker</label>
+                      <select id="ts-eval-profile-select" class="select-input">
+                        <option value="">No known speakers enrolled</option>
+                      </select>
+                      <p class="text-xs text-muted">Uses the clean reference clips managed above.</p>
+                    </div>
+                    <div class="form-group mb-0">
+                      <label class="form-label" for="ts-eval-diar-speaker-select">Matching Diarized Speaker <span class="text-muted">(optional)</span></label>
+                      <select id="ts-eval-diar-speaker-select" class="select-input">
+                        <option value="">No named match — score all turns independently</option>
+                      </select>
+                      <p class="text-xs text-muted" id="ts-eval-assignment-help">Same-named enrolled identities are matched automatically, but remain tied to their local speaker ID.</p>
+                    </div>
+                    <button class="btn btn-primary" id="btn-ts-score" title="Embed every turn and compare it with the target speaker reference">
+                      🎯 Score Turns
+                    </button>
                   </div>
-                  <div class="form-group mb-0">
-                    <label class="form-label" for="ts-eval-diar-speaker-select">Matching Diarized Speaker <span class="text-muted">(optional)</span></label>
-                    <select id="ts-eval-diar-speaker-select" class="select-input">
-                      <option value="">No named match — score all turns independently</option>
-                    </select>
-                    <p class="text-xs text-muted" id="ts-eval-assignment-help">Same-named enrolled identities are matched automatically, but remain tied to their local speaker ID.</p>
-                  </div>
-                  <button class="btn btn-primary" id="btn-ts-score" title="Embed every turn and compare it with the target speaker reference">
-                    🎯 Score Turns
-                  </button>
-                </div>
 
-                <div class="target-eval-context" id="ts-eval-context">
-                  <span class="badge badge-accent">Post-diarization</span>
-                  <strong id="ts-eval-context-title">Run diarization first</strong>
-                  <span id="ts-eval-context-detail">A completed speaker timeline is required before target-speaker scoring.</span>
-                </div>
-                <div class="text-xs text-muted" id="ts-score-status">Choose a target speaker after diarization.</div>
-                <div class="target-evaluation-summary" id="ts-evaluation-summary" hidden></div>
-                <div id="ts-evaluation-results"></div>
-              </section>
+                  <div class="target-eval-context" id="ts-eval-context">
+                    <span class="badge badge-accent">Post-diarization</span>
+                    <strong id="ts-eval-context-title">Run diarization first</strong>
+                    <span id="ts-eval-context-detail">A completed speaker timeline is required before target-speaker scoring.</span>
+                  </div>
+                  <div class="text-xs text-muted" id="ts-score-status">Choose a target speaker after diarization.</div>
+                  <div class="target-evaluation-summary" id="ts-evaluation-summary" hidden></div>
+                  <div id="ts-evaluation-results"></div>
+                </section>
+              </details>
 
               <!-- Shared Timeline & Turn Filters -->
               <div class="diar-inspector-toolbar diar-timeline-filter-toolbar diar-turn-review-filter-toolbar">
@@ -1306,43 +1259,80 @@
               </div>
             </div>
 
-            <!-- Subview 2: Multi-Format Export Studio -->
-            <div class="diar-subview-panel hidden" id="diar-subview-export">
+            <div class="diar-timeline-speakers" id="diar-subview-speakers">
               <div class="subview-header">
                 <div>
-                  <h3 class="subview-title">Diarization Export & Annotations</h3>
-                  <p class="subview-desc">Export your diarization results in NIST RTTM, Pipeline JSON, CSV spreadsheet, Subtitle formats, Audacity labels, or Praat TextGrid.</p>
+                  <h3 class="subview-title">Speakers</h3>
+                  <p class="subview-desc">Rename speakers, inspect speech metrics, or extract isolated speaker audio stems.</p>
                 </div>
-              </div>
-
-              <!-- Export Tab Pills -->
-              <div class="export-format-nav">
-                <button class="export-nav-tab active" data-export-tab="rttm">NIST RTTM</button>
-                <button class="export-nav-tab" data-export-tab="json">Pipeline JSON</button>
-                <button class="export-nav-tab" data-export-tab="csv">CSV Spreadsheet</button>
-                <button class="export-nav-tab" data-export-tab="srt">SRT Subtitles</button>
-                <button class="export-nav-tab" data-export-tab="vtt">WebVTT</button>
-                <button class="export-nav-tab" data-export-tab="audacity">Audacity Labels (.txt)</button>
-                <button class="export-nav-tab" data-export-tab="praat">Praat TextGrid</button>
-              </div>
-
-              <!-- Export Preview & Actions Box -->
-              <div class="export-content-box">
-                <div class="export-preview-header">
-                  <span class="export-filename" id="export-filename-label">diarization.rttm</span>
-                  <div class="export-actions-right">
-                    <button class="btn btn-secondary btn-sm" id="btn-copy-export">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                      <span>Copy</span>
-                    </button>
-                    <button class="btn btn-primary btn-sm" id="btn-download-export">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                      <span>Download File</span>
-                    </button>
+                <div class="subview-actions flex-wrap gap-2">
+                  <div class="flex-row items-center gap-1">
+                    <label class="text-xs text-muted" for="diar-extract-pre-roll">4. Export Pre-roll:</label>
+                    <input type="number" id="diar-extract-pre-roll" class="filter-num-input" min="0" max="2" step="0.01" value="0.12" title="Seconds included before every exported turn. Canonical timestamps are unchanged.">
+                    <span class="text-xs text-muted">s</span>
                   </div>
+                  <div class="flex-row items-center gap-1">
+                    <label class="text-xs text-muted" for="diar-extract-post-roll">Post-roll:</label>
+                    <input type="number" id="diar-extract-post-roll" class="filter-num-input" min="0" max="2" step="0.01" value="0.20" title="Seconds included after every exported turn. Overlapping padded intervals are merged.">
+                    <span class="text-xs text-muted">s</span>
+                  </div>
+                  <div class="flex-row items-center gap-1">
+                    <label class="text-xs text-muted" for="diar-extract-mode-select">Stem Mode:</label>
+                    <select id="diar-extract-mode-select" class="select-input select-sm" title="Extraction mode for speaker audio files">
+                      <option value="concatenated">Concatenated Speech</option>
+                      <option value="time_aligned">Time-Aligned Stems (Muted Silence)</option>
+                    </select>
+                  </div>
+                  <button class="btn btn-secondary btn-sm" id="btn-extract-all-speakers" title="Extract all speaker stems as separate audio files">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    <span>Extract All Speaker Stems</span>
+                  </button>
                 </div>
-                <textarea id="export-preview-textarea" class="export-preview-textarea font-mono" readonly rows="10"></textarea>
               </div>
+
+              <div class="diar-speakers-grid" id="diar-speakers-grid"></div>
+            </div>
+          </div>
+
+          <!-- Multi-Format Export Studio -->
+          <div class="card diar-export-card">
+            <div class="card-header">
+              <div>
+                <div class="flex-row items-center gap-2">
+                  <span class="tab-icon">💾</span>
+                  <h2 class="card-title">Diarization Export & Annotations</h2>
+                </div>
+                <p class="card-subtitle">Export your diarization results in NIST RTTM, Pipeline JSON, CSV spreadsheet, Subtitle formats, Audacity labels, or Praat TextGrid.</p>
+              </div>
+            </div>
+
+            <!-- Export Tab Pills -->
+            <div class="export-format-nav">
+              <button class="export-nav-tab active" data-export-tab="rttm">NIST RTTM</button>
+              <button class="export-nav-tab" data-export-tab="json">Pipeline JSON</button>
+              <button class="export-nav-tab" data-export-tab="csv">CSV Spreadsheet</button>
+              <button class="export-nav-tab" data-export-tab="srt">SRT Subtitles</button>
+              <button class="export-nav-tab" data-export-tab="vtt">WebVTT</button>
+              <button class="export-nav-tab" data-export-tab="audacity">Audacity Labels (.txt)</button>
+              <button class="export-nav-tab" data-export-tab="praat">Praat TextGrid</button>
+            </div>
+
+            <!-- Export Preview & Actions Box -->
+            <div class="export-content-box">
+              <div class="export-preview-header">
+                <span class="export-filename" id="export-filename-label">diarization.rttm</span>
+                <div class="export-actions-right">
+                  <button class="btn btn-secondary btn-sm" id="btn-copy-export">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                    <span>Copy</span>
+                  </button>
+                  <button class="btn btn-primary btn-sm" id="btn-download-export">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    <span>Download File</span>
+                  </button>
+                </div>
+              </div>
+              <textarea id="export-preview-textarea" class="export-preview-textarea font-mono" readonly rows="10"></textarea>
             </div>
           </div>
         </div>
