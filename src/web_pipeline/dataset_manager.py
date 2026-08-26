@@ -26,6 +26,7 @@ DATA_DIR = ROOT_DIR / ".data" / "pipeline"
 REGISTRY_FILE = DATA_DIR / "dataset_registry.json"
 DATASETS_FILE = DATA_DIR / "datasets.json"
 EXPORTS_DIR = DATA_DIR / "exports"
+SYSTEM_TAG_PREFIXES = ("type:", "stage:", "speaker:", "profile:", "verification:")
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -49,17 +50,45 @@ class AudioItem:
     channel_id: Optional[str] = None
     channel_name: Optional[str] = None
     channel_url: Optional[str] = None
-    tags: List[str] = field(default_factory=list)
+    custom_tags: List[str] = field(default_factory=list)
+    system_tags: List[str] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
     stems: Dict[str, Dict[str, str]] = field(default_factory=dict)  # model -> {stem_name: path}
-    diarization: Optional[Dict[str, Any]] = None  # {speaker_count, turns: [...], rttm_path}
+    diarization: Optional[Dict[str, Any]] = None  # Canonical DiarizationResult JSON
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
+    @property
+    def tags(self) -> List[str]:
+        """All tags for compatibility; edits must target ``custom_tags``."""
+        return [*self.system_tags, *self.custom_tags]
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> AudioItem:
+        legacy_tags = [str(tag) for tag in data.get("tags", [])]
+        custom_tags = list(data.get("custom_tags", []))
+        system_tags = set(data.get("system_tags", []))
+        if not custom_tags and not system_tags:
+            for tag in legacy_tags:
+                if tag.startswith(SYSTEM_TAG_PREFIXES):
+                    system_tags.add(tag)
+                elif tag == "diarized":
+                    system_tags.add("stage:diarized")
+                elif tag == "separated" or tag.startswith("sep_"):
+                    system_tags.add("stage:separated")
+                elif tag in {"source", "raw"}:
+                    system_tags.add("type:source")
+                elif tag == "cut":
+                    system_tags.add("type:cut")
+                else:
+                    custom_tags.append(tag)
+        system_tags.add("type:source")
+        if data.get("diarization"):
+            system_tags.add("stage:diarized")
+            if not any(tag.startswith("verification:") for tag in system_tags):
+                system_tags.add("verification:unverified")
         return cls(
             id=data["id"],
             source_id=data.get("source_id", ""),
@@ -75,7 +104,8 @@ class AudioItem:
             channel_id=data.get("channel_id") or data.get("metadata", {}).get("channel_id"),
             channel_name=data.get("channel_name") or data.get("metadata", {}).get("channel_name"),
             channel_url=data.get("channel_url") or data.get("metadata", {}).get("channel_url"),
-            tags=list(data.get("tags", [])),
+            custom_tags=sorted(set(custom_tags)),
+            system_tags=sorted(system_tags),
             created_at=float(data.get("created_at", time.time())),
             stems=dict(data.get("stems", {})),
             diarization=data.get("diarization"),
@@ -180,10 +210,19 @@ class DatasetManager:
         dataset: str = "Default",
         tags: Optional[List[str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        system_tags: Optional[List[str]] = None,
     ) -> AudioItem:
         """Register an existing Audio file into a dataset collection."""
         item_id = f"aud_{uuid.uuid4().hex[:10]}"
-        tags_list = list(tags) if tags else []
+        tags_list = [
+            str(tag).strip() for tag in (tags or [])
+            if str(tag).strip() and not str(tag).startswith(SYSTEM_TAG_PREFIXES)
+        ]
+        generated_tags = {"type:source", "stage:ingested"}
+        generated_tags.update(
+            str(tag).strip() for tag in (system_tags or [])
+            if str(tag).strip().startswith(SYSTEM_TAG_PREFIXES)
+        )
 
         if dataset not in self._datasets:
             self.create_dataset(dataset)
@@ -203,7 +242,8 @@ class DatasetManager:
             channel_id=audio.channel_id,
             channel_name=audio.channel_name,
             channel_url=audio.channel_url,
-            tags=tags_list,
+            custom_tags=sorted(set(tags_list)),
+            system_tags=sorted(generated_tags),
             created_at=time.time(),
             metadata=metadata or {},
         )
@@ -215,11 +255,32 @@ class DatasetManager:
         """Retrieve an audio item by ID."""
         return self._items.get(item_id)
 
+    def find_item_by_path(self, path: str | Path) -> Optional[AudioItem]:
+        """Return the registered item that references ``path``, if any."""
+        target = Path(path).resolve()
+        return next(
+            (
+                item for item in self._items.values()
+                if Path(item.path).resolve() == target
+            ),
+            None,
+        )
+
+    def items_by_path(self) -> Dict[str, AudioItem]:
+        """Return a snapshot keyed by resolved file path for library joins."""
+        return {str(Path(item.path).resolve()): item for item in self._items.values()}
+
     def list_items(
         self,
         dataset: Optional[str] = None,
         query: Optional[str] = None,
         tag: Optional[str] = None,
+        asset_type: Optional[str] = None,
+        stage: Optional[str] = None,
+        speaker: Optional[str] = None,
+        profile: Optional[str] = None,
+        verification: Optional[str] = None,
+        format_name: Optional[str] = None,
         channel_id: Optional[str] = None,
         has_stems: Optional[bool] = None,
         has_diarization: Optional[bool] = None,
@@ -249,6 +310,20 @@ class DatasetManager:
 
         if tag:
             results = [x for x in results if tag in x.tags]
+
+        for prefix, value in (
+            ("type", asset_type),
+            ("stage", stage),
+            ("speaker", speaker),
+            ("profile", profile),
+            ("verification", verification),
+        ):
+            if value and value != "all":
+                expected = value if value.startswith(f"{prefix}:") else f"{prefix}:{value}"
+                results = [x for x in results if expected in x.system_tags]
+
+        if format_name and format_name != "all":
+            results = [x for x in results if x.format.lower() == format_name.lower()]
 
         if channel_id and channel_id != "all":
             results = [x for x in results if x.channel_id == channel_id]
@@ -301,8 +376,12 @@ class DatasetManager:
             if new_ds not in self._datasets:
                 self.create_dataset(new_ds)
             item.dataset = new_ds
-        if "tags" in updates and isinstance(updates["tags"], list):
-            item.tags = list(set(updates["tags"]))
+        custom_tags = updates.get("custom_tags", updates.get("tags"))
+        if isinstance(custom_tags, list):
+            item.custom_tags = sorted({
+                str(tag).strip() for tag in custom_tags
+                if str(tag).strip() and not str(tag).startswith(SYSTEM_TAG_PREFIXES)
+            })
         if "metadata" in updates and isinstance(updates["metadata"], dict):
             item.metadata.update(updates["metadata"])
 
@@ -317,9 +396,7 @@ class DatasetManager:
         if model_name not in item.stems:
             item.stems[model_name] = {}
         item.stems[model_name][stem_name] = str(Path(stem_path).resolve())
-        tag_name = f"sep_{model_name.lower()}"
-        if tag_name not in item.tags:
-            item.tags.append(tag_name)
+        item.system_tags = sorted(set(item.system_tags) | {"stage:separated"})
         self._save_items()
 
     def attach_diarization(self, item_id: str, diarization_result: Dict[str, Any]) -> None:
@@ -328,15 +405,35 @@ class DatasetManager:
         if not item:
             return
         item.diarization = diarization_result
-        if "diarized" not in item.tags:
-            item.tags.append("diarized")
+        item.metadata.pop("target_speaker", None)
+        item.metadata.pop("target_speakers", None)
+        speakers = {
+            str(speaker.get("speaker_id"))
+            for speaker in diarization_result.get("speakers", [])
+            if speaker.get("speaker_id")
+        }
+        retained_tags = {
+            tag for tag in item.system_tags
+            if not tag.startswith("speaker:")
+            and not tag.startswith("profile:")
+            and tag not in {
+                "stage:verified",
+                "verification:passed",
+                "verification:rejected",
+            }
+        }
+        item.system_tags = sorted(
+            retained_tags
+            | {"stage:diarized", "verification:unverified"}
+            | {f"speaker:{speaker}" for speaker in speakers}
+        )
         self._save_items()
 
     def attach_target_speaker(self, item_id: str, summary: Dict[str, Any]) -> None:
         """Attach a target-speaker verification summary to an audio item.
 
-        Stored under ``metadata["target_speaker"]`` and tagged
-        ``target:<profile>`` so manifest exports can filter verified items.
+        Stored under ``metadata["target_speaker"]`` with namespaced profile,
+        stage, and verification system tags.
         """
         item = self._items.get(item_id)
         if not item:
@@ -346,9 +443,19 @@ class DatasetManager:
         profile = summary.get("profile")
         if profile:
             profiles[str(profile)] = summary
-            tag_name = f"target:{profile}"
-            if tag_name not in item.tags:
-                item.tags.append(tag_name)
+            passed_count = summary.get("passed_candidates", summary.get("num_kept"))
+            if passed_count is None:
+                kept_segments = summary.get("kept_segments", [])
+                passed_count = len(kept_segments) if isinstance(kept_segments, list) else 0
+            verification_tag = (
+                "verification:passed"
+                if int(passed_count or 0) > 0
+                else "verification:rejected"
+            )
+            item.system_tags = sorted(
+                (set(item.system_tags) - {"verification:unverified", "verification:passed", "verification:rejected"})
+                | {"stage:verified", f"profile:{profile}", verification_tag}
+            )
         self._save_items()
 
     def delete_items(self, item_ids: List[str], delete_files: bool = False) -> int:
@@ -487,10 +594,13 @@ class DatasetManager:
         for item_id in item_ids:
             item = self._items.get(item_id)
             if item:
-                current = set(item.tags)
+                current = set(item.custom_tags)
                 new_tags = (current | add_set) - rem_set
                 if new_tags != current:
-                    item.tags = list(new_tags)
+                    item.custom_tags = sorted(
+                        tag for tag in new_tags
+                        if not tag.startswith(SYSTEM_TAG_PREFIXES)
+                    )
                     affected += 1
         if affected > 0:
             self._save_items()
@@ -545,7 +655,10 @@ class DatasetManager:
                 "speaker_count",
             ])
             for it in items:
-                spk_count = it.diarization.get("speaker_count", 0) if it.diarization else 0
+                spk_count = (
+                    it.diarization.get("summary", {}).get("speaker_count", 0)
+                    if it.diarization else 0
+                )
                 writer.writerow([
                     it.id,
                     it.source_id,
@@ -555,7 +668,7 @@ class DatasetManager:
                     it.sample_rate,
                     it.channels,
                     it.dataset,
-                    "|".join(it.tags),
+                    "|".join(it.custom_tags),
                     len(it.stems),
                     spk_count,
                 ])
@@ -573,7 +686,8 @@ class DatasetManager:
                 "title": it.title,
                 "source_id": it.source_id,
                 "dataset": it.dataset,
-                "tags": it.tags,
+                "custom_tags": it.custom_tags,
+                "system_tags": it.system_tags,
                 "stems": it.stems,
                 "diarization": it.diarization,
                 "metadata": it.metadata,

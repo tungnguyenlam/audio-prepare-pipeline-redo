@@ -15,12 +15,7 @@ from typing import Any
 
 from src.base.model import ManagedModel
 from src.diarization.BaseDiarizer import BaseDiarizer
-from src.diarization.schemas import (
-    DiarizationModelInfo,
-    DiarizationResult,
-    Speaker,
-    SpeakerTurn,
-)
+from src.diarization.schemas import DiarizationResult
 from src.utils.AudioClass import Audio
 
 logger = logging.getLogger(__name__)
@@ -315,18 +310,4 @@ class ThreeDSpeakerWorkerDiarizer(BaseDiarizer, ManagedModel):
 
     @staticmethod
     def _result_from_dict(payload: dict[str, Any]) -> DiarizationResult:
-        model_payload = payload.get("model")
-        return DiarizationResult(
-            schema_version=payload["schema_version"],
-            audio_id=payload["audio_id"],
-            speakers=[Speaker(**speaker) for speaker in payload["speakers"]],
-            turns=[SpeakerTurn(**turn) for turn in payload["turns"]],
-            model=(
-                DiarizationModelInfo(**model_payload)
-                if model_payload is not None
-                else None
-            ),
-            channel_id=payload.get("channel_id"),
-            channel_name=payload.get("channel_name"),
-            channel_url=payload.get("channel_url"),
-        )
+        return DiarizationResult.from_dict(payload)

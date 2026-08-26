@@ -2084,6 +2084,15 @@ button {
   color: var(--text-muted);
 }
 
+.tag-pill.system-tag {
+  color: var(--color-cyan);
+  border-color: color-mix(in srgb, var(--color-cyan) 45%, var(--border-subtle));
+}
+
+.tag-pill.custom-tag {
+  border-style: dashed;
+}
+
 .stem-badge {
   font-family: var(--font-mono);
   font-size: 0.72rem;

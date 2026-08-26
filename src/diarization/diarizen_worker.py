@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
 import json
 import logging
 from pathlib import Path
@@ -95,7 +94,7 @@ def main() -> None:
                         _audio_from_dict(request["audio"]),
                         **kwargs,
                     )
-                    _respond(result=asdict(result))
+                    _respond(result=result.to_dict())
                 elif action == "close":
                     if diarizer is not None:
                         diarizer.unload()

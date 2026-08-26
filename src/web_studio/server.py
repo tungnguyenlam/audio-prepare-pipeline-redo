@@ -74,11 +74,17 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 DATA_DIR = ROOT_DIR / ".data"
 TEMP_DIR = ROOT_DIR / "temp"
 UPLOADS_DIR = DATA_DIR / "web_uploads"
+DIARIZATION_RESULTS_DIR = DATA_DIR / "diarization" / "results"
+DIARIZATION_VERIFICATIONS_DIR = DATA_DIR / "diarization" / "verifications"
+DIARIZATION_PREVIEW_DIR = DATA_DIR / "diarization" / "preview"
 
 # Ensure runtime directories exist
 DATA_DIR.mkdir(exist_ok=True)
 TEMP_DIR.mkdir(exist_ok=True)
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+DIARIZATION_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+DIARIZATION_VERIFICATIONS_DIR.mkdir(parents=True, exist_ok=True)
+DIARIZATION_PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def get_default_device() -> str:
@@ -252,12 +258,34 @@ class AudioRegistry:
     ) -> str:
         """Register an Audio object and return a unique ID."""
         audio_id = f"aud_{uuid.uuid4().hex[:10]}"
+        raw_tags = [str(tag) for tag in (tags or [])]
+        system_tags = {
+            tag for tag in raw_tags
+            if tag.startswith(("type:", "stage:", "speaker:", "profile:", "verification:"))
+        }
+        custom_tags = [tag for tag in raw_tags if tag not in system_tags]
+        type_tag = {
+            "separation": "type:stem",
+            "cut": "type:cut",
+            "speaker_stem": "type:cut",
+            "purity_stem": "type:stem",
+        }.get(source_type, "type:source")
+        stage_tag = {
+            "separation": "stage:separated",
+            "diarization": "stage:diarized",
+            "speaker_stem": "stage:diarized",
+            "purity_stem": "stage:verified",
+        }.get(source_type, "stage:ingested")
+        system_tags.update({type_tag, stage_tag})
+        if source_type == "purity_stem":
+            system_tags.add("verification:passed")
         self._items[audio_id] = {
             "id": audio_id,
             "audio": audio,
             "source_type": source_type,
             "parent_id": parent_id,
-            "tags": tags or [],
+            "custom_tags": sorted(set(custom_tags)),
+            "system_tags": sorted(system_tags),
             "model_info": model_info or {},
             "created_at": time.time(),
         }
@@ -338,7 +366,9 @@ class AudioRegistry:
                     "fingerprint": audio.fingerprint,
                     "source_type": item["source_type"],
                     "parent_id": item["parent_id"],
-                    "tags": item["tags"],
+                    "custom_tags": item["custom_tags"],
+                    "system_tags": item["system_tags"],
+                    "tags": [*item["system_tags"], *item["custom_tags"]],
                     "model_info": item.get("model_info", {}),
                     "created_at": item["created_at"],
                     "file_size": file_size,
@@ -797,6 +827,76 @@ task_manager = TaskManager(workers_per_device=STUDIO_QUEUE_CONCURRENCY)
 evaluation_manager = EvaluationManager(DATA_DIR / "studio" / "evaluations.json")
 
 
+def _diarization_result_path(result_id: str) -> Path:
+    """Resolve a result ID without allowing directory traversal."""
+    if not result_id or any(char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for char in result_id):
+        raise ValueError("Invalid diarization result ID")
+    return DIARIZATION_RESULTS_DIR / f"{result_id}.json"
+
+
+def _load_diarization_result(result_id: str) -> DiarizationResult:
+    path = _diarization_result_path(result_id)
+    if not path.is_file():
+        raise FileNotFoundError(f"Diarization result not found: {result_id}")
+    result = DiarizationResult.load(path)
+    if result.result_id != result_id:
+        raise ValueError("Diarization result ID does not match its filename")
+    return result
+
+
+def _turn_key(speaker_id: str, start_s: float, end_s: float) -> str:
+    return f"{speaker_id}|{float(start_s):.6f}|{float(end_s):.6f}"
+
+
+def _verification_state_index(profile_name: str | None = None) -> dict[str, dict[str, Any]]:
+    """Read the latest persisted decision for each result and turn."""
+    by_result: dict[str, dict[str, Any]] = {}
+    reports = sorted(
+        DIARIZATION_VERIFICATIONS_DIR.glob("*.json"),
+        key=lambda path: path.stat().st_mtime,
+    )
+    for path in reports:
+        try:
+            report = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if profile_name is not None and report.get("profile") != profile_name:
+            continue
+        for item in report.get("results", []):
+            result_id = item.get("result_id")
+            if not result_id:
+                continue
+            state = by_result.setdefault(
+                str(result_id), {"state": "unverified", "turns": {}, "report_id": None}
+            )
+            decision = str(item.get("decision", "error"))
+            state["turns"][_turn_key(item.get("speaker_id", ""), item.get("start_s", 0), item.get("end_s", 0))] = decision
+            state["report_id"] = report.get("verification_id")
+    for state in by_result.values():
+        decisions = set(state["turns"].values())
+        if "error" in decisions:
+            state["state"] = "error"
+        elif "reject" in decisions:
+            state["state"] = "rejected"
+        elif "pass" in decisions:
+            state["state"] = "passed"
+    return by_result
+
+
+def _result_catalog_item(
+    result: DiarizationResult,
+    verification: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload = result.to_dict()
+    payload["verification"] = verification or {
+        "state": "unverified", "turns": {}, "report_id": None
+    }
+    payload["source_available"] = bool(
+        result.source_audio and Path(result.source_audio.path).is_file()
+    )
+    return payload
+
+
 def extract_waveform_peaks(audio_path: Path, num_points: int = 1200) -> List[float]:
     """Extract downsampled peak amplitudes for high-performance waveform drawing."""
     if not audio_path.is_file():
@@ -955,7 +1055,7 @@ def probe_audio_file_info(path: Path) -> dict[str, Any]:
 
 
 def categorize_library_path(rel_path: str) -> str:
-    """Determine clean, accurate library category based on relative project path."""
+    """Fallback category for legacy files that have no structured metadata."""
     p_lower = rel_path.lower()
     if "sources/speech" in p_lower or ("speech" in p_lower and "music" not in p_lower and "cuts" not in p_lower):
         return "Benchmark Speech"
@@ -979,6 +1079,22 @@ def categorize_library_path(rel_path: str) -> str:
         return "Project Audio"
 
 
+def categorize_library_tags(system_tags: list[str], fallback_path: str) -> str:
+    """Classify a library asset from namespaced metadata before legacy paths."""
+    tags = set(system_tags)
+    if "type:cut" in tags:
+        return "Audio Cuts"
+    if "stage:verified" in tags:
+        return "Verified Speech"
+    if "type:stem" in tags or "stage:separated" in tags:
+        return "Separated Stems"
+    if "stage:diarized" in tags:
+        return "Diarized Sources"
+    if "stage:ingested" in tags or "type:source" in tags:
+        return "Ingested Sources"
+    return categorize_library_path(fallback_path)
+
+
 async def handle_list_library(request: web.Request) -> web.Response:
     """Scan and list audio files available in project directories with precise categorization and metadata."""
     # Ensure benchmark and output directories exist
@@ -999,6 +1115,15 @@ async def handle_list_library(request: web.Request) -> web.Response:
     extensions = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac", ".aiff"}
     files = []
     seen_paths = set()
+    try:
+        from src.web_pipeline.dataset_manager import dataset_manager
+        pipeline_items = dataset_manager.items_by_path()
+    except Exception:
+        pipeline_items = {}
+    active_items = {
+        str(Path(item["audio"].path).resolve()): item
+        for item in registry._items.values()
+    }
 
     for directory in scan_dirs:
         if directory.is_dir():
@@ -1019,8 +1144,51 @@ async def handle_list_library(request: web.Request) -> web.Response:
                             continue
 
                         rel_path = str(p.relative_to(ROOT_DIR))
-                        category = categorize_library_path(rel_path)
                         probe_meta = probe_audio_file_info(p)
+                        pipeline_item = pipeline_items.get(resolved_str)
+                        active_item = active_items.get(resolved_str)
+                        system_tags = list(
+                            pipeline_item.system_tags if pipeline_item else []
+                        )
+                        custom_tags = list(
+                            pipeline_item.custom_tags if pipeline_item else []
+                        )
+                        dataset = pipeline_item.dataset if pipeline_item else None
+                        registry_item_id = pipeline_item.id if pipeline_item else None
+                        if active_item:
+                            system_tags = sorted(
+                                set(system_tags) | set(active_item.get("system_tags", []))
+                            )
+                            custom_tags = sorted(
+                                set(custom_tags) | set(active_item.get("custom_tags", []))
+                            )
+                            source_type = active_item.get("source_type", "local")
+                            type_tag = {
+                                "separation": "type:stem",
+                                "cut": "type:cut",
+                            }.get(source_type, "type:source")
+                            stage_tag = {
+                                "separation": "stage:separated",
+                                "cut": "stage:ingested",
+                            }.get(source_type, "stage:ingested")
+                            system_tags = sorted(set(system_tags) | {type_tag, stage_tag})
+                        history = probe_meta.get("history") or []
+                        normalized_history = [str(step).lower() for step in history]
+                        if any("diar" in step for step in normalized_history):
+                            system_tags = sorted(set(system_tags) | {"stage:diarized"})
+                        if any(
+                            marker in step
+                            for step in normalized_history
+                            for marker in ("demucs", "roformer", "mvsep", "separ")
+                        ):
+                            system_tags = sorted(
+                                set(system_tags) | {"type:stem", "stage:separated"}
+                            )
+                        if any("cut" in step for step in normalized_history):
+                            system_tags = sorted(set(system_tags) | {"type:cut"})
+                        if any("purity" in step or "verified" in step for step in normalized_history):
+                            system_tags = sorted(set(system_tags) | {"stage:verified"})
+                        category = categorize_library_tags(system_tags, rel_path)
 
                         files.append(
                             {
@@ -1041,6 +1209,11 @@ async def handle_list_library(request: web.Request) -> web.Response:
                                 "channel_id": probe_meta.get("channel_id"),
                                 "channel_name": probe_meta.get("channel_name"),
                                 "channel_url": probe_meta.get("channel_url"),
+                                "history": history,
+                                "dataset": dataset,
+                                "registry_item_id": registry_item_id,
+                                "system_tags": system_tags,
+                                "custom_tags": custom_tags,
                             }
                         )
                     except Exception:
@@ -1961,8 +2134,32 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
             elapsed = time.time() - start_time
             end_power_w = _get_device_power_w(target_device)
 
-            # Format dataclass result to JSON
-            result_dict = asdict(result)
+            result_path = result.save(DIARIZATION_RESULTS_DIR)
+            result_dict = result.to_dict()
+            active_item = registry.get_item(audio_id)
+            if active_item:
+                retained_tags = {
+                    tag for tag in active_item.get("system_tags", [])
+                    if not tag.startswith("speaker:")
+                    and not tag.startswith("profile:")
+                    and tag not in {
+                        "stage:verified",
+                        "verification:passed",
+                        "verification:rejected",
+                    }
+                }
+                active_item["system_tags"] = sorted(
+                    retained_tags
+                    | {"stage:diarized", "verification:unverified"}
+                    | {f"speaker:{speaker.speaker_id}" for speaker in result.speakers}
+                )
+            try:
+                from src.web_pipeline.dataset_manager import dataset_manager
+                pipeline_item = dataset_manager.find_item_by_path(audio.path)
+                if pipeline_item:
+                    dataset_manager.attach_diarization(pipeline_item.id, result_dict)
+            except Exception:
+                logger.exception("Could not synchronize diarization metadata to Pipeline")
             complete_msg = (
                 f"Diarization finished in {elapsed:.2f}s on {target_device} (⚡ {end_power_w}W)!"
                 if end_power_w is not None
@@ -1976,6 +2173,8 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
                 message=complete_msg,
                 result={
                     "diarization": result_dict,
+                    "diarization_result_id": result.result_id,
+                    "diarization_result_path": str(result_path),
                     "elapsed_s": round(elapsed, 2),
                     "audio_id": audio_id,
                     "device": target_device,
@@ -2380,13 +2579,14 @@ async def handle_target_speaker_score(request: web.Request) -> web.Response:
         return web.json_response({"error": f"Invalid turns: {e}"}, status=400)
 
     diarization = DiarizationResult(
-        schema_version="1.0",
+        schema_version="2.0",
         audio_id=audio.source_id,
         speakers=[
             Speaker(speaker_id=spk)
             for spk in sorted({t.speaker_id for t in speaker_turns})
         ],
         turns=speaker_turns,
+        source_audio=audio,
         channel_id=audio.channel_id,
         channel_name=audio.channel_name,
         channel_url=audio.channel_url,
@@ -2494,6 +2694,330 @@ async def handle_speaker_purity_config(request: web.Request) -> web.Response:
     )
 
 
+async def handle_list_diarization_results(request: web.Request) -> web.Response:
+    """List every durable canonical diarization result for Studio and Pipeline."""
+    verification = _verification_state_index()
+    items = []
+    for path in DIARIZATION_RESULTS_DIR.glob("*.json"):
+        try:
+            result = DiarizationResult.load(path)
+            items.append(_result_catalog_item(result, verification.get(result.result_id)))
+        except Exception as exc:
+            logger.warning("Ignoring invalid diarization result %s: %s", path, exc)
+    items.sort(key=lambda item: item.get("created_at", 0), reverse=True)
+    return web.json_response({"results": items, "total": len(items)})
+
+
+async def handle_get_diarization_result(request: web.Request) -> web.Response:
+    """Return one complete canonical diarization result."""
+    try:
+        result = _load_diarization_result(request.match_info["result_id"])
+    except FileNotFoundError as exc:
+        return web.json_response({"error": str(exc)}, status=404)
+    except (TypeError, ValueError, OSError, json.JSONDecodeError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    state = _verification_state_index().get(result.result_id)
+    return web.json_response(_result_catalog_item(result, state))
+
+
+async def handle_preview_diarization_turn(request: web.Request) -> web.StreamResponse:
+    """Lazily cut and stream one turn without registering a new audio item."""
+    try:
+        result = _load_diarization_result(request.match_info["result_id"])
+        turn_index = int(request.match_info["turn_index"])
+        turn = result.turns[turn_index]
+        if result.source_audio is None:
+            raise ValueError("Diarization result has no source audio reference")
+        if not Path(result.source_audio.path).is_file():
+            raise FileNotFoundError(f"Source audio is unavailable: {result.source_audio.path}")
+    except (IndexError, ValueError, TypeError) as exc:
+        return web.Response(text=str(exc), status=400)
+    except FileNotFoundError as exc:
+        return web.Response(text=str(exc), status=404)
+
+    result_dir = DIARIZATION_PREVIEW_DIR / result.result_id
+    output_path = result_dir / f"turn_{turn_index:06d}.wav"
+    if not output_path.is_file():
+        cutter = AudioCutter(output_dir=result_dir)
+        await asyncio.to_thread(
+            cutter.cut,
+            result.source_audio,
+            turn.start_s,
+            turn.end_s,
+            output_path=output_path,
+        )
+    return web.FileResponse(output_path)
+
+
+async def handle_verify_diarization_batch(request: web.Request) -> web.Response:
+    """Verify filtered turns from one or more persisted diarization results."""
+    data = await request.json()
+    result_ids = list(dict.fromkeys(
+        str(value) for value in data.get("result_ids", []) if value
+    ))
+    profile_name = str(data.get("profile") or data.get("profile_name") or "").strip()
+    if not result_ids or not profile_name:
+        return web.json_response(
+            {"error": "result_ids and profile are required"}, status=400
+        )
+    try:
+        results = [_load_diarization_result(result_id) for result_id in result_ids]
+        similarity_threshold = float(data.get("similarity_threshold", 0.60))
+        min_duration_s = float(data.get("min_duration_s", 1.5))
+        max_duration_value = data.get("max_duration_s")
+        max_duration_s = float(max_duration_value) if max_duration_value not in (None, "") else None
+        max_overlap_duration_s = float(data.get("max_overlap_duration_s", 0.05))
+        window_duration_s = float(data.get("window_duration_s", 2.0))
+        window_hop_s = float(data.get("window_hop_s", 0.75))
+    except FileNotFoundError as exc:
+        return web.json_response({"error": str(exc)}, status=404)
+    except (TypeError, ValueError, OSError, json.JSONDecodeError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+
+    speaker_ids = {str(value) for value in data.get("speaker_ids", []) if value}
+    overlap_state = str(data.get("overlap_state", "any"))
+    verification_filter = str(data.get("verification_state", "all"))
+    if min_duration_s <= 0 or (max_duration_s is not None and max_duration_s <= 0):
+        return web.json_response({"error": "Turn durations must be greater than zero"}, status=400)
+    if max_duration_s is not None and max_duration_s < min_duration_s:
+        return web.json_response({"error": "max_duration_s must be at least min_duration_s"}, status=400)
+    if overlap_state not in {"any", "exclude", "only"}:
+        return web.json_response({"error": "Invalid overlap_state"}, status=400)
+    if verification_filter not in {"all", "unverified", "pass", "reject", "error"}:
+        return web.json_response({"error": "Invalid verification_state"}, status=400)
+    previous_states = _verification_state_index(profile_name)
+    candidates_by_result: dict[str, list[SpeakerTurn]] = {}
+    for result in results:
+        previous_turns = previous_states.get(result.result_id, {}).get("turns", {})
+        candidates = []
+        for turn in result.turns:
+            duration_s = turn.duration_s
+            prior = previous_turns.get(
+                _turn_key(turn.speaker_id, turn.start_s, turn.end_s), "unverified"
+            )
+            if speaker_ids and turn.speaker_id not in speaker_ids:
+                continue
+            if duration_s < min_duration_s or (max_duration_s is not None and duration_s > max_duration_s):
+                continue
+            if overlap_state == "exclude" and turn.overlaps_other_speaker:
+                continue
+            if overlap_state == "only" and not turn.overlaps_other_speaker:
+                continue
+            if verification_filter != "all" and prior != verification_filter:
+                continue
+            candidates.append(turn)
+        candidates_by_result[result.result_id] = candidates
+
+    total_candidates = sum(len(turns) for turns in candidates_by_result.values())
+    if total_candidates == 0:
+        return web.json_response({"error": "No turns match the selected filters"}, status=400)
+
+    device = str(data.get("device", "auto"))
+    target_device = get_default_device() if device == "auto" else device
+    model_id = str(data.get("model_id") or DEFAULT_EMBEDDING_MODEL_ID)
+    token = data.get("token") or os.getenv("HF_TOKEN")
+    task_id = task_manager.create_task(
+        "diarization_batch_verify",
+        {
+            "result_ids": result_ids,
+            "profile": profile_name,
+            "device": target_device,
+            "candidate_count": total_candidates,
+        },
+    )
+
+    async def run_batch() -> None:
+        task_manager.update_task(
+            task_id,
+            status="running",
+            progress=0.0,
+            progress_known=True,
+            message=f"Verifying {total_candidates} turns from {len(results)} result(s)...",
+        )
+        collected: list[dict[str, Any]] = []
+        started_at = time.time()
+        try:
+            verifier = SpeakerVerifier(model_id=model_id, device=target_device, token=token)
+            profile = verifier.load_profile(profile_name)
+            with verifier:
+                completed = 0
+                for result in results:
+                    if _task_is_cancelled(task_id):
+                        return
+                    candidates = candidates_by_result[result.result_id]
+                    if not candidates:
+                        continue
+                    if result.source_audio is None:
+                        raise ValueError(f"Result {result.result_id} has no source audio")
+                    try:
+                        verified = await asyncio.to_thread(
+                            verifier.verify_purity,
+                            result,
+                            profile,
+                            candidates=candidates,
+                            similarity_threshold=similarity_threshold,
+                            min_candidate_duration_s=min_duration_s,
+                            max_overlap_duration_s=max_overlap_duration_s,
+                            window_duration_s=window_duration_s,
+                            window_hop_s=window_hop_s,
+                        )
+                        for item in verified:
+                            turn_index = next(
+                                index for index, turn in enumerate(result.turns)
+                                if _turn_key(turn.speaker_id, turn.start_s, turn.end_s)
+                                == _turn_key(item.speaker_id, item.start_s, item.end_s)
+                            )
+                            serialized = asdict(item)
+                            serialized.update(
+                                {
+                                    "result_id": result.result_id,
+                                    "source_title": result.source_audio.title,
+                                    "turn_index": turn_index,
+                                    "passed": item.passed,
+                                    "duration_s": item.duration_s,
+                                    "min_target_similarity": item.min_target_similarity,
+                                }
+                            )
+                            collected.append(serialized)
+                    except Exception as exc:
+                        error_text = f"{type(exc).__name__}: {exc}"
+                        for turn in candidates:
+                            collected.append(
+                                {
+                                    "schema_version": "1.0",
+                                    "audio_id": result.audio_id,
+                                    "profile_name": profile_name,
+                                    "speaker_id": turn.speaker_id,
+                                    "start_s": turn.start_s,
+                                    "end_s": turn.end_s,
+                                    "decision": "error",
+                                    "reason": "result_verification_failed",
+                                    "error": error_text,
+                                    "overlap_duration_s": 0.0,
+                                    "overlap_ratio": 0.0,
+                                    "windows": [],
+                                    "model": None,
+                                    "result_id": result.result_id,
+                                    "source_title": result.source_audio.title,
+                                    "turn_index": result.turns.index(turn),
+                                    "passed": False,
+                                    "duration_s": turn.duration_s,
+                                    "min_target_similarity": None,
+                                }
+                            )
+                    completed += len(candidates)
+                    task_manager.update_task(
+                        task_id,
+                        progress=completed / total_candidates,
+                        progress_known=True,
+                        message=f"Verified {completed}/{total_candidates} turns",
+                    )
+
+            verification_id = f"verify_{uuid.uuid4().hex}"
+            counts = {
+                decision: sum(item["decision"] == decision for item in collected)
+                for decision in ("pass", "reject", "error")
+            }
+            report = {
+                "kind": "diarization.verification.batch",
+                "schema_version": "1.0",
+                "verification_id": verification_id,
+                "created_at": time.time(),
+                "result_ids": result_ids,
+                "profile": profile_name,
+                "results": collected,
+                "counts": counts,
+                "settings": {
+                    "similarity_threshold": similarity_threshold,
+                    "min_duration_s": min_duration_s,
+                    "max_duration_s": max_duration_s,
+                    "max_overlap_duration_s": max_overlap_duration_s,
+                    "window_duration_s": window_duration_s,
+                    "window_hop_s": window_hop_s,
+                    "speaker_ids": sorted(speaker_ids),
+                    "overlap_state": overlap_state,
+                    "verification_state": verification_filter,
+                    "model_id": model_id,
+                },
+            }
+            report_path = DIARIZATION_VERIFICATIONS_DIR / f"{verification_id}.json"
+            report_temp_path = report_path.with_suffix(".json.tmp")
+            report_temp_path.write_text(
+                json.dumps(report, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+            report_temp_path.replace(report_path)
+            for result in results:
+                if result.source_audio is None:
+                    continue
+                active_audio_id = registry.find_id_by_path(result.source_audio.path)
+                active_item = registry.get_item(active_audio_id) if active_audio_id else None
+                if active_item:
+                    result_rows = [
+                        row for row in collected if row["result_id"] == result.result_id
+                    ]
+                    if not result_rows:
+                        continue
+                    verification_tag = (
+                        "verification:passed"
+                        if any(row["decision"] == "pass" for row in result_rows)
+                        else "verification:rejected"
+                    )
+                    active_item["system_tags"] = sorted(
+                        (set(active_item.get("system_tags", [])) - {"verification:unverified", "verification:passed", "verification:rejected"})
+                        | {"stage:verified", f"profile:{profile_name}", verification_tag}
+                    )
+
+            # Reflect durable verification metadata in Pipeline when its source
+            # item is registered; no segment audio is registered or exported.
+            try:
+                from src.web_pipeline.dataset_manager import dataset_manager
+                for result in results:
+                    if result.source_audio is None:
+                        continue
+                    result_rows = [
+                        row for row in collected if row["result_id"] == result.result_id
+                    ]
+                    if not result_rows:
+                        continue
+                    item = dataset_manager.find_item_by_path(result.source_audio.path)
+                    if item:
+                        dataset_manager.attach_target_speaker(
+                            item.id,
+                            {
+                                "profile": profile_name,
+                                "passed_candidates": sum(
+                                    row["decision"] == "pass" for row in result_rows
+                                ),
+                                "verification_id": verification_id,
+                            },
+                        )
+            except Exception:
+                logger.exception("Could not synchronize verification metadata to Pipeline")
+
+            task_manager.update_task(
+                task_id,
+                status="completed",
+                progress=1.0,
+                progress_known=True,
+                message=f"Batch complete: {counts['pass']} passed, {counts['reject']} rejected, {counts['error']} errors",
+                result={**report, "elapsed_s": round(time.time() - started_at, 2)},
+            )
+        except Exception as exc:
+            if _task_is_cancelled(task_id):
+                return
+            logger.exception("Diarization batch verification failed")
+            task_manager.update_task(
+                task_id,
+                status="failed",
+                error=str(exc),
+                message=f"Batch verification failed: {exc}",
+            )
+
+    task_manager.enqueue(task_id, run_batch)
+    return web.json_response(
+        {"task_id": task_id, "task": task_manager.get_task(task_id)}, status=202
+    )
 async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
     """Verify speaker purity of diarization turns against an enrolled speaker profile."""
     data = await request.json()
@@ -2601,13 +3125,14 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
         return web.json_response({"error": f"Invalid turns: {e}"}, status=400)
 
     diarization = DiarizationResult(
-        schema_version="1.0",
+        schema_version="2.0",
         audio_id=audio.source_id,
         speakers=[
             Speaker(speaker_id=spk)
             for spk in sorted({t.speaker_id for t in speaker_turns})
         ],
         turns=speaker_turns,
+        source_audio=audio,
         channel_id=audio.channel_id,
         channel_name=audio.channel_name,
         channel_url=audio.channel_url,
@@ -2651,7 +3176,6 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
             profile = verifier.load_profile(profile_name)
             with verifier:
                 return verifier.verify_purity(
-                    audio,
                     diarization,
                     profile,
                     similarity_threshold=similarity_threshold,
@@ -3540,6 +4064,17 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_post("/api/evaluations", handle_save_evaluation)
     app.router.add_delete("/api/evaluations/{id}", handle_delete_evaluation)
     app.router.add_post("/api/diarization/run", handle_run_diarization)
+    app.router.add_get("/api/diarization/results", handle_list_diarization_results)
+    app.router.add_post(
+        "/api/diarization/results/verify", handle_verify_diarization_batch
+    )
+    app.router.add_get(
+        "/api/diarization/results/{result_id}", handle_get_diarization_result
+    )
+    app.router.add_get(
+        "/api/diarization/results/{result_id}/turns/{turn_index}/audio",
+        handle_preview_diarization_turn,
+    )
     app.router.add_post("/api/diarization/extract-speaker", handle_extract_speaker_audio)
     app.router.add_post("/api/diarization/extract-all-speakers", handle_extract_all_speakers)
     app.router.add_get("/api/speaker-profiles", handle_list_speaker_profiles)

@@ -198,10 +198,11 @@ class PyannoteDiarizer(BaseDiarizer, ManagedModel):
             )
 
         return DiarizationResult(
-            schema_version="1.0",
+            schema_version="2.0",
             audio_id=audio.source_id,
             speakers=speakers,
             turns=turns,
+            source_audio=audio,
             model=DiarizationModelInfo(
                 backend="pyannote",
                 model_id=self.model_id,

@@ -15,12 +15,7 @@ from typing import Any
 from src.base.model import ManagedModel
 from src.diarization.BaseDiarizer import BaseDiarizer
 from src.diarization.DiariZenDiarizer import DEFAULT_DIARIZEN_MODEL_ID
-from src.diarization.schemas import (
-    DiarizationModelInfo,
-    DiarizationResult,
-    Speaker,
-    SpeakerTurn,
-)
+from src.diarization.schemas import DiarizationResult
 from src.utils.AudioClass import Audio
 
 logger = logging.getLogger(__name__)
@@ -41,6 +36,7 @@ class DiariZenWorkerDiarizer(BaseDiarizer, ManagedModel):
         num_speakers: int | None = None,
         min_speakers: int | None = None,
         max_speakers: int | None = None,
+        batch_size: int = 1,
         ffmpeg_bin: str = "ffmpeg",
         worker_python: str | Path | None = None,
     ) -> None:
@@ -63,6 +59,7 @@ class DiariZenWorkerDiarizer(BaseDiarizer, ManagedModel):
             "num_speakers": num_speakers,
             "min_speakers": min_speakers,
             "max_speakers": max_speakers,
+            "batch_size": batch_size,
             "ffmpeg_bin": ffmpeg_bin,
         }
         self._process: subprocess.Popen[str] | None = None
@@ -268,18 +265,4 @@ class DiariZenWorkerDiarizer(BaseDiarizer, ManagedModel):
 
     @staticmethod
     def _result_from_dict(payload: dict[str, Any]) -> DiarizationResult:
-        model_payload = payload.get("model")
-        return DiarizationResult(
-            schema_version=payload["schema_version"],
-            audio_id=payload["audio_id"],
-            speakers=[Speaker(**speaker) for speaker in payload["speakers"]],
-            turns=[SpeakerTurn(**turn) for turn in payload["turns"]],
-            model=(
-                DiarizationModelInfo(**model_payload)
-                if model_payload is not None
-                else None
-            ),
-            channel_id=payload.get("channel_id"),
-            channel_name=payload.get("channel_name"),
-            channel_url=payload.get("channel_url"),
-        )
+        return DiarizationResult.from_dict(payload)

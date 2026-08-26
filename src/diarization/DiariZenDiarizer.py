@@ -41,6 +41,7 @@ class DiariZenDiarizer(BaseDiarizer, ManagedModel):
         num_speakers: int | None = None,
         min_speakers: int | None = None,
         max_speakers: int | None = None,
+        batch_size: int = 1,
         ffmpeg_bin: str = "ffmpeg",
     ) -> None:
         """Initialize the DiariZen diarizer.
@@ -53,6 +54,7 @@ class DiariZenDiarizer(BaseDiarizer, ManagedModel):
             num_speakers: Optional exact speaker count.
             min_speakers: Optional minimum speaker count.
             max_speakers: Optional maximum speaker count.
+            batch_size: Segmentation and embedding inference batch size.
             ffmpeg_bin: ``ffmpeg`` executable used to normalize input audio.
         """
         ManagedModel.__init__(self)
@@ -61,12 +63,19 @@ class DiariZenDiarizer(BaseDiarizer, ManagedModel):
             min_speakers,
             max_speakers,
         )
+        if (
+            isinstance(batch_size, bool)
+            or not isinstance(batch_size, int)
+            or batch_size < 1
+        ):
+            raise ValueError("batch_size must be an integer of at least 1")
         self.model_id = model_id
         self.device = str(device)
         self.token = token
         self.num_speakers = num_speakers
         self.min_speakers = min_speakers
         self.max_speakers = max_speakers
+        self.batch_size = batch_size
         self.ffmpeg_bin = ffmpeg_bin
         self._pipeline: Any | None = None
         self._target_device: Any | None = None
@@ -129,6 +138,8 @@ class DiariZenDiarizer(BaseDiarizer, ManagedModel):
         target_device = self._resolve_device(torch)
         try:
             pipeline = DiariZenPipeline.from_pretrained(self.model_id)
+            pipeline.segmentation_batch_size = self.batch_size
+            pipeline.embedding_batch_size = self.batch_size
             pipeline.to(target_device)
         except Exception as exc:
             raise RuntimeError(
@@ -224,10 +235,11 @@ class DiariZenDiarizer(BaseDiarizer, ManagedModel):
 
         turns, speakers = self._turns_from_annotation(annotation)
         return DiarizationResult(
-            schema_version="1.0",
+            schema_version="2.0",
             audio_id=audio.source_id,
             speakers=speakers,
             turns=turns,
+            source_audio=audio,
             model=DiarizationModelInfo(
                 backend="diarizen",
                 model_id=self.model_id,

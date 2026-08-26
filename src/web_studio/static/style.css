@@ -6082,6 +6082,63 @@ button {
 }
 
 /* Post-diarization target-speaker review */
+.purity-result-list {
+  display: grid;
+  gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.purity-result-card {
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border-color, #d5d9e2);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.purity-result-card.selected {
+  border-color: var(--accent, #6c63ff);
+  background: color-mix(in srgb, var(--accent, #6c63ff) 8%, transparent);
+}
+
+.purity-result-card-body,
+.purity-result-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+}
+
+.purity-result-card-body strong {
+  width: 100%;
+}
+
+.purity-candidate-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.purity-manual-fallback {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px dashed var(--border-color, #d5d9e2);
+  border-radius: 8px;
+}
+
+.library-metadata-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 6px;
+  width: 100%;
+}
+
+.system-tag-chip { color: var(--accent-primary-hover); }
+.custom-tag-chip { border-style: dashed; }
+
 .target-eval-setup {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) minmax(300px, 1.4fr) auto;

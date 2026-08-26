@@ -27,10 +27,31 @@ separation, cutting, resampling, and other derived artifacts.
 
 ## Diarization and target-speaker results
 
-`DiarizationResult` and `TargetSpeakerResult` expose optional `channel_id`,
-`channel_name`, and `channel_url` alongside their video-level `audio_id`.
-Diarizer backends copy these fields from the input `Audio`; target-speaker
-filtering preserves them from the scored result.
+`DiarizationResult` schema 2.0 is the canonical handoff from diarization to
+verification. Every newly produced result contains:
+
+- a stable `result_id`, creation timestamp, and `audio_id`;
+- the complete file-backed source `Audio` snapshot under `source_audio`;
+- all declared `Speaker` and `SpeakerTurn` records, including confidence and
+  normalized `overlaps_other_speaker` evidence;
+- `DiarizationModelInfo` and source/channel identity; and
+- a derived `summary` with speaker/turn counts, total speech duration, and
+  duration per speaker.
+
+`to_dict()` is the only serialized representation. `from_dict()` round-trips
+it, `save()` writes it atomically, and `load()` restores it. Turn `duration_s`
+and `summary` are serialized conveniences and are recomputed from canonical
+fields on load. Constructors reject duplicate speakers, turns referencing
+undeclared speakers, mismatched source identity, and turns beyond a known
+source duration. Schema-1.0 payloads can be migrated by passing their source
+`Audio` to `from_dict()`.
+
+The derived Python properties are `speaker_count`, `turn_count`,
+`total_speech_duration_s`, `duration_per_speaker_s`, and
+`turns_by_speaker`. Durable web results live under
+`.data/diarization/results/`; verification reports live under
+`.data/diarization/verifications/`. Lazy audition cuts use
+`.data/diarization/preview/` and are not registered as audio assets.
 
 `Speaker.global_speaker_id` names a globally enrolled identity that was
 injected into a supporting diarization pipeline. Turns continue to reference
@@ -82,7 +103,12 @@ error. This web-report evidence does not change the core
 ## Pipeline `AudioItem`
 
 Pipeline registry items expose the `Audio` source/channel fields directly in
-addition to dataset, tags, stems, diarization, and arbitrary metadata. Target
+addition to dataset, `custom_tags`, `system_tags`, stems, canonical
+`diarization`, and arbitrary metadata. System tags are pipeline-owned and use
+the namespaces `type:`, `stage:`, `speaker:`, `profile:`, and `verification:`.
+Only `custom_tags` are user editable. Legacy unnamespaced tags are migrated as
+custom tags except known processing markers, which migrate to system tags.
+Target
 speaker summaries are stored per profile under
 `metadata["target_speakers"][profile_name]`; `metadata["target_speaker"]`
 contains the most recent result for compatibility.

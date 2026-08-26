@@ -292,8 +292,10 @@ Subclasses must implement `_load() -> None` and `_unload() -> None`.
 **Defined in:** `src/diarization/BaseDiarizer.py`
 
 Abstract interface for converting audio into backend-independent speaker
-information. Every backend copies the input audio's optional `channel_id`,
-`channel_name`, and `channel_url` into the result.
+information. Every backend returns schema 2.0, retains the input file-backed
+`Audio` as `source_audio`, and copies optional channel identity into the
+result. Results validate source identity, declared speakers, turn bounds, and
+overlap state before downstream use.
 
 ### `PyannoteDiarizer(model_id=..., device=..., token=..., num_speakers=..., min_speakers=..., max_speakers=...)`
 
@@ -460,7 +462,7 @@ constructor option can point to a non-default isolated interpreter.
   speaker-embedding models and places them on the selected device.
 - `_unload()` releases both models and clears available accelerator caches.
 
-### `DiariZenDiarizer.diarize(audio: Audio, *, num_speakers=None, min_speakers=None, max_speakers=None) -> DiarizationResult`
+### `DiariZenDiarizer(model_id=..., device="auto", token=None, num_speakers=None, min_speakers=None, max_speakers=None, batch_size=1, ffmpeg_bin="ffmpeg")`
 
 **Defined in:** `src/diarization/DiariZenDiarizer.py`
 
@@ -469,6 +471,10 @@ speaker embeddings, and VBx clustering. The default checkpoint is
 `BUT-FIT/diarizen-wavlm-large-s80-md-v2`. Its weights are CC BY-NC 4.0 and are
 limited to research and other non-commercial use. Dependencies are isolated in
 `.venv-diarizen` using `requirements-diarizen.txt`.
+
+`batch_size` controls both segmentation and embedding inference. It defaults to
+`1` to keep peak VRAM bounded on 10 GiB GPUs; callers may raise it when the
+selected device has sufficient free memory.
 
 **Behavior contract:**
 
@@ -638,15 +644,27 @@ segments with `similarity >= threshold`, duration `>= min_duration_s`, and
 different thresholds can be tried cheaply on one `score` result. Channel
 identity is preserved from the scored result.
 
-### `SpeakerVerifier.verify_purity(audio, result, profile, *, similarity_threshold, min_candidate_duration_s=1.5, max_overlap_duration_s=0.05, window_duration_s=2.0, window_hop_s=0.75) -> list[SpeakerPurityResult]`
+### `SpeakerVerifier.verify_purity(source, profile, *, candidates=None, similarity_threshold, min_candidate_duration_s=1.5, max_overlap_duration_s=0.05, window_duration_s=2.0, window_hop_s=0.75) -> list[SpeakerPurityResult]`
 
-Requires `load()` (or a `with` block) first. Treats every diarization turn as
-one candidate and returns one decision in input order.
+Requires `load()` (or a `with` block) first. `source` is
+`Audio | DiarizationResult`:
+
+- A schema-2.0 `DiarizationResult` is the canonical input: its embedded
+  `source_audio` is the verified file and every turn is one candidate by
+  default. `candidates` may select a subset of the result's turns; the
+  complete `DiarizationResult` remains the overlap authority. Passing a turn
+  that does not belong to the result is rejected.
+- A plain `Audio` is verified as a single whole-file candidate attributed to
+  the profile's speaker. This path has no overlap authority, so the overlap
+  veto cannot fire; the sliding identity windows still apply.
 
 **Behavior contract:**
 
-- Requires `result.audio_id == audio.source_id` so timestamps cannot silently
-  be applied to the wrong file.
+- Audio/turn identity is structural, never re-checked by string comparison:
+  `DiarizationResult` construction already enforces
+  `source_audio.source_id == audio_id` and turn bounds against the source
+  duration. A result without `source_audio` (legacy schema-1.0 payload) is
+  rejected with `ValueError`.
 - Rejects candidates shorter than `min_candidate_duration_s` with reason
   `candidate_too_short`.
 - Computes the union duration of other-speaker turns intersecting each
@@ -794,10 +812,10 @@ classes.
 `Speaker`, `SpeakerTurn`, `DiarizationModelInfo`, `DiarizationResult`,
 `ScoredSegment`, `TargetSpeakerResult`, `SpeakerProfile`,
 `BenchmarkDefinition`, `MixingParameters`, `AudioMixResult`, and
-`SeparationBenchmarkSample` are dataclasses. Apart from validation in the
-`Speaker*`, `DiarizationModelInfo`, and `DiarizationResult` constructors, they
-do not define additional business methods. Python supplies standard dataclass
-methods such as `__init__`, `__repr__`, and `__eq__`.
+`SeparationBenchmarkSample` are dataclasses. `DiarizationResult` additionally
+defines canonical `to_dict()` / `from_dict()` round-tripping, atomic
+`save()` / `load()` persistence, source/turn validation, and derived summary
+properties. Python supplies the remaining standard dataclass methods.
 
 ## 9. Web application platforms
 
@@ -868,6 +886,21 @@ The repository provides two specialized web platforms:
   substituting post-diarization similarity scoring. The legacy
   `POST /api/diarization/target-speaker-score` endpoint remains for Pipeline's
   explicit target-filter jobs, but is not part of Studio's interactive flow.
+- **Canonical diarization-result endpoints:**
+  `GET /api/diarization/results` lists durable results with source/model
+  summaries and verification state;
+  `GET /api/diarization/results/{result_id}` returns one complete result;
+  `GET /api/diarization/results/{result_id}/turns/{turn_index}/audio` lazily
+  cuts and streams a turn without registering it; and
+  `POST /api/diarization/results/verify` queues filtered turns from one or more
+  result IDs as one batch. Filters cover speaker, min/max duration, overlap,
+  and prior verification state. Reports persist under
+  `.data/diarization/verifications/`. `POST /api/purity/verify` remains the
+  separate imported-audio fallback.
+- **Persistence:** Studio's diarization history and result-first verifier load
+  the server-side canonical result catalog after refresh or restart. Browser
+  storage contains viewer-only speaker labels/colors and verifier preferences,
+  not the authoritative turns or source identity.
 
 ### `src/web_pipeline/` (SonicPipeline API domain and frontend)
 - **Role:** Large-scale channel-oriented batch engine for high-throughput
@@ -875,7 +908,9 @@ The repository provides two specialized web platforms:
   batch diarization, target filtering, benchmark evaluation, and manifests.
 - **Channel endpoints:** `GET /api/channels` returns per-channel item, duration,
   separation, diarization, and target-filter coverage. `GET /api/items` accepts
-  `channel_id`. YouTube batch ingest groups items into `Channel · <name>`
+  `channel_id` plus `type`, `stage`, `speaker`, `profile`, `verification`,
+  `format`, dataset, tag, duration, and free-text filters. YouTube batch ingest
+  groups items into `Channel · <name>`
   collections by default while retaining the video `source_id`.
 - **Channel-scoped jobs:** `POST /api/jobs/batch_separation` and
   `POST /api/jobs/batch_diarization` accept optional `channel_id` alongside
@@ -896,7 +931,8 @@ The repository provides two specialized web platforms:
   scored segments), optionally exports kept segments as wav cuts, and attaches
   a summary (including qualified segment/duration percentages) under both the
   last-result compatibility key `metadata["target_speaker"]` and the
-  per-profile map `metadata["target_speakers"]`, with a `target:<profile>` tag.
+  per-profile map `metadata["target_speakers"]`. Pipeline-owned state is kept
+  in namespaced `system_tags`; users edit only `custom_tags`.
 
 **Telemetry payload:** The `gpu` object includes `load_percent`, host-level
 `used_vram_mb`, `free_vram_mb`, and `total_vram_mb`, plus the current process's

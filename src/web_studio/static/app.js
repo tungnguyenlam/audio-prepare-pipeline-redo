@@ -37,6 +37,7 @@ const state = {
   // Tab 7 Project Explorer Filter State
   tabLibrarySearch: "",
   tabLibraryCategory: "all",
+  tabLibraryFilters: { dataset: 'all', channel: 'all', speaker: 'all', verification: 'all', format: 'all' },
 
   // Diarization Studio State
   diarization: {
@@ -80,6 +81,8 @@ const state = {
   // Speaker Purity Workbench state
   purity: {
     audioId: null,
+    diarizationResults: [],
+    selectedResultIds: new Set(),
     profileName: '',
     results: null,
     metrics: null,
@@ -326,6 +329,14 @@ const el = {
   diarHistoryList: document.getElementById('diar-history-list'),
 
   // Speaker Purity Workbench
+  purityResultList: document.getElementById('purity-result-list'),
+  purityResultSelectionSummary: document.getElementById('purity-result-selection-summary'),
+  btnPurityRefreshResults: document.getElementById('btn-purity-refresh-results'),
+  purityCandidateSpeaker: document.getElementById('purity-candidate-speaker'),
+  purityCandidateMinDuration: document.getElementById('purity-candidate-min-duration'),
+  purityCandidateMaxDuration: document.getElementById('purity-candidate-max-duration'),
+  purityCandidateOverlap: document.getElementById('purity-candidate-overlap'),
+  purityCandidateVerification: document.getElementById('purity-candidate-verification'),
   purityInputSelect: document.getElementById('purity-input-select'),
   btnPurityBrowseLibrary: document.getElementById('btn-purity-browse-library'),
   purityAudioMetaChip: document.getElementById('purity-audio-meta-chip'),
@@ -364,6 +375,7 @@ const el = {
   purityHfTokenInput: document.getElementById('purity-hf-token-input'),
   btnTogglePurityHfVis: document.getElementById('btn-toggle-purity-hf-vis'),
   btnRunPurity: document.getElementById('btn-run-purity'),
+  btnRunPurityManual: document.getElementById('btn-run-purity-manual'),
   btnPurityReset: document.getElementById('btn-purity-reset'),
   purityTaskProgressBox: document.getElementById('purity-task-progress-box'),
   purityTaskTimer: document.getElementById('purity-task-timer'),
@@ -447,6 +459,11 @@ const el = {
   libraryModalCount: document.getElementById('library-modal-count'),
   tabLibrarySearch: document.getElementById('tab-library-search'),
   tabLibraryCategories: document.getElementById('tab-library-categories'),
+  tabLibraryDataset: document.getElementById('tab-library-dataset'),
+  tabLibraryChannel: document.getElementById('tab-library-channel'),
+  tabLibrarySpeaker: document.getElementById('tab-library-speaker'),
+  tabLibraryVerification: document.getElementById('tab-library-verification'),
+  tabLibraryFormat: document.getElementById('tab-library-format'),
   queueBadge: document.getElementById('queue-badge'),
   modalTaskQueue: document.getElementById('modal-task-queue'),
   btnCloseQueueModal: document.getElementById('btn-close-queue-modal'),
@@ -2537,6 +2554,7 @@ function initDiarizationStudio() {
           state.diarization.activeHistoryId = null;
           renderDiarizationWorkspace(result.diarization, audioId);
           saveDiarizationToHistory(result.diarization, audioId, result);
+          loadDiarizationResultsForVerification();
         }, (err) => {
           clearInterval(timerInterval);
           el.diarTaskProgressBox.classList.add('hidden');
@@ -2868,7 +2886,7 @@ function saveDiarizationToHistory(diarization, audioId, runResult = {}) {
   );
   const modelBackend = completeData.model?.backend || completeData.model?.model_id || 'Pyannote';
   const historyItem = {
-    id: `diar_hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    id: completeData.result_id || `diar_hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     timestamp: Date.now(),
     audio_id: audioId,
     audio_title: audio.title || audio.source_id || audioId,
@@ -2905,9 +2923,14 @@ function saveDiarizationToHistory(diarization, audioId, runResult = {}) {
 
 function persistDiarizationHistory() {
   try {
-    localStorage.setItem('sonic_diarization_history', JSON.stringify(state.diarization.history || []));
+    const uiState = Object.fromEntries((state.diarization.history || []).map(item => [
+      item.diarization?.result_id || item.id,
+      { custom_names: item.custom_names || {}, colors: item.colors || {} },
+    ]));
+    localStorage.setItem('sonic_diarization_ui_state', JSON.stringify(uiState));
+    localStorage.removeItem('sonic_diarization_history');
   } catch (err) {
-    console.warn('Could not persist diarization history:', err);
+    console.warn('Could not persist diarization viewer preferences:', err);
   }
 }
 
@@ -2948,14 +2971,37 @@ function normalizeDiarizationHistoryItem(item) {
   };
 }
 
-function loadDiarizationHistory() {
+async function loadDiarizationHistory() {
   try {
-    const stored = JSON.parse(localStorage.getItem('sonic_diarization_history') || '[]');
-    state.diarization.history = Array.isArray(stored)
-      ? stored.map(normalizeDiarizationHistoryItem).filter(Boolean)
-      : [];
+    const response = await fetch('/api/diarization/results');
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Unable to load diarization history');
+    const uiState = JSON.parse(localStorage.getItem('sonic_diarization_ui_state') || '{}');
+    state.diarization.history = (payload.results || []).map(result => {
+      const source = result.source_audio || {};
+      const summary = result.summary || {};
+      const ui = uiState[result.result_id] || {};
+      return normalizeDiarizationHistoryItem({
+        id: result.result_id,
+        timestamp: Number(result.created_at || 0) * 1000,
+        audio_id: result.audio_id,
+        audio_title: source.title || result.audio_id,
+        audio_path: source.path,
+        audio_source_id: source.source_id,
+        duration_s: source.duration_s || 0,
+        model_backend: result.model?.backend,
+        model_id: result.model?.model_id,
+        speaker_count: summary.speaker_count,
+        turn_count: summary.turn_count,
+        total_speech_s: summary.total_speech_duration_s,
+        speech_ratio_pct: source.duration_s > 0 ? Number((100 * summary.total_speech_duration_s / source.duration_s).toFixed(1)) : 0,
+        diarization: result,
+        custom_names: ui.custom_names || {},
+        colors: ui.colors || {},
+      });
+    }).filter(Boolean);
   } catch (err) {
-    console.warn('Could not load diarization history:', err);
+    console.warn('Could not load durable diarization history:', err);
     state.diarization.history = [];
   }
   renderDiarizationHistory();
@@ -3070,6 +3116,7 @@ function clearDiarizationHistory() {
   if (!count || !confirm(`Clear all ${count} saved diarization session${count === 1 ? '' : 's'}?`)) return;
   state.diarization.history = [];
   state.diarization.activeHistoryId = null;
+  localStorage.removeItem('sonic_diarization_ui_state');
   localStorage.removeItem('sonic_diarization_history');
   hideSavedDiarizationNotice();
   renderDiarizationHistory();
@@ -4709,6 +4756,76 @@ function purityBackendDefaults(backend = state.purity.overlap.backend) {
   return state.purity.serverConfig?.[backend] || {};
 }
 
+async function loadDiarizationResultsForVerification() {
+  if (!el.purityResultList) return;
+  try {
+    const response = await fetch('/api/diarization/results');
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Unable to load diarization results');
+    state.purity.diarizationResults = payload.results || [];
+    const available = new Set(state.purity.diarizationResults.map(item => item.result_id));
+    state.purity.selectedResultIds = new Set(
+      [...state.purity.selectedResultIds].filter(resultId => available.has(resultId))
+    );
+    renderDiarizationResultCandidates();
+  } catch (err) {
+    el.purityResultList.innerHTML = `<div class="empty-placeholder">${escapeHtml(err.message || String(err))}</div>`;
+  }
+}
+
+function renderDiarizationResultCandidates() {
+  if (!el.purityResultList) return;
+  const results = state.purity.diarizationResults || [];
+  if (!results.length) {
+    el.purityResultList.innerHTML = '<div class="empty-placeholder">No persisted diarization results yet. Completing diarization will add one automatically.</div>';
+    return;
+  }
+  el.purityResultList.innerHTML = results.map(result => {
+    const source = result.source_audio || {};
+    const summary = result.summary || {};
+    const model = result.model?.model_id || result.model?.backend || 'Unknown model';
+    const stateLabel = result.verification?.state || 'unverified';
+    const selected = state.purity.selectedResultIds.has(result.result_id);
+    return `<label class="purity-result-card ${selected ? 'selected' : ''}">
+      <input type="checkbox" data-result-id="${escapeHtml(result.result_id)}" ${selected ? 'checked' : ''} ${result.source_available ? '' : 'disabled'}>
+      <span class="purity-result-card-body">
+        <strong>${escapeHtml(source.title || result.audio_id)}</strong>
+        <span class="text-xs text-muted">${escapeHtml(model)}</span>
+        <span class="purity-result-meta">
+          <span>${summary.speaker_count ?? result.speakers?.length ?? 0} speakers</span>
+          <span>${summary.turn_count ?? result.turns?.length ?? 0} turns</span>
+          <span>${Number(summary.total_speech_duration_s || 0).toFixed(1)}s speech</span>
+          <span class="badge badge-sm ${stateLabel === 'passed' ? 'badge-success' : stateLabel === 'rejected' || stateLabel === 'error' ? 'badge-danger' : 'badge-ghost'}">${escapeHtml(stateLabel)}</span>
+          ${result.source_available ? '' : '<span class="badge badge-sm badge-warning">source unavailable</span>'}
+        </span>
+      </span>
+    </label>`;
+  }).join('');
+  el.purityResultList.querySelectorAll('input[data-result-id]').forEach(input => {
+    input.addEventListener('change', () => {
+      if (input.checked) state.purity.selectedResultIds.add(input.dataset.resultId);
+      else state.purity.selectedResultIds.delete(input.dataset.resultId);
+      renderDiarizationResultCandidates();
+      syncDiarizationCandidateFilters();
+    });
+  });
+  syncDiarizationCandidateFilters();
+}
+
+function syncDiarizationCandidateFilters() {
+  const selected = (state.purity.diarizationResults || []).filter(result => state.purity.selectedResultIds.has(result.result_id));
+  const speakers = [...new Set(selected.flatMap(result => (result.speakers || []).map(speaker => speaker.speaker_id)))].sort();
+  if (el.purityCandidateSpeaker) {
+    const current = el.purityCandidateSpeaker.value;
+    el.purityCandidateSpeaker.innerHTML = '<option value="">All speakers</option>' + speakers.map(speaker => `<option value="${escapeHtml(speaker)}">${escapeHtml(speaker)}</option>`).join('');
+    if (speakers.includes(current)) el.purityCandidateSpeaker.value = current;
+  }
+  const turns = selected.reduce((sum, result) => sum + (result.turns?.length || 0), 0);
+  if (el.purityResultSelectionSummary) {
+    el.purityResultSelectionSummary.textContent = `${selected.length} result(s) selected • ${turns} turns before filters • all eligible turns will run as one batch`;
+  }
+}
+
 function savePurityPreferences() {
   try {
     localStorage.setItem('sonic_purity_preferences', JSON.stringify({
@@ -4807,6 +4924,11 @@ function restorePurityOverlapDefaults() {
 }
 
 function initPurityTab() {
+  loadDiarizationResultsForVerification();
+  el.btnPurityRefreshResults?.addEventListener('click', async () => {
+    await loadDiarizationResultsForVerification();
+    showToast('Diarization results refreshed', 'info');
+  });
   loadSpeakerPurityConfig();
   if (el.purityThresholdSlider) {
     el.purityThresholdSlider.addEventListener('input', e => {
@@ -4947,6 +5069,7 @@ function initPurityTab() {
   if (el.btnRunPurity) {
     el.btnRunPurity.addEventListener('click', runSpeakerPurityVerification);
   }
+  el.btnRunPurityManual?.addEventListener('click', () => runSpeakerPurityVerification(true));
 
   if (el.btnPurityReset) {
     el.btnPurityReset.addEventListener('click', resetPurityTab);
@@ -5054,7 +5177,15 @@ function syncPurityDiarizationStatus() {
   }
 }
 
-async function runSpeakerPurityVerification() {
+async function runSpeakerPurityVerification(forceManual = false) {
+  if (!forceManual && state.purity.selectedResultIds.size > 0) {
+    await runDiarizationResultBatchVerification();
+    return;
+  }
+  if (!forceManual) {
+    showToast('Select at least one diarization result, or use “Verify imported audio” in the fallback panel.', 'error');
+    return;
+  }
   const audioId = el.purityInputSelect?.value;
   const profileName = el.purityProfileSelect?.value;
 
@@ -5106,6 +5237,7 @@ async function runSpeakerPurityVerification() {
   state.purity.profileName = profileName;
 
   if (el.btnRunPurity) el.btnRunPurity.disabled = true;
+  if (el.btnRunPurityManual) el.btnRunPurityManual.disabled = true;
   if (el.purityTaskProgressBox) el.purityTaskProgressBox.classList.remove('hidden');
   if (el.purityTaskStatusText) {
     const secondStage = overlap.enabled ? `, then checking passes with ${overlap.backend === 'gemini' ? 'Gemini' : 'Gemma 4'}` : '';
@@ -5182,10 +5314,78 @@ async function runSpeakerPurityVerification() {
     showToast(`Purity verification failed: ${msg}`, 'error');
   } finally {
     if (el.btnRunPurity) el.btnRunPurity.disabled = false;
+    if (el.btnRunPurityManual) el.btnRunPurityManual.disabled = false;
+  }
+}
+
+async function runDiarizationResultBatchVerification() {
+  const resultIds = [...state.purity.selectedResultIds];
+  const profileName = el.purityProfileSelect?.value;
+  if (!profileName) {
+    showToast('Please select an enrolled target speaker profile', 'error');
+    return;
+  }
+  const minDuration = Math.max(0.01, parseFloat(el.purityCandidateMinDuration?.value) || 1.5);
+  const maxDurationRaw = el.purityCandidateMaxDuration?.value;
+  const modelId = el.purityEmbeddingModel?.value.trim() || state.purity.settings.modelId;
+  const device = el.purityDeviceSelect?.value || 'auto';
+  const token = el.purityHfTokenInput?.value || localStorage.getItem('sonic_hf_token') || undefined;
+  if (el.btnRunPurity) el.btnRunPurity.disabled = true;
+  if (el.btnRunPurityManual) el.btnRunPurityManual.disabled = true;
+  if (el.purityTaskProgressBox) el.purityTaskProgressBox.classList.remove('hidden');
+  if (el.purityTaskStatusText) el.purityTaskStatusText.textContent = `Queueing all eligible turns from ${resultIds.length} diarization result(s)…`;
+  try {
+    const response = await fetch('/api/diarization/results/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        result_ids: resultIds,
+        profile: profileName,
+        speaker_ids: el.purityCandidateSpeaker?.value ? [el.purityCandidateSpeaker.value] : [],
+        min_duration_s: minDuration,
+        max_duration_s: maxDurationRaw ? parseFloat(maxDurationRaw) : null,
+        overlap_state: el.purityCandidateOverlap?.value || 'any',
+        verification_state: el.purityCandidateVerification?.value || 'all',
+        similarity_threshold: state.purity.settings.similarityThreshold,
+        max_overlap_duration_s: state.purity.settings.maxOverlap,
+        window_duration_s: state.purity.settings.windowDuration,
+        window_hop_s: state.purity.settings.windowHop,
+        model_id: modelId,
+        device,
+        token,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Batch verification failed to start');
+    const report = await new Promise((resolve, reject) => pollTask(payload.task_id, resolve, reject));
+    state.purity.results = report.results || [];
+    state.purity.metrics = {
+      total_candidates: report.results?.length || 0,
+      passed_candidates: report.counts?.pass || 0,
+      rejected_candidates: report.counts?.reject || 0,
+      error_candidates: report.counts?.error || 0,
+    };
+    state.purity.profileName = report.profile;
+    state.purity.audioId = null;
+    state.purity.runSettings = report.settings || null;
+    if (el.purityEmptyPlaceholder) el.purityEmptyPlaceholder.classList.add('hidden');
+    if (el.purityResultsWrapper) el.purityResultsWrapper.classList.remove('hidden');
+    renderPurityResults();
+    await loadDiarizationResultsForVerification();
+    showToast(`Batch complete: ${report.counts?.pass || 0} passed, ${report.counts?.reject || 0} rejected, ${report.counts?.error || 0} errors`, 'success');
+  } catch (err) {
+    showToast(`Batch verification failed: ${err.message || String(err)}`, 'error');
+  } finally {
+    if (el.btnRunPurity) el.btnRunPurity.disabled = false;
+    if (el.btnRunPurityManual) el.btnRunPurityManual.disabled = false;
+    if (el.purityTaskProgressBox) el.purityTaskProgressBox.classList.add('hidden');
   }
 }
 
 function purityTurnKey(turn) {
+  if (turn.result_id && Number.isInteger(turn.turn_index)) {
+    return `${turn.result_id}:${turn.turn_index}`;
+  }
   return `${Number(turn.start_s).toFixed(3)}-${Number(turn.end_s).toFixed(3)}-${turn.speaker_id}`;
 }
 
@@ -5221,6 +5421,24 @@ function watchPuritySegmentEnd(endSec, key) {
 }
 
 function togglePuritySegmentPreview(turn) {
+  if (turn.result_id && Number.isInteger(turn.turn_index)) {
+    const key = `${turn.result_id}:${turn.turn_index}`;
+    if (activePuritySegmentKey === key) {
+      stopPuritySegmentPreview();
+      return;
+    }
+    stopPuritySegmentPreview();
+    activePuritySegmentKey = key;
+    puritySegmentAudio.src = `/api/diarization/results/${encodeURIComponent(turn.result_id)}/turns/${turn.turn_index}/audio`;
+    puritySegmentAudio.currentTime = 0;
+    puritySegmentAudio.play().catch(err => {
+      console.error('Segment preview error:', err);
+      stopPuritySegmentPreview();
+      showToast('Unable to play this segment', 'error');
+    });
+    updatePuritySegmentPlaybackButtons();
+    return;
+  }
   const audioId = state.purity.audioId || state.diarization.audioId;
   if (!audioId) return;
 
@@ -5284,6 +5502,11 @@ function renderPurityResults() {
   }
 
   const threshold = state.purity.settings.similarityThreshold;
+  const runSettings = state.purity.runSettings || {};
+  const runMinDuration = runSettings.min_duration_s ?? runSettings.min_candidate_duration_s ?? state.purity.settings.minDuration;
+  const runMaxOverlap = runSettings.max_overlap_duration_s ?? state.purity.settings.maxOverlap;
+  const runWindowDuration = runSettings.window_duration_s ?? runSettings.windowDuration ?? state.purity.settings.windowDuration;
+  const runWindowHop = runSettings.window_hop_s ?? runSettings.windowHop ?? state.purity.settings.windowHop;
   const passed = results.filter(r => r.decision === 'pass');
   const rejected = results.filter(r => r.decision === 'reject');
   const errors = results.filter(r => r.decision === 'error');
@@ -5459,6 +5682,7 @@ function renderPurityResults() {
         <td>
           <strong>${escapeHtml(spkName)}</strong>
           <small class="target-local-id">${escapeHtml(r.speaker_id)}</small>
+          ${r.source_title ? `<small class="target-local-id" title="${escapeHtml(r.source_title)}">${escapeHtml(r.source_title)}</small>` : ''}
         </td>
         <td class="font-mono">${dur.toFixed(2)}s</td>
         <td class="font-mono ${hasOverlap ? 'text-danger font-bold' : 'text-muted'}">${overlapStr}</td>
@@ -6360,43 +6584,50 @@ async function fetchEvaluations() {
 
 function getFileModelBadge(file) {
   const cat = (file.category || "").toLowerCase();
-  const path = (file.path || "").toLowerCase();
-  const name = (file.name || "").toLowerCase();
+  const systemTags = new Set((file.system_tags || []).map(tag => String(tag).toLowerCase()));
+  const customTags = new Set((file.custom_tags || []).map(tag => String(tag).toLowerCase()));
+  const history = (file.history || []).join(' ').toLowerCase();
 
-  if (cat.includes("speech") || path.includes("speech")) {
-    return { label: "Speech Source", class: "badge-success" };
+  if (systemTags.has('stage:verified')) {
+    return { label: "Verified Speech", class: "badge-success" };
   }
-  if (cat.includes("music") || path.includes("music")) {
-    return { label: "Music BGM", class: "badge-accent" };
-  }
-  if (cat.includes("cuts") || path.includes("cut") || name.includes("_cut_")) {
+  if (systemTags.has('type:cut')) {
     return { label: "Audio Cut", class: "badge-warning" };
   }
-  if (path.includes("bs_roformer") || name.includes("bs_roformer")) {
+  if (history.includes('bs_roformer')) {
     return { label: "BS-RoFormer", class: "badge-primary" };
   }
-  if (path.includes("mel_roformer") || name.includes("mel_roformer")) {
+  if (history.includes('mel_roformer')) {
     return { label: "Mel-RoFormer", class: "badge-primary" };
   }
-  if (path.includes("htdemucs") || name.includes("demucs")) {
+  if (history.includes('htdemucs')) {
     return { label: "HTDemucs", class: "badge-primary" };
   }
-  if (path.includes("mvsep") || name.includes("mdx")) {
+  if (history.includes('mvsep') || history.includes('mdx')) {
     return { label: "MVSep MDX", class: "badge-primary" };
   }
-  if (cat.includes("stem") || cat.includes("separated")) {
+  if (systemTags.has('type:stem') || systemTags.has('stage:separated')) {
     return { label: "Separated Stem", class: "badge-primary" };
   }
-  if (cat.includes("youtube") || path.includes("yt_crawler") || path.includes("download")) {
-    return { label: "YouTube Ingest", class: "badge-secondary" };
+  if (systemTags.has('stage:diarized')) {
+    return { label: "Diarized Source", class: "badge-info" };
   }
-  if (cat.includes("pipeline") || path.includes("pipeline")) {
+  if (cat.includes("speech") || customTags.has('speech')) {
+    return { label: "Speech Source", class: "badge-success" };
+  }
+  if (cat.includes("music") || customTags.has('music')) {
+    return { label: "Music BGM", class: "badge-accent" };
+  }
+  if (systemTags.has('stage:ingested')) {
+    return { label: "Ingested Source", class: "badge-secondary" };
+  }
+  if (file.registry_item_id) {
     return { label: "Pipeline Asset", class: "badge-info" };
   }
-  if (cat.includes("temp") || path.includes("temp") || name.includes("quick_save")) {
+  if (cat.includes("temp")) {
     return { label: "Quick Save", class: "badge-ghost" };
   }
-  if (cat.includes("upload") || path.includes("upload")) {
+  if (cat.includes("upload")) {
     return { label: "Upload", class: "badge-secondary" };
   }
   return { label: (file.format || "WAV").toUpperCase(), class: "badge-ghost" };
@@ -6598,6 +6829,7 @@ async function fetchServerFiles() {
     const res = await fetch("/api/library");
     const data = await res.json();
     state.serverFiles = data.files || [];
+    populateLibraryMetadataFilters();
     renderServerFiles();
     renderLibraryModalItems();
     // Keep diarization (and other) selects in sync with library contents
@@ -6607,7 +6839,7 @@ async function fetchServerFiles() {
   }
 }
 
-function filterServerFiles(files, query, category) {
+function filterServerFiles(files, query, category, metadataFilters = null) {
   const q = (query || "").toLowerCase().trim();
   const cat = (category || "all").toLowerCase().trim();
 
@@ -6616,26 +6848,57 @@ function filterServerFiles(files, query, category) {
     const filePath = (file.path || "").toLowerCase();
     const fileName = (file.name || "").toLowerCase();
     const fileTitle = (file.title || "").toLowerCase();
+    const systemTags = (file.system_tags || []).map(tag => String(tag).toLowerCase());
+    const customTags = (file.custom_tags || []).map(tag => String(tag).toLowerCase());
 
     let matchesCat = cat === "all";
     if (!matchesCat) {
-      if (cat === "speech") matchesCat = fileCat.includes("speech") || filePath.includes("speech");
-      else if (cat === "music") matchesCat = fileCat.includes("music") || filePath.includes("music");
-      else if (cat === "separated" || cat === "stems") matchesCat = fileCat.includes("separated") || fileCat.includes("stem") || filePath.includes("demucs") || filePath.includes("roformer") || filePath.includes("mvsep") || filePath.includes("stems");
-      else if (cat === "downloads") matchesCat = fileCat.includes("download") || filePath.includes("yt_crawler") || filePath.includes("downloads");
-      else if (cat === "cuts") matchesCat = fileCat.includes("cuts") || filePath.includes("cuts") || fileName.includes("_cut_");
-      else if (cat === "temp") matchesCat = fileCat.includes("temp") || filePath.includes("temp") || fileName.includes("quick_save");
-      else matchesCat = fileCat.includes(cat) || filePath.includes(cat);
+      if (cat === "speech") matchesCat = fileCat.includes("speech") || customTags.includes("speech");
+      else if (cat === "music") matchesCat = fileCat.includes("music") || customTags.includes("music");
+      else if (cat === "separated" || cat === "stems") matchesCat = systemTags.includes("type:stem") || systemTags.includes("stage:separated");
+      else if (cat === "downloads") matchesCat = systemTags.includes("stage:ingested");
+      else if (cat === "cuts") matchesCat = systemTags.includes("type:cut");
+      else if (cat === "pipeline") matchesCat = Boolean(file.registry_item_id);
+      else if (cat === "temp") matchesCat = fileCat.includes("temp");
+      else matchesCat = fileCat.includes(cat) || systemTags.includes(`type:${cat}`) || systemTags.includes(`stage:${cat}`);
     }
 
     const matchesQ = !q ||
       fileName.includes(q) ||
       fileTitle.includes(q) ||
       filePath.includes(q) ||
-      fileCat.includes(q);
+      fileCat.includes(q) ||
+      systemTags.some(tag => tag.includes(q)) ||
+      customTags.some(tag => tag.includes(q)) ||
+      String(file.dataset || '').toLowerCase().includes(q) ||
+      String(file.channel_name || '').toLowerCase().includes(q);
 
-    return matchesCat && matchesQ;
+    const filters = metadataFilters || {};
+    const matchesMetadata =
+      (!filters.dataset || filters.dataset === 'all' || file.dataset === filters.dataset) &&
+      (!filters.channel || filters.channel === 'all' || file.channel_id === filters.channel) &&
+      (!filters.speaker || filters.speaker === 'all' || systemTags.includes(filters.speaker)) &&
+      (!filters.verification || filters.verification === 'all' || systemTags.includes(`verification:${filters.verification}`)) &&
+      (!filters.format || filters.format === 'all' || String(file.format).toLowerCase() === filters.format);
+
+    return matchesCat && matchesQ && matchesMetadata;
   });
+}
+
+function populateLibraryMetadataFilters() {
+  const fill = (select, values, label) => {
+    if (!select) return;
+    const current = select.value || 'all';
+    select.innerHTML = `<option value="all">${label}</option>` + values.map(value => `<option value="${escapeHtml(value.value)}">${escapeHtml(value.label)}</option>`).join('');
+    if ([...select.options].some(option => option.value === current)) select.value = current;
+  };
+  const unique = values => [...new Set(values.filter(Boolean))].sort();
+  fill(el.tabLibraryDataset, unique(state.serverFiles.map(file => file.dataset)).map(value => ({ value, label: value })), 'All datasets');
+  const channels = new Map(state.serverFiles.filter(file => file.channel_id).map(file => [file.channel_id, file.channel_name || file.channel_id]));
+  fill(el.tabLibraryChannel, [...channels].map(([value, label]) => ({ value, label })), 'All channels');
+  const identities = unique(state.serverFiles.flatMap(file => (file.system_tags || []).filter(tag => tag.startsWith('speaker:') || tag.startsWith('profile:'))));
+  fill(el.tabLibrarySpeaker, identities.map(value => ({ value, label: value })), 'All speakers/profiles');
+  fill(el.tabLibraryFormat, unique(state.serverFiles.map(file => String(file.format || '').toLowerCase())).map(value => ({ value, label: value.toUpperCase() })), 'All formats');
 }
 
 function buildFileItemCard(file, { isModal = false } = {}) {
@@ -6645,6 +6908,8 @@ function buildFileItemCard(file, { isModal = false } = {}) {
   const srStr = file.sample_rate ? `${(file.sample_rate / 1000).toFixed(1)} kHz` : '';
   const chStr = file.channels === 1 ? 'Mono' : (file.channels === 2 ? 'Stereo' : '');
   const fmtStr = (file.format || 'wav').toUpperCase();
+  const systemTagChips = (file.system_tags || []).map(tag => `<span class="meta-chip system-tag-chip">${escapeHtml(tag)}</span>`).join('');
+  const customTagChips = (file.custom_tags || []).map(tag => `<span class="meta-chip custom-tag-chip">${escapeHtml(tag)}</span>`).join('');
 
   const card = document.createElement("div");
   card.className = "file-item-card";
@@ -6668,10 +6933,13 @@ function buildFileItemCard(file, { isModal = false } = {}) {
           ${chStr ? `<span class="meta-chip">${chStr}</span>` : ''}
           <span class="meta-chip">${fmtStr}</span>
           <span class="meta-chip">${formatBytes(file.size || 0)}</span>
+          ${file.dataset ? `<span class="meta-chip">dataset:${escapeHtml(file.dataset)}</span>` : ''}
+          ${systemTagChips}${customTagChips}
         </div>
       </div>
     </div>
     <div class="file-actions">
+      ${file.registry_item_id ? `<button class="btn btn-sm btn-ghost btn-edit-file-tags" title="Edit custom tags">Tags</button>` : ''}
       <button class="btn btn-sm btn-primary btn-load-target" data-path="${escapeHtml(file.path)}" data-target="workspace" title="Load into Studio Workspace">
         <span>Load</span>
       </button>
@@ -6701,6 +6969,24 @@ function buildFileItemCard(file, { isModal = false } = {}) {
   card.querySelector('.btn-load-target').addEventListener('click', () => {
     const target = isModal ? (state.libraryLoadTarget || 'workspace') : 'workspace';
     loadLibraryFileTo(file.path, target);
+  });
+  card.querySelector('.btn-edit-file-tags')?.addEventListener('click', async () => {
+    const entered = prompt('Custom tags (comma-separated). System tags remain read-only.', (file.custom_tags || []).join(', '));
+    if (entered === null) return;
+    const customTags = entered.split(',').map(tag => tag.trim()).filter(Boolean);
+    try {
+      const response = await fetch(`/api/items/${encodeURIComponent(file.registry_item_id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ custom_tags: customTags }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Unable to update tags');
+      await fetchServerFiles();
+      showToast('Custom tags updated', 'success');
+    } catch (err) {
+      showToast(`Tag update failed: ${err.message || String(err)}`, 'error');
+    }
   });
 
   const btnMore = card.querySelector('.btn-more-actions');
@@ -6733,7 +7019,7 @@ function renderServerFiles() {
 
   const query = state.tabLibrarySearch || "";
   const category = state.tabLibraryCategory || "all";
-  const filtered = filterServerFiles(state.serverFiles, query, category);
+  const filtered = filterServerFiles(state.serverFiles, query, category, state.tabLibraryFilters);
 
   if (filtered.length === 0) {
     container.innerHTML = `<div class="empty-placeholder" style="padding: 2.5rem 1rem; text-align: center;">No project audio files found matching filter.</div>`;
@@ -7959,6 +8245,18 @@ function initNavigation() {
       renderServerFiles();
     });
   }
+  [
+    ['dataset', el.tabLibraryDataset],
+    ['channel', el.tabLibraryChannel],
+    ['speaker', el.tabLibrarySpeaker],
+    ['verification', el.tabLibraryVerification],
+    ['format', el.tabLibraryFormat],
+  ].forEach(([name, select]) => {
+    select?.addEventListener('change', () => {
+      state.tabLibraryFilters[name] = select.value;
+      renderServerFiles();
+    });
+  });
 }
 
 function switchTab(tabId) {

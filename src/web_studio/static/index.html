@@ -1349,42 +1349,47 @@
 
           <!-- Setup 2-Column Grid -->
           <div class="purity-setup-grid" id="purity-setup-body">
-            <!-- Left: Audio Source, Diarization Timeline & Profile Selection -->
+            <!-- Left: Canonical Diarization Results & Profile Selection -->
             <div class="purity-source-panel">
               <div class="form-group">
                 <div class="label-with-tool">
-                  <label class="form-label" for="purity-input-select">1. Select Target Audio Track:</label>
-                  <div class="flex-row items-center gap-2">
-                    <span class="text-xs text-muted" id="purity-audio-meta-chip">No track selected</span>
-                    <button type="button" class="btn btn-ghost btn-xs" id="btn-purity-browse-library" title="Browse and load from the sample library">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
-                      <span>Library</span>
-                    </button>
-                  </div>
+                  <label class="form-label">1. Select Diarization Results:</label>
+                  <button type="button" class="btn btn-ghost btn-xs" id="btn-purity-refresh-results">↻ Refresh</button>
                 </div>
-                <select id="purity-input-select" class="select-input">
-                  <option value="">-- Select session or library track --</option>
+                <div id="purity-result-list" class="purity-result-list">
+                  <div class="empty-placeholder">Loading durable diarization results…</div>
+                </div>
+                <p class="text-xs text-muted" id="purity-result-selection-summary" style="margin: 5px 0 0;">Default: all eligible turns from selected results.</p>
+              </div>
+
+              <div class="purity-candidate-filters">
+                <select id="purity-candidate-speaker" class="select-input"><option value="">All speakers</option></select>
+                <input id="purity-candidate-min-duration" class="text-input" type="number" min="0" step="0.25" value="1.5" aria-label="Minimum turn duration">
+                <input id="purity-candidate-max-duration" class="text-input" type="number" min="0" step="0.25" placeholder="No max" aria-label="Maximum turn duration">
+                <select id="purity-candidate-overlap" class="select-input">
+                  <option value="any">Any overlap state</option><option value="exclude">Exclude overlap</option><option value="only">Overlap only</option>
+                </select>
+                <select id="purity-candidate-verification" class="select-input">
+                  <option value="all">Any verification state</option><option value="unverified">Unverified</option><option value="pass">Previously passed</option><option value="reject">Previously rejected</option><option value="error">Previous error</option>
                 </select>
               </div>
 
-              <!-- Quick Audio Preview / Playback Pill -->
-              <div id="purity-input-preview-pill" class="purity-input-preview-pill hidden">
-                <button class="btn btn-xs btn-primary" id="btn-purity-preview-input">▶ Play Track</button>
-                <span class="purity-track-title-text" id="purity-track-title-text">audio_title</span>
-                <span class="purity-track-spec-chip" id="purity-track-spec-chip">44.1kHz • Mono • 0:00</span>
-              </div>
-
-              <!-- Diarization Timeline Status Box -->
-              <div class="purity-diar-status-box" id="purity-diar-status-box">
-                <div class="purity-diar-status-header">
-                  <div class="flex-row items-center gap-2">
-                    <span class="diar-icon">👥</span>
-                    <strong id="purity-diar-title">Diarization Timeline</strong>
-                  </div>
-                  <span class="badge badge-sm badge-accent" id="purity-diar-turns-chip">0 turns available</span>
+              <details class="purity-manual-fallback">
+                <summary>Verify imported audio (fallback)</summary>
+                <p class="text-xs text-muted">Use this only for standalone imported audio with an active diarization timeline.</p>
+                <div class="label-with-tool">
+                  <span class="text-xs text-muted" id="purity-audio-meta-chip">No imported track selected</span>
+                  <button type="button" class="btn btn-ghost btn-xs" id="btn-purity-browse-library">Library</button>
                 </div>
-                <p class="text-xs text-muted" id="purity-diar-desc" style="margin: 6px 0 0;">Candidate turns from Diarization Studio will be verified for single-speaker purity.</p>
-              </div>
+                <select id="purity-input-select" class="select-input"><option value="">-- Select imported/session track --</option></select>
+                <div id="purity-input-preview-pill" class="purity-input-preview-pill hidden">
+                  <button class="btn btn-xs btn-primary" id="btn-purity-preview-input">▶ Play Track</button>
+                  <span class="purity-track-title-text" id="purity-track-title-text">audio_title</span>
+                  <span class="purity-track-spec-chip" id="purity-track-spec-chip"></span>
+                </div>
+                <div class="purity-diar-status-box" id="purity-diar-status-box"><span id="purity-diar-turns-chip">0 turns available</span><p id="purity-diar-desc" class="text-xs text-muted"></p></div>
+                <button type="button" class="btn btn-secondary w-full" id="btn-run-purity-manual">Verify imported audio</button>
+              </details>
 
               <!-- Target Speaker Profile Selection -->
               <div class="form-group" style="margin-top: 12px;">
@@ -1540,7 +1545,7 @@
               <div class="purity-actions" style="margin-top: 14px;">
                 <button class="btn btn-primary btn-lg w-full" id="btn-run-purity">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
-                  <span>Run Speaker Purity Verification</span>
+                  <span>Verify All Eligible Turns</span>
                 </button>
               </div>
             </div>
@@ -1568,7 +1573,7 @@
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
           </div>
           <h3 class="empty-title">No Speaker Purity Analysis Yet</h3>
-          <p class="empty-desc">Select a target audio track, ensure a diarization timeline is loaded, choose an enrolled target speaker profile above, and click <strong>Run Speaker Purity Verification</strong>.</p>
+          <p class="empty-desc">Select one or more durable diarization results, choose an enrolled target speaker profile, filter candidates if needed, and run the complete turn batch. Imported audio remains available in the fallback panel.</p>
         </div>
 
         <!-- Results & Analytics Container -->
@@ -1957,6 +1962,13 @@
                 <button class="pill-btn" data-category="downloads">Ingest</button>
                 <button class="pill-btn" data-category="pipeline">Pipeline</button>
                 <button class="pill-btn" data-category="temp">Temp</button>
+              </div>
+              <div class="library-metadata-filters">
+                <select id="tab-library-dataset" class="select-input"><option value="all">All datasets</option></select>
+                <select id="tab-library-channel" class="select-input"><option value="all">All channels</option></select>
+                <select id="tab-library-speaker" class="select-input"><option value="all">All speakers/profiles</option></select>
+                <select id="tab-library-verification" class="select-input"><option value="all">Any verification</option><option value="unverified">Unverified</option><option value="passed">Passed</option><option value="rejected">Rejected</option></select>
+                <select id="tab-library-format" class="select-input"><option value="all">All formats</option></select>
               </div>
             </div>
 

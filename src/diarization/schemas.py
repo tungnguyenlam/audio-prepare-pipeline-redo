@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+import time
+import uuid
+from dataclasses import asdict, dataclass, field
 from math import isfinite
-from typing import Literal
+from pathlib import Path
+from typing import Any, Literal
+
+from src.utils.AudioClass import Audio
+
+
+DIARIZATION_RESULT_KIND = "diarization.result"
+DIARIZATION_SCHEMA_VERSION = "2.0"
 
 
 def _validate_non_empty_string(value: str, field_name: str) -> None:
@@ -29,6 +39,7 @@ class SpeakerTurn:
     start_s: float
     end_s: float
     confidence: float | None = None
+    overlaps_other_speaker: bool = False
 
     def __post_init__(self) -> None:
         _validate_non_empty_string(self.speaker_id, "speaker_id")
@@ -44,6 +55,13 @@ class SpeakerTurn:
                 raise TypeError("confidence must be a number or None")
             if not isfinite(self.confidence) or not 0 <= self.confidence <= 1:
                 raise ValueError("confidence must be between 0 and 1")
+        if not isinstance(self.overlaps_other_speaker, bool):
+            raise TypeError("overlaps_other_speaker must be a bool")
+
+    @property
+    def duration_s(self) -> float:
+        """Length of this turn in seconds."""
+        return self.end_s - self.start_s
 
 
 @dataclass
@@ -222,20 +240,35 @@ class SpeakerPurityResult:
 
 @dataclass
 class DiarizationResult:
-    """Complete speaker and activity information for one audio item."""
+    """Canonical, file-backed diarization handoff for one audio item.
+
+    Newly produced results always include ``source_audio``. ``None`` remains
+    accepted only so schema-1.0 payloads can be read and migrated.
+    """
 
     schema_version: str
     audio_id: str
     speakers: list[Speaker]
     turns: list[SpeakerTurn]
+    source_audio: Audio | None = None
     model: DiarizationModelInfo | None = None
     channel_id: str | None = None
     channel_name: str | None = None
     channel_url: str | None = None
+    result_id: str = field(default_factory=lambda: f"diar_{uuid.uuid4().hex}")
+    created_at: float = field(default_factory=time.time)
 
     def __post_init__(self) -> None:
         _validate_non_empty_string(self.schema_version, "schema_version")
         _validate_non_empty_string(self.audio_id, "audio_id")
+        _validate_non_empty_string(self.result_id, "result_id")
+        if (
+            isinstance(self.created_at, bool)
+            or not isinstance(self.created_at, (int, float))
+            or not isfinite(self.created_at)
+            or self.created_at < 0
+        ):
+            raise ValueError("created_at must be a finite non-negative timestamp")
 
         if not isinstance(self.speakers, list):
             raise TypeError("speakers must be a list")
@@ -255,3 +288,201 @@ class DiarizationResult:
         if unknown_speaker_ids:
             unknown = ", ".join(sorted(unknown_speaker_ids))
             raise ValueError(f"turns reference unknown speaker_id values: {unknown}")
+
+        if self.schema_version.startswith("2") and self.source_audio is None:
+            raise ValueError("schema 2.0 DiarizationResult requires source_audio")
+        if self.source_audio is not None:
+            if not isinstance(self.source_audio, Audio):
+                raise TypeError("source_audio must be an Audio or None")
+            if self.source_audio.source_id != self.audio_id:
+                raise ValueError(
+                    "source_audio.source_id must match audio_id: "
+                    f"{self.source_audio.source_id!r} != {self.audio_id!r}"
+                )
+            for field_name in ("channel_id", "channel_name", "channel_url"):
+                result_value = getattr(self, field_name)
+                source_value = getattr(self.source_audio, field_name)
+                if result_value is None:
+                    setattr(self, field_name, source_value)
+                elif source_value is not None and result_value != source_value:
+                    raise ValueError(
+                        f"{field_name} must match source_audio.{field_name}"
+                    )
+            if self.source_audio.duration_s is not None:
+                out_of_bounds = [
+                    turn for turn in self.turns
+                    if turn.end_s > self.source_audio.duration_s + 0.05
+                ]
+                if out_of_bounds:
+                    turn = out_of_bounds[0]
+                    raise ValueError(
+                        "turn exceeds source audio duration: "
+                        f"{turn.speaker_id} ends at {turn.end_s:.3f}s, source "
+                        f"duration is {self.source_audio.duration_s:.3f}s"
+                    )
+
+        # Normalize overlap evidence once so every serializer and consumer sees
+        # the same value, regardless of whether the backend emitted it.
+        for index, turn in enumerate(self.turns):
+            if turn.overlaps_other_speaker:
+                continue
+            turn.overlaps_other_speaker = any(
+                other.speaker_id != turn.speaker_id
+                and turn.start_s < other.end_s
+                and other.start_s < turn.end_s
+                for other in self.turns[index + 1 :]
+            ) or any(
+                other.speaker_id != turn.speaker_id
+                and turn.start_s < other.end_s
+                and other.start_s < turn.end_s
+                for other in self.turns[:index]
+            )
+
+    @property
+    def speaker_count(self) -> int:
+        """Number of declared speakers."""
+        return len(self.speakers)
+
+    @property
+    def turn_count(self) -> int:
+        """Number of speaker turns."""
+        return len(self.turns)
+
+    @property
+    def total_speech_duration_s(self) -> float:
+        """Sum of all turn durations, including simultaneous speech."""
+        return sum(turn.duration_s for turn in self.turns)
+
+    @property
+    def duration_per_speaker_s(self) -> dict[str, float]:
+        """Summed speech duration keyed by speaker ID."""
+        totals = {speaker.speaker_id: 0.0 for speaker in self.speakers}
+        for turn in self.turns:
+            totals[turn.speaker_id] += turn.duration_s
+        return totals
+
+    @property
+    def turns_by_speaker(self) -> dict[str, list[SpeakerTurn]]:
+        """Turns grouped by speaker ID in their existing order."""
+        grouped = {speaker.speaker_id: [] for speaker in self.speakers}
+        for turn in self.turns:
+            grouped[turn.speaker_id].append(turn)
+        return grouped
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return the single canonical JSON-compatible representation."""
+        source_audio = self.source_audio.metadata() if self.source_audio else None
+        return {
+            "kind": DIARIZATION_RESULT_KIND,
+            "schema_version": self.schema_version,
+            "result_id": self.result_id,
+            "created_at": self.created_at,
+            "audio_id": self.audio_id,
+            "source_audio": source_audio,
+            "speakers": [asdict(speaker) for speaker in self.speakers],
+            "turns": [
+                {
+                    **asdict(turn),
+                    "duration_s": turn.duration_s,
+                }
+                for turn in self.turns
+            ],
+            "model": asdict(self.model) if self.model else None,
+            "channel_id": self.channel_id,
+            "channel_name": self.channel_name,
+            "channel_url": self.channel_url,
+            "summary": {
+                "speaker_count": self.speaker_count,
+                "turn_count": self.turn_count,
+                "total_speech_duration_s": self.total_speech_duration_s,
+                "duration_per_speaker_s": self.duration_per_speaker_s,
+            },
+        }
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: dict[str, Any],
+        *,
+        source_audio: Audio | None = None,
+    ) -> DiarizationResult:
+        """Restore a result from its canonical JSON representation.
+
+        ``source_audio`` may be supplied only to migrate an older schema-1.0
+        payload that did not contain a file-backed source snapshot.
+        """
+        if not isinstance(data, dict):
+            raise TypeError("DiarizationResult payload must be an object")
+        kind = data.get("kind")
+        if kind not in (None, DIARIZATION_RESULT_KIND):
+            raise ValueError(f"Unsupported diarization payload kind: {kind!r}")
+
+        source_payload = data.get("source_audio")
+        if source_audio is None and isinstance(source_payload, dict):
+            source_audio = Audio(
+                path=Path(source_payload["path"]).expanduser().resolve(),
+                source_id=str(source_payload["source_id"]),
+                title=source_payload.get("title"),
+                sample_rate=source_payload.get("sample_rate"),
+                duration_s=source_payload.get("duration_s"),
+                channels=source_payload.get("channels"),
+                format=str(source_payload.get("format", "wav")),
+                native_sample_rate=source_payload.get("native_sample_rate"),
+                history=tuple(source_payload.get("history") or ()),
+                source_url=source_payload.get("source_url"),
+                channel_id=source_payload.get("channel_id"),
+                channel_name=source_payload.get("channel_name"),
+                channel_url=source_payload.get("channel_url"),
+            )
+
+        turns = []
+        for raw_turn in data.get("turns", []):
+            turn_data = dict(raw_turn)
+            turn_data.pop("duration_s", None)
+            turns.append(SpeakerTurn(**turn_data))
+        model_payload = data.get("model")
+        speaker_payloads = data.get("speakers") or [
+            {"speaker_id": speaker_id}
+            for speaker_id in sorted({turn.speaker_id for turn in turns})
+        ]
+        if not model_payload and data.get("backend"):
+            model_payload = {
+                "backend": str(data["backend"]),
+                "model_id": str(data.get("model_id") or data["backend"]),
+            }
+        return cls(
+            schema_version=str(data.get("schema_version", "1.0")),
+            audio_id=str(data["audio_id"]),
+            speakers=[Speaker(**speaker) for speaker in speaker_payloads],
+            turns=turns,
+            source_audio=source_audio,
+            model=DiarizationModelInfo(**model_payload) if model_payload else None,
+            channel_id=data.get("channel_id") or getattr(source_audio, "channel_id", None),
+            channel_name=data.get("channel_name") or getattr(source_audio, "channel_name", None),
+            channel_url=data.get("channel_url") or getattr(source_audio, "channel_url", None),
+            result_id=str(data.get("result_id") or f"diar_{uuid.uuid4().hex}"),
+            created_at=float(data.get("created_at", time.time())),
+        )
+
+    def save(self, destination: str | Path) -> Path:
+        """Persist this canonical result as JSON and return its path."""
+        destination_path = Path(destination)
+        path = (
+            destination_path
+            if destination_path.suffix.lower() == ".json"
+            else destination_path / f"{self.result_id}.json"
+        )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = path.with_suffix(".json.tmp")
+        temp_path.write_text(
+            json.dumps(self.to_dict(), indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        temp_path.replace(path)
+        return path
+
+    @classmethod
+    def load(cls, path: str | Path) -> DiarizationResult:
+        """Load a canonical result JSON file."""
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        return cls.from_dict(payload)

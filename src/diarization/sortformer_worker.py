@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
 import json
 import logging
 from pathlib import Path
@@ -86,7 +85,7 @@ def main() -> None:
                         enrollment_name=request.get("enrollment_name"),
                         enrollment_clips=request.get("enrollment_clips"),
                     )
-                    _respond(result=asdict(result))
+                    _respond(result=result.to_dict())
                 elif action == "close":
                     if diarizer is not None:
                         diarizer.unload()

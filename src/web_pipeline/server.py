@@ -153,6 +153,12 @@ async def handle_list_items(request: web.Request) -> web.Response:
     dataset = request.query.get("dataset")
     query = request.query.get("query")
     tag = request.query.get("tag")
+    asset_type = request.query.get("type")
+    stage = request.query.get("stage")
+    speaker = request.query.get("speaker")
+    profile = request.query.get("profile")
+    verification = request.query.get("verification")
+    format_name = request.query.get("format")
     channel_id = request.query.get("channel_id")
     has_stems_param = request.query.get("has_stems")
     has_diar_param = request.query.get("has_diarization")
@@ -175,6 +181,12 @@ async def handle_list_items(request: web.Request) -> web.Response:
         dataset=dataset,
         query=query,
         tag=tag,
+        asset_type=asset_type,
+        stage=stage,
+        speaker=speaker,
+        profile=profile,
+        verification=verification,
+        format_name=format_name,
         channel_id=channel_id,
         has_stems=has_stems,
         has_diarization=has_diar,

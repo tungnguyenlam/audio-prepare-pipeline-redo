@@ -22,11 +22,14 @@ from typing import Any
 
 from src.base.model import ManagedModel
 from src.diarization.schemas import (
+    DIARIZATION_SCHEMA_VERSION,
     DiarizationModelInfo,
     DiarizationResult,
     ScoredSegment,
+    Speaker,
     SpeakerPurityResult,
     SpeakerSimilarityWindow,
+    SpeakerTurn,
     TargetSpeakerResult,
 )
 from src.utils.AudioClass import Audio, _sanitize_filename_component
@@ -524,31 +527,33 @@ class SpeakerVerifier(ManagedModel):
 
     def verify_purity(
         self,
-        audio: Audio,
-        result: DiarizationResult,
+        source: Audio | DiarizationResult,
         profile: SpeakerProfile,
         *,
+        candidates: list[SpeakerTurn] | None = None,
         similarity_threshold: float,
         min_candidate_duration_s: float = 1.5,
         max_overlap_duration_s: float = DEFAULT_MAX_OVERLAP_DURATION_S,
         window_duration_s: float = DEFAULT_PURITY_WINDOW_DURATION_S,
         window_hop_s: float = DEFAULT_PURITY_WINDOW_HOP_S,
     ) -> list[SpeakerPurityResult]:
-        """Verify every diarization turn as a speaker-pure candidate.
+        """Verify diarization turns, or a whole audio file, as speaker-pure.
 
         A candidate is rejected when an overlap-aware diarization result shows
         meaningful activity from another speaker or when any sliding embedding
         window falls below ``similarity_threshold``. Candidates that cannot be
         embedded return ``decision="error"`` and therefore never pass.
 
-        The diarization result is the overlap authority for this method. Use an
-        overlap-aware backend, such as 3D-Speaker with ``include_overlap=True``
-        or Sortformer, when simultaneous-speaker vetoes are required.
-
         Args:
-            audio: File-backed speech audio on the same timeline as ``result``.
-            result: Diarization candidates and overlap activity for ``audio``.
+            source: A schema-2.0 ``DiarizationResult`` whose ``source_audio``
+                is verified and whose turns are the candidates and the overlap
+                authority, or a plain ``Audio`` verified as one whole-file
+                candidate attributed to ``profile``'s speaker. The plain-
+                ``Audio`` path has no overlap authority, so the overlap veto
+                cannot fire there; sliding identity windows still apply.
             profile: Enrolled target-speaker profile.
+            candidates: Optional subset of the result's turns to verify. The
+                complete result remains the overlap authority.
             similarity_threshold: Minimum cosine similarity for every window.
             min_candidate_duration_s: Shorter turns are rejected without
                 attempting an unreliable speaker embedding.
@@ -558,13 +563,16 @@ class SpeakerVerifier(ManagedModel):
             window_hop_s: Hop between identity windows.
 
         Returns:
-            One evidence-rich purity result per diarization turn, in input
-            order. Only results with ``decision="pass"`` are dataset-safe.
+            One evidence-rich purity result per candidate, in input order.
+            Only results with ``decision="pass"`` are dataset-safe.
 
         Raises:
             RuntimeError: If the embedding model is not loaded.
             FileNotFoundError: If the audio file does not exist.
-            ValueError: If settings are invalid or audio identities differ.
+            TypeError: If ``source`` is neither ``Audio`` nor
+                ``DiarizationResult``.
+            ValueError: If settings are invalid, the result lacks
+                ``source_audio``, or candidates are not turns of the result.
             SpeakerVerifierError: If the profile cannot be embedded.
         """
         if not self.is_loaded or self._inference is None:
@@ -572,14 +580,10 @@ class SpeakerVerifier(ManagedModel):
                 "SpeakerVerifier is not loaded. Call load() before "
                 "verify_purity(), or use it as a context manager."
             )
+        audio, result = self._resolve_purity_source(source, profile)
         source_path = Path(audio.path)
         if not source_path.is_file():
             raise FileNotFoundError(f"Audio file does not exist: {source_path}")
-        if result.audio_id != audio.source_id:
-            raise ValueError(
-                "DiarizationResult audio_id does not match Audio source_id: "
-                f"{result.audio_id!r} != {audio.source_id!r}"
-            )
 
         settings = self._validate_purity_settings(
             similarity_threshold=similarity_threshold,
@@ -604,7 +608,18 @@ class SpeakerVerifier(ManagedModel):
         centroid: Any | None = None
         purity_results: list[SpeakerPurityResult] = []
 
-        for turn in result.turns:
+        candidate_turns = result.turns if candidates is None else candidates
+        result_turn_keys = {
+            (turn.speaker_id, turn.start_s, turn.end_s) for turn in result.turns
+        }
+        unknown_candidates = [
+            turn for turn in candidate_turns
+            if (turn.speaker_id, turn.start_s, turn.end_s) not in result_turn_keys
+        ]
+        if unknown_candidates:
+            raise ValueError("candidates must be turns from DiarizationResult")
+
+        for turn in candidate_turns:
             duration_s = turn.end_s - turn.start_s
             overlap_duration_s = self._other_speaker_overlap_duration(
                 result,
@@ -698,6 +713,54 @@ class SpeakerVerifier(ManagedModel):
             )
 
         return purity_results
+
+    @staticmethod
+    def _resolve_purity_source(
+        source: Audio | DiarizationResult,
+        profile: SpeakerProfile,
+    ) -> tuple[Audio, DiarizationResult]:
+        """Normalize ``source`` into its ``(audio, diarization result)`` pair.
+
+        A plain ``Audio`` becomes a single whole-file candidate attributed to
+        the profile's speaker; the synthetic single-speaker result carries no
+        overlap evidence, so the overlap veto stays silent for it.
+        """
+        if isinstance(source, DiarizationResult):
+            if source.source_audio is None:
+                raise ValueError(
+                    "verify_purity() requires a DiarizationResult carrying its "
+                    "source_audio (schema 2.0); reload or migrate the result"
+                )
+            return source.source_audio, source
+        if isinstance(source, Audio):
+            source_path = Path(source.path)
+            if not source_path.is_file():
+                raise FileNotFoundError(f"Audio file does not exist: {source_path}")
+            duration_s = source.duration_s
+            if duration_s is None:
+                import soundfile as sf
+
+                duration_s = float(sf.info(str(source_path)).duration)
+            turn = SpeakerTurn(
+                speaker_id=profile.name,
+                start_s=0.0,
+                end_s=duration_s,
+            )
+            result = DiarizationResult(
+                schema_version=DIARIZATION_SCHEMA_VERSION,
+                audio_id=source.source_id,
+                speakers=[Speaker(speaker_id=profile.name)],
+                turns=[turn],
+                source_audio=source,
+                channel_id=source.channel_id,
+                channel_name=source.channel_name,
+                channel_url=source.channel_url,
+            )
+            return source, result
+        raise TypeError(
+            "verify_purity() source must be an Audio or DiarizationResult, got "
+            f"{type(source).__name__}"
+        )
 
     @staticmethod
     def _validate_purity_settings(

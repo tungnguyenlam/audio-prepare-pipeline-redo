@@ -29,7 +29,7 @@ from src.diarization import (
     ThreeDSpeakerDiarizer,
     ThreeDSpeakerWorkerDiarizer,
 )
-from src.diarization.schemas import DiarizationResult, Speaker, SpeakerTurn
+from src.diarization.schemas import DiarizationResult
 from src.separation import BSRoFormer, HTDemucs, MelRoFormer, MVSepMDX23
 from src.utils.AudioClass import (
     DEFAULT_SAMPLE_RATE,
@@ -51,7 +51,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = ROOT_DIR / ".data" / "pipeline"
 INGEST_DIR = DATA_DIR / "ingest"
 STEMS_DIR = DATA_DIR / "stems"
-DIARIZATION_DIR = DATA_DIR / "diarization"
+DIARIZATION_DIR = ROOT_DIR / ".data" / "diarization" / "results"
 TARGET_SPEAKER_DIR = DATA_DIR / "target_speaker"
 BENCHMARK_DIR = DATA_DIR / "benchmarks"
 
@@ -603,37 +603,9 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
                 audio = it.to_audio()
                 res = await asyncio.to_thread(diarizer.diarize, audio)
 
-                # Persist diarization RTTM and JSON
-                item_diar_dir = DIARIZATION_DIR / it.id
-                item_diar_dir.mkdir(parents=True, exist_ok=True)
-                json_path = item_diar_dir / "diarization.json"
-
-                turns_data = [
-                    {
-                        "speaker_id": turn.speaker_id,
-                        "start_s": round(turn.start_s, 3),
-                        "end_s": round(turn.end_s, 3),
-                        "duration_s": round(turn.end_s - turn.start_s, 3),
-                    }
-                    for turn in res.turns
-                ]
-
-                diar_summary = {
-                    "backend": backend,
-                    "audio_id": res.audio_id,
-                    "channel_id": res.channel_id,
-                    "channel_name": res.channel_name,
-                    "channel_url": res.channel_url,
-                    "speaker_count": len(res.speakers),
-                    "num_turns": len(res.turns),
-                    "total_speech_duration": round(sum(t["duration_s"] for t in turns_data), 2),
-                    "turns": turns_data,
-                }
-
-                with open(json_path, "w", encoding="utf-8") as f:
-                    json.dump(diar_summary, f, indent=2)
-
-                dataset_manager.attach_diarization(it.id, diar_summary)
+                # Persist the complete canonical handoff shared with Studio.
+                json_path = res.save(DIARIZATION_DIR)
+                dataset_manager.attach_diarization(it.id, res.to_dict())
 
                 wall_time = time.time() - t0
                 hardware_monitor.record_item_processed(it.duration, wall_time)
@@ -644,6 +616,8 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
                     "title": it.title,
                     "speaker_count": len(res.speakers),
                     "num_turns": len(res.turns),
+                    "diarization_result_id": res.result_id,
+                    "diarization_result_path": str(json_path),
                     "device": device,
                     "power_w": item_pwr,
                     "wall_time": round(wall_time, 2),
@@ -736,29 +710,8 @@ async def process_target_speaker_filter(job: PipelineJob, queue: JobQueueManager
                 diar = it.diarization
                 if not diar or not diar.get("turns"):
                     raise ValueError("Item has no attached diarization; run batch diarization first")
-
-                turns = [
-                    SpeakerTurn(
-                        speaker_id=str(t["speaker_id"]),
-                        start_s=float(t["start_s"]),
-                        end_s=float(t["end_s"]),
-                    )
-                    for t in diar["turns"]
-                ]
-                diarization = DiarizationResult(
-                    schema_version="1.0",
-                    audio_id=it.source_id or it.id,
-                    speakers=[
-                        Speaker(speaker_id=spk)
-                        for spk in sorted({t.speaker_id for t in turns})
-                    ],
-                    turns=turns,
-                    channel_id=it.channel_id,
-                    channel_name=it.channel_name,
-                    channel_url=it.channel_url,
-                )
-
                 audio = it.to_audio()
+                diarization = DiarizationResult.from_dict(diar, source_audio=audio)
                 scored = await asyncio.to_thread(verifier.score, audio, diarization, profile)
                 kept = SpeakerVerifier.filter(
                     scored,

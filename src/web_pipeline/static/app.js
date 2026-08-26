@@ -173,6 +173,10 @@
     // Datasets & Manifests
     itemFilterDataset: document.getElementById('item-filter-dataset'),
     itemFilterChannel: document.getElementById('item-filter-channel'),
+    itemFilterType: document.getElementById('item-filter-type'),
+    itemFilterStage: document.getElementById('item-filter-stage'),
+    itemFilterVerification: document.getElementById('item-filter-verification'),
+    itemFilterFormat: document.getElementById('item-filter-format'),
     itemFilterQuery: document.getElementById('item-filter-query'),
     itemFilterStems: document.getElementById('item-filter-stems'),
     itemsTbody: document.getElementById('items-tbody'),
@@ -1638,6 +1642,10 @@
     if (query) params.append('query', query);
     if (stems) params.append('has_stems', stems);
     if (channel && channel !== 'all') params.append('channel_id', channel);
+    if (els.itemFilterType?.value && els.itemFilterType.value !== 'all') params.append('type', els.itemFilterType.value);
+    if (els.itemFilterStage?.value && els.itemFilterStage.value !== 'all') params.append('stage', els.itemFilterStage.value);
+    if (els.itemFilterVerification?.value && els.itemFilterVerification.value !== 'all') params.append('verification', els.itemFilterVerification.value);
+    if (els.itemFilterFormat?.value && els.itemFilterFormat.value !== 'all') params.append('format', els.itemFilterFormat.value);
 
     try {
       const res = await fetch(`/api/items?${params.toString()}`);
@@ -1660,8 +1668,10 @@
       const isPlaying = state.currentPlayingItemId === item.id;
       const stemCount = Object.keys(item.stems || {}).length;
       const stemBadge = stemCount > 0 ? `<span class="stem-badge">${stemCount} model(s)</span>` : '<span class="text-muted">None</span>';
-      const diarBadge = item.diarization ? `<span class="badge badge-accent">${item.diarization.speaker_count} spk</span>` : '<span class="text-muted">No</span>';
-      const tags = (item.tags || []).map((t) => `<span class="tag-pill">${escapeHtml(t)}</span>`).join(' ');
+      const diarBadge = item.diarization ? `<span class="badge badge-accent">${item.diarization.summary?.speaker_count ?? item.diarization.speaker_count ?? 0} spk</span>` : '<span class="text-muted">No</span>';
+      const systemTags = (item.system_tags || []).map((t) => `<span class="tag-pill system-tag">${escapeHtml(t)}</span>`).join(' ');
+      const customTags = (item.custom_tags || []).map((t) => `<span class="tag-pill custom-tag">${escapeHtml(t)}</span>`).join(' ');
+      const tags = `${systemTags}${customTags}`;
 
       return `
         <tr data-id="${item.id}">
@@ -1838,6 +1848,10 @@
               </select>
             </div>
           </div>
+          <div class="form-item">
+            <label class="form-label">Custom Tags <small class="text-muted">(comma-separated; pipeline tags are read-only)</small></label>
+            <input type="text" id="inspector-edit-custom-tags" class="form-input form-input-sm" value="${escapeHtml((item.custom_tags || []).join(', '))}">
+          </div>
           <div style="display: flex; justify-content: flex-end; gap: 8px;">
             <button type="button" class="btn btn-primary btn-xs" id="btn-save-inspector-meta" data-id="${item.id}">Save Details</button>
           </div>
@@ -1847,7 +1861,8 @@
           <div><strong>Duration:</strong> ${(item.duration || 0).toFixed(2)}s</div>
           <div><strong>Sample Rate:</strong> ${item.sample_rate.toLocaleString()} Hz</div>
           <div><strong>Channels:</strong> ${item.channels === 1 ? 'Mono' : 'Stereo'}</div>
-          <div><strong>Tags:</strong> ${(item.tags || []).join(', ') || 'none'}</div>
+          <div><strong>System tags:</strong> ${(item.system_tags || []).map(escapeHtml).join(', ') || 'none'}</div>
+          <div><strong>Custom tags:</strong> ${(item.custom_tags || []).map(escapeHtml).join(', ') || 'none'}</div>
           <div style="grid-column: 1 / -1; word-break: break-all;"><strong>File Path:</strong> ${escapeHtml(item.path)}</div>
         </div>
         ${stemsHtml}
@@ -1864,11 +1879,12 @@
       btnSave.addEventListener('click', async () => {
         const newTitle = document.getElementById('inspector-edit-title')?.value.trim();
         const newDs = document.getElementById('inspector-edit-dataset')?.value;
+        const customTags = (document.getElementById('inspector-edit-custom-tags')?.value || '').split(',').map(tag => tag.trim()).filter(Boolean);
         try {
           const res = await fetch(`/api/items/${item.id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: newTitle, dataset: newDs }),
+            body: JSON.stringify({ title: newTitle, dataset: newDs, custom_tags: customTags }),
           });
           if (!res.ok) throw new Error("Failed to update item");
           showToast("Asset updated successfully", "success");
@@ -2115,6 +2131,7 @@
     if (els.itemFilterDataset) els.itemFilterDataset.addEventListener('change', loadItems);
     if (els.itemFilterChannel) els.itemFilterChannel.addEventListener('change', loadItems);
     if (els.itemFilterStems) els.itemFilterStems.addEventListener('change', loadItems);
+    [els.itemFilterType, els.itemFilterStage, els.itemFilterVerification, els.itemFilterFormat].forEach(select => select?.addEventListener('change', loadItems));
     if (els.itemFilterQuery) {
       els.itemFilterQuery.addEventListener('input', () => {
         clearTimeout(window._searchTimer);
