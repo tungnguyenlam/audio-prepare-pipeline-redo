@@ -4327,6 +4327,7 @@ function renderTurnsTable() {
       <td class="table-actions">
         <div class="turn-row-actions">
           <button class="btn btn-sm btn-ghost btn-play-turn" data-index="${idx}" title="Play turn segment">▶ Play</button>
+          <button type="button" class="btn btn-sm btn-ghost btn-save-turn-cut" data-index="${idx}" title="Save this turn as a session audio cut">Save Cut</button>
           ${evaluationActions}
         </div>
       </td>
@@ -4351,6 +4352,11 @@ function renderTurnsTable() {
       el.audio.play();
     });
 
+    tr.querySelector('.btn-save-turn-cut').addEventListener('click', (e) => {
+      e.stopPropagation();
+      saveTurnAsCut(turn, e.currentTarget);
+    });
+
     tr.querySelectorAll('.ts-turn-label').forEach(button => {
       button.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -4360,6 +4366,47 @@ function renderTurnsTable() {
 
     el.turnsTableBody.appendChild(tr);
   });
+}
+
+async function saveTurnAsCut(turn, button) {
+  const audioId = state.diarization.audioId || el.diarInputSelect.value;
+  if (!audioId) {
+    showToast("No active audio track selected", "error");
+    return;
+  }
+
+  const start = turn.start_s;
+  const end = turn.end_s;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    showToast("This turn has an invalid time range", "error");
+    return;
+  }
+
+  const originalLabel = button ? button.innerHTML : "Save Cut";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Saving...";
+  }
+
+  try {
+    const res = await fetch(`/api/audio/${audioId}/cut`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ start, end, unit: "seconds" }),
+    });
+    const data = await parseJsonResponse(res);
+    await fetchAudioList();
+    addCutToRegistry(data.audio_id, start, end, "seconds");
+    const title = data.metadata?.title || data.audio_id;
+    showToast(`Saved turn as clip ${title}`, "success");
+  } catch (err) {
+    showToast(err.message, "error");
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = originalLabel;
+    }
+  }
 }
 
 function downloadDiarizationRttm() {
