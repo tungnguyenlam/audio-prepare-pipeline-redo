@@ -902,7 +902,11 @@ The repository provides two specialized web platforms:
 - **Canonical diarization-result endpoints:**
   `GET /api/diarization/results` lists durable results with source/model
   summaries and verification state;
-  `GET /api/diarization/results/{result_id}` returns one complete result;
+  `GET /api/diarization/results/{result_id}` returns one complete result and
+  re-registers its source audio into the Studio session when the file still
+  exists;
+  `DELETE /api/diarization/results/{result_id}` removes one persisted result;
+  `POST /api/diarization/results/clear` deletes the catalog;
   `GET /api/diarization/results/{result_id}/turns/{turn_index}/audio` lazily
   cuts and streams a turn without registering it; and
   `POST /api/diarization/results/verify` queues filtered turns from one or more
@@ -921,9 +925,12 @@ The repository provides two specialized web platforms:
   same `settings`; registered stems are tagged `turns:clean` or `turns:raw`.
   RTTM export continues to use the canonical raw turns.
 - **Persistence:** Studio's diarization history and result-first verifier load
-  the server-side canonical result catalog after refresh or restart. Browser
-  storage contains viewer-only speaker labels/colors and verifier preferences,
-  not the authoritative turns or source identity.
+  the server-side canonical result catalog after refresh or restart. Result JSON
+  lives under `.data/diarization/results/`. The Studio session audio registry is
+  persisted to `.data/studio/audio_registry.json` and restored on backend
+  startup for files that still exist. Browser storage contains viewer-only
+  speaker labels/colors and verifier preferences, not the authoritative turns
+  or source identity.
 
 ### `src/web_pipeline/` (SonicPipeline API domain and frontend)
 - **Role:** Large-scale channel-oriented batch engine for high-throughput

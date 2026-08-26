@@ -63,6 +63,8 @@ const state = {
     minDurFilter: 0,
     maxDurFilter: 0,
     overlapFilter: false,
+    targetMatchFilter: 'all',
+    reviewFilter: 'all',
     searchQuery: '',
     sortMode: 'time-asc',
     isScrubbing: false,
@@ -322,6 +324,9 @@ const el = {
   diarFilterMinDur: document.getElementById('diar-filter-min-dur'),
   diarFilterMaxDur: document.getElementById('diar-filter-max-dur'),
   btnDiarFilterOverlaps: document.getElementById('btn-diar-filter-overlaps'),
+  diarFilterTargetSelect: document.getElementById('diar-filter-target-select'),
+  diarFilterReviewSelect: document.getElementById('diar-filter-review-select'),
+  btnDiarClearFilters: document.getElementById('btn-diar-clear-filters'),
   btnDiarCleanTurns: document.getElementById('btn-diar-clean-turns'),
   diarCleanTurnsSummary: document.getElementById('diar-clean-turns-summary'),
   diarSortTurnsSelect: document.getElementById('diar-sort-turns-select'),
@@ -567,11 +572,40 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 }
 
+function parseJsonText(text) {
+  let cleaned = String(text || '').replace(/^\uFEFF/, '').trim();
+  if (/^\d{3}\s*[\[{]/.test(cleaned)) {
+    cleaned = cleaned.slice(3).trim();
+  }
+  try {
+    return JSON.parse(cleaned);
+  } catch (err) {
+    const match = /position\s+(\d+)/i.exec(err.message || '');
+    if (match) {
+      const pos = Number(match[1]);
+      if (pos > 0) {
+        try {
+          return JSON.parse(cleaned.slice(0, pos));
+        } catch (_) {}
+      }
+    }
+    const objStart = cleaned.indexOf('{');
+    const arrStart = cleaned.indexOf('[');
+    const start = [objStart, arrStart].filter(index => index >= 0).sort((a, b) => a - b)[0];
+    if (start > 0) {
+      try {
+        return JSON.parse(cleaned.slice(start));
+      } catch (_) {}
+    }
+    throw err;
+  }
+}
+
 async function parseJsonResponse(res) {
   const text = await res.text();
   let data;
   try {
-    data = JSON.parse(text);
+    data = parseJsonText(text);
   } catch (_) {
     if (res.status === 404) {
       throw new Error(`Endpoint not found (HTTP 404). Please ensure the backend server was restarted with the latest routes!`);
@@ -2699,6 +2733,24 @@ function initDiarizationStudio() {
     });
   }
 
+  if (el.diarFilterTargetSelect) {
+    el.diarFilterTargetSelect.addEventListener('change', (e) => {
+      state.diarization.targetMatchFilter = e.target.value;
+      renderDiarizationFilteredViews();
+    });
+  }
+
+  if (el.diarFilterReviewSelect) {
+    el.diarFilterReviewSelect.addEventListener('change', (e) => {
+      state.diarization.reviewFilter = e.target.value;
+      renderDiarizationFilteredViews();
+    });
+  }
+
+  if (el.btnDiarClearFilters) {
+    el.btnDiarClearFilters.addEventListener('click', clearDiarizationTurnFilters);
+  }
+
   if (el.btnDiarCleanTurns) {
     el.btnDiarCleanTurns.addEventListener('click', toggleDiarizationCleanTurns);
   }
@@ -2810,6 +2862,8 @@ function clearDiarizationWorkspace() {
   state.diarization.soloSpeaker = null;
   state.diarization.mutedSpeakers.clear();
   state.diarization.overlapFilter = false;
+  state.diarization.targetMatchFilter = 'all';
+  state.diarization.reviewFilter = 'all';
   if (el.btnDiarFilterOverlaps) {
     el.btnDiarFilterOverlaps.classList.remove('active');
     el.btnDiarFilterOverlaps.setAttribute('aria-pressed', 'false');
@@ -2827,9 +2881,11 @@ function clearDiarizationWorkspace() {
 
 function diarizationHistoryMatch(item, audio) {
   if (!item || !audio) return false;
-  if (item.audio_id && item.audio_id === audio.id) return true;
+  if (item.session_audio_id && item.session_audio_id === audio.id) return true;
+  if (item.audio_id && (item.audio_id === audio.id || item.audio_id === audio.source_id)) return true;
+  if (item.audio_source_id && item.audio_source_id === audio.source_id) return true;
   if (item.audio_fingerprint && audio.fingerprint && item.audio_fingerprint === audio.fingerprint) return true;
-  if (item.audio_path && audio.path && item.audio_path === audio.path) return true;
+  if (item.audio_path && audio.path && normalizedAudioPath(item.audio_path) === normalizedAudioPath(audio.path)) return true;
   return false;
 }
 
@@ -2855,11 +2911,13 @@ function showSavedDiarizationNotice(item, audioId) {
   }
   if (el.btnLoadSavedForTrack) {
     el.btnLoadSavedForTrack.textContent = 'Reload Session';
-    el.btnLoadSavedForTrack.onclick = () => restoreDiarizationHistoryItem(item, audioId, { notify: true, scroll: true });
+    el.btnLoadSavedForTrack.onclick = () => {
+      restoreDiarizationHistoryItem(item, audioId, { notify: true, scroll: true });
+    };
   }
 }
 
-function openDiarizationAudio(audioId, { restoreHistory = false } = {}) {
+async function openDiarizationAudio(audioId, { restoreHistory = false } = {}) {
   const previousAudioId = state.diarization.audioId;
   renderDiarizationChildren(audioId);
   updateDiarInputMeta(audioId);
@@ -2868,7 +2926,7 @@ function openDiarizationAudio(audioId, { restoreHistory = false } = {}) {
 
   const historyItem = findDiarizationHistoryForAudio(audioId);
   if (restoreHistory && historyItem) {
-    restoreDiarizationHistoryItem(historyItem, audioId, { notify: true, scroll: false });
+    await restoreDiarizationHistoryItem(historyItem, audioId, { notify: true, scroll: false });
     return;
   }
 
@@ -2986,9 +3044,8 @@ function normalizeDiarizationHistoryItem(item) {
 
 async function loadDiarizationHistory() {
   try {
-    const response = await fetch('/api/diarization/results');
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || 'Unable to load diarization history');
+    const payload = await parseJsonResponse(await fetch('/api/diarization/results'));
+    await fetchAudioList();
     const uiState = JSON.parse(localStorage.getItem('sonic_diarization_ui_state') || '{}');
     state.diarization.history = (payload.results || []).map(result => {
       const source = result.source_audio || {};
@@ -2997,10 +3054,12 @@ async function loadDiarizationHistory() {
       return normalizeDiarizationHistoryItem({
         id: result.result_id,
         timestamp: Number(result.created_at || 0) * 1000,
-        audio_id: result.audio_id,
+        audio_id: result.session_audio_id || result.audio_id,
+        session_audio_id: result.session_audio_id || null,
         audio_title: source.title || result.audio_id,
         audio_path: source.path,
-        audio_source_id: source.source_id,
+        audio_source_id: source.source_id || result.audio_id,
+        audio_fingerprint: source.fingerprint || null,
         duration_s: source.duration_s || 0,
         model_backend: result.model?.backend,
         model_id: result.model?.model_id,
@@ -3008,6 +3067,7 @@ async function loadDiarizationHistory() {
         turn_count: summary.turn_count,
         total_speech_s: summary.total_speech_duration_s,
         speech_ratio_pct: source.duration_s > 0 ? Number((100 * summary.total_speech_duration_s / source.duration_s).toFixed(1)) : 0,
+        source_available: Boolean(result.source_available),
         diarization: result,
         custom_names: ui.custom_names || {},
         colors: ui.colors || {},
@@ -3024,24 +3084,43 @@ function historyDiarizationData(item) {
   return cloneDiarizationData(normalizeDiarizationHistoryItem(item)?.diarization || {});
 }
 
-function restoreDiarizationHistoryItem(item, targetAudioId = null, { notify = false, scroll = false } = {}) {
+async function restoreDiarizationHistoryItem(item, targetAudioId = null, { notify = false, scroll = false } = {}) {
   const normalized = normalizeDiarizationHistoryItem(item);
   if (!normalized) return;
+  const resultId = normalized.diarization?.result_id || normalized.id;
+  let diarization = historyDiarizationData(normalized);
+  if (!Array.isArray(diarization.turns) || diarization.turns.length === 0) {
+    try {
+      diarization = await parseJsonResponse(
+        await fetch(`/api/diarization/results/${encodeURIComponent(resultId)}`)
+      );
+      normalized.diarization = diarization;
+      normalized.session_audio_id = diarization.session_audio_id || normalized.session_audio_id;
+      normalized.turn_count = diarization.turns?.length || normalized.turn_count;
+      normalized.speaker_count = diarization.speakers?.length || normalized.speaker_count;
+      await fetchAudioList();
+    } catch (err) {
+      showToast(`Could not load diarization result: ${err.message}`, 'error');
+      return;
+    }
+  }
+
   const matchedAudio = targetAudioId
     ? state.audioList.find(audio => audio.id === targetAudioId)
     : resolveDiarizationHistoryAudio(normalized);
-  const audioId = matchedAudio?.id || targetAudioId || normalized.audio_id;
+  const audioId = matchedAudio?.id || diarization.session_audio_id || targetAudioId || normalized.session_audio_id || normalized.audio_id;
 
   state.diarization.customNames = { ...normalized.custom_names };
   state.diarization.colors = { ...normalized.colors };
   state.diarization.activeHistoryId = normalized.id;
-  renderDiarizationWorkspace(historyDiarizationData(normalized), audioId);
+  renderDiarizationWorkspace(diarization, audioId);
 
-  if (matchedAudio) {
-    if (el.diarInputSelect) el.diarInputSelect.value = matchedAudio.id;
-    renderDiarizationChildren(matchedAudio.id);
-    updateDiarInputMeta(matchedAudio.id);
-    loadAudioIntoPlayer(matchedAudio.id, false);
+  if (matchedAudio || state.audioList.some(audio => audio.id === audioId)) {
+    const resolvedId = matchedAudio?.id || audioId;
+    if (el.diarInputSelect) el.diarInputSelect.value = resolvedId;
+    renderDiarizationChildren(resolvedId);
+    updateDiarInputMeta(resolvedId);
+    loadAudioIntoPlayer(resolvedId, false);
   }
   showSavedDiarizationNotice(normalized, audioId);
   renderDiarizationHistory();
@@ -3104,7 +3183,7 @@ function renderDiarizationHistory() {
         <span><strong>${item.turn_count}</strong> turns</span>
         <span><strong>${Number(item.speech_ratio_pct || 0).toFixed(1)}%</strong> speech</span>
         <span>${formatTime(item.duration_s || 0)}</span>
-        <span class="badge badge-sm ${sourceAvailable ? 'badge-success' : 'badge-ghost'}">${sourceAvailable ? 'Audio available' : 'Annotations only'}</span>
+        <span class="badge badge-sm ${sourceAvailable || item.source_available ? 'badge-success' : 'badge-ghost'}">${sourceAvailable || item.source_available ? 'Audio available' : 'Annotations only'}</span>
       </div>
       <div class="diar-hist-actions">
         <button class="btn btn-xs btn-primary btn-load-diar-history">Open Viewer</button>
@@ -3115,25 +3194,48 @@ function renderDiarizationHistory() {
       restoreDiarizationHistoryItem(item, null, { notify: true, scroll: true });
     });
     card.querySelector('.btn-delete-diar-history').addEventListener('click', () => {
-      state.diarization.history = state.diarization.history.filter(entry => entry.id !== item.id);
-      if (state.diarization.activeHistoryId === item.id) state.diarization.activeHistoryId = null;
-      persistDiarizationHistory();
-      renderDiarizationHistory();
+      deleteDiarizationHistoryItem(item);
     });
     el.diarHistoryList.appendChild(card);
   });
 }
 
-function clearDiarizationHistory() {
+async function deleteDiarizationHistoryItem(item) {
+  const resultId = item?.diarization?.result_id || item?.id;
+  if (!resultId) return;
+  try {
+    await parseJsonResponse(await fetch(`/api/diarization/results/${encodeURIComponent(resultId)}`, {
+      method: 'DELETE',
+    }));
+    if (state.diarization.activeHistoryId === resultId) {
+      state.diarization.activeHistoryId = null;
+      hideSavedDiarizationNotice();
+    }
+    persistDiarizationHistory();
+    await loadDiarizationHistory();
+    loadDiarizationResultsForVerification();
+    showToast('Deleted diarization history entry', 'info');
+  } catch (err) {
+    showToast(`Could not delete history entry: ${err.message}`, 'error');
+  }
+}
+
+async function clearDiarizationHistory() {
   const count = state.diarization.history.length;
   if (!count || !confirm(`Clear all ${count} saved diarization session${count === 1 ? '' : 's'}?`)) return;
-  state.diarization.history = [];
-  state.diarization.activeHistoryId = null;
-  localStorage.removeItem('sonic_diarization_ui_state');
-  localStorage.removeItem('sonic_diarization_history');
-  hideSavedDiarizationNotice();
-  renderDiarizationHistory();
-  showToast('Diarization history cleared', 'info');
+  try {
+    await parseJsonResponse(await fetch('/api/diarization/results/clear', { method: 'POST' }));
+    state.diarization.history = [];
+    state.diarization.activeHistoryId = null;
+    localStorage.removeItem('sonic_diarization_ui_state');
+    localStorage.removeItem('sonic_diarization_history');
+    hideSavedDiarizationNotice();
+    renderDiarizationHistory();
+    loadDiarizationResultsForVerification();
+    showToast('Diarization history cleared', 'info');
+  } catch (err) {
+    showToast(`Could not clear history: ${err.message}`, 'error');
+  }
 }
 
 function setDiarZoom(zoom) {
@@ -3233,7 +3335,8 @@ async function toggleDiarizationCleanTurns() {
 }
 
 function renderDiarizationWorkspace(diarization, audioId, options = {}) {
-  resetTargetSpeakerEvaluation({ preserveSelection: true });
+  const preserveLabels = state.diarization.audioId === audioId;
+  resetTargetSpeakerEvaluation({ preserveSelection: true, preserveLabels });
   state.targetSpeaker.assignedSpeakerId = '';
   state.diarization.audioId = audioId;
   state.diarization.data = cloneDiarizationData(diarization || state.diarization.data || {});
@@ -3244,9 +3347,13 @@ function renderDiarizationWorkspace(diarization, audioId, options = {}) {
   state.diarization.minDurFilter = 0;
   state.diarization.maxDurFilter = 0;
   state.diarization.overlapFilter = false;
+  state.diarization.targetMatchFilter = 'all';
+  state.diarization.reviewFilter = 'all';
   if (el.diarTurnsSearchInput) el.diarTurnsSearchInput.value = '';
   if (el.diarFilterMinDur) el.diarFilterMinDur.value = '';
   if (el.diarFilterMaxDur) el.diarFilterMaxDur.value = '';
+  if (el.diarFilterTargetSelect) el.diarFilterTargetSelect.value = 'all';
+  if (el.diarFilterReviewSelect) el.diarFilterReviewSelect.value = 'all';
   if (el.btnDiarFilterOverlaps) {
     el.btnDiarFilterOverlaps.classList.remove('active');
     el.btnDiarFilterOverlaps.setAttribute('aria-pressed', 'false');
@@ -3953,6 +4060,22 @@ function getFilteredAndSortedTurns() {
     turns = turns.filter(t => !t.has_overlap);
   }
 
+  if (state.diarization.targetMatchFilter !== 'all') {
+    turns = turns.filter(turn => {
+      const segment = findTargetScoredSegment(turn);
+      if (!segment) return false;
+      const proposed = isTargetSegmentProposed(segment);
+      return state.diarization.targetMatchFilter === 'proposed' ? proposed : !proposed;
+    });
+  }
+
+  if (state.diarization.reviewFilter !== 'all') {
+    turns = turns.filter(turn => {
+      const label = state.targetSpeaker.labels[targetSegmentKey(turn)] || 'unreviewed';
+      return label === state.diarization.reviewFilter;
+    });
+  }
+
   if (state.diarization.sortMode === 'time-desc') {
     turns.sort((a, b) => b.start_s - a.start_s);
   } else if (state.diarization.sortMode === 'dur-desc') {
@@ -3964,6 +4087,28 @@ function getFilteredAndSortedTurns() {
   }
 
   return turns;
+}
+
+function clearDiarizationTurnFilters() {
+  state.diarization.activeSpeakerFilter = 'all';
+  state.diarization.searchQuery = '';
+  state.diarization.minDurFilter = 0;
+  state.diarization.maxDurFilter = 0;
+  state.diarization.overlapFilter = false;
+  state.diarization.targetMatchFilter = 'all';
+  state.diarization.reviewFilter = 'all';
+
+  if (el.diarFilterSpeakerSelect) el.diarFilterSpeakerSelect.value = 'all';
+  if (el.diarTurnsSearchInput) el.diarTurnsSearchInput.value = '';
+  if (el.diarFilterMinDur) el.diarFilterMinDur.value = '';
+  if (el.diarFilterMaxDur) el.diarFilterMaxDur.value = '';
+  if (el.diarFilterTargetSelect) el.diarFilterTargetSelect.value = 'all';
+  if (el.diarFilterReviewSelect) el.diarFilterReviewSelect.value = 'all';
+  if (el.btnDiarFilterOverlaps) {
+    el.btnDiarFilterOverlaps.classList.remove('active');
+    el.btnDiarFilterOverlaps.setAttribute('aria-pressed', 'false');
+  }
+  renderDiarizationFilteredViews();
 }
 
 function renderDiarizationFilteredViews() {
@@ -3991,18 +4136,16 @@ function renderTurnsTable() {
     const color = getSpeakerColor(turn.speaker_id);
     const duration = Math.max(0, turn.end_s - turn.start_s).toFixed(2);
     const scoredSegment = findTargetScoredSegment(turn);
-    const segmentKey = scoredSegment ? targetSegmentKey(scoredSegment) : '';
+    const segmentKey = targetSegmentKey(scoredSegment || turn);
     const proposed = scoredSegment ? isTargetSegmentProposed(scoredSegment) : false;
-    const label = segmentKey ? (state.targetSpeaker.labels[segmentKey] || 'unreviewed') : 'unreviewed';
+    const label = state.targetSpeaker.labels[segmentKey] || 'unreviewed';
     const targetScore = scoredSegment
       ? `<strong>${Number(scoredSegment.similarity).toFixed(3)}</strong><small class="turn-target-status ${proposed ? 'is-proposed' : ''}">${proposed ? 'Proposed' : 'Filtered'}</small>`
       : '<span class="text-xs text-muted">Not scored</span>';
-    const evaluationActions = scoredSegment
-      ? `<div class="turn-review-actions">
+    const evaluationActions = `<div class="turn-review-actions">
           <button type="button" class="btn btn-xs ${label === 'qualified' ? 'btn-primary' : 'btn-ghost'} ts-turn-label" data-key="${escapeHtml(segmentKey)}" data-label="qualified" aria-pressed="${label === 'qualified'}" title="Accept this turn">✓ Accept</button>
           <button type="button" class="btn btn-xs ${label === 'rejected' ? 'target-label-rejected' : 'btn-ghost'} ts-turn-label" data-key="${escapeHtml(segmentKey)}" data-label="rejected" aria-pressed="${label === 'rejected'}" title="Reject this turn">✕ Reject</button>
-        </div>`
-      : '<span class="text-xs text-muted">Score target first</span>';
+        </div>`;
 
     const tr = document.createElement("tr");
     tr.id = `turn-row-${idx}`;
@@ -4404,7 +4547,7 @@ function initTargetSpeakerEvaluation() {
 
   profileSelect?.addEventListener('change', () => {
     state.targetSpeaker.profileName = profileSelect.value;
-    resetTargetSpeakerEvaluation({ preserveSelection: true });
+    resetTargetSpeakerEvaluation({ preserveSelection: true, preserveLabels: true });
     state.targetSpeaker.assignedSpeakerId = '';
     renderTargetSpeakerAssignmentOptions({ autoMatch: true });
     renderTargetSpeakerContext();
@@ -4492,10 +4635,10 @@ function renderTargetSpeakerContext() {
   if (status && !state.targetSpeaker.scored) status.textContent = `Ready to score ${turns.length} turns against “${profileName}”.`;
 }
 
-function resetTargetSpeakerEvaluation({ preserveSelection = true } = {}) {
+function resetTargetSpeakerEvaluation({ preserveSelection = true, preserveLabels = false } = {}) {
   state.targetSpeaker.scored = null;
   state.targetSpeaker.audioId = null;
-  state.targetSpeaker.labels = {};
+  if (!preserveLabels) state.targetSpeaker.labels = {};
   state.targetSpeaker.threshold = 0.60;
   state.targetSpeaker.minDur = 1.5;
   state.targetSpeaker.excludeOverlap = true;
@@ -4509,6 +4652,11 @@ function resetTargetSpeakerEvaluation({ preserveSelection = true } = {}) {
   if (summary) summary.hidden = true;
   if (results) results.innerHTML = '';
   if (chip) chip.textContent = 'Not scored';
+  state.diarization.targetMatchFilter = 'all';
+  if (el.diarFilterTargetSelect) {
+    el.diarFilterTargetSelect.value = 'all';
+    el.diarFilterTargetSelect.disabled = true;
+  }
   renderTurnsTable();
 }
 
@@ -4549,7 +4697,7 @@ async function runTargetSpeakerScore() {
 
     state.targetSpeaker.scored = result.scored;
     state.targetSpeaker.audioId = result.audio_id;
-    state.targetSpeaker.labels = {};
+    const manualLabels = { ...state.targetSpeaker.labels };
     const saved = (state.evaluations || []).find(evaluation =>
       evaluation.evaluation_type === 'target_speaker'
       && evaluation.clip_id === result.audio_id
@@ -4559,7 +4707,7 @@ async function runTargetSpeakerScore() {
       state.targetSpeaker.threshold = Number(saved.threshold ?? 0.60);
       state.targetSpeaker.minDur = Number(saved.min_duration_s ?? 1.5);
       state.targetSpeaker.excludeOverlap = saved.exclude_overlap !== false;
-      state.targetSpeaker.labels = { ...(saved.segment_labels || {}) };
+      state.targetSpeaker.labels = { ...manualLabels, ...(saved.segment_labels || {}) };
       const assignedTag = (saved.tags || []).find(tag => String(tag).startsWith('diarized_speaker:'));
       const savedSpeakerId = assignedTag ? assignedTag.slice('diarized_speaker:'.length) : '';
       if ((state.diarization.speakers || []).some(speaker => speaker.speaker_id === savedSpeakerId)) {
@@ -4568,6 +4716,7 @@ async function runTargetSpeakerScore() {
       }
     }
     renderTargetSpeakerResults();
+    if (el.diarFilterTargetSelect) el.diarFilterTargetSelect.disabled = false;
     renderTurnsTable();
     renderTargetSpeakerContext();
     if (status) status.textContent = `Scored ${result.scored.segments.length} turns in ${result.elapsed_s}s. Review each result directly in the turn table below.`;
@@ -4605,11 +4754,11 @@ function isTargetSegmentProposed(segment) {
 }
 
 function toggleTargetSegmentLabel(key, nextLabel) {
-  if (!key || !state.targetSpeaker.scored) return;
+  if (!key) return;
   const currentLabel = state.targetSpeaker.labels[key];
   state.targetSpeaker.labels[key] = currentLabel === nextLabel ? 'unreviewed' : nextLabel;
   renderTargetSpeakerResults();
-  renderTurnsTable();
+  renderDiarizationFilteredViews();
 }
 
 function targetSpeakerKeptSegments() {
@@ -4673,17 +4822,17 @@ function renderTargetSpeakerResults() {
   document.getElementById('ts-threshold')?.addEventListener('input', event => {
     target.threshold = parseFloat(event.target.value);
     renderTargetSpeakerResults();
-    renderTurnsTable();
+    renderDiarizationFilteredViews();
   });
   document.getElementById('ts-min-duration')?.addEventListener('change', event => {
     target.minDur = Math.max(0, parseFloat(event.target.value) || 0);
     renderTargetSpeakerResults();
-    renderTurnsTable();
+    renderDiarizationFilteredViews();
   });
   document.getElementById('ts-exclude-overlap')?.addEventListener('change', event => {
     target.excludeOverlap = event.target.checked;
     renderTargetSpeakerResults();
-    renderTurnsTable();
+    renderDiarizationFilteredViews();
   });
   document.getElementById('btn-ts-save-evaluation')?.addEventListener('click', saveTargetSpeakerEvaluation);
   document.getElementById('btn-ts-export-qualified')?.addEventListener('click', exportTargetSpeakerSegments);
@@ -4785,9 +4934,7 @@ function purityBackendDefaults(backend = state.purity.overlap.backend) {
 async function loadDiarizationResultsForVerification() {
   if (!el.purityResultList) return;
   try {
-    const response = await fetch('/api/diarization/results');
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || 'Unable to load diarization results');
+    const payload = await parseJsonResponse(await fetch('/api/diarization/results'));
     state.purity.diarizationResults = payload.results || [];
     const available = new Set(state.purity.diarizationResults.map(item => item.result_id));
     state.purity.selectedResultIds = new Set(

@@ -50,7 +50,9 @@ The derived Python properties are `speaker_count`, `turn_count`,
 `total_speech_duration_s`, `duration_per_speaker_s`, and
 `turns_by_speaker`. Durable web results live under
 `.data/diarization/results/`; verification reports live under
-`.data/diarization/verifications/`. Lazy audition cuts use
+`.data/diarization/verifications/`. Studio session audio IDs persist in
+`.data/studio/audio_registry.json` so history can reattach the same source
+file after a backend restart. Lazy audition cuts use
 `.data/diarization/preview/` and are not registered as audio assets.
 
 Clean turns are a derived output policy, not a second diarization result.

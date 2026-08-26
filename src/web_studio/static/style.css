@@ -3323,6 +3323,19 @@ button {
   min-width: 220px;
 }
 
+.diar-turn-review-filter-toolbar {
+  align-items: flex-start;
+  margin-top: 0.9rem;
+}
+
+.diar-turn-review-filter-toolbar .toolbar-right {
+  justify-content: flex-end;
+}
+
+.diar-turn-review-filter-toolbar select {
+  max-width: 190px;
+}
+
 /* Diarization session history */
 .diar-history-card {
   background-color: var(--bg-surface);

@@ -65,7 +65,12 @@ from src.diarization import (
     clean_speaker_turns,
     create_overlap_verifier,
 )
-from src.diarization.schemas import DiarizationResult, Speaker, SpeakerTurn
+from src.diarization.schemas import (
+    DIARIZATION_RESULT_KIND,
+    DiarizationResult,
+    Speaker,
+    SpeakerTurn,
+)
 from src.yt_crawler.YtCrawlerClass import YtCrawler, parse_crawl_sample_rate
 
 # Setup logging
@@ -82,6 +87,7 @@ UPLOADS_DIR = DATA_DIR / "web_uploads"
 DIARIZATION_RESULTS_DIR = DATA_DIR / "diarization" / "results"
 DIARIZATION_VERIFICATIONS_DIR = DATA_DIR / "diarization" / "verifications"
 DIARIZATION_PREVIEW_DIR = DATA_DIR / "diarization" / "preview"
+AUDIO_REGISTRY_PATH = DATA_DIR / "studio" / "audio_registry.json"
 
 # Ensure runtime directories exist
 DATA_DIR.mkdir(exist_ok=True)
@@ -90,6 +96,7 @@ UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 DIARIZATION_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 DIARIZATION_VERIFICATIONS_DIR.mkdir(parents=True, exist_ok=True)
 DIARIZATION_PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+AUDIO_REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
 def get_default_device() -> str:
@@ -246,11 +253,13 @@ def _cli_progress_reporter(
 
 
 class AudioRegistry:
-    """In-memory store mapping audio IDs to Audio objects and metadata."""
+    """File-backed store mapping audio IDs to Audio objects and metadata."""
 
-    def __init__(self) -> None:
+    def __init__(self, persist_path: Path = AUDIO_REGISTRY_PATH) -> None:
         self._items: Dict[str, Dict[str, Any]] = {}
         self._waveform_cache: Dict[str, List[float]] = {}
+        self._persist_path = persist_path
+        self._restoring = False
 
     def register(
         self,
@@ -260,9 +269,27 @@ class AudioRegistry:
         parent_id: Optional[str] = None,
         tags: Optional[List[str]] = None,
         model_info: Optional[Dict[str, Any]] = None,
+        audio_id: Optional[str] = None,
+        created_at: Optional[float] = None,
     ) -> str:
-        """Register an Audio object and return a unique ID."""
-        audio_id = f"aud_{uuid.uuid4().hex[:10]}"
+        """Register an Audio object and return a stable ID.
+
+        The same file path reuses its previous ID so diarization history can
+        find the source after a server restart.
+        """
+        existing_id = self.find_id_by_path(audio.path)
+        if existing_id:
+            return existing_id
+        requested_id = str(audio_id or "").strip()
+        if (
+            requested_id
+            and requested_id not in self._items
+            and "/" not in requested_id
+            and "\\" not in requested_id
+        ):
+            resolved_id = requested_id
+        else:
+            resolved_id = f"aud_{uuid.uuid4().hex[:10]}"
         raw_tags = [str(tag) for tag in (tags or [])]
         system_tags = {
             tag for tag in raw_tags
@@ -284,17 +311,18 @@ class AudioRegistry:
         system_tags.update({type_tag, stage_tag})
         if source_type == "purity_stem":
             system_tags.add("verification:passed")
-        self._items[audio_id] = {
-            "id": audio_id,
+        self._items[resolved_id] = {
+            "id": resolved_id,
             "audio": audio,
             "source_type": source_type,
             "parent_id": parent_id,
             "custom_tags": sorted(set(custom_tags)),
             "system_tags": sorted(system_tags),
             "model_info": model_info or {},
-            "created_at": time.time(),
+            "created_at": float(created_at) if created_at is not None else time.time(),
         }
-        return audio_id
+        self._persist()
+        return resolved_id
 
     def get_audio(self, audio_id: str) -> Optional[Audio]:
         """Retrieve the Audio object for an ID."""
@@ -307,17 +335,25 @@ class AudioRegistry:
 
     def find_id_by_path(self, path: str | Path) -> str | None:
         """Return the registered ID for a file path, if present."""
-        target = Path(path).resolve()
+        try:
+            target = Path(path).expanduser().resolve()
+        except OSError:
+            return None
         for audio_id, item in self._items.items():
-            if Path(item["audio"].path).resolve() == target:
-                return audio_id
+            try:
+                if Path(item["audio"].path).resolve() == target:
+                    return audio_id
+            except OSError:
+                continue
         return None
 
-    def unregister(self, audio_id: str) -> bool:
-        """Remove an audio object from the in-memory registry."""
+    def unregister(self, audio_id: str, *, persist: bool = True) -> bool:
+        """Remove an audio object from the session registry."""
         if audio_id in self._items:
             del self._items[audio_id]
             self._waveform_cache.pop(audio_id, None)
+            if persist:
+                self._persist()
             return True
         return False
 
@@ -330,15 +366,112 @@ class AudioRegistry:
             if Path(item["audio"].path).resolve() == target
         ]
         for audio_id in matching_ids:
-            self.unregister(audio_id)
+            self.unregister(audio_id, persist=False)
+        if matching_ids:
+            self._persist()
         return len(matching_ids)
 
     def clear_all(self) -> int:
-        """Clear all registered items from in-memory session registry."""
+        """Clear all registered items from the session registry."""
         count = len(self._items)
         self._items.clear()
         self._waveform_cache.clear()
+        self._persist()
         return count
+
+    def restore(self) -> int:
+        """Reload session items whose audio files still exist on disk.
+
+        Returns:
+            Number of restored session items.
+        """
+        if not self._persist_path.is_file():
+            return 0
+        try:
+            payload = json.loads(self._persist_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning("Could not restore session audio registry: %s", exc)
+            return 0
+        records = payload.get("items", payload) if isinstance(payload, dict) else payload
+        if not isinstance(records, list):
+            logger.warning("Ignoring invalid session audio registry payload")
+            return 0
+        restored = 0
+        self._restoring = True
+        try:
+            for record in records:
+                if not isinstance(record, dict):
+                    continue
+                raw_path = record.get("path")
+                if not raw_path:
+                    continue
+                path = Path(str(raw_path)).expanduser()
+                if not path.is_file():
+                    continue
+                try:
+                    audio = Audio.from_file(path)
+                    self.register(
+                        audio,
+                        source_type=str(record.get("source_type") or "local"),
+                        parent_id=record.get("parent_id"),
+                        tags=[
+                            *list(record.get("system_tags") or []),
+                            *list(record.get("custom_tags") or []),
+                        ],
+                        model_info=record.get("model_info") or {},
+                        audio_id=str(record.get("id") or ""),
+                        created_at=record.get("created_at"),
+                    )
+                    restored += 1
+                except Exception as exc:
+                    logger.warning("Skipping persisted session audio %s: %s", path, exc)
+        finally:
+            self._restoring = False
+        self._persist()
+        return restored
+
+    def _persist(self) -> None:
+        """Atomically write the session registry, skipping missing files."""
+        if self._restoring:
+            return
+        records = []
+        for audio_id, item in self._items.items():
+            audio: Audio = item["audio"]
+            try:
+                path = Path(audio.path).resolve()
+            except OSError:
+                continue
+            if not path.is_file():
+                continue
+            try:
+                model_info = json.loads(
+                    json.dumps(item.get("model_info") or {}, default=str, allow_nan=False)
+                )
+            except (TypeError, ValueError):
+                model_info = {}
+            records.append(
+                {
+                    "id": audio_id,
+                    "path": str(path),
+                    "source_type": item["source_type"],
+                    "parent_id": item["parent_id"],
+                    "custom_tags": list(item["custom_tags"]),
+                    "system_tags": list(item["system_tags"]),
+                    "model_info": model_info,
+                    "created_at": item["created_at"],
+                }
+            )
+        try:
+            self._persist_path.parent.mkdir(parents=True, exist_ok=True)
+            temp_path = self._persist_path.with_suffix(".json.tmp")
+            temp_path.write_text(
+                json.dumps({"items": records}, indent=2, ensure_ascii=False, allow_nan=False)
+                + "\n",
+                encoding="utf-8",
+            )
+            temp_path.replace(self._persist_path)
+        except Exception as exc:
+            logger.warning("Could not persist session audio registry: %s", exc)
 
     def list_all(self) -> List[Dict[str, Any]]:
         """List all registered items formatted for the frontend."""
@@ -832,6 +965,66 @@ task_manager = TaskManager(workers_per_device=STUDIO_QUEUE_CONCURRENCY)
 evaluation_manager = EvaluationManager(DATA_DIR / "studio" / "evaluations.json")
 
 
+def _json_response(payload: Any, status: int = 200) -> web.Response:
+    """Serialize JSON without NaN/Infinity so browsers can parse the body."""
+    return web.Response(
+        text=json.dumps(payload, ensure_ascii=False, allow_nan=False),
+        status=status,
+        content_type="application/json",
+        charset="utf-8",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+def _source_audio_path(result: DiarizationResult) -> Path | None:
+    """Return the resolved source audio path when the snapshot exists."""
+    if result.source_audio is None:
+        return None
+    path = Path(result.source_audio.path).expanduser()
+    if not path.is_absolute():
+        path = ROOT_DIR / path
+    try:
+        return path.resolve()
+    except OSError:
+        return None
+
+
+def _session_audio_id_for(result: DiarizationResult) -> str | None:
+    """Return the live session ID for a result's source file, if registered."""
+    path = _source_audio_path(result)
+    if path is None:
+        return None
+    return registry.find_id_by_path(path)
+
+
+def _ensure_source_registered(result: DiarizationResult) -> str | None:
+    """Register a result's source audio into the session when the file exists."""
+    path = _source_audio_path(result)
+    if path is None or not path.is_file() or result.source_audio is None:
+        return None
+    existing = registry.find_id_by_path(path)
+    if existing:
+        return existing
+    source = result.source_audio
+    if Path(source.path).resolve() != path:
+        source = Audio.from_file(
+            path,
+            source_id=source.source_id,
+            title=source.title,
+            source_url=source.source_url,
+            channel_id=source.channel_id,
+            channel_name=source.channel_name,
+            channel_url=source.channel_url,
+            native_sample_rate=source.native_sample_rate,
+            history=source.history,
+        )
+    return registry.register(
+        source,
+        source_type="library",
+        tags=["library", "diarization_source"],
+    )
+
+
 def _diarization_result_path(result_id: str) -> Path:
     """Resolve a result ID without allowing directory traversal."""
     if not result_id or any(char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for char in result_id):
@@ -949,15 +1142,53 @@ def _verification_state_index(profile_name: str | None = None) -> dict[str, dict
 def _result_catalog_item(
     result: DiarizationResult,
     verification: dict[str, Any] | None = None,
+    *,
+    complete: bool = False,
+    hydrate_source: bool = False,
 ) -> dict[str, Any]:
-    payload = result.to_dict()
-    payload["verification"] = verification or {
-        "state": "unverified", "turns": {}, "report_id": None
-    }
-    payload["source_available"] = bool(
-        result.source_audio and Path(result.source_audio.path).is_file()
+    """Build a JSON-safe catalog entry for a durable diarization result.
+
+    The list endpoint returns summaries only. The single-result endpoint
+    returns the complete canonical payload plus session hydration fields.
+    """
+    session_audio_id = (
+        _ensure_source_registered(result)
+        if hydrate_source
+        else _session_audio_id_for(result)
     )
-    return payload
+    source_path = _source_audio_path(result)
+    extras = {
+        "verification": verification or {
+            "state": "unverified", "turns": {}, "report_id": None
+        },
+        "source_available": bool(source_path and source_path.is_file()),
+        "session_audio_id": session_audio_id,
+    }
+    if complete:
+        payload = result.to_dict()
+        payload.update(extras)
+        return payload
+    source = result.source_audio.metadata() if result.source_audio else None
+    return {
+        "kind": DIARIZATION_RESULT_KIND,
+        "schema_version": result.schema_version,
+        "result_id": result.result_id,
+        "created_at": result.created_at,
+        "audio_id": result.audio_id,
+        "source_audio": source,
+        "speakers": [asdict(speaker) for speaker in result.speakers],
+        "model": asdict(result.model) if result.model else None,
+        "channel_id": result.channel_id,
+        "channel_name": result.channel_name,
+        "channel_url": result.channel_url,
+        "summary": {
+            "speaker_count": result.speaker_count,
+            "turn_count": result.turn_count,
+            "total_speech_duration_s": result.total_speech_duration_s,
+            "duration_per_speaker_s": result.duration_per_speaker_s,
+        },
+        **extras,
+    }
 
 
 def extract_waveform_peaks(audio_path: Path, num_points: int = 1200) -> List[float]:
@@ -2847,17 +3078,19 @@ async def handle_speaker_purity_config(request: web.Request) -> web.Response:
 
 
 async def handle_list_diarization_results(request: web.Request) -> web.Response:
-    """List every durable canonical diarization result for Studio and Pipeline."""
+    """List durable diarization results with source/model summaries."""
     verification = _verification_state_index()
     items = []
     for path in DIARIZATION_RESULTS_DIR.glob("*.json"):
         try:
             result = DiarizationResult.load(path)
-            items.append(_result_catalog_item(result, verification.get(result.result_id)))
+            item = _result_catalog_item(result, verification.get(result.result_id))
+            json.dumps(item, allow_nan=False)
+            items.append(item)
         except Exception as exc:
             logger.warning("Ignoring invalid diarization result %s: %s", path, exc)
     items.sort(key=lambda item: item.get("created_at", 0), reverse=True)
-    return web.json_response({"results": items, "total": len(items)})
+    return _json_response({"results": items, "total": len(items)})
 
 
 async def handle_get_diarization_result(request: web.Request) -> web.Response:
@@ -2865,11 +3098,44 @@ async def handle_get_diarization_result(request: web.Request) -> web.Response:
     try:
         result = _load_diarization_result(request.match_info["result_id"])
     except FileNotFoundError as exc:
-        return web.json_response({"error": str(exc)}, status=404)
+        return _json_response({"error": str(exc)}, status=404)
     except (TypeError, ValueError, OSError, json.JSONDecodeError) as exc:
-        return web.json_response({"error": str(exc)}, status=400)
+        return _json_response({"error": str(exc)}, status=400)
     state = _verification_state_index().get(result.result_id)
-    return web.json_response(_result_catalog_item(result, state))
+    try:
+        return _json_response(
+            _result_catalog_item(result, state, complete=True, hydrate_source=True)
+        )
+    except ValueError as exc:
+        logger.exception("Could not serialize diarization result %s", result.result_id)
+        return _json_response({"error": f"Result is not JSON-serializable: {exc}"}, status=500)
+
+
+async def handle_delete_diarization_result(request: web.Request) -> web.Response:
+    """Delete one persisted diarization result JSON file."""
+    try:
+        path = _diarization_result_path(request.match_info["result_id"])
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}, status=400)
+    if not path.is_file():
+        return _json_response(
+            {"error": f"Diarization result not found: {request.match_info['result_id']}"},
+            status=404,
+        )
+    path.unlink()
+    return _json_response({"deleted": request.match_info["result_id"]})
+
+
+async def handle_clear_diarization_results(request: web.Request) -> web.Response:
+    """Delete every persisted diarization result JSON file."""
+    deleted = 0
+    for path in list(DIARIZATION_RESULTS_DIR.glob("*.json")):
+        try:
+            path.unlink()
+            deleted += 1
+        except OSError as exc:
+            logger.warning("Could not delete diarization result %s: %s", path, exc)
+    return _json_response({"cleared": deleted})
 
 
 async def handle_preview_diarization_turn(request: web.Request) -> web.StreamResponse:
@@ -4162,6 +4428,9 @@ async def no_cache_middleware(request: web.Request, handler):
 
 
 async def start_background_tasks(app: web.Application):
+    restored = registry.restore()
+    if restored:
+        logger.info("Restored %d session audio item(s) from disk", restored)
     await task_manager.start()
 
 
@@ -4223,8 +4492,14 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_post(
         "/api/diarization/results/verify", handle_verify_diarization_batch
     )
+    app.router.add_post(
+        "/api/diarization/results/clear", handle_clear_diarization_results
+    )
     app.router.add_get(
         "/api/diarization/results/{result_id}", handle_get_diarization_result
+    )
+    app.router.add_delete(
+        "/api/diarization/results/{result_id}", handle_delete_diarization_result
     )
     app.router.add_get(
         "/api/diarization/results/{result_id}/turns/{turn_index}/audio",
