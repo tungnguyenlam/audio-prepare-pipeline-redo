@@ -2021,7 +2021,7 @@ button {
 }
 
 .diar-model-panel .model-cards-grid {
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 }
 
 .model-card {
@@ -2191,15 +2191,9 @@ button {
 
 .diar-setup-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 1.5rem;
   margin-top: 1rem;
-}
-
-@media (max-width: 900px) {
-  .diar-setup-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 .diar-source-panel,
@@ -2207,6 +2201,12 @@ button {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  min-width: 0;
+}
+
+.diar-model-panel {
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .diar-input-preview-pill {
