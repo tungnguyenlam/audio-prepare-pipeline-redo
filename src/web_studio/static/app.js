@@ -346,6 +346,9 @@ const el = {
   diarCleanTurnsSummary: document.getElementById('diar-clean-turns-summary'),
   diarSortTurnsSelect: document.getElementById('diar-sort-turns-select'),
   diarFilteredTurnsCount: document.getElementById('diar-filtered-turns-count'),
+  diarReviewedCount: document.getElementById('diar-reviewed-count'),
+  diarAcceptedCount: document.getElementById('diar-accepted-count'),
+  diarRejectedCount: document.getElementById('diar-rejected-count'),
   turnsTableBody: document.getElementById('turns-table-body'),
   btnDownloadExport: document.getElementById('btn-download-export'),
   diarHistoryCountBadge: document.getElementById('diar-history-count-badge'),
@@ -3052,6 +3055,7 @@ function saveDiarizationToHistory(diarization, audioId, runResult = {}) {
     diarization: completeData,
     custom_names: { ...state.diarization.customNames },
     colors: { ...state.diarization.colors },
+    segment_labels: { ...state.targetSpeaker.labels },
     run: {
       elapsed_s: runResult.elapsed_s ?? null,
       device: runResult.device ?? null,
@@ -3073,7 +3077,11 @@ function persistDiarizationHistory() {
   try {
     const uiState = Object.fromEntries((state.diarization.history || []).map(item => [
       item.diarization?.result_id || item.id,
-      { custom_names: item.custom_names || {}, colors: item.colors || {} },
+      {
+        custom_names: item.custom_names || {},
+        colors: item.colors || {},
+        segment_labels: item.segment_labels || {},
+      },
     ]));
     localStorage.setItem('sonic_diarization_ui_state', JSON.stringify(uiState));
     localStorage.removeItem('sonic_diarization_history');
@@ -3090,6 +3098,7 @@ function updateActiveDiarizationHistory() {
   item.diarization.speakers = cloneDiarizationData(state.diarization.speakers);
   item.custom_names = { ...state.diarization.customNames };
   item.colors = { ...state.diarization.colors };
+  item.segment_labels = { ...state.targetSpeaker.labels };
   persistDiarizationHistory();
   renderDiarizationHistory();
 }
@@ -3118,6 +3127,7 @@ function normalizeDiarizationHistoryItem(item) {
     diarization,
     custom_names: legacyNames,
     colors: item.colors || {},
+    segment_labels: item.segment_labels || {},
   };
 }
 
@@ -3157,6 +3167,7 @@ async function loadDiarizationHistory() {
           diarization: result,
           custom_names: ui.custom_names || {},
           colors: ui.colors || {},
+          segment_labels: ui.segment_labels || {},
         });
       }).filter(Boolean);
       const loadedIds = new Set(loaded.map(item => item.id));
@@ -3227,6 +3238,8 @@ async function restoreDiarizationHistoryItem(item, targetAudioId = null, { notif
   state.diarization.colors = { ...normalized.colors };
   state.diarization.activeHistoryId = normalized.id;
   renderDiarizationWorkspace(diarization, audioId);
+  state.targetSpeaker.labels = { ...normalized.segment_labels };
+  renderDiarizationFilteredViews();
 
   if (matchedAudio || state.audioList.some(audio => audio.id === audioId)) {
     const resolvedId = matchedAudio?.id || audioId;
@@ -4254,10 +4267,7 @@ function getFilteredAndSortedTurns() {
   }
 
   if (state.diarization.reviewFilter !== 'all') {
-    turns = turns.filter(turn => {
-      const label = state.targetSpeaker.labels[targetSegmentKey(turn)] || 'unreviewed';
-      return label === state.diarization.reviewFilter;
-    });
+    turns = turns.filter(turn => turnReviewLabel(turn) === state.diarization.reviewFilter);
   }
 
   if (state.diarization.sortMode === 'time-desc') {
@@ -4300,18 +4310,47 @@ function renderDiarizationFilteredViews() {
   renderTurnsTable();
 }
 
+function turnReviewLabel(turn) {
+  const scoredSegment = findTargetScoredSegment(turn);
+  return state.targetSpeaker.labels[targetSegmentKey(scoredSegment || turn)] || 'unreviewed';
+}
+
+function getTurnReviewStats() {
+  let accepted = 0;
+  let rejected = 0;
+  for (const turn of state.diarization.turns) {
+    const label = turnReviewLabel(turn);
+    if (label === 'qualified') accepted += 1;
+    else if (label === 'rejected') rejected += 1;
+  }
+  return { accepted, rejected, reviewed: accepted + rejected, total: state.diarization.turns.length };
+}
+
+function renderTurnReviewStats(visibleCount) {
+  const stats = getTurnReviewStats();
+  if (el.diarFilteredTurnsCount) {
+    el.diarFilteredTurnsCount.textContent = `${visibleCount} of ${stats.total} turns`;
+  }
+  if (el.diarReviewedCount) {
+    el.diarReviewedCount.textContent = `${stats.reviewed} reviewed`;
+  }
+  if (el.diarAcceptedCount) {
+    el.diarAcceptedCount.textContent = `${stats.accepted} accepted`;
+  }
+  if (el.diarRejectedCount) {
+    el.diarRejectedCount.textContent = `${stats.rejected} rejected`;
+  }
+}
+
 function renderTurnsTable() {
   if (!el.turnsTableBody) return;
   el.turnsTableBody.innerHTML = "";
 
   const turns = getFilteredAndSortedTurns();
-
-  if (el.diarFilteredTurnsCount) {
-    el.diarFilteredTurnsCount.textContent = `${turns.length} of ${state.diarization.turns.length} turns`;
-  }
+  renderTurnReviewStats(turns.length);
 
   if (turns.length === 0) {
-    el.turnsTableBody.innerHTML = `<tr><td colspan="8" class="text-center text-muted" style="padding: 24px;">No turns match the active filter criteria.</td></tr>`;
+    el.turnsTableBody.innerHTML = `<tr><td colspan="7" class="text-center text-muted" style="padding: 24px;">No turns match the active filter criteria.</td></tr>`;
     return;
   }
 
@@ -4322,7 +4361,7 @@ function renderTurnsTable() {
     const scoredSegment = findTargetScoredSegment(turn);
     const segmentKey = targetSegmentKey(scoredSegment || turn);
     const proposed = scoredSegment ? isTargetSegmentProposed(scoredSegment) : false;
-    const label = state.targetSpeaker.labels[segmentKey] || 'unreviewed';
+    const label = turnReviewLabel(turn);
     const targetScore = scoredSegment
       ? `<strong>${Number(scoredSegment.similarity).toFixed(3)}</strong><small class="turn-target-status ${proposed ? 'is-proposed' : ''}">${proposed ? 'Proposed' : 'Filtered'}</small>`
       : '<span class="text-xs text-muted">Not scored</span>';
@@ -4340,8 +4379,7 @@ function renderTurnsTable() {
     tr.innerHTML = `
       <td><span class="text-muted font-mono">#${idx + 1}</span></td>
       <td><span style="color: ${color}; font-weight: 700;">${escapeHtml(getSpeakerName(turn.speaker_id))}</span></td>
-      <td><code>${turn.start_s.toFixed(2)}s</code></td>
-      <td><code>${turn.end_s.toFixed(2)}s</code></td>
+      <td class="turn-time-range"><code>${turn.start_s.toFixed(2)}<span class="turn-time-sep">–</span>${turn.end_s.toFixed(2)}</code></td>
       <td><span class="badge badge-ghost">${duration}s</span></td>
       <td>${turn.has_overlap ? '<span class="badge badge-warning">Yes</span>' : '<span class="text-xs text-muted">No</span>'}</td>
       <td class="turn-target-score">${targetScore}</td>
@@ -4991,6 +5029,7 @@ function toggleTargetSegmentLabel(key, nextLabel) {
   if (!key) return;
   const currentLabel = state.targetSpeaker.labels[key];
   state.targetSpeaker.labels[key] = currentLabel === nextLabel ? 'unreviewed' : nextLabel;
+  updateActiveDiarizationHistory();
   renderTargetSpeakerResults();
   renderDiarizationFilteredViews();
 }

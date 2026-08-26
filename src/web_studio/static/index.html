@@ -1180,44 +1180,42 @@
 
               <!-- Shared Timeline & Turn Filters -->
               <div class="diar-inspector-toolbar diar-timeline-filter-toolbar diar-turn-review-filter-toolbar">
-                <div class="toolbar-left">
-                  <div class="form-group mb-0">
+                <div class="diar-filter-items" role="group" aria-label="Turn filters">
+                  <div class="diar-filter-item">
                     <select id="diar-filter-speaker-select" class="select-input select-sm" aria-label="Filter by diarized speaker">
                       <option value="all">All Speakers</option>
                     </select>
                   </div>
-                  <div class="form-group mb-0 flex-1">
-                    <input type="text" id="diar-turns-search-input" class="text-input text-sm" placeholder="Search turn #, speaker name, or timestamp..." aria-label="Search turns">
+                  <div class="diar-filter-item diar-filter-item-grow">
+                    <input type="text" id="diar-turns-search-input" class="text-input text-sm" placeholder="Search turn #, speaker name, or time" aria-label="Search turns">
                   </div>
-                  <div class="form-group mb-0">
+                  <div class="diar-filter-item">
                     <div class="filter-num-group" title="Hide turns shorter than minimum duration in seconds (type any value)">
                       <span class="filter-num-label">Min ≥</span>
                       <input type="number" id="diar-filter-min-dur" class="filter-num-input" min="0" max="3600" step="0.5" placeholder="0" value="" aria-label="Minimum turn duration">
                       <span class="filter-num-unit">s</span>
                     </div>
                   </div>
-                  <div class="form-group mb-0">
+                  <div class="diar-filter-item">
                     <div class="filter-num-group" title="Hide turns longer than maximum duration in seconds (type any value)">
                       <span class="filter-num-label">Max ≤</span>
                       <input type="number" id="diar-filter-max-dur" class="filter-num-input" min="0" max="3600" step="1" placeholder="∞" value="" aria-label="Maximum turn duration">
                       <span class="filter-num-unit">s</span>
                     </div>
                   </div>
-                  <div class="form-group mb-0">
+                  <div class="diar-filter-item">
                     <button type="button" id="btn-diar-filter-overlaps" class="btn btn-xs btn-ghost diar-overlap-filter-btn" title="Hide turns that overlap another turn" aria-pressed="false">
                       Exclude Overlaps
                     </button>
                   </div>
-                </div>
-                <div class="toolbar-right">
-                  <div class="form-group mb-0">
+                  <div class="diar-filter-item">
                     <select id="diar-filter-target-select" class="select-input select-sm" aria-label="Filter by target-speaker score" disabled>
                       <option value="all">Any Target Score</option>
                       <option value="proposed">Target Matches</option>
                       <option value="filtered">Non-target / Filtered</option>
                     </select>
                   </div>
-                  <div class="form-group mb-0">
+                  <div class="diar-filter-item">
                     <select id="diar-filter-review-select" class="select-input select-sm" aria-label="Filter by human review state">
                       <option value="all">Any Review State</option>
                       <option value="unreviewed">Unreviewed</option>
@@ -1225,10 +1223,11 @@
                       <option value="rejected">Rejected</option>
                     </select>
                   </div>
-                  <button type="button" id="btn-diar-clear-filters" class="btn btn-xs btn-ghost" title="Clear all turn filters">Clear Filters</button>
-                  <span class="badge badge-info" id="diar-filtered-turns-count">0 turns</span>
-                  <div class="form-group mb-0 flex-row items-center gap-2">
-                    <label class="text-xs text-muted">Sort:</label>
+                  <div class="diar-filter-item">
+                    <button type="button" id="btn-diar-clear-filters" class="btn btn-xs btn-ghost" title="Clear all turn filters">Clear Filters</button>
+                  </div>
+                  <div class="diar-filter-item">
+                    <label class="diar-filter-item-label" for="diar-sort-turns-select">Sort</label>
                     <select id="diar-sort-turns-select" class="select-input select-sm">
                       <option value="time-asc">Start Time (Ascending)</option>
                       <option value="time-desc">Start Time (Descending)</option>
@@ -1236,6 +1235,12 @@
                       <option value="speaker">Speaker</option>
                     </select>
                   </div>
+                </div>
+                <div class="diar-turn-stats" aria-label="Turn review statistics">
+                  <span class="badge badge-info" id="diar-filtered-turns-count">0 of 0 turns</span>
+                  <span class="badge badge-ghost" id="diar-reviewed-count" title="Turns you have accepted or rejected">0 reviewed</span>
+                  <span class="badge badge-success" id="diar-accepted-count">0 accepted</span>
+                  <span class="badge badge-danger" id="diar-rejected-count">0 rejected</span>
                 </div>
               </div>
 
@@ -1246,8 +1251,7 @@
                     <tr>
                       <th style="width: 50px;">#</th>
                       <th style="width: 120px;">Speaker</th>
-                      <th style="width: 110px;">Start Time (s)</th>
-                      <th style="width: 110px;">End Time (s)</th>
+                      <th style="width: 180px;">Time (s)</th>
                       <th style="width: 95px;">Duration</th>
                       <th style="width: 90px;">Overlap</th>
                       <th style="width: 130px;">Target Score</th>
