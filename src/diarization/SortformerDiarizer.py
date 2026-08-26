@@ -35,6 +35,10 @@ DEFAULT_MODEL_FILENAME = "diar_sortformer_4spk-v1.nemo"
 DEFAULT_MODEL_REVISION = "f059506485424eb68a90a7af84c8e63e67f381fd"
 FRAME_DURATION_S = 0.08
 MAX_LOCAL_SPEAKERS = 4
+DEFAULT_ONSET = 0.74
+DEFAULT_OFFSET = 0.64
+DEFAULT_PAD_ONSET_S = 0.12
+DEFAULT_PAD_OFFSET_S = 0.20
 
 
 @dataclass(frozen=True)
@@ -93,10 +97,10 @@ class SortformerDiarizer(BaseDiarizer, ManagedModel):
         enable_speaker_similarity: bool = True,
         embedding_similarity_threshold: float = 0.70,
         overlap_match_threshold: float = 0.35,
-        onset: float = 0.64,
-        offset: float = 0.74,
-        pad_onset_s: float = 0.06,
-        pad_offset_s: float = 0.0,
+        onset: float = DEFAULT_ONSET,
+        offset: float = DEFAULT_OFFSET,
+        pad_onset_s: float = DEFAULT_PAD_ONSET_S,
+        pad_offset_s: float = DEFAULT_PAD_OFFSET_S,
         min_duration_on_s: float = 0.10,
         min_duration_off_s: float = 0.15,
         ffmpeg_bin: str = "ffmpeg",
@@ -121,14 +125,18 @@ class SortformerDiarizer(BaseDiarizer, ManagedModel):
         }.items():
             if not 0 <= value <= 1:
                 raise ValueError(f"{name} must be between 0 and 1")
+        if onset < offset:
+            raise ValueError(
+                "onset must be greater than or equal to offset for hysteresis"
+            )
         for name, value in {
             "pad_onset_s": pad_onset_s,
             "pad_offset_s": pad_offset_s,
             "min_duration_on_s": min_duration_on_s,
             "min_duration_off_s": min_duration_off_s,
         }.items():
-            if value < 0:
-                raise ValueError(f"{name} must be non-negative")
+            if not math.isfinite(value) or value < 0:
+                raise ValueError(f"{name} must be finite and non-negative")
 
         self.model_id = model_id
         self.revision = revision

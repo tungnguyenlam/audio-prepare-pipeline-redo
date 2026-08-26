@@ -18,6 +18,10 @@ from src.diarization.SortformerDiarizer import (
     DEFAULT_MODEL_FILENAME,
     DEFAULT_MODEL_ID,
     DEFAULT_MODEL_REVISION,
+    DEFAULT_OFFSET,
+    DEFAULT_ONSET,
+    DEFAULT_PAD_OFFSET_S,
+    DEFAULT_PAD_ONSET_S,
 )
 from src.diarization.schemas import DiarizationResult
 from src.utils.AudioClass import Audio
@@ -52,10 +56,10 @@ class SortformerWorkerDiarizer(BaseDiarizer, ManagedModel):
         enable_speaker_similarity: bool = True,
         embedding_similarity_threshold: float = 0.70,
         overlap_match_threshold: float = 0.35,
-        onset: float = 0.64,
-        offset: float = 0.74,
-        pad_onset_s: float = 0.06,
-        pad_offset_s: float = 0.0,
+        onset: float = DEFAULT_ONSET,
+        offset: float = DEFAULT_OFFSET,
+        pad_onset_s: float = DEFAULT_PAD_ONSET_S,
+        pad_offset_s: float = DEFAULT_PAD_OFFSET_S,
         min_duration_on_s: float = 0.10,
         min_duration_off_s: float = 0.15,
         ffmpeg_bin: str = "ffmpeg",

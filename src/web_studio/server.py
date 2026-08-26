@@ -20,6 +20,7 @@ import time
 import uuid
 import wave
 from dataclasses import asdict
+from math import isfinite
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 from urllib.parse import quote
@@ -44,7 +45,6 @@ from src.separation import HTDemucs, BSRoFormer, MelRoFormer, MVSepMDX23
 from src.diarization import (
     ClusteringDiarizer,
     ClusteringWorkerDiarizer,
-    DEFAULT_BOUNDARY_COLLAR_S,
     DEFAULT_GEMINI_MODEL_ID,
     DEFAULT_EMBEDDING_MODEL_ID,
     DEFAULT_GEMMA4_MODEL_ID,
@@ -64,6 +64,13 @@ from src.diarization import (
     ThreeDSpeakerWorkerDiarizer,
     clean_speaker_turns,
     create_overlap_verifier,
+    pad_and_merge_intervals,
+)
+from src.diarization.SortformerDiarizer import (
+    DEFAULT_OFFSET as DEFAULT_SORTFORMER_OFFSET,
+    DEFAULT_ONSET as DEFAULT_SORTFORMER_ONSET,
+    DEFAULT_PAD_OFFSET_S as DEFAULT_SORTFORMER_PAD_OFFSET_S,
+    DEFAULT_PAD_ONSET_S as DEFAULT_SORTFORMER_PAD_ONSET_S,
 )
 from src.diarization.schemas import (
     DIARIZATION_RESULT_KIND,
@@ -88,6 +95,9 @@ DIARIZATION_RESULTS_DIR = DATA_DIR / "diarization" / "results"
 DIARIZATION_VERIFICATIONS_DIR = DATA_DIR / "diarization" / "verifications"
 DIARIZATION_PREVIEW_DIR = DATA_DIR / "diarization" / "preview"
 AUDIO_REGISTRY_PATH = DATA_DIR / "studio" / "audio_registry.json"
+
+DEFAULT_EXTRACTION_PRE_ROLL_S = DEFAULT_SORTFORMER_PAD_ONSET_S
+DEFAULT_EXTRACTION_POST_ROLL_S = DEFAULT_SORTFORMER_PAD_OFFSET_S
 
 # Ensure runtime directories exist
 DATA_DIR.mkdir(exist_ok=True)
@@ -1046,6 +1056,111 @@ def _turn_key(speaker_id: str, start_s: float, end_s: float) -> str:
     return f"{speaker_id}|{float(start_s):.6f}|{float(end_s):.6f}"
 
 
+def _validated_float(
+    value: Any,
+    name: str,
+    *,
+    minimum: float,
+    maximum: float | None = None,
+) -> float:
+    """Parse one finite numeric request setting within inclusive bounds."""
+    if isinstance(value, bool):
+        raise TypeError(f"{name} must be a number")
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise TypeError(f"{name} must be a number") from exc
+    if not isfinite(parsed) or parsed < minimum:
+        raise ValueError(f"{name} must be at least {minimum}")
+    if maximum is not None and parsed > maximum:
+        raise ValueError(f"{name} must be at most {maximum}")
+    return parsed
+
+
+def _sortformer_settings(data: dict[str, Any]) -> dict[str, float]:
+    """Read Sortformer boundary-detection settings from an API request."""
+    settings = {
+        "onset": _validated_float(
+            data.get("sortformer_onset", DEFAULT_SORTFORMER_ONSET),
+            "sortformer_onset",
+            minimum=0.0,
+            maximum=1.0,
+        ),
+        "offset": _validated_float(
+            data.get("sortformer_offset", DEFAULT_SORTFORMER_OFFSET),
+            "sortformer_offset",
+            minimum=0.0,
+            maximum=1.0,
+        ),
+        "pad_onset_s": _validated_float(
+            data.get("sortformer_pad_onset_s", DEFAULT_SORTFORMER_PAD_ONSET_S),
+            "sortformer_pad_onset_s",
+            minimum=0.0,
+        ),
+        "pad_offset_s": _validated_float(
+            data.get("sortformer_pad_offset_s", DEFAULT_SORTFORMER_PAD_OFFSET_S),
+            "sortformer_pad_offset_s",
+            minimum=0.0,
+        ),
+    }
+    if settings["onset"] < settings["offset"]:
+        raise ValueError(
+            "sortformer_onset must be greater than or equal to "
+            "sortformer_offset"
+        )
+    return settings
+
+
+def _extraction_settings(data: dict[str, Any]) -> dict[str, float]:
+    """Read non-destructive padding applied only while extracting stems."""
+    settings = data.get("extraction_settings") or {}
+    if not isinstance(settings, dict):
+        raise TypeError("extraction_settings must be an object")
+    return {
+        "pre_roll_s": _validated_float(
+            settings.get("pre_roll_s", DEFAULT_EXTRACTION_PRE_ROLL_S),
+            "extraction_settings.pre_roll_s",
+            minimum=0.0,
+        ),
+        "post_roll_s": _validated_float(
+            settings.get("post_roll_s", DEFAULT_EXTRACTION_POST_ROLL_S),
+            "extraction_settings.post_roll_s",
+            minimum=0.0,
+        ),
+    }
+
+
+def _padded_audio_intervals(
+    turns: list[dict[str, Any]],
+    *,
+    sample_rate: int,
+    total_frames: int,
+    pre_roll_s: float,
+    post_roll_s: float,
+) -> list[tuple[int, int]]:
+    """Resolve padded turn bounds and merge intervals that now overlap."""
+    duration_s = total_frames / sample_rate if sample_rate else 0.0
+    windows = pad_and_merge_intervals(
+        [
+            (float(turn.get("start_s", 0)), float(turn.get("end_s", 0)))
+            for turn in turns
+        ],
+        pre_roll_s=pre_roll_s,
+        post_roll_s=post_roll_s,
+        end_bound_s=duration_s,
+    )
+    intervals: list[tuple[int, int]] = []
+    for start_s, end_s in windows:
+        start_frame = max(0, min(int(round(start_s * sample_rate)), total_frames))
+        end_frame = max(0, min(int(round(end_s * sample_rate)), total_frames))
+        if end_frame > start_frame:
+            if intervals and start_frame <= intervals[-1][1]:
+                intervals[-1] = (intervals[-1][0], max(intervals[-1][1], end_frame))
+            else:
+                intervals.append((start_frame, end_frame))
+    return intervals
+
+
 def _speaker_turns_from_payload(raw_turns: Any) -> list[SpeakerTurn]:
     """Parse JSON turn objects without accepting frontend-only fields."""
     if not isinstance(raw_turns, list):
@@ -1073,25 +1188,38 @@ def _speaker_turns_from_payload(raw_turns: Any) -> list[SpeakerTurn]:
 
 
 def _clean_turn_settings(data: dict[str, Any]) -> dict[str, float]:
-    """Read optional clean-turn settings from an API request."""
+    """Read optional clean-turn settings from an API request.
+
+    Studio listen/export defaults the boundary collar to zero so cleanup does
+    not clip syllables. The library default of 40 ms remains available for
+    high-purity identity clips when a client sends it explicitly.
+    """
     settings = data.get("settings") or {}
     if not isinstance(settings, dict):
         raise TypeError("settings must be an object")
     return {
-        "min_turn_duration_s": float(
-            settings.get("min_turn_duration_s", DEFAULT_MIN_TURN_DURATION_S)
+        "min_turn_duration_s": _validated_float(
+            settings.get("min_turn_duration_s", DEFAULT_MIN_TURN_DURATION_S),
+            "settings.min_turn_duration_s",
+            minimum=0.0,
         ),
-        "merge_same_speaker_gap_s": float(
+        "merge_same_speaker_gap_s": _validated_float(
             settings.get(
                 "merge_same_speaker_gap_s",
                 DEFAULT_MERGE_SAME_SPEAKER_GAP_S,
-            )
+            ),
+            "settings.merge_same_speaker_gap_s",
+            minimum=0.0,
         ),
-        "boundary_collar_s": float(
-            settings.get("boundary_collar_s", DEFAULT_BOUNDARY_COLLAR_S)
+        "boundary_collar_s": _validated_float(
+            settings.get("boundary_collar_s", 0.0),
+            "settings.boundary_collar_s",
+            minimum=0.0,
         ),
-        "jitter_max_duration_s": float(
-            settings.get("jitter_max_duration_s", DEFAULT_JITTER_MAX_DURATION_S)
+        "jitter_max_duration_s": _validated_float(
+            settings.get("jitter_max_duration_s", DEFAULT_JITTER_MAX_DURATION_S),
+            "settings.jitter_max_duration_s",
+            minimum=0.0,
         ),
     }
 
@@ -2242,6 +2370,10 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
     enrollment_profile_name = data.get("enrollment_profile")
     include_overlap = bool(data.get("include_overlap", False))
     try:
+        sortformer_settings = _sortformer_settings(data)
+    except (TypeError, ValueError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    try:
         vad_onset = float(data.get("vad_onset", 0.5)) if data.get("vad_onset") is not None else 0.5
         vad_offset = float(data.get("vad_offset", 0.3)) if data.get("vad_offset") is not None else 0.3
     except (TypeError, ValueError):
@@ -2285,6 +2417,7 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
             "model_type": model_type,
             "device": device,
             "enrollment_profile": enrollment_profile_name,
+            "sortformer_settings": sortformer_settings,
         },
     )
 
@@ -2339,7 +2472,10 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
                 with diarizer:
                     return diarizer.diarize(audio)
             elif model_type == "sortformer":
-                diarizer = SortformerWorkerDiarizer(device=target_device)
+                diarizer = SortformerWorkerDiarizer(
+                    device=target_device,
+                    **sortformer_settings,
+                )
                 task_manager.set_cancel_callback(task_id, diarizer.cancel)
                 try:
                     with diarizer:
@@ -2474,6 +2610,9 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
                     "device": target_device,
                     "power_w": end_power_w,
                     "enrollment_profile": enrollment_profile_name,
+                    "sortformer_settings": (
+                        sortformer_settings if model_type == "sortformer" else None
+                    ),
                 },
             )
         except Exception as e:
@@ -2553,6 +2692,11 @@ async def handle_extract_speaker_audio(request: web.Request) -> web.Response:
         except (TypeError, ValueError) as exc:
             return web.json_response({"error": str(exc)}, status=400)
 
+    try:
+        extraction_settings = _extraction_settings(data)
+    except (TypeError, ValueError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+
     # Filter turns for this speaker
     spk_turns = [t for t in turns if t.get("speaker_id") == speaker_id]
     if not spk_turns:
@@ -2566,15 +2710,12 @@ async def handle_extract_speaker_audio(request: web.Request) -> web.Response:
         waveform, sr = sf.read(str(src_path), always_2d=True)
         total_frames = waveform.shape[0]
 
-        valid_intervals = []
-        for t in spk_turns:
-            s_sec = float(t.get("start_s", 0))
-            e_sec = float(t.get("end_s", 0))
-            if e_sec > s_sec:
-                s_frame = max(0, min(int(round(s_sec * sr)), total_frames))
-                e_frame = max(0, min(int(round(e_sec * sr)), total_frames))
-                if e_frame > s_frame:
-                    valid_intervals.append((s_frame, e_frame))
+        valid_intervals = _padded_audio_intervals(
+            spk_turns,
+            sample_rate=sr,
+            total_frames=total_frames,
+            **extraction_settings,
+        )
 
         if not valid_intervals:
             raise ValueError(f"No valid audio samples found for speaker {speaker_id}")
@@ -2643,6 +2784,7 @@ async def handle_extract_speaker_audio(request: web.Request) -> web.Response:
             "mode": mode,
             "turn_policy": "clean" if clean_turns else "raw",
             "duration_s": extracted.duration_s,
+            "extraction_settings": extraction_settings,
         })
     except Exception as e:
         logger.exception("Speaker extraction failed")
@@ -2671,6 +2813,11 @@ async def handle_extract_all_speakers(request: web.Request) -> web.Response:
         except (TypeError, ValueError) as exc:
             return web.json_response({"error": str(exc)}, status=400)
 
+    try:
+        extraction_settings = _extraction_settings(data)
+    except (TypeError, ValueError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+
     unique_speakers = sorted(list(set(t.get("speaker_id") for t in turns if t.get("speaker_id"))))
     if not unique_speakers:
         return web.json_response({"error": "No valid speakers found in turns"}, status=400)
@@ -2690,15 +2837,12 @@ async def handle_extract_all_speakers(request: web.Request) -> web.Response:
         for spk_id in unique_speakers:
             spk_name = speaker_names.get(spk_id, spk_id)
             spk_turns = [t for t in turns if t.get("speaker_id") == spk_id]
-            valid_intervals = []
-            for t in spk_turns:
-                s_sec = float(t.get("start_s", 0))
-                e_sec = float(t.get("end_s", 0))
-                if e_sec > s_sec:
-                    s_frame = max(0, min(int(round(s_sec * sr)), total_frames))
-                    e_frame = max(0, min(int(round(e_sec * sr)), total_frames))
-                    if e_frame > s_frame:
-                        valid_intervals.append((s_frame, e_frame))
+            valid_intervals = _padded_audio_intervals(
+                spk_turns,
+                sample_rate=sr,
+                total_frames=total_frames,
+                **extraction_settings,
+            )
 
             if not valid_intervals:
                 continue
@@ -2769,6 +2913,7 @@ async def handle_extract_all_speakers(request: web.Request) -> web.Response:
                 "extracted": registered,
                 "total_speakers": len(registered),
                 "turn_policy": "clean" if clean_turns else "raw",
+                "extraction_settings": extraction_settings,
             }
         )
     except Exception as e:
@@ -3834,6 +3979,11 @@ async def handle_export_purity_audio(request: web.Request) -> web.Response:
     if not audio:
         return web.json_response({"error": "Audio not found"}, status=404)
 
+    try:
+        extraction_settings = _extraction_settings(data)
+    except (TypeError, ValueError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+
     out_dir = DATA_DIR / "purity" / "extracted"
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -3842,15 +3992,12 @@ async def handle_export_purity_audio(request: web.Request) -> web.Response:
         waveform, sr = sf.read(str(src_path), always_2d=True)
         total_frames = waveform.shape[0]
 
-        valid_intervals = []
-        for s in segments:
-            s_sec = float(s.get("start_s", 0))
-            e_sec = float(s.get("end_s", 0))
-            if e_sec > s_sec:
-                s_frame = max(0, min(int(round(s_sec * sr)), total_frames))
-                e_frame = max(0, min(int(round(e_sec * sr)), total_frames))
-                if e_frame > s_frame:
-                    valid_intervals.append((s_frame, e_frame))
+        valid_intervals = _padded_audio_intervals(
+            segments,
+            sample_rate=sr,
+            total_frames=total_frames,
+            **extraction_settings,
+        )
 
         if not valid_intervals:
             raise ValueError("No valid audio intervals found in segments")
@@ -3900,6 +4047,7 @@ async def handle_export_purity_audio(request: web.Request) -> web.Response:
             "metadata": extracted_audio.metadata(),
             "duration_s": extracted_audio.duration_s,
             "segments_count": len(segments),
+            "extraction_settings": extraction_settings,
             "status": "success",
         })
     except Exception as e:

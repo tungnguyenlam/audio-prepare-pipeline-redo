@@ -28,6 +28,13 @@ from src.diarization import (
     SpeakerVerifier,
     ThreeDSpeakerDiarizer,
     ThreeDSpeakerWorkerDiarizer,
+    pad_and_merge_intervals,
+)
+from src.diarization.SortformerDiarizer import (
+    DEFAULT_OFFSET as DEFAULT_SORTFORMER_OFFSET,
+    DEFAULT_ONSET as DEFAULT_SORTFORMER_ONSET,
+    DEFAULT_PAD_OFFSET_S as DEFAULT_SORTFORMER_PAD_OFFSET_S,
+    DEFAULT_PAD_ONSET_S as DEFAULT_SORTFORMER_PAD_ONSET_S,
 )
 from src.diarization.schemas import DiarizationResult
 from src.separation import BSRoFormer, HTDemucs, MelRoFormer, MVSepMDX23
@@ -495,6 +502,10 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
     vad_offset = float(job.params.get("vad_offset", 0.3)) if job.params.get("vad_offset") is not None else 0.3
     chunk_duration_s = float(job.params.get("chunk_duration_s", 1.5))
     chunk_step_s = float(job.params.get("chunk_step_s", 0.75))
+    sortformer_onset = float(job.params.get("sortformer_onset", DEFAULT_SORTFORMER_ONSET))
+    sortformer_offset = float(job.params.get("sortformer_offset", DEFAULT_SORTFORMER_OFFSET))
+    sortformer_pad_onset_s = float(job.params.get("sortformer_pad_onset_s", DEFAULT_SORTFORMER_PAD_ONSET_S))
+    sortformer_pad_offset_s = float(job.params.get("sortformer_pad_offset_s", DEFAULT_SORTFORMER_PAD_OFFSET_S))
     backend_key = backend.lower()
 
     if backend_key == "sortformer" and any(
@@ -517,7 +528,13 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
     diarizer = None
     try:
         if backend_key == "sortformer":
-            diarizer = SortformerWorkerDiarizer(device=device)
+            diarizer = SortformerWorkerDiarizer(
+                device=device,
+                onset=sortformer_onset,
+                offset=sortformer_offset,
+                pad_onset_s=sortformer_pad_onset_s,
+                pad_offset_s=sortformer_pad_offset_s,
+            )
         elif backend_key in {"clustering", "nemo-clustering"}:
             oracle_speakers, max_num_speakers = ClusteringDiarizer.resolve_speaker_settings(
                 num_speakers,
@@ -667,6 +684,8 @@ async def process_target_speaker_filter(job: PipelineJob, queue: JobQueueManager
     min_duration_s: float = float(job.params.get("min_duration_s", 1.5))
     exclude_overlap: bool = bool(job.params.get("exclude_overlap", True))
     export_cuts: bool = bool(job.params.get("export_cuts", False))
+    export_pre_roll_s = float(job.params.get("export_pre_roll_s", DEFAULT_SORTFORMER_PAD_ONSET_S))
+    export_post_roll_s = float(job.params.get("export_post_roll_s", DEFAULT_SORTFORMER_PAD_OFFSET_S))
     device: str = job.params.get("device", "cuda" if torch.cuda.is_available() else "cpu")
     hf_token: Optional[str] = job.params.get("hf_token")
 
@@ -743,6 +762,8 @@ async def process_target_speaker_filter(job: PipelineJob, queue: JobQueueManager
                     "threshold": threshold,
                     "min_duration_s": min_duration_s,
                     "exclude_overlap": exclude_overlap,
+                    "export_pre_roll_s": export_pre_roll_s,
+                    "export_post_roll_s": export_post_roll_s,
                     "num_scored": len(scored.segments),
                     "num_kept": len(kept.segments),
                     "kept_duration_s": round(kept_duration, 2),
@@ -766,9 +787,15 @@ async def process_target_speaker_filter(job: PipelineJob, queue: JobQueueManager
                     from src.utils.AudioCutter import AudioCutter
 
                     cutter = AudioCutter(output_dir=item_dir / "segments")
-                    for seg in kept.segments:
+                    cut_windows = pad_and_merge_intervals(
+                        ((seg.start_s, seg.end_s) for seg in kept.segments),
+                        pre_roll_s=export_pre_roll_s,
+                        post_roll_s=export_post_roll_s,
+                        end_bound_s=audio.duration_s,
+                    )
+                    for start_s, end_s in cut_windows:
                         clip = await asyncio.to_thread(
-                            cutter.cut, audio, seg.start_s, seg.end_s
+                            cutter.cut, audio, start_s, end_s
                         )
                         exported_paths.append(str(clip.path))
 

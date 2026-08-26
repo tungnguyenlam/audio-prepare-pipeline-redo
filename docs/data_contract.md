@@ -61,7 +61,14 @@ canonical result. The Studio toggle may use those derived boundaries for
 preview, verification, and speaker-stem extraction, while durable result JSON
 and RTTM export retain all raw turns and overlap evidence. Extracted audio is
 tagged `turns:clean` or `turns:raw` so downstream dataset selection can tell
-which boundary policy produced it.
+which boundary policy produced it. Speaker-stem, purity-stem, and target-speaker
+wav export apply optional pre-roll and post-roll only at cut time. Canonical
+`start_s`/`end_s` values are not rewritten. Padded windows that overlap after
+this expansion are merged before writing.
+
+Studio listen/export cleanup defaults `boundary_collar_s` to `0` so close
+speaker boundaries are not trimmed. The library default of 40 ms remains the
+high-purity identity-clip policy when a caller requests it.
 
 `Speaker.global_speaker_id` names a globally enrolled identity that was
 injected into a supporting diarization pipeline. Turns continue to reference

@@ -885,6 +885,25 @@
                 </div>
               </div>
 
+              <div class="diar-params-row" id="diar-sortformer-params-group" style="display: none;">
+                <div class="form-group flex-1">
+                  <label class="form-label" for="diar-sortformer-onset">Boundary Onset</label>
+                  <input type="number" id="diar-sortformer-onset" class="text-input" min="0" max="1" step="0.01" value="0.74" title="Start a speaker turn above this probability. Keep this greater than or equal to Boundary Offset.">
+                </div>
+                <div class="form-group flex-1">
+                  <label class="form-label" for="diar-sortformer-offset">Boundary Offset</label>
+                  <input type="number" id="diar-sortformer-offset" class="text-input" min="0" max="1" step="0.01" value="0.64" title="End a speaker turn below this probability. Keep this less than or equal to Boundary Onset.">
+                </div>
+                <div class="form-group flex-1">
+                  <label class="form-label" for="diar-sortformer-pad-onset">Detected Pre-pad (s)</label>
+                  <input type="number" id="diar-sortformer-pad-onset" class="text-input" min="0" max="2" step="0.01" value="0.12" title="Extend detected Sortformer turns earlier without changing the source audio.">
+                </div>
+                <div class="form-group flex-1">
+                  <label class="form-label" for="diar-sortformer-pad-offset">Detected Post-pad (s)</label>
+                  <input type="number" id="diar-sortformer-pad-offset" class="text-input" min="0" max="2" step="0.01" value="0.20" title="Extend detected Sortformer turns later to preserve sentence-ending syllables.">
+                </div>
+              </div>
+
               <div class="diar-params-row" id="diar-3d-chunk-group" style="display: none;">
                 <div class="form-group flex-1">
                   <label class="form-label" for="diar-chunk-duration">Embedding Window (s)</label>
@@ -1082,6 +1101,32 @@
             <!-- Hover Tooltip -->
             <div id="diar-turn-tooltip" class="diar-turn-tooltip hidden"></div>
 
+            <div class="diar-params-row" aria-label="Turn cleanup settings">
+              <div class="form-group flex-1">
+                <label class="form-label">3. Turn Cleanup</label>
+                <button type="button" id="btn-diar-clean-turns" class="btn btn-xs btn-ghost diar-clean-turns-btn" title="Apply these cleanup settings as a derived view. Canonical raw diarization remains unchanged." aria-pressed="false">
+                  Clean Turns
+                </button>
+                <span class="badge badge-ghost hidden" id="diar-clean-turns-summary"></span>
+              </div>
+              <div class="form-group flex-1">
+                <label class="form-label" for="diar-clean-jitter-max">A-B-A Jitter Max (s)</label>
+                <input type="number" id="diar-clean-jitter-max" class="text-input" min="0" max="30" step="0.1" value="3.0" title="Relabel a bounded middle A-B-A turn up to this duration. Set 0 to disable.">
+              </div>
+              <div class="form-group flex-1">
+                <label class="form-label" for="diar-clean-boundary-collar">Boundary Trim / Side (s)</label>
+                <input type="number" id="diar-clean-boundary-collar" class="text-input" min="0" max="1" step="0.01" value="0.00" title="Trim this amount from each close different-speaker boundary. Use 0 to avoid clipping syllables.">
+              </div>
+              <div class="form-group flex-1">
+                <label class="form-label" for="diar-clean-merge-gap">Same-speaker Merge Gap (s)</label>
+                <input type="number" id="diar-clean-merge-gap" class="text-input" min="0" max="30" step="0.1" value="1.0" title="Merge consecutive turns from the same speaker across gaps up to this duration.">
+              </div>
+              <div class="form-group flex-1">
+                <label class="form-label" for="diar-clean-min-duration">Min Kept Turn (s)</label>
+                <input type="number" id="diar-clean-min-duration" class="text-input" min="0" max="30" step="0.1" value="0.5" title="Drop residual cleaned turns shorter than this duration.">
+              </div>
+            </div>
+
             <div class="diar-timeline-speakers" id="diar-subview-speakers">
               <div class="subview-header">
                 <div>
@@ -1089,6 +1134,16 @@
                   <p class="subview-desc">Rename speakers, inspect speech metrics, or extract isolated speaker audio stems.</p>
                 </div>
                 <div class="subview-actions flex-wrap gap-2">
+                  <div class="flex-row items-center gap-1">
+                    <label class="text-xs text-muted" for="diar-extract-pre-roll">4. Export Pre-roll:</label>
+                    <input type="number" id="diar-extract-pre-roll" class="filter-num-input" min="0" max="2" step="0.01" value="0.12" title="Seconds included before every exported turn. Canonical timestamps are unchanged.">
+                    <span class="text-xs text-muted">s</span>
+                  </div>
+                  <div class="flex-row items-center gap-1">
+                    <label class="text-xs text-muted" for="diar-extract-post-roll">Post-roll:</label>
+                    <input type="number" id="diar-extract-post-roll" class="filter-num-input" min="0" max="2" step="0.01" value="0.20" title="Seconds included after every exported turn. Overlapping padded intervals are merged.">
+                    <span class="text-xs text-muted">s</span>
+                  </div>
                   <div class="flex-row items-center gap-1">
                     <label class="text-xs text-muted" for="diar-extract-mode-select">Stem Mode:</label>
                     <select id="diar-extract-mode-select" class="select-input select-sm" title="Extraction mode for speaker audio files">
@@ -1200,11 +1255,6 @@
                       Exclude Overlaps
                     </button>
                   </div>
-                  <div class="form-group mb-0">
-                    <button type="button" id="btn-diar-clean-turns" class="btn btn-xs btn-ghost diar-clean-turns-btn" title="Optional output view: fix bounded A-B-A jitter, trim 40 ms per speaker boundary, merge same-speaker gaps up to 1 s, and remove turns shorter than 0.5 s. Raw diarization remains unchanged." aria-pressed="false">
-                      Clean Turns
-                    </button>
-                  </div>
                 </div>
                 <div class="toolbar-right">
                   <div class="form-group mb-0">
@@ -1223,7 +1273,6 @@
                     </select>
                   </div>
                   <button type="button" id="btn-diar-clear-filters" class="btn btn-xs btn-ghost" title="Clear all turn filters">Clear Filters</button>
-                  <span class="badge badge-ghost hidden" id="diar-clean-turns-summary"></span>
                   <span class="badge badge-info" id="diar-filtered-turns-count">0 turns</span>
                   <div class="form-group mb-0 flex-row items-center gap-2">
                     <label class="text-xs text-muted">Sort:</label>
@@ -1701,7 +1750,17 @@
               <div class="flex-row items-center gap-2">
                 <span class="text-xs text-muted" id="purity-footer-selection-info">0 passed candidates ready for export</span>
               </div>
-              <div class="flex-row items-center gap-2">
+              <div class="flex-row items-center gap-2 flex-wrap">
+                <div class="flex-row items-center gap-1">
+                  <label class="text-xs text-muted" for="purity-extract-pre-roll">4. Export Pre-roll:</label>
+                  <input type="number" id="purity-extract-pre-roll" class="filter-num-input" min="0" max="2" step="0.01" value="0.12" title="Seconds included before every exported segment. Canonical timestamps are unchanged.">
+                  <span class="text-xs text-muted">s</span>
+                </div>
+                <div class="flex-row items-center gap-1">
+                  <label class="text-xs text-muted" for="purity-extract-post-roll">Post-roll:</label>
+                  <input type="number" id="purity-extract-post-roll" class="filter-num-input" min="0" max="2" step="0.01" value="0.20" title="Seconds included after every exported segment. Overlapping padded intervals are merged.">
+                  <span class="text-xs text-muted">s</span>
+                </div>
                 <button type="button" class="btn btn-secondary btn-sm" id="btn-purity-download-json" title="Download standard SpeakerPurityResult JSON">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                   <span>JSON Report</span>

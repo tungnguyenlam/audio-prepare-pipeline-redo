@@ -51,8 +51,12 @@ const state = {
     cleanTurnsSettings: {
       min_turn_duration_s: 0.5,
       merge_same_speaker_gap_s: 1.0,
-      boundary_collar_s: 0.04,
+      boundary_collar_s: 0.0,
       jitter_max_duration_s: 3.0,
+    },
+    extractionSettings: {
+      pre_roll_s: 0.12,
+      post_roll_s: 0.20,
     },
     customNames: {},
     colors: {},
@@ -276,6 +280,10 @@ const el = {
   hfTokenInput: document.getElementById('hf-token-input'),
   btnToggleHfVis: document.getElementById('btn-toggle-hf-vis'),
   diarDeviceSelect: document.getElementById('diar-device-select'),
+  diarSortformerOnset: document.getElementById('diar-sortformer-onset'),
+  diarSortformerOffset: document.getElementById('diar-sortformer-offset'),
+  diarSortformerPadOnset: document.getElementById('diar-sortformer-pad-onset'),
+  diarSortformerPadOffset: document.getElementById('diar-sortformer-pad-offset'),
   btnRunDiarization: document.getElementById('btn-run-diarization'),
   btnDiarReset: document.getElementById('btn-diar-reset'),
   diarTaskProgressBox: document.getElementById('diar-task-progress-box'),
@@ -318,6 +326,10 @@ const el = {
   diarTurnTooltip: document.getElementById('diar-turn-tooltip'),
   diarSpeakersGrid: document.getElementById('diar-speakers-grid'),
   diarExtractModeSelect: document.getElementById('diar-extract-mode-select'),
+  diarExtractPreRoll: document.getElementById('diar-extract-pre-roll'),
+  diarExtractPostRoll: document.getElementById('diar-extract-post-roll'),
+  purityExtractPreRoll: document.getElementById('purity-extract-pre-roll'),
+  purityExtractPostRoll: document.getElementById('purity-extract-post-roll'),
   btnExtractAllSpeakers: document.getElementById('btn-extract-all-speakers'),
   diarFilterSpeakerSelect: document.getElementById('diar-filter-speaker-select'),
   diarTurnsSearchInput: document.getElementById('diar-turns-search-input'),
@@ -328,6 +340,10 @@ const el = {
   diarFilterReviewSelect: document.getElementById('diar-filter-review-select'),
   btnDiarClearFilters: document.getElementById('btn-diar-clear-filters'),
   btnDiarCleanTurns: document.getElementById('btn-diar-clean-turns'),
+  diarCleanJitterMax: document.getElementById('diar-clean-jitter-max'),
+  diarCleanBoundaryCollar: document.getElementById('diar-clean-boundary-collar'),
+  diarCleanMergeGap: document.getElementById('diar-clean-merge-gap'),
+  diarCleanMinDuration: document.getElementById('diar-clean-min-duration'),
   diarCleanTurnsSummary: document.getElementById('diar-clean-turns-summary'),
   diarSortTurnsSelect: document.getElementById('diar-sort-turns-select'),
   diarFilteredTurnsCount: document.getElementById('diar-filtered-turns-count'),
@@ -2365,6 +2381,7 @@ function syncDiarModelOptions(modelType) {
   const isDiariZen = modelType === "diarizen" || modelType === "diarizen_large_s80_v2";
   const is3d = modelType === "3d_speaker" || modelType === "3d-speaker" || modelType === "threed_speaker";
   const isClustering = modelType === "clustering" || modelType === "nemo-clustering" || modelType === "nemo_clustering";
+  const isSortformer = modelType === "sortformer";
 
   const hfGroup = document.getElementById("hf-token-group");
   const overlapCheck = document.getElementById("diar-3d-overlap");
@@ -2380,10 +2397,14 @@ function syncDiarModelOptions(modelType) {
   if (clusteringGroup) {
     clusteringGroup.style.display = isClustering ? "" : "none";
   }
+  const sortformerGroup = document.getElementById("diar-sortformer-params-group");
+  if (sortformerGroup) {
+    sortformerGroup.style.display = isSortformer ? "" : "none";
+  }
 
   const enrollmentSelect = document.getElementById('diar-enrollment-profile-select');
   const enrollmentSupport = document.getElementById('diar-enrollment-support');
-  const supportsEnrollment = modelType === 'sortformer';
+  const supportsEnrollment = isSortformer;
   if (enrollmentSelect) {
     enrollmentSelect.disabled = !supportsEnrollment;
     if (!supportsEnrollment) enrollmentSelect.value = '';
@@ -2538,6 +2559,20 @@ function initDiarizationStudio() {
       const chunkStepEl = document.getElementById('diar-chunk-step');
       const chunkDuration = chunkDurationEl ? parseFloat(chunkDurationEl.value) : 1.5;
       const chunkStep = chunkStepEl ? parseFloat(chunkStepEl.value) : 0.75;
+      const sortformerOnset = el.diarSortformerOnset ? parseFloat(el.diarSortformerOnset.value) : 0.74;
+      const sortformerOffset = el.diarSortformerOffset ? parseFloat(el.diarSortformerOffset.value) : 0.64;
+      const sortformerPadOnset = el.diarSortformerPadOnset ? parseFloat(el.diarSortformerPadOnset.value) : 0.12;
+      const sortformerPadOffset = el.diarSortformerPadOffset ? parseFloat(el.diarSortformerPadOffset.value) : 0.20;
+
+      if (
+        modelType === 'sortformer'
+        && Number.isFinite(sortformerOnset)
+        && Number.isFinite(sortformerOffset)
+        && sortformerOnset < sortformerOffset
+      ) {
+        showToast('Sortformer Boundary Onset must be greater than or equal to Boundary Offset', 'error');
+        return;
+      }
 
       el.btnRunDiarization.disabled = true;
       el.diarTaskProgressBox.classList.remove('hidden');
@@ -2572,6 +2607,10 @@ function initDiarizationStudio() {
             vad_offset: Number.isFinite(vadOffset) ? vadOffset : 0.3,
             chunk_duration_s: Number.isFinite(chunkDuration) ? chunkDuration : 1.5,
             chunk_step_s: Number.isFinite(chunkStep) ? chunkStep : 0.75,
+            sortformer_onset: Number.isFinite(sortformerOnset) ? sortformerOnset : 0.74,
+            sortformer_offset: Number.isFinite(sortformerOffset) ? sortformerOffset : 0.64,
+            sortformer_pad_onset_s: Number.isFinite(sortformerPadOnset) ? sortformerPadOnset : 0.12,
+            sortformer_pad_offset_s: Number.isFinite(sortformerPadOffset) ? sortformerPadOffset : 0.20,
             enrollment_profile: enrollmentProfile,
           }),
         });
@@ -2754,6 +2793,24 @@ function initDiarizationStudio() {
   if (el.btnDiarCleanTurns) {
     el.btnDiarCleanTurns.addEventListener('click', toggleDiarizationCleanTurns);
   }
+
+  [
+    el.diarCleanJitterMax,
+    el.diarCleanBoundaryCollar,
+    el.diarCleanMergeGap,
+    el.diarCleanMinDuration,
+  ].filter(Boolean).forEach(input => {
+    input.addEventListener('change', () => {
+      readDiarizationCleanTurnsSettings();
+      if (state.diarization.cleanTurnsEnabled) applyDiarizationCleanTurns();
+    });
+  });
+
+  [el.diarExtractPreRoll, el.diarExtractPostRoll, el.purityExtractPreRoll, el.purityExtractPostRoll]
+    .filter(Boolean)
+    .forEach(input => {
+      input.addEventListener('change', () => readDiarizationExtractionSettings(input));
+    });
 
   if (el.diarSortTurnsSelect) {
     el.diarSortTurnsSelect.addEventListener('change', (e) => {
@@ -3278,6 +3335,55 @@ function canonicalDiarizationTurns(turns, fallbackSpeakerId = "spk_00") {
   }));
 }
 
+function readDiarizationCleanTurnsSettings() {
+  const readNonNegative = (input, fallback) => {
+    const value = input ? parseFloat(input.value) : fallback;
+    return Number.isFinite(value) && value >= 0 ? value : fallback;
+  };
+  state.diarization.cleanTurnsSettings = {
+    jitter_max_duration_s: readNonNegative(el.diarCleanJitterMax, 3.0),
+    boundary_collar_s: readNonNegative(el.diarCleanBoundaryCollar, 0.0),
+    merge_same_speaker_gap_s: readNonNegative(el.diarCleanMergeGap, 1.0),
+    min_turn_duration_s: readNonNegative(el.diarCleanMinDuration, 0.5),
+  };
+  return state.diarization.cleanTurnsSettings;
+}
+
+function readDiarizationExtractionSettings(sourceInput) {
+  const readNonNegative = (input, fallback) => {
+    const value = input ? parseFloat(input.value) : fallback;
+    return Number.isFinite(value) && value >= 0 ? value : fallback;
+  };
+  const preInput = sourceInput && sourceInput.id.includes('pre-roll')
+    ? sourceInput
+    : (el.diarExtractPreRoll || el.purityExtractPreRoll);
+  const postInput = sourceInput && sourceInput.id.includes('post-roll')
+    ? sourceInput
+    : (el.diarExtractPostRoll || el.purityExtractPostRoll);
+  state.diarization.extractionSettings = {
+    pre_roll_s: readNonNegative(preInput, 0.12),
+    post_roll_s: readNonNegative(postInput, 0.20),
+  };
+  const preValue = String(state.diarization.extractionSettings.pre_roll_s);
+  const postValue = String(state.diarization.extractionSettings.post_roll_s);
+  [el.diarExtractPreRoll, el.purityExtractPreRoll].filter(Boolean).forEach(input => {
+    if (input !== preInput) input.value = preValue;
+  });
+  [el.diarExtractPostRoll, el.purityExtractPostRoll].filter(Boolean).forEach(input => {
+    if (input !== postInput) input.value = postValue;
+  });
+  return state.diarization.extractionSettings;
+}
+
+function paddedPreviewWindow(turn) {
+  const settings = readDiarizationExtractionSettings();
+  const duration = state.diarization.duration || state.player.duration || Number.POSITIVE_INFINITY;
+  return {
+    start_s: Math.max(0, turn.start_s - settings.pre_roll_s),
+    end_s: Math.min(duration, turn.end_s + settings.post_roll_s),
+  };
+}
+
 function updateDiarizationCleanTurnsControl() {
   const enabled = state.diarization.cleanTurnsEnabled;
   if (el.btnDiarCleanTurns) {
@@ -3295,17 +3401,7 @@ function updateDiarizationCleanTurnsControl() {
   }
 }
 
-async function toggleDiarizationCleanTurns() {
-  if (!state.diarization.data || !state.diarization.rawTurns.length) return;
-
-  if (state.diarization.cleanTurnsEnabled) {
-    renderDiarizationWorkspace(state.diarization.data, state.diarization.audioId, {
-      rawTurns: state.diarization.rawTurns,
-    });
-    showToast('Showing canonical raw diarization turns', 'info');
-    return;
-  }
-
+async function applyDiarizationCleanTurns() {
   el.btnDiarCleanTurns.disabled = true;
   try {
     const resultId = state.diarization.data.result_id;
@@ -3315,7 +3411,7 @@ async function toggleDiarizationCleanTurns() {
       body: JSON.stringify({
         result_id: resultId || undefined,
         turns: resultId ? undefined : state.diarization.rawTurns,
-        settings: state.diarization.cleanTurnsSettings,
+        settings: readDiarizationCleanTurnsSettings(),
       }),
     });
     const payload = await response.json();
@@ -3332,6 +3428,20 @@ async function toggleDiarizationCleanTurns() {
   } finally {
     updateDiarizationCleanTurnsControl();
   }
+}
+
+async function toggleDiarizationCleanTurns() {
+  if (!state.diarization.data || !state.diarization.rawTurns.length) return;
+
+  if (state.diarization.cleanTurnsEnabled) {
+    renderDiarizationWorkspace(state.diarization.data, state.diarization.audioId, {
+      rawTurns: state.diarization.rawTurns,
+    });
+    showToast('Showing canonical raw diarization turns', 'info');
+    return;
+  }
+
+  await applyDiarizationCleanTurns();
 }
 
 function renderDiarizationWorkspace(diarization, audioId, options = {}) {
@@ -4181,9 +4291,10 @@ function renderTurnsTable() {
     tr.querySelector('.btn-play-turn').addEventListener('click', (e) => {
       e.stopPropagation();
       const audioId = state.diarization.audioId || el.diarInputSelect.value;
+      const previewWindow = paddedPreviewWindow(turn);
       loadAudioIntoPlayer(audioId);
-      seekTo(turn.start_s);
-      state.player.previewEnd = turn.end_s;
+      seekTo(previewWindow.start_s);
+      state.player.previewEnd = previewWindow.end_s;
       el.audio.play();
     });
 
@@ -4252,6 +4363,7 @@ async function extractSpeakerAudio(speakerId, speakerName) {
         turns: rawTurns,
         clean_turns: state.diarization.cleanTurnsEnabled,
         settings: state.diarization.cleanTurnsSettings,
+        extraction_settings: readDiarizationExtractionSettings(),
       }),
     });
     const data = await res.json();
@@ -4284,6 +4396,7 @@ async function extractAllSpeakers() {
         turns: state.diarization.rawTurns,
         clean_turns: state.diarization.cleanTurnsEnabled,
         settings: state.diarization.cleanTurnsSettings,
+        extraction_settings: readDiarizationExtractionSettings(),
         speaker_names: state.diarization.customNames,
       }),
     });
@@ -4914,6 +5027,7 @@ async function exportTargetSpeakerSegments() {
           start_s: segment.start_s,
           end_s: segment.end_s,
         })),
+        extraction_settings: readDiarizationExtractionSettings(),
       }),
     });
     const data = await response.json();
@@ -5903,6 +6017,7 @@ async function exportPurityAudio(mode = 'concat') {
           start_s: r.start_s,
           end_s: r.end_s,
         })),
+        extraction_settings: readDiarizationExtractionSettings(),
       }),
     });
 

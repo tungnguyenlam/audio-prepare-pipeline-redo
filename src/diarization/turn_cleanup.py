@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from math import isfinite
-from typing import Sequence
+from typing import Iterable, Sequence
 
 from src.diarization.schemas import SpeakerTurn
 
@@ -145,3 +145,70 @@ def clean_speaker_turns(
     return [
         turn for turn in merged if turn.duration_s >= min_turn_duration_s
     ]
+
+
+def pad_and_merge_intervals(
+    intervals: Iterable[tuple[float, float]],
+    *,
+    pre_roll_s: float = 0.0,
+    post_roll_s: float = 0.0,
+    start_bound_s: float = 0.0,
+    end_bound_s: float | None = None,
+) -> list[tuple[float, float]]:
+    """Expand time windows for extraction, then merge any that overlap or touch.
+
+    Canonical diarization timestamps are not rewritten. Callers use this only
+    when cutting or concatenating audio.
+
+    Args:
+        intervals: Inclusive-start, exclusive-end windows in seconds.
+        pre_roll_s: Seconds added before each window.
+        post_roll_s: Seconds added after each window.
+        start_bound_s: Inclusive lower clamp, typically ``0``.
+        end_bound_s: Optional inclusive upper clamp, typically source duration.
+
+    Returns:
+        Merged windows ordered by start time. Empty or inverted inputs are
+        dropped.
+
+    Raises:
+        TypeError: If a bound is not a number.
+        ValueError: If a bound is non-finite or a roll is negative.
+    """
+    settings = {
+        "pre_roll_s": pre_roll_s,
+        "post_roll_s": post_roll_s,
+        "start_bound_s": start_bound_s,
+    }
+    for name, value in settings.items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TypeError(f"{name} must be a number")
+        if not isfinite(value):
+            raise ValueError(f"{name} must be finite")
+    if pre_roll_s < 0 or post_roll_s < 0:
+        raise ValueError("pre_roll_s and post_roll_s must be non-negative")
+    if end_bound_s is not None:
+        if isinstance(end_bound_s, bool) or not isinstance(end_bound_s, (int, float)):
+            raise TypeError("end_bound_s must be a number")
+        if not isfinite(end_bound_s):
+            raise ValueError("end_bound_s must be finite")
+
+    padded: list[tuple[float, float]] = []
+    for start_s, end_s in intervals:
+        if end_s <= start_s:
+            continue
+        padded_start = max(start_bound_s, start_s - pre_roll_s)
+        padded_end = end_s + post_roll_s
+        if end_bound_s is not None:
+            padded_end = min(end_bound_s, padded_end)
+        if padded_end > padded_start:
+            padded.append((padded_start, padded_end))
+
+    padded.sort(key=lambda window: window[0])
+    merged: list[tuple[float, float]] = []
+    for start_s, end_s in padded:
+        if merged and start_s <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end_s))
+        else:
+            merged.append((start_s, end_s))
+    return merged

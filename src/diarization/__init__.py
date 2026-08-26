@@ -46,6 +46,7 @@ from src.diarization.turn_cleanup import (
     DEFAULT_MERGE_SAME_SPEAKER_GAP_S,
     DEFAULT_MIN_TURN_DURATION_S,
     clean_speaker_turns,
+    pad_and_merge_intervals,
 )
 
 from src.diarization.schemas import (
@@ -105,4 +106,5 @@ __all__ = [
     "DEFAULT_MIN_TURN_DURATION_S",
     "clean_speaker_turns",
     "create_overlap_verifier",
+    "pad_and_merge_intervals",
 ]

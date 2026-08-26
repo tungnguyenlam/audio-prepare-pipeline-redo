@@ -153,6 +153,11 @@
     diarHfToken: document.getElementById('diar-hf-token'),
     btnToggleTokenVis: document.getElementById('btn-toggle-token-vis'),
     diarBackendRadios: document.querySelectorAll('input[name="diar-backend-radio"]'),
+    diarSortformerGroup: document.getElementById('diar-sortformer-group'),
+    diarSortformerOnset: document.getElementById('diar-sortformer-onset'),
+    diarSortformerOffset: document.getElementById('diar-sortformer-offset'),
+    diarSortformerPadOnset: document.getElementById('diar-sortformer-pad-onset'),
+    diarSortformerPadOffset: document.getElementById('diar-sortformer-pad-offset'),
     diar3dChunkGroup: document.getElementById('diar-3d-chunk-group'),
     diarChunkDuration: document.getElementById('diar-chunk-duration'),
     diarChunkStep: document.getElementById('diar-chunk-step'),
@@ -1374,6 +1379,9 @@
 
     // Diarization backend radio cards
     function syncDiarBackendOptions(backend) {
+      if (els.diarSortformerGroup) {
+        els.diarSortformerGroup.style.display = backend === 'sortformer' ? '' : 'none';
+      }
       if (els.diar3dChunkGroup) {
         const is3d = backend === '3d_speaker' || backend === '3d-speaker' || backend === 'threed_speaker';
         els.diar3dChunkGroup.style.display = is3d ? '' : 'none';
@@ -1412,6 +1420,15 @@
         const includeOverlap = els.diar3dOverlap ? els.diar3dOverlap.checked : false;
         const vadOnset = els.diarVadOnset && els.diarVadOnset.value ? parseFloat(els.diarVadOnset.value) : 0.5;
         const vadOffset = els.diarVadOffset && els.diarVadOffset.value ? parseFloat(els.diarVadOffset.value) : 0.3;
+        const sortformerOnset = els.diarSortformerOnset ? parseFloat(els.diarSortformerOnset.value) : 0.74;
+        const sortformerOffset = els.diarSortformerOffset ? parseFloat(els.diarSortformerOffset.value) : 0.64;
+        const sortformerPadOnset = els.diarSortformerPadOnset ? parseFloat(els.diarSortformerPadOnset.value) : 0.12;
+        const sortformerPadOffset = els.diarSortformerPadOffset ? parseFloat(els.diarSortformerPadOffset.value) : 0.20;
+
+        if (backend === 'sortformer' && sortformerOnset < sortformerOffset) {
+          showToast('Sortformer Boundary Onset must be greater than or equal to Boundary Offset', 'danger');
+          return;
+        }
 
         try {
           const res = await fetch('/api/jobs/batch_diarization', {
@@ -1431,6 +1448,10 @@
               vad_offset: Number.isFinite(vadOffset) ? vadOffset : 0.3,
               chunk_duration_s: Number.isFinite(chunkDuration) ? chunkDuration : 1.5,
               chunk_step_s: Number.isFinite(chunkStep) ? chunkStep : 0.75,
+              sortformer_onset: Number.isFinite(sortformerOnset) ? sortformerOnset : 0.74,
+              sortformer_offset: Number.isFinite(sortformerOffset) ? sortformerOffset : 0.64,
+              sortformer_pad_onset_s: Number.isFinite(sortformerPadOnset) ? sortformerPadOnset : 0.12,
+              sortformer_pad_offset_s: Number.isFinite(sortformerPadOffset) ? sortformerPadOffset : 0.20,
             }),
           });
           const job = await res.json();
@@ -1494,6 +1515,8 @@
       const minDur = parseFloat(document.getElementById('ts-pipe-min-dur').value);
       const excludeOverlap = document.getElementById('ts-pipe-exclude-overlap').checked;
       const exportCuts = document.getElementById('ts-pipe-export-cuts').checked;
+      const preRoll = parseFloat(document.getElementById('ts-pipe-pre-roll').value);
+      const postRoll = parseFloat(document.getElementById('ts-pipe-post-roll').value);
       const deviceSel = document.getElementById('ts-pipe-device');
       const device = state.selectedGpu || (deviceSel ? deviceSel.value : 'cuda');
       const token = els.diarHfToken ? els.diarHfToken.value.trim() || null : null;
@@ -1516,6 +1539,8 @@
               min_duration_s: Number.isFinite(minDur) ? minDur : 1.5,
               exclude_overlap: excludeOverlap,
               export_cuts: exportCuts,
+              export_pre_roll_s: Number.isFinite(preRoll) ? preRoll : 0.12,
+              export_post_roll_s: Number.isFinite(postRoll) ? postRoll : 0.20,
               device,
               hf_token: token,
             }),

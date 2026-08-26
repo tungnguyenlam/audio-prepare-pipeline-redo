@@ -12,6 +12,7 @@ import shutil
 import sys
 import time
 import uuid
+from math import isfinite
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -27,6 +28,12 @@ os.environ.setdefault("HF_HOME", str(ROOT_DIR / ".data" / "huggingface"))
 
 from src.yt_crawler.YtCrawlerClass import parse_crawl_sample_rate
 from src.utils.AudioClass import DEFAULT_SAMPLE_RATE, Audio
+from src.diarization.SortformerDiarizer import (
+    DEFAULT_OFFSET as DEFAULT_SORTFORMER_OFFSET,
+    DEFAULT_ONSET as DEFAULT_SORTFORMER_ONSET,
+    DEFAULT_PAD_OFFSET_S as DEFAULT_SORTFORMER_PAD_OFFSET_S,
+    DEFAULT_PAD_ONSET_S as DEFAULT_SORTFORMER_PAD_ONSET_S,
+)
 from src.web_pipeline.batch_processors import register_all_handlers
 from src.web_pipeline.dataset_manager import dataset_manager
 from src.web_pipeline.hardware_monitor import hardware_monitor
@@ -566,6 +573,25 @@ async def handle_submit_diarization(request: web.Request) -> web.Response:
         vad_offset = body.get("vad_offset", 0.3)
         chunk_duration_s = body.get("chunk_duration_s", 1.5)
         chunk_step_s = body.get("chunk_step_s", 0.75)
+        sortformer_onset = float(body.get("sortformer_onset", DEFAULT_SORTFORMER_ONSET))
+        sortformer_offset = float(body.get("sortformer_offset", DEFAULT_SORTFORMER_OFFSET))
+        sortformer_pad_onset_s = float(body.get("sortformer_pad_onset_s", DEFAULT_SORTFORMER_PAD_ONSET_S))
+        sortformer_pad_offset_s = float(body.get("sortformer_pad_offset_s", DEFAULT_SORTFORMER_PAD_OFFSET_S))
+        if not (
+            isfinite(sortformer_onset)
+            and isfinite(sortformer_offset)
+            and 0 <= sortformer_offset <= sortformer_onset <= 1
+        ):
+            return json_error(
+                "Sortformer thresholds must satisfy 0 <= offset <= onset <= 1"
+            )
+        if (
+            not isfinite(sortformer_pad_onset_s)
+            or not isfinite(sortformer_pad_offset_s)
+            or sortformer_pad_onset_s < 0
+            or sortformer_pad_offset_s < 0
+        ):
+            return json_error("Sortformer boundary padding must be non-negative")
 
         if not item_ids and (dataset or channel_id or "dataset" in body):
             target_ds = None if (not dataset or dataset == "all") else dataset
@@ -596,6 +622,10 @@ async def handle_submit_diarization(request: web.Request) -> web.Response:
                 "vad_offset": vad_offset,
                 "chunk_duration_s": chunk_duration_s,
                 "chunk_step_s": chunk_step_s,
+                "sortformer_onset": sortformer_onset,
+                "sortformer_offset": sortformer_offset,
+                "sortformer_pad_onset_s": sortformer_pad_onset_s,
+                "sortformer_pad_offset_s": sortformer_pad_offset_s,
             },
             total_items=len(item_ids),
         )
@@ -616,6 +646,15 @@ async def handle_submit_target_speaker(request: web.Request) -> web.Response:
         min_duration_s = float(body.get("min_duration_s", 1.5))
         exclude_overlap = bool(body.get("exclude_overlap", True))
         export_cuts = bool(body.get("export_cuts", False))
+        export_pre_roll_s = float(body.get("export_pre_roll_s", DEFAULT_SORTFORMER_PAD_ONSET_S))
+        export_post_roll_s = float(body.get("export_post_roll_s", DEFAULT_SORTFORMER_PAD_OFFSET_S))
+        if (
+            not isfinite(export_pre_roll_s)
+            or not isfinite(export_post_roll_s)
+            or export_pre_roll_s < 0
+            or export_post_roll_s < 0
+        ):
+            return json_error("Export pre-roll and post-roll must be non-negative")
         device = body.get("device", "cuda" if torch.cuda.is_available() else "cpu")
         hf_token = body.get("hf_token")
 
@@ -646,6 +685,8 @@ async def handle_submit_target_speaker(request: web.Request) -> web.Response:
                 "min_duration_s": min_duration_s,
                 "exclude_overlap": exclude_overlap,
                 "export_cuts": export_cuts,
+                "export_pre_roll_s": export_pre_roll_s,
+                "export_post_roll_s": export_post_roll_s,
                 "device": device,
                 "hf_token": hf_token,
             },

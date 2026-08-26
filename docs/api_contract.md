@@ -310,6 +310,16 @@ non-negative numbers. Existing `overlaps_other_speaker` evidence is retained
 through relabeling and merging; cleanup does not claim to remove overlapping
 speech.
 
+### `pad_and_merge_intervals(intervals, *, pre_roll_s=0.0, post_roll_s=0.0, start_bound_s=0.0, end_bound_s=None) -> list[tuple[float, float]]`
+
+**Defined in:** `src/diarization/turn_cleanup.py`
+
+Expands extraction windows by `pre_roll_s` / `post_roll_s`, clamps them to
+`start_bound_s` and optional `end_bound_s` (typically source duration), and
+merges windows that overlap or touch. Canonical `start_s` / `end_s` values are
+not rewritten. Empty or inverted inputs are dropped. Bounds must be finite
+numbers; roll values must be non-negative.
+
 ### `PyannoteDiarizer(model_id=..., device=..., token=..., num_speakers=..., min_speakers=..., max_speakers=...)`
 
 **Defined in:** `src/diarization/PyannoteDiarizer.py`
@@ -374,7 +384,9 @@ starts. Hugging Face downloads use `.data/huggingface` as the default cache
 - Processes at most six minutes per inference call by default, with a one-minute
   overlap between adjacent windows.
 - Converts the model's 80 ms, four-channel activity probabilities into speaker
-  turns with configurable hysteresis and duration post-processing.
+  turns with configurable hysteresis and duration post-processing. Boundary
+  defaults are `onset=0.74`, `offset=0.64`, `pad_onset_s=0.12`, and
+  `pad_offset_s=0.20`; hysteresis requires `onset >= offset`.
 - Aligns speaker slots between windows using activity in the shared region.
 - Uses TitaNet embeddings as a fallback when a speaker is absent from the
   overlap, unless speaker similarity is disabled.
@@ -922,8 +934,17 @@ The repository provides two specialized web platforms:
   speaker-stem extraction.
   `POST /api/diarization/extract-speaker` and
   `POST /api/diarization/extract-all-speakers` accept `clean_turns` plus the
-  same `settings`; registered stems are tagged `turns:clean` or `turns:raw`.
-  RTTM export continues to use the canonical raw turns.
+  same `settings`. They and `POST /api/purity/export-audio` also accept
+  `extraction_settings` with `pre_roll_s` and `post_roll_s` (defaults 0.12 and
+  0.20 seconds). Padding is clamped to the source, and padded intervals that
+  overlap are merged before concatenated or time-aligned export. Registered
+  stems are tagged `turns:clean` or `turns:raw`. Canonical turns and RTTM export
+  remain unchanged. Studio exposes boundary detection, cleanup, and extraction
+  controls in that workflow order; its cleanup collar defaults to zero to
+  avoid removing speech at close boundaries. Turn Inspector **Play** uses the
+  same export pre/post-roll so audition matches extracted stems. Purity
+  verification preview clips stay tight for speaker identity; purity stem
+  export uses the same extraction padding.
 - **Persistence:** Studio's diarization history and result-first verifier load
   the server-side canonical result catalog after refresh or restart. Result JSON
   lives under `.data/diarization/results/`. The Studio session audio registry is
@@ -945,7 +966,10 @@ The repository provides two specialized web platforms:
 - **Channel-scoped jobs:** `POST /api/jobs/batch_separation` and
   `POST /api/jobs/batch_diarization` accept optional `channel_id` alongside
   `dataset`; when item IDs are omitted, both filters are applied to resolve the
-  batch. Their Pipeline forms expose the same channel selector.
+  batch. Batch diarization additionally accepts `sortformer_onset`,
+  `sortformer_offset`, `sortformer_pad_onset_s`, and
+  `sortformer_pad_offset_s`. Their Pipeline forms expose these settings and the
+  same channel selector.
 - **Frontend layout:** Flat `static/index.html` + `app.js` + `style.css`.
 - **Job progress:** Server-Sent Events on `GET /api/events` (queue/job updates
   plus telemetry heartbeats). Initial hydrate still uses `GET /api/jobs`.
@@ -955,10 +979,12 @@ The repository provides two specialized web platforms:
   (default 1), not a single global worker pool.
 - **Target speaker filter job:** `POST /api/jobs/target_speaker_filter`
   (params: `item_ids`/`dataset`/`channel_id`, `profile`, `threshold`, `min_duration_s`,
-  `exclude_overlap`, `export_cuts`, `device`, `hf_token`) scores items with
+  `exclude_overlap`, `export_cuts`, `export_pre_roll_s`, `export_post_roll_s`,
+  `device`, `hf_token`) scores items with
   attached diarization against an enrolled profile, writes
   `.data/pipeline/target_speaker/<item_id>/target_speaker__<profile>.json` (kept plus all
-  scored segments), optionally exports kept segments as wav cuts, and attaches
+  scored segments), optionally exports kept segments as padded wav cuts with
+  overlapping padded windows merged, and attaches
   a summary (including qualified segment/duration percentages) under both the
   last-result compatibility key `metadata["target_speaker"]` and the
   per-profile map `metadata["target_speakers"]`. Pipeline-owned state is kept
