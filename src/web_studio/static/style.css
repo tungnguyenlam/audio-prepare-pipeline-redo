@@ -3329,6 +3329,7 @@ button {
 }
 
 .diar-turn-review-filter-toolbar .toolbar-right {
+  flex-basis: 100%;
   justify-content: flex-end;
 }
 
