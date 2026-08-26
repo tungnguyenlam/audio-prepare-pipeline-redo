@@ -44,7 +44,16 @@ const state = {
     audioId: null,
     data: null,
     speakers: [],
+    rawTurns: [],
     turns: [],
+    cleanTurnsEnabled: false,
+    cleanTurnsSummary: null,
+    cleanTurnsSettings: {
+      min_turn_duration_s: 0.5,
+      merge_same_speaker_gap_s: 1.0,
+      boundary_collar_s: 0.04,
+      jitter_max_duration_s: 3.0,
+    },
     customNames: {},
     colors: {},
     zoom: 1.0,
@@ -74,7 +83,6 @@ const state = {
     threshold: 0.60,
     minDur: 1.5,
     excludeOverlap: true,
-    hideFiltered: false,
     labels: {},
   },
 
@@ -114,11 +122,6 @@ const state = {
     allWindowsExpanded: false,
   },
 };
-
-const targetSegmentAudio = new Audio();
-let activeTargetSegmentKey = null;
-let targetSegmentPlayRaf = 0;
-targetSegmentAudio.addEventListener('ended', stopTargetSegmentPreview);
 
 const puritySegmentAudio = new Audio();
 let activePuritySegmentKey = null;
@@ -319,6 +322,8 @@ const el = {
   diarFilterMinDur: document.getElementById('diar-filter-min-dur'),
   diarFilterMaxDur: document.getElementById('diar-filter-max-dur'),
   btnDiarFilterOverlaps: document.getElementById('btn-diar-filter-overlaps'),
+  btnDiarCleanTurns: document.getElementById('btn-diar-clean-turns'),
+  diarCleanTurnsSummary: document.getElementById('diar-clean-turns-summary'),
   diarSortTurnsSelect: document.getElementById('diar-sort-turns-select'),
   diarFilteredTurnsCount: document.getElementById('diar-filtered-turns-count'),
   turnsTableBody: document.getElementById('turns-table-body'),
@@ -2694,6 +2699,10 @@ function initDiarizationStudio() {
     });
   }
 
+  if (el.btnDiarCleanTurns) {
+    el.btnDiarCleanTurns.addEventListener('click', toggleDiarizationCleanTurns);
+  }
+
   if (el.diarSortTurnsSelect) {
     el.diarSortTurnsSelect.addEventListener('change', (e) => {
       state.diarization.sortMode = e.target.value;
@@ -2789,7 +2798,10 @@ function updateDiarInputMeta(audioId) {
 
 function clearDiarizationWorkspace() {
   state.diarization.data = null;
+  state.diarization.rawTurns = [];
   state.diarization.turns = [];
+  state.diarization.cleanTurnsEnabled = false;
+  state.diarization.cleanTurnsSummary = null;
   state.diarization.speakers = [];
   state.diarization.customNames = {};
   state.diarization.colors = {};
@@ -2802,6 +2814,7 @@ function clearDiarizationWorkspace() {
     el.btnDiarFilterOverlaps.classList.remove('active');
     el.btnDiarFilterOverlaps.setAttribute('aria-pressed', 'false');
   }
+  updateDiarizationCleanTurnsControl();
   if (el.audio) el.audio.muted = false;
   if (el.diarResultsWrapper) el.diarResultsWrapper.classList.add('hidden');
   if (el.diarEmptyPlaceholder) el.diarEmptyPlaceholder.classList.remove('hidden');
@@ -2876,11 +2889,11 @@ function saveDiarizationToHistory(diarization, audioId, runResult = {}) {
 
   const audio = state.audioList.find(item => item.id === audioId) || {};
   const completeData = cloneDiarizationData(state.diarization.data || diarization);
-  completeData.turns = cloneDiarizationData(state.diarization.turns);
+  completeData.turns = cloneDiarizationData(state.diarization.rawTurns);
   completeData.speakers = cloneDiarizationData(state.diarization.speakers);
   completeData.duration_s = state.diarization.duration;
 
-  const totalSpeechS = state.diarization.turns.reduce(
+  const totalSpeechS = state.diarization.rawTurns.reduce(
     (total, turn) => total + Math.max(0, turn.end_s - turn.start_s),
     0,
   );
@@ -2897,7 +2910,7 @@ function saveDiarizationToHistory(diarization, audioId, runResult = {}) {
     model_backend: modelBackend,
     model_id: completeData.model?.model_id || null,
     speaker_count: state.diarization.speakers.length,
-    turn_count: state.diarization.turns.length,
+    turn_count: state.diarization.rawTurns.length,
     total_speech_s: totalSpeechS,
     speech_ratio_pct: state.diarization.duration > 0
       ? Number(((totalSpeechS / state.diarization.duration) * 100).toFixed(1))
@@ -2938,7 +2951,7 @@ function updateActiveDiarizationHistory() {
   const item = state.diarization.history.find(entry => entry.id === state.diarization.activeHistoryId);
   if (!item || !state.diarization.data) return;
   item.diarization = cloneDiarizationData(state.diarization.data);
-  item.diarization.turns = cloneDiarizationData(state.diarization.turns);
+  item.diarization.turns = cloneDiarizationData(state.diarization.rawTurns);
   item.diarization.speakers = cloneDiarizationData(state.diarization.speakers);
   item.custom_names = { ...state.diarization.customNames };
   item.colors = { ...state.diarization.colors };
@@ -3145,11 +3158,85 @@ function setDiarZoom(zoom) {
   renderDiarRuler();
 }
 
-function renderDiarizationWorkspace(diarization, audioId) {
+function normalizedDiarizationTurns(turns, fallbackSpeakerId = "spk_00") {
+  return (turns || []).map(t => ({
+    ...t,
+    speaker_id: t.speaker_id || fallbackSpeakerId,
+    start_s: roundNum(Math.max(0, Number(t.start_s) || 0), 2),
+    end_s: roundNum(Math.max(0.05, Number(t.end_s) || 0), 2),
+  }));
+}
+
+function canonicalDiarizationTurns(turns, fallbackSpeakerId = "spk_00") {
+  return (turns || []).map(t => ({
+    ...t,
+    speaker_id: t.speaker_id || fallbackSpeakerId,
+    start_s: Math.max(0, Number(t.start_s) || 0),
+    end_s: Math.max(0.05, Number(t.end_s) || 0),
+  }));
+}
+
+function updateDiarizationCleanTurnsControl() {
+  const enabled = state.diarization.cleanTurnsEnabled;
+  if (el.btnDiarCleanTurns) {
+    el.btnDiarCleanTurns.disabled = !state.diarization.rawTurns.length;
+    el.btnDiarCleanTurns.classList.toggle('active', enabled);
+    el.btnDiarCleanTurns.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+    el.btnDiarCleanTurns.textContent = enabled ? 'Clean Turns: On' : 'Clean Turns';
+  }
+  if (!el.diarCleanTurnsSummary) return;
+  const summary = state.diarization.cleanTurnsSummary;
+  el.diarCleanTurnsSummary.classList.toggle('hidden', !enabled || !summary);
+  if (enabled && summary) {
+    el.diarCleanTurnsSummary.textContent = `${summary.raw_turn_count} raw → ${summary.clean_turn_count} clean`;
+    el.diarCleanTurnsSummary.title = `Non-destructive view; canonical raw result is unchanged. ${Number(summary.raw_duration_s || 0).toFixed(1)}s raw → ${Number(summary.clean_duration_s || 0).toFixed(1)}s clean.`;
+  }
+}
+
+async function toggleDiarizationCleanTurns() {
+  if (!state.diarization.data || !state.diarization.rawTurns.length) return;
+
+  if (state.diarization.cleanTurnsEnabled) {
+    renderDiarizationWorkspace(state.diarization.data, state.diarization.audioId, {
+      rawTurns: state.diarization.rawTurns,
+    });
+    showToast('Showing canonical raw diarization turns', 'info');
+    return;
+  }
+
+  el.btnDiarCleanTurns.disabled = true;
+  try {
+    const resultId = state.diarization.data.result_id;
+    const response = await fetch('/api/diarization/clean-turns', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        result_id: resultId || undefined,
+        turns: resultId ? undefined : state.diarization.rawTurns,
+        settings: state.diarization.cleanTurnsSettings,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Could not clean diarization turns');
+    renderDiarizationWorkspace(state.diarization.data, state.diarization.audioId, {
+      rawTurns: state.diarization.rawTurns,
+      viewTurns: payload.turns,
+      cleanTurnsEnabled: true,
+      cleanTurnsSummary: payload.summary,
+    });
+    showToast(`Clean view: ${payload.summary.raw_turn_count} raw → ${payload.summary.clean_turn_count} turns`, 'success');
+  } catch (err) {
+    showToast(`Clean-turn cleanup failed: ${err.message}`, 'error');
+  } finally {
+    updateDiarizationCleanTurnsControl();
+  }
+}
+
+function renderDiarizationWorkspace(diarization, audioId, options = {}) {
   resetTargetSpeakerEvaluation({ preserveSelection: true });
   state.targetSpeaker.assignedSpeakerId = '';
   state.diarization.audioId = audioId;
-  state.diarization.data = diarization || state.diarization.data || {};
+  state.diarization.data = cloneDiarizationData(diarization || state.diarization.data || {});
   state.diarization.soloSpeaker = null;
   state.diarization.mutedSpeakers.clear();
   state.diarization.activeSpeakerFilter = 'all';
@@ -3166,27 +3253,29 @@ function renderDiarizationWorkspace(diarization, audioId) {
   }
   if (el.audio) el.audio.muted = false;
 
-  const rawSpeakers = (diarization && diarization.speakers) || state.diarization.speakers || [];
+  const rawSpeakers = state.diarization.data.speakers || state.diarization.speakers || [];
   state.diarization.speakers = rawSpeakers.map(s => {
     if (typeof s === 'string') return { speaker_id: s };
     if (s && s.speaker_id) return s;
     return { speaker_id: s?.id || String(s) };
   });
 
-  const rawTurns = (diarization && diarization.turns) || state.diarization.turns || [];
-  state.diarization.turns = rawTurns.map(t => ({
-    ...t,
-    speaker_id: t.speaker_id || (state.diarization.speakers[0]?.speaker_id || "spk_00"),
-    start_s: roundNum(Math.max(0, Number(t.start_s) || 0), 2),
-    end_s: roundNum(Math.max(0.05, Number(t.end_s) || 0), 2),
-  }));
+  const fallbackSpeakerId = state.diarization.speakers[0]?.speaker_id || "spk_00";
+  const canonicalTurns = options.rawTurns || state.diarization.data.turns || [];
+  state.diarization.rawTurns = canonicalDiarizationTurns(canonicalTurns, fallbackSpeakerId);
+  state.diarization.turns = normalizedDiarizationTurns(
+    options.viewTurns || state.diarization.rawTurns,
+    fallbackSpeakerId,
+  );
+  state.diarization.cleanTurnsEnabled = options.cleanTurnsEnabled === true;
+  state.diarization.cleanTurnsSummary = options.cleanTurnsSummary || null;
 
   if (el.diarEmptyPlaceholder) el.diarEmptyPlaceholder.classList.add('hidden');
   if (el.diarResultsWrapper) el.diarResultsWrapper.classList.remove('hidden');
 
   const audioItem = state.audioList.find(a => a.id === audioId);
   const maxTurnEnd = state.diarization.turns.length > 0 ? Math.max(...state.diarization.turns.map(t => t.end_s)) : 10;
-  const totalAudioDuration = (audioItem ? audioItem.duration_s : 0) || (diarization && diarization.duration_s) || maxTurnEnd || 10;
+  const totalAudioDuration = (audioItem ? audioItem.duration_s : 0) || state.diarization.data.duration_s || maxTurnEnd || 10;
   state.diarization.duration = totalAudioDuration;
 
   if (state.diarization.speakers.length === 0) {
@@ -3194,7 +3283,7 @@ function renderDiarizationWorkspace(diarization, audioId) {
     state.diarization.speakers = uniqueSpkIds.map(id => ({ speaker_id: id }));
   }
 
-  state.diarization.data.turns = state.diarization.turns;
+  state.diarization.data.turns = cloneDiarizationData(state.diarization.rawTurns);
   state.diarization.data.speakers = state.diarization.speakers;
   state.diarization.data.duration_s = totalAudioDuration;
 
@@ -3213,7 +3302,7 @@ function renderDiarizationWorkspace(diarization, audioId) {
   const speechRatioPct = totalAudioDuration > 0 ? ((totalSpeechS / totalAudioDuration) * 100).toFixed(1) : "0.0";
 
   if (el.diarModelBadge) {
-    const backend = diarization?.model?.backend || diarization?.model?.model_id || "Pyannote";
+    const backend = state.diarization.data.model?.backend || state.diarization.data.model?.model_id || "Pyannote";
     el.diarModelBadge.textContent = diarizationModelLabel(backend);
   }
   if (el.diarSpeakerCountBadge) {
@@ -3227,6 +3316,7 @@ function renderDiarizationWorkspace(diarization, audioId) {
   }
 
   if (el.diarSubtabTurnsCount) el.diarSubtabTurnsCount.textContent = state.diarization.turns.length;
+  updateDiarizationCleanTurnsControl();
 
   if (el.diarFilterSpeakerSelect) {
     el.diarFilterSpeakerSelect.innerHTML = `<option value="all">All Speakers (${state.diarization.speakers.length})</option>` +
@@ -3251,7 +3341,7 @@ function renderDiarizationWorkspace(diarization, audioId) {
 
 function detectTurnOverlaps() {
   const turns = state.diarization.turns;
-  turns.forEach(t => { t.has_overlap = false; });
+  turns.forEach(t => { t.has_overlap = Boolean(t.overlaps_other_speaker); });
 
   for (let i = 0; i < turns.length; i++) {
     for (let j = i + 1; j < turns.length; j++) {
@@ -3892,7 +3982,7 @@ function renderTurnsTable() {
   }
 
   if (turns.length === 0) {
-    el.turnsTableBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted" style="padding: 24px;">No turns match the active filter criteria.</td></tr>`;
+    el.turnsTableBody.innerHTML = `<tr><td colspan="8" class="text-center text-muted" style="padding: 24px;">No turns match the active filter criteria.</td></tr>`;
     return;
   }
 
@@ -3900,10 +3990,25 @@ function renderTurnsTable() {
     const idx = turn.originalIndex;
     const color = getSpeakerColor(turn.speaker_id);
     const duration = Math.max(0, turn.end_s - turn.start_s).toFixed(2);
+    const scoredSegment = findTargetScoredSegment(turn);
+    const segmentKey = scoredSegment ? targetSegmentKey(scoredSegment) : '';
+    const proposed = scoredSegment ? isTargetSegmentProposed(scoredSegment) : false;
+    const label = segmentKey ? (state.targetSpeaker.labels[segmentKey] || 'unreviewed') : 'unreviewed';
+    const targetScore = scoredSegment
+      ? `<strong>${Number(scoredSegment.similarity).toFixed(3)}</strong><small class="turn-target-status ${proposed ? 'is-proposed' : ''}">${proposed ? 'Proposed' : 'Filtered'}</small>`
+      : '<span class="text-xs text-muted">Not scored</span>';
+    const evaluationActions = scoredSegment
+      ? `<div class="turn-review-actions">
+          <button type="button" class="btn btn-xs ${label === 'qualified' ? 'btn-primary' : 'btn-ghost'} ts-turn-label" data-key="${escapeHtml(segmentKey)}" data-label="qualified" aria-pressed="${label === 'qualified'}" title="Accept this turn">✓ Accept</button>
+          <button type="button" class="btn btn-xs ${label === 'rejected' ? 'target-label-rejected' : 'btn-ghost'} ts-turn-label" data-key="${escapeHtml(segmentKey)}" data-label="rejected" aria-pressed="${label === 'rejected'}" title="Reject this turn">✕ Reject</button>
+        </div>`
+      : '<span class="text-xs text-muted">Score target first</span>';
 
     const tr = document.createElement("tr");
     tr.id = `turn-row-${idx}`;
     if (state.diarization.activeTurnIndex === idx) tr.classList.add('selected-row');
+    if (label === 'qualified') tr.classList.add('turn-row-accepted');
+    if (label === 'rejected') tr.classList.add('turn-row-rejected');
 
     tr.innerHTML = `
       <td><span class="text-muted font-mono">#${idx + 1}</span></td>
@@ -3911,13 +4016,18 @@ function renderTurnsTable() {
       <td><code>${turn.start_s.toFixed(2)}s</code></td>
       <td><code>${turn.end_s.toFixed(2)}s</code></td>
       <td><span class="badge badge-ghost">${duration}s</span></td>
+      <td>${turn.has_overlap ? '<span class="badge badge-warning">Yes</span>' : '<span class="text-xs text-muted">No</span>'}</td>
+      <td class="turn-target-score">${targetScore}</td>
       <td class="table-actions">
-        <button class="btn btn-sm btn-ghost btn-play-turn" data-index="${idx}" title="Play turn segment">▶ Play</button>
+        <div class="turn-row-actions">
+          <button class="btn btn-sm btn-ghost btn-play-turn" data-index="${idx}" title="Play turn segment">▶ Play</button>
+          ${evaluationActions}
+        </div>
       </td>
     `;
 
     tr.addEventListener('click', (e) => {
-      if (e.target.closest('.btn-play-turn')) return;
+      if (e.target.closest('button')) return;
       state.diarization.activeTurnIndex = idx;
       highlightActiveTurn(idx);
       document.querySelectorAll('.diar-turns-table tr').forEach(r => r.classList.remove('selected-row'));
@@ -3934,13 +4044,20 @@ function renderTurnsTable() {
       el.audio.play();
     });
 
+    tr.querySelectorAll('.ts-turn-label').forEach(button => {
+      button.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleTargetSegmentLabel(button.dataset.key, button.dataset.label);
+      });
+    });
+
     el.turnsTableBody.appendChild(tr);
   });
 }
 
 function downloadDiarizationRttm() {
   const audioId = state.diarization.audioId || 'audio_sample';
-  const turns = state.diarization.turns || [];
+  const turns = state.diarization.rawTurns || [];
   if (turns.length === 0) {
     showToast("No diarization turns to export", "info");
     return;
@@ -3970,8 +4087,9 @@ async function extractSpeakerAudio(speakerId, speakerName) {
     return;
   }
 
-  const turns = state.diarization.turns.filter(t => t.speaker_id === speakerId);
-  if (turns.length === 0) {
+  const previewTurns = state.diarization.turns.filter(t => t.speaker_id === speakerId);
+  const rawTurns = state.diarization.rawTurns || [];
+  if (previewTurns.length === 0) {
     showToast("No turns found for speaker extraction", "error");
     return;
   }
@@ -3988,14 +4106,16 @@ async function extractSpeakerAudio(speakerId, speakerName) {
         speaker_id: speakerId,
         speaker_name: speakerName || speakerId,
         mode: mode,
-        turns: turns,
+        turns: rawTurns,
+        clean_turns: state.diarization.cleanTurnsEnabled,
+        settings: state.diarization.cleanTurnsSettings,
       }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Failed to extract speaker audio");
 
     await fetchAudioList();
-    showToast(`Speaker track extracted: "${data.metadata?.title || speakerId}" (${data.duration_s?.toFixed(2)}s)`, "success");
+    showToast(`Speaker track extracted from ${data.turn_policy || 'raw'} turns: "${data.metadata?.title || speakerId}" (${data.duration_s?.toFixed(2)}s)`, "success");
   } catch (err) {
     showToast(`Extraction failed: ${err.message}`, "error");
   }
@@ -4018,7 +4138,9 @@ async function extractAllSpeakers() {
       body: JSON.stringify({
         audio_id: audioId,
         mode: mode,
-        turns: state.diarization.turns,
+        turns: state.diarization.rawTurns,
+        clean_turns: state.diarization.cleanTurnsEnabled,
+        settings: state.diarization.cleanTurnsSettings,
         speaker_names: state.diarization.customNames,
       }),
     });
@@ -4026,7 +4148,7 @@ async function extractAllSpeakers() {
     if (!res.ok) throw new Error(data.error || "Failed to extract all speakers");
 
     await fetchAudioList();
-    showToast(`Successfully extracted ${data.total_speakers} speaker stems into workspace!`, "success");
+    showToast(`Extracted ${data.total_speakers} speaker stems from ${data.turn_policy || 'raw'} turns`, "success");
   } catch (err) {
     showToast(`Extraction failed: ${err.message}`, "error");
   }
@@ -4371,14 +4493,12 @@ function renderTargetSpeakerContext() {
 }
 
 function resetTargetSpeakerEvaluation({ preserveSelection = true } = {}) {
-  stopTargetSegmentPreview();
   state.targetSpeaker.scored = null;
   state.targetSpeaker.audioId = null;
   state.targetSpeaker.labels = {};
   state.targetSpeaker.threshold = 0.60;
   state.targetSpeaker.minDur = 1.5;
   state.targetSpeaker.excludeOverlap = true;
-  state.targetSpeaker.hideFiltered = false;
   if (!preserveSelection) {
     state.targetSpeaker.profileName = '';
     state.targetSpeaker.assignedSpeakerId = '';
@@ -4388,7 +4508,8 @@ function resetTargetSpeakerEvaluation({ preserveSelection = true } = {}) {
   const chip = document.getElementById('ts-kept-chip');
   if (summary) summary.hidden = true;
   if (results) results.innerHTML = '';
-  if (chip) chip.textContent = '—';
+  if (chip) chip.textContent = 'Not scored';
+  renderTurnsTable();
 }
 
 async function runTargetSpeakerScore() {
@@ -4447,8 +4568,9 @@ async function runTargetSpeakerScore() {
       }
     }
     renderTargetSpeakerResults();
+    renderTurnsTable();
     renderTargetSpeakerContext();
-    if (status) status.textContent = `Scored ${result.scored.segments.length} turns in ${result.elapsed_s}s. Tune the filter, audition segments, and record your evaluation.`;
+    if (status) status.textContent = `Scored ${result.scored.segments.length} turns in ${result.elapsed_s}s. Review each result directly in the turn table below.`;
     showToast(`Target-speaker scoring completed for “${profileName}”`, 'success');
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -4463,87 +4585,35 @@ function targetSegmentKey(segment) {
   return `${Number(segment.start_s).toFixed(3)}-${Number(segment.end_s).toFixed(3)}-${segment.speaker_id}`;
 }
 
-function updateTargetSegmentPlaybackButtons() {
-  document.querySelectorAll('.ts-play-segment').forEach(button => {
-    const isActive = button.dataset.key === activeTargetSegmentKey;
-    button.textContent = `${isActive ? '■' : '▶'} ${button.dataset.range}`;
-    button.title = isActive ? 'Stop segment' : 'Play segment';
-    button.setAttribute('aria-pressed', String(isActive));
-  });
+function findTargetScoredSegment(turn) {
+  const segments = state.targetSpeaker.scored?.segments || [];
+  const exactKey = targetSegmentKey(turn);
+  return segments.find(segment => targetSegmentKey(segment) === exactKey)
+    || segments.find(segment =>
+      segment.speaker_id === turn.speaker_id
+      && Math.abs(Number(segment.start_s) - Number(turn.start_s)) < 0.01
+      && Math.abs(Number(segment.end_s) - Number(turn.end_s)) < 0.01
+    )
+    || null;
 }
 
-function stopTargetSegmentPreview() {
-  if (targetSegmentPlayRaf) {
-    cancelAnimationFrame(targetSegmentPlayRaf);
-    targetSegmentPlayRaf = 0;
-  }
-  targetSegmentAudio.pause();
-  activeTargetSegmentKey = null;
-  updateTargetSegmentPlaybackButtons();
+function isTargetSegmentProposed(segment) {
+  const target = state.targetSpeaker;
+  return Number(segment.similarity) >= target.threshold
+    && (Number(segment.end_s) - Number(segment.start_s)) >= target.minDur
+    && !(target.excludeOverlap && segment.overlaps_other_speaker);
 }
 
-function watchTargetSegmentEnd(endSec, key) {
-  const tick = () => {
-    targetSegmentPlayRaf = 0;
-    if (activeTargetSegmentKey !== key || targetSegmentAudio.paused) return;
-    if (targetSegmentAudio.currentTime >= endSec - 0.01) {
-      stopTargetSegmentPreview();
-      return;
-    }
-    targetSegmentPlayRaf = requestAnimationFrame(tick);
-  };
-  targetSegmentPlayRaf = requestAnimationFrame(tick);
-}
-
-function toggleTargetSegmentPreview(segment) {
-  const audioId = state.targetSpeaker.audioId || state.diarization.audioId;
-  if (!audioId) return;
-
-  const key = targetSegmentKey(segment);
-  if (activeTargetSegmentKey === key) {
-    stopTargetSegmentPreview();
-    return;
-  }
-
-  stopTargetSegmentPreview();
-  if (el.audio && !el.audio.paused) el.audio.pause();
-
-  activeTargetSegmentKey = key;
-  targetSegmentAudio.volume = state.player.volume;
-  targetSegmentAudio.playbackRate = state.player.playbackRate;
-  updateTargetSegmentPlaybackButtons();
-
-  const beginPlayback = () => {
-    if (activeTargetSegmentKey !== key) return;
-    targetSegmentAudio.currentTime = segment.start_s;
-    targetSegmentAudio.play()
-      .then(() => watchTargetSegmentEnd(segment.end_s, key))
-      .catch(err => {
-        console.error('Segment preview error:', err);
-        stopTargetSegmentPreview();
-        showToast('Unable to play this segment', 'error');
-      });
-  };
-
-  const streamUrl = `/api/audio/${audioId}/stream`;
-  if (!targetSegmentAudio.src.endsWith(streamUrl)) {
-    targetSegmentAudio.src = streamUrl;
-    targetSegmentAudio.addEventListener('loadedmetadata', beginPlayback, { once: true });
-    targetSegmentAudio.load();
-  } else if (targetSegmentAudio.readyState >= 1) {
-    beginPlayback();
-  } else {
-    targetSegmentAudio.addEventListener('loadedmetadata', beginPlayback, { once: true });
-  }
+function toggleTargetSegmentLabel(key, nextLabel) {
+  if (!key || !state.targetSpeaker.scored) return;
+  const currentLabel = state.targetSpeaker.labels[key];
+  state.targetSpeaker.labels[key] = currentLabel === nextLabel ? 'unreviewed' : nextLabel;
+  renderTargetSpeakerResults();
+  renderTurnsTable();
 }
 
 function targetSpeakerKeptSegments() {
-  const target = state.targetSpeaker;
-  return (target.scored?.segments || []).filter(segment =>
-    segment.similarity >= target.threshold
-    && (segment.end_s - segment.start_s) >= target.minDur
-    && !(target.excludeOverlap && segment.overlaps_other_speaker)
-  );
+  return (state.targetSpeaker.scored?.segments || []).filter(isTargetSegmentProposed);
 }
 
 function renderTargetSpeakerResults() {
@@ -4560,10 +4630,10 @@ function renderTargetSpeakerResults() {
 
   const kept = targetSpeakerKeptSegments();
   const keptKeys = new Set(kept.map(targetSegmentKey));
-  const filteredCount = scored.segments.length - kept.length;
   const labels = target.labels || {};
-  const reviewed = Object.values(labels).filter(label => label === 'qualified' || label === 'rejected').length;
-  const qualified = Object.values(labels).filter(label => label === 'qualified').length;
+  const currentLabels = scored.segments.map(segment => labels[targetSegmentKey(segment)] || 'unreviewed');
+  const reviewed = currentLabels.filter(label => label === 'qualified' || label === 'rejected').length;
+  const qualified = currentLabels.filter(label => label === 'qualified').length;
   const totalDuration = scored.segments.reduce((sum, segment) => sum + segment.end_s - segment.start_s, 0);
   const keptDuration = kept.reduce((sum, segment) => sum + segment.end_s - segment.start_s, 0);
   const assignedId = target.assignedSpeakerId;
@@ -4573,33 +4643,10 @@ function renderTargetSpeakerResults() {
   ).length : 0;
   const agreementPercent = assignedId && scored.segments.length ? (agreementCount / scored.segments.length) * 100 : null;
   const chip = document.getElementById('ts-kept-chip');
-  if (chip) chip.textContent = kept.length;
+  if (chip) chip.textContent = `${qualified} accepted · ${reviewed} reviewed`;
 
   summary.hidden = false;
   summary.innerHTML = `<strong>${escapeHtml(scored.profile_name)}</strong><span>${kept.length}/${scored.segments.length} proposed turns · ${keptDuration.toFixed(1)}s/${totalDuration.toFixed(1)}s diarized speech</span>`;
-
-  const rows = [...scored.segments]
-    .sort((a, b) => a.start_s - b.start_s)
-    .filter(segment => !target.hideFiltered || keptKeys.has(targetSegmentKey(segment)))
-    .map((segment, index) => {
-      const key = targetSegmentKey(segment);
-      const proposed = keptKeys.has(key);
-      const label = labels[key] || 'unreviewed';
-      const assigned = Boolean(assignedId && segment.speaker_id === assignedId);
-      return `
-        <tr class="${proposed ? '' : 'target-row-dropped'}">
-          <td>${index + 1}</td>
-          <td><button class="btn btn-xs btn-ghost ts-play-segment" data-key="${key}" data-range="${segment.start_s.toFixed(1)}–${segment.end_s.toFixed(1)}s" title="Play segment" aria-pressed="false">▶ ${segment.start_s.toFixed(1)}–${segment.end_s.toFixed(1)}s</button></td>
-          <td><strong>${escapeHtml(getSpeakerName(segment.speaker_id))}</strong><small class="target-local-id">${escapeHtml(segment.speaker_id)}</small></td>
-          <td><strong>${segment.similarity.toFixed(3)}</strong></td>
-          <td>${proposed ? '<span class="badge badge-success">Proposed</span>' : '<span class="badge badge-ghost">Filtered</span>'}</td>
-          <td>${assigned ? '<span class="badge badge-accent">Named target</span>' : '<span class="text-xs text-muted">—</span>'}</td>
-          <td class="target-label-actions">
-            <button type="button" class="btn btn-xs ${label === 'qualified' ? 'btn-primary' : 'btn-ghost'} ts-label-segment" data-key="${key}" data-label="qualified" aria-pressed="${label === 'qualified'}">✓ Accept</button>
-            <button type="button" class="btn btn-xs ${label === 'rejected' ? 'target-label-rejected' : 'btn-ghost'} ts-label-segment" data-key="${key}" data-label="rejected" aria-pressed="${label === 'rejected'}">✕ Reject</button>
-          </td>
-        </tr>`;
-    }).join('');
 
   results.innerHTML = `
     <article class="target-evaluation-card">
@@ -4615,16 +4662,7 @@ function renderTargetSpeakerResults() {
         <div><strong>${agreementPercent === null ? '—' : `${agreementPercent.toFixed(1)}%`}</strong><span>${assignedId ? `agreement with ${getSpeakerName(assignedId)} (${assignedSegments.length} turns)` : 'optional named-speaker agreement'}</span></div>
       </div>
       <div class="target-segments-toolbar">
-        <span>${target.hideFiltered ? `Showing ${kept.length} proposed segments` : `Showing all ${scored.segments.length} segments`}</span>
-        <button type="button" class="btn btn-secondary btn-sm" id="btn-ts-toggle-filtered" aria-pressed="${target.hideFiltered}" ${filteredCount ? '' : 'disabled'}>
-          ${target.hideFiltered ? `Show ${filteredCount} filtered segments` : `Hide ${filteredCount} filtered segments`}
-        </button>
-      </div>
-      <div class="target-segments-scroll">
-        <table class="turns-table">
-          <thead><tr><th>#</th><th>Segment</th><th>Diarized speaker</th><th>Score</th><th>Verifier</th><th>Name match</th><th>Human evaluation</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
+        <span>Review all ${scored.segments.length} scored turns with the Accept / Reject controls in the inspector table.</span>
       </div>
       <footer class="target-evaluation-actions">
         <button type="button" class="btn btn-secondary btn-sm" id="btn-ts-export-qualified">Export accepted audio</button>
@@ -4635,33 +4673,18 @@ function renderTargetSpeakerResults() {
   document.getElementById('ts-threshold')?.addEventListener('input', event => {
     target.threshold = parseFloat(event.target.value);
     renderTargetSpeakerResults();
+    renderTurnsTable();
   });
   document.getElementById('ts-min-duration')?.addEventListener('change', event => {
     target.minDur = Math.max(0, parseFloat(event.target.value) || 0);
     renderTargetSpeakerResults();
+    renderTurnsTable();
   });
   document.getElementById('ts-exclude-overlap')?.addEventListener('change', event => {
     target.excludeOverlap = event.target.checked;
     renderTargetSpeakerResults();
+    renderTurnsTable();
   });
-  document.getElementById('btn-ts-toggle-filtered')?.addEventListener('click', () => {
-    target.hideFiltered = !target.hideFiltered;
-    renderTargetSpeakerResults();
-  });
-  results.querySelectorAll('.ts-play-segment').forEach(button => button.addEventListener('click', () => {
-    const segment = scored.segments.find(item => targetSegmentKey(item) === button.dataset.key);
-    if (segment) toggleTargetSegmentPreview(segment);
-  }));
-  updateTargetSegmentPlaybackButtons();
-  results.querySelectorAll('.ts-label-segment').forEach(button => button.addEventListener('click', () => {
-    const scrollTop = results.querySelector('.target-segments-scroll')?.scrollTop || 0;
-    target.labels[button.dataset.key] = target.labels[button.dataset.key] === button.dataset.label
-      ? 'unreviewed'
-      : button.dataset.label;
-    renderTargetSpeakerResults();
-    const scroll = results.querySelector('.target-segments-scroll');
-    if (scroll) scroll.scrollTop = scrollTop;
-  }));
   document.getElementById('btn-ts-save-evaluation')?.addEventListener('click', saveTargetSpeakerEvaluation);
   document.getElementById('btn-ts-export-qualified')?.addEventListener('click', exportTargetSpeakerSegments);
 }
@@ -4672,7 +4695,10 @@ async function saveTargetSpeakerEvaluation() {
   if (!scored) { showToast('Score a target speaker first', 'error'); return; }
   const audio = state.audioList.find(item => item.id === target.audioId) || {};
   const labels = target.labels || {};
-  const reviewed = Object.values(labels).filter(label => label === 'qualified' || label === 'rejected').length;
+  const reviewed = scored.segments.filter(segment => {
+    const label = labels[targetSegmentKey(segment)];
+    return label === 'qualified' || label === 'rejected';
+  }).length;
   const qualifiedSegments = scored.segments.filter(segment => labels[targetSegmentKey(segment)] === 'qualified');
   const totalDuration = scored.segments.reduce((sum, segment) => sum + segment.end_s - segment.start_s, 0);
   const qualifiedDuration = qualifiedSegments.reduce((sum, segment) => sum + segment.end_s - segment.start_s, 0);

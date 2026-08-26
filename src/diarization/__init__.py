@@ -40,6 +40,13 @@ from src.diarization.SpeakerVerifier import (
 )
 from src.diarization.ThreeDSpeakerDiarizer import ThreeDSpeakerDiarizer
 from src.diarization.ThreeDSpeakerWorkerDiarizer import ThreeDSpeakerWorkerDiarizer
+from src.diarization.turn_cleanup import (
+    DEFAULT_BOUNDARY_COLLAR_S,
+    DEFAULT_JITTER_MAX_DURATION_S,
+    DEFAULT_MERGE_SAME_SPEAKER_GAP_S,
+    DEFAULT_MIN_TURN_DURATION_S,
+    clean_speaker_turns,
+)
 
 from src.diarization.schemas import (
     DiarizationModelInfo,
@@ -92,5 +99,10 @@ __all__ = [
     "TargetSpeakerResult",
     "ThreeDSpeakerDiarizer",
     "ThreeDSpeakerWorkerDiarizer",
+    "DEFAULT_BOUNDARY_COLLAR_S",
+    "DEFAULT_JITTER_MAX_DURATION_S",
+    "DEFAULT_MERGE_SAME_SPEAKER_GAP_S",
+    "DEFAULT_MIN_TURN_DURATION_S",
+    "clean_speaker_turns",
     "create_overlap_verifier",
 ]

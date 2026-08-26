@@ -297,6 +297,19 @@ information. Every backend returns schema 2.0, retains the input file-backed
 result. Results validate source identity, declared speakers, turn bounds, and
 overlap state before downstream use.
 
+### `clean_speaker_turns(turns, *, min_turn_duration_s=0.5, merge_same_speaker_gap_s=1.0, boundary_collar_s=0.04, jitter_max_duration_s=3.0) -> list[SpeakerTurn]`
+
+**Defined in:** `src/diarization/turn_cleanup.py`
+
+Creates a non-mutating, high-precision output view from canonical raw turns.
+It corrects bounded, non-overlapping `A-B-A` label jitter; trims 40 ms from
+each side of close different-speaker boundaries; merges consecutive
+same-speaker turns across gaps up to 1 second; and removes residual turns
+shorter than 0.5 seconds. The thresholds are configurable and must be finite,
+non-negative numbers. Existing `overlaps_other_speaker` evidence is retained
+through relabeling and merging; cleanup does not claim to remove overlapping
+speech.
+
 ### `PyannoteDiarizer(model_id=..., device=..., token=..., num_speakers=..., min_speakers=..., max_speakers=...)`
 
 **Defined in:** `src/diarization/PyannoteDiarizer.py`
@@ -897,6 +910,16 @@ The repository provides two specialized web platforms:
   and prior verification state. Reports persist under
   `.data/diarization/verifications/`. `POST /api/purity/verify` remains the
   separate imported-audio fallback.
+- **Clean-turn output policy:** `POST /api/diarization/clean-turns` accepts a
+  durable `result_id` or an explicit raw `turns` list plus optional cleanup
+  `settings`, and returns derived turns and raw/clean count-duration summaries
+  without saving over the result. Studio's **Clean Turns** toggle uses this
+  view for timeline preview, active-timeline target/manual-purity review, and
+  speaker-stem extraction.
+  `POST /api/diarization/extract-speaker` and
+  `POST /api/diarization/extract-all-speakers` accept `clean_turns` plus the
+  same `settings`; registered stems are tagged `turns:clean` or `turns:raw`.
+  RTTM export continues to use the canonical raw turns.
 - **Persistence:** Studio's diarization history and result-first verifier load
   the server-side canonical result catalog after refresh or restart. Browser
   storage contains viewer-only speaker labels/colors and verifier preferences,

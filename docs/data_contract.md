@@ -53,6 +53,14 @@ The derived Python properties are `speaker_count`, `turn_count`,
 `.data/diarization/verifications/`. Lazy audition cuts use
 `.data/diarization/preview/` and are not registered as audio assets.
 
+Clean turns are a derived output policy, not a second diarization result.
+`clean_speaker_turns()` returns new `SpeakerTurn` values and never mutates the
+canonical result. The Studio toggle may use those derived boundaries for
+preview, verification, and speaker-stem extraction, while durable result JSON
+and RTTM export retain all raw turns and overlap evidence. Extracted audio is
+tagged `turns:clean` or `turns:raw` so downstream dataset selection can tell
+which boundary policy produced it.
+
 `Speaker.global_speaker_id` names a globally enrolled identity that was
 injected into a supporting diarization pipeline. Turns continue to reference
 the result-local `speaker_id`; clients render `global_speaker_id` as the

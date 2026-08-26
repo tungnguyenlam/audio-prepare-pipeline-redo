@@ -3301,6 +3301,13 @@ button {
   font-weight: 700;
 }
 
+.diar-clean-turns-btn.active {
+  background-color: var(--accent-cyan);
+  border-color: var(--accent-cyan);
+  color: #001417;
+  font-weight: 700;
+}
+
 .diar-timeline-filter-toolbar {
   background-color: var(--bg-surface-elevated);
   border: 1px solid var(--border-subtle);
@@ -6139,6 +6146,34 @@ button {
 .system-tag-chip { color: var(--accent-primary-hover); }
 .custom-tag-chip { border-style: dashed; }
 
+.turn-target-evaluation {
+  margin-bottom: 14px;
+  padding: 14px;
+  background: color-mix(in srgb, var(--accent-primary) 4%, var(--bg-surface));
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+}
+
+.turn-target-evaluation-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.turn-target-evaluation-header h4 {
+  margin: 0 0 3px;
+  color: var(--text-primary);
+  font-size: .9rem;
+}
+
+.turn-target-evaluation-header p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: .76rem;
+}
+
 .target-eval-setup {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) minmax(300px, 1.4fr) auto;
@@ -6220,14 +6255,6 @@ button {
 .target-metrics-grid strong { font-size: 1rem; }
 .target-metrics-grid span { color: var(--text-secondary); font-size: .7rem; }
 
-.target-segments-scroll {
-  max-height: 460px;
-  overflow: auto;
-}
-
-.target-segments-scroll table { min-width: 900px; }
-.target-row-dropped > td:not(:last-child) { opacity: .48; }
-.target-label-actions { display: flex; gap: 4px; }
 .target-label-rejected {
   color: #fff;
   background: var(--danger, #ef4444);
@@ -6235,6 +6262,51 @@ button {
 }
 .target-label-rejected:hover { background: #dc2626; }
 .target-local-id { display: block; margin-top: 2px; color: var(--text-muted); font-family: var(--font-mono); }
+
+.turn-review-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.turn-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.turn-target-score {
+  font-family: var(--font-mono);
+}
+
+.turn-target-score strong,
+.turn-target-status {
+  display: block;
+}
+
+.turn-target-status {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: .65rem;
+}
+
+.turn-target-status.is-proposed {
+  color: var(--success, #22c55e);
+}
+
+.diar-turns-table {
+  min-width: 920px;
+}
+
+.diar-turns-table tr.turn-row-accepted {
+  background: color-mix(in srgb, var(--success, #22c55e) 9%, transparent);
+}
+
+.diar-turns-table tr.turn-row-rejected {
+  background: color-mix(in srgb, var(--danger, #ef4444) 9%, transparent);
+}
 
 .target-segments-toolbar {
   display: flex;

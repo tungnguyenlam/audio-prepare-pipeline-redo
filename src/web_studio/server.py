@@ -44,9 +44,13 @@ from src.separation import HTDemucs, BSRoFormer, MelRoFormer, MVSepMDX23
 from src.diarization import (
     ClusteringDiarizer,
     ClusteringWorkerDiarizer,
+    DEFAULT_BOUNDARY_COLLAR_S,
     DEFAULT_GEMINI_MODEL_ID,
     DEFAULT_EMBEDDING_MODEL_ID,
     DEFAULT_GEMMA4_MODEL_ID,
+    DEFAULT_JITTER_MAX_DURATION_S,
+    DEFAULT_MERGE_SAME_SPEAKER_GAP_S,
+    DEFAULT_MIN_TURN_DURATION_S,
     DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS,
     DEFAULT_UNSLOTH_ENDPOINT,
     DiariZenWorkerDiarizer,
@@ -58,6 +62,7 @@ from src.diarization import (
     SpeakerPurityResult,
     ThreeDSpeakerDiarizer,
     ThreeDSpeakerWorkerDiarizer,
+    clean_speaker_turns,
     create_overlap_verifier,
 )
 from src.diarization.schemas import DiarizationResult, Speaker, SpeakerTurn
@@ -846,6 +851,64 @@ def _load_diarization_result(result_id: str) -> DiarizationResult:
 
 def _turn_key(speaker_id: str, start_s: float, end_s: float) -> str:
     return f"{speaker_id}|{float(start_s):.6f}|{float(end_s):.6f}"
+
+
+def _speaker_turns_from_payload(raw_turns: Any) -> list[SpeakerTurn]:
+    """Parse JSON turn objects without accepting frontend-only fields."""
+    if not isinstance(raw_turns, list):
+        raise TypeError("turns must be a list")
+    turns: list[SpeakerTurn] = []
+    for raw_turn in raw_turns:
+        if not isinstance(raw_turn, dict):
+            raise TypeError("each turn must be an object")
+        confidence = raw_turn.get("confidence")
+        turns.append(
+            SpeakerTurn(
+                speaker_id=str(raw_turn.get("speaker_id") or ""),
+                start_s=float(raw_turn.get("start_s", 0)),
+                end_s=float(raw_turn.get("end_s", 0)),
+                confidence=(float(confidence) if confidence is not None else None),
+                overlaps_other_speaker=bool(
+                    raw_turn.get(
+                        "overlaps_other_speaker",
+                        raw_turn.get("has_overlap", False),
+                    )
+                ),
+            )
+        )
+    return turns
+
+
+def _clean_turn_settings(data: dict[str, Any]) -> dict[str, float]:
+    """Read optional clean-turn settings from an API request."""
+    settings = data.get("settings") or {}
+    if not isinstance(settings, dict):
+        raise TypeError("settings must be an object")
+    return {
+        "min_turn_duration_s": float(
+            settings.get("min_turn_duration_s", DEFAULT_MIN_TURN_DURATION_S)
+        ),
+        "merge_same_speaker_gap_s": float(
+            settings.get(
+                "merge_same_speaker_gap_s",
+                DEFAULT_MERGE_SAME_SPEAKER_GAP_S,
+            )
+        ),
+        "boundary_collar_s": float(
+            settings.get("boundary_collar_s", DEFAULT_BOUNDARY_COLLAR_S)
+        ),
+        "jitter_max_duration_s": float(
+            settings.get("jitter_max_duration_s", DEFAULT_JITTER_MAX_DURATION_S)
+        ),
+    }
+
+
+def _clean_turn_payloads(
+    raw_turns: Any,
+    settings: dict[str, float],
+) -> list[dict[str, Any]]:
+    turns = clean_speaker_turns(_speaker_turns_from_payload(raw_turns), **settings)
+    return [{**asdict(turn), "duration_s": turn.duration_s} for turn in turns]
 
 
 def _verification_state_index(profile_name: str | None = None) -> dict[str, dict[str, Any]]:
@@ -2198,6 +2261,43 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
     return web.json_response({"task_id": task_id, "task": task_manager.get_task(task_id)}, status=202)
 
 
+async def handle_clean_diarization_turns(request: web.Request) -> web.Response:
+    """Build a non-persistent clean-turn view from raw diarization turns."""
+    try:
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise TypeError("request body must be an object")
+        settings = _clean_turn_settings(data)
+        result_id = str(data.get("result_id") or "").strip()
+        if result_id:
+            result = _load_diarization_result(result_id)
+            raw_turns: Any = [asdict(turn) for turn in result.turns]
+        else:
+            raw_turns = data.get("turns")
+        cleaned = _clean_turn_payloads(raw_turns, settings)
+    except FileNotFoundError as exc:
+        return web.json_response({"error": str(exc)}, status=404)
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+
+    return web.json_response(
+        {
+            "turns": cleaned,
+            "settings": settings,
+            "summary": {
+                "raw_turn_count": len(raw_turns),
+                "clean_turn_count": len(cleaned),
+                "removed_turn_count": len(raw_turns) - len(cleaned),
+                "raw_duration_s": sum(
+                    float(turn.get("end_s", 0)) - float(turn.get("start_s", 0))
+                    for turn in raw_turns
+                ),
+                "clean_duration_s": sum(turn["duration_s"] for turn in cleaned),
+            },
+        }
+    )
+
+
 async def handle_extract_speaker_audio(request: web.Request) -> web.Response:
     """Extract all turns for a specific speaker and concatenate into a new Audio item."""
     data = await request.json()
@@ -2205,6 +2305,7 @@ async def handle_extract_speaker_audio(request: web.Request) -> web.Response:
     speaker_id = data.get("speaker_id")
     speaker_name = data.get("speaker_name") or speaker_id
     turns = data.get("turns", [])
+    clean_turns = bool(data.get("clean_turns", False))
 
     mode = data.get("mode", "concatenated")  # "concatenated" or "time_aligned"
 
@@ -2214,6 +2315,12 @@ async def handle_extract_speaker_audio(request: web.Request) -> web.Response:
     audio = registry.get_audio(audio_id)
     if not audio:
         return web.json_response({"error": "Audio not found"}, status=404)
+
+    if clean_turns:
+        try:
+            turns = _clean_turn_payloads(turns, _clean_turn_settings(data))
+        except (TypeError, ValueError) as exc:
+            return web.json_response({"error": str(exc)}, status=400)
 
     # Filter turns for this speaker
     spk_turns = [t for t in turns if t.get("speaker_id") == speaker_id]
@@ -2254,21 +2361,32 @@ async def handle_extract_speaker_audio(request: web.Request) -> web.Response:
 
         sanitized_title = _sanitize_filename_component(audio.title or audio.source_id)
         sanitized_spk = _sanitize_filename_component(speaker_name or speaker_id)
-        out_filename = f"{sanitized_title}_{sanitized_spk}_{mode_suffix}.wav"
+        turn_policy = "clean" if clean_turns else "raw"
+        out_filename = (
+            f"{sanitized_title}_{sanitized_spk}_{turn_policy}_{mode_suffix}.wav"
+        )
         out_path = out_dir / out_filename
         sf.write(str(out_path), combined, sr)
 
-        tag_title = f"{audio.title or audio.source_id} [{speaker_name}] ({mode_suffix})"
+        tag_title = (
+            f"{audio.title or audio.source_id} [{speaker_name}] "
+            f"({turn_policy} {mode_suffix})"
+        )
         extracted_audio = Audio.from_file(
             out_path,
-            source_id=f"{audio.source_id}_{sanitized_spk}_{mode_suffix}",
+            source_id=(
+                f"{audio.source_id}_{sanitized_spk}_{turn_policy}_{mode_suffix}"
+            ),
             title=tag_title,
             source_url=audio.source_url,
             channel_id=audio.channel_id,
             channel_name=audio.channel_name,
             channel_url=audio.channel_url,
             native_sample_rate=audio.native_sample_rate,
-            history=(*audio.history, f"diar_extract_{speaker_id}_{mode}"),
+            history=(
+                *audio.history,
+                f"diar_extract_{speaker_id}_{turn_policy}_{mode}",
+            ),
         )
         return extracted_audio
 
@@ -2279,7 +2397,12 @@ async def handle_extract_speaker_audio(request: web.Request) -> web.Response:
             extracted,
             source_type="speaker_stem",
             parent_id=audio_id,
-            tags=["diarization", f"speaker:{speaker_id}", f"mode:{mode}"],
+            tags=[
+                "diarization",
+                f"speaker:{speaker_id}",
+                f"mode:{mode}",
+                f"turns:{'clean' if clean_turns else 'raw'}",
+            ],
         )
         return web.json_response({
             "audio_id": new_id,
@@ -2287,6 +2410,7 @@ async def handle_extract_speaker_audio(request: web.Request) -> web.Response:
             "speaker_id": speaker_id,
             "speaker_name": speaker_name,
             "mode": mode,
+            "turn_policy": "clean" if clean_turns else "raw",
             "duration_s": extracted.duration_s,
         })
     except Exception as e:
@@ -2301,6 +2425,7 @@ async def handle_extract_all_speakers(request: web.Request) -> web.Response:
     turns = data.get("turns", [])
     speaker_names = data.get("speaker_names", {})  # map spk_id -> custom_name
     mode = data.get("mode", "concatenated")  # "concatenated" or "time_aligned"
+    clean_turns = bool(data.get("clean_turns", False))
 
     if not audio_id or not turns:
         return web.json_response({"error": "audio_id and non-empty turns are required"}, status=400)
@@ -2308,6 +2433,12 @@ async def handle_extract_all_speakers(request: web.Request) -> web.Response:
     audio = registry.get_audio(audio_id)
     if not audio:
         return web.json_response({"error": "Audio not found"}, status=404)
+
+    if clean_turns:
+        try:
+            turns = _clean_turn_payloads(turns, _clean_turn_settings(data))
+        except (TypeError, ValueError) as exc:
+            return web.json_response({"error": str(exc)}, status=400)
 
     unique_speakers = sorted(list(set(t.get("speaker_id") for t in turns if t.get("speaker_id"))))
     if not unique_speakers:
@@ -2323,6 +2454,7 @@ async def handle_extract_all_speakers(request: web.Request) -> web.Response:
         results = []
 
         mode_suffix = "aligned" if mode == "time_aligned" else "concat"
+        turn_policy = "clean" if clean_turns else "raw"
 
         for spk_id in unique_speakers:
             spk_name = speaker_names.get(spk_id, spk_id)
@@ -2351,20 +2483,30 @@ async def handle_extract_all_speakers(request: web.Request) -> web.Response:
 
             sanitized_title = _sanitize_filename_component(audio.title or audio.source_id)
             sanitized_spk = _sanitize_filename_component(spk_name or spk_id)
-            out_filename = f"{sanitized_title}_{sanitized_spk}_{mode_suffix}.wav"
+            out_filename = (
+                f"{sanitized_title}_{sanitized_spk}_{turn_policy}_{mode_suffix}.wav"
+            )
             out_path = out_dir / out_filename
             sf.write(str(out_path), combined, sr)
 
             extracted_audio = Audio.from_file(
                 out_path,
-                source_id=f"{audio.source_id}_{sanitized_spk}_{mode_suffix}",
-                title=f"{audio.title or audio.source_id} [{spk_name}] ({mode_suffix})",
+                source_id=(
+                    f"{audio.source_id}_{sanitized_spk}_{turn_policy}_{mode_suffix}"
+                ),
+                title=(
+                    f"{audio.title or audio.source_id} [{spk_name}] "
+                    f"({turn_policy} {mode_suffix})"
+                ),
                 source_url=audio.source_url,
                 channel_id=audio.channel_id,
                 channel_name=audio.channel_name,
                 channel_url=audio.channel_url,
                 native_sample_rate=audio.native_sample_rate,
-                history=(*audio.history, f"diar_extract_{spk_id}_{mode}"),
+                history=(
+                    *audio.history,
+                    f"diar_extract_{spk_id}_{turn_policy}_{mode}",
+                ),
             )
             results.append((spk_id, spk_name, extracted_audio))
         return results
@@ -2378,7 +2520,11 @@ async def handle_extract_all_speakers(request: web.Request) -> web.Response:
                 extracted_audio,
                 source_type="speaker_stem",
                 parent_id=audio_id,
-                tags=["diarization", f"speaker:{spk_id}"],
+                tags=[
+                    "diarization",
+                    f"speaker:{spk_id}",
+                    f"turns:{'clean' if clean_turns else 'raw'}",
+                ],
             )
             registered.append({
                 "audio_id": new_id,
@@ -2387,7 +2533,13 @@ async def handle_extract_all_speakers(request: web.Request) -> web.Response:
                 "metadata": extracted_audio.metadata(),
                 "duration_s": extracted_audio.duration_s,
             })
-        return web.json_response({"extracted": registered, "total_speakers": len(registered)})
+        return web.json_response(
+            {
+                "extracted": registered,
+                "total_speakers": len(registered),
+                "turn_policy": "clean" if clean_turns else "raw",
+            }
+        )
     except Exception as e:
         logger.exception("Bulk speaker extraction failed")
         return web.json_response({"error": str(e)}, status=500)
@@ -4064,6 +4216,9 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_post("/api/evaluations", handle_save_evaluation)
     app.router.add_delete("/api/evaluations/{id}", handle_delete_evaluation)
     app.router.add_post("/api/diarization/run", handle_run_diarization)
+    app.router.add_post(
+        "/api/diarization/clean-turns", handle_clean_diarization_turns
+    )
     app.router.add_get("/api/diarization/results", handle_list_diarization_results)
     app.router.add_post(
         "/api/diarization/results/verify", handle_verify_diarization_batch
