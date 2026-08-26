@@ -505,7 +505,9 @@ selected device has sufficient free memory.
 
 - Normalizes input to mono, 16 kHz PCM WAV before inference.
 - Converts the returned Pyannote Annotation into result-local `spk_NN` labels,
-  preserving simultaneous turns for overlapping speakers.
+  preserving simultaneous turns for overlapping speakers. Clamps turn
+  timestamps to the source `Audio.duration_s` so last-frame overshoot cannot
+  fail schema 2.0 duration validation.
 - Constructor speaker bounds are used unless a corresponding per-call override
   is supplied. An exact speaker count sets both clustering bounds for that call.
 - Includes `DiarizationModelInfo` with backend `"diarizen"` and the configured

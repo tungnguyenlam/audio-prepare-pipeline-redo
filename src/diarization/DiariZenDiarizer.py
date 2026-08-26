@@ -233,7 +233,10 @@ class DiariZenDiarizer(BaseDiarizer, ManagedModel):
             pipeline.min_speakers = original_min
             pipeline.max_speakers = original_max
 
-        turns, speakers = self._turns_from_annotation(annotation)
+        turns, speakers = self._turns_from_annotation(
+            annotation,
+            duration_s=audio.duration_s,
+        )
         return DiarizationResult(
             schema_version="2.0",
             audio_id=audio.source_id,
@@ -252,15 +255,25 @@ class DiariZenDiarizer(BaseDiarizer, ManagedModel):
     @staticmethod
     def _turns_from_annotation(
         annotation: Any,
+        duration_s: float | None = None,
     ) -> tuple[list[SpeakerTurn], list[Speaker]]:
-        """Convert a Pyannote Annotation into schema turns."""
+        """Convert a Pyannote Annotation into schema turns.
+
+        Last-frame timestamps from WavLM/VBx can land a few tens of
+        milliseconds past the source file. Clamp them to ``duration_s`` so
+        ``DiarizationResult`` schema 2.0 does not reject the result.
+        """
         raw_turns: list[tuple[str, float, float]] = []
         for segment, _, label in annotation.itertracks(yield_label=True):
             start_s = float(segment.start)
             end_s = float(segment.end)
             if not math.isfinite(start_s) or not math.isfinite(end_s):
                 continue
-            start_s = max(0.0, start_s)
+            if duration_s is not None:
+                start_s = min(max(0.0, start_s), duration_s)
+                end_s = min(max(0.0, end_s), duration_s)
+            else:
+                start_s = max(0.0, start_s)
             if end_s <= start_s:
                 continue
             raw_turns.append((str(label), start_s, end_s))
