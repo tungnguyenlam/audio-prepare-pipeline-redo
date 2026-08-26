@@ -874,9 +874,22 @@ The repository provides two specialized web platforms:
   in-memory audio objects with persistent project-library files. Selecting a
   library file loads it into the active registry before processing. Repeated
   loads of the same resolved file path reuse its existing audio ID.
+- **Library browsing:** `GET /api/library` scans `benchmarks/`, `data/`,
+  `temp/`, and `.data/` (skipping caches such as `huggingface/`, `.cache/`,
+  and `work/`) and returns `{files, total, category_counts}`. Each file
+  includes `category`, a stable `category_id` (`speech`, `music`, `cuts`,
+  `stems`, `verified`, `diarized`, `ingest`, `pipeline`, `uploads`, `temp`,
+  `data`, `other`), sidecar metadata, and Pipeline registry tags when
+  present. `GET /api/library/stream` and `GET /api/library/download` serve
+  one permitted file. `POST /api/library/delete` and
+  `POST /api/library/bulk-delete` remove audio plus sidecar JSON and drop
+  matching Studio session / Pipeline registry entries.
 - **Library loading:** `POST /api/library/load` accepts `{"path": "..."}` and
   returns `audio_id`, `metadata`, and `reused`. `reused` is `true` when that
-  resolved path was already present in the active registry.
+  resolved path was already present in the active registry. The Sample
+  Library modal and Library tab share this catalog; processing selectors
+  group library files by `category_id` and load a `lib:` path into the
+  session before running.
 - **Background task queue:** YouTube ingestion, single-model separation,
   diarization, and multi-model comparison use **per-device FIFO queues**.
   Each GPU (`cuda:0`, `cuda:1`, …) and the `cpu`/`mps` lane have independent

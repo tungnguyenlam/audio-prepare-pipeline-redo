@@ -91,6 +91,39 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 DATA_DIR = ROOT_DIR / ".data"
 TEMP_DIR = ROOT_DIR / "temp"
 UPLOADS_DIR = DATA_DIR / "web_uploads"
+LIBRARY_ALLOWED_ROOTS = (
+    DATA_DIR.resolve(),
+    (ROOT_DIR / "data").resolve(),
+    TEMP_DIR.resolve(),
+    (ROOT_DIR / "benchmarks").resolve(),
+)
+LIBRARY_SKIP_DIR_NAMES = {
+    "work",
+    ".cache",
+    "checkpoints",
+    "venv",
+    ".venv",
+    ".git",
+    "__pycache__",
+    "huggingface",
+    "node_modules",
+    ".uv",
+}
+LIBRARY_AUDIO_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac", ".aiff"}
+LIBRARY_CATEGORY_ORDER = (
+    "speech",
+    "music",
+    "cuts",
+    "stems",
+    "verified",
+    "diarized",
+    "ingest",
+    "pipeline",
+    "uploads",
+    "temp",
+    "data",
+    "other",
+)
 DIARIZATION_RESULTS_DIR = DATA_DIR / "diarization" / "results"
 DIARIZATION_VERIFICATIONS_DIR = DATA_DIR / "diarization" / "verifications"
 DIARIZATION_PREVIEW_DIR = DATA_DIR / "diarization" / "preview"
@@ -1596,67 +1629,252 @@ def probe_audio_file_info(path: Path) -> dict[str, Any]:
         }
 
 
-def categorize_library_path(rel_path: str) -> str:
-    """Fallback category for legacy files that have no structured metadata."""
+def _session_library_tags(source_type: str) -> set[str]:
+    """Return only tags implied by a session source type, without inventing ingest."""
+    return {
+        "separation": {"type:stem", "stage:separated"},
+        "cut": {"type:cut"},
+        "speaker_stem": {"type:cut", "stage:diarized"},
+        "purity_stem": {"type:stem", "stage:verified", "verification:passed"},
+        "youtube": {"type:source", "stage:ingested"},
+        "upload": {"type:source", "stage:ingested"},
+        "diarization": {"stage:diarized"},
+    }.get(source_type, set())
+
+
+def resolve_library_path(rel_or_abs: str | Path | None) -> Path | None:
+    """Resolve a user-supplied path if it is inside a permitted library root."""
+    if not rel_or_abs:
+        return None
+    target = Path(rel_or_abs)
+    try:
+        if not target.is_absolute():
+            target = (ROOT_DIR / target).resolve()
+        else:
+            target = target.resolve()
+    except OSError:
+        return None
+    if not any(target.is_relative_to(root) for root in LIBRARY_ALLOWED_ROOTS):
+        return None
+    return target
+
+
+def should_skip_library_path(path: Path) -> bool:
+    """Skip caches, VCS, and model-weight trees while scanning the library."""
+    return any(part in LIBRARY_SKIP_DIR_NAMES for part in path.parts)
+
+
+def library_relative_path(path: Path) -> str:
+    """Return a POSIX relative path from the repo root when possible."""
+    try:
+        return path.resolve().relative_to(ROOT_DIR).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def categorize_library_path(rel_path: str) -> tuple[str, str]:
+    """Fallback category id and label for files that have no structured metadata."""
     p_lower = rel_path.lower()
     if "sources/speech" in p_lower or ("speech" in p_lower and "music" not in p_lower and "cuts" not in p_lower):
-        return "Benchmark Speech"
-    elif "sources/music" in p_lower or ("music" in p_lower and "speech" not in p_lower and "cuts" not in p_lower):
-        return "Benchmark Music"
-    elif "sources/cuts" in p_lower or "audio_cutter" in p_lower or "_cut_" in p_lower or "cuts" in p_lower:
-        return "Audio Cuts"
-    elif "stems" in p_lower or "separation" in p_lower or "demucs" in p_lower or "roformer" in p_lower or "mvsep" in p_lower:
-        return "Separated Stems"
-    elif "yt_crawler" in p_lower or "downloads" in p_lower:
-        return "YouTube Downloads"
-    elif "pipeline" in p_lower:
-        return "Pipeline Assets"
-    elif "temp" in p_lower or "quick_save" in p_lower:
-        return "Quick Saves (temp)"
-    elif "upload" in p_lower:
-        return "Uploads"
-    elif "data" in p_lower:
-        return "Data Directory"
-    else:
-        return "Project Audio"
+        return "speech", "Benchmark Speech"
+    if "sources/music" in p_lower or ("music" in p_lower and "speech" not in p_lower and "cuts" not in p_lower):
+        return "music", "Benchmark Music"
+    if "sources/cuts" in p_lower or "audio_cutter" in p_lower or "_cut_" in p_lower or "cuts" in p_lower:
+        return "cuts", "Audio Cuts"
+    if "stems" in p_lower or "separation" in p_lower or "demucs" in p_lower or "roformer" in p_lower or "mvsep" in p_lower:
+        return "stems", "Separated Stems"
+    if "yt_crawler" in p_lower or "downloads" in p_lower:
+        return "ingest", "YouTube Downloads"
+    if "pipeline" in p_lower:
+        return "pipeline", "Pipeline Assets"
+    if "temp" in p_lower or "quick_save" in p_lower:
+        return "temp", "Quick Saves"
+    if "upload" in p_lower:
+        return "uploads", "Uploads"
+    if "data" in p_lower:
+        return "data", "Data Directory"
+    return "other", "Project Audio"
 
 
-def categorize_library_tags(system_tags: list[str], fallback_path: str) -> str:
+def categorize_library_tags(system_tags: list[str], fallback_path: str) -> tuple[str, str]:
     """Classify a library asset from namespaced metadata before legacy paths."""
     tags = set(system_tags)
     if "type:cut" in tags:
-        return "Audio Cuts"
-    if "stage:verified" in tags:
-        return "Verified Speech"
+        return "cuts", "Audio Cuts"
+    if "stage:verified" in tags or "verification:passed" in tags:
+        return "verified", "Verified Speech"
     if "type:stem" in tags or "stage:separated" in tags:
-        return "Separated Stems"
+        return "stems", "Separated Stems"
     if "stage:diarized" in tags:
-        return "Diarized Sources"
-    if "stage:ingested" in tags or "type:source" in tags:
-        return "Ingested Sources"
+        return "diarized", "Diarized Sources"
+    if "stage:ingested" in tags:
+        return "ingest", "Ingested Sources"
     return categorize_library_path(fallback_path)
+
+
+def ensure_library_dirs() -> None:
+    """Create the directories the sample library is expected to browse."""
+    (ROOT_DIR / "benchmarks/separation/sources/speech").mkdir(parents=True, exist_ok=True)
+    (ROOT_DIR / "benchmarks/separation/sources/music").mkdir(parents=True, exist_ok=True)
+    (ROOT_DIR / "benchmarks/separation/sources/cuts").mkdir(parents=True, exist_ok=True)
+    (ROOT_DIR / "data").mkdir(parents=True, exist_ok=True)
+    TEMP_DIR.mkdir(parents=True, exist_ok=True)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _unregister_pipeline_path(target: Path) -> None:
+    """Drop a deleted file from the Pipeline dataset registry without deleting again."""
+    try:
+        from src.web_pipeline.dataset_manager import dataset_manager
+        item = dataset_manager.find_item_by_path(target)
+        if item:
+            dataset_manager.delete_items([item.id], delete_files=False)
+    except Exception:
+        logger.debug("Pipeline registry skip for %s", target, exc_info=True)
+
+
+def delete_library_file(target: Path) -> str:
+    """Delete a library audio file, sidecar, and registry entries.
+
+    Args:
+        target: Resolved path already confirmed to be inside a library root.
+
+    Returns:
+        Repo-relative POSIX path of the deleted file.
+
+    Raises:
+        FileNotFoundError: If the audio file is not present.
+        OSError: If the filesystem delete fails.
+    """
+    if not target.is_file():
+        raise FileNotFoundError(target.name)
+    target.unlink()
+    sidecar = target.with_suffix(".json")
+    if sidecar.is_file():
+        sidecar.unlink()
+    registry.unregister_path(target)
+    _unregister_pipeline_path(target)
+    rel_path = library_relative_path(target)
+    logger.info("Deleted library file and sidecar: %s", target)
+    return rel_path
+
+
+def collect_library_files(
+    pipeline_items: dict[str, Any],
+    active_items: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Scan permitted directories and return library file records."""
+    scan_dirs = [
+        ROOT_DIR / "benchmarks",
+        ROOT_DIR / "data",
+        TEMP_DIR,
+        DATA_DIR,
+    ]
+    files: list[dict[str, Any]] = []
+    seen_paths: set[str] = set()
+
+    for directory in scan_dirs:
+        if not directory.is_dir():
+            continue
+        for root, dirnames, filenames in os.walk(directory, followlinks=False):
+            dirnames[:] = [name for name in dirnames if name not in LIBRARY_SKIP_DIR_NAMES]
+            root_path = Path(root)
+            if should_skip_library_path(root_path):
+                dirnames[:] = []
+                continue
+            for name in filenames:
+                p = root_path / name
+                if p.suffix.lower() not in LIBRARY_AUDIO_EXTENSIONS:
+                    continue
+                try:
+                    resolved_str = str(p.resolve())
+                    if resolved_str in seen_paths:
+                        continue
+                    seen_paths.add(resolved_str)
+
+                    stat = p.stat()
+                    if stat.st_size == 0:
+                        continue
+
+                    rel_path = library_relative_path(p)
+                    probe_meta = probe_audio_file_info(p)
+                    pipeline_item = pipeline_items.get(resolved_str)
+                    active_item = active_items.get(resolved_str)
+                    system_tags = list(pipeline_item.system_tags if pipeline_item else [])
+                    custom_tags = list(pipeline_item.custom_tags if pipeline_item else [])
+                    dataset = pipeline_item.dataset if pipeline_item else None
+                    registry_item_id = pipeline_item.id if pipeline_item else None
+                    if active_item:
+                        source_type = str(active_item.get("source_type") or "local")
+                        session_tags = set(active_item.get("system_tags", []))
+                        if source_type not in {"youtube", "upload"}:
+                            session_tags -= {"type:source", "stage:ingested"}
+                        system_tags = sorted(
+                            set(system_tags)
+                            | session_tags
+                            | _session_library_tags(source_type)
+                        )
+                        custom_tags = sorted(
+                            set(custom_tags) | set(active_item.get("custom_tags", []))
+                        )
+                    history = probe_meta.get("history") or []
+                    normalized_history = [str(step).lower() for step in history]
+                    extra_tags: set[str] = set()
+                    if any("diar" in step for step in normalized_history):
+                        extra_tags.add("stage:diarized")
+                    if any(
+                        marker in step
+                        for step in normalized_history
+                        for marker in ("demucs", "roformer", "mvsep", "separ")
+                    ):
+                        extra_tags.update({"type:stem", "stage:separated"})
+                    if any("cut" in step for step in normalized_history):
+                        extra_tags.add("type:cut")
+                    if any("purity" in step or "verified" in step for step in normalized_history):
+                        extra_tags.add("stage:verified")
+                    if extra_tags:
+                        system_tags = sorted(set(system_tags) | extra_tags)
+                    category_id, category = categorize_library_tags(system_tags, rel_path)
+                    if registry_item_id and category_id == "other":
+                        category_id, category = "pipeline", "Pipeline Assets"
+
+                    files.append(
+                        {
+                            "category": category,
+                            "category_id": category_id,
+                            "name": p.name,
+                            "title": probe_meta.get("title") or p.stem,
+                            "source_id": probe_meta.get("source_id") or p.stem,
+                            "path": rel_path,
+                            "absolute_path": resolved_str,
+                            "size": stat.st_size,
+                            "modified": stat.st_mtime,
+                            "format": p.suffix.lstrip(".").lower(),
+                            "duration_s": probe_meta.get("duration_s", 0.0),
+                            "sample_rate": probe_meta.get("sample_rate", DEFAULT_SAMPLE_RATE),
+                            "channels": probe_meta.get("channels", 1),
+                            "native_sample_rate": probe_meta.get("native_sample_rate", DEFAULT_SAMPLE_RATE),
+                            "source_url": probe_meta.get("source_url"),
+                            "channel_id": probe_meta.get("channel_id"),
+                            "channel_name": probe_meta.get("channel_name"),
+                            "channel_url": probe_meta.get("channel_url"),
+                            "history": history,
+                            "dataset": dataset,
+                            "registry_item_id": registry_item_id,
+                            "system_tags": system_tags,
+                            "custom_tags": custom_tags,
+                        }
+                    )
+                except OSError:
+                    logger.debug("Skipping unreadable library file %s", p, exc_info=True)
+
+    files.sort(key=lambda item: item["modified"], reverse=True)
+    return files
 
 
 async def handle_list_library(request: web.Request) -> web.Response:
     """Scan and list audio files available in project directories with precise categorization and metadata."""
-    # Ensure benchmark and output directories exist
-    (ROOT_DIR / "benchmarks/separation/sources/speech").mkdir(parents=True, exist_ok=True)
-    (ROOT_DIR / "benchmarks/separation/sources/music").mkdir(parents=True, exist_ok=True)
-    (ROOT_DIR / "benchmarks/separation/sources/cuts").mkdir(parents=True, exist_ok=True)
-    (ROOT_DIR / "temp").mkdir(parents=True, exist_ok=True)
-    (ROOT_DIR / "data").mkdir(parents=True, exist_ok=True)
-    (ROOT_DIR / ".data").mkdir(parents=True, exist_ok=True)
-
-    scan_dirs = [
-        ROOT_DIR / "benchmarks",
-        ROOT_DIR / "data",
-        ROOT_DIR / "temp",
-        ROOT_DIR / ".data",
-    ]
-
-    extensions = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac", ".aiff"}
-    files = []
-    seen_paths = set()
+    ensure_library_dirs()
     try:
         from src.web_pipeline.dataset_manager import dataset_manager
         pipeline_items = dataset_manager.items_by_path()
@@ -1666,123 +1884,28 @@ async def handle_list_library(request: web.Request) -> web.Response:
         str(Path(item["audio"].path).resolve()): item
         for item in registry._items.values()
     }
-
-    for directory in scan_dirs:
-        if directory.is_dir():
-            for p in directory.rglob("*"):
-                # Ignore intermediate work directories and caches
-                if any(part in ("work", ".cache", "checkpoints", "venv", ".git", "__pycache__") for part in p.parts):
-                    continue
-                if p.is_file() and p.suffix.lower() in extensions:
-                    try:
-                        resolved_str = str(p.resolve())
-                        if resolved_str in seen_paths:
-                            continue
-                        seen_paths.add(resolved_str)
-
-                        stat = p.stat()
-                        # Zero byte files are unusable / corrupted downloads
-                        if stat.st_size == 0:
-                            continue
-
-                        rel_path = str(p.relative_to(ROOT_DIR))
-                        probe_meta = probe_audio_file_info(p)
-                        pipeline_item = pipeline_items.get(resolved_str)
-                        active_item = active_items.get(resolved_str)
-                        system_tags = list(
-                            pipeline_item.system_tags if pipeline_item else []
-                        )
-                        custom_tags = list(
-                            pipeline_item.custom_tags if pipeline_item else []
-                        )
-                        dataset = pipeline_item.dataset if pipeline_item else None
-                        registry_item_id = pipeline_item.id if pipeline_item else None
-                        if active_item:
-                            system_tags = sorted(
-                                set(system_tags) | set(active_item.get("system_tags", []))
-                            )
-                            custom_tags = sorted(
-                                set(custom_tags) | set(active_item.get("custom_tags", []))
-                            )
-                            source_type = active_item.get("source_type", "local")
-                            type_tag = {
-                                "separation": "type:stem",
-                                "cut": "type:cut",
-                            }.get(source_type, "type:source")
-                            stage_tag = {
-                                "separation": "stage:separated",
-                                "cut": "stage:ingested",
-                            }.get(source_type, "stage:ingested")
-                            system_tags = sorted(set(system_tags) | {type_tag, stage_tag})
-                        history = probe_meta.get("history") or []
-                        normalized_history = [str(step).lower() for step in history]
-                        if any("diar" in step for step in normalized_history):
-                            system_tags = sorted(set(system_tags) | {"stage:diarized"})
-                        if any(
-                            marker in step
-                            for step in normalized_history
-                            for marker in ("demucs", "roformer", "mvsep", "separ")
-                        ):
-                            system_tags = sorted(
-                                set(system_tags) | {"type:stem", "stage:separated"}
-                            )
-                        if any("cut" in step for step in normalized_history):
-                            system_tags = sorted(set(system_tags) | {"type:cut"})
-                        if any("purity" in step or "verified" in step for step in normalized_history):
-                            system_tags = sorted(set(system_tags) | {"stage:verified"})
-                        category = categorize_library_tags(system_tags, rel_path)
-
-                        files.append(
-                            {
-                                "category": category,
-                                "name": p.name,
-                                "title": probe_meta.get("title") or p.stem,
-                                "source_id": probe_meta.get("source_id") or p.stem,
-                                "path": rel_path,
-                                "absolute_path": resolved_str,
-                                "size": stat.st_size,
-                                "modified": stat.st_mtime,
-                                "format": p.suffix.lstrip(".").lower(),
-                                "duration_s": probe_meta.get("duration_s", 0.0),
-                                "sample_rate": probe_meta.get("sample_rate", DEFAULT_SAMPLE_RATE),
-                                "channels": probe_meta.get("channels", 1),
-                                "native_sample_rate": probe_meta.get("native_sample_rate", DEFAULT_SAMPLE_RATE),
-                                "source_url": probe_meta.get("source_url"),
-                                "channel_id": probe_meta.get("channel_id"),
-                                "channel_name": probe_meta.get("channel_name"),
-                                "channel_url": probe_meta.get("channel_url"),
-                                "history": history,
-                                "dataset": dataset,
-                                "registry_item_id": registry_item_id,
-                                "system_tags": system_tags,
-                                "custom_tags": custom_tags,
-                            }
-                        )
-                    except Exception:
-                        pass
-
-    files.sort(key=lambda x: x["modified"], reverse=True)
-    return web.json_response({"files": files, "total": len(files)})
+    loop = asyncio.get_running_loop()
+    files = await loop.run_in_executor(
+        None, collect_library_files, pipeline_items, active_items
+    )
+    category_counts: dict[str, int] = {key: 0 for key in LIBRARY_CATEGORY_ORDER}
+    for item in files:
+        category_counts[item["category_id"]] = category_counts.get(item["category_id"], 0) + 1
+    return web.json_response({
+        "files": files,
+        "total": len(files),
+        "category_counts": category_counts,
+    })
 
 
 async def handle_stream_library_file(request: web.Request) -> web.Response:
     """Stream any permissible library audio file directly for preview/playback."""
-    rel_or_abs = request.query.get("path")
-    if not rel_or_abs:
-        return web.Response(text="Path is required", status=400)
-    target = Path(rel_or_abs)
-    if not target.is_absolute():
-        target = (ROOT_DIR / rel_or_abs).resolve()
-    else:
-        target = target.resolve()
-
-    allowed_roots = [
-        (ROOT_DIR / ".data").resolve(),
-        (ROOT_DIR / "data").resolve(),
-        (ROOT_DIR / "temp").resolve(),
-        (ROOT_DIR / "benchmarks").resolve(),
-    ]
-    if not any(target.is_relative_to(root) for root in allowed_roots) or not target.is_file():
+    target = resolve_library_path(request.query.get("path"))
+    if target is None:
+        return web.Response(text="Path is required", status=400) if not request.query.get("path") else web.Response(
+            text="Audio file not found or access denied", status=404
+        )
+    if not target.is_file():
         return web.Response(text="Audio file not found or access denied", status=404)
 
     return web.FileResponse(
@@ -1797,22 +1920,12 @@ async def handle_stream_library_file(request: web.Request) -> web.Response:
 
 async def handle_download_library_file(request: web.Request) -> web.Response:
     """Download any permissible library audio file."""
-    rel_or_abs = request.query.get("path")
-    if not rel_or_abs:
-        return web.Response(text="Path is required", status=400)
-    target = Path(rel_or_abs)
-    if not target.is_absolute():
-        target = (ROOT_DIR / rel_or_abs).resolve()
-    else:
-        target = target.resolve()
-
-    allowed_roots = [
-        (ROOT_DIR / ".data").resolve(),
-        (ROOT_DIR / "data").resolve(),
-        (ROOT_DIR / "temp").resolve(),
-        (ROOT_DIR / "benchmarks").resolve(),
-    ]
-    if not any(target.is_relative_to(root) for root in allowed_roots) or not target.is_file():
+    target = resolve_library_path(request.query.get("path"))
+    if target is None:
+        return web.Response(text="Path is required", status=400) if not request.query.get("path") else web.Response(
+            text="Audio file not found or access denied", status=404
+        )
+    if not target.is_file():
         return web.Response(text="Audio file not found or access denied", status=404)
 
     return web.FileResponse(
@@ -1826,52 +1939,21 @@ async def handle_download_library_file(request: web.Request) -> web.Response:
 async def handle_delete_library_file(request: web.Request) -> web.Response:
     """Delete an audio file and its matching sidecar JSON from disk."""
     data = await request.json()
-    rel_or_abs_path = data.get("path")
-    if not rel_or_abs_path:
-        return web.json_response({"error": "File path is required"}, status=400)
-
-    target_path = Path(rel_or_abs_path)
-    if not target_path.is_absolute():
-        target_path = (ROOT_DIR / rel_or_abs_path).resolve()
-    else:
-        target_path = target_path.resolve()
-
-    # Security check: Ensure target path is inside ROOT_DIR and within permitted directories
-    try:
-        target_path.relative_to(ROOT_DIR)
-    except ValueError:
-        return web.json_response({"error": "Cannot delete files outside project workspace"}, status=403)
-
-    allowed_roots = [
-        (ROOT_DIR / ".data").resolve(),
-        (ROOT_DIR / "data").resolve(),
-        (ROOT_DIR / "temp").resolve(),
-        (ROOT_DIR / "benchmarks").resolve(),
-    ]
-    if not any(target_path.is_relative_to(ar) for ar in allowed_roots):
-        return web.json_response({"error": "Path is outside permissible data/benchmark folders"}, status=403)
-
-    if not target_path.is_file():
-        return web.json_response({"error": f"File not found: {target_path.name}"}, status=404)
+    target_path = resolve_library_path(data.get("path"))
+    if target_path is None:
+        status = 400 if not data.get("path") else 403
+        error = "File path is required" if status == 400 else "Path is outside permissible data/benchmark folders"
+        return web.json_response({"error": error}, status=status)
 
     try:
-        # Delete the media file
-        target_path.unlink()
-
-        # Delete matching sidecar JSON if present
-        sidecar = target_path.with_suffix(".json")
-        if sidecar.is_file():
-            sidecar.unlink()
-
-        # A deleted source must not remain in the in-memory session registry.
-        registry.unregister_path(target_path)
-
-        logger.info("Deleted library file and sidecar: %s", target_path)
+        rel_path = delete_library_file(target_path)
         return web.json_response({
             "status": "success",
-            "deleted_file": str(target_path.name),
-            "path": str(target_path.relative_to(ROOT_DIR)),
+            "deleted_file": target_path.name,
+            "path": rel_path,
         })
+    except FileNotFoundError:
+        return web.json_response({"error": f"File not found: {target_path.name}"}, status=404)
     except Exception as e:
         logger.exception("Failed to delete file: %s", target_path)
         return web.json_response({"error": str(e)}, status=500)
@@ -1884,33 +1966,19 @@ async def handle_bulk_delete_library_files(request: web.Request) -> web.Response
     if not paths:
         return web.json_response({"error": "List of file paths is required"}, status=400)
 
-    allowed_roots = [
-        (ROOT_DIR / ".data").resolve(),
-        (ROOT_DIR / "data").resolve(),
-        (ROOT_DIR / "temp").resolve(),
-        (ROOT_DIR / "benchmarks").resolve(),
-    ]
-
     deleted_count = 0
     errors = []
 
     for p_str in paths:
-        target = Path(p_str)
-        if not target.is_absolute():
-            target = (ROOT_DIR / p_str).resolve()
-        else:
-            target = target.resolve()
-
-        if any(target.is_relative_to(ar) for ar in allowed_roots) and target.is_file():
-            try:
-                target.unlink()
-                sidecar = target.with_suffix(".json")
-                if sidecar.is_file():
-                    sidecar.unlink()
-                registry.unregister_path(target)
-                deleted_count += 1
-            except Exception as e:
-                errors.append({"path": p_str, "error": str(e)})
+        target = resolve_library_path(p_str)
+        if target is None or not target.is_file():
+            errors.append({"path": p_str, "error": "not found or not permitted"})
+            continue
+        try:
+            delete_library_file(target)
+            deleted_count += 1
+        except Exception as e:
+            errors.append({"path": p_str, "error": str(e)})
 
     return web.json_response({
         "status": "success",
@@ -1922,23 +1990,11 @@ async def handle_bulk_delete_library_files(request: web.Request) -> web.Response
 async def handle_load_library_file(request: web.Request) -> web.Response:
     """Load a server file into active registry."""
     data = await request.json()
-    file_path = data.get("path")
-    if not file_path:
-        return web.json_response({"error": "Path is required"}, status=400)
-
-    resolved = Path(file_path)
-    if not resolved.is_absolute():
-        resolved = ROOT_DIR / file_path
-    resolved = resolved.resolve()
-
-    allowed_roots = [
-        (ROOT_DIR / ".data").resolve(),
-        (ROOT_DIR / "data").resolve(),
-        (ROOT_DIR / "temp").resolve(),
-        (ROOT_DIR / "benchmarks").resolve(),
-    ]
-    if not any(resolved.is_relative_to(root) for root in allowed_roots):
-        return web.json_response({"error": "Path is outside permissible project audio folders"}, status=403)
+    resolved = resolve_library_path(data.get("path"))
+    if resolved is None:
+        status = 400 if not data.get("path") else 403
+        error = "Path is required" if status == 400 else "Path is outside permissible project audio folders"
+        return web.json_response({"error": error}, status=status)
 
     if not resolved.is_file():
         return web.json_response({"error": f"File not found: {resolved}"}, status=404)
@@ -1954,8 +2010,12 @@ async def handle_load_library_file(request: web.Request) -> web.Response:
             })
 
         audio = Audio.from_file(resolved)
-        category = categorize_library_path(str(resolved.relative_to(ROOT_DIR)))
-        audio_id = registry.register(audio, source_type="library", tags=["library", category.lower().replace(" ", "_")])
+        _category_id, category = categorize_library_path(library_relative_path(resolved))
+        audio_id = registry.register(
+            audio,
+            source_type="library",
+            tags=["library", category.lower().replace(" ", "_")],
+        )
         return web.json_response({"audio_id": audio_id, "metadata": audio.metadata(), "reused": False})
     except Exception as e:
         logger.exception("Error loading audio file")

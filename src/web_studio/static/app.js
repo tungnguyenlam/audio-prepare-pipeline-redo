@@ -33,6 +33,8 @@ const state = {
   libraryModalSearch: "",
   libraryModalCategory: "all",
   libraryLoadTarget: "workspace",
+  librarySort: "newest",
+  librarySelectedPaths: new Set(),
 
   // Tab 7 Project Explorer Filter State
   tabLibrarySearch: "",
@@ -480,6 +482,10 @@ const el = {
   libraryModalSearch: document.getElementById('library-modal-search'),
   libraryModalCategories: document.getElementById('library-modal-categories'),
   libraryModalCount: document.getElementById('library-modal-count'),
+  libraryModalTitle: document.getElementById('library-modal-title'),
+  libraryModalSubtitle: document.getElementById('library-modal-subtitle'),
+  libraryModalSort: document.getElementById('library-modal-sort'),
+  btnRefreshLibraryModal: document.getElementById('btn-refresh-library-modal'),
   tabLibrarySearch: document.getElementById('tab-library-search'),
   tabLibraryCategories: document.getElementById('tab-library-categories'),
   tabLibraryDataset: document.getElementById('tab-library-dataset'),
@@ -487,6 +493,10 @@ const el = {
   tabLibrarySpeaker: document.getElementById('tab-library-speaker'),
   tabLibraryVerification: document.getElementById('tab-library-verification'),
   tabLibraryFormat: document.getElementById('tab-library-format'),
+  tabLibrarySort: document.getElementById('tab-library-sort'),
+  tabLibrarySelectAll: document.getElementById('tab-library-select-all'),
+  tabLibraryCount: document.getElementById('tab-library-count'),
+  btnBulkDeleteLibrary: document.getElementById('btn-bulk-delete-library'),
   queueBadge: document.getElementById('queue-badge'),
   modalTaskQueue: document.getElementById('modal-task-queue'),
   btnCloseQueueModal: document.getElementById('btn-close-queue-modal'),
@@ -812,6 +822,14 @@ function initPlayer() {
 function handleGlobalKeydown(e) {
   // If typing inside an input, textarea or select, ignore hotkeys
   if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+
+  if (isModalOpen()) {
+    if (e.code === 'Escape') {
+      e.preventDefault();
+      closeAllModals();
+    }
+    return;
+  }
 
   // Space: Play / Pause using whichever player is active.
   if (e.code === 'Space') {
@@ -1946,7 +1964,10 @@ function initIngestAndSaves() {
   el.btnBrowseLibrary.addEventListener('click', () => openLibraryModal('workspace'));
   const btnBrowseTop = document.getElementById('btn-browse-library-top');
   if (btnBrowseTop) btnBrowseTop.addEventListener('click', () => openLibraryModal('workspace'));
-  el.btnCloseLibraryModal.addEventListener('click', () => el.modalLibrary.classList.add('hidden'));
+  el.btnCloseLibraryModal.addEventListener('click', () => {
+    stopFilePreview();
+    el.modalLibrary.classList.add('hidden');
+  });
 }
 
 async function uploadFile(file) {
@@ -5415,8 +5436,12 @@ function initPurityTab() {
   });
 
   if (el.purityInputSelect) {
-    el.purityInputSelect.addEventListener('change', () => {
+    el.purityInputSelect.addEventListener('change', async () => {
       const audioId = el.purityInputSelect.value;
+      if (audioId && audioId.startsWith('lib:')) {
+        await loadLibraryFileTo(audioId.slice(4), 'purity');
+        return;
+      }
       state.purity.audioId = audioId || null;
       updatePurityInputMeta(audioId);
       syncPurityDiarizationStatus();
@@ -5424,10 +5449,7 @@ function initPurityTab() {
   }
 
   if (el.btnPurityBrowseLibrary) {
-    el.btnPurityBrowseLibrary.addEventListener('click', () => {
-      state.libraryLoadTarget = 'purity';
-      openLibraryModal();
-    });
+    el.btnPurityBrowseLibrary.addEventListener('click', () => openLibraryModal('purity'));
   }
 
   if (el.btnPurityPreviewInput) {
@@ -6972,14 +6994,15 @@ async function fetchEvaluations() {
 
 function getFileModelBadge(file) {
   const cat = (file.category || "").toLowerCase();
+  const categoryId = fileCategoryId(file);
   const systemTags = new Set((file.system_tags || []).map(tag => String(tag).toLowerCase()));
   const customTags = new Set((file.custom_tags || []).map(tag => String(tag).toLowerCase()));
   const history = (file.history || []).join(' ').toLowerCase();
 
-  if (systemTags.has('stage:verified')) {
+  if (systemTags.has('stage:verified') || categoryId === 'verified') {
     return { label: "Verified Speech", class: "badge-success" };
   }
-  if (systemTags.has('type:cut')) {
+  if (systemTags.has('type:cut') || categoryId === 'cuts') {
     return { label: "Audio Cut", class: "badge-warning" };
   }
   if (history.includes('bs_roformer')) {
@@ -6994,28 +7017,28 @@ function getFileModelBadge(file) {
   if (history.includes('mvsep') || history.includes('mdx')) {
     return { label: "MVSep MDX", class: "badge-primary" };
   }
-  if (systemTags.has('type:stem') || systemTags.has('stage:separated')) {
+  if (systemTags.has('type:stem') || systemTags.has('stage:separated') || categoryId === 'stems') {
     return { label: "Separated Stem", class: "badge-primary" };
   }
-  if (systemTags.has('stage:diarized')) {
+  if (systemTags.has('stage:diarized') || categoryId === 'diarized') {
     return { label: "Diarized Source", class: "badge-info" };
   }
-  if (cat.includes("speech") || customTags.has('speech')) {
+  if (categoryId === 'speech' || cat.includes("speech") || customTags.has('speech')) {
     return { label: "Speech Source", class: "badge-success" };
   }
-  if (cat.includes("music") || customTags.has('music')) {
+  if (categoryId === 'music' || cat.includes("music") || customTags.has('music')) {
     return { label: "Music BGM", class: "badge-accent" };
   }
-  if (systemTags.has('stage:ingested')) {
+  if (systemTags.has('stage:ingested') || categoryId === 'ingest') {
     return { label: "Ingested Source", class: "badge-secondary" };
   }
-  if (file.registry_item_id) {
+  if (file.registry_item_id || categoryId === 'pipeline') {
     return { label: "Pipeline Asset", class: "badge-info" };
   }
-  if (cat.includes("temp")) {
+  if (categoryId === 'temp' || cat.includes("temp")) {
     return { label: "Quick Save", class: "badge-ghost" };
   }
-  if (cat.includes("upload")) {
+  if (categoryId === 'uploads' || cat.includes("upload")) {
     return { label: "Upload", class: "badge-secondary" };
   }
   return { label: (file.format || "WAV").toUpperCase(), class: "badge-ghost" };
@@ -7024,23 +7047,66 @@ function getFileModelBadge(file) {
 let previewAudioEl = null;
 let currentPreviewingPath = null;
 
+const LIBRARY_CATEGORY_ORDER = ['speech', 'music', 'cuts', 'stems', 'verified', 'diarized', 'ingest', 'pipeline', 'uploads', 'temp', 'data', 'other'];
+const LIBRARY_LOAD_TARGETS = {
+  workspace: {
+    title: 'Project Sample Library',
+    subtitle: 'Browse project audio and load it into the Studio workspace',
+    button: 'Load into Workspace',
+  },
+  cutter: {
+    title: 'Open from Sample Library',
+    subtitle: 'Choose a file to inspect and cut',
+    button: 'Open in Cutter',
+  },
+  separation: {
+    title: 'Load into Separation',
+    subtitle: 'Choose a source track for vocal / stem separation',
+    button: 'Send to Separation',
+  },
+  diarization: {
+    title: 'Load into Diarization',
+    subtitle: 'Choose a source track for speaker diarization',
+    button: 'Send to Diarization',
+  },
+  purity: {
+    title: 'Load into Speaker Purity',
+    subtitle: 'Choose imported audio to verify against an enrolled speaker',
+    button: 'Send to Speaker Purity',
+  },
+};
+const PREVIEW_PLAY_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
+const PREVIEW_PAUSE_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>';
+
+function isModalOpen() {
+  return [el.modalLibrary, el.modalSaveTo, el.modalTaskQueue].some(modal => modal && !modal.classList.contains('hidden'));
+}
+
+function fileCategoryId(file) {
+  return file?.category_id || 'other';
+}
+
+function resetPreviewButtons() {
+  document.querySelectorAll('.btn-preview-file').forEach(btn => {
+    btn.classList.remove('playing');
+    btn.innerHTML = PREVIEW_PLAY_ICON;
+  });
+}
+
+function stopFilePreview() {
+  if (previewAudioEl && !previewAudioEl.paused) {
+    previewAudioEl.pause();
+  }
+  currentPreviewingPath = null;
+  resetPreviewButtons();
+}
+
 function toggleFilePreview(filePath, btn) {
   if (!previewAudioEl) {
     previewAudioEl = new Audio();
-    previewAudioEl.addEventListener('ended', () => {
-      currentPreviewingPath = null;
-      document.querySelectorAll('.btn-preview-file').forEach(b => {
-        b.classList.remove('playing');
-        b.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
-      });
-    });
+    previewAudioEl.addEventListener('ended', stopFilePreview);
     previewAudioEl.addEventListener('pause', () => {
-      if (previewAudioEl.ended || previewAudioEl.paused) {
-        document.querySelectorAll('.btn-preview-file').forEach(b => {
-          b.classList.remove('playing');
-          b.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
-        });
-      }
+      if (previewAudioEl.ended || previewAudioEl.paused) resetPreviewButtons();
     });
   }
 
@@ -7049,33 +7115,28 @@ function toggleFilePreview(filePath, btn) {
     currentPreviewingPath = null;
     if (btn) {
       btn.classList.remove('playing');
-      btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
+      btn.innerHTML = PREVIEW_PLAY_ICON;
     }
-  } else {
-    // Pause main workspace player if playing
-    if (el.audio && !el.audio.paused) {
-      el.audio.pause();
-      state.isPlaying = false;
-      updatePlayPauseButton();
-    }
+    return;
+  }
 
-    previewAudioEl.pause();
-    currentPreviewingPath = filePath;
-    previewAudioEl.src = `/api/library/stream?path=${encodeURIComponent(filePath)}`;
-    previewAudioEl.play().catch(e => {
-      console.warn("Audio preview failed:", e);
-      showToast("Audio preview error", "error");
-    });
+  if (el.audio && !el.audio.paused) {
+    el.audio.pause();
+    setPlayingUI(false);
+  }
 
-    document.querySelectorAll('.btn-preview-file').forEach(b => {
-      b.classList.remove('playing');
-      b.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
-    });
+  previewAudioEl.pause();
+  currentPreviewingPath = filePath;
+  previewAudioEl.src = `/api/library/stream?path=${encodeURIComponent(filePath)}`;
+  previewAudioEl.play().catch(err => {
+    console.warn("Audio preview failed:", err);
+    showToast("Audio preview error", "error");
+  });
 
-    if (btn) {
-      btn.classList.add('playing');
-      btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>';
-    }
+  resetPreviewButtons();
+  if (btn) {
+    btn.classList.add('playing');
+    btn.innerHTML = PREVIEW_PAUSE_ICON;
   }
 }
 
@@ -7131,8 +7192,7 @@ function renderSessionHistory() {
             <button class="menu-item-btn btn-session-cutter" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">✂️ Open in Cutter</button>
             <button class="menu-item-btn btn-session-sep" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">🎛️ Send to Separation</button>
             <button class="menu-item-btn btn-session-diar" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">👥 Send to Diarization</button>
-            <button class="menu-item-btn btn-session-speech" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">🗣️ Set as Speech (Mixer)</button>
-            <button class="menu-item-btn btn-session-music" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">🎵 Set as Music (Mixer)</button>
+            <button class="menu-item-btn btn-session-purity" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">🛡️ Send to Speaker Purity</button>
             <a href="/api/audio/${item.id}/stream" download="${escapeHtml(item.title)}.${item.format}" class="menu-item-btn" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--accent-primary-hover); text-decoration: none; cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">⬇️ Download Audio</a>
           </div>
         </div>
@@ -7161,7 +7221,7 @@ function renderSessionHistory() {
 
     card.querySelector('.btn-session-cutter')?.addEventListener('click', () => {
       popupMenu.classList.add('hidden');
-      switchTab('tab-cutter');
+      switchTab('tab-workspace');
       setActiveAudio(item.id, { play: false });
     });
     card.querySelector('.btn-session-sep')?.addEventListener('click', () => {
@@ -7179,17 +7239,14 @@ function renderSessionHistory() {
       }
       showToast(`Selected "${item.title}" for Diarization!`, "success");
     });
-    card.querySelector('.btn-session-speech')?.addEventListener('click', () => {
+    card.querySelector('.btn-session-purity')?.addEventListener('click', () => {
       popupMenu.classList.add('hidden');
-      switchTab('tab-separation');
-      if (el.sepInputSelect) el.sepInputSelect.value = item.id;
-      showToast(`Selected "${item.title}" for Separation!`, "success");
-    });
-    card.querySelector('.btn-session-music')?.addEventListener('click', async () => {
-      popupMenu.classList.add('hidden');
-      switchTab('tab-workspace');
-      await setActiveAudio(item.id, { play: true });
-      showToast(`Loaded "${item.title}" into Workspace!`, "success");
+      switchTab('tab-purity');
+      if (el.purityInputSelect) {
+        el.purityInputSelect.value = item.id;
+        el.purityInputSelect.dispatchEvent(new Event('change'));
+      }
+      showToast(`Selected "${item.title}" for Speaker Purity!`, "success");
     });
 
     card.querySelector('.btn-delete-session').addEventListener('click', async () => {
@@ -7217,13 +7274,16 @@ async function fetchServerFiles() {
     const res = await fetch("/api/library");
     const data = await res.json();
     state.serverFiles = data.files || [];
+    const selected = state.librarySelectedPaths;
+    const livePaths = new Set(state.serverFiles.map(file => file.path));
+    state.librarySelectedPaths = new Set([...selected].filter(path => livePaths.has(path)));
     populateLibraryMetadataFilters();
     renderServerFiles();
     renderLibraryModalItems();
-    // Keep diarization (and other) selects in sync with library contents
     populateAllAudioSelects();
   } catch (err) {
     console.error("Failed to fetch library:", err);
+    showToast("Failed to scan the sample library", "error");
   }
 }
 
@@ -7232,6 +7292,7 @@ function filterServerFiles(files, query, category, metadataFilters = null) {
   const cat = (category || "all").toLowerCase().trim();
 
   return (files || []).filter(file => {
+    const categoryId = fileCategoryId(file);
     const fileCat = (file.category || "").toLowerCase();
     const filePath = (file.path || "").toLowerCase();
     const fileName = (file.name || "").toLowerCase();
@@ -7239,23 +7300,16 @@ function filterServerFiles(files, query, category, metadataFilters = null) {
     const systemTags = (file.system_tags || []).map(tag => String(tag).toLowerCase());
     const customTags = (file.custom_tags || []).map(tag => String(tag).toLowerCase());
 
-    let matchesCat = cat === "all";
-    if (!matchesCat) {
-      if (cat === "speech") matchesCat = fileCat.includes("speech") || customTags.includes("speech");
-      else if (cat === "music") matchesCat = fileCat.includes("music") || customTags.includes("music");
-      else if (cat === "separated" || cat === "stems") matchesCat = systemTags.includes("type:stem") || systemTags.includes("stage:separated");
-      else if (cat === "downloads") matchesCat = systemTags.includes("stage:ingested");
-      else if (cat === "cuts") matchesCat = systemTags.includes("type:cut");
-      else if (cat === "pipeline") matchesCat = Boolean(file.registry_item_id);
-      else if (cat === "temp") matchesCat = fileCat.includes("temp");
-      else matchesCat = fileCat.includes(cat) || systemTags.includes(`type:${cat}`) || systemTags.includes(`stage:${cat}`);
-    }
+    const matchesCat = cat === "all" || categoryId === cat ||
+      (cat === "downloads" && categoryId === "ingest") ||
+      (cat === "separated" && categoryId === "stems");
 
     const matchesQ = !q ||
       fileName.includes(q) ||
       fileTitle.includes(q) ||
       filePath.includes(q) ||
       fileCat.includes(q) ||
+      categoryId.includes(q) ||
       systemTags.some(tag => tag.includes(q)) ||
       customTags.some(tag => tag.includes(q)) ||
       String(file.dataset || '').toLowerCase().includes(q) ||
@@ -7270,6 +7324,34 @@ function filterServerFiles(files, query, category, metadataFilters = null) {
       (!filters.format || filters.format === 'all' || String(file.format).toLowerCase() === filters.format);
 
     return matchesCat && matchesQ && matchesMetadata;
+  });
+}
+
+function sortLibraryFiles(files, mode = state.librarySort) {
+  const sorted = [...(files || [])];
+  const byName = (left, right) => String(left.title || left.name || '').localeCompare(String(right.title || right.name || ''), undefined, { sensitivity: 'base' });
+  if (mode === 'oldest') sorted.sort((left, right) => (left.modified || 0) - (right.modified || 0));
+  else if (mode === 'name') sorted.sort(byName);
+  else if (mode === 'duration') sorted.sort((left, right) => (right.duration_s || 0) - (left.duration_s || 0) || byName(left, right));
+  else if (mode === 'size') sorted.sort((left, right) => (right.size || 0) - (left.size || 0) || byName(left, right));
+  else sorted.sort((left, right) => (right.modified || 0) - (left.modified || 0));
+  return sorted;
+}
+
+function updateCategoryPills(container, files, activeCategory) {
+  if (!container) return;
+  const counts = { all: (files || []).length };
+  (files || []).forEach(file => {
+    const id = fileCategoryId(file);
+    counts[id] = (counts[id] || 0) + 1;
+  });
+  container.querySelectorAll('.pill-btn').forEach(btn => {
+    const cat = btn.dataset.category || 'all';
+    const base = btn.dataset.label || btn.textContent.replace(/\s*\(\d+\)\s*$/, '').trim();
+    btn.dataset.label = base;
+    const count = counts[cat] || 0;
+    btn.textContent = `${base} (${cat === 'all' ? counts.all : count})`;
+    btn.style.display = (cat === 'all' || count > 0 || cat === activeCategory) ? '' : 'none';
   });
 }
 
@@ -7289,25 +7371,65 @@ function populateLibraryMetadataFilters() {
   fill(el.tabLibraryFormat, unique(state.serverFiles.map(file => String(file.format || '').toLowerCase())).map(value => ({ value, label: value.toUpperCase() })), 'All formats');
 }
 
-function buildFileItemCard(file, { isModal = false } = {}) {
+function visibleTagChips(file) {
+  const preferred = (file.system_tags || []).filter(tag =>
+    tag.startsWith('speaker:') || tag.startsWith('profile:') || tag.startsWith('verification:')
+  );
+  const custom = file.custom_tags || [];
+  return [...preferred, ...custom]
+    .slice(0, 4)
+    .map(tag => `<span class="meta-chip ${String(tag).includes(':') ? 'system-tag-chip' : 'custom-tag-chip'}">${escapeHtml(tag)}</span>`)
+    .join('');
+}
+
+function updateLibrarySelectionUi() {
+  const count = state.librarySelectedPaths.size;
+  if (el.btnBulkDeleteLibrary) el.btnBulkDeleteLibrary.disabled = count === 0;
+  if (el.btnBulkDeleteLibrary) {
+    el.btnBulkDeleteLibrary.textContent = count ? `Delete selected (${count})` : 'Delete selected';
+  }
+}
+
+function renderGroupedFileList(container, files, { isModal = false, selectable = false } = {}) {
+  container.innerHTML = "";
+  const grouped = new Map();
+  files.forEach(file => {
+    const key = fileCategoryId(file);
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(file);
+  });
+  const keys = [
+    ...LIBRARY_CATEGORY_ORDER.filter(key => grouped.has(key)),
+    ...[...grouped.keys()].filter(key => !LIBRARY_CATEGORY_ORDER.includes(key)),
+  ];
+  keys.forEach(key => {
+    const groupFiles = grouped.get(key) || [];
+    const header = document.createElement('div');
+    header.className = 'library-group-header';
+    header.innerHTML = `<span>${escapeHtml(groupFiles[0]?.category || key)}</span><span>${groupFiles.length}</span>`;
+    container.appendChild(header);
+    groupFiles.forEach(file => container.appendChild(buildFileItemCard(file, { isModal, selectable })));
+  });
+}
+
+function buildFileItemCard(file, { isModal = false, selectable = false } = {}) {
   const badgeInfo = getFileModelBadge(file);
   const isPlaying = currentPreviewingPath === file.path && previewAudioEl && !previewAudioEl.paused;
+  const selected = state.librarySelectedPaths.has(file.path);
   const durStr = (file.duration_s || 0) > 0 ? `${(file.duration_s).toFixed(1)}s` : '';
   const srStr = file.sample_rate ? `${(file.sample_rate / 1000).toFixed(1)} kHz` : '';
   const chStr = file.channels === 1 ? 'Mono' : (file.channels === 2 ? 'Stereo' : '');
   const fmtStr = (file.format || 'wav').toUpperCase();
-  const systemTagChips = (file.system_tags || []).map(tag => `<span class="meta-chip system-tag-chip">${escapeHtml(tag)}</span>`).join('');
-  const customTagChips = (file.custom_tags || []).map(tag => `<span class="meta-chip custom-tag-chip">${escapeHtml(tag)}</span>`).join('');
+  const loadTarget = isModal ? (state.libraryLoadTarget || 'workspace') : 'workspace';
+  const loadLabel = LIBRARY_LOAD_TARGETS[loadTarget]?.button || 'Load';
 
   const card = document.createElement("div");
-  card.className = "file-item-card";
+  card.className = `file-item-card${selected ? ' selected' : ''}`;
   card.innerHTML = `
     <div class="file-left-group">
-      <button class="btn-preview-file ${isPlaying ? 'playing' : ''}" data-path="${escapeHtml(file.path)}" title="${isPlaying ? 'Pause preview' : 'Play & Audition preview'}" aria-label="Preview track">
-        ${isPlaying
-          ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>'
-          : '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>'
-        }
+      ${selectable ? `<input type="checkbox" class="file-select-check" data-path="${escapeHtml(file.path)}" ${selected ? 'checked' : ''} aria-label="Select ${escapeHtml(file.title || file.name)}">` : ''}
+      <button class="btn-preview-file ${isPlaying ? 'playing' : ''}" data-path="${escapeHtml(file.path)}" title="${isPlaying ? 'Pause preview' : 'Preview this file'}" aria-label="Preview track">
+        ${isPlaying ? PREVIEW_PAUSE_ICON : PREVIEW_PLAY_ICON}
       </button>
       <div class="file-details">
         <div class="file-title-row">
@@ -7322,25 +7444,25 @@ function buildFileItemCard(file, { isModal = false } = {}) {
           <span class="meta-chip">${fmtStr}</span>
           <span class="meta-chip">${formatBytes(file.size || 0)}</span>
           ${file.dataset ? `<span class="meta-chip">dataset:${escapeHtml(file.dataset)}</span>` : ''}
-          ${systemTagChips}${customTagChips}
+          ${visibleTagChips(file)}
         </div>
       </div>
     </div>
     <div class="file-actions">
       ${file.registry_item_id ? `<button class="btn btn-sm btn-ghost btn-edit-file-tags" title="Edit custom tags">Tags</button>` : ''}
-      <button class="btn btn-sm btn-primary btn-load-target" data-path="${escapeHtml(file.path)}" data-target="workspace" title="Load into Studio Workspace">
-        <span>Load</span>
+      <button class="btn btn-sm btn-primary btn-load-target" data-path="${escapeHtml(file.path)}" title="${escapeHtml(loadLabel)}">
+        <span>${escapeHtml(isModal ? loadLabel.replace(/^Send to |^Load into |^Open in /, '') : 'Load')}</span>
       </button>
       <div class="dropdown-actions-wrap" style="position: relative; display: inline-block;">
         <button class="btn btn-sm btn-secondary btn-more-actions" title="More routing actions">
           <span>⋯</span>
         </button>
-        <div class="actions-popup-menu hidden" style="position: absolute; right: 0; top: 100%; margin-top: 4px; z-index: 50; background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); box-shadow: 0 8px 24px rgba(0,0,0,0.5); padding: 4px; min-width: 170px; display: flex; flex-direction: column; gap: 2px;">
-          <button class="menu-item-btn btn-send-cutter" data-path="${escapeHtml(file.path)}" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">✂️ Open in Cutter</button>
-          <button class="menu-item-btn btn-send-sep" data-path="${escapeHtml(file.path)}" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">🎛️ Send to Separation</button>
-          <button class="menu-item-btn btn-send-diar" data-path="${escapeHtml(file.path)}" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">👥 Send to Diarization</button>
-          <button class="menu-item-btn btn-send-speech" data-path="${escapeHtml(file.path)}" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">🗣️ Set as Speech (Mixer)</button>
-          <button class="menu-item-btn btn-send-music" data-path="${escapeHtml(file.path)}" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">🎵 Set as Music (Mixer)</button>
+        <div class="actions-popup-menu hidden" style="position: absolute; right: 0; top: 100%; margin-top: 4px; z-index: 50; background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); box-shadow: 0 8px 24px rgba(0,0,0,0.5); padding: 4px; min-width: 180px; display: flex; flex-direction: column; gap: 2px;">
+          <button class="menu-item-btn btn-send-workspace" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">🎵 Load into Workspace</button>
+          <button class="menu-item-btn btn-send-cutter" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">✂️ Open in Cutter</button>
+          <button class="menu-item-btn btn-send-sep" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">🎛️ Send to Separation</button>
+          <button class="menu-item-btn btn-send-diar" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">👥 Send to Diarization</button>
+          <button class="menu-item-btn btn-send-purity" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">🛡️ Send to Speaker Purity</button>
           <a href="/api/library/download?path=${encodeURIComponent(file.path)}" download="${escapeHtml(file.name)}" class="menu-item-btn" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--accent-primary-hover); text-decoration: none; cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">⬇️ Download File</a>
         </div>
       </div>
@@ -7350,13 +7472,18 @@ function buildFileItemCard(file, { isModal = false } = {}) {
     </div>
   `;
 
-  // Attach event listeners
   const btnPrev = card.querySelector('.btn-preview-file');
   btnPrev.addEventListener('click', () => toggleFilePreview(file.path, btnPrev));
 
+  card.querySelector('.file-select-check')?.addEventListener('change', (event) => {
+    if (event.target.checked) state.librarySelectedPaths.add(file.path);
+    else state.librarySelectedPaths.delete(file.path);
+    card.classList.toggle('selected', event.target.checked);
+    updateLibrarySelectionUi();
+  });
+
   card.querySelector('.btn-load-target').addEventListener('click', () => {
-    const target = isModal ? (state.libraryLoadTarget || 'workspace') : 'workspace';
-    loadLibraryFileTo(file.path, target);
+    loadLibraryFileTo(file.path, loadTarget);
   });
   card.querySelector('.btn-edit-file-tags')?.addEventListener('click', async () => {
     const entered = prompt('Custom tags (comma-separated). System tags remain read-only.', (file.custom_tags || []).join(', '));
@@ -7389,40 +7516,50 @@ function buildFileItemCard(file, { isModal = false } = {}) {
     });
   }
 
+  card.querySelector('.btn-send-workspace')?.addEventListener('click', () => { popupMenu.classList.add('hidden'); loadLibraryFileTo(file.path, 'workspace'); });
   card.querySelector('.btn-send-cutter')?.addEventListener('click', () => { popupMenu.classList.add('hidden'); loadLibraryFileTo(file.path, 'cutter'); });
   card.querySelector('.btn-send-sep')?.addEventListener('click', () => { popupMenu.classList.add('hidden'); loadLibraryFileTo(file.path, 'separation'); });
   card.querySelector('.btn-send-diar')?.addEventListener('click', () => { popupMenu.classList.add('hidden'); loadLibraryFileTo(file.path, 'diarization'); });
-  card.querySelector('.btn-send-speech')?.addEventListener('click', () => { popupMenu.classList.add('hidden'); loadLibraryFileTo(file.path, 'speech'); });
-  card.querySelector('.btn-send-music')?.addEventListener('click', () => { popupMenu.classList.add('hidden'); loadLibraryFileTo(file.path, 'music'); });
-
+  card.querySelector('.btn-send-purity')?.addEventListener('click', () => { popupMenu.classList.add('hidden'); loadLibraryFileTo(file.path, 'purity'); });
   card.querySelector('.btn-delete-file').addEventListener('click', () => deleteServerFile(file.path, file.name));
 
   return card;
 }
 
+function currentTabLibraryFiles() {
+  return sortLibraryFiles(
+    filterServerFiles(state.serverFiles, state.tabLibrarySearch, state.tabLibraryCategory, state.tabLibraryFilters)
+  );
+}
+
 function renderServerFiles() {
   const container = el.serverFilesList;
   if (!container) return;
-  container.innerHTML = "";
 
-  const query = state.tabLibrarySearch || "";
-  const category = state.tabLibraryCategory || "all";
-  const filtered = filterServerFiles(state.serverFiles, query, category, state.tabLibraryFilters);
+  const searchMatches = filterServerFiles(state.serverFiles, state.tabLibrarySearch, "all", state.tabLibraryFilters);
+  updateCategoryPills(el.tabLibraryCategories, searchMatches, state.tabLibraryCategory);
+  const filtered = currentTabLibraryFiles();
+
+  if (el.tabLibraryCount) {
+    el.tabLibraryCount.textContent = `${filtered.length} of ${(state.serverFiles || []).length} files`;
+  }
+  if (el.tabLibrarySelectAll) {
+    el.tabLibrarySelectAll.checked = filtered.length > 0 && filtered.every(file => state.librarySelectedPaths.has(file.path));
+    el.tabLibrarySelectAll.indeterminate = filtered.some(file => state.librarySelectedPaths.has(file.path)) && !el.tabLibrarySelectAll.checked;
+  }
+  updateLibrarySelectionUi();
 
   if (filtered.length === 0) {
     container.innerHTML = `<div class="empty-placeholder" style="padding: 2.5rem 1rem; text-align: center;">No project audio files found matching filter.</div>`;
     return;
   }
 
-  filtered.forEach(file => {
-    const card = buildFileItemCard(file, { isModal: false });
-    container.appendChild(card);
-  });
+  renderGroupedFileList(container, filtered, { isModal: false, selectable: true });
 }
 
 async function deleteServerFile(filePath, fileName) {
   const displayName = fileName || filePath.split('/').pop();
-  if (!confirm(`Are you sure you want to permanently delete "${displayName}" from disk?\n(Matching .json metadata sidecar will also be removed)`)) {
+  if (!confirm(`Permanently delete "${displayName}" from disk?\nThe matching .json sidecar will also be removed.`)) {
     return;
   }
   try {
@@ -7432,18 +7569,43 @@ async function deleteServerFile(filePath, fileName) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path: filePath }),
     });
-    const data = await parseJsonResponse(res);
-
-    showToast(`Deleted ${displayName} successfully!`, "success");
+    await parseJsonResponse(res);
+    state.librarySelectedPaths.delete(filePath);
+    showToast(`Deleted ${displayName}`, "success");
     await fetchServerFiles();
+    await fetchAudioList();
   } catch (err) {
     showToast(`Delete failed: ${err.message}`, "error");
   }
 }
 
+async function bulkDeleteSelectedLibraryFiles() {
+  const paths = [...state.librarySelectedPaths];
+  if (!paths.length) return;
+  if (!confirm(`Permanently delete ${paths.length} selected file${paths.length === 1 ? '' : 's'} from disk?\nMatching .json sidecars will also be removed.`)) {
+    return;
+  }
+  try {
+    showToast(`Deleting ${paths.length} files...`, "info");
+    const res = await fetch("/api/library/bulk-delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paths }),
+    });
+    const data = await parseJsonResponse(res);
+    state.librarySelectedPaths = new Set();
+    const failed = (data.errors || []).length;
+    showToast(`Deleted ${data.deleted_count || 0} file${(data.deleted_count || 0) === 1 ? '' : 's'}${failed ? ` (${failed} failed)` : ''}`, failed ? "warning" : "success");
+    await fetchServerFiles();
+    await fetchAudioList();
+  } catch (err) {
+    showToast(`Bulk delete failed: ${err.message}`, "error");
+  }
+}
+
 async function loadLibraryFileTo(filePath, target = 'workspace') {
   try {
-    showToast(`Loading ${filePath}...`, "info");
+    showToast(`Loading ${filePath.split('/').pop()}...`, "info");
     const res = await fetch("/api/library/load", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -7454,40 +7616,42 @@ async function loadLibraryFileTo(filePath, target = 'workspace') {
     if (data.audio_id) {
       await fetchAudioList();
       closeAllModals();
+      const title = data.metadata?.title || filePath.split('/').pop();
 
       if (target === 'workspace') {
         switchTab('tab-workspace');
         await setActiveAudio(data.audio_id, { play: true });
-        showToast(`Loaded "${data.metadata?.title || filePath}" into Studio Workspace!`, "success");
+        showToast(`Loaded "${title}" into Workspace`, "success");
       } else if (target === 'cutter') {
-        switchTab('tab-cutter');
+        switchTab('tab-workspace');
         await setActiveAudio(data.audio_id, { play: false });
-        showToast(`Loaded "${data.metadata?.title || filePath}" into Audio Cutter!`, "success");
+        showToast(`Loaded "${title}" into Audio Cutter`, "success");
       } else if (target === 'separation') {
         switchTab('tab-separation');
         if (el.sepInputSelect) {
           el.sepInputSelect.value = data.audio_id;
           el.sepInputSelect.dispatchEvent(new Event('change'));
         }
-        showToast(`Selected "${data.metadata?.title || filePath}" for Separation!`, "success");
+        showToast(`Selected "${title}" for Separation`, "success");
       } else if (target === 'diarization') {
         switchTab('tab-diarization');
         if (el.diarInputSelect) {
           el.diarInputSelect.value = data.audio_id;
           el.diarInputSelect.dispatchEvent(new Event('change'));
         }
-        showToast(`Selected "${data.metadata?.title || filePath}" for Diarization!`, "success");
-      } else if (target === 'speech') {
-        switchTab('tab-separation');
-        if (el.sepInputSelect) {
-          el.sepInputSelect.value = data.audio_id;
-          el.sepInputSelect.dispatchEvent(new Event('change'));
+        showToast(`Selected "${title}" for Diarization`, "success");
+      } else if (target === 'purity') {
+        switchTab('tab-purity');
+        if (el.purityInputSelect) {
+          el.purityInputSelect.value = data.audio_id;
+          state.purity.audioId = data.audio_id;
+          el.purityInputSelect.dispatchEvent(new Event('change'));
         }
-        showToast(`Selected "${data.metadata?.title || filePath}" for Separation!`, "success");
-      } else if (target === 'music') {
+        showToast(`Selected "${title}" for Speaker Purity`, "success");
+      } else {
         switchTab('tab-workspace');
         await setActiveAudio(data.audio_id, { play: true });
-        showToast(`Loaded "${data.metadata?.title || filePath}" into Workspace!`, "success");
+        showToast(`Loaded "${title}" into Workspace`, "success");
       }
     }
   } catch (err) {
@@ -7495,10 +7659,16 @@ async function loadLibraryFileTo(filePath, target = 'workspace') {
   }
 }
 
+function applyLibraryModalContext(target) {
+  const meta = LIBRARY_LOAD_TARGETS[target] || LIBRARY_LOAD_TARGETS.workspace;
+  if (el.libraryModalTitle) el.libraryModalTitle.textContent = meta.title;
+  if (el.libraryModalSubtitle) el.libraryModalSubtitle.textContent = meta.subtitle;
+}
+
 async function openLibraryModal(loadTarget = 'workspace') {
-  // Guard: click handlers may pass an Event as the first argument
-  const target = (typeof loadTarget === 'string' && loadTarget) ? loadTarget : 'workspace';
+  const target = (typeof loadTarget === 'string' && loadTarget && LIBRARY_LOAD_TARGETS[loadTarget]) ? loadTarget : 'workspace';
   state.libraryLoadTarget = target;
+  applyLibraryModalContext(target);
   if (el.modalLibrary) el.modalLibrary.classList.remove('hidden');
   if (el.libraryModalSearch) {
     el.libraryModalSearch.value = "";
@@ -7511,23 +7681,22 @@ async function openLibraryModal(loadTarget = 'workspace') {
       btn.classList.toggle('active', btn.dataset.category === 'all');
     });
   }
-
-  if (!state.serverFiles || state.serverFiles.length === 0) {
-    if (el.modalLibraryItems) {
-      el.modalLibraryItems.innerHTML = '<div class="empty-placeholder">Scanning project directories for sample audio files...</div>';
-    }
-    await fetchServerFiles();
+  if (el.libraryModalSort) el.libraryModalSort.value = state.librarySort;
+  if (el.modalLibraryItems) {
+    el.modalLibraryItems.innerHTML = '<div class="empty-placeholder">Scanning project directories…</div>';
   }
+  await fetchServerFiles();
   renderLibraryModalItems();
 }
 
 function renderLibraryModalItems() {
   if (!el.modalLibraryItems) return;
-  el.modalLibraryItems.innerHTML = "";
 
-  const query = state.libraryModalSearch || "";
-  const category = state.libraryModalCategory || "all";
-  const filtered = filterServerFiles(state.serverFiles, query, category);
+  const searchMatches = filterServerFiles(state.serverFiles, state.libraryModalSearch, "all");
+  updateCategoryPills(el.libraryModalCategories, searchMatches, state.libraryModalCategory);
+  const filtered = sortLibraryFiles(
+    filterServerFiles(state.serverFiles, state.libraryModalSearch, state.libraryModalCategory)
+  );
 
   if (el.libraryModalCount) {
     el.libraryModalCount.textContent = `${filtered.length} of ${(state.serverFiles || []).length} sample files`;
@@ -7543,10 +7712,7 @@ function renderLibraryModalItems() {
     return;
   }
 
-  filtered.forEach(file => {
-    const card = buildFileItemCard(file, { isModal: true });
-    el.modalLibraryItems.appendChild(card);
-  });
+  renderGroupedFileList(el.modalLibraryItems, filtered, { isModal: true, selectable: false });
 }
 
 // ==================== STUDIO TASK QUEUE MODAL LOGIC ====================
@@ -7946,6 +8112,7 @@ async function clearQueueFinished() {
 }
 
 function closeAllModals() {
+  stopFilePreview();
   if (el.modalSaveTo) el.modalSaveTo.classList.add('hidden');
   if (el.modalLibrary) el.modalLibrary.classList.add('hidden');
   if (el.modalTaskQueue) el.modalTaskQueue.classList.add('hidden');
@@ -7995,11 +8162,13 @@ function initModals() {
   // Close buttons
   if (el.btnCloseLibraryModal) {
     el.btnCloseLibraryModal.addEventListener('click', () => {
+      stopFilePreview();
       if (el.modalLibrary) el.modalLibrary.classList.add('hidden');
     });
   }
   if (el.btnCancelLibraryModal) {
     el.btnCancelLibraryModal.addEventListener('click', () => {
+      stopFilePreview();
       if (el.modalLibrary) el.modalLibrary.classList.add('hidden');
     });
   }
@@ -8040,6 +8209,26 @@ function initModals() {
       btn.classList.add('active');
       state.libraryModalCategory = btn.dataset.category || 'all';
       renderLibraryModalItems();
+    });
+  }
+
+  if (el.libraryModalSort) {
+    el.libraryModalSort.addEventListener('change', (e) => {
+      state.librarySort = e.target.value || 'newest';
+      if (el.tabLibrarySort) el.tabLibrarySort.value = state.librarySort;
+      renderLibraryModalItems();
+      renderServerFiles();
+    });
+  }
+
+  if (el.btnRefreshLibraryModal) {
+    el.btnRefreshLibraryModal.addEventListener('click', async () => {
+      el.btnRefreshLibraryModal.disabled = true;
+      try {
+        await fetchServerFiles();
+      } finally {
+        el.btnRefreshLibraryModal.disabled = false;
+      }
     });
   }
 }
@@ -8106,25 +8295,33 @@ function populateAllAudioSelects() {
       const sessionPaths = new Set(
         state.audioList.map(a => normalizedAudioPath(a.path)).filter(Boolean)
       );
-      const libraryGroup = document.createElement("optgroup");
-
-      state.serverFiles.forEach(file => {
+      const grouped = new Map();
+      sortLibraryFiles(state.serverFiles).forEach(file => {
         const canonicalPath = normalizedAudioPath(file?.absolute_path || file?.path);
         if (!file?.path || sessionPaths.has(canonicalPath)) return;
-        const opt = document.createElement("option");
-        opt.value = `lib:${file.path}`;
-        const title = file.title || file.name || file.path;
-        const dur = Number(file.duration_s) || 0;
-        const fmt = (file.format || "wav").toString().toUpperCase();
-        const cat = file.category ? `[${file.category}] ` : "";
-        opt.textContent = `${cat}${title} (${dur.toFixed(1)}s, ${fmt})`;
-        libraryGroup.appendChild(opt);
+        const key = fileCategoryId(file);
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key).push(file);
       });
-
-      if (libraryGroup.children.length > 0) {
-        libraryGroup.label = `📁 Sample Library (${libraryGroup.children.length})`;
+      const keys = [
+        ...LIBRARY_CATEGORY_ORDER.filter(key => grouped.has(key)),
+        ...[...grouped.keys()].filter(key => !LIBRARY_CATEGORY_ORDER.includes(key)),
+      ];
+      keys.forEach(key => {
+        const groupFiles = grouped.get(key) || [];
+        const libraryGroup = document.createElement("optgroup");
+        libraryGroup.label = `📁 ${groupFiles[0]?.category || key} (${groupFiles.length})`;
+        groupFiles.forEach(file => {
+          const opt = document.createElement("option");
+          opt.value = `lib:${file.path}`;
+          const title = file.title || file.name || file.path;
+          const dur = Number(file.duration_s) || 0;
+          const fmt = (file.format || "wav").toString().toUpperCase();
+          opt.textContent = `${title} (${dur.toFixed(1)}s, ${fmt})`;
+          libraryGroup.appendChild(opt);
+        });
         select.appendChild(libraryGroup);
-      }
+      });
     }
 
     if (currentVal && (
@@ -8645,6 +8842,31 @@ function initNavigation() {
       renderServerFiles();
     });
   });
+
+  if (el.tabLibrarySort) {
+    el.tabLibrarySort.addEventListener('change', (e) => {
+      state.librarySort = e.target.value || 'newest';
+      if (el.libraryModalSort) el.libraryModalSort.value = state.librarySort;
+      renderServerFiles();
+      renderLibraryModalItems();
+    });
+  }
+
+  if (el.tabLibrarySelectAll) {
+    el.tabLibrarySelectAll.addEventListener('change', () => {
+      const visible = currentTabLibraryFiles();
+      if (el.tabLibrarySelectAll.checked) {
+        visible.forEach(file => state.librarySelectedPaths.add(file.path));
+      } else {
+        visible.forEach(file => state.librarySelectedPaths.delete(file.path));
+      }
+      renderServerFiles();
+    });
+  }
+
+  if (el.btnBulkDeleteLibrary) {
+    el.btnBulkDeleteLibrary.addEventListener('click', bulkDeleteSelectedLibraryFiles);
+  }
 }
 
 function switchTab(tabId) {

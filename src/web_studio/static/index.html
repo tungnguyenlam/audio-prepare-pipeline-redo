@@ -1991,29 +1991,32 @@
               
 
               <section id="tab-library" class="tab-pane">
-        <div class="grid-2col">
+        <div class="library-explorer-layout">
           <!-- Project Audio Files Explorer -->
-          <div class="card">
+          <div class="card library-explorer-card">
             <div class="card-header">
               <div>
-                <h2 class="card-title">Project File Explorer</h2>
-                <span class="card-subtitle">Scanned from <code>benchmarks/</code>, <code>data/</code>, <code>temp/</code>, and <code>.data/</code></span>
+                <h2 class="card-title">Project Sample Library</h2>
+                <span class="card-subtitle">Browse, preview, load, and delete audio under <code>benchmarks/</code>, <code>data/</code>, <code>temp/</code>, and <code>.data/</code></span>
               </div>
               <button class="btn btn-sm btn-ghost" id="btn-refresh-library">
                 <span>↻ Refresh</span>
               </button>
             </div>
             
-            <div class="modal-filter-bar" style="margin-bottom: 0.75rem;">
-              <input type="text" id="tab-library-search" class="input-text library-search-input" placeholder="🔍 Search audio files by name, path, format...">
+            <div class="modal-filter-bar library-filter-bar">
+              <input type="text" id="tab-library-search" class="input-text library-search-input" placeholder="Search by name, path, tag, dataset, channel…">
               <div class="category-pills" id="tab-library-categories">
                 <button class="pill-btn active" data-category="all">All</button>
                 <button class="pill-btn" data-category="speech">Speech</button>
                 <button class="pill-btn" data-category="music">Music</button>
                 <button class="pill-btn" data-category="cuts">Cuts</button>
                 <button class="pill-btn" data-category="stems">Stems</button>
-                <button class="pill-btn" data-category="downloads">Ingest</button>
+                <button class="pill-btn" data-category="verified">Verified</button>
+                <button class="pill-btn" data-category="diarized">Diarized</button>
+                <button class="pill-btn" data-category="ingest">Ingest</button>
                 <button class="pill-btn" data-category="pipeline">Pipeline</button>
+                <button class="pill-btn" data-category="uploads">Uploads</button>
                 <button class="pill-btn" data-category="temp">Temp</button>
               </div>
               <div class="library-metadata-filters">
@@ -2022,6 +2025,21 @@
                 <select id="tab-library-speaker" class="select-input"><option value="all">All speakers/profiles</option></select>
                 <select id="tab-library-verification" class="select-input"><option value="all">Any verification</option><option value="unverified">Unverified</option><option value="passed">Passed</option><option value="rejected">Rejected</option></select>
                 <select id="tab-library-format" class="select-input"><option value="all">All formats</option></select>
+                <select id="tab-library-sort" class="select-input" title="Sort library files">
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="name">Name A–Z</option>
+                  <option value="duration">Longest first</option>
+                  <option value="size">Largest first</option>
+                </select>
+              </div>
+              <div class="library-toolbar">
+                <label class="library-select-all">
+                  <input type="checkbox" id="tab-library-select-all">
+                  <span>Select visible</span>
+                </label>
+                <button type="button" class="btn btn-xs btn-ghost text-danger" id="btn-bulk-delete-library" disabled>Delete selected</button>
+                <span class="modal-footer-hint font-mono text-muted" id="tab-library-count">0 files</span>
               </div>
             </div>
 
@@ -2035,7 +2053,7 @@
             <div class="card-header">
               <div>
                 <h2 class="card-title">Active Session Audio Objects</h2>
-                <span class="card-subtitle">In-memory registered Audio instances</span>
+                <span class="card-subtitle">Loaded into this Studio session for processing</span>
               </div>
               <div style="display: flex; align-items: center; gap: 8px;">
                 <span class="badge badge-ghost" id="session-count-badge">0 items</span>
@@ -2186,28 +2204,45 @@
     <!-- Sample Library Modal -->
 
     <div id="modal-library" class="modal-backdrop hidden">
-      <div class="modal-card modal-lg">
+      <div class="modal-card modal-lg library-modal-card">
         <div class="modal-header">
           <div class="modal-title-wrap">
             <span class="modal-badge-icon">📁</span>
             <div>
-              <h3 class="modal-title">Project Sample Library</h3>
-              <p class="modal-subtitle">Browse, preview, and load audio files from data/ and .data/ directories</p>
+              <h3 class="modal-title" id="library-modal-title">Project Sample Library</h3>
+              <p class="modal-subtitle" id="library-modal-subtitle">Browse, preview, and load audio from the project sample folders</p>
             </div>
           </div>
-          <button class="btn-close-modal" id="btn-close-library-modal" title="Close" aria-label="Close modal">&times;</button>
+          <div class="modal-header-actions">
+            <button class="btn btn-sm btn-secondary" id="btn-refresh-library-modal" title="Rescan project directories">
+              <span>↻ Refresh</span>
+            </button>
+            <button class="btn-close-modal" id="btn-close-library-modal" title="Close" aria-label="Close modal">&times;</button>
+          </div>
         </div>
         
-        <div class="modal-filter-bar">
-          <input type="text" id="library-modal-search" class="input-text library-search-input" placeholder="🔍 Search samples by name, folder, format...">
+        <div class="modal-filter-bar library-filter-bar">
+          <div class="library-search-row">
+            <input type="text" id="library-modal-search" class="input-text library-search-input" placeholder="Search samples by name, folder, tag, format…">
+            <select id="library-modal-sort" class="select-input library-sort-select" title="Sort library files">
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="name">Name A–Z</option>
+              <option value="duration">Longest first</option>
+              <option value="size">Largest first</option>
+            </select>
+          </div>
           <div class="category-pills" id="library-modal-categories">
             <button class="pill-btn active" data-category="all">All</button>
             <button class="pill-btn" data-category="speech">Speech</button>
             <button class="pill-btn" data-category="music">Music</button>
             <button class="pill-btn" data-category="cuts">Cuts</button>
             <button class="pill-btn" data-category="stems">Stems</button>
-            <button class="pill-btn" data-category="downloads">Ingest</button>
+            <button class="pill-btn" data-category="verified">Verified</button>
+            <button class="pill-btn" data-category="diarized">Diarized</button>
+            <button class="pill-btn" data-category="ingest">Ingest</button>
             <button class="pill-btn" data-category="pipeline">Pipeline</button>
+            <button class="pill-btn" data-category="uploads">Uploads</button>
             <button class="pill-btn" data-category="temp">Temp</button>
           </div>
         </div>
