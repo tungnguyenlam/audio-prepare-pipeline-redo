@@ -16,6 +16,16 @@ from src.utils.AudioClass import Audio
 DIARIZATION_RESULT_KIND = "diarization.result"
 DIARIZATION_SCHEMA_VERSION = "2.0"
 
+_SPEAKER_FIELDS = {"speaker_id", "global_speaker_id"}
+_MODEL_FIELDS = {"backend", "model_id", "revision"}
+_TURN_FIELDS = {
+    "speaker_id",
+    "start_s",
+    "end_s",
+    "confidence",
+    "overlaps_other_speaker",
+}
+
 
 def _validate_non_empty_string(value: str, field_name: str) -> None:
     if not isinstance(value, str):
@@ -29,6 +39,59 @@ def _validate_timestamp(value: float, field_name: str) -> None:
         raise TypeError(f"{field_name} must be a number")
     if not isfinite(value) or value < 0:
         raise ValueError(f"{field_name} must be finite and non-negative")
+
+
+def _speaker_from_payload(raw: Any) -> Speaker:
+    """Build a speaker from JSON, ignoring viewer-only extra keys."""
+    if isinstance(raw, str):
+        return Speaker(speaker_id=raw)
+    if not isinstance(raw, dict):
+        raise TypeError("each speaker must be an object")
+    payload = {key: raw[key] for key in _SPEAKER_FIELDS if key in raw}
+    return Speaker(**payload)
+
+
+def _model_from_payload(raw: Any) -> DiarizationModelInfo | None:
+    if not isinstance(raw, dict):
+        return None
+    payload = {key: raw[key] for key in _MODEL_FIELDS if key in raw}
+    if "backend" not in payload or "model_id" not in payload:
+        return None
+    return DiarizationModelInfo(**payload)
+
+
+def _turn_from_payload(
+    raw: Any,
+    *,
+    duration_s: float | None,
+) -> SpeakerTurn | None:
+    """Build one turn from JSON, clamping last-frame overshoot on load.
+
+    Unknown viewer keys such as ``duration_s`` and ``has_overlap`` are ignored
+    so previously persisted results can still be reopened in history.
+    """
+    if not isinstance(raw, dict):
+        return None
+    payload = dict(raw)
+    payload.pop("duration_s", None)
+    if "overlaps_other_speaker" not in payload and "has_overlap" in payload:
+        payload["overlaps_other_speaker"] = bool(payload.get("has_overlap"))
+    payload.pop("has_overlap", None)
+    payload = {key: payload[key] for key in _TURN_FIELDS if key in payload}
+    try:
+        start_s = float(payload.get("start_s", 0))
+        end_s = float(payload.get("end_s", 0))
+    except (TypeError, ValueError):
+        return None
+    if duration_s is not None and isfinite(duration_s) and duration_s >= 0:
+        start_s = min(max(0.0, start_s), duration_s)
+        end_s = min(max(0.0, end_s), duration_s)
+    payload["start_s"] = start_s
+    payload["end_s"] = end_s
+    try:
+        return SpeakerTurn(**payload)
+    except (TypeError, ValueError):
+        return None
 
 
 @dataclass
@@ -410,6 +473,10 @@ class DiarizationResult:
 
         ``source_audio`` may be supplied only to migrate an older schema-1.0
         payload that did not contain a file-backed source snapshot.
+
+        Load is more tolerant than direct construction: unknown viewer keys are
+        ignored, last-frame timestamps that overshoot ``duration_s`` are
+        clamped, and speakers referenced only by turns are added.
         """
         if not isinstance(data, dict):
             raise TypeError("DiarizationResult payload must be an object")
@@ -419,32 +486,46 @@ class DiarizationResult:
 
         source_payload = data.get("source_audio")
         if source_audio is None and isinstance(source_payload, dict):
-            source_audio = Audio(
-                path=Path(source_payload["path"]).expanduser().resolve(),
-                source_id=str(source_payload["source_id"]),
-                title=source_payload.get("title"),
-                sample_rate=source_payload.get("sample_rate"),
-                duration_s=source_payload.get("duration_s"),
-                channels=source_payload.get("channels"),
-                format=str(source_payload.get("format", "wav")),
-                native_sample_rate=source_payload.get("native_sample_rate"),
-                history=tuple(source_payload.get("history") or ()),
-                source_url=source_payload.get("source_url"),
-                channel_id=source_payload.get("channel_id"),
-                channel_name=source_payload.get("channel_name"),
-                channel_url=source_payload.get("channel_url"),
-            )
+            raw_path = source_payload.get("path")
+            raw_source_id = source_payload.get("source_id") or data.get("audio_id")
+            if raw_path and raw_source_id:
+                source_audio = Audio(
+                    path=Path(raw_path).expanduser().resolve(),
+                    source_id=str(raw_source_id),
+                    title=source_payload.get("title"),
+                    sample_rate=source_payload.get("sample_rate"),
+                    duration_s=source_payload.get("duration_s"),
+                    channels=source_payload.get("channels"),
+                    format=str(source_payload.get("format", "wav")),
+                    native_sample_rate=source_payload.get("native_sample_rate"),
+                    history=tuple(source_payload.get("history") or ()),
+                    source_url=source_payload.get("source_url"),
+                    channel_id=source_payload.get("channel_id"),
+                    channel_name=source_payload.get("channel_name"),
+                    channel_url=source_payload.get("channel_url"),
+                )
 
-        turns = []
-        for raw_turn in data.get("turns", []):
-            turn_data = dict(raw_turn)
-            turn_data.pop("duration_s", None)
-            turns.append(SpeakerTurn(**turn_data))
-        model_payload = data.get("model")
+        duration_s = getattr(source_audio, "duration_s", None)
+        turns = [
+            turn
+            for turn in (
+                _turn_from_payload(raw_turn, duration_s=duration_s)
+                for raw_turn in data.get("turns", [])
+            )
+            if turn is not None
+        ]
         speaker_payloads = data.get("speakers") or [
             {"speaker_id": speaker_id}
             for speaker_id in sorted({turn.speaker_id for turn in turns})
         ]
+        speakers = [_speaker_from_payload(speaker) for speaker in speaker_payloads]
+        declared_ids = {speaker.speaker_id for speaker in speakers}
+        for turn in turns:
+            if turn.speaker_id not in declared_ids:
+                speakers.append(Speaker(speaker_id=turn.speaker_id))
+                declared_ids.add(turn.speaker_id)
+
+        model_payload = data.get("model")
         if not model_payload and data.get("backend"):
             model_payload = {
                 "backend": str(data["backend"]),
@@ -453,10 +534,10 @@ class DiarizationResult:
         return cls(
             schema_version=str(data.get("schema_version", "1.0")),
             audio_id=str(data["audio_id"]),
-            speakers=[Speaker(**speaker) for speaker in speaker_payloads],
+            speakers=speakers,
             turns=turns,
             source_audio=source_audio,
-            model=DiarizationModelInfo(**model_payload) if model_payload else None,
+            model=_model_from_payload(model_payload),
             channel_id=data.get("channel_id") or getattr(source_audio, "channel_id", None),
             channel_name=data.get("channel_name") or getattr(source_audio, "channel_name", None),
             channel_url=data.get("channel_url") or getattr(source_audio, "channel_url", None),

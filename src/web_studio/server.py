@@ -1279,11 +1279,19 @@ def _result_catalog_item(
     The list endpoint returns summaries only. The single-result endpoint
     returns the complete canonical payload plus session hydration fields.
     """
-    session_audio_id = (
-        _ensure_source_registered(result)
-        if hydrate_source
-        else _session_audio_id_for(result)
-    )
+    session_audio_id = None
+    if hydrate_source:
+        try:
+            session_audio_id = _ensure_source_registered(result)
+        except Exception as exc:
+            logger.warning(
+                "Could not re-register diarization source for %s: %s",
+                result.result_id,
+                exc,
+            )
+            session_audio_id = _session_audio_id_for(result)
+    else:
+        session_audio_id = _session_audio_id_for(result)
     source_path = _source_audio_path(result)
     extras = {
         "verification": verification or {
@@ -1294,9 +1302,19 @@ def _result_catalog_item(
     }
     if complete:
         payload = result.to_dict()
+        if payload.get("source_audio") is not None and result.source_audio is not None:
+            try:
+                payload["source_audio"]["fingerprint"] = result.source_audio.fingerprint
+            except Exception:
+                payload["source_audio"]["fingerprint"] = None
         payload.update(extras)
         return payload
     source = result.source_audio.metadata() if result.source_audio else None
+    if source is not None:
+        try:
+            source["fingerprint"] = result.source_audio.fingerprint
+        except Exception:
+            source["fingerprint"] = None
     return {
         "kind": DIARIZATION_RESULT_KIND,
         "schema_version": result.schema_version,
@@ -1317,6 +1335,108 @@ def _result_catalog_item(
         },
         **extras,
     }
+
+
+def _raw_result_catalog_item(
+    path: Path,
+    verification: dict[str, Any] | None = None,
+    *,
+    complete: bool = False,
+) -> dict[str, Any]:
+    """Build a catalog entry from raw JSON when schema load fails."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("Diarization result is not an object")
+    result_id = str(data.get("result_id") or path.stem)
+    source = data.get("source_audio") if isinstance(data.get("source_audio"), dict) else None
+    speakers = data.get("speakers") if isinstance(data.get("speakers"), list) else []
+    turns = data.get("turns") if isinstance(data.get("turns"), list) else []
+    summary = data.get("summary") if isinstance(data.get("summary"), dict) else {}
+    source_path: Path | None = None
+    if source and source.get("path"):
+        try:
+            source_path = Path(str(source["path"])).expanduser()
+            if not source_path.is_absolute():
+                source_path = ROOT_DIR / source_path
+            source_path = source_path.resolve()
+        except OSError:
+            source_path = None
+    extras = {
+        "verification": verification or {
+            "state": "unverified", "turns": {}, "report_id": None
+        },
+        "source_available": bool(source_path and source_path.is_file()),
+        "session_audio_id": registry.find_id_by_path(source_path) if source_path else None,
+    }
+    if complete and not extras["session_audio_id"] and extras["source_available"] and source_path:
+        try:
+            extras["session_audio_id"] = registry.register(
+                Audio.from_file(source_path),
+                source_type="library",
+                tags=["library", "diarization_source"],
+            )
+        except Exception as exc:
+            logger.warning("Could not re-register raw diarization source %s: %s", path, exc)
+    if complete:
+        payload = dict(data)
+        payload.update(extras)
+        return payload
+    return {
+        "kind": data.get("kind") or DIARIZATION_RESULT_KIND,
+        "schema_version": data.get("schema_version") or "1.0",
+        "result_id": result_id,
+        "created_at": data.get("created_at") or 0,
+        "audio_id": data.get("audio_id") or (source or {}).get("source_id"),
+        "source_audio": source,
+        "speakers": speakers,
+        "model": data.get("model"),
+        "channel_id": data.get("channel_id"),
+        "channel_name": data.get("channel_name"),
+        "channel_url": data.get("channel_url"),
+        "summary": {
+            "speaker_count": summary.get("speaker_count", len(speakers)),
+            "turn_count": summary.get("turn_count", len(turns)),
+            "total_speech_duration_s": summary.get("total_speech_duration_s", 0),
+            "duration_per_speaker_s": summary.get("duration_per_speaker_s") or {},
+        },
+        **extras,
+    }
+
+
+def _catalog_item_from_path(
+    path: Path,
+    verification: dict[str, dict[str, Any]],
+    *,
+    complete: bool = False,
+    hydrate_source: bool = False,
+) -> dict[str, Any]:
+    """Load one result file as a catalog item, falling back to raw JSON."""
+    try:
+        result = DiarizationResult.load(path)
+        item = _result_catalog_item(
+            result,
+            verification.get(result.result_id),
+            complete=complete,
+            hydrate_source=hydrate_source,
+        )
+        json.dumps(item, allow_nan=False)
+        return item
+    except Exception as exc:
+        logger.warning("Could not load diarization result %s: %s", path, exc)
+        item = _raw_result_catalog_item(
+            path,
+            verification.get(str(path.stem)),
+            complete=complete,
+        )
+        json.dumps(item, allow_nan=False)
+        return item
+
+
+def _created_at_value(item: dict[str, Any]) -> float:
+    try:
+        return float(item.get("created_at") or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def extract_waveform_peaks(audio_path: Path, num_points: int = 1200) -> List[float]:
@@ -3228,32 +3348,33 @@ async def handle_list_diarization_results(request: web.Request) -> web.Response:
     items = []
     for path in DIARIZATION_RESULTS_DIR.glob("*.json"):
         try:
-            result = DiarizationResult.load(path)
-            item = _result_catalog_item(result, verification.get(result.result_id))
-            json.dumps(item, allow_nan=False)
-            items.append(item)
+            items.append(_catalog_item_from_path(path, verification))
         except Exception as exc:
             logger.warning("Ignoring invalid diarization result %s: %s", path, exc)
-    items.sort(key=lambda item: item.get("created_at", 0), reverse=True)
+    items.sort(key=lambda item: _created_at_value(item), reverse=True)
     return _json_response({"results": items, "total": len(items)})
 
 
 async def handle_get_diarization_result(request: web.Request) -> web.Response:
     """Return one complete canonical diarization result."""
+    result_id = request.match_info["result_id"]
     try:
-        result = _load_diarization_result(request.match_info["result_id"])
-    except FileNotFoundError as exc:
-        return _json_response({"error": str(exc)}, status=404)
-    except (TypeError, ValueError, OSError, json.JSONDecodeError) as exc:
-        return _json_response({"error": str(exc)}, status=400)
-    state = _verification_state_index().get(result.result_id)
-    try:
-        return _json_response(
-            _result_catalog_item(result, state, complete=True, hydrate_source=True)
-        )
+        path = _diarization_result_path(result_id)
     except ValueError as exc:
-        logger.exception("Could not serialize diarization result %s", result.result_id)
+        return _json_response({"error": str(exc)}, status=400)
+    if not path.is_file():
+        return _json_response({"error": f"Diarization result not found: {result_id}"}, status=404)
+    verification = _verification_state_index()
+    try:
+        payload = _catalog_item_from_path(
+            path, verification, complete=True, hydrate_source=True
+        )
+        return _json_response(payload)
+    except ValueError as exc:
+        logger.exception("Could not serialize diarization result %s", result_id)
         return _json_response({"error": f"Result is not JSON-serializable: {exc}"}, status=500)
+    except (TypeError, OSError, json.JSONDecodeError) as exc:
+        return _json_response({"error": str(exc)}, status=400)
 
 
 async def handle_delete_diarization_result(request: web.Request) -> web.Response:

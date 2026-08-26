@@ -948,12 +948,14 @@ The repository provides two specialized web platforms:
   verification preview clips stay tight for speaker identity; purity stem
   export uses the same extraction padding.
 - **Persistence:** Studio's diarization history and result-first verifier load
-  the server-side canonical result catalog after refresh or restart. Result JSON
-  lives under `.data/diarization/results/`. The Studio session audio registry is
-  persisted to `.data/studio/audio_registry.json` and restored on backend
-  startup for files that still exist. Browser storage contains viewer-only
-  speaker labels/colors and verifier preferences, not the authoritative turns
-  or source identity.
+  the server-side canonical result catalog after refresh or restart. The
+  history panel waits for that catalog before auto-restoring the selected
+  track. Result JSON lives under `.data/diarization/results/`. The Studio
+  session audio registry is persisted to `.data/studio/audio_registry.json`
+  and restored on backend startup for files that still exist. Reopening a
+  result re-registers its source audio when the file is still present.
+  Browser storage contains viewer-only speaker labels/colors and verifier
+  preferences, not the authoritative turns or source identity.
 
 ### `src/web_pipeline/` (SonicPipeline API domain and frontend)
 - **Role:** Large-scale channel-oriented batch engine for high-throughput

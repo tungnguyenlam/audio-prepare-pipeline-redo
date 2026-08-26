@@ -2898,20 +2898,53 @@ function clearDiarizationWorkspace() {
 function diarizationHistoryMatch(item, audio) {
   if (!item || !audio) return false;
   if (item.session_audio_id && item.session_audio_id === audio.id) return true;
-  if (item.audio_id && (item.audio_id === audio.id || item.audio_id === audio.source_id)) return true;
-  if (item.audio_source_id && item.audio_source_id === audio.source_id) return true;
-  if (item.audio_fingerprint && audio.fingerprint && item.audio_fingerprint === audio.fingerprint) return true;
   if (item.audio_path && audio.path && normalizedAudioPath(item.audio_path) === normalizedAudioPath(audio.path)) return true;
-  return false;
+  if (item.audio_fingerprint && audio.fingerprint && item.audio_fingerprint === audio.fingerprint) return true;
+  const sameSource = Boolean(
+    (item.audio_source_id && item.audio_source_id === audio.source_id)
+    || (item.audio_id && (item.audio_id === audio.id || item.audio_id === audio.source_id))
+  );
+  if (!sameSource) return false;
+  if (item.duration_s && audio.duration_s) {
+    return Math.abs(Number(item.duration_s) - Number(audio.duration_s)) < 0.5;
+  }
+  return true;
 }
 
 function findDiarizationHistoryForAudio(audioId) {
   const audio = state.audioList.find(item => item.id === audioId);
   if (!audio) return null;
-  return (state.diarization.history || []).find(item => diarizationHistoryMatch(item, audio)) || null;
+  const matches = (state.diarization.history || []).filter(item => diarizationHistoryMatch(item, audio));
+  if (!matches.length) return null;
+  const ranked = matches.map(item => {
+    let score = 0;
+    if (item.session_audio_id && item.session_audio_id === audio.id) score += 8;
+    if (item.audio_path && audio.path && normalizedAudioPath(item.audio_path) === normalizedAudioPath(audio.path)) score += 4;
+    if (item.audio_fingerprint && audio.fingerprint && item.audio_fingerprint === audio.fingerprint) score += 2;
+    return { item, score };
+  });
+  ranked.sort((a, b) => b.score - a.score || (b.item.timestamp || 0) - (a.item.timestamp || 0));
+  return ranked[0].item;
 }
 
 function resolveDiarizationHistoryAudio(item) {
+  if (!item) return null;
+  if (item.session_audio_id) {
+    const bySession = state.audioList.find(audio => audio.id === item.session_audio_id);
+    if (bySession) return bySession;
+  }
+  if (item.audio_path) {
+    const byPath = state.audioList.find(audio => (
+      audio.path && normalizedAudioPath(audio.path) === normalizedAudioPath(item.audio_path)
+    ));
+    if (byPath) return byPath;
+  }
+  if (item.audio_fingerprint) {
+    const byFingerprint = state.audioList.find(audio => (
+      audio.fingerprint && audio.fingerprint === item.audio_fingerprint
+    ));
+    if (byFingerprint) return byFingerprint;
+  }
   return state.audioList.find(audio => diarizationHistoryMatch(item, audio)) || null;
 }
 
@@ -2933,7 +2966,10 @@ function showSavedDiarizationNotice(item, audioId) {
   }
 }
 
-async function openDiarizationAudio(audioId, { restoreHistory = false } = {}) {
+async function openDiarizationAudio(audioId, { restoreHistory = false, waitForHistory = true } = {}) {
+  if (restoreHistory && waitForHistory) {
+    await diarizationHistoryReady;
+  }
   const previousAudioId = state.diarization.audioId;
   renderDiarizationChildren(audioId);
   updateDiarInputMeta(audioId);
@@ -2959,7 +2995,10 @@ function cloneDiarizationData(data) {
 }
 
 function saveDiarizationToHistory(diarization, audioId, runResult = {}) {
-  if (!diarization || !Array.isArray(state.diarization.turns)) return;
+  if (!diarization) return;
+  if (!Array.isArray(state.diarization.turns)) state.diarization.turns = [];
+  if (!Array.isArray(state.diarization.rawTurns)) state.diarization.rawTurns = [];
+  if (!Array.isArray(state.diarization.history)) state.diarization.history = [];
 
   const audio = state.audioList.find(item => item.id === audioId) || {};
   const completeData = cloneDiarizationData(state.diarization.data || diarization);
@@ -3006,6 +3045,7 @@ function saveDiarizationToHistory(diarization, audioId, runResult = {}) {
   persistDiarizationHistory();
   renderDiarizationHistory();
   showSavedDiarizationNotice(historyItem, audioId);
+  loadDiarizationHistory();
 }
 
 function persistDiarizationHistory() {
@@ -3058,42 +3098,72 @@ function normalizeDiarizationHistoryItem(item) {
   };
 }
 
+let diarizationHistoryLoadSeq = 0;
+let diarizationHistoryReady = Promise.resolve();
+
 async function loadDiarizationHistory() {
-  try {
-    const payload = await parseJsonResponse(await fetch('/api/diarization/results'));
-    await fetchAudioList();
-    const uiState = JSON.parse(localStorage.getItem('sonic_diarization_ui_state') || '{}');
-    state.diarization.history = (payload.results || []).map(result => {
-      const source = result.source_audio || {};
-      const summary = result.summary || {};
-      const ui = uiState[result.result_id] || {};
-      return normalizeDiarizationHistoryItem({
-        id: result.result_id,
-        timestamp: Number(result.created_at || 0) * 1000,
-        audio_id: result.session_audio_id || result.audio_id,
-        session_audio_id: result.session_audio_id || null,
-        audio_title: source.title || result.audio_id,
-        audio_path: source.path,
-        audio_source_id: source.source_id || result.audio_id,
-        audio_fingerprint: source.fingerprint || null,
-        duration_s: source.duration_s || 0,
-        model_backend: result.model?.backend,
-        model_id: result.model?.model_id,
-        speaker_count: summary.speaker_count,
-        turn_count: summary.turn_count,
-        total_speech_s: summary.total_speech_duration_s,
-        speech_ratio_pct: source.duration_s > 0 ? Number((100 * summary.total_speech_duration_s / source.duration_s).toFixed(1)) : 0,
-        source_available: Boolean(result.source_available),
-        diarization: result,
-        custom_names: ui.custom_names || {},
-        colors: ui.colors || {},
-      });
-    }).filter(Boolean);
-  } catch (err) {
-    console.warn('Could not load durable diarization history:', err);
-    state.diarization.history = [];
-  }
-  renderDiarizationHistory();
+  const seq = ++diarizationHistoryLoadSeq;
+  const pending = (async () => {
+    try {
+      const payload = await parseJsonResponse(await fetch('/api/diarization/results'));
+      if (seq !== diarizationHistoryLoadSeq) return;
+      await fetchAudioList();
+      if (seq !== diarizationHistoryLoadSeq) return;
+      const uiState = JSON.parse(localStorage.getItem('sonic_diarization_ui_state') || '{}');
+      const loaded = (payload.results || []).map(result => {
+        const source = result.source_audio || {};
+        const summary = result.summary || {};
+        const ui = uiState[result.result_id] || {};
+        return normalizeDiarizationHistoryItem({
+          id: result.result_id,
+          timestamp: Number(result.created_at || 0) * 1000,
+          audio_id: result.session_audio_id || result.audio_id,
+          session_audio_id: result.session_audio_id || null,
+          audio_title: source.title || result.audio_id,
+          audio_path: source.path,
+          audio_source_id: source.source_id || result.audio_id,
+          audio_fingerprint: source.fingerprint || null,
+          duration_s: source.duration_s || 0,
+          model_backend: result.model?.backend,
+          model_id: result.model?.model_id,
+          speaker_count: summary.speaker_count,
+          turn_count: summary.turn_count,
+          total_speech_s: summary.total_speech_duration_s,
+          speech_ratio_pct: source.duration_s > 0 ? Number((100 * summary.total_speech_duration_s / source.duration_s).toFixed(1)) : 0,
+          source_available: Boolean(result.source_available),
+          diarization: result,
+          custom_names: ui.custom_names || {},
+          colors: ui.colors || {},
+        });
+      }).filter(Boolean);
+      const loadedIds = new Set(loaded.map(item => item.id));
+      const localOnly = (state.diarization.history || []).filter(item => (
+        item?.id
+        && !loadedIds.has(item.id)
+        && Array.isArray(item.diarization?.turns)
+        && item.diarization.turns.length > 0
+      ));
+      const activeId = state.diarization.activeHistoryId;
+      state.diarization.history = [...localOnly, ...loaded];
+      if (activeId && state.diarization.history.some(item => item.id === activeId)) {
+        state.diarization.activeHistoryId = activeId;
+      }
+    } catch (err) {
+      if (seq !== diarizationHistoryLoadSeq) return;
+      console.warn('Could not load durable diarization history:', err);
+      if (!Array.isArray(state.diarization.history)) state.diarization.history = [];
+    }
+    if (seq !== diarizationHistoryLoadSeq) return;
+    renderDiarizationHistory();
+    const selectedId = el.diarInputSelect?.value;
+    if (selectedId && !selectedId.startsWith('lib:')) {
+      const historyItem = findDiarizationHistoryForAudio(selectedId);
+      if (historyItem) showSavedDiarizationNotice(historyItem, selectedId);
+      else hideSavedDiarizationNotice();
+    }
+  })();
+  diarizationHistoryReady = pending.catch(() => {});
+  await pending;
 }
 
 function historyDiarizationData(item) {
@@ -3112,8 +3182,12 @@ async function restoreDiarizationHistoryItem(item, targetAudioId = null, { notif
       );
       normalized.diarization = diarization;
       normalized.session_audio_id = diarization.session_audio_id || normalized.session_audio_id;
+      normalized.audio_path = diarization.source_audio?.path || normalized.audio_path;
+      normalized.audio_fingerprint = diarization.source_audio?.fingerprint || normalized.audio_fingerprint;
       normalized.turn_count = diarization.turns?.length || normalized.turn_count;
       normalized.speaker_count = diarization.speakers?.length || normalized.speaker_count;
+      const historyIndex = (state.diarization.history || []).findIndex(entry => entry.id === normalized.id);
+      if (historyIndex >= 0) state.diarization.history[historyIndex] = normalized;
       await fetchAudioList();
     } catch (err) {
       showToast(`Could not load diarization result: ${err.message}`, 'error');

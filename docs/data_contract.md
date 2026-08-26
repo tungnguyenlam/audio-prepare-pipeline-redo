@@ -41,10 +41,11 @@ verification. Every newly produced result contains:
 `to_dict()` is the only serialized representation. `from_dict()` round-trips
 it, `save()` writes it atomically, and `load()` restores it. Turn `duration_s`
 and `summary` are serialized conveniences and are recomputed from canonical
-fields on load. Constructors reject duplicate speakers, turns referencing
-undeclared speakers, mismatched source identity, and turns beyond a known
-source duration. Schema-1.0 payloads can be migrated by passing their source
-`Audio` to `from_dict()`.
+fields on load.         Load is more tolerant than direct construction so Studio history can
+        reopen persisted files: unknown viewer keys are ignored, last-frame
+        timestamps that overshoot ``duration_s`` are clamped, and speakers
+        referenced only by turns are added. Constructors still reject invalid
+        newly produced results.
 
 The derived Python properties are `speaker_count`, `turn_count`,
 `total_speech_duration_s`, `duration_per_speaker_s`, and
