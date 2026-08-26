@@ -3254,8 +3254,9 @@ button {
 }
 
 .diar-filter-item-grow {
-  flex: 1 1 220px;
+  flex: 1 1 200px;
   min-width: 160px;
+  max-width: 280px;
 }
 
 .diar-filter-item-label {
@@ -3305,6 +3306,8 @@ button {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+  flex: 1 1 auto;
+  max-width: 100%;
 }
 
 .diar-turn-stats .badge {

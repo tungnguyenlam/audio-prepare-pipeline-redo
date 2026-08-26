@@ -4332,7 +4332,7 @@ function renderTurnReviewStats(visibleCount) {
     el.diarFilteredTurnsCount.textContent = `${visibleCount} of ${stats.total} turns`;
   }
   if (el.diarReviewedCount) {
-    el.diarReviewedCount.textContent = `${stats.reviewed} reviewed`;
+    el.diarReviewedCount.textContent = `${stats.reviewed} reviewed by me`;
   }
   if (el.diarAcceptedCount) {
     el.diarAcceptedCount.textContent = `${stats.accepted} accepted`;
