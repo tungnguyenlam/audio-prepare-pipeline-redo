@@ -3086,11 +3086,13 @@ function normalizeDiarizationHistoryItem(item) {
   };
   const speakers = Array.isArray(diarization.speakers) ? diarization.speakers : [];
   const turns = Array.isArray(diarization.turns) ? diarization.turns : [];
+  const uniqueTurnSpeakers = new Set(turns.map(t => t.speaker_id).filter(Boolean));
+  const speakerCount = uniqueTurnSpeakers.size > 0 ? uniqueTurnSpeakers.size : (Number(item.speaker_count) || speakers.length);
   return {
     ...item,
     id: item.id || `diar_hist_${item.timestamp || Date.now()}`,
     timestamp: Number(item.timestamp) || Date.now(),
-    speaker_count: Number(item.speaker_count) || speakers.length,
+    speaker_count: speakerCount,
     turn_count: Number(item.turn_count) || turns.length,
     diarization,
     custom_names: legacyNames,
@@ -3504,13 +3506,13 @@ function renderDiarizationWorkspace(diarization, audioId, options = {}) {
   if (el.audio) el.audio.muted = false;
 
   const rawSpeakers = state.diarization.data.speakers || state.diarization.speakers || [];
-  state.diarization.speakers = rawSpeakers.map(s => {
+  const initialSpeakers = rawSpeakers.map(s => {
     if (typeof s === 'string') return { speaker_id: s };
     if (s && s.speaker_id) return s;
     return { speaker_id: s?.id || String(s) };
   });
 
-  const fallbackSpeakerId = state.diarization.speakers[0]?.speaker_id || "spk_00";
+  const fallbackSpeakerId = initialSpeakers[0]?.speaker_id || "spk_00";
   const canonicalTurns = options.rawTurns || state.diarization.data.turns || [];
   state.diarization.rawTurns = canonicalDiarizationTurns(canonicalTurns, fallbackSpeakerId);
   state.diarization.turns = normalizedDiarizationTurns(
@@ -3528,9 +3530,28 @@ function renderDiarizationWorkspace(diarization, audioId, options = {}) {
   const totalAudioDuration = (audioItem ? audioItem.duration_s : 0) || state.diarization.data.duration_s || maxTurnEnd || 10;
   state.diarization.duration = totalAudioDuration;
 
-  if (state.diarization.speakers.length === 0) {
-    const uniqueSpkIds = Array.from(new Set(state.diarization.turns.map(t => t.speaker_id)));
-    state.diarization.speakers = uniqueSpkIds.map(id => ({ speaker_id: id }));
+  const uniqueSpkIds = Array.from(new Set(state.diarization.turns.map(t => t.speaker_id).filter(Boolean)));
+  if (uniqueSpkIds.length > 0) {
+    const rawMap = new Map();
+    initialSpeakers.forEach(s => {
+      if (s.speaker_id && !rawMap.has(s.speaker_id)) {
+        rawMap.set(s.speaker_id, s);
+      }
+    });
+    const syncedSpeakers = [];
+    rawMap.forEach((obj, id) => {
+      if (uniqueSpkIds.includes(id)) {
+        syncedSpeakers.push(obj);
+      }
+    });
+    uniqueSpkIds.forEach(id => {
+      if (!rawMap.has(id)) {
+        syncedSpeakers.push({ speaker_id: id });
+      }
+    });
+    state.diarization.speakers = syncedSpeakers;
+  } else {
+    state.diarization.speakers = initialSpeakers;
   }
 
   state.diarization.data.turns = cloneDiarizationData(state.diarization.rawTurns);
