@@ -105,6 +105,8 @@ const state = {
     resultCatalog: [],
     evaluation: null,
     drag: null,
+    rangeDrag: null,
+    suppressTimelineClick: false,
     loopTurnId: null,
   },
 
@@ -494,6 +496,8 @@ const el = {
   purityOverlapTimeout: document.getElementById('purity-overlap-timeout'),
   purityOverlapMaxTokens: document.getElementById('purity-overlap-max-tokens'),
   purityOverlapFailurePolicy: document.getElementById('purity-overlap-failure-policy'),
+  purityOverlapPromptLabel: document.getElementById('purity-overlap-prompt-label'),
+  purityOverlapPromptStatus: document.getElementById('purity-overlap-prompt-status'),
   purityOverlapPrompt: document.getElementById('purity-overlap-prompt'),
   btnResetPurityOverlap: document.getElementById('btn-reset-purity-overlap'),
   purityDeviceSelect: document.getElementById('purity-device-select'),
@@ -964,6 +968,7 @@ function handleGlobalKeydown(e) {
         e.preventDefault();
         state.annotation.activeSpeakerId = speaker.speaker_id;
         renderAnnotationSpeakers();
+        updateAnnotationMarks();
       }
       return;
     }
@@ -5655,8 +5660,13 @@ function clearAnnotationEditor() {
   state.annotation.markOut = null;
   state.annotation.undo = [];
   state.annotation.redo = [];
+  state.annotation.drag = null;
+  state.annotation.rangeDrag = null;
+  state.annotation.suppressTimelineClick = false;
+  state.annotation.loopTurnId = null;
   state.annotation.dirty = false;
   state.annotation.evaluation = null;
+  el.annTimelineStage?.classList.remove('selecting');
   if (el.annNameInput) {
     el.annNameInput.value = '';
     el.annNameInput.disabled = true;
@@ -5813,6 +5823,8 @@ function createAnnotationTurn(startValue = state.annotation.markIn, endValue = s
 function updateAnnotationMarks() {
   const markIn = state.annotation.markIn;
   const markOut = state.annotation.markOut;
+  const hasRange = Number.isFinite(markIn) && Number.isFinite(markOut) && markOut > markIn;
+  const activeSpeaker = annotationSpeaker(state.annotation.activeSpeakerId);
   if (el.annMarkIn && document.activeElement !== el.annMarkIn) {
     el.annMarkIn.value = Number.isFinite(markIn) ? formatAnnotationTime(markIn) : '';
   }
@@ -5820,13 +5832,17 @@ function updateAnnotationMarks() {
     el.annMarkOut.value = Number.isFinite(markOut) ? formatAnnotationTime(markOut) : '';
   }
   if (el.annMarkDuration) {
-    el.annMarkDuration.textContent = Number.isFinite(markIn) && Number.isFinite(markOut) && markOut > markIn
-      ? `${formatAnnotationTime(markOut - markIn)} selected`
+    el.annMarkDuration.textContent = hasRange
+      ? `${formatAnnotationTime(markOut - markIn)} selected for ${activeSpeaker?.name || 'active speaker'}`
       : 'No complete range marked';
+  }
+  if (el.btnAnnCreateTurn) {
+    el.btnAnnCreateTurn.disabled = !hasRange || !activeSpeaker;
+    el.btnAnnCreateTurn.textContent = activeSpeaker ? `Create ${activeSpeaker.name} turn` : 'Create speaker turn';
   }
   if (el.annMarkRegion) {
     const duration = annotationDuration();
-    const valid = duration > 0 && Number.isFinite(markIn) && Number.isFinite(markOut) && markOut > markIn;
+    const valid = duration > 0 && hasRange;
     el.annMarkRegion.classList.toggle('hidden', !valid);
     if (valid) {
       el.annMarkRegion.style.left = `${markIn / duration * 100}%`;
@@ -5850,6 +5866,7 @@ function renderAnnotationSpeakers() {
     button.addEventListener('click', () => {
       state.annotation.activeSpeakerId = button.dataset.speakerId;
       renderAnnotationSpeakers();
+      updateAnnotationMarks();
     });
   });
   el.annLaneLabels.innerHTML = state.annotation.speakers.map(speaker => {
@@ -5961,7 +5978,7 @@ function renderAnnotationTurnsTable() {
     return !query || `${speaker?.name || ''} ${turn.speaker_id} ${formatAnnotationTime(turn.start_s)} ${formatAnnotationTime(turn.end_s)}`.toLowerCase().includes(query);
   });
   if (!turns.length) {
-    el.annTurnsBody.innerHTML = '<tr><td colspan="6"><div class="empty-placeholder">No turns yet. Press I at speech onset, then O at speech offset.</div></td></tr>';
+    el.annTurnsBody.innerHTML = '<tr><td colspan="6"><div class="empty-placeholder">No turns yet. Drag a range on the timeline and create the active speaker turn, or use I/O while playing.</div></td></tr>';
   } else {
     el.annTurnsBody.innerHTML = turns.map((turn, index) => `
       <tr data-turn-id="${escapeHtml(turn.turn_id)}" class="${turn.turn_id === state.annotation.selectedTurnId ? 'selected' : ''}">
@@ -6236,8 +6253,76 @@ function endAnnotationSegmentDrag() {
   renderAnnotationEditor();
 }
 
+function annotationTimeFromPointer(event) {
+  if (!el.annTimelineStage) return 0;
+  const rect = el.annTimelineStage.getBoundingClientRect();
+  const x = Math.max(0, Math.min(event.clientX - rect.left, rect.width));
+  return snapAnnotationTime(rect.width ? x / rect.width * annotationDuration() : 0);
+}
+
+function beginAnnotationRangeDrag(event) {
+  if (!state.annotation.current || event.button !== 0 || event.target.closest('.ann-segment')) return;
+  const duration = annotationDuration();
+  if (!duration || !el.annTimelineStage) return;
+  const start = annotationTimeFromPointer(event);
+  const lane = event.target.closest('.ann-lane');
+  if (lane?.dataset.laneSpeaker) {
+    state.annotation.activeSpeakerId = lane.dataset.laneSpeaker;
+    renderAnnotationSpeakers();
+  }
+  state.annotation.rangeDrag = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    start,
+    previousMarkIn: state.annotation.markIn,
+    previousMarkOut: state.annotation.markOut,
+    moved: false,
+  };
+  state.annotation.selectedTurnId = null;
+  el.annLanes?.querySelectorAll('.ann-segment.selected').forEach(segment => segment.classList.remove('selected'));
+  state.annotation.markIn = start;
+  state.annotation.markOut = start;
+  el.annTimelineStage.classList.add('selecting');
+  updateAnnotationMarks();
+}
+
+function moveAnnotationRangeDrag(event) {
+  const drag = state.annotation.rangeDrag;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  if (Math.abs(event.clientX - drag.startX) >= 3) drag.moved = true;
+  if (!drag.moved) return;
+  event.preventDefault();
+  const current = annotationTimeFromPointer(event);
+  state.annotation.markIn = Math.min(drag.start, current);
+  state.annotation.markOut = Math.max(drag.start, current);
+  updateAnnotationMarks();
+}
+
+function endAnnotationRangeDrag(event) {
+  const drag = state.annotation.rangeDrag;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  state.annotation.rangeDrag = null;
+  el.annTimelineStage?.classList.remove('selecting');
+  const hasRange = drag.moved && state.annotation.markOut - state.annotation.markIn >= 0.001;
+  if (!hasRange) {
+    state.annotation.markIn = drag.previousMarkIn;
+    state.annotation.markOut = drag.previousMarkOut;
+    updateAnnotationMarks();
+    return;
+  }
+  state.annotation.suppressTimelineClick = true;
+  setTimeout(() => { state.annotation.suppressTimelineClick = false; }, 0);
+  seekTo(state.annotation.markIn);
+  renderAnnotationTurnsTable();
+  updateAnnotationMarks();
+}
+
 function annotationTimelineSeek(event) {
   if (event.target.closest('.ann-segment') || !el.annTimelineStage) return;
+  if (state.annotation.suppressTimelineClick) {
+    state.annotation.suppressTimelineClick = false;
+    return;
+  }
   const rect = el.annTimelineStage.getBoundingClientRect();
   seekTo((event.clientX - rect.left) / rect.width * annotationDuration());
 }
@@ -6572,9 +6657,14 @@ function initAnnotationTab() {
   el.btnAnnZoomFit?.addEventListener('click', () => setAnnotationZoom(1));
   el.annZoomRange?.addEventListener('input', () => setAnnotationZoom(el.annZoomRange.value));
   el.annTimelineStage?.addEventListener('click', annotationTimelineSeek);
+  el.annTimelineStage?.addEventListener('pointerdown', beginAnnotationRangeDrag);
   el.annLanes?.addEventListener('pointerdown', beginAnnotationSegmentDrag);
   document.addEventListener('pointermove', moveAnnotationSegmentDrag);
+  document.addEventListener('pointermove', moveAnnotationRangeDrag);
   document.addEventListener('pointerup', endAnnotationSegmentDrag);
+  document.addEventListener('pointerup', endAnnotationRangeDrag);
+  document.addEventListener('pointercancel', endAnnotationSegmentDrag);
+  document.addEventListener('pointercancel', endAnnotationRangeDrag);
   el.annLanes?.addEventListener('dblclick', event => {
     const segment = event.target.closest('.ann-segment');
     if (segment) selectAnnotationTurn(segment.dataset.turnId, { seek: true });
@@ -6697,6 +6787,21 @@ function syncPurityOverlapUi() {
     const configured = purityBackendDefaults(overlap.backend).api_key_configured;
     el.purityOverlapKeyStatus.textContent = configured ? '(server .env configured)' : '(optional)';
     el.purityOverlapKeyStatus.className = configured ? 'text-success' : 'text-muted';
+  }
+  syncPurityPromptUi();
+}
+
+function syncPurityPromptUi() {
+  const backendName = state.purity.overlap.backend === 'gemini' ? 'Gemini' : 'Gemma 4';
+  const prompt = (el.purityOverlapPrompt?.value ?? state.purity.overlap.prompt ?? '').trim();
+  const defaultPrompt = (
+    state.purity.serverConfig?.overlap_prompt
+    || 'Does this audio contain overlapping speech from two or more speakers at the same time?'
+  ).trim();
+  if (el.purityOverlapPromptLabel) el.purityOverlapPromptLabel.textContent = `${backendName} prompt`;
+  if (el.purityOverlapPromptStatus) {
+    el.purityOverlapPromptStatus.textContent = !prompt ? 'Required' : (prompt === defaultPrompt ? 'Server default' : 'Custom prompt');
+    el.purityOverlapPromptStatus.className = `badge badge-sm ${!prompt ? 'badge-danger' : (prompt === defaultPrompt ? 'badge-ghost' : 'badge-info')}`;
   }
 }
 
@@ -6844,8 +6949,9 @@ function initPurityTab() {
     state.purity.overlap.failurePolicy = e.target.value;
     savePurityPreferences();
   });
-  el.purityOverlapPrompt?.addEventListener('change', e => {
-    state.purity.overlap.prompt = e.target.value.trim();
+  el.purityOverlapPrompt?.addEventListener('input', e => {
+    state.purity.overlap.prompt = e.target.value;
+    syncPurityPromptUi();
     savePurityPreferences();
   });
   el.btnResetPurityOverlap?.addEventListener('click', restorePurityOverlapDefaults);

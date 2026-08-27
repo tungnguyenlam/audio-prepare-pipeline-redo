@@ -1519,7 +1519,7 @@
                 <button class="btn btn-xs btn-ghost" id="btn-ann-set-out">Set + create</button>
               </div>
               <span class="ann-mark-duration font-mono" id="ann-mark-duration">No range marked</span>
-              <button class="btn btn-sm btn-primary" id="btn-ann-create-turn">Create turn</button>
+              <button class="btn btn-sm btn-primary" id="btn-ann-create-turn" disabled>Create Speaker 1 turn</button>
               <button class="btn btn-sm btn-ghost" id="btn-ann-clear-marks">Clear</button>
             </div>
 
@@ -1550,7 +1550,7 @@
                 </div>
               </div>
             </div>
-            <p class="text-xs text-muted ann-timeline-help">Click the waveform to seek. Drag a turn to move it; drag either edge for exact boundary adjustment. Overlap is represented on separate speaker lanes.</p>
+            <p class="text-xs text-muted ann-timeline-help"><strong>To add a turn:</strong> choose the active speaker, drag across the waveform or that speaker's empty lane, then click <em>Create speaker turn</em>. Click to seek; drag a turn to move it; drag either edge to adjust its boundary.</p>
           </div>
 
           <div class="card ann-turns-card">
@@ -1788,11 +1788,14 @@
 
                   <div class="form-group mb-0 purity-prompt-field">
                     <div class="label-with-tool">
-                      <label class="form-label" for="purity-overlap-prompt">Verifier prompt</label>
+                      <div class="flex-row items-center gap-2">
+                        <label class="form-label" id="purity-overlap-prompt-label" for="purity-overlap-prompt">Gemma 4 prompt</label>
+                        <span class="badge badge-sm badge-ghost" id="purity-overlap-prompt-status">Server default</span>
+                      </div>
                       <button type="button" class="btn btn-ghost btn-xs" id="btn-reset-purity-overlap">Restore server defaults</button>
                     </div>
-                    <textarea id="purity-overlap-prompt" class="text-input purity-prompt-input" rows="4" spellcheck="true"></textarea>
-                    <p class="text-xs text-muted">The response shape remains fixed to <code>{ overlap: boolean, reason: string }</code>. Only stage-one passes are sent, one candidate at a time.</p>
+                    <textarea id="purity-overlap-prompt" class="text-input purity-prompt-input" rows="5" spellcheck="true" aria-describedby="purity-overlap-prompt-help" placeholder="Enter the instruction sent with every candidate audio clip…"></textarea>
+                    <p class="text-xs text-muted" id="purity-overlap-prompt-help"><strong>Editable:</strong> this exact instruction is sent with every candidate audio clip. The response remains fixed to <code>{ overlap: boolean, reason: string }</code>.</p>
                   </div>
                 </div>
               </div>
@@ -1800,8 +1803,9 @@
               <!-- Hardware Device & HF Token Row -->
               <div class="purity-params-row" style="margin-top: 12px;">
                 <div class="form-group flex-2">
-                  <label class="form-label" for="purity-embedding-model">Speaker embedding model:</label>
+                  <label class="form-label" for="purity-embedding-model">Stage 1 · Speaker identity embedding model</label>
                   <input type="text" id="purity-embedding-model" class="text-input font-mono" value="pyannote/wespeaker-voxceleb-resnet34-LM" autocomplete="off">
+                  <p class="text-xs text-muted">Compares sliding windows from each candidate turn with the selected profile's enrolled reference clips. Gemma does not perform this identity match.</p>
                 </div>
                 <div class="form-group flex-1">
                   <label class="form-label" for="purity-device-select">Compute Device:</label>
