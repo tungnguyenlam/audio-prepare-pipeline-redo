@@ -567,6 +567,9 @@ async def handle_submit_diarization(request: web.Request) -> web.Response:
         num_speakers = body.get("num_speakers")
         min_speakers = body.get("min_speakers")
         max_speakers = body.get("max_speakers")
+        batch_size = int(body.get("batch_size", 1))
+        if batch_size < 1 or batch_size > 256:
+            return json_error("batch_size must be an integer from 1 to 256")
         hf_token = body.get("hf_token")
         include_overlap = bool(body.get("include_overlap", False))
         vad_onset = body.get("vad_onset", 0.5)
@@ -616,6 +619,7 @@ async def handle_submit_diarization(request: web.Request) -> web.Response:
                 "num_speakers": num_speakers,
                 "min_speakers": min_speakers,
                 "max_speakers": max_speakers,
+                "batch_size": batch_size,
                 "hf_token": hf_token,
                 "include_overlap": include_overlap,
                 "vad_onset": vad_onset,

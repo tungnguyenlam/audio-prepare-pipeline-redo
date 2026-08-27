@@ -17,6 +17,7 @@ from src.diarization.schemas import VibeVoicePurityResult
 from src.diarization.VibeVoicePurityVerifier import (
     DEFAULT_MAX_NEW_TOKENS,
     DEFAULT_MIN_SECONDARY_SPEECH_S,
+    DEFAULT_VIBEVOICE_BATCH_SIZE,
     DEFAULT_VIBEVOICE_MODEL_ID,
     VibeVoicePurityError,
 )
@@ -44,6 +45,7 @@ class VibeVoicePurityWorkerVerifier(ManagedModel):
         token: str | None = None,
         min_secondary_speech_s: float = DEFAULT_MIN_SECONDARY_SPEECH_S,
         max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
+        batch_size: int = DEFAULT_VIBEVOICE_BATCH_SIZE,
         attn_implementation: str = "eager",
         worker_python: str | Path | None = None,
     ) -> None:
@@ -65,6 +67,7 @@ class VibeVoicePurityWorkerVerifier(ManagedModel):
             "token": token,
             "min_secondary_speech_s": min_secondary_speech_s,
             "max_new_tokens": max_new_tokens,
+            "batch_size": batch_size,
             "attn_implementation": attn_implementation,
         }
         self._process: subprocess.Popen[str] | None = None
@@ -248,31 +251,44 @@ class VibeVoicePurityWorkerVerifier(ManagedModel):
             )
         if not Path(audio.path).is_file():
             raise FileNotFoundError(f"Audio file does not exist: {audio.path}")
-        payload = self._request(
-            {
-                "action": "verify",
-                "audio": {
-                    "path": str(Path(audio.path).resolve()),
-                    "source_id": audio.source_id,
-                    "title": audio.title,
-                    "source_url": audio.source_url,
-                    "channel_id": audio.channel_id,
-                    "channel_name": audio.channel_name,
-                    "channel_url": audio.channel_url,
-                    "sample_rate": audio.sample_rate,
-                    "duration_s": audio.duration_s,
-                    "channels": audio.channels,
-                    "format": audio.format,
-                    "native_sample_rate": audio.native_sample_rate,
-                    "history": list(audio.history),
-                },
-            }
-        )
+        payload = self._request({"action": "verify", "audio": self._audio_payload(audio)})
         return VibeVoicePurityResult.from_dict(payload)
 
     def verify_batch(self, audios: list[Audio]) -> list[VibeVoicePurityResult]:
-        """Verify candidates sequentially through the persistent worker."""
-        return [self.verify(audio) for audio in audios]
+        """Verify candidates using the worker's configured model batch size."""
+        if not self.is_loaded or self._process is None:
+            raise RuntimeError(
+                "VibeVoice purity worker is not loaded. Call load() first "
+                "or use it as a context manager."
+            )
+        for audio in audios:
+            if not Path(audio.path).is_file():
+                raise FileNotFoundError(f"Audio file does not exist: {audio.path}")
+        payload = self._request(
+            {
+                "action": "verify_batch",
+                "audios": [self._audio_payload(audio) for audio in audios],
+            }
+        )
+        return [VibeVoicePurityResult.from_dict(item) for item in payload]
+
+    @staticmethod
+    def _audio_payload(audio: Audio) -> dict[str, Any]:
+        return {
+            "path": str(Path(audio.path).resolve()),
+            "source_id": audio.source_id,
+            "title": audio.title,
+            "source_url": audio.source_url,
+            "channel_id": audio.channel_id,
+            "channel_name": audio.channel_name,
+            "channel_url": audio.channel_url,
+            "sample_rate": audio.sample_rate,
+            "duration_s": audio.duration_s,
+            "channels": audio.channels,
+            "format": audio.format,
+            "native_sample_rate": audio.native_sample_rate,
+            "history": list(audio.history),
+        }
 
     def close(self) -> None:
         """Compatibility alias that unloads and reaps the worker."""

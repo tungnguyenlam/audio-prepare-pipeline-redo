@@ -36,6 +36,7 @@ class PyannoteDiarizer(BaseDiarizer, ManagedModel):
         num_speakers: int | None = None,
         min_speakers: int | None = None,
         max_speakers: int | None = None,
+        batch_size: int = 1,
     ) -> None:
         """Initialize PyannoteDiarizer.
 
@@ -47,14 +48,18 @@ class PyannoteDiarizer(BaseDiarizer, ManagedModel):
             num_speakers: Optional exact number of speakers to look for.
             min_speakers: Optional lower bound on the number of speakers.
             max_speakers: Optional upper bound on the number of speakers.
+            batch_size: Segmentation and embedding inference batch size.
         """
         ManagedModel.__init__(self)
+        if isinstance(batch_size, bool) or not isinstance(batch_size, int) or batch_size < 1:
+            raise ValueError("batch_size must be an integer of at least 1")
         self.model_id = model_id
         self.device = str(device)
         self.token = token
         self.num_speakers = num_speakers
         self.min_speakers = min_speakers
         self.max_speakers = max_speakers
+        self.batch_size = batch_size
         self._pipeline: Any | None = None
 
     def _load(self) -> None:
@@ -77,6 +82,10 @@ class PyannoteDiarizer(BaseDiarizer, ManagedModel):
             target_device = torch.device(self.device)
         if target_device.type != "cpu" or self.device not in {"auto", "cpu"}:
             pipeline.to(target_device)
+        if hasattr(pipeline, "segmentation_batch_size"):
+            pipeline.segmentation_batch_size = self.batch_size
+        if hasattr(pipeline, "embedding_batch_size"):
+            pipeline.embedding_batch_size = self.batch_size
 
         # Assign only after the complete load, including device placement,
         # succeeds.  ManagedModel marks the instance loaded afterwards.

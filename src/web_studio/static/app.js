@@ -143,6 +143,7 @@ const state = {
       prompt: 'Does this audio contain overlapping speech from two or more speakers at the same time?',
       failurePolicy: 'fail_closed',
       minSecondarySpeech: 0.25,
+      batchSize: 1,
     },
     serverConfig: null,
     verifierStatus: null,
@@ -306,6 +307,7 @@ const el = {
   hfTokenInput: document.getElementById('hf-token-input'),
   btnToggleHfVis: document.getElementById('btn-toggle-hf-vis'),
   diarDeviceSelect: document.getElementById('diar-device-select'),
+  diarBatchSize: document.getElementById('diar-batch-size'),
   diarSortformerOnset: document.getElementById('diar-sortformer-onset'),
   diarSortformerOffset: document.getElementById('diar-sortformer-offset'),
   diarSortformerPadOnset: document.getElementById('diar-sortformer-pad-onset'),
@@ -493,6 +495,8 @@ const el = {
   purityOverlapKeyField: document.getElementById('purity-overlap-key-field'),
   purityVibevoiceSecondaryField: document.getElementById('purity-vibevoice-secondary-field'),
   purityVibevoiceSecondary: document.getElementById('purity-vibevoice-secondary'),
+  purityVibevoiceBatchField: document.getElementById('purity-vibevoice-batch-field'),
+  purityVibevoiceBatchSize: document.getElementById('purity-vibevoice-batch-size'),
   btnResetPurityOverlap: document.getElementById('btn-reset-purity-overlap'),
   btnPurityCheckVerifier: document.getElementById('btn-purity-check-verifier'),
   purityVerifierStatusMsg: document.getElementById('purity-verifier-status-msg'),
@@ -2570,6 +2574,11 @@ function syncDiarModelOptions(modelType) {
   const is3d = modelType === "3d_speaker" || modelType === "3d-speaker" || modelType === "threed_speaker";
   const isClustering = modelType === "clustering" || modelType === "nemo-clustering" || modelType === "nemo_clustering";
   const isSortformer = modelType === "sortformer";
+  const activeCard = document.querySelector(`.model-card[data-diar-model="${modelType}"]`);
+  if (el.diarBatchSize && el.diarBatchSize.dataset.modelType !== modelType) {
+    el.diarBatchSize.value = activeCard?.dataset.defaultBatchSize || '1';
+    el.diarBatchSize.dataset.modelType = modelType;
+  }
 
   const hfGroup = document.getElementById("hf-token-group");
   const overlapCheck = document.getElementById("diar-3d-overlap");
@@ -2702,6 +2711,7 @@ function initDiarizationStudio() {
       const modelType = activeCard ? activeCard.dataset.diarModel : "pyannote_community";
       const modelId = activeCard?.dataset.modelId || (modelType === "pyannote_31" ? "pyannote/speaker-diarization-3.1" : (modelType.startsWith("pyannote") ? "pyannote/speaker-diarization-community-1" : undefined));
       const device = state.selectedGpu || (el.diarDeviceSelect ? el.diarDeviceSelect.value : 'auto');
+      const batchSize = el.diarBatchSize ? parseInt(el.diarBatchSize.value, 10) : 1;
       const token = el.hfTokenInput.value.trim() || undefined;
       const minSpkEl = document.getElementById('diar-min-speakers');
       const maxSpkEl = document.getElementById('diar-max-speakers');
@@ -2765,6 +2775,7 @@ function initDiarizationStudio() {
             model_type: modelType,
             model_id: modelId,
             device: device,
+            batch_size: Number.isInteger(batchSize) && batchSize > 0 ? batchSize : 1,
             token: token,
             min_speakers: Number.isFinite(minSpeakers) ? minSpeakers : undefined,
             max_speakers: Number.isFinite(maxSpeakers) ? maxSpeakers : undefined,
@@ -6787,6 +6798,9 @@ function purityOverlapVerifierPayload() {
   if (el.purityVibevoiceSecondary) {
     overlap.minSecondarySpeech = Math.max(0, parseFloat(el.purityVibevoiceSecondary.value) || 0.25);
   }
+  if (el.purityVibevoiceBatchSize) {
+    overlap.batchSize = Math.max(1, parseInt(el.purityVibevoiceBatchSize.value, 10) || 1);
+  }
   return {
     enabled: true,
     backend: overlap.backend,
@@ -6797,6 +6811,7 @@ function purityOverlapVerifierPayload() {
     max_output_tokens: overlap.backend === 'vibevoice' ? undefined : overlap.maxOutputTokens,
     max_new_tokens: overlap.backend === 'vibevoice' ? overlap.maxOutputTokens : undefined,
     min_secondary_speech_s: overlap.backend === 'vibevoice' ? overlap.minSecondarySpeech : undefined,
+    batch_size: overlap.backend === 'vibevoice' ? overlap.batchSize : undefined,
     prompt: overlap.backend === 'vibevoice' ? undefined : overlap.prompt,
     failure_policy: overlap.failurePolicy,
   };
@@ -6813,6 +6828,7 @@ function applyPurityControls() {
   if (el.purityOverlapFailurePolicy) el.purityOverlapFailurePolicy.value = overlap.failurePolicy;
   if (el.purityOverlapPrompt) el.purityOverlapPrompt.value = overlap.prompt;
   if (el.purityVibevoiceSecondary) el.purityVibevoiceSecondary.value = overlap.minSecondarySpeech ?? 0.25;
+  if (el.purityVibevoiceBatchSize) el.purityVibevoiceBatchSize.value = overlap.batchSize ?? 1;
   syncPurityOverlapUi();
 }
 
@@ -6885,6 +6901,7 @@ function syncPurityOverlapUi() {
   if (el.purityOverlapPromptField) el.purityOverlapPromptField.classList.toggle('hidden', isVibevoice);
   if (el.purityOverlapTimeoutField) el.purityOverlapTimeoutField.classList.toggle('hidden', isVibevoice);
   if (el.purityVibevoiceSecondaryField) el.purityVibevoiceSecondaryField.classList.toggle('hidden', !isVibevoice);
+  if (el.purityVibevoiceBatchField) el.purityVibevoiceBatchField.classList.toggle('hidden', !isVibevoice);
   if (el.purityVibevoiceDeviceField) el.purityVibevoiceDeviceField.classList.toggle('hidden', !isVibevoice);
   if (el.purityVibevoiceHfField) el.purityVibevoiceHfField.classList.toggle('hidden', !isVibevoice);
   if (el.purityOverlapMaxTokensLabel) {
@@ -6937,6 +6954,7 @@ async function loadSpeakerPurityConfig() {
       prompt: config.overlap_prompt || state.purity.overlap.prompt,
       failurePolicy: 'fail_closed',
       minSecondarySpeech: vibevoiceDefaults.min_secondary_speech_s ?? 0.25,
+      batchSize: vibevoiceDefaults.batch_size ?? 1,
     };
     try {
       const saved = JSON.parse(localStorage.getItem('sonic_purity_preferences') || 'null');
@@ -6975,6 +6993,7 @@ function restorePurityOverlapDefaults() {
     prompt: config.overlap_prompt || 'Does this audio contain overlapping speech from two or more speakers at the same time?',
     failurePolicy: 'fail_closed',
     minSecondarySpeech: vibevoiceDefaults.min_secondary_speech_s ?? 0.25,
+    batchSize: vibevoiceDefaults.batch_size ?? 1,
   };
   if (el.purityOverlapApiKey) el.purityOverlapApiKey.value = '';
   applyPurityControls();
@@ -7027,6 +7046,11 @@ function initPurityTab() {
   el.purityOverlapMaxTokens?.addEventListener('change', e => {
     state.purity.overlap.maxOutputTokens = Math.max(1, parseInt(e.target.value, 10) || 128);
     e.target.value = state.purity.overlap.maxOutputTokens;
+    savePurityPreferences();
+  });
+  el.purityVibevoiceBatchSize?.addEventListener('change', e => {
+    state.purity.overlap.batchSize = Math.max(1, parseInt(e.target.value, 10) || 1);
+    e.target.value = state.purity.overlap.batchSize;
     savePurityPreferences();
   });
   el.purityOverlapFailurePolicy?.addEventListener('change', e => {

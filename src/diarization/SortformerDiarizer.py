@@ -90,6 +90,7 @@ class SortformerDiarizer(BaseDiarizer, ManagedModel):
         checkpoint_path: str | Path | None = None,
         device: str = "auto",
         token: str | None = None,
+        batch_size: int = 1,
         window_duration_s: float = 360.0,
         overlap_duration_s: float = 60.0,
         oom_retry_window_s: float | None = 180.0,
@@ -106,6 +107,8 @@ class SortformerDiarizer(BaseDiarizer, ManagedModel):
         ffmpeg_bin: str = "ffmpeg",
     ) -> None:
         ManagedModel.__init__(self)
+        if isinstance(batch_size, bool) or not isinstance(batch_size, int) or batch_size < 1:
+            raise ValueError("batch_size must be an integer of at least 1")
         if window_duration_s <= 0:
             raise ValueError("window_duration_s must be positive")
         if overlap_duration_s < 0 or overlap_duration_s >= window_duration_s:
@@ -146,6 +149,7 @@ class SortformerDiarizer(BaseDiarizer, ManagedModel):
         )
         self.device = str(device)
         self.token = token
+        self.batch_size = batch_size
         self.window_duration_s = float(window_duration_s)
         self.overlap_duration_s = float(overlap_duration_s)
         self.oom_retry_window_s = (
@@ -509,7 +513,7 @@ class SortformerDiarizer(BaseDiarizer, ManagedModel):
 
         candidates: dict[str, Any] = {
             "audio": str(chunk_path),
-            "batch_size": 1,
+            "batch_size": self.batch_size,
             "include_tensor_outputs": True,
             "num_workers": 0,
             "verbose": False,
@@ -521,7 +525,7 @@ class SortformerDiarizer(BaseDiarizer, ManagedModel):
             # signature. These are the stable Sortformer diarize arguments.
             return self._model.diarize(
                 audio=str(chunk_path),
-                batch_size=1,
+                batch_size=self.batch_size,
                 include_tensor_outputs=True,
             )
 

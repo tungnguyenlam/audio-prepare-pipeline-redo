@@ -51,6 +51,7 @@ from src.diarization import (
     DEFAULT_MAX_NEW_TOKENS,
     DEFAULT_MERGE_SAME_SPEAKER_GAP_S,
     DEFAULT_MIN_SECONDARY_SPEECH_S,
+    DEFAULT_VIBEVOICE_BATCH_SIZE,
     DEFAULT_MIN_TURN_DURATION_S,
     DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS,
     DEFAULT_UNSLOTH_ENDPOINT,
@@ -1121,6 +1122,11 @@ def _parse_overlap_verifier_request(
     backend = str(overlap_settings.get("backend", "gemma4")).strip().lower()
     backend = backend.replace("_", "-")
     if backend in {"vibevoice", "vibevoice-asr"}:
+        batch_size = int(
+            overlap_settings.get("batch_size", DEFAULT_VIBEVOICE_BATCH_SIZE)
+        )
+        if batch_size < 1 or batch_size > 256:
+            raise ValueError("batch_size must be an integer from 1 to 256")
         return {
             "backend": "vibevoice",
             "model": overlap_settings.get("model") or DEFAULT_VIBEVOICE_MODEL_ID,
@@ -1132,6 +1138,7 @@ def _parse_overlap_verifier_request(
             "max_new_tokens": int(
                 overlap_settings.get("max_new_tokens", DEFAULT_MAX_NEW_TOKENS)
             ),
+            "batch_size": batch_size,
         }, failure_policy
     config: dict[str, Any] = {
         "backend": overlap_settings.get("backend", "gemma4"),
@@ -1321,6 +1328,9 @@ def _vibevoice_verifier_from_config(
         ),
         max_new_tokens=int(
             overlap_config.get("max_new_tokens", DEFAULT_MAX_NEW_TOKENS)
+        ),
+        batch_size=int(
+            overlap_config.get("batch_size", DEFAULT_VIBEVOICE_BATCH_SIZE)
         ),
         attn_implementation="eager",
     )
@@ -3074,6 +3084,14 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
     num_speakers = data.get("num_speakers")
     min_speakers = data.get("min_speakers")
     max_speakers = data.get("max_speakers")
+    try:
+        batch_size = int(data.get("batch_size", 1))
+        if batch_size < 1 or batch_size > 256:
+            raise ValueError
+    except (TypeError, ValueError):
+        return web.json_response(
+            {"error": "batch_size must be an integer from 1 to 256"}, status=400
+        )
     enrollment_profile_name = data.get("enrollment_profile")
     include_overlap = bool(data.get("include_overlap", False))
     try:
@@ -3163,6 +3181,7 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
                     num_speakers=num_speakers,
                     min_speakers=min_speakers,
                     max_speakers=max_speakers,
+                    batch_size=batch_size,
                 )
                 with diarizer:
                     return diarizer.diarize(audio)
@@ -3175,12 +3194,14 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
                     num_speakers=num_speakers,
                     min_speakers=min_speakers,
                     max_speakers=max_speakers,
+                    batch_size=batch_size,
                 )
                 with diarizer:
                     return diarizer.diarize(audio)
             elif model_type == "sortformer":
                 diarizer = SortformerWorkerDiarizer(
                     device=target_device,
+                    batch_size=batch_size,
                     **sortformer_settings,
                 )
                 task_manager.set_cancel_callback(task_id, diarizer.cancel)
@@ -3215,6 +3236,7 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
                     max_num_speakers=max_num_speakers,
                     vad_onset=vad_onset,
                     vad_offset=vad_offset,
+                    batch_size=batch_size,
                 )
                 task_manager.set_cancel_callback(task_id, diarizer.cancel)
                 try:
@@ -3232,6 +3254,7 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
                     device=target_device,
                     num_speakers=oracle_speakers,
                     include_overlap=include_overlap,
+                    batch_size=batch_size,
                     chunk_duration_s=chunk_duration_s,
                     chunk_step_s=chunk_step_s,
                     token=token if include_overlap else None,
@@ -3253,6 +3276,7 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
                     num_speakers=num_speakers,
                     min_speakers=min_speakers,
                     max_speakers=max_speakers,
+                    batch_size=batch_size,
                 )
                 task_manager.set_cancel_callback(task_id, diarizer.cancel)
                 try:
@@ -3928,6 +3952,7 @@ async def handle_speaker_purity_config(request: web.Request) -> web.Response:
                 "model": os.getenv("VIBEVOICE_MODEL") or DEFAULT_VIBEVOICE_MODEL_ID,
                 "min_secondary_speech_s": DEFAULT_MIN_SECONDARY_SPEECH_S,
                 "max_new_tokens": DEFAULT_MAX_NEW_TOKENS,
+                "batch_size": DEFAULT_VIBEVOICE_BATCH_SIZE,
             },
         }
     )
@@ -4364,6 +4389,64 @@ async def handle_verify_diarization_batch(request: web.Request) -> web.Response:
                             f"Result {result.result_id} has no source audio"
                         )
                     audio = result.source_audio
+                    if use_vibevoice:
+                        batch_items: list[dict[str, Any]] = []
+                        batch_segments: list[Audio] = []
+                        for turn in candidates:
+                            item = _direct_audio_purity_item(
+                                audio, result, turn, profile_name
+                            )
+                            item["result_id"] = result.result_id
+                            item["source_title"] = audio.title
+                            item["turn_index"] = result.turns.index(turn)
+                            output_path = (
+                                work_dir
+                                / f"candidate_{completed + len(batch_items) + 1:05d}.wav"
+                            )
+                            batch_segments.append(
+                                cutter.cut(
+                                    audio,
+                                    turn.start_s,
+                                    turn.end_s,
+                                    output_path=output_path,
+                                )
+                            )
+                            batch_items.append(item)
+                        try:
+                            batch_results = await loop.run_in_executor(
+                                None, vibe_verifier.verify_batch, batch_segments
+                            )
+                            for item, direct_result in zip(
+                                batch_items, batch_results, strict=True
+                            ):
+                                _apply_vibevoice_purity_item(item, direct_result)
+                        except Exception as exc:
+                            error_text = f"{type(exc).__name__}: {exc}"
+                            for item in batch_items:
+                                item["decision"] = (
+                                    "error"
+                                    if overlap_failure_policy == "fail_closed"
+                                    else "pass"
+                                )
+                                item["reason"] = (
+                                    "vibevoice_verification_failed"
+                                    if overlap_failure_policy == "fail_closed"
+                                    else None
+                                )
+                                item["error"] = error_text
+                                item["passed"] = item["decision"] == "pass"
+                        collected.extend(batch_items)
+                        completed += len(batch_items)
+                        task_manager.update_task(
+                            task_id,
+                            progress=completed / total_candidates,
+                            progress_known=True,
+                            message=(
+                                f"Direct audio check {completed}/"
+                                f"{total_candidates} with {overlap_backend}"
+                            ),
+                        )
+                        continue
                     for turn in candidates:
                         if _task_is_cancelled(task_id):
                             return
@@ -4729,7 +4812,59 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
             cutter = AudioCutter(output_dir=work_dir)
             serialized_results = []
             try:
+                if use_vibevoice:
+                    batch_items = []
+                    batch_segments = []
+                    for position, turn in enumerate(speaker_turns, start=1):
+                        item = _direct_audio_purity_item(
+                            audio, diarization, turn, profile_name
+                        )
+                        output_path = work_dir / f"candidate_{position:05d}.wav"
+                        batch_segments.append(
+                            cutter.cut(
+                                audio,
+                                turn.start_s,
+                                turn.end_s,
+                                output_path=output_path,
+                            )
+                        )
+                        batch_items.append(item)
+                    try:
+                        batch_results = await loop.run_in_executor(
+                            None, verifier.verify_batch, batch_segments
+                        )
+                        for item, direct_result in zip(
+                            batch_items, batch_results, strict=True
+                        ):
+                            _apply_vibevoice_purity_item(item, direct_result)
+                    except Exception as exc:
+                        error_text = f"{type(exc).__name__}: {exc}"
+                        for item in batch_items:
+                            item["error"] = error_text
+                            item["decision"] = (
+                                "error"
+                                if overlap_failure_policy == "fail_closed"
+                                else "pass"
+                            )
+                            item["reason"] = (
+                                "vibevoice_verification_failed"
+                                if overlap_failure_policy == "fail_closed"
+                                else None
+                            )
+                            item["passed"] = item["decision"] == "pass"
+                    serialized_results.extend(batch_items)
+                    task_manager.update_task(
+                        task_id,
+                        progress=1.0,
+                        progress_known=True,
+                        message=(
+                            f"Direct audio check {len(speaker_turns)}/"
+                            f"{len(speaker_turns)} with {backend}"
+                        ),
+                    )
                 for position, turn in enumerate(speaker_turns, start=1):
+                    if use_vibevoice:
+                        break
                     if _task_is_cancelled(task_id):
                         return
                     item = _direct_audio_purity_item(

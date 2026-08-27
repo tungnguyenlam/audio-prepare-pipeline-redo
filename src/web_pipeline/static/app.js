@@ -147,6 +147,7 @@
     diarChannelSelect: document.getElementById('diar-channel-select'),
     diarBackend: document.getElementById('diar-backend'),
     diarDevice: document.getElementById('diar-device'),
+    diarBatchSize: document.getElementById('diar-batch-size'),
     diarMinSpk: document.getElementById('diar-min-spk'),
     diarMaxSpk: document.getElementById('diar-max-spk'),
     diarNumSpk: document.getElementById('diar-num-spk'),
@@ -1379,6 +1380,19 @@
 
     // Diarization backend radio cards
     function syncDiarBackendOptions(backend) {
+      const defaultBatchSizes = {
+        sortformer: 1,
+        clustering: 64,
+        'nemo-clustering': 64,
+        '3d_speaker': 64,
+        diarizen: 1,
+        pyannote_community: 1,
+        pyannote_31: 1,
+      };
+      if (els.diarBatchSize && els.diarBatchSize.dataset.backend !== backend) {
+        els.diarBatchSize.value = String(defaultBatchSizes[backend] || 1);
+        els.diarBatchSize.dataset.backend = backend;
+      }
       if (els.diarSortformerGroup) {
         els.diarSortformerGroup.style.display = backend === 'sortformer' ? '' : 'none';
       }
@@ -1411,6 +1425,7 @@
         const channelId = els.diarChannelSelect?.value || 'all';
         const backend = els.diarBackend.value;
         const device = state.selectedGpu || (els.diarDevice ? els.diarDevice.value : 'cuda');
+        const batchSize = els.diarBatchSize ? parseInt(els.diarBatchSize.value, 10) : 1;
         const minSpk = els.diarMinSpk && els.diarMinSpk.value ? parseInt(els.diarMinSpk.value, 10) : null;
         const maxSpk = els.diarMaxSpk && els.diarMaxSpk.value ? parseInt(els.diarMaxSpk.value, 10) : null;
         const numSpk = els.diarNumSpk && els.diarNumSpk.value ? parseInt(els.diarNumSpk.value, 10) : null;
@@ -1439,6 +1454,7 @@
               channel_id: channelId === 'all' ? null : channelId,
               backend,
               device,
+              batch_size: Number.isInteger(batchSize) && batchSize > 0 ? batchSize : 1,
               min_speakers: minSpk,
               max_speakers: maxSpk,
               num_speakers: numSpk,

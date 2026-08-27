@@ -79,6 +79,13 @@ def main() -> None:
                         raise RuntimeError("VibeVoice purity worker is not loaded")
                     result = verifier.verify(_audio_from_dict(request["audio"]))
                     _respond(result=result.to_dict())
+                elif action == "verify_batch":
+                    if verifier is None:
+                        raise RuntimeError("VibeVoice purity worker is not loaded")
+                    results = verifier.verify_batch(
+                        [_audio_from_dict(item) for item in request["audios"]]
+                    )
+                    _respond(result=[result.to_dict() for result in results])
                 elif action == "close":
                     if verifier is not None:
                         verifier.unload()

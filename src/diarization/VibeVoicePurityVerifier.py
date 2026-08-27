@@ -27,6 +27,7 @@ from src.utils.AudioClass import Audio
 DEFAULT_VIBEVOICE_MODEL_ID = "microsoft/VibeVoice-ASR-HF"
 DEFAULT_MIN_SECONDARY_SPEECH_S = 0.25
 DEFAULT_MAX_NEW_TOKENS = 2048
+DEFAULT_VIBEVOICE_BATCH_SIZE = 1
 VIBEVOICE_PURITY_SCHEMA_VERSION = "1.0"
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,7 @@ class VibeVoicePurityVerifier(ManagedModel):
         token: str | None = None,
         min_secondary_speech_s: float = DEFAULT_MIN_SECONDARY_SPEECH_S,
         max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
+        batch_size: int = DEFAULT_VIBEVOICE_BATCH_SIZE,
         attn_implementation: str = "eager",
     ) -> None:
         """Initialize the verifier without loading weights.
@@ -65,6 +67,7 @@ class VibeVoicePurityVerifier(ManagedModel):
                 duration meets this threshold. Smaller secondary turns are
                 ``uncertain``.
             max_new_tokens: Generation budget for the structured transcript.
+            batch_size: Maximum number of candidate files per model forward pass.
             attn_implementation: Transformers attention backend.
         """
         ManagedModel.__init__(self)
@@ -77,6 +80,7 @@ class VibeVoicePurityVerifier(ManagedModel):
             min_secondary_speech_s
         )
         self.max_new_tokens = _validate_max_new_tokens(max_new_tokens)
+        self.batch_size = _validate_batch_size(batch_size)
         self.attn_implementation = str(attn_implementation).strip() or "eager"
         self._processor: Any = None
         self._model: Any = None
@@ -218,7 +222,7 @@ class VibeVoicePurityVerifier(ManagedModel):
         )
 
     def verify_batch(self, audios: list[Audio]) -> list[VibeVoicePurityResult]:
-        """Verify candidates one file at a time.
+        """Verify candidates in configurable model batches.
 
         Args:
             audios: File-backed candidate segments.
@@ -226,7 +230,48 @@ class VibeVoicePurityVerifier(ManagedModel):
         Returns:
             One result per input, in the same order.
         """
-        return [self.verify(audio) for audio in audios]
+        if not self.is_loaded or self._model is None or self._processor is None:
+            raise RuntimeError(
+                "VibeVoice purity verifier is not loaded. Call load() first "
+                "or use it as a context manager."
+            )
+        for audio in audios:
+            if not Path(audio.path).is_file():
+                raise FileNotFoundError(f"Audio file does not exist: {audio.path}")
+
+        results: list[VibeVoicePurityResult] = []
+        for offset in range(0, len(audios), self.batch_size):
+            batch = audios[offset : offset + self.batch_size]
+            try:
+                segments_by_audio = self._infer_batch(
+                    [Path(audio.path) for audio in batch]
+                )
+            except Exception as exc:
+                error = f"{type(exc).__name__}: {exc}"
+                results.extend(
+                    _result(
+                        audio_id=audio.source_id,
+                        decision="uncertain",
+                        reason="inference_error",
+                        num_speakers=0,
+                        secondary_speech_s=0.0,
+                        speaker_turns=(),
+                        model=self._model_info(),
+                        error=error,
+                    )
+                    for audio in batch
+                )
+                continue
+            results.extend(
+                classify_vibevoice_segments(
+                    segments,
+                    audio_id=audio.source_id,
+                    min_secondary_speech_s=self.min_secondary_speech_s,
+                    model=self._model_info(),
+                )
+                for audio, segments in zip(batch, segments_by_audio, strict=True)
+            )
+        return results
 
     def _infer(self, path: Path) -> list[dict[str, Any]]:
         """Generate structured VibeVoice-ASR segments for one file."""
@@ -246,6 +291,33 @@ class VibeVoicePurityVerifier(ManagedModel):
         generated_ids = output_ids[:, inputs["input_ids"].shape[1] :]
         parsed = processor.decode(generated_ids, return_format="parsed")
         return _normalize_segments(_unwrap_parsed_transcription(parsed))
+
+    def _infer_batch(self, paths: list[Path]) -> list[list[dict[str, Any]]]:
+        """Generate structured segments for multiple files in one forward pass."""
+        import torch
+
+        processor = self._processor
+        model = self._model
+        inputs = processor.apply_transcription_request(
+            audio=[str(path) for path in paths]
+        )
+        inputs = inputs.to(self._torch_device, model.dtype)
+        with torch.inference_mode():
+            output_ids = model.generate(
+                **inputs,
+                max_new_tokens=self.max_new_tokens,
+                do_sample=False,
+                num_beams=1,
+            )
+        generated_ids = output_ids[:, inputs["input_ids"].shape[1] :]
+        parsed_batch = processor.decode(generated_ids, return_format="parsed")
+        if len(paths) == 1:
+            return [_normalize_segments(_unwrap_parsed_transcription(parsed_batch))]
+        if not isinstance(parsed_batch, list) or len(parsed_batch) != len(paths):
+            raise VibeVoicePurityError(
+                "VibeVoice-ASR returned an unexpected batch result shape"
+            )
+        return [_normalize_segments(parsed) for parsed in parsed_batch]
 
     def _model_info(self) -> DiarizationModelInfo:
         return DiarizationModelInfo(
@@ -492,4 +564,12 @@ def _validate_max_new_tokens(value: int) -> int:
         raise TypeError("max_new_tokens must be an integer")
     if value <= 0:
         raise ValueError("max_new_tokens must be greater than zero")
+    return value
+
+
+def _validate_batch_size(value: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError("batch_size must be an integer")
+    if value < 1 or value > 256:
+        raise ValueError("batch_size must be from 1 to 256")
     return value

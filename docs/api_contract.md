@@ -334,7 +334,7 @@ merges windows that overlap or touch. Canonical `start_s` / `end_s` values are
 not rewritten. Empty or inverted inputs are dropped. Bounds must be finite
 numbers; roll values must be non-negative.
 
-### `PyannoteDiarizer(model_id=..., device=..., token=..., num_speakers=..., min_speakers=..., max_speakers=...)`
+### `PyannoteDiarizer(model_id=..., device=..., token=..., num_speakers=..., min_speakers=..., max_speakers=..., batch_size=1)`
 
 **Defined in:** `src/diarization/PyannoteDiarizer.py`
 
@@ -342,6 +342,7 @@ numbers; roll values must be non-negative.
 - `device`: Compute target (`"auto"`, `"cuda"`, `"cpu"`, etc.).
 - `token`: Optional Hugging Face authentication token (or reads `HF_TOKEN` from environment).
 - `num_speakers`, `min_speakers`, `max_speakers`: Optional speaker-count constraints.
+- `batch_size`: Segmentation and embedding inference batch size.
 
 ### `PyannoteDiarizer.diarize(audio: Audio, *, num_speakers=None, min_speakers=None, max_speakers=None, hook=None) -> DiarizationResult`
 
@@ -390,6 +391,9 @@ Deployment note: model inference is run on the dedicated model server
 server loads `HF_TOKEN` from the repository-root `.env` when the web process
 starts. Hugging Face downloads use `.data/huggingface` as the default cache
 (`HF_HOME` can override this location).
+
+The constructor's `batch_size` controls NeMo diarization inference and defaults
+to `1`.
 
 **Behavior contract:**
 
@@ -460,6 +464,8 @@ NeMo's cascaded clustering pipeline: MarbleNet voice-activity detection,
 multi-scale TitaNet speaker embeddings, then spectral clustering. Requires the
 same isolated NeMo environment as Sortformer (`requirements-sortformer.txt`).
 Default models are `vad_multilingual_marblenet` and `titanet_large`.
+The constructor's `batch_size` controls VAD and embedding extraction and
+defaults to `64`.
 
 **Behavior contract:**
 
@@ -563,6 +569,10 @@ isolated environment pinned in `requirements-3dspeaker.txt`. The 3D-Speaker
 repository is shallow-cloned into `.data/3d-speaker` on first `load()` when
 missing (override with `THREEDSPEAKER_ROOT`). Model downloads default to
 `.data/modelscope`.
+
+The constructor's `batch_size` controls CAM++ embedding batches and, when
+overlap refinement is enabled, Pyannote segmentation batches. It defaults to
+the upstream value `64`.
 
 **Behavior contract:**
 
@@ -859,7 +869,8 @@ with VibeVoicePurityVerifier(device="cuda") as verifier:
 - `verify(audio: Audio) -> VibeVoicePurityResult` requires `load()` (or a
   `with` block). Missing files raise `FileNotFoundError`. Model/generation
   failures return `uncertain` / `inference_error` so a batch can continue.
-- `verify_batch(audios)` calls `verify()` per file.
+- `verify_batch(audios)` groups files into model forward passes according to
+  constructor `batch_size` (default `1`) and preserves input order.
 - `classify_vibevoice_segments(segments, *, audio_id, ...)` is the pure
   decision function over already-parsed `{start_time, end_time, speaker_id}`
   dicts.
@@ -887,6 +898,8 @@ rows attach a `vibevoice` evidence object (speaker count, dominant speaker,
 secondary duration, speaker turns) and may use `decision: "uncertain"`.
 Worker-process failures follow `failure_policy` (`fail_closed` → `error` /
 `vibevoice_verification_failed`; `fail_open` → keep `pass`).
+The request's `overlap_verifier.batch_size` selects the VibeVoice model batch
+size from `1` to `256`; lower values use less inference VRAM.
 `GET /api/purity/config` returns LLM-verifier defaults only (backend, prompt,
 timeout, Unsloth/Gemini/VibeVoice settings). It does not return an embedding
 model or cosine threshold. VibeVoice defaults are included when

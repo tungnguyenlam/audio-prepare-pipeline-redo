@@ -44,6 +44,7 @@ from src.diarization.ThreeDSpeakerWorkerDiarizer import ThreeDSpeakerWorkerDiari
 from src.diarization.VibeVoicePurityVerifier import (
     DEFAULT_MAX_NEW_TOKENS,
     DEFAULT_MIN_SECONDARY_SPEECH_S,
+    DEFAULT_VIBEVOICE_BATCH_SIZE,
     DEFAULT_VIBEVOICE_MODEL_ID,
     VibeVoicePurityError,
     VibeVoicePurityVerifier,
@@ -92,6 +93,7 @@ __all__ = [
     "DEFAULT_UNSLOTH_PORT",
     "DEFAULT_MAX_NEW_TOKENS",
     "DEFAULT_MIN_SECONDARY_SPEECH_S",
+    "DEFAULT_VIBEVOICE_BATCH_SIZE",
     "DEFAULT_VIBEVOICE_MODEL_ID",
     "DiarizationModelInfo",
     "DiarizationResult",

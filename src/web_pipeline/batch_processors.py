@@ -498,6 +498,7 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
     max_speakers: Optional[int] = job.params.get("max_speakers")
     hf_token: Optional[str] = job.params.get("hf_token")
     include_overlap: bool = bool(job.params.get("include_overlap", False))
+    batch_size = int(job.params.get("batch_size", 1))
     vad_onset = float(job.params.get("vad_onset", 0.5)) if job.params.get("vad_onset") is not None else 0.5
     vad_offset = float(job.params.get("vad_offset", 0.3)) if job.params.get("vad_offset") is not None else 0.3
     chunk_duration_s = float(job.params.get("chunk_duration_s", 1.5))
@@ -530,6 +531,7 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
         if backend_key == "sortformer":
             diarizer = SortformerWorkerDiarizer(
                 device=device,
+                batch_size=batch_size,
                 onset=sortformer_onset,
                 offset=sortformer_offset,
                 pad_onset_s=sortformer_pad_onset_s,
@@ -547,6 +549,7 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
                 max_num_speakers=max_num_speakers,
                 vad_onset=vad_onset,
                 vad_offset=vad_offset,
+                batch_size=batch_size,
             )
         elif backend_key in {"3d_speaker", "3d-speaker", "threed_speaker", "speakerlab"}:
             oracle_speakers = ThreeDSpeakerDiarizer.resolve_speaker_settings(
@@ -558,6 +561,7 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
                 device=device,
                 num_speakers=oracle_speakers,
                 include_overlap=include_overlap,
+                batch_size=batch_size,
                 chunk_duration_s=chunk_duration_s,
                 chunk_step_s=chunk_step_s,
                 token=hf_token if include_overlap else None,
@@ -573,6 +577,7 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
                 num_speakers=num_speakers,
                 min_speakers=min_speakers,
                 max_speakers=max_speakers,
+                batch_size=batch_size,
             )
         elif backend_key in {"pyannote_31", "pyannote_3", "pyannote_3.1"}:
             diarizer = PyannoteDiarizer(
@@ -582,6 +587,7 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
                 num_speakers=num_speakers,
                 min_speakers=min_speakers,
                 max_speakers=max_speakers,
+                batch_size=batch_size,
             )
         else:
             diarizer = PyannoteDiarizer(
@@ -591,6 +597,7 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
                 num_speakers=num_speakers,
                 min_speakers=min_speakers,
                 max_speakers=max_speakers,
+                batch_size=batch_size,
             )
 
         _bind_job_cancel(queue, job.id, diarizer)

@@ -769,7 +769,7 @@
               <div class="form-group">
                 <label class="form-label">2. Diarization Neural Architecture:</label>
                 <div class="model-cards-grid">
-                  <div class="model-card active" data-diar-model="pyannote_community" data-model-id="pyannote/speaker-diarization-community-1">
+                  <div class="model-card active" data-diar-model="pyannote_community" data-model-id="pyannote/speaker-diarization-community-1" data-default-batch-size="1">
                     <div class="model-card-header">
                       <span class="model-name">Pyannote Community-1</span>
                       <span class="badge badge-sm badge-info">Community SOTA</span>
@@ -781,7 +781,7 @@
                     </div>
                   </div>
 
-                  <div class="model-card" data-diar-model="pyannote_31" data-model-id="pyannote/speaker-diarization-3.1">
+                  <div class="model-card" data-diar-model="pyannote_31" data-model-id="pyannote/speaker-diarization-3.1" data-default-batch-size="1">
                     <div class="model-card-header">
                       <span class="model-name">Pyannote 3.1</span>
                       <span class="badge badge-sm badge-info">Classic SOTA</span>
@@ -793,7 +793,7 @@
                     </div>
                   </div>
 
-                  <div class="model-card" data-diar-model="sortformer">
+                  <div class="model-card" data-diar-model="sortformer" data-default-batch-size="1">
                     <div class="model-card-header">
                       <span class="model-name">NeMo Sortformer</span>
                       <span class="badge badge-sm badge-success">Ultra Fast</span>
@@ -806,7 +806,7 @@
                     </div>
                   </div>
 
-                  <div class="model-card" data-diar-model="clustering">
+                  <div class="model-card" data-diar-model="clustering" data-default-batch-size="64">
                     <div class="model-card-header">
                       <span class="model-name">NeMo Clustering</span>
                       <span class="badge badge-sm badge-accent">Cascaded</span>
@@ -818,7 +818,7 @@
                     </div>
                   </div>
 
-                  <div class="model-card" data-diar-model="3d_speaker">
+                  <div class="model-card" data-diar-model="3d_speaker" data-default-batch-size="64">
                     <div class="model-card-header">
                       <span class="model-name">3D-Speaker</span>
                       <span class="badge badge-sm badge-accent">ModelScope</span>
@@ -830,7 +830,7 @@
                     </div>
                   </div>
 
-                  <div class="model-card" data-diar-model="diarizen" data-model-id="BUT-FIT/diarizen-wavlm-large-s80-md-v2">
+                  <div class="model-card" data-diar-model="diarizen" data-model-id="BUT-FIT/diarizen-wavlm-large-s80-md-v2" data-default-batch-size="1">
                     <div class="model-card-header">
                       <span class="model-name">DiariZen Large s80-v2</span>
                       <span class="badge badge-sm badge-success">Cross-Domain</span>
@@ -853,6 +853,11 @@
                     <option value="mps">MPS (Apple Silicon)</option>
                     <option value="cpu">CPU Only</option>
                   </select>
+                </div>
+
+                <div class="form-group flex-1">
+                  <label class="form-label" for="diar-batch-size">Inference Batch Size:</label>
+                  <input type="number" id="diar-batch-size" class="text-input" min="1" max="256" step="1" value="1" title="Lower this value to reduce inference VRAM usage. Model weights still require their full load-time memory.">
                 </div>
 
                 <div class="form-group flex-2" id="hf-token-group">
@@ -1718,6 +1723,10 @@
                     <div class="form-group mb-0" id="purity-overlap-max-tokens-field">
                       <label class="form-label" for="purity-overlap-max-tokens" id="purity-overlap-max-tokens-label">Max output tokens</label>
                       <input id="purity-overlap-max-tokens" class="text-input" type="number" min="1" max="4096" step="1" value="128">
+                    </div>
+                    <div class="form-group mb-0 hidden" id="purity-vibevoice-batch-field">
+                      <label class="form-label" for="purity-vibevoice-batch-size">Inference batch size</label>
+                      <input id="purity-vibevoice-batch-size" class="text-input" type="number" min="1" max="256" step="1" value="1" title="Number of candidate clips sent through VibeVoice in one forward pass. Use 1 for minimum inference VRAM.">
                     </div>
                     <div class="form-group mb-0 hidden" id="purity-vibevoice-secondary-field">
                       <label class="form-label" for="purity-vibevoice-secondary">Min secondary speech (s)</label>

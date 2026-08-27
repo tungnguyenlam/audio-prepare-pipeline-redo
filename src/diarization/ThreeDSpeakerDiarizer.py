@@ -58,6 +58,7 @@ class ThreeDSpeakerDiarizer(BaseDiarizer, ManagedModel):
         device: str = "auto",
         num_speakers: int | None = None,
         include_overlap: bool = False,
+        batch_size: int = 64,
         chunk_duration_s: float = DEFAULT_CHUNK_DURATION_S,
         chunk_step_s: float = DEFAULT_CHUNK_STEP_S,
         token: str | None = None,
@@ -72,6 +73,7 @@ class ThreeDSpeakerDiarizer(BaseDiarizer, ManagedModel):
             num_speakers: Exact speaker count when known in advance.
             include_overlap: Enable pyannote segmentation-based overlap
                 refinement. Requires a Hugging Face token.
+            batch_size: Speaker-embedding and overlap-segmentation batch size.
             chunk_duration_s: Embedding subsegment window length in seconds.
                 Upstream default is ``1.5``.
             chunk_step_s: Hop between consecutive subsegments in seconds.
@@ -88,6 +90,8 @@ class ThreeDSpeakerDiarizer(BaseDiarizer, ManagedModel):
             ffmpeg_bin: ``ffmpeg`` executable used to normalize input audio.
         """
         ManagedModel.__init__(self)
+        if isinstance(batch_size, bool) or not isinstance(batch_size, int) or batch_size < 1:
+            raise ValueError("batch_size must be an integer of at least 1")
         if num_speakers is not None and num_speakers < 1:
             raise ValueError("num_speakers must be at least 1")
         duration_s, step_s = self._validate_chunk_settings(
@@ -106,6 +110,7 @@ class ThreeDSpeakerDiarizer(BaseDiarizer, ManagedModel):
         self.device = str(device)
         self.num_speakers = num_speakers
         self.include_overlap = bool(include_overlap)
+        self.batch_size = batch_size
         self.chunk_duration_s = duration_s
         self.chunk_step_s = step_s
         self.token = token
@@ -318,6 +323,9 @@ class ThreeDSpeakerDiarizer(BaseDiarizer, ManagedModel):
         )
         self._target_device = target_device
         self._pipeline = pipeline
+        pipeline.batchsize = self.batch_size
+        if self.include_overlap and hasattr(pipeline, "segmentation_model"):
+            pipeline.segmentation_model.batch_size = self.batch_size
         self._apply_chunk_settings()
 
     def _unload(self) -> None:
