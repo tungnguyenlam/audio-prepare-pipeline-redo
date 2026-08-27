@@ -769,9 +769,12 @@ structured answer to:
   `gemini-3.1-pro-preview` and can be changed with `GEMINI_MODEL` or the
   constructor. Web entrypoints load these values from the repository-root
   `.env` before constructing pipeline components.
-- Both validate the returned boolean and non-empty reason. Missing files,
-  unsupported formats, HTTP failures, and malformed model responses fail
-  explicitly rather than returning a guessed result.
+- `Gemma4OverlapVerifier.check_ready()` probes Unsloth at `/v1/models` before
+  any candidate audio is sent. Unreachable hosts, empty model lists, HTTP
+  5xx, and OpenAI-style `error` objects fail as readiness errors instead of
+  a guessed overlap answer. Empty assistant content is also an explicit
+  error (the model may still be loading).
+- `GeminiOverlapVerifier.check_ready()` confirms `GEMINI_API_KEY` is set.
 - Both constructors accept `prompt` (defaulting to `OVERLAP_PROMPT`) and
   `max_output_tokens` (default `128`) in addition to `model`, `api_key`, and
   `timeout_s`. The prompt is required to be non-empty and the token limit must
@@ -795,25 +798,28 @@ verifier = create_overlap_verifier(
 result = verifier.verify(audio_segment)
 ```
 
-SonicStudio routes verification on two endpoints. Speaker embeddings are an
-identity **filter**, not the purity verifier:
+SonicStudio Speaker Purity is LLM-only. Speaker embeddings are not used on
+that tab:
 
+- `GET /api/purity/verifier-status` probes Gemma 4 / Unsloth (or Gemini key
+  configuration) and returns `{ready, message, models}`. A not-ready Unsloth
+  server is reported instead of starting a candidate batch.
 - `POST /api/diarization/results/verify` first applies speaker / duration /
-  overlap / prior-state filters. When `overlap_verifier.enabled` is true
-  (the workbench **Verify All Eligible Turns** path with Gemma, Gemini, or
-  VibeVoice-ASR on), every remaining candidate is cut and judged by that
-  verifier; embeddings do not run and do not gate that decision. When the
-  direct-audio verifier is off, remaining turns are scored with embedding
-  `verify_purity` as an identity filter against the enrolled profile.
-- `POST /api/purity/verify` is the imported/session-audio fallback. The same
-  split applies: the direct-audio verifier decides every candidate when
-  enabled; otherwise embedding `verify_purity` filters by identity.
+  overlap / prior-state filters, then every remaining candidate is cut and
+  judged by Gemma 4, Gemini, or VibeVoice-ASR. Embeddings do not run.
+- `POST /api/purity/verify` is the imported/session-audio fallback with the
+  same LLM path. Disabling the verifier is rejected.
+
+If Unsloth is down or still loading, the job fails immediately with that
+message. Per-candidate request failures stay visible (`error` plus the
+Errors tab). Fail-open still records the error text; it does not hide it.
 
 Duration and diarization-overlap measurements are still recorded on
 direct-audio rows but do not veto. A positive overlap result rejects the
 candidate with reason `direct_overlap_detected`. Request failures either
 become `error` with reason `direct_overlap_verification_failed` (the default
-fail-closed policy) or keep the candidate as `pass` (the fail-open policy).
+fail-closed policy) or keep the candidate as `pass` (the fail-open policy)
+while still storing the error.
 
 The web report records backend, model, endpoint, timeout, token budget,
 prompt, and failure policy but never returns the API key.
@@ -1019,13 +1025,13 @@ The repository provides two specialized web platforms:
   cuts and streams a turn without registering it; and
   `POST /api/diarization/results/verify` queues filtered turns from one or more
   result IDs as one batch. This is the workbench's **Verify All Eligible
-  Turns** path. Dropdowns filter the candidate set first. When the
-  direct-audio verifier is enabled, Gemma or Gemini decides every remaining
-  candidate and embeddings do not run. When it is off, embedding
-  `verify_purity` is the identity filter only — not the purity verifier.
-  Reports persist under `.data/diarization/verifications/`.
+  Turns** path. Dropdowns filter the candidate set first. Gemma 4, Gemini, or
+  VibeVoice-ASR then decides every remaining candidate; embeddings do not run.
+  `GET /api/purity/verifier-status` reports whether Unsloth (or Gemini) is
+  ready before a run. If Unsloth is down, the job fails instead of marking
+  candidates silently. Reports persist under `.data/diarization/verifications/`.
   `POST /api/purity/verify` is the imported/session-audio fallback (**Verify
-  imported audio**) with the same filter-vs-verifier split.
+  imported audio**) with the same LLM verifier.
 - **Manual annotation and evaluation endpoints:**
   `GET /api/diarization/annotations` lists durable ground-truth references;
   `GET /api/diarization/annotations/{annotation_id}` returns a full reference

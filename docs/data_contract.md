@@ -118,12 +118,13 @@ Each result covers one diarization-turn candidate and records:
 - candidate identity (`audio_id`, `speaker_id`, `start_s`, `end_s`,
   `profile_name`);
 - `decision` (`pass`, `reject`, or `error`) plus a stable `reason`;
-- union overlap duration and ratio from other-speaker turns (recorded in
-  both embedding and direct-audio modes; only embedding `verify_purity`
-  uses them as a veto);
-- every successfully computed `SpeakerSimilarityWindow` and embedding model
-  metadata (empty / null when the workbench used the direct-audio verifier);
-- an operational error message only when `decision == "error"`.
+- union overlap duration and ratio from other-speaker turns (recorded for
+  reporting; they do not veto on the Studio Speaker Purity tab);
+- embedding `windows` / `min_target_similarity` only when a caller uses
+  `SpeakerVerifier.verify_purity` directly (Studio's Speaker Purity tab
+  leaves them empty / null);
+- an operational error message when the LLM request failed (always stored;
+  `decision` is `error` under fail-closed, or still `pass` under fail-open).
 
 `passed` and `min_target_similarity` are derived properties rather than stored
 state. Only `pass` enters the dataset. Both `reject` and `error` fail closed,
@@ -176,8 +177,8 @@ imported audio (`POST /api/purity/verify`). VibeVoice-ASR runs attach
 do not run, so `windows` is empty and `min_target_similarity` is null.
 Diarization overlap duration/ratio remain on the row but do not decide. The
 `direct_overlap` object records backend, model, normalized `overlap`
-decision, model reason, and any request error. Identity filter runs
-(direct-audio off) attach neither object. This web-report evidence does not
+decision, model reason, and any request error. The Speaker Purity tab does
+not run an identity filter. This web-report evidence does not
 change the core `SpeakerPurityResult` dataclass.
 
 ## Pipeline `AudioItem`

@@ -6918,9 +6918,44 @@ button {
   gap: 2px;
 }
 
-.purity-overlap-toggle small {
+.purity-overlap-lead {
+  display: block;
+  margin-top: 2px;
   color: var(--text-muted, #64748b);
   font-size: 0.72rem;
+  font-weight: 400;
+}
+
+.purity-verifier-status-msg {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  background: var(--bg-surface, #141824);
+  border: 1px solid var(--border-color, #333a4d);
+  color: var(--text-secondary, #94a3b8);
+}
+
+.purity-verifier-status-msg.is-ready {
+  border-color: color-mix(in srgb, var(--accent-emerald, #10b981) 40%, transparent);
+  color: var(--accent-emerald, #10b981);
+}
+
+.purity-verifier-status-msg.is-unready {
+  border-color: color-mix(in srgb, var(--danger, #ef4444) 45%, transparent);
+  color: var(--danger, #ef4444);
+}
+
+.purity-error-banner {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--danger, #ef4444) 12%, var(--bg-surface, #141824));
+  border: 1px solid color-mix(in srgb, var(--danger, #ef4444) 45%, transparent);
+  color: var(--text-primary, #f1f5f9);
+  font-size: 0.82rem;
+  line-height: 1.45;
 }
 
 .purity-overlap-config {
@@ -7156,60 +7191,6 @@ button {
 .purity-row-error > td,
 .purity-row-uncertain > td {
   background: color-mix(in srgb, var(--warning, #f59e0b) 6%, transparent);
-}
-
-/* Sliding Windows Visualizer */
-.purity-windows-cell {
-  padding: 8px 10px;
-}
-
-.purity-windows-preview {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-}
-
-.purity-window-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
-  font-size: 0.68rem;
-  font-family: var(--font-mono, monospace);
-  font-weight: 600;
-  border-radius: 4px;
-  border: 1px solid transparent;
-  cursor: default;
-  transition: transform 0.1s ease;
-}
-
-.purity-window-chip.win-pass {
-  background: color-mix(in srgb, var(--accent-emerald, #10b981) 18%, transparent);
-  border-color: color-mix(in srgb, var(--accent-emerald, #10b981) 40%, transparent);
-  color: var(--accent-emerald, #10b981);
-}
-
-.purity-window-chip.win-fail {
-  background: color-mix(in srgb, var(--danger, #ef4444) 18%, transparent);
-  border-color: color-mix(in srgb, var(--danger, #ef4444) 40%, transparent);
-  color: var(--danger, #ef4444);
-}
-
-.purity-window-chip:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(0,0,0,0.25);
-}
-
-.purity-windows-detail-box {
-  margin-top: 6px;
-  padding: 8px 10px;
-  background: var(--bg-surface, #141824);
-  border: 1px dashed var(--border-color, #333a4d);
-  border-radius: 6px;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-  gap: 6px;
 }
 
 .purity-actions-footer {
