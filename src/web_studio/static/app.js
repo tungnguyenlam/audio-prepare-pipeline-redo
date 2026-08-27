@@ -82,6 +82,32 @@ const state = {
     activeHistoryId: null,
   },
 
+  // Manual ground-truth diarization annotation and model evaluation
+  annotation: {
+    audioId: null,
+    current: null,
+    catalog: [],
+    speakers: [],
+    turns: [],
+    activeSpeakerId: null,
+    selectedTurnId: null,
+    markIn: null,
+    markOut: null,
+    zoom: 1,
+    snapS: 0.05,
+    stepS: 0.1,
+    undo: [],
+    redo: [],
+    saveTimer: null,
+    savePromise: null,
+    dirty: false,
+    editVersion: 0,
+    resultCatalog: [],
+    evaluation: null,
+    drag: null,
+    loopTurnId: null,
+  },
+
   // Post-diarization target-speaker review state
   targetSpeaker: {
     scored: null,
@@ -355,6 +381,77 @@ const el = {
   btnClearDiarHistory: document.getElementById('btn-clear-diar-history'),
   diarHistorySearchInput: document.getElementById('diar-history-search-input'),
   diarHistoryList: document.getElementById('diar-history-list'),
+
+  // Manual annotation and diarization evaluation
+  annSaveState: document.getElementById('ann-save-state'),
+  annImportInput: document.getElementById('ann-import-input'),
+  btnAnnImport: document.getElementById('btn-ann-import'),
+  annExportFormat: document.getElementById('ann-export-format'),
+  btnAnnExport: document.getElementById('btn-ann-export'),
+  annAudioSelect: document.getElementById('ann-audio-select'),
+  btnAnnBrowseLibrary: document.getElementById('btn-ann-browse-library'),
+  annAudioMeta: document.getElementById('ann-audio-meta'),
+  annSavedSelect: document.getElementById('ann-saved-select'),
+  btnAnnNew: document.getElementById('btn-ann-new'),
+  btnAnnLoad: document.getElementById('btn-ann-load'),
+  btnAnnDelete: document.getElementById('btn-ann-delete'),
+  annNameInput: document.getElementById('ann-name-input'),
+  annRevisionLabel: document.getElementById('ann-revision-label'),
+  annEmptyState: document.getElementById('ann-empty-state'),
+  annWorkspace: document.getElementById('ann-workspace'),
+  btnAnnStart: document.getElementById('btn-ann-start'),
+  btnAnnBack1: document.getElementById('btn-ann-back-1'),
+  btnAnnBackFrame: document.getElementById('btn-ann-back-frame'),
+  btnAnnPlay: document.getElementById('btn-ann-play'),
+  btnAnnForwardFrame: document.getElementById('btn-ann-forward-frame'),
+  btnAnnForward1: document.getElementById('btn-ann-forward-1'),
+  annTimecode: document.getElementById('ann-timecode'),
+  annStepSelect: document.getElementById('ann-step-select'),
+  annSnapSelect: document.getElementById('ann-snap-select'),
+  annSpeedSelect: document.getElementById('ann-speed-select'),
+  btnAnnUndo: document.getElementById('btn-ann-undo'),
+  btnAnnRedo: document.getElementById('btn-ann-redo'),
+  annSpeakerChips: document.getElementById('ann-speaker-chips'),
+  btnAnnAddSpeaker: document.getElementById('btn-ann-add-speaker'),
+  btnAnnRenameSpeaker: document.getElementById('btn-ann-rename-speaker'),
+  btnAnnLinkSpeaker: document.getElementById('btn-ann-link-speaker'),
+  btnAnnMergeSpeaker: document.getElementById('btn-ann-merge-speaker'),
+  btnAnnRemoveSpeaker: document.getElementById('btn-ann-remove-speaker'),
+  annMarkIn: document.getElementById('ann-mark-in'),
+  annMarkOut: document.getElementById('ann-mark-out'),
+  btnAnnSetIn: document.getElementById('btn-ann-set-in'),
+  btnAnnSetOut: document.getElementById('btn-ann-set-out'),
+  annMarkDuration: document.getElementById('ann-mark-duration'),
+  btnAnnCreateTurn: document.getElementById('btn-ann-create-turn'),
+  btnAnnClearMarks: document.getElementById('btn-ann-clear-marks'),
+  annTurnCount: document.getElementById('ann-turn-count'),
+  annOverlapCount: document.getElementById('ann-overlap-count'),
+  btnAnnZoomOut: document.getElementById('btn-ann-zoom-out'),
+  annZoomRange: document.getElementById('ann-zoom-range'),
+  btnAnnZoomIn: document.getElementById('btn-ann-zoom-in'),
+  btnAnnZoomFit: document.getElementById('btn-ann-zoom-fit'),
+  annZoomLabel: document.getElementById('ann-zoom-label'),
+  annLaneLabels: document.getElementById('ann-lane-labels'),
+  annTimelineScroll: document.getElementById('ann-timeline-scroll'),
+  annTimelineStage: document.getElementById('ann-timeline-stage'),
+  annWaveformCanvas: document.getElementById('ann-waveform-canvas'),
+  annRuler: document.getElementById('ann-ruler'),
+  annLanes: document.getElementById('ann-lanes'),
+  annPlayhead: document.getElementById('ann-playhead'),
+  annMarkRegion: document.getElementById('ann-mark-region'),
+  annTurnSearch: document.getElementById('ann-turn-search'),
+  btnAnnLoopSelected: document.getElementById('btn-ann-loop-selected'),
+  btnAnnSplit: document.getElementById('btn-ann-split'),
+  btnAnnReassign: document.getElementById('btn-ann-reassign'),
+  btnAnnDeleteTurn: document.getElementById('btn-ann-delete-turn'),
+  annTurnsBody: document.getElementById('ann-turns-body'),
+  btnAnnRefreshResults: document.getElementById('btn-ann-refresh-results'),
+  annResultList: document.getElementById('ann-result-list'),
+  annCollarInput: document.getElementById('ann-collar-input'),
+  annSkipOverlap: document.getElementById('ann-skip-overlap'),
+  btnAnnEvaluate: document.getElementById('btn-ann-evaluate'),
+  btnAnnDownloadReport: document.getElementById('btn-ann-download-report'),
+  annEvalResults: document.getElementById('ann-eval-results'),
 
   // Speaker Purity Workbench
   purityResultList: document.getElementById('purity-result-list'),
@@ -699,6 +796,7 @@ function syncSpeedControls(rate = getPlaybackAudio()?.playbackRate || state.play
   setSelectValue(el.speedSelect);
   setSelectValue(el.auditionSpeedSelect);
   setSelectValue(el.diarSpeedSelect);
+  setSelectValue(el.annSpeedSelect);
 }
 
 function syncVolumeControls(volume = getPlaybackAudio()?.volume ?? state.player.volume) {
@@ -802,10 +900,12 @@ function initPlayer() {
     el.audio.addEventListener('ended', onEnded);
     el.audio.addEventListener('play', () => {
       if (!isAuditionPlaybackActive()) setPlayingUI(true);
+      updateAnnotationPlayhead(el.audio.currentTime || 0);
       startDiarPlaybackWatch();
     });
     el.audio.addEventListener('pause', () => {
       if (!isAuditionPlaybackActive()) setPlayingUI(false);
+      updateAnnotationPlayhead(el.audio.currentTime || 0);
       stopDiarPlaybackWatch();
     });
     el.audio.addEventListener('error', () => {
@@ -832,6 +932,65 @@ function handleGlobalKeydown(e) {
       closeAllModals();
     }
     return;
+  }
+
+  if (state.activeTab === 'tab-annotation' && state.annotation.current) {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      if (e.shiftKey) redoAnnotation();
+      else undoAnnotation();
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'y') {
+      e.preventDefault();
+      redoAnnotation();
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+      saveAnnotationNow();
+      return;
+    }
+    if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+      e.preventDefault();
+      const direction = e.code === 'ArrowLeft' ? -1 : 1;
+      const step = e.altKey ? 0.01 : (e.shiftKey ? 1 : 0.1);
+      seekRelative(direction * step);
+      return;
+    }
+    if (/^[1-9]$/.test(e.key)) {
+      const speaker = state.annotation.speakers[Number(e.key) - 1];
+      if (speaker) {
+        e.preventDefault();
+        state.annotation.activeSpeakerId = speaker.speaker_id;
+        renderAnnotationSpeakers();
+      }
+      return;
+    }
+    if (e.key.toLowerCase() === 'i') {
+      e.preventDefault();
+      state.annotation.markIn = snapAnnotationTime(el.audio?.currentTime || 0);
+      state.annotation.markOut = null;
+      updateAnnotationMarks();
+      return;
+    }
+    if (e.key.toLowerCase() === 'o') {
+      e.preventDefault();
+      state.annotation.markOut = snapAnnotationTime(el.audio?.currentTime || 0);
+      updateAnnotationMarks();
+      createAnnotationTurn();
+      return;
+    }
+    if (e.key.toLowerCase() === 's' && !e.metaKey && !e.ctrlKey) {
+      e.preventDefault();
+      splitSelectedAnnotationTurn();
+      return;
+    }
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
+      deleteSelectedAnnotationTurn();
+      return;
+    }
   }
 
   // Space: Play / Pause using whichever player is active.
@@ -1081,11 +1240,12 @@ function onTimeUpdate() {
   el.scrubProgress.style.width = `${pct}%`;
   updatePlayheadPosition(cur);
   updateDiarizationPlayhead(cur, dur);
+  updateAnnotationPlayhead(cur);
 }
 
 function onEnded() {
   if (isAuditionPlaybackActive()) return;
-  if (state.diarization.autoAdvance && state.diarization.turns.length && state.player.loop) {
+  if (state.activeTab === 'tab-diarization' && state.diarization.autoAdvance && state.diarization.turns.length && state.player.loop) {
     const first = findNextAudibleTurn(-1, { wrap: true });
     if (first) {
       jumpToDiarTurn(first);
@@ -4014,6 +4174,7 @@ function stopDiarPlaybackWatch() {
 
 function startDiarPlaybackWatch() {
   if (diarPlayRaf || !el.audio || el.audio.paused) return;
+  if (state.activeTab !== 'tab-diarization') return;
   if (!state.diarization.turns.length || !diarIsolationActive()) return;
 
   const tick = () => {
@@ -4029,6 +4190,7 @@ function startDiarPlaybackWatch() {
 }
 
 function prepareDiarPlaybackGate() {
+  if (state.activeTab !== 'tab-diarization') return true;
   if (!el.audio || !state.diarization.turns.length) return true;
   const t = el.audio.currentTime || 0;
   applySpeakerSoloMuteAudio(t);
@@ -4076,6 +4238,7 @@ function updateDiarizationPlayhead(currentTime, totalDuration) {
 
   if (el.diarTimeCurrent) el.diarTimeCurrent.textContent = formatTimePrecise(currentTime);
   if (el.diarTimeTotal) el.diarTimeTotal.textContent = formatTimePrecise(dur);
+  if (state.activeTab !== 'tab-diarization') return;
 
   const activeTurn = audibleTurnsAtTime(currentTime)[0]
     || state.diarization.turns.find((t) => turnContainsTime(t, currentTime));
@@ -5271,6 +5434,1225 @@ function syncDiarizationCandidateFilters() {
   if (el.purityResultSelectionSummary) {
     el.purityResultSelectionSummary.textContent = `${selected.length} result(s) selected • ${turns} turns before filters • all eligible turns will run as one batch`;
   }
+}
+
+// ==================== MANUAL DIARIZATION ANNOTATION ====================
+
+const ANNOTATION_SPEAKER_COLORS = [
+  '#168aad', '#2f9e6f', '#c98200', '#dc3656', '#805ad5',
+  '#2574c8', '#65a30d', '#d95f20', '#0891b2', '#be185d',
+];
+
+function formatAnnotationTime(seconds) {
+  const safe = Math.max(0, Number(seconds) || 0);
+  const totalMs = Math.round(safe * 1000);
+  const hours = Math.floor(totalMs / 3600000);
+  const minutes = Math.floor((totalMs % 3600000) / 60000);
+  const wholeSeconds = Math.floor((totalMs % 60000) / 1000);
+  const milliseconds = totalMs % 1000;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(wholeSeconds).padStart(2, '0')}.${String(milliseconds).padStart(3, '0')}`;
+}
+
+function parseAnnotationTime(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return NaN;
+  if (!text.includes(':')) {
+    const seconds = Number(text);
+    return Number.isFinite(seconds) && seconds >= 0 ? seconds : NaN;
+  }
+  const parts = text.split(':').map(Number);
+  if (parts.length < 2 || parts.length > 3 || parts.some(part => !Number.isFinite(part) || part < 0)) return NaN;
+  if (parts.slice(1).some(part => part >= 60)) return NaN;
+  return parts.length === 2
+    ? parts[0] * 60 + parts[1]
+    : parts[0] * 3600 + parts[1] * 60 + parts[2];
+}
+
+function annotationDuration() {
+  return Number(state.annotation.current?.source_audio?.duration_s)
+    || Number(state.audioList.find(item => item.id === state.annotation.audioId)?.duration_s)
+    || Number(state.activeAudio?.duration_s)
+    || 0;
+}
+
+function snapAnnotationTime(seconds) {
+  const duration = annotationDuration();
+  const snap = Number(state.annotation.snapS) || 0;
+  const clamped = Math.max(0, Math.min(Number(seconds) || 0, duration));
+  return Number((snap ? Math.round(clamped / snap) * snap : clamped).toFixed(3));
+}
+
+function annotationSpeaker(speakerId) {
+  return state.annotation.speakers.find(speaker => speaker.speaker_id === speakerId) || null;
+}
+
+function annotationSelectedTurn() {
+  return state.annotation.turns.find(turn => turn.turn_id === state.annotation.selectedTurnId) || null;
+}
+
+function setAnnotationSaveState(label, status = 'idle') {
+  if (!el.annSaveState) return;
+  el.annSaveState.textContent = label;
+  el.annSaveState.dataset.state = status;
+}
+
+function annotationSnapshot() {
+  return {
+    name: state.annotation.current?.name || el.annNameInput?.value || 'Ground truth',
+    speakers: structuredClone(state.annotation.speakers),
+    turns: structuredClone(state.annotation.turns),
+    activeSpeakerId: state.annotation.activeSpeakerId,
+    selectedTurnId: state.annotation.selectedTurnId,
+    markIn: state.annotation.markIn,
+    markOut: state.annotation.markOut,
+  };
+}
+
+function restoreAnnotationSnapshot(snapshot) {
+  if (!snapshot) return;
+  state.annotation.speakers = structuredClone(snapshot.speakers || []);
+  state.annotation.turns = structuredClone(snapshot.turns || []);
+  state.annotation.activeSpeakerId = snapshot.activeSpeakerId || state.annotation.speakers[0]?.speaker_id || null;
+  state.annotation.selectedTurnId = snapshot.selectedTurnId || null;
+  state.annotation.markIn = snapshot.markIn;
+  state.annotation.markOut = snapshot.markOut;
+  if (el.annNameInput) el.annNameInput.value = snapshot.name || 'Ground truth';
+}
+
+function annotationChanged(mutator) {
+  if (!state.annotation.current) return false;
+  const before = annotationSnapshot();
+  const changed = mutator();
+  if (changed === false) return false;
+  state.annotation.undo.push(before);
+  state.annotation.undo = state.annotation.undo.slice(-100);
+  state.annotation.redo = [];
+  state.annotation.editVersion += 1;
+  state.annotation.dirty = true;
+  renderAnnotationEditor();
+  scheduleAnnotationSave();
+  return true;
+}
+
+function undoAnnotation() {
+  const snapshot = state.annotation.undo.pop();
+  if (!snapshot) return;
+  state.annotation.redo.push(annotationSnapshot());
+  restoreAnnotationSnapshot(snapshot);
+  state.annotation.editVersion += 1;
+  state.annotation.dirty = true;
+  renderAnnotationEditor();
+  scheduleAnnotationSave();
+}
+
+function redoAnnotation() {
+  const snapshot = state.annotation.redo.pop();
+  if (!snapshot) return;
+  state.annotation.undo.push(annotationSnapshot());
+  restoreAnnotationSnapshot(snapshot);
+  state.annotation.editVersion += 1;
+  state.annotation.dirty = true;
+  renderAnnotationEditor();
+  scheduleAnnotationSave();
+}
+
+function scheduleAnnotationSave(delay = 550) {
+  clearTimeout(state.annotation.saveTimer);
+  state.annotation.dirty = true;
+  setAnnotationSaveState('Unsaved changes', 'saving');
+  state.annotation.saveTimer = setTimeout(() => saveAnnotationNow(), delay);
+}
+
+async function saveAnnotationNow() {
+  clearTimeout(state.annotation.saveTimer);
+  state.annotation.saveTimer = null;
+  if (!state.annotation.current || !state.annotation.audioId || !state.annotation.dirty) return state.annotation.current;
+  if (state.annotation.savePromise) {
+    await state.annotation.savePromise.catch(() => {});
+    if (!state.annotation.dirty) return state.annotation.current;
+  }
+  const current = state.annotation.current;
+  const capturedVersion = state.annotation.editVersion;
+  const payload = {
+    annotation_id: current.annotation_id || undefined,
+    revision: current.revision || 0,
+    session_audio_id: state.annotation.audioId,
+    name: el.annNameInput?.value.trim() || current.name || 'Ground truth',
+    speakers: structuredClone(state.annotation.speakers),
+    turns: structuredClone(state.annotation.turns),
+  };
+  setAnnotationSaveState('Saving…', 'saving');
+  const request = (async () => {
+    const response = await fetch('/api/diarization/annotations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const saved = await parseJsonResponse(response);
+    if (state.annotation.current !== current) return saved;
+    current.annotation_id = saved.annotation_id;
+    current.revision = saved.revision;
+    current.created_at = saved.created_at;
+    current.updated_at = saved.updated_at;
+    current.source_audio = saved.source_audio;
+    current.audio_id = saved.audio_id;
+    current.name = saved.name;
+    state.annotation.turns = structuredClone(saved.turns || []);
+    state.annotation.speakers = structuredClone(saved.speakers || []);
+    if (state.annotation.editVersion === capturedVersion) {
+      state.annotation.dirty = false;
+      setAnnotationSaveState(`Saved · r${saved.revision}`, 'saved');
+    } else {
+      scheduleAnnotationSave(100);
+    }
+    if (el.annRevisionLabel) {
+      el.annRevisionLabel.textContent = `Server revision ${saved.revision} · autosave enabled`;
+    }
+    if (el.btnAnnExport) el.btnAnnExport.disabled = false;
+    await loadAnnotationCatalog(saved.annotation_id);
+    return saved;
+  })();
+  state.annotation.savePromise = request;
+  try {
+    return await request;
+  } catch (error) {
+    setAnnotationSaveState(error.message || 'Save failed', 'error');
+    showToast(`Annotation save failed: ${error.message}`, 'error');
+    throw error;
+  } finally {
+    if (state.annotation.savePromise === request) state.annotation.savePromise = null;
+  }
+}
+
+async function loadAnnotationCatalog(selectedId = null) {
+  if (!el.annSavedSelect) return;
+  try {
+    const payload = await parseJsonResponse(await fetch('/api/diarization/annotations'));
+    state.annotation.catalog = payload.annotations || [];
+    const currentValue = selectedId || state.annotation.current?.annotation_id || el.annSavedSelect.value;
+    el.annSavedSelect.innerHTML = '<option value="">New annotation</option>' + state.annotation.catalog.map(item => {
+      const title = item.name || item.source_audio?.title || item.annotation_id;
+      const details = `${item.speaker_count} spk · ${item.turn_count} turns · r${item.revision}`;
+      return `<option value="${escapeHtml(item.annotation_id)}">${escapeHtml(title)} — ${details}</option>`;
+    }).join('');
+    if (currentValue && state.annotation.catalog.some(item => item.annotation_id === currentValue)) {
+      el.annSavedSelect.value = currentValue;
+    }
+  } catch (error) {
+    console.warn('Could not load annotation catalog:', error);
+  }
+}
+
+function clearAnnotationEditor() {
+  clearTimeout(state.annotation.saveTimer);
+  state.annotation.audioId = null;
+  state.annotation.current = null;
+  state.annotation.speakers = [];
+  state.annotation.turns = [];
+  state.annotation.activeSpeakerId = null;
+  state.annotation.selectedTurnId = null;
+  state.annotation.markIn = null;
+  state.annotation.markOut = null;
+  state.annotation.undo = [];
+  state.annotation.redo = [];
+  state.annotation.dirty = false;
+  state.annotation.evaluation = null;
+  if (el.annNameInput) {
+    el.annNameInput.value = '';
+    el.annNameInput.disabled = true;
+  }
+  el.annWorkspace?.classList.add('hidden');
+  el.annEmptyState?.classList.remove('hidden');
+  if (el.btnAnnExport) el.btnAnnExport.disabled = true;
+  setAnnotationSaveState('No annotation loaded', 'idle');
+}
+
+async function selectAnnotationAudio(audioId) {
+  if (!audioId) return;
+  if (audioId.startsWith('lib:')) {
+    await loadLibraryFileTo(audioId.slice(4), 'annotation');
+    return;
+  }
+  const item = state.audioList.find(audio => audio.id === audioId);
+  if (!item) {
+    showToast('The selected audio is no longer available', 'error');
+    return;
+  }
+  if (state.annotation.current && state.annotation.audioId !== audioId) {
+    await saveAnnotationNow().catch(() => {});
+    clearAnnotationEditor();
+  }
+  state.annotation.audioId = audioId;
+  if (el.annAudioSelect) el.annAudioSelect.value = audioId;
+  if (el.annAudioMeta) {
+    el.annAudioMeta.textContent = `${item.title || item.source_id} · ${formatAnnotationTime(item.duration_s)} · ${(item.sample_rate || 0).toLocaleString()} Hz · ${item.fingerprint || 'fingerprint pending'}`;
+  }
+  await setActiveAudio(audioId, { play: false });
+  renderAnnotationTimeline();
+}
+
+async function createAnnotationForSelectedAudio() {
+  let audioId = el.annAudioSelect?.value || state.annotation.audioId || state.activeAudio?.id;
+  if (audioId?.startsWith('lib:')) {
+    await loadLibraryFileTo(audioId.slice(4), 'annotation');
+    return;
+  }
+  if (!audioId || !state.audioList.some(item => item.id === audioId)) {
+    showToast('Select source audio first', 'warning');
+    return;
+  }
+  await saveAnnotationNow().catch(() => {});
+  clearAnnotationEditor();
+  await selectAnnotationAudio(audioId);
+  const item = state.audioList.find(audio => audio.id === audioId);
+  const speakerId = 'spk_1';
+  state.annotation.current = {
+    annotation_id: null,
+    revision: 0,
+    name: `${item?.title || 'Audio'} ground truth`,
+    source_audio: { duration_s: item?.duration_s, title: item?.title, fingerprint: item?.fingerprint },
+  };
+  state.annotation.speakers = [{ speaker_id: speakerId, name: 'Speaker 1', color: ANNOTATION_SPEAKER_COLORS[0], global_speaker_id: null }];
+  state.annotation.turns = [];
+  state.annotation.activeSpeakerId = speakerId;
+  state.annotation.markIn = 0;
+  state.annotation.editVersion += 1;
+  state.annotation.dirty = true;
+  el.annEmptyState?.classList.add('hidden');
+  el.annWorkspace?.classList.remove('hidden');
+  if (el.annNameInput) {
+    el.annNameInput.disabled = false;
+    el.annNameInput.value = state.annotation.current.name;
+  }
+  renderAnnotationEditor();
+  await saveAnnotationNow();
+  await loadCompatibleDiarizationResults();
+}
+
+async function loadAnnotation(annotationId) {
+  if (!annotationId) return;
+  await saveAnnotationNow().catch(() => {});
+  const payload = await parseJsonResponse(
+    await fetch(`/api/diarization/annotations/${encodeURIComponent(annotationId)}`)
+  );
+  clearAnnotationEditor();
+  state.annotation.current = payload;
+  state.annotation.audioId = payload.session_audio_id || null;
+  state.annotation.speakers = structuredClone(payload.speakers || []);
+  state.annotation.turns = structuredClone(payload.turns || []);
+  state.annotation.activeSpeakerId = state.annotation.speakers[0]?.speaker_id || null;
+  state.annotation.markIn = 0;
+  state.annotation.editVersion += 1;
+  el.annEmptyState?.classList.add('hidden');
+  el.annWorkspace?.classList.remove('hidden');
+  if (el.annNameInput) {
+    el.annNameInput.disabled = false;
+    el.annNameInput.value = payload.name || 'Ground truth';
+  }
+  if (el.annSavedSelect) el.annSavedSelect.value = annotationId;
+  if (payload.session_audio_id) {
+    await fetchAudioList();
+    await selectAnnotationAudio(payload.session_audio_id);
+  } else {
+    state.activePeaks = [];
+    el.audio?.pause();
+    el.audio?.removeAttribute('src');
+    el.audio?.load();
+    if (el.annAudioMeta) el.annAudioMeta.textContent = 'Source file is unavailable on this machine; playback is disabled but timestamp editing remains available.';
+    showToast('Annotation loaded, but its source audio file is unavailable', 'warning');
+  }
+  if (el.annRevisionLabel) el.annRevisionLabel.textContent = `Server revision ${payload.revision} · autosave enabled`;
+  setAnnotationSaveState(`Saved · r${payload.revision}`, 'saved');
+  if (el.btnAnnExport) el.btnAnnExport.disabled = false;
+  renderAnnotationEditor();
+  await loadCompatibleDiarizationResults();
+}
+
+function annotationTurnOverlap(candidate, excludeTurnId = null) {
+  return state.annotation.turns.find(turn => (
+    turn.turn_id !== excludeTurnId
+    && turn.speaker_id === candidate.speaker_id
+    && candidate.start_s < turn.end_s - 0.000001
+    && turn.start_s < candidate.end_s - 0.000001
+  )) || null;
+}
+
+function createAnnotationTurn(startValue = state.annotation.markIn, endValue = state.annotation.markOut) {
+  if (!state.annotation.current || !state.annotation.activeSpeakerId) return false;
+  if (!Number.isFinite(Number(startValue)) || !Number.isFinite(Number(endValue))) {
+    showToast('Enter valid mark-in and mark-out timestamps', 'warning');
+    return false;
+  }
+  const start = snapAnnotationTime(startValue);
+  const end = snapAnnotationTime(endValue);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    showToast('Mark out must be after mark in', 'warning');
+    return false;
+  }
+  const turn = {
+    turn_id: `turn_${crypto.randomUUID().replaceAll('-', '')}`,
+    speaker_id: state.annotation.activeSpeakerId,
+    start_s: start,
+    end_s: end,
+  };
+  const overlap = annotationTurnOverlap(turn);
+  if (overlap) {
+    showToast(`This overlaps another ${annotationSpeaker(turn.speaker_id)?.name || 'speaker'} turn. Use a separate speaker lane for simultaneous speech.`, 'warning');
+    return false;
+  }
+  return annotationChanged(() => {
+    state.annotation.turns.push(turn);
+    state.annotation.turns.sort((a, b) => a.start_s - b.start_s || a.end_s - b.end_s);
+    state.annotation.selectedTurnId = turn.turn_id;
+    state.annotation.markIn = end;
+    state.annotation.markOut = null;
+    seekTo(start);
+  });
+}
+
+function updateAnnotationMarks() {
+  const markIn = state.annotation.markIn;
+  const markOut = state.annotation.markOut;
+  if (el.annMarkIn && document.activeElement !== el.annMarkIn) {
+    el.annMarkIn.value = Number.isFinite(markIn) ? formatAnnotationTime(markIn) : '';
+  }
+  if (el.annMarkOut && document.activeElement !== el.annMarkOut) {
+    el.annMarkOut.value = Number.isFinite(markOut) ? formatAnnotationTime(markOut) : '';
+  }
+  if (el.annMarkDuration) {
+    el.annMarkDuration.textContent = Number.isFinite(markIn) && Number.isFinite(markOut) && markOut > markIn
+      ? `${formatAnnotationTime(markOut - markIn)} selected`
+      : 'No complete range marked';
+  }
+  if (el.annMarkRegion) {
+    const duration = annotationDuration();
+    const valid = duration > 0 && Number.isFinite(markIn) && Number.isFinite(markOut) && markOut > markIn;
+    el.annMarkRegion.classList.toggle('hidden', !valid);
+    if (valid) {
+      el.annMarkRegion.style.left = `${markIn / duration * 100}%`;
+      el.annMarkRegion.style.width = `${(markOut - markIn) / duration * 100}%`;
+    }
+  }
+}
+
+function renderAnnotationSpeakers() {
+  if (!el.annSpeakerChips || !el.annLaneLabels) return;
+  el.annSpeakerChips.innerHTML = state.annotation.speakers.map((speaker, index) => `
+    <button class="ann-speaker-chip ${speaker.speaker_id === state.annotation.activeSpeakerId ? 'active' : ''}"
+      data-speaker-id="${escapeHtml(speaker.speaker_id)}" style="--speaker-color:${escapeHtml(speaker.color)}"
+      title="${speaker.global_speaker_id ? `Linked to ${escapeHtml(speaker.global_speaker_id)}` : 'Local anonymous speaker'}">
+      <span class="ann-speaker-chip-key">${index < 9 ? index + 1 : '•'}</span>
+      <span>${escapeHtml(speaker.name)}</span>
+      ${speaker.global_speaker_id ? '<span aria-label="Known profile">🔗</span>' : ''}
+    </button>
+  `).join('');
+  el.annSpeakerChips.querySelectorAll('[data-speaker-id]').forEach(button => {
+    button.addEventListener('click', () => {
+      state.annotation.activeSpeakerId = button.dataset.speakerId;
+      renderAnnotationSpeakers();
+    });
+  });
+  el.annLaneLabels.innerHTML = state.annotation.speakers.map(speaker => {
+    const count = state.annotation.turns.filter(turn => turn.speaker_id === speaker.speaker_id).length;
+    const speechS = state.annotation.turns.filter(turn => turn.speaker_id === speaker.speaker_id).reduce((sum, turn) => sum + turn.end_s - turn.start_s, 0);
+    return `<div class="ann-lane-label" style="--speaker-color:${escapeHtml(speaker.color)}">
+      <span class="ann-lane-label-dot"></span><span title="${escapeHtml(speaker.speaker_id)}">${escapeHtml(speaker.name)}</span><small>${count} · ${speechS.toFixed(1)}s</small>
+    </div>`;
+  }).join('');
+}
+
+function renderAnnotationWaveform() {
+  const canvas = el.annWaveformCanvas;
+  const stage = el.annTimelineStage;
+  if (!canvas || !stage) return;
+  const cssWidth = Math.max(1, stage.clientWidth);
+  const cssHeight = 84;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(cssWidth * dpr);
+  canvas.height = Math.round(cssHeight * dpr);
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssWidth, cssHeight);
+  const peaks = state.activePeaks || [];
+  if (!peaks.length) {
+    ctx.strokeStyle = '#43506a';
+    ctx.beginPath();
+    ctx.moveTo(0, cssHeight / 2);
+    ctx.lineTo(cssWidth, cssHeight / 2);
+    ctx.stroke();
+    return;
+  }
+  const center = cssHeight / 2;
+  const pointsPerPixel = peaks.length / cssWidth;
+  ctx.fillStyle = '#37b7d0';
+  for (let x = 0; x < cssWidth; x += 1) {
+    const start = Math.floor(x * pointsPerPixel);
+    const end = Math.max(start + 1, Math.floor((x + 1) * pointsPerPixel));
+    let peak = 0;
+    for (let index = start; index < Math.min(end, peaks.length); index += 1) peak = Math.max(peak, Math.abs(peaks[index] || 0));
+    const height = Math.max(1, peak * (cssHeight - 8));
+    ctx.fillRect(x, center - height / 2, 1, height);
+  }
+}
+
+function niceAnnotationTickStep(duration, width) {
+  const target = duration / Math.max(2, width / 110);
+  const steps = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
+  return steps.find(step => step >= target) || Math.ceil(target / 600) * 600;
+}
+
+function renderAnnotationTimeline() {
+  if (!el.annTimelineStage || !state.annotation.current) return;
+  const duration = annotationDuration();
+  const viewportWidth = Math.max(600, el.annTimelineScroll?.clientWidth || 600);
+  const width = Math.max(viewportWidth, Math.round(viewportWidth * state.annotation.zoom));
+  const height = 112 + Math.max(1, state.annotation.speakers.length) * 52;
+  el.annTimelineStage.style.width = `${width}px`;
+  el.annTimelineStage.style.height = `${height}px`;
+  if (el.annLaneLabels) el.annLaneLabels.style.minHeight = `${height}px`;
+  if (el.annZoomRange) el.annZoomRange.value = state.annotation.zoom;
+  if (el.annZoomLabel) el.annZoomLabel.textContent = `${Math.round(state.annotation.zoom * 100)}%`;
+
+  renderAnnotationWaveform();
+  if (el.annRuler) {
+    const step = niceAnnotationTickStep(duration || 1, width);
+    const ticks = [];
+    for (let seconds = 0; seconds <= duration + step * 0.25; seconds += step) {
+      ticks.push(`<div class="ann-ruler-tick" style="left:${duration ? Math.min(100, seconds / duration * 100) : 0}%"><span>${formatAnnotationTime(seconds).replace(/^00:/, '')}</span></div>`);
+    }
+    el.annRuler.innerHTML = ticks.join('');
+  }
+  if (el.annLanes) {
+    el.annLanes.innerHTML = state.annotation.speakers.map(speaker => {
+      const turns = state.annotation.turns.filter(turn => turn.speaker_id === speaker.speaker_id);
+      return `<div class="ann-lane" data-lane-speaker="${escapeHtml(speaker.speaker_id)}">${turns.map(turn => {
+        const left = duration ? turn.start_s / duration * 100 : 0;
+        const widthPct = duration ? (turn.end_s - turn.start_s) / duration * 100 : 0;
+        return `<div class="ann-segment ${turn.turn_id === state.annotation.selectedTurnId ? 'selected' : ''}"
+          data-turn-id="${escapeHtml(turn.turn_id)}" style="left:${left}%;width:${widthPct}%;--speaker-color:${escapeHtml(speaker.color)}"
+          title="${escapeHtml(speaker.name)} · ${formatAnnotationTime(turn.start_s)} – ${formatAnnotationTime(turn.end_s)}">
+          <span class="ann-segment-handle start" data-edge="start"></span>
+          <span class="ann-segment-label">${escapeHtml(speaker.name)} · ${(turn.end_s - turn.start_s).toFixed(3)}s</span>
+          <span class="ann-segment-handle end" data-edge="end"></span>
+        </div>`;
+      }).join('')}</div>`;
+    }).join('');
+  }
+  updateAnnotationMarks();
+  updateAnnotationPlayhead(el.audio?.currentTime || 0);
+}
+
+function countAnnotationOverlaps() {
+  let count = 0;
+  const turns = state.annotation.turns;
+  for (let left = 0; left < turns.length; left += 1) {
+    for (let right = left + 1; right < turns.length; right += 1) {
+      if (turns[left].speaker_id !== turns[right].speaker_id && turns[left].start_s < turns[right].end_s && turns[right].start_s < turns[left].end_s) count += 1;
+    }
+  }
+  return count;
+}
+
+function renderAnnotationTurnsTable() {
+  if (!el.annTurnsBody) return;
+  const query = (el.annTurnSearch?.value || '').toLowerCase().trim();
+  const turns = state.annotation.turns.filter(turn => {
+    const speaker = annotationSpeaker(turn.speaker_id);
+    return !query || `${speaker?.name || ''} ${turn.speaker_id} ${formatAnnotationTime(turn.start_s)} ${formatAnnotationTime(turn.end_s)}`.toLowerCase().includes(query);
+  });
+  if (!turns.length) {
+    el.annTurnsBody.innerHTML = '<tr><td colspan="6"><div class="empty-placeholder">No turns yet. Press I at speech onset, then O at speech offset.</div></td></tr>';
+  } else {
+    el.annTurnsBody.innerHTML = turns.map((turn, index) => `
+      <tr data-turn-id="${escapeHtml(turn.turn_id)}" class="${turn.turn_id === state.annotation.selectedTurnId ? 'selected' : ''}">
+        <td>${index + 1}</td>
+        <td><select class="select-input select-sm ann-row-speaker" aria-label="Turn speaker">${state.annotation.speakers.map(speaker => `<option value="${escapeHtml(speaker.speaker_id)}" ${speaker.speaker_id === turn.speaker_id ? 'selected' : ''}>${escapeHtml(speaker.name)}</option>`).join('')}</select></td>
+        <td><input class="text-input ann-time-input ann-row-start" value="${formatAnnotationTime(turn.start_s)}" aria-label="Turn start"></td>
+        <td><input class="text-input ann-time-input ann-row-end" value="${formatAnnotationTime(turn.end_s)}" aria-label="Turn end"></td>
+        <td class="font-mono">${(turn.end_s - turn.start_s).toFixed(3)}s</td>
+        <td><button class="btn btn-xs btn-ghost ann-row-play">▶ Play</button> <button class="btn btn-xs btn-ghost text-destructive ann-row-delete">Delete</button></td>
+      </tr>
+    `).join('');
+  }
+  const selected = annotationSelectedTurn();
+  [el.btnAnnLoopSelected, el.btnAnnSplit, el.btnAnnReassign, el.btnAnnDeleteTurn].forEach(button => { if (button) button.disabled = !selected; });
+}
+
+function renderAnnotationEditor() {
+  if (!state.annotation.current) return;
+  renderAnnotationSpeakers();
+  renderAnnotationTimeline();
+  renderAnnotationTurnsTable();
+  updateAnnotationMarks();
+  if (el.annTurnCount) el.annTurnCount.textContent = `${state.annotation.turns.length} turn${state.annotation.turns.length === 1 ? '' : 's'}`;
+  if (el.annOverlapCount) {
+    const overlaps = countAnnotationOverlaps();
+    el.annOverlapCount.textContent = `${overlaps} overlap${overlaps === 1 ? '' : 's'}`;
+  }
+  if (el.btnAnnUndo) el.btnAnnUndo.disabled = state.annotation.undo.length === 0;
+  if (el.btnAnnRedo) el.btnAnnRedo.disabled = state.annotation.redo.length === 0;
+}
+
+function updateAnnotationPlayhead(seconds) {
+  if (!state.annotation.current) return;
+  const duration = annotationDuration();
+  const current = Math.max(0, Math.min(Number(seconds) || 0, duration));
+  if (el.annTimecode) el.annTimecode.textContent = formatAnnotationTime(current);
+  if (el.annPlayhead) el.annPlayhead.style.left = `${duration ? current / duration * 100 : 0}%`;
+  if (el.btnAnnPlay) el.btnAnnPlay.textContent = el.audio && !el.audio.paused ? '❚❚ Pause' : '▶ Play';
+  const loopTurn = state.annotation.loopTurnId
+    ? state.annotation.turns.find(turn => turn.turn_id === state.annotation.loopTurnId)
+    : null;
+  if (loopTurn && el.audio && !el.audio.paused && current >= loopTurn.end_s) {
+    el.audio.currentTime = loopTurn.start_s;
+  }
+}
+
+function selectAnnotationTurn(turnId, { seek = false } = {}) {
+  state.annotation.selectedTurnId = turnId || null;
+  const turn = annotationSelectedTurn();
+  if (turn) {
+    state.annotation.activeSpeakerId = turn.speaker_id;
+    if (seek) seekTo(turn.start_s);
+  }
+  renderAnnotationEditor();
+}
+
+function playAnnotationTurn(turn, { loop = false } = {}) {
+  if (!turn || !el.audio?.src) return;
+  state.annotation.loopTurnId = loop ? turn.turn_id : null;
+  state.player.previewEnd = loop ? null : turn.end_s;
+  seekTo(turn.start_s);
+  el.audio.play().catch(error => showToast(`Could not play turn: ${error.message}`, 'error'));
+  if (el.btnAnnLoopSelected) el.btnAnnLoopSelected.classList.toggle('active', loop);
+}
+
+function deleteSelectedAnnotationTurn() {
+  const turnId = state.annotation.selectedTurnId;
+  if (!turnId) return;
+  annotationChanged(() => {
+    state.annotation.turns = state.annotation.turns.filter(turn => turn.turn_id !== turnId);
+    state.annotation.selectedTurnId = null;
+    if (state.annotation.loopTurnId === turnId) state.annotation.loopTurnId = null;
+  });
+}
+
+function splitSelectedAnnotationTurn() {
+  const turn = annotationSelectedTurn();
+  const split = snapAnnotationTime(el.audio?.currentTime || 0);
+  if (!turn || split <= turn.start_s + 0.001 || split >= turn.end_s - 0.001) {
+    showToast('Place the playhead inside the selected turn before splitting', 'warning');
+    return;
+  }
+  annotationChanged(() => {
+    const originalEnd = turn.end_s;
+    turn.end_s = split;
+    const second = {
+      turn_id: `turn_${crypto.randomUUID().replaceAll('-', '')}`,
+      speaker_id: turn.speaker_id,
+      start_s: split,
+      end_s: originalEnd,
+    };
+    state.annotation.turns.push(second);
+    state.annotation.turns.sort((a, b) => a.start_s - b.start_s || a.end_s - b.end_s);
+    state.annotation.selectedTurnId = second.turn_id;
+  });
+}
+
+function addAnnotationSpeaker() {
+  if (!state.annotation.current) return;
+  const suggested = `Speaker ${state.annotation.speakers.length + 1}`;
+  const name = prompt('Speaker display name:', suggested);
+  if (name === null || !name.trim()) return;
+  annotationChanged(() => {
+    let number = state.annotation.speakers.length + 1;
+    let speakerId = `spk_${number}`;
+    while (annotationSpeaker(speakerId)) speakerId = `spk_${++number}`;
+    state.annotation.speakers.push({
+      speaker_id: speakerId,
+      name: name.trim(),
+      color: ANNOTATION_SPEAKER_COLORS[(number - 1) % ANNOTATION_SPEAKER_COLORS.length],
+      global_speaker_id: null,
+    });
+    state.annotation.activeSpeakerId = speakerId;
+  });
+}
+
+function renameActiveAnnotationSpeaker() {
+  const speaker = annotationSpeaker(state.annotation.activeSpeakerId);
+  if (!speaker) return;
+  const name = prompt('Rename speaker:', speaker.name);
+  if (name === null || !name.trim() || name.trim() === speaker.name) return;
+  annotationChanged(() => { speaker.name = name.trim(); });
+}
+
+async function linkActiveAnnotationSpeaker() {
+  const speaker = annotationSpeaker(state.annotation.activeSpeakerId);
+  if (!speaker) return;
+  if (!state.knownSpeakers?.profiles?.length) await loadSpeakerProfiles();
+  const names = (state.knownSpeakers?.profiles || []).map(profile => profile.name);
+  if (!names.length) {
+    showToast('Create a known speaker profile in the Diarization tab first', 'info');
+    return;
+  }
+  const entered = prompt(`Known profile to link (blank unlinks):\n${names.join(', ')}`, speaker.global_speaker_id || '');
+  if (entered === null) return;
+  const profile = entered.trim();
+  if (profile && !names.includes(profile)) {
+    showToast('That known speaker profile does not exist', 'warning');
+    return;
+  }
+  annotationChanged(() => { speaker.global_speaker_id = profile || null; });
+}
+
+function mergeActiveAnnotationSpeaker() {
+  const source = annotationSpeaker(state.annotation.activeSpeakerId);
+  const targets = state.annotation.speakers.filter(speaker => speaker.speaker_id !== source?.speaker_id);
+  if (!source || !targets.length) return;
+  const entered = prompt(`Merge “${source.name}” into which speaker?\n${targets.map(speaker => `${speaker.name} (${speaker.speaker_id})`).join(', ')}`);
+  if (entered === null) return;
+  const key = entered.trim();
+  const target = targets.find(speaker => speaker.speaker_id === key || speaker.name === key);
+  if (!target) {
+    showToast('Target speaker was not found', 'warning');
+    return;
+  }
+  const prospective = state.annotation.turns.map(turn => ({
+    ...turn,
+    speaker_id: turn.speaker_id === source.speaker_id ? target.speaker_id : turn.speaker_id,
+  })).sort((a, b) => a.start_s - b.start_s || a.end_s - b.end_s);
+  const targetTurns = prospective.filter(turn => turn.speaker_id === target.speaker_id);
+  if (targetTurns.some((turn, index) => index > 0 && turn.start_s < targetTurns[index - 1].end_s - 0.000001)) {
+    showToast('Merge would create overlapping turns on one speaker lane. Reassign those turns first.', 'warning');
+    return;
+  }
+  annotationChanged(() => {
+    state.annotation.turns = prospective;
+    state.annotation.speakers = state.annotation.speakers.filter(speaker => speaker.speaker_id !== source.speaker_id);
+    state.annotation.activeSpeakerId = target.speaker_id;
+  });
+}
+
+function removeActiveAnnotationSpeaker() {
+  const speaker = annotationSpeaker(state.annotation.activeSpeakerId);
+  if (!speaker) return;
+  const count = state.annotation.turns.filter(turn => turn.speaker_id === speaker.speaker_id).length;
+  if (count) {
+    showToast(`Reassign or delete ${count} turn${count === 1 ? '' : 's'} before removing this speaker`, 'warning');
+    return;
+  }
+  if (state.annotation.speakers.length === 1) {
+    showToast('An annotation must keep at least one speaker', 'warning');
+    return;
+  }
+  annotationChanged(() => {
+    state.annotation.speakers = state.annotation.speakers.filter(item => item.speaker_id !== speaker.speaker_id);
+    state.annotation.activeSpeakerId = state.annotation.speakers[0]?.speaker_id || null;
+  });
+}
+
+function reassignSelectedAnnotationTurn() {
+  const turn = annotationSelectedTurn();
+  if (!turn) return;
+  const entered = prompt(`Reassign to:\n${state.annotation.speakers.map(speaker => `${speaker.name} (${speaker.speaker_id})`).join(', ')}`);
+  if (entered === null) return;
+  const key = entered.trim();
+  const target = state.annotation.speakers.find(speaker => speaker.speaker_id === key || speaker.name === key);
+  if (!target || target.speaker_id === turn.speaker_id) return;
+  const candidate = { ...turn, speaker_id: target.speaker_id };
+  if (annotationTurnOverlap(candidate, turn.turn_id)) {
+    showToast('Reassignment would overlap another turn on that speaker lane', 'warning');
+    return;
+  }
+  annotationChanged(() => {
+    turn.speaker_id = target.speaker_id;
+    state.annotation.activeSpeakerId = target.speaker_id;
+  });
+}
+
+function beginAnnotationSegmentDrag(event) {
+  const segment = event.target.closest('.ann-segment');
+  if (!segment || event.button !== 0) return;
+  event.preventDefault();
+  const turn = state.annotation.turns.find(item => item.turn_id === segment.dataset.turnId);
+  if (!turn) return;
+  state.annotation.selectedTurnId = turn.turn_id;
+  state.annotation.activeSpeakerId = turn.speaker_id;
+  const mode = event.target.dataset.edge || 'move';
+  state.annotation.drag = {
+    turnId: turn.turn_id,
+    mode,
+    startX: event.clientX,
+    originalStart: turn.start_s,
+    originalEnd: turn.end_s,
+    before: annotationSnapshot(),
+    changed: false,
+  };
+  segment.classList.add('selected', 'dragging');
+  renderAnnotationTurnsTable();
+}
+
+function moveAnnotationSegmentDrag(event) {
+  const drag = state.annotation.drag;
+  if (!drag || !el.annTimelineStage) return;
+  const turn = state.annotation.turns.find(item => item.turn_id === drag.turnId);
+  if (!turn) return;
+  const delta = (event.clientX - drag.startX) / el.annTimelineStage.clientWidth * annotationDuration();
+  const length = drag.originalEnd - drag.originalStart;
+  if (drag.mode === 'start') {
+    turn.start_s = Math.min(snapAnnotationTime(drag.originalStart + delta), turn.end_s - 0.001);
+  } else if (drag.mode === 'end') {
+    turn.end_s = Math.max(snapAnnotationTime(drag.originalEnd + delta), turn.start_s + 0.001);
+  } else {
+    const start = Math.min(
+      snapAnnotationTime(Math.max(0, Math.min(drag.originalStart + delta, annotationDuration() - length))),
+      Math.max(0, annotationDuration() - length),
+    );
+    turn.start_s = start;
+    turn.end_s = Number(Math.min(annotationDuration(), start + length).toFixed(3));
+  }
+  drag.changed = turn.start_s !== drag.originalStart || turn.end_s !== drag.originalEnd;
+  renderAnnotationTimeline();
+}
+
+function endAnnotationSegmentDrag() {
+  const drag = state.annotation.drag;
+  if (!drag) return;
+  state.annotation.drag = null;
+  const turn = state.annotation.turns.find(item => item.turn_id === drag.turnId);
+  if (!turn) return;
+  const overlap = annotationTurnOverlap(turn, turn.turn_id);
+  if (overlap || turn.end_s <= turn.start_s) {
+    restoreAnnotationSnapshot(drag.before);
+    showToast('Boundary change would create an invalid same-speaker overlap', 'warning');
+  } else if (drag.changed) {
+    state.annotation.undo.push(drag.before);
+    state.annotation.undo = state.annotation.undo.slice(-100);
+    state.annotation.redo = [];
+    state.annotation.editVersion += 1;
+    state.annotation.dirty = true;
+    scheduleAnnotationSave();
+  }
+  renderAnnotationEditor();
+}
+
+function annotationTimelineSeek(event) {
+  if (event.target.closest('.ann-segment') || !el.annTimelineStage) return;
+  const rect = el.annTimelineStage.getBoundingClientRect();
+  seekTo((event.clientX - rect.left) / rect.width * annotationDuration());
+}
+
+function updateAnnotationTurnFromRow(row) {
+  const turn = state.annotation.turns.find(item => item.turn_id === row?.dataset.turnId);
+  if (!turn) return;
+  const start = parseAnnotationTime(row.querySelector('.ann-row-start')?.value);
+  const end = parseAnnotationTime(row.querySelector('.ann-row-end')?.value);
+  const speakerId = row.querySelector('.ann-row-speaker')?.value;
+  const candidate = {
+    ...turn,
+    speaker_id: speakerId,
+    start_s: Number(start.toFixed(3)),
+    end_s: Number(end.toFixed(3)),
+  };
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start || end > annotationDuration() + 0.001) {
+    showToast(`Turn must satisfy 0 ≤ start < end ≤ ${formatAnnotationTime(annotationDuration())}`, 'warning');
+    renderAnnotationTurnsTable();
+    return;
+  }
+  if (annotationTurnOverlap(candidate, turn.turn_id)) {
+    showToast('That edit overlaps another turn on the same speaker lane', 'warning');
+    renderAnnotationTurnsTable();
+    return;
+  }
+  annotationChanged(() => {
+    turn.speaker_id = candidate.speaker_id;
+    turn.start_s = candidate.start_s;
+    turn.end_s = candidate.end_s;
+    state.annotation.activeSpeakerId = candidate.speaker_id;
+    state.annotation.turns.sort((left, right) => left.start_s - right.start_s || left.end_s - right.end_s);
+  });
+}
+
+function annotationSourceMatchesResult(result) {
+  const annotation = state.annotation.current;
+  const source = annotation?.source_audio || {};
+  const resultSource = result.source_audio || {};
+  if (source.fingerprint && resultSource.fingerprint) return source.fingerprint === resultSource.fingerprint;
+  if (source.path && resultSource.path && normalizedAudioPath(source.path) === normalizedAudioPath(resultSource.path)) return true;
+  return annotation?.audio_id === result.audio_id
+    && Math.abs(Number(source.duration_s || 0) - Number(resultSource.duration_s || 0)) <= 0.05;
+}
+
+async function loadCompatibleDiarizationResults() {
+  if (!el.annResultList || !state.annotation.current) return;
+  try {
+    const payload = await parseJsonResponse(await fetch('/api/diarization/results'));
+    state.annotation.resultCatalog = (payload.results || []).filter(annotationSourceMatchesResult);
+    renderAnnotationResultList();
+  } catch (error) {
+    el.annResultList.innerHTML = `<div class="empty-placeholder">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function renderAnnotationResultList() {
+  if (!el.annResultList) return;
+  const results = state.annotation.resultCatalog || [];
+  if (!results.length) {
+    el.annResultList.innerHTML = '<div class="empty-placeholder">No compatible model results. Run diarization on this exact audio, then refresh.</div>';
+    return;
+  }
+  el.annResultList.innerHTML = results.map(result => {
+    const model = result.model?.model_id || result.model?.backend || 'Unknown model';
+    const summary = result.summary || {};
+    return `<label class="ann-result-option">
+      <input type="checkbox" data-ann-result-id="${escapeHtml(result.result_id)}">
+      <span><strong>${escapeHtml(model)}</strong><small>${escapeHtml(result.result_id)} · ${summary.speaker_count || 0} speakers · ${summary.turn_count || 0} turns</small></span>
+      <span class="badge badge-success">source match</span>
+    </label>`;
+  }).join('');
+}
+
+async function evaluateSelectedAnnotationResults() {
+  if (!state.annotation.current?.annotation_id) {
+    showToast('Wait for the reference annotation to finish saving', 'warning');
+    return;
+  }
+  await saveAnnotationNow();
+  const resultIds = [...el.annResultList.querySelectorAll('input[data-ann-result-id]:checked')].map(input => input.dataset.annResultId);
+  if (!resultIds.length) {
+    showToast('Select at least one compatible model result', 'warning');
+    return;
+  }
+  const collarS = Number(el.annCollarInput?.value);
+  if (!Number.isFinite(collarS) || collarS < 0 || collarS > 10) {
+    showToast('Boundary collar must be between 0 and 10 seconds', 'warning');
+    return;
+  }
+  el.btnAnnEvaluate.disabled = true;
+  el.btnAnnEvaluate.textContent = 'Evaluating…';
+  try {
+    const response = await fetch('/api/diarization/evaluate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        annotation_id: state.annotation.current.annotation_id,
+        result_ids: resultIds,
+        collar_s: collarS,
+        skip_overlap: Boolean(el.annSkipOverlap?.checked),
+      }),
+    });
+    state.annotation.evaluation = await parseJsonResponse(response);
+    renderAnnotationEvaluation();
+    showToast(`Evaluated ${resultIds.length} model result${resultIds.length === 1 ? '' : 's'}`, 'success');
+  } catch (error) {
+    showToast(`Evaluation failed: ${error.message}`, 'error');
+  } finally {
+    el.btnAnnEvaluate.disabled = false;
+    el.btnAnnEvaluate.textContent = 'Evaluate selected models';
+  }
+}
+
+function renderAnnotationEvaluation() {
+  if (!el.annEvalResults) return;
+  const reports = state.annotation.evaluation?.results || [];
+  el.annEvalResults.classList.toggle('hidden', reports.length === 0);
+  if (el.btnAnnDownloadReport) el.btnAnnDownloadReport.disabled = reports.length === 0;
+  el.annEvalResults.innerHTML = reports.map((report, index) => {
+    const model = report.model?.model_id || report.model?.backend || report.result_id;
+    const mapping = (report.speaker_mapping || []).map(item => `${item.hypothesis_speaker_id} → ${annotationSpeaker(item.reference_speaker_id)?.name || item.reference_speaker_id}`).join(' · ');
+    return `<section class="ann-eval-model">
+      <div class="flex-row items-center gap-2 flex-wrap"><span class="badge ${index === 0 ? 'badge-success' : 'badge-ghost'}">#${index + 1}</span><h4>${escapeHtml(model)}</h4><span class="text-xs text-muted">${escapeHtml(report.result_id)}</span></div>
+      <div class="ann-score-grid">
+        <div class="ann-score-card"><span>DER</span><strong>${Number(report.der_pct).toFixed(2)}%</strong></div>
+        <div class="ann-score-card"><span>JER</span><strong>${Number(report.jer_pct).toFixed(2)}%</strong></div>
+        <div class="ann-score-card"><span>Missed speech</span><strong>${Number(report.missed_speech_s).toFixed(3)}s</strong></div>
+        <div class="ann-score-card"><span>False alarm</span><strong>${Number(report.false_alarm_s).toFixed(3)}s</strong></div>
+        <div class="ann-score-card"><span>Confusion</span><strong>${Number(report.speaker_confusion_s).toFixed(3)}s</strong></div>
+        <div class="ann-score-card"><span>Reference speech</span><strong>${Number(report.reference_speaker_s).toFixed(3)}s</strong></div>
+        <div class="ann-score-card"><span>Scored audio</span><strong>${Number(report.scored_audio_s).toFixed(3)}s</strong></div>
+        <div class="ann-score-card"><span>Source</span><strong style="font-size:12px">${escapeHtml(report.source_match)}</strong></div>
+      </div>
+      <div class="text-xs"><strong>Optimal speaker mapping:</strong> ${escapeHtml(mapping || 'No temporal speaker mapping')}</div>
+      <div class="turns-table-wrapper" style="margin-top:10px"><table class="turns-table"><thead><tr><th>Reference</th><th>Model speaker</th><th>Reference</th><th>Intersection</th><th>Coverage</th><th>JER</th></tr></thead><tbody>${(report.per_speaker || []).map(item => `<tr><td>${escapeHtml(annotationSpeaker(item.reference_speaker_id)?.name || item.reference_speaker_id)}</td><td>${escapeHtml(item.hypothesis_speaker_id || 'Unmapped')}</td><td>${Number(item.reference_s).toFixed(3)}s</td><td>${Number(item.intersection_s).toFixed(3)}s</td><td>${Number(item.coverage_pct).toFixed(2)}%</td><td>${Number(item.jer_pct).toFixed(2)}%</td></tr>`).join('')}</tbody></table></div>
+    </section>`;
+  }).join('');
+}
+
+function downloadTextFile(content, filename, type = 'application/json') {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function exportAnnotation() {
+  if (!state.annotation.current) return;
+  await saveAnnotationNow();
+  const format = el.annExportFormat?.value || 'json';
+  const base = (state.annotation.current.name || 'diarization_reference').replace(/[^a-z0-9_-]+/gi, '_');
+  if (format === 'rttm') {
+    const fileId = (state.annotation.current.audio_id || base).replace(/\s+/g, '_');
+    const lines = state.annotation.turns.map(turn => {
+      const speaker = annotationSpeaker(turn.speaker_id);
+      const label = (speaker?.name || turn.speaker_id).replace(/\s+/g, '_');
+      return `SPEAKER ${fileId} 1 ${turn.start_s.toFixed(6)} ${(turn.end_s - turn.start_s).toFixed(6)} <NA> <NA> ${label} <NA> <NA>`;
+    });
+    downloadTextFile(`${lines.join('\n')}\n`, `${base}.rttm`, 'text/plain');
+  } else {
+    downloadTextFile(`${JSON.stringify({ ...state.annotation.current, speakers: state.annotation.speakers, turns: state.annotation.turns }, null, 2)}\n`, `${base}.json`);
+  }
+}
+
+function parseImportedAnnotation(text, filename) {
+  if (filename.toLowerCase().endsWith('.rttm')) {
+    const turns = [];
+    const names = new Set();
+    text.split(/\r?\n/).forEach((line, lineIndex) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) return;
+      const fields = trimmed.split(/\s+/);
+      if (fields.length < 8 || fields[0] !== 'SPEAKER') throw new Error(`Invalid RTTM line ${lineIndex + 1}`);
+      const start = Number(fields[3]);
+      const duration = Number(fields[4]);
+      const name = fields[7];
+      if (!Number.isFinite(start) || !Number.isFinite(duration) || duration <= 0) throw new Error(`Invalid RTTM timestamps on line ${lineIndex + 1}`);
+      names.add(name);
+      turns.push({ importedName: name, start_s: start, end_s: start + duration });
+    });
+    const speakers = [...names].map((name, index) => ({ speaker_id: `spk_${index + 1}`, name, color: ANNOTATION_SPEAKER_COLORS[index % ANNOTATION_SPEAKER_COLORS.length], global_speaker_id: null }));
+    const idByName = new Map(speakers.map(speaker => [speaker.name, speaker.speaker_id]));
+    return {
+      name: filename.replace(/\.rttm$/i, ''),
+      speakers,
+      turns: turns.map(turn => ({ turn_id: `turn_${crypto.randomUUID().replaceAll('-', '')}`, speaker_id: idByName.get(turn.importedName), start_s: turn.start_s, end_s: turn.end_s })),
+    };
+  }
+  const payload = parseJsonText(text);
+  const rawTurns = payload.turns || payload.diarization?.turns;
+  if (!Array.isArray(rawTurns)) throw new Error('JSON does not contain a turns array');
+  const rawSpeakers = Array.isArray(payload.speakers) ? payload.speakers : [];
+  const ids = [...new Set([...rawSpeakers.map(speaker => speaker.speaker_id), ...rawTurns.map(turn => turn.speaker_id)].filter(Boolean))];
+  const speakers = ids.map((speakerId, index) => {
+    const source = rawSpeakers.find(speaker => speaker.speaker_id === speakerId) || {};
+    return { speaker_id: String(speakerId), name: String(source.name || source.global_speaker_id || speakerId), color: source.color || ANNOTATION_SPEAKER_COLORS[index % ANNOTATION_SPEAKER_COLORS.length], global_speaker_id: source.global_speaker_id || null };
+  });
+  return {
+    name: payload.name || filename.replace(/\.json$/i, ''),
+    speakers,
+    turns: rawTurns.map(turn => ({ turn_id: turn.turn_id || `turn_${crypto.randomUUID().replaceAll('-', '')}`, speaker_id: String(turn.speaker_id), start_s: Number(turn.start_s), end_s: Number(turn.end_s) })),
+  };
+}
+
+function validateImportedAnnotation(imported) {
+  if (!imported.speakers.length) throw new Error('Annotation must contain at least one speaker');
+  const speakerIds = new Set(imported.speakers.map(speaker => speaker.speaker_id));
+  const duration = annotationDuration();
+  imported.turns.forEach((turn, index) => {
+    if (!speakerIds.has(turn.speaker_id)) throw new Error(`Turn ${index + 1} references an unknown speaker`);
+    if (!Number.isFinite(turn.start_s) || !Number.isFinite(turn.end_s) || turn.start_s < 0 || turn.end_s <= turn.start_s || turn.end_s > duration + 0.001) {
+      throw new Error(`Turn ${index + 1} is outside the ${formatAnnotationTime(duration)} source duration`);
+    }
+    turn.start_s = Number(turn.start_s.toFixed(3));
+    turn.end_s = Number(Math.min(duration, turn.end_s).toFixed(3));
+  });
+  imported.turns.sort((left, right) => left.start_s - right.start_s || left.end_s - right.end_s);
+  imported.speakers.forEach(speaker => {
+    const turns = imported.turns.filter(turn => turn.speaker_id === speaker.speaker_id);
+    if (turns.some((turn, index) => index > 0 && turn.start_s < turns[index - 1].end_s - 0.000001)) {
+      throw new Error(`${speaker.name} has overlapping turns; simultaneous speech must use separate speaker lanes`);
+    }
+  });
+  return imported;
+}
+
+function initAnnotationTab() {
+  loadAnnotationCatalog();
+  el.annAudioSelect?.addEventListener('change', async () => {
+    const value = el.annAudioSelect.value;
+    if (!value) return;
+    await selectAnnotationAudio(value);
+  });
+  el.btnAnnBrowseLibrary?.addEventListener('click', () => openLibraryModal('annotation'));
+  el.btnAnnNew?.addEventListener('click', createAnnotationForSelectedAudio);
+  el.btnAnnLoad?.addEventListener('click', () => {
+    const annotationId = el.annSavedSelect?.value;
+    if (!annotationId) showToast('Choose a saved annotation first', 'info');
+    else loadAnnotation(annotationId).catch(error => showToast(error.message, 'error'));
+  });
+  el.annSavedSelect?.addEventListener('dblclick', () => el.btnAnnLoad?.click());
+  el.btnAnnDelete?.addEventListener('click', async () => {
+    const annotationId = el.annSavedSelect?.value || state.annotation.current?.annotation_id;
+    if (!annotationId || !confirm('Delete this saved ground-truth annotation? The audio file is not removed.')) return;
+    try {
+      clearTimeout(state.annotation.saveTimer);
+      state.annotation.saveTimer = null;
+      if (state.annotation.savePromise) await state.annotation.savePromise;
+      await parseJsonResponse(await fetch(`/api/diarization/annotations/${encodeURIComponent(annotationId)}`, { method: 'DELETE' }));
+      if (state.annotation.current?.annotation_id === annotationId) clearAnnotationEditor();
+      await loadAnnotationCatalog();
+      showToast('Annotation deleted; source audio was kept', 'success');
+    } catch (error) {
+      showToast(`Delete failed: ${error.message}`, 'error');
+    }
+  });
+  el.annNameInput?.addEventListener('change', () => {
+    if (!state.annotation.current) return;
+    const value = el.annNameInput.value.trim();
+    if (!value) {
+      el.annNameInput.value = state.annotation.current.name || 'Ground truth';
+      return;
+    }
+    annotationChanged(() => { state.annotation.current.name = value; });
+  });
+
+  el.btnAnnStart?.addEventListener('click', () => seekTo(0));
+  el.btnAnnBack1?.addEventListener('click', () => seekRelative(-1));
+  el.btnAnnForward1?.addEventListener('click', () => seekRelative(1));
+  el.btnAnnBackFrame?.addEventListener('click', () => seekRelative(-state.annotation.stepS));
+  el.btnAnnForwardFrame?.addEventListener('click', () => seekRelative(state.annotation.stepS));
+  el.btnAnnPlay?.addEventListener('click', togglePlayPause);
+  el.annStepSelect?.addEventListener('change', () => { state.annotation.stepS = Number(el.annStepSelect.value) || 0.1; });
+  el.annSnapSelect?.addEventListener('change', () => { state.annotation.snapS = Number(el.annSnapSelect.value) || 0; });
+  el.annSpeedSelect?.addEventListener('change', () => setPlaybackRate(el.annSpeedSelect.value));
+  el.btnAnnUndo?.addEventListener('click', undoAnnotation);
+  el.btnAnnRedo?.addEventListener('click', redoAnnotation);
+
+  el.btnAnnAddSpeaker?.addEventListener('click', addAnnotationSpeaker);
+  el.btnAnnRenameSpeaker?.addEventListener('click', renameActiveAnnotationSpeaker);
+  el.btnAnnLinkSpeaker?.addEventListener('click', linkActiveAnnotationSpeaker);
+  el.btnAnnMergeSpeaker?.addEventListener('click', mergeActiveAnnotationSpeaker);
+  el.btnAnnRemoveSpeaker?.addEventListener('click', removeActiveAnnotationSpeaker);
+
+  const setMarkIn = () => {
+    if (!state.annotation.current) return;
+    state.annotation.markIn = snapAnnotationTime(el.audio?.currentTime || 0);
+    state.annotation.markOut = null;
+    updateAnnotationMarks();
+  };
+  const setMarkOutAndCreate = () => {
+    if (!state.annotation.current) return;
+    state.annotation.markOut = snapAnnotationTime(el.audio?.currentTime || 0);
+    updateAnnotationMarks();
+    createAnnotationTurn();
+  };
+  el.btnAnnSetIn?.addEventListener('click', setMarkIn);
+  el.btnAnnSetOut?.addEventListener('click', setMarkOutAndCreate);
+  el.btnAnnCreateTurn?.addEventListener('click', () => {
+    const start = parseAnnotationTime(el.annMarkIn?.value);
+    const end = parseAnnotationTime(el.annMarkOut?.value);
+    createAnnotationTurn(start, end);
+  });
+  el.btnAnnClearMarks?.addEventListener('click', () => {
+    state.annotation.markIn = null;
+    state.annotation.markOut = null;
+    updateAnnotationMarks();
+  });
+  el.annMarkIn?.addEventListener('change', () => {
+    const value = parseAnnotationTime(el.annMarkIn.value);
+    if (!Number.isFinite(value) || value > annotationDuration()) return updateAnnotationMarks();
+    state.annotation.markIn = snapAnnotationTime(value);
+    updateAnnotationMarks();
+  });
+  el.annMarkOut?.addEventListener('change', () => {
+    const value = parseAnnotationTime(el.annMarkOut.value);
+    if (!Number.isFinite(value) || value > annotationDuration()) return updateAnnotationMarks();
+    state.annotation.markOut = snapAnnotationTime(value);
+    updateAnnotationMarks();
+  });
+
+  const setAnnotationZoom = value => {
+    state.annotation.zoom = Math.max(1, Math.min(30, Number(value) || 1));
+    renderAnnotationTimeline();
+  };
+  el.btnAnnZoomOut?.addEventListener('click', () => setAnnotationZoom(state.annotation.zoom / 1.5));
+  el.btnAnnZoomIn?.addEventListener('click', () => setAnnotationZoom(state.annotation.zoom * 1.5));
+  el.btnAnnZoomFit?.addEventListener('click', () => setAnnotationZoom(1));
+  el.annZoomRange?.addEventListener('input', () => setAnnotationZoom(el.annZoomRange.value));
+  el.annTimelineStage?.addEventListener('click', annotationTimelineSeek);
+  el.annLanes?.addEventListener('pointerdown', beginAnnotationSegmentDrag);
+  document.addEventListener('pointermove', moveAnnotationSegmentDrag);
+  document.addEventListener('pointerup', endAnnotationSegmentDrag);
+  el.annLanes?.addEventListener('dblclick', event => {
+    const segment = event.target.closest('.ann-segment');
+    if (segment) selectAnnotationTurn(segment.dataset.turnId, { seek: true });
+  });
+
+  el.annTurnSearch?.addEventListener('input', renderAnnotationTurnsTable);
+  el.annTurnsBody?.addEventListener('click', event => {
+    const row = event.target.closest('tr[data-turn-id]');
+    if (!row) return;
+    const turn = state.annotation.turns.find(item => item.turn_id === row.dataset.turnId);
+    if (event.target.closest('.ann-row-delete')) {
+      state.annotation.selectedTurnId = row.dataset.turnId;
+      deleteSelectedAnnotationTurn();
+    } else if (event.target.closest('.ann-row-play')) {
+      selectAnnotationTurn(row.dataset.turnId);
+      playAnnotationTurn(turn);
+    } else if (!event.target.closest('input,select,button')) {
+      selectAnnotationTurn(row.dataset.turnId, { seek: true });
+    }
+  });
+  el.annTurnsBody?.addEventListener('change', event => {
+    if (event.target.matches('.ann-row-start,.ann-row-end,.ann-row-speaker')) updateAnnotationTurnFromRow(event.target.closest('tr'));
+  });
+  el.btnAnnDeleteTurn?.addEventListener('click', deleteSelectedAnnotationTurn);
+  el.btnAnnSplit?.addEventListener('click', splitSelectedAnnotationTurn);
+  el.btnAnnReassign?.addEventListener('click', reassignSelectedAnnotationTurn);
+  el.btnAnnLoopSelected?.addEventListener('click', () => {
+    const turn = annotationSelectedTurn();
+    if (!turn) return;
+    const enable = state.annotation.loopTurnId !== turn.turn_id;
+    state.annotation.loopTurnId = enable ? turn.turn_id : null;
+    el.btnAnnLoopSelected.classList.toggle('active', enable);
+    if (enable) playAnnotationTurn(turn, { loop: true });
+    else {
+      el.audio?.pause();
+      state.player.previewEnd = null;
+    }
+  });
+
+  el.btnAnnRefreshResults?.addEventListener('click', loadCompatibleDiarizationResults);
+  el.btnAnnEvaluate?.addEventListener('click', evaluateSelectedAnnotationResults);
+  el.btnAnnDownloadReport?.addEventListener('click', () => {
+    if (!state.annotation.evaluation) return;
+    downloadTextFile(`${JSON.stringify(state.annotation.evaluation, null, 2)}\n`, `${state.annotation.current?.name || 'diarization'}_evaluation.json`);
+  });
+  el.btnAnnExport?.addEventListener('click', exportAnnotation);
+  el.btnAnnImport?.addEventListener('click', () => el.annImportInput?.click());
+  el.annImportInput?.addEventListener('change', async () => {
+    const file = el.annImportInput.files?.[0];
+    if (!file) return;
+    try {
+      if (!state.annotation.current) await createAnnotationForSelectedAudio();
+      if (!state.annotation.current) return;
+      const imported = validateImportedAnnotation(parseImportedAnnotation(await file.text(), file.name));
+      annotationChanged(() => {
+        state.annotation.current.name = imported.name;
+        state.annotation.speakers = imported.speakers;
+        state.annotation.turns = imported.turns;
+        state.annotation.activeSpeakerId = imported.speakers[0]?.speaker_id || null;
+        state.annotation.selectedTurnId = null;
+        if (el.annNameInput) el.annNameInput.value = imported.name;
+      });
+      showToast(`Imported ${imported.turns.length} turns from ${file.name}`, 'success');
+    } catch (error) {
+      showToast(`Import failed: ${error.message}`, 'error');
+    } finally {
+      el.annImportInput.value = '';
+    }
+  });
+
+  window.addEventListener('beforeunload', event => {
+    if (!state.annotation.dirty) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
+  window.addEventListener('resize', () => {
+    if (state.activeTab === 'tab-annotation') renderAnnotationTimeline();
+  });
 }
 
 function savePurityPreferences() {
@@ -7108,6 +8490,11 @@ const LIBRARY_LOAD_TARGETS = {
     subtitle: 'Choose a source track for speaker diarization',
     button: 'Send to Diarization',
   },
+  annotation: {
+    title: 'Load into Manual Annotation',
+    subtitle: 'Choose the exact source track for ground-truth speaker annotation',
+    button: 'Annotate this audio',
+  },
   purity: {
     title: 'Load into Speaker Purity',
     subtitle: 'Choose imported audio to verify against an enrolled speaker',
@@ -7679,6 +9066,13 @@ async function loadLibraryFileTo(filePath, target = 'workspace') {
           el.diarInputSelect.dispatchEvent(new Event('change'));
         }
         showToast(`Selected "${title}" for Diarization`, "success");
+      } else if (target === 'annotation') {
+        switchTab('tab-annotation');
+        if (el.annAudioSelect) {
+          el.annAudioSelect.value = data.audio_id;
+          await selectAnnotationAudio(data.audio_id);
+        }
+        showToast(`Selected "${title}" for manual annotation`, "success");
       } else if (target === 'purity') {
         switchTab('tab-purity');
         if (el.purityInputSelect) {
@@ -8305,6 +9699,7 @@ function populateAllAudioSelects() {
   const standardSelects = [
     el.sepInputSelect,
     el.diarInputSelect,
+    el.annAudioSelect,
     el.purityInputSelect,
   ];
 
@@ -8952,6 +10347,17 @@ function switchTab(tabId) {
     renderDiarWaveform();
     renderDiarRuler();
     startDiarPlaybackWatch();
+  } else if (tabId === 'tab-annotation') {
+    loadAnnotationCatalog();
+    if (!state.annotation.current && el.annAudioSelect && !el.annAudioSelect.value && state.activeAudio) {
+      el.annAudioSelect.value = state.activeAudio.id;
+      state.annotation.audioId = state.activeAudio.id;
+      const item = state.audioList.find(audio => audio.id === state.activeAudio.id);
+      if (item && el.annAudioMeta) {
+        el.annAudioMeta.textContent = `${item.title || item.source_id} · ${formatAnnotationTime(item.duration_s)} · ${(item.sample_rate || 0).toLocaleString()} Hz`;
+      }
+    }
+    renderAnnotationEditor();
   } else if (tabId === 'tab-purity') {
     loadSpeakerProfiles().then(() => syncPurityProfileSelect());
     if (el.purityInputSelect) {
@@ -8971,6 +10377,11 @@ function switchTab(tabId) {
   if (tabId !== 'tab-diarization' && el.audio) {
     el.audio.muted = false;
     stopDiarPlaybackWatch();
+  }
+
+  if (tabId !== 'tab-annotation') {
+    state.annotation.loopTurnId = null;
+    if (el.btnAnnLoopSelected) el.btnAnnLoopSelected.classList.remove('active');
   }
 
   if (tabId !== 'tab-purity') {
@@ -9016,6 +10427,7 @@ async function initApp() {
   try { initIngestAndSaves(); } catch (e) { console.error("initIngestAndSaves error:", e); }
   try { initSeparationStudio(); } catch (e) { console.error("initSeparationStudio error:", e); }
   try { initDiarizationStudio(); } catch (e) { console.error("initDiarizationStudio error:", e); }
+  try { initAnnotationTab(); } catch (e) { console.error("initAnnotationTab error:", e); }
   try { initKnownSpeakerManager(); } catch (e) { console.error("initKnownSpeakerManager error:", e); }
   try { initTargetSpeakerEvaluation(); } catch (e) { console.error("initTargetSpeakerEvaluation error:", e); }
   try { initPurityTab(); } catch (e) { console.error("initPurityTab error:", e); }

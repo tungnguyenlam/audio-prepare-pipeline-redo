@@ -76,6 +76,34 @@ injected into a supporting diarization pipeline. Turns continue to reference
 the result-local `speaker_id`; clients render `global_speaker_id` as the
 speaker name when present.
 
+## Manual diarization annotations and evaluations
+
+Manual ground truth uses `kind: "diarization.annotation"` and schema version
+`1.0`. Durable annotation JSON lives under
+`.data/diarization/annotations/` and contains:
+
+- `annotation_id`, `revision`, `created_at`, `updated_at`, and a display `name`;
+- the stable source `audio_id`, current `session_audio_id`, and a
+  `source_audio` snapshot with path, fingerprint, title, duration, sample rate,
+  channel count, and format;
+- speakers with stable local `speaker_id`, display name, color, and optional
+  `global_speaker_id` linking an enrolled speaker profile; and
+- turns with stable `turn_id`, `speaker_id`, and second-based `start_s` / `end_s`
+  values preserved to microsecond JSON precision.
+
+Writes are atomic and revision checked. A stale client receives HTTP 409 rather
+than overwriting a newer revision. Turn validation requires finite in-bounds
+timestamps and rejects same-speaker overlap; simultaneous speech is represented
+by turns on different speaker lanes. JSON and NIST RTTM are exchange formats.
+
+Manual evaluation compares one annotation with one or more compatible durable
+`DiarizationResult` values. Compatibility prefers an exact audio fingerprint,
+then an exact resolved path, then stable source identity plus duration. Reports
+contain DER, JER, missed speech, false alarm, speaker confusion, scored duration,
+optimal one-to-one hypothesis/reference speaker mapping, and per-reference-
+speaker coverage. The boundary collar is excluded on each side of every
+reference boundary. Reference-overlap regions may optionally be excluded.
+
 ## `SpeakerProfile`
 
 A profile stores `name`, reference `clip_paths`, `created_at`, `updated_at`, and

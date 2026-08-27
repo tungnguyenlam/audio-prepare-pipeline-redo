@@ -64,6 +64,7 @@ from src.diarization import (
     ThreeDSpeakerWorkerDiarizer,
     clean_speaker_turns,
     create_overlap_verifier,
+    evaluate_diarization,
     pad_and_merge_intervals,
 )
 from src.diarization.SortformerDiarizer import (
@@ -127,6 +128,7 @@ LIBRARY_CATEGORY_ORDER = (
 DIARIZATION_RESULTS_DIR = DATA_DIR / "diarization" / "results"
 DIARIZATION_VERIFICATIONS_DIR = DATA_DIR / "diarization" / "verifications"
 DIARIZATION_PREVIEW_DIR = DATA_DIR / "diarization" / "preview"
+DIARIZATION_ANNOTATIONS_DIR = DATA_DIR / "diarization" / "annotations"
 AUDIO_REGISTRY_PATH = DATA_DIR / "studio" / "audio_registry.json"
 
 DEFAULT_EXTRACTION_PRE_ROLL_S = DEFAULT_SORTFORMER_PAD_ONSET_S
@@ -139,6 +141,7 @@ UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 DIARIZATION_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 DIARIZATION_VERIFICATIONS_DIR.mkdir(parents=True, exist_ok=True)
 DIARIZATION_PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
+DIARIZATION_ANNOTATIONS_DIR.mkdir(parents=True, exist_ok=True)
 AUDIO_REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
@@ -1083,6 +1086,268 @@ def _load_diarization_result(result_id: str) -> DiarizationResult:
     if result.result_id != result_id:
         raise ValueError("Diarization result ID does not match its filename")
     return result
+
+
+def _annotation_path(annotation_id: str) -> Path:
+    """Resolve a manual annotation ID without allowing directory traversal."""
+    if not annotation_id or any(
+        char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+        for char in annotation_id
+    ):
+        raise ValueError("Invalid annotation ID")
+    return DIARIZATION_ANNOTATIONS_DIR / f"{annotation_id}.json"
+
+
+def _load_annotation(annotation_id: str) -> dict[str, Any]:
+    """Load and validate the outer shape of one manual annotation."""
+    path = _annotation_path(annotation_id)
+    if not path.is_file():
+        raise FileNotFoundError(f"Annotation not found: {annotation_id}")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or payload.get("annotation_id") != annotation_id:
+        raise ValueError("Annotation ID does not match its filename")
+    return payload
+
+
+def _annotation_session_audio_id(annotation: dict[str, Any]) -> str | None:
+    """Find the live session ID for an annotation source, if registered."""
+    source = annotation.get("source_audio") or {}
+    raw_path = source.get("path")
+    if not raw_path:
+        return None
+    return registry.find_id_by_path(raw_path)
+
+
+def _ensure_annotation_source_registered(annotation: dict[str, Any]) -> str | None:
+    """Restore an annotation source into the Studio registry when available."""
+    existing = _annotation_session_audio_id(annotation)
+    if existing:
+        return existing
+    source = annotation.get("source_audio") or {}
+    raw_path = source.get("path")
+    if not raw_path:
+        return None
+    path = Path(str(raw_path)).expanduser()
+    try:
+        path = path.resolve()
+    except OSError:
+        return None
+    if not path.is_file():
+        return None
+    audio = Audio.from_file(
+        path,
+        source_id=str(annotation.get("audio_id") or path.stem),
+        title=source.get("title"),
+    )
+    return registry.register(
+        audio,
+        source_type="library",
+        tags=["library", "diarization_annotation_source"],
+    )
+
+
+def _annotation_summary(annotation: dict[str, Any]) -> dict[str, Any]:
+    """Return catalog fields without the full turn payload."""
+    speakers = annotation.get("speakers") or []
+    turns = annotation.get("turns") or []
+    return {
+        "kind": annotation.get("kind"),
+        "schema_version": annotation.get("schema_version"),
+        "annotation_id": annotation.get("annotation_id"),
+        "revision": annotation.get("revision"),
+        "created_at": annotation.get("created_at"),
+        "updated_at": annotation.get("updated_at"),
+        "name": annotation.get("name"),
+        "audio_id": annotation.get("audio_id"),
+        "session_audio_id": _annotation_session_audio_id(annotation),
+        "source_audio": annotation.get("source_audio"),
+        "speaker_count": len(speakers),
+        "turn_count": len(turns),
+        "speech_duration_s": round(
+            sum(float(turn["end_s"]) - float(turn["start_s"]) for turn in turns),
+            6,
+        ),
+    }
+
+
+def _validated_annotation_payload(
+    data: dict[str, Any],
+    *,
+    existing: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Validate and normalize a manual ground-truth annotation request."""
+    if not isinstance(data, dict):
+        raise TypeError("Annotation payload must be an object")
+    now = time.time()
+    annotation_id = (
+        str(existing["annotation_id"])
+        if existing is not None
+        else str(data.get("annotation_id") or f"ann_{uuid.uuid4().hex}")
+    )
+    _annotation_path(annotation_id)
+
+    if existing is not None:
+        requested_revision = data.get("revision")
+        if isinstance(requested_revision, bool):
+            raise TypeError("revision must be an integer")
+        try:
+            requested_revision = int(requested_revision)
+        except (TypeError, ValueError) as exc:
+            raise TypeError("revision must be an integer") from exc
+        if requested_revision != int(existing.get("revision", 0)):
+            raise RuntimeError(
+                "This annotation changed in another browser tab. Reload it before saving."
+            )
+        source_audio = dict(existing.get("source_audio") or {})
+        audio_id = str(existing.get("audio_id") or "")
+        session_audio_id = _annotation_session_audio_id(existing)
+    else:
+        session_audio_id = str(data.get("session_audio_id") or "").strip()
+        audio = registry.get_audio(session_audio_id)
+        if audio is None:
+            raise FileNotFoundError("Select a registered source audio before annotating")
+        source_audio = {
+            "path": str(Path(audio.path).resolve()),
+            "fingerprint": audio.fingerprint,
+            "title": audio.title,
+            "duration_s": audio.duration_s,
+            "sample_rate": audio.sample_rate,
+            "channels": audio.channels,
+            "format": audio.format,
+        }
+        audio_id = audio.source_id
+
+    try:
+        duration_s = float(source_audio.get("duration_s"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Source audio requires a known duration") from exc
+    if not isfinite(duration_s) or duration_s <= 0:
+        raise ValueError("Source audio requires a finite positive duration")
+
+    raw_speakers = data.get("speakers")
+    raw_turns = data.get("turns")
+    if not isinstance(raw_speakers, list) or not isinstance(raw_turns, list):
+        raise TypeError("speakers and turns must be arrays")
+    speakers = []
+    speaker_ids: set[str] = set()
+    for index, raw_speaker in enumerate(raw_speakers):
+        if not isinstance(raw_speaker, dict):
+            raise TypeError("Every speaker must be an object")
+        speaker_id = str(raw_speaker.get("speaker_id") or "").strip()
+        if not speaker_id:
+            raise ValueError(f"Speaker {index + 1} requires speaker_id")
+        if speaker_id in speaker_ids:
+            raise ValueError(f"Duplicate speaker_id: {speaker_id}")
+        speaker_ids.add(speaker_id)
+        name = str(raw_speaker.get("name") or speaker_id).strip()
+        if not name:
+            raise ValueError(f"Speaker {speaker_id} requires a display name")
+        global_speaker_id = str(raw_speaker.get("global_speaker_id") or "").strip() or None
+        speakers.append(
+            {
+                "speaker_id": speaker_id,
+                "name": name[:120],
+                "color": str(raw_speaker.get("color") or "#4f7cff")[:32],
+                "global_speaker_id": global_speaker_id,
+            }
+        )
+
+    turns = []
+    turn_ids: set[str] = set()
+    for index, raw_turn in enumerate(raw_turns):
+        if not isinstance(raw_turn, dict):
+            raise TypeError("Every turn must be an object")
+        turn_id = str(raw_turn.get("turn_id") or f"turn_{uuid.uuid4().hex}").strip()
+        speaker_id = str(raw_turn.get("speaker_id") or "").strip()
+        if turn_id in turn_ids:
+            raise ValueError(f"Duplicate turn_id: {turn_id}")
+        if speaker_id not in speaker_ids:
+            raise ValueError(f"Turn {index + 1} references unknown speaker: {speaker_id}")
+        try:
+            start_s = round(float(raw_turn.get("start_s")), 6)
+            end_s = round(float(raw_turn.get("end_s")), 6)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Turn {index + 1} requires numeric timestamps") from exc
+        if (
+            not isfinite(start_s)
+            or not isfinite(end_s)
+            or start_s < 0
+            or end_s <= start_s
+            or end_s > duration_s + 0.001
+        ):
+            raise ValueError(
+                f"Turn {index + 1} must satisfy 0 <= start_s < end_s <= {duration_s:.3f}"
+            )
+        turn_ids.add(turn_id)
+        turns.append(
+            {
+                "turn_id": turn_id,
+                "speaker_id": speaker_id,
+                "start_s": start_s,
+                "end_s": min(end_s, duration_s),
+            }
+        )
+    turns.sort(key=lambda turn: (turn["start_s"], turn["end_s"], turn["speaker_id"]))
+    previous_by_speaker: dict[str, dict[str, Any]] = {}
+    for turn in turns:
+        previous = previous_by_speaker.get(turn["speaker_id"])
+        if previous is not None and turn["start_s"] < previous["end_s"] - 0.000001:
+            raise ValueError(
+                f"{turn['speaker_id']} has overlapping turns at "
+                f"{turn['start_s']:.3f}s; use another speaker lane for simultaneous speech"
+            )
+        previous_by_speaker[turn["speaker_id"]] = turn
+
+    name = str(data.get("name") or source_audio.get("title") or "Ground truth").strip()
+    if not name:
+        raise ValueError("Annotation name cannot be empty")
+    return {
+        "kind": "diarization.annotation",
+        "schema_version": "1.0",
+        "annotation_id": annotation_id,
+        "revision": int(existing.get("revision", 0)) + 1 if existing else 1,
+        "created_at": float(existing.get("created_at", now)) if existing else now,
+        "updated_at": now,
+        "name": name[:200],
+        "audio_id": audio_id,
+        "session_audio_id": session_audio_id,
+        "source_audio": source_audio,
+        "speakers": speakers,
+        "turns": turns,
+    }
+
+
+def _annotation_matches_result(
+    annotation: dict[str, Any], result: DiarizationResult
+) -> tuple[bool, str]:
+    """Check that reference and hypothesis describe the same exact audio."""
+    source = annotation.get("source_audio") or {}
+    result_source = result.source_audio
+    if result_source is None:
+        return False, "Model result has no source-audio identity"
+    annotation_fingerprint = str(source.get("fingerprint") or "")
+    result_fingerprint = str(result_source.fingerprint or "")
+    if annotation_fingerprint and result_fingerprint:
+        if annotation_fingerprint != result_fingerprint:
+            return False, "Audio fingerprints differ"
+        return True, "Audio fingerprints match"
+    try:
+        annotation_path = Path(str(source.get("path") or "")).expanduser().resolve()
+        result_path = Path(result_source.path).expanduser().resolve()
+        if annotation_path == result_path:
+            return True, "Source paths match"
+    except OSError:
+        pass
+    annotation_duration = source.get("duration_s")
+    result_duration = result_source.duration_s
+    if (
+        annotation.get("audio_id") == result.audio_id
+        and annotation_duration is not None
+        and result_duration is not None
+        and abs(float(annotation_duration) - float(result_duration)) <= 0.05
+    ):
+        return True, "Stable source identity and duration match"
+    return False, "Result was produced from different audio"
 
 
 def _turn_key(speaker_id: str, start_s: float, end_s: float) -> str:
@@ -3415,6 +3680,134 @@ async def handle_list_diarization_results(request: web.Request) -> web.Response:
     return _json_response({"results": items, "total": len(items)})
 
 
+async def handle_list_diarization_annotations(request: web.Request) -> web.Response:
+    """List durable manual ground-truth annotations."""
+    items = []
+    for path in DIARIZATION_ANNOTATIONS_DIR.glob("*.json"):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                items.append(_annotation_summary(payload))
+        except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            logger.warning("Ignoring invalid diarization annotation %s: %s", path, exc)
+    items.sort(key=lambda item: float(item.get("updated_at") or 0), reverse=True)
+    return _json_response({"annotations": items, "total": len(items)})
+
+
+async def handle_get_diarization_annotation(request: web.Request) -> web.Response:
+    """Return one complete manual annotation and its current session audio ID."""
+    try:
+        payload = _load_annotation(request.match_info["annotation_id"])
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}, status=400)
+    except FileNotFoundError as exc:
+        return _json_response({"error": str(exc)}, status=404)
+    except (OSError, json.JSONDecodeError) as exc:
+        return _json_response({"error": str(exc)}, status=500)
+    payload = dict(payload)
+    try:
+        payload["session_audio_id"] = _ensure_annotation_source_registered(payload)
+    except Exception as exc:
+        logger.warning("Could not restore annotation source: %s", exc)
+        payload["session_audio_id"] = None
+    return _json_response(payload)
+
+
+async def handle_save_diarization_annotation(request: web.Request) -> web.Response:
+    """Create or revision-save one validated manual annotation atomically."""
+    try:
+        data = await request.json()
+        annotation_id = str(data.get("annotation_id") or "").strip()
+        existing = _load_annotation(annotation_id) if annotation_id else None
+        payload = _validated_annotation_payload(data, existing=existing)
+        path = _annotation_path(payload["annotation_id"])
+        temp_path = path.with_suffix(".json.tmp")
+        temp_path.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False, allow_nan=False) + "\n",
+            encoding="utf-8",
+        )
+        temp_path.replace(path)
+        return _json_response(payload, status=200 if existing else 201)
+    except RuntimeError as exc:
+        return _json_response({"error": str(exc)}, status=409)
+    except FileNotFoundError as exc:
+        return _json_response({"error": str(exc)}, status=404)
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        return _json_response({"error": str(exc)}, status=400)
+    except OSError as exc:
+        logger.exception("Could not save diarization annotation")
+        return _json_response({"error": str(exc)}, status=500)
+
+
+async def handle_delete_diarization_annotation(request: web.Request) -> web.Response:
+    """Delete one persisted manual annotation."""
+    try:
+        path = _annotation_path(request.match_info["annotation_id"])
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}, status=400)
+    if not path.is_file():
+        return _json_response({"error": "Annotation not found"}, status=404)
+    try:
+        path.unlink()
+    except OSError as exc:
+        return _json_response({"error": str(exc)}, status=500)
+    return _json_response({"deleted": request.match_info["annotation_id"]})
+
+
+async def handle_evaluate_diarization_results(request: web.Request) -> web.Response:
+    """Evaluate compatible model results against one manual annotation."""
+    try:
+        data = await request.json()
+        annotation_id = str(data.get("annotation_id") or "").strip()
+        result_ids = data.get("result_ids")
+        if not isinstance(result_ids, list) or not result_ids:
+            raise ValueError("Select at least one diarization result")
+        if len(result_ids) > 50:
+            raise ValueError("At most 50 results can be evaluated at once")
+        collar_s = _validated_float(
+            data.get("collar_s", 0.0), "collar_s", minimum=0.0, maximum=10.0
+        )
+        skip_overlap = bool(data.get("skip_overlap", False))
+        annotation = _load_annotation(annotation_id)
+        duration_s = float((annotation.get("source_audio") or {}).get("duration_s"))
+        reports = []
+        for raw_result_id in result_ids:
+            result_id = str(raw_result_id).strip()
+            result = _load_diarization_result(result_id)
+            matches, match_reason = _annotation_matches_result(annotation, result)
+            if not matches:
+                raise ValueError(f"{result_id}: {match_reason}")
+            metrics = evaluate_diarization(
+                annotation.get("turns") or [],
+                result.turns,
+                duration_s=duration_s,
+                collar_s=collar_s,
+                skip_overlap=skip_overlap,
+            )
+            reports.append(
+                {
+                    "result_id": result.result_id,
+                    "model": asdict(result.model) if result.model else None,
+                    "created_at": result.created_at,
+                    "source_match": match_reason,
+                    **metrics,
+                }
+            )
+        reports.sort(key=lambda report: (report["der_pct"], report["jer_pct"]))
+        return _json_response(
+            {
+                "annotation_id": annotation_id,
+                "annotation_revision": annotation.get("revision"),
+                "settings": {"collar_s": collar_s, "skip_overlap": skip_overlap},
+                "results": reports,
+            }
+        )
+    except FileNotFoundError as exc:
+        return _json_response({"error": str(exc)}, status=404)
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        return _json_response({"error": str(exc)}, status=400)
+
+
 async def handle_get_diarization_result(request: web.Request) -> web.Response:
     """Return one complete canonical diarization result."""
     result_id = request.match_info["result_id"]
@@ -4814,6 +5207,23 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_post("/api/evaluations", handle_save_evaluation)
     app.router.add_delete("/api/evaluations/{id}", handle_delete_evaluation)
     app.router.add_post("/api/diarization/run", handle_run_diarization)
+    app.router.add_get(
+        "/api/diarization/annotations", handle_list_diarization_annotations
+    )
+    app.router.add_post(
+        "/api/diarization/annotations", handle_save_diarization_annotation
+    )
+    app.router.add_get(
+        "/api/diarization/annotations/{annotation_id}",
+        handle_get_diarization_annotation,
+    )
+    app.router.add_delete(
+        "/api/diarization/annotations/{annotation_id}",
+        handle_delete_diarization_annotation,
+    )
+    app.router.add_post(
+        "/api/diarization/evaluate", handle_evaluate_diarization_results
+    )
     app.router.add_post(
         "/api/diarization/clean-turns", handle_clean_diarization_turns
     )

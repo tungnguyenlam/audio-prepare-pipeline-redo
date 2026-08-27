@@ -297,6 +297,18 @@ information. Every backend returns schema 2.0, retains the input file-backed
 result. Results validate source identity, declared speakers, turn bounds, and
 overlap state before downstream use.
 
+### `evaluate_diarization(reference_turns, hypothesis_turns, *, duration_s, collar_s=0.0, skip_overlap=False) -> dict`
+
+**Defined in:** `src/diarization/evaluation.py`
+
+Computes diarization error from exact interval boundaries without sampled time
+bins. A maximum-weight one-to-one assignment maps hypothesis speakers to
+reference speakers before DER, JER, missed speech, false alarm, speaker
+confusion, and per-speaker coverage are calculated. `collar_s` excludes that
+duration on each side of each reference boundary; `skip_overlap=True` excludes
+regions containing multiple active reference speakers. Invalid timestamps or
+turns outside the shared positive `duration_s` raise `TypeError` / `ValueError`.
+
 ### `clean_speaker_turns(turns, *, min_turn_duration_s=0.5, merge_same_speaker_gap_s=1.0, boundary_collar_s=0.04, jitter_max_duration_s=3.0) -> list[SpeakerTurn]`
 
 **Defined in:** `src/diarization/turn_cleanup.py`
@@ -868,8 +880,8 @@ The repository provides two specialized web platforms:
   known-speaker management, enrollment-aware diarization, A/B audition, and
   library browsing.
 - **Frontend layout:** Flat `static/index.html` + `app.js` + `style.css` (no
-  HTML partial composer). Tabs: Workspace, Separation, Diarization, Audition,
-  Library.
+  HTML partial composer). Tabs: Workspace, Separation, Diarization, Annotate &
+  Evaluate, Speaker Purity, Audition, and Library.
 - **Audio selection:** Separation and diarization selectors group active
   in-memory audio objects with persistent project-library files. Selecting a
   library file loads it into the active registry before processing. Repeated
@@ -941,6 +953,20 @@ The repository provides two specialized web platforms:
   and prior verification state. Reports persist under
   `.data/diarization/verifications/`. `POST /api/purity/verify` remains the
   separate imported-audio fallback.
+- **Manual annotation and evaluation endpoints:**
+  `GET /api/diarization/annotations` lists durable ground-truth references;
+  `GET /api/diarization/annotations/{annotation_id}` returns a full reference
+  and re-registers its source audio when the file remains available;
+  `POST /api/diarization/annotations` creates or revision-saves a validated
+  reference with atomic file replacement;
+  `DELETE /api/diarization/annotations/{annotation_id}` deletes only the
+  reference JSON; and `POST /api/diarization/evaluate` compares selected
+  compatible durable model results with the reference. Evaluation accepts
+  `annotation_id`, `result_ids`, `collar_s` (seconds excluded on each side of
+  reference boundaries), and `skip_overlap`. It returns ranked DER/JER reports,
+  error components, optimal speaker mappings, and per-speaker coverage. Manual
+  references live under `.data/diarization/annotations/`; source audio and model
+  results are never rewritten by annotation or evaluation.
 - **Clean-turn output policy:** `POST /api/diarization/clean-turns` accepts a
   durable `result_id` or an explicit raw `turns` list plus optional cleanup
   `settings`, and returns derived turns and raw/clean count-duration summaries

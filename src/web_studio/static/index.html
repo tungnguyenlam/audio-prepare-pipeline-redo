@@ -58,6 +58,10 @@
             <span class="tab-icon">👥</span>
             <span class="nav-text">Diarization</span>
           </button>
+          <button class="nav-tab" data-tab="tab-annotation" id="btn-tab-annotation">
+            <span class="tab-icon">✍️</span>
+            <span class="nav-text">Annotate &amp; Evaluate</span>
+          </button>
           <button class="nav-tab" data-tab="tab-purity" id="btn-tab-purity">
             <span class="tab-icon">🛡️</span>
             <span class="nav-text">Speaker Purity</span>
@@ -1371,6 +1375,235 @@
 
         <!-- Auto-Merge Micro-Gaps Modal -->
         
+      </section>
+
+      <!-- ==================== TAB: MANUAL DIARIZATION ANNOTATION ==================== -->
+      <section id="tab-annotation" class="tab-pane">
+        <div class="card ann-setup-card">
+          <div class="card-header">
+            <div>
+              <div class="flex-row items-center gap-2 flex-wrap">
+                <span class="workflow-step">Ground Truth Lab</span>
+                <h2 class="card-title">Annotate &amp; Evaluate</h2>
+                <span class="badge badge-accent">1 ms timestamps</span>
+              </div>
+              <p class="card-subtitle">Build reliable speaker-reference timelines quickly, then score compatible diarization models against the same audio.</p>
+            </div>
+            <div class="card-actions flex-wrap gap-2">
+              <span class="ann-save-state" id="ann-save-state" data-state="idle">No annotation loaded</span>
+              <input type="file" id="ann-import-input" accept=".json,.rttm" class="hidden">
+              <button class="btn btn-sm btn-ghost" id="btn-ann-import">Import JSON / RTTM</button>
+              <select id="ann-export-format" class="select-input select-sm" aria-label="Annotation export format">
+                <option value="json">Canonical JSON</option>
+                <option value="rttm">NIST RTTM</option>
+              </select>
+              <button class="btn btn-sm btn-secondary" id="btn-ann-export" disabled>Export</button>
+            </div>
+          </div>
+
+          <div class="ann-source-grid">
+            <div class="form-group mb-0">
+              <div class="label-with-tool">
+                <label class="form-label" for="ann-audio-select">1. Source audio</label>
+                <button class="btn btn-xs btn-ghost" id="btn-ann-browse-library">Library</button>
+              </div>
+              <select id="ann-audio-select" class="select-input">
+                <option value="">Select session or library audio…</option>
+              </select>
+              <p class="text-xs text-muted" id="ann-audio-meta">Choose the exact file that model results were generated from.</p>
+            </div>
+            <div class="form-group mb-0">
+              <label class="form-label" for="ann-saved-select">2. Reference annotation</label>
+              <select id="ann-saved-select" class="select-input">
+                <option value="">New annotation</option>
+              </select>
+              <div class="flex-row items-center gap-2" style="margin-top: 6px;">
+                <button class="btn btn-xs btn-primary" id="btn-ann-new">New</button>
+                <button class="btn btn-xs btn-secondary" id="btn-ann-load">Load</button>
+                <button class="btn btn-xs btn-ghost text-destructive" id="btn-ann-delete">Delete</button>
+              </div>
+            </div>
+            <div class="form-group mb-0">
+              <label class="form-label" for="ann-name-input">Reference name</label>
+              <input id="ann-name-input" class="text-input" placeholder="Ground truth annotation" disabled>
+              <p class="text-xs text-muted" id="ann-revision-label">Autosave starts after the first edit.</p>
+            </div>
+          </div>
+        </div>
+
+        <div id="ann-empty-state" class="card empty-placeholder ann-empty-state">
+          <span class="ann-empty-icon">✍️</span>
+          <h3 class="empty-title">Choose audio to begin ground-truth annotation</h3>
+          <p class="empty-desc">Create a reference, mark speaker turns with I/O, and every valid edit is saved to this server automatically.</p>
+        </div>
+
+        <div id="ann-workspace" class="hidden">
+          <div class="ann-shortcuts-strip" aria-label="Annotation keyboard shortcuts">
+            <span><kbd>Space</kbd> play / pause</span>
+            <span><kbd>I</kbd> mark in</span>
+            <span><kbd>O</kbd> create turn</span>
+            <span><kbd>1–9</kbd> speaker</span>
+            <span><kbd>←/→</kbd> ±100 ms</span>
+            <span><kbd>Alt</kbd> + arrows ±10 ms</span>
+            <span><kbd>Shift</kbd> + arrows ±1 s</span>
+            <span><kbd>S</kbd> split</span>
+            <span><kbd>Del</kbd> delete</span>
+            <span><kbd>⌘/Ctrl Z</kbd> undo</span>
+          </div>
+
+          <div class="card ann-editor-card">
+            <div class="ann-transport">
+              <div class="ann-transport-primary">
+                <button class="btn btn-sm btn-ghost" id="btn-ann-start" title="Go to start">|◀</button>
+                <button class="btn btn-sm btn-ghost" id="btn-ann-back-1" title="Back 1 second">−1s</button>
+                <button class="btn btn-sm btn-ghost" id="btn-ann-back-frame" title="Back one precision step">−step</button>
+                <button class="btn btn-primary ann-play-btn" id="btn-ann-play">▶ Play</button>
+                <button class="btn btn-sm btn-ghost" id="btn-ann-forward-frame" title="Forward one precision step">+step</button>
+                <button class="btn btn-sm btn-ghost" id="btn-ann-forward-1" title="Forward 1 second">+1s</button>
+                <span class="ann-timecode font-mono" id="ann-timecode">00:00:00.000</span>
+              </div>
+              <div class="ann-transport-options">
+                <label class="text-xs text-muted" for="ann-step-select">Step</label>
+                <select id="ann-step-select" class="select-input select-sm">
+                  <option value="0.01">10 ms</option>
+                  <option value="0.02">20 ms</option>
+                  <option value="0.05">50 ms</option>
+                  <option value="0.1" selected>100 ms</option>
+                  <option value="0.5">500 ms</option>
+                </select>
+                <label class="text-xs text-muted" for="ann-snap-select">Snap</label>
+                <select id="ann-snap-select" class="select-input select-sm">
+                  <option value="0">Off</option>
+                  <option value="0.01">10 ms</option>
+                  <option value="0.02">20 ms</option>
+                  <option value="0.05" selected>50 ms</option>
+                  <option value="0.1">100 ms</option>
+                </select>
+                <label class="text-xs text-muted" for="ann-speed-select">Speed</label>
+                <select id="ann-speed-select" class="select-input select-sm">
+                  <option value="0.5">0.5×</option>
+                  <option value="0.75">0.75×</option>
+                  <option value="1" selected>1×</option>
+                  <option value="1.25">1.25×</option>
+                  <option value="1.5">1.5×</option>
+                  <option value="2">2×</option>
+                </select>
+                <button class="btn btn-xs btn-ghost" id="btn-ann-undo" disabled>Undo</button>
+                <button class="btn btn-xs btn-ghost" id="btn-ann-redo" disabled>Redo</button>
+              </div>
+            </div>
+
+            <div class="ann-speaker-toolbar">
+              <div>
+                <span class="form-label">Active speaker</span>
+                <div class="ann-speaker-chips" id="ann-speaker-chips"></div>
+              </div>
+              <div class="flex-row items-center gap-2 flex-wrap">
+                <button class="btn btn-sm btn-secondary" id="btn-ann-add-speaker">+ Speaker</button>
+                <button class="btn btn-sm btn-ghost" id="btn-ann-rename-speaker">Rename</button>
+                <button class="btn btn-sm btn-ghost" id="btn-ann-link-speaker">Link known profile</button>
+                <button class="btn btn-sm btn-ghost" id="btn-ann-merge-speaker">Merge</button>
+                <button class="btn btn-sm btn-ghost text-destructive" id="btn-ann-remove-speaker">Remove</button>
+              </div>
+            </div>
+
+            <div class="ann-mark-bar">
+              <div class="ann-mark-field">
+                <label for="ann-mark-in">Mark in <kbd>I</kbd></label>
+                <input id="ann-mark-in" class="text-input font-mono" value="00:00:00.000">
+                <button class="btn btn-xs btn-ghost" id="btn-ann-set-in">Set</button>
+              </div>
+              <div class="ann-mark-field">
+                <label for="ann-mark-out">Mark out <kbd>O</kbd></label>
+                <input id="ann-mark-out" class="text-input font-mono" placeholder="00:00:00.000">
+                <button class="btn btn-xs btn-ghost" id="btn-ann-set-out">Set + create</button>
+              </div>
+              <span class="ann-mark-duration font-mono" id="ann-mark-duration">No range marked</span>
+              <button class="btn btn-sm btn-primary" id="btn-ann-create-turn">Create turn</button>
+              <button class="btn btn-sm btn-ghost" id="btn-ann-clear-marks">Clear</button>
+            </div>
+
+            <div class="ann-timeline-toolbar">
+              <div class="flex-row items-center gap-2">
+                <strong>Speaker timeline</strong>
+                <span class="badge badge-info" id="ann-turn-count">0 turns</span>
+                <span class="badge badge-ghost" id="ann-overlap-count">0 overlaps</span>
+              </div>
+              <div class="flex-row items-center gap-2">
+                <button class="btn btn-xs btn-ghost" id="btn-ann-zoom-out">−</button>
+                <input type="range" id="ann-zoom-range" min="1" max="30" step="0.5" value="1" aria-label="Timeline zoom">
+                <button class="btn btn-xs btn-ghost" id="btn-ann-zoom-in">+</button>
+                <button class="btn btn-xs btn-ghost" id="btn-ann-zoom-fit">Fit</button>
+                <span class="font-mono text-xs" id="ann-zoom-label">100%</span>
+              </div>
+            </div>
+
+            <div class="ann-timeline-shell">
+              <div class="ann-lane-labels" id="ann-lane-labels"></div>
+              <div class="ann-timeline-scroll" id="ann-timeline-scroll">
+                <div class="ann-timeline-stage" id="ann-timeline-stage">
+                  <canvas id="ann-waveform-canvas" class="ann-waveform-canvas"></canvas>
+                  <div class="ann-ruler" id="ann-ruler"></div>
+                  <div class="ann-lanes" id="ann-lanes"></div>
+                  <div class="ann-playhead" id="ann-playhead"><span></span></div>
+                  <div class="ann-mark-region hidden" id="ann-mark-region"></div>
+                </div>
+              </div>
+            </div>
+            <p class="text-xs text-muted ann-timeline-help">Click the waveform to seek. Drag a turn to move it; drag either edge for exact boundary adjustment. Overlap is represented on separate speaker lanes.</p>
+          </div>
+
+          <div class="card ann-turns-card">
+            <div class="card-header">
+              <div>
+                <h3 class="card-title">Turn Inspector</h3>
+                <p class="card-subtitle">Direct timestamp editing is rounded to 1 ms and validated before autosave.</p>
+              </div>
+              <div class="card-actions gap-2">
+                <input id="ann-turn-search" class="text-input text-sm" type="search" placeholder="Filter speaker or time…">
+                <button class="btn btn-sm btn-secondary" id="btn-ann-loop-selected" disabled>Loop selected</button>
+                <button class="btn btn-sm btn-secondary" id="btn-ann-split" disabled>Split at playhead</button>
+                <button class="btn btn-sm btn-ghost" id="btn-ann-reassign" disabled>Reassign</button>
+                <button class="btn btn-sm btn-ghost text-destructive" id="btn-ann-delete-turn" disabled>Delete</button>
+              </div>
+            </div>
+            <div class="turns-table-wrapper ann-turns-table-wrap">
+              <table class="turns-table ann-turns-table">
+                <thead><tr><th>#</th><th>Speaker</th><th>Start</th><th>End</th><th>Duration</th><th>Actions</th></tr></thead>
+                <tbody id="ann-turns-body"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card ann-evaluation-card">
+            <div class="card-header">
+              <div>
+                <div class="flex-row items-center gap-2">
+                  <span class="workflow-step">Model Benchmark</span>
+                  <h3 class="card-title">Evaluate Diarization Results</h3>
+                </div>
+                <p class="card-subtitle">Only results whose source identity matches this reference can be scored.</p>
+              </div>
+              <button class="btn btn-xs btn-ghost" id="btn-ann-refresh-results">↻ Refresh results</button>
+            </div>
+            <div class="ann-eval-grid">
+              <div>
+                <label class="form-label">Compatible model results</label>
+                <div class="ann-result-list" id="ann-result-list"><div class="empty-placeholder">No matching results loaded.</div></div>
+              </div>
+              <div class="ann-eval-settings">
+                <div class="form-group mb-0">
+                  <label class="form-label" for="ann-collar-input">Boundary collar per side</label>
+                  <div class="input-group"><input type="number" id="ann-collar-input" class="text-input" min="0" max="10" step="0.01" value="0"><span class="input-unit">seconds</span></div>
+                </div>
+                <label class="checkbox-label"><input type="checkbox" id="ann-skip-overlap"> Exclude reference overlap regions</label>
+                <button class="btn btn-primary" id="btn-ann-evaluate">Evaluate selected models</button>
+                <button class="btn btn-sm btn-secondary" id="btn-ann-download-report" disabled>Download report</button>
+              </div>
+            </div>
+            <div id="ann-eval-results" class="ann-eval-results hidden"></div>
+          </div>
+        </div>
       </section>
 
       <!-- ==================== TAB: SPEAKER PURITY ==================== -->
