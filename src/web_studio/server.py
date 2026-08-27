@@ -437,9 +437,9 @@ class AudioRegistry:
         Returns:
             Number of restored session items.
         """
-        if not self._persist_path.is_file():
-            return 0
         try:
+            if not self._persist_path.is_file():
+                return 0
             payload = json.loads(self._persist_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             logger.warning("Could not restore session audio registry: %s", exc)
@@ -458,7 +458,12 @@ class AudioRegistry:
                 if not raw_path:
                     continue
                 path = Path(str(raw_path)).expanduser()
-                if not path.is_file():
+                try:
+                    exists = path.is_file()
+                except OSError as exc:
+                    logger.warning("Skipping inaccessible session audio %s: %s", path, exc)
+                    continue
+                if not exists:
                     continue
                 try:
                     audio = Audio.from_file(path)
@@ -491,9 +496,10 @@ class AudioRegistry:
             audio: Audio = item["audio"]
             try:
                 path = Path(audio.path).resolve()
+                exists = path.is_file()
             except OSError:
                 continue
-            if not path.is_file():
+            if not exists:
                 continue
             try:
                 model_info = json.loads(
