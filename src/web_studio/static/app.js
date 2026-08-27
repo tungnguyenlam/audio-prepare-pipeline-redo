@@ -711,7 +711,8 @@ function parseJsonText(text) {
       const pos = Number(match[1]);
       if (pos > 0) {
         try {
-          return JSON.parse(cleaned.slice(0, pos));
+          const parsed = JSON.parse(cleaned.slice(0, pos));
+          if (parsed && typeof parsed === 'object') return parsed;
         } catch (_) {}
       }
     }
@@ -720,7 +721,8 @@ function parseJsonText(text) {
     const start = [objStart, arrStart].filter(index => index >= 0).sort((a, b) => a - b)[0];
     if (start > 0) {
       try {
-        return JSON.parse(cleaned.slice(start));
+        const parsed = JSON.parse(cleaned.slice(start));
+        if (parsed && typeof parsed === 'object') return parsed;
       } catch (_) {}
     }
     throw err;
@@ -739,7 +741,8 @@ async function parseJsonResponse(res) {
     throw new Error(`Server returned HTTP ${res.status}: ${text.substring(0, 120) || res.statusText}`);
   }
   if (!res.ok) {
-    throw new Error(data.error || `Request failed with status ${res.status}`);
+    const msg = (data && typeof data === 'object' && (data.error || data.message || data.detail)) || `Request failed with status ${res.status}`;
+    throw new Error(msg);
   }
   return data;
 }
@@ -6826,7 +6829,21 @@ async function refreshPurityVerifierStatus() {
     if (overlap.model) params.set('model', overlap.model);
     if (overlap.backend === 'gemma4' && overlap.endpoint) params.set('endpoint', overlap.endpoint);
     const response = await fetch(`/api/purity/verifier-status?${params}`);
-    const status = await response.json();
+    const text = await response.text();
+    let data;
+    try {
+      data = parseJsonText(text);
+    } catch (_) {
+      if (response.status === 404) {
+        data = { ready: false, message: 'Verifier status endpoint not found (HTTP 404). Please ensure the backend server was restarted with the latest routes!' };
+      } else {
+        data = { ready: false, message: `Server returned HTTP ${response.status}: ${text.substring(0, 150) || response.statusText}` };
+      }
+    }
+    const status = (data && typeof data === 'object') ? data : {
+      ready: false,
+      message: text ? text.substring(0, 150) : `HTTP ${response.status}`,
+    };
     applyPurityVerifierStatus(status);
     return status;
   } catch (err) {
@@ -6885,9 +6902,7 @@ function syncPurityPromptUi() {
 async function loadSpeakerPurityConfig() {
   if (state.purity.serverConfig) return;
   try {
-    const response = await fetch('/api/purity/config');
-    const config = await response.json();
-    if (!response.ok) throw new Error(config.error || 'Unable to load purity defaults');
+    const config = await parseJsonResponse(await fetch('/api/purity/config'));
     state.purity.serverConfig = config;
     const backend = config.overlap_backend || 'gemma4';
     const defaults = config[backend] || {};

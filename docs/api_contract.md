@@ -876,7 +876,9 @@ rows attach a `vibevoice` evidence object (speaker count, dominant speaker,
 secondary duration, speaker turns) and may use `decision: "uncertain"`.
 Worker-process failures follow `failure_policy` (`fail_closed` → `error` /
 `vibevoice_verification_failed`; `fail_open` → keep `pass`).
-`GET /api/purity/config` returns the VibeVoice defaults when
+`GET /api/purity/config` returns LLM-verifier defaults only (backend, prompt,
+timeout, Unsloth/Gemini/VibeVoice settings). It does not return an embedding
+model or cosine threshold. VibeVoice defaults are included when
 `OVERLAP_VERIFIER=vibevoice`.
 
 ## 6. Benchmark mixing API

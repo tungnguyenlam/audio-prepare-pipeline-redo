@@ -3948,8 +3948,7 @@ async def handle_purity_verifier_status(request: web.Request) -> web.Response:
         return web.json_response({"backend": backend, **status})
     except (TypeError, ValueError) as exc:
         return web.json_response(
-            {"backend": backend, "ready": False, "message": str(exc), "models": []},
-            status=400,
+            {"backend": backend, "ready": False, "message": str(exc), "models": []}
         )
     except OverlapVerifierError as exc:
         return web.json_response(
@@ -3957,6 +3956,16 @@ async def handle_purity_verifier_status(request: web.Request) -> web.Response:
                 "backend": backend,
                 "ready": False,
                 "message": str(exc),
+                "models": [],
+            }
+        )
+    except Exception as exc:
+        logger.exception("Purity verifier status probe failed")
+        return web.json_response(
+            {
+                "backend": backend,
+                "ready": False,
+                "message": f"Verifier probe failed: {exc}",
                 "models": [],
             }
         )
