@@ -1088,6 +1088,142 @@ def _load_diarization_result(result_id: str) -> DiarizationResult:
     return result
 
 
+def _parse_overlap_verifier_request(
+    overlap_settings: Any,
+) -> tuple[dict[str, Any] | None, str]:
+    """Parse an optional ``overlap_verifier`` request object.
+
+    Returns:
+        ``(config, failure_policy)``. ``config`` is ``None`` when the
+        direct-audio verifier is disabled.
+
+    Raises:
+        TypeError: Numeric fields cannot be coerced.
+        ValueError: Payload shape or constructor settings are invalid.
+    """
+    if overlap_settings is None:
+        overlap_settings = {}
+    if not isinstance(overlap_settings, dict):
+        raise ValueError("overlap_verifier must be an object")
+    failure_policy = str(overlap_settings.get("failure_policy", "fail_closed"))
+    if failure_policy not in {"fail_closed", "fail_open"}:
+        raise ValueError("Invalid overlap verifier failure_policy")
+    if overlap_settings.get("enabled") is not True:
+        return None, failure_policy
+    config: dict[str, Any] = {
+        "backend": overlap_settings.get("backend", "gemma4"),
+        "model": overlap_settings.get("model") or None,
+        "api_key": overlap_settings.get("api_key") or None,
+        "timeout_s": float(overlap_settings.get("timeout_s", 120.0)),
+        "prompt": overlap_settings.get("prompt") or OVERLAP_PROMPT,
+        "max_output_tokens": int(
+            overlap_settings.get(
+                "max_output_tokens", DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS
+            )
+        ),
+    }
+    if str(config["backend"]).strip().lower() in {
+        "gemma",
+        "gemma4",
+        "gemma-4",
+        "unsloth",
+    }:
+        config["endpoint"] = overlap_settings.get("endpoint") or None
+    config = {key: value for key, value in config.items() if value is not None}
+    create_overlap_verifier(config)
+    return config, failure_policy
+
+
+def _direct_audio_purity_item(
+    audio: Audio,
+    diarization: DiarizationResult,
+    turn: SpeakerTurn,
+    profile_name: str,
+) -> dict[str, Any]:
+    """Build a purity-report row for one turn judged by the direct-audio verifier."""
+    duration_s = turn.end_s - turn.start_s
+    overlap_duration_s = SpeakerVerifier._other_speaker_overlap_duration(
+        diarization,
+        speaker_id=turn.speaker_id,
+        start_s=turn.start_s,
+        end_s=turn.end_s,
+    )
+    return {
+        "schema_version": "1.0",
+        "audio_id": audio.source_id,
+        "profile_name": profile_name,
+        "speaker_id": turn.speaker_id,
+        "start_s": turn.start_s,
+        "end_s": turn.end_s,
+        "decision": "pass",
+        "reason": None,
+        "error": None,
+        "overlap_duration_s": overlap_duration_s,
+        "overlap_ratio": (
+            min(1.0, overlap_duration_s / duration_s) if duration_s > 0 else 0.0
+        ),
+        "windows": [],
+        "model": None,
+        "duration_s": duration_s,
+        "min_target_similarity": None,
+        "direct_overlap": None,
+        "passed": True,
+    }
+
+
+def _apply_direct_overlap_decision(
+    item: dict[str, Any],
+    *,
+    backend: str,
+    model: str,
+    overlap: bool | None,
+    reason: str | None,
+    error: str | None,
+    failure_policy: str,
+) -> None:
+    """Record a direct-audio answer onto a purity-report row."""
+    item["direct_overlap"] = {
+        "backend": backend,
+        "model": model,
+        "overlap": overlap,
+        "reason": reason,
+        "error": error,
+    }
+    if error:
+        if failure_policy == "fail_closed":
+            item["decision"] = "error"
+            item["reason"] = "direct_overlap_verification_failed"
+            item["error"] = error
+            item["passed"] = False
+        return
+    if overlap:
+        item["decision"] = "reject"
+        item["reason"] = "direct_overlap_detected"
+        item["passed"] = False
+
+
+def _overlap_verifier_report_settings(
+    overlap_config: dict[str, Any] | None,
+    failure_policy: str,
+    verifier: Any = None,
+) -> dict[str, Any]:
+    if not overlap_config:
+        return {"enabled": False}
+    return {
+        "enabled": True,
+        "backend": overlap_config["backend"],
+        "model": getattr(verifier, "model", overlap_config.get("model")),
+        "endpoint": getattr(verifier, "endpoint", overlap_config.get("endpoint")),
+        "timeout_s": overlap_config["timeout_s"],
+        "prompt": overlap_config["prompt"],
+        "max_output_tokens": overlap_config["max_output_tokens"],
+        "failure_policy": failure_policy,
+        "api_key_configured": bool(
+            overlap_config.get("api_key") or getattr(verifier, "api_key", None)
+        ),
+    }
+
+
 def _annotation_path(annotation_id: str) -> Path:
     """Resolve a manual annotation ID without allowing directory traversal."""
     if not annotation_id or any(
@@ -3922,6 +4058,12 @@ async def handle_verify_diarization_batch(request: web.Request) -> web.Response:
         return web.json_response({"error": "Invalid overlap_state"}, status=400)
     if verification_filter not in {"all", "unverified", "pass", "reject", "error"}:
         return web.json_response({"error": "Invalid verification_state"}, status=400)
+    try:
+        overlap_config, overlap_failure_policy = _parse_overlap_verifier_request(
+            data.get("overlap_verifier")
+        )
+    except (TypeError, ValueError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
     previous_states = _verification_state_index(profile_name)
     candidates_by_result: dict[str, list[SpeakerTurn]] = {}
     for result in results:
@@ -3960,95 +4102,209 @@ async def handle_verify_diarization_batch(request: web.Request) -> web.Response:
             "profile": profile_name,
             "device": target_device,
             "candidate_count": total_candidates,
+            "overlap_verifier": (
+                overlap_config.get("backend") if overlap_config else None
+            ),
         },
     )
 
     async def run_batch() -> None:
+        overlap_backend = (
+            str(overlap_config["backend"]) if overlap_config else None
+        )
         task_manager.update_task(
             task_id,
             status="running",
             progress=0.0,
             progress_known=True,
-            message=f"Verifying {total_candidates} turns from {len(results)} result(s)...",
+            message=(
+                f"Checking {total_candidates} candidate(s) directly with "
+                f"{overlap_backend}..."
+                if overlap_config
+                else (
+                    f"Filtering {total_candidates} turns from {len(results)} "
+                    f"result(s) with speaker embeddings..."
+                )
+            ),
         )
         collected: list[dict[str, Any]] = []
         started_at = time.time()
+        overlap_verifier = None
         try:
-            verifier = SpeakerVerifier(model_id=model_id, device=target_device, token=token)
-            profile = verifier.load_profile(profile_name)
-            with verifier:
-                completed = 0
-                for result in results:
-                    if _task_is_cancelled(task_id):
-                        return
-                    candidates = candidates_by_result[result.result_id]
-                    if not candidates:
-                        continue
-                    if result.source_audio is None:
-                        raise ValueError(f"Result {result.result_id} has no source audio")
-                    try:
-                        verified = await asyncio.to_thread(
-                            verifier.verify_purity,
-                            result,
-                            profile,
-                            candidates=candidates,
-                            similarity_threshold=similarity_threshold,
-                            min_candidate_duration_s=min_duration_s,
-                            max_overlap_duration_s=max_overlap_duration_s,
-                            window_duration_s=window_duration_s,
-                            window_hop_s=window_hop_s,
-                        )
-                        for item in verified:
-                            turn_index = next(
-                                index for index, turn in enumerate(result.turns)
-                                if _turn_key(turn.speaker_id, turn.start_s, turn.end_s)
-                                == _turn_key(item.speaker_id, item.start_s, item.end_s)
-                            )
-                            serialized = asdict(item)
-                            serialized.update(
-                                {
-                                    "result_id": result.result_id,
-                                    "source_title": result.source_audio.title,
-                                    "turn_index": turn_index,
-                                    "passed": item.passed,
-                                    "duration_s": item.duration_s,
-                                    "min_target_similarity": item.min_target_similarity,
-                                }
-                            )
-                            collected.append(serialized)
-                    except Exception as exc:
-                        error_text = f"{type(exc).__name__}: {exc}"
-                        for turn in candidates:
-                            collected.append(
-                                {
-                                    "schema_version": "1.0",
-                                    "audio_id": result.audio_id,
-                                    "profile_name": profile_name,
-                                    "speaker_id": turn.speaker_id,
-                                    "start_s": turn.start_s,
-                                    "end_s": turn.end_s,
-                                    "decision": "error",
-                                    "reason": "result_verification_failed",
-                                    "error": error_text,
-                                    "overlap_duration_s": 0.0,
-                                    "overlap_ratio": 0.0,
-                                    "windows": [],
-                                    "model": None,
-                                    "result_id": result.result_id,
-                                    "source_title": result.source_audio.title,
-                                    "turn_index": result.turns.index(turn),
-                                    "passed": False,
-                                    "duration_s": turn.duration_s,
-                                    "min_target_similarity": None,
-                                }
-                            )
-                    completed += len(candidates)
-                    task_manager.update_task(
-                        task_id,
-                        progress=completed / total_candidates,
-                        progress_known=True,
-                        message=f"Verified {completed}/{total_candidates} turns",
+            if overlap_config:
+                overlap_verifier = create_overlap_verifier(overlap_config)
+                overlap_model = str(
+                    getattr(
+                        overlap_verifier,
+                        "model",
+                        overlap_config.get("model", ""),
                     )
+                )
+                work_dir = DATA_DIR / "purity" / "work" / task_id
+                cutter = AudioCutter(output_dir=work_dir)
+                loop = asyncio.get_running_loop()
+                completed = 0
+                try:
+                    for result in results:
+                        if _task_is_cancelled(task_id):
+                            return
+                        candidates = candidates_by_result[result.result_id]
+                        if not candidates:
+                            continue
+                        if result.source_audio is None:
+                            raise ValueError(
+                                f"Result {result.result_id} has no source audio"
+                            )
+                        audio = result.source_audio
+                        for turn in candidates:
+                            if _task_is_cancelled(task_id):
+                                return
+                            item = _direct_audio_purity_item(
+                                audio, result, turn, profile_name
+                            )
+                            item["result_id"] = result.result_id
+                            item["source_title"] = audio.title
+                            item["turn_index"] = result.turns.index(turn)
+                            output_path = (
+                                work_dir / f"candidate_{completed + 1:05d}.wav"
+                            )
+
+                            def verify_candidate(
+                                turn=turn, output_path=output_path, audio=audio
+                            ):
+                                segment = cutter.cut(
+                                    audio,
+                                    turn.start_s,
+                                    turn.end_s,
+                                    output_path=output_path,
+                                )
+                                return overlap_verifier.verify(segment)
+
+                            try:
+                                direct_result = await loop.run_in_executor(
+                                    None, verify_candidate
+                                )
+                                _apply_direct_overlap_decision(
+                                    item,
+                                    backend=str(overlap_backend),
+                                    model=overlap_model,
+                                    overlap=direct_result["overlap"],
+                                    reason=direct_result["reason"],
+                                    error=None,
+                                    failure_policy=overlap_failure_policy,
+                                )
+                            except Exception as exc:
+                                _apply_direct_overlap_decision(
+                                    item,
+                                    backend=str(overlap_backend),
+                                    model=overlap_model,
+                                    overlap=None,
+                                    reason=None,
+                                    error=f"{type(exc).__name__}: {exc}",
+                                    failure_policy=overlap_failure_policy,
+                                )
+                            collected.append(item)
+                            completed += 1
+                            task_manager.update_task(
+                                task_id,
+                                progress=completed / total_candidates,
+                                progress_known=True,
+                                message=(
+                                    f"Direct audio check {completed}/"
+                                    f"{total_candidates} with {overlap_backend}"
+                                ),
+                            )
+                finally:
+                    shutil.rmtree(work_dir, ignore_errors=True)
+            else:
+                verifier = SpeakerVerifier(
+                    model_id=model_id, device=target_device, token=token
+                )
+                profile = verifier.load_profile(profile_name)
+                with verifier:
+                    completed = 0
+                    for result in results:
+                        if _task_is_cancelled(task_id):
+                            return
+                        candidates = candidates_by_result[result.result_id]
+                        if not candidates:
+                            continue
+                        if result.source_audio is None:
+                            raise ValueError(
+                                f"Result {result.result_id} has no source audio"
+                            )
+                        try:
+                            verified = await asyncio.to_thread(
+                                verifier.verify_purity,
+                                result,
+                                profile,
+                                candidates=candidates,
+                                similarity_threshold=similarity_threshold,
+                                min_candidate_duration_s=min_duration_s,
+                                max_overlap_duration_s=max_overlap_duration_s,
+                                window_duration_s=window_duration_s,
+                                window_hop_s=window_hop_s,
+                            )
+                            for item in verified:
+                                turn_index = next(
+                                    index
+                                    for index, turn in enumerate(result.turns)
+                                    if _turn_key(
+                                        turn.speaker_id, turn.start_s, turn.end_s
+                                    )
+                                    == _turn_key(
+                                        item.speaker_id, item.start_s, item.end_s
+                                    )
+                                )
+                                serialized = asdict(item)
+                                serialized.update(
+                                    {
+                                        "result_id": result.result_id,
+                                        "source_title": result.source_audio.title,
+                                        "turn_index": turn_index,
+                                        "passed": item.passed,
+                                        "duration_s": item.duration_s,
+                                        "min_target_similarity": (
+                                            item.min_target_similarity
+                                        ),
+                                    }
+                                )
+                                collected.append(serialized)
+                        except Exception as exc:
+                            error_text = f"{type(exc).__name__}: {exc}"
+                            for turn in candidates:
+                                collected.append(
+                                    {
+                                        "schema_version": "1.0",
+                                        "audio_id": result.audio_id,
+                                        "profile_name": profile_name,
+                                        "speaker_id": turn.speaker_id,
+                                        "start_s": turn.start_s,
+                                        "end_s": turn.end_s,
+                                        "decision": "error",
+                                        "reason": "result_verification_failed",
+                                        "error": error_text,
+                                        "overlap_duration_s": 0.0,
+                                        "overlap_ratio": 0.0,
+                                        "windows": [],
+                                        "model": None,
+                                        "result_id": result.result_id,
+                                        "source_title": result.source_audio.title,
+                                        "turn_index": result.turns.index(turn),
+                                        "passed": False,
+                                        "duration_s": turn.duration_s,
+                                        "min_target_similarity": None,
+                                    }
+                                )
+                        completed += len(candidates)
+                        task_manager.update_task(
+                            task_id,
+                            progress=completed / total_candidates,
+                            progress_known=True,
+                            message=(
+                                f"Filtered {completed}/{total_candidates} turns"
+                            ),
+                        )
 
             verification_id = f"verify_{uuid.uuid4().hex}"
             counts = {
@@ -4075,6 +4331,11 @@ async def handle_verify_diarization_batch(request: web.Request) -> web.Response:
                     "overlap_state": overlap_state,
                     "verification_state": verification_filter,
                     "model_id": model_id,
+                    "overlap_verifier": _overlap_verifier_report_settings(
+                        overlap_config,
+                        overlap_failure_policy,
+                        overlap_verifier,
+                    ),
                 },
             }
             report_path = DIARIZATION_VERIFICATIONS_DIR / f"{verification_id}.json"
@@ -4181,58 +4442,12 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
         return web.json_response(
             {"error": f"Invalid speaker purity numeric setting: {e}"}, status=400
         )
-    overlap_settings = data.get("overlap_verifier") or {}
-    if not isinstance(overlap_settings, dict):
-        return web.json_response(
-            {"error": "overlap_verifier must be an object"}, status=400
+    try:
+        overlap_config, overlap_failure_policy = _parse_overlap_verifier_request(
+            data.get("overlap_verifier")
         )
-    overlap_enabled = overlap_settings.get("enabled") is True
-    overlap_failure_policy = str(
-        overlap_settings.get("failure_policy", "fail_closed")
-    )
-    if overlap_failure_policy not in {"fail_closed", "keep_embedding_decision"}:
-        return web.json_response(
-            {"error": "Invalid overlap verifier failure_policy"}, status=400
-        )
-
-    overlap_config: dict[str, Any] | None = None
-    if overlap_enabled:
-        try:
-            overlap_config = {
-                "backend": overlap_settings.get("backend", "gemma4"),
-                "model": overlap_settings.get("model") or None,
-                "api_key": overlap_settings.get("api_key") or None,
-                "timeout_s": float(overlap_settings.get("timeout_s", 120.0)),
-                "prompt": overlap_settings.get("prompt") or OVERLAP_PROMPT,
-                "max_output_tokens": int(
-                    overlap_settings.get(
-                        "max_output_tokens", DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS
-                    )
-                ),
-            }
-        except (TypeError, ValueError) as e:
-            return web.json_response(
-                {"error": f"Invalid overlap verifier numeric setting: {e}"},
-                status=400,
-            )
-        if str(overlap_config["backend"]).strip().lower() in {
-            "gemma",
-            "gemma4",
-            "gemma-4",
-            "unsloth",
-        }:
-            overlap_config["endpoint"] = (
-                overlap_settings.get("endpoint") or None
-            )
-        overlap_config = {
-            key: value for key, value in overlap_config.items() if value is not None
-        }
-        try:
-            create_overlap_verifier(overlap_config)
-        except (TypeError, ValueError) as e:
-            return web.json_response(
-                {"error": f"Invalid overlap verifier settings: {e}"}, status=400
-            )
+    except (TypeError, ValueError) as e:
+        return web.json_response({"error": str(e)}, status=400)
 
     if not audio_id or not profile_name:
         return web.json_response(
@@ -4292,16 +4507,6 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
 
     async def run_verify():
         target_device = get_default_device() if device == "auto" else device
-        task_manager.update_task(
-            task_id,
-            status="running",
-            progress=0.05 if overlap_config else 0.0,
-            progress_known=bool(overlap_config),
-            message=(
-                f"Verifying speaker purity for {len(speaker_turns)} turns against "
-                f"'{profile_name}' on {target_device}..."
-            ),
-        )
         loop = asyncio.get_running_loop()
 
         def do_verify():
@@ -4324,52 +4529,69 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
 
         try:
             start_time = time.time()
-            purity_results = await loop.run_in_executor(None, do_verify)
-            if _task_is_cancelled(task_id):
-                return
-
-            serialized_results = []
-            for r in purity_results:
-                item = asdict(r)
-                item["passed"] = r.passed
-                item["duration_s"] = r.duration_s
-                item["min_target_similarity"] = r.min_target_similarity
-                if overlap_config:
-                    item["direct_overlap"] = None
-                serialized_results.append(item)
-
             if overlap_config:
-                preliminary_passes = [
-                    index
-                    for index, item in enumerate(serialized_results)
-                    if item["decision"] == "pass"
-                ]
+                # Direct-audio verification: every candidate is cut and judged
+                # by the configured multimodal verifier, whose answer is the
+                # decision. The speaker-embedding model does not gate or veto
+                # here; it remains an upstream diarization-stage filter only.
                 verifier = create_overlap_verifier(overlap_config)
                 backend = str(overlap_config["backend"])
                 model = str(getattr(verifier, "model", overlap_config.get("model", "")))
                 task_manager.update_task(
                     task_id,
-                    progress=0.45,
+                    status="running",
+                    progress=0.0,
                     progress_known=True,
                     message=(
-                        f"Identity stage complete. Checking {len(preliminary_passes)} "
-                        f"candidate(s) with {backend}..."
+                        f"Checking {len(speaker_turns)} candidate(s) directly "
+                        f"with {backend}..."
                     ),
                 )
                 work_dir = DATA_DIR / "purity" / "work" / task_id
                 cutter = AudioCutter(output_dir=work_dir)
+                serialized_results = []
                 try:
-                    for position, result_index in enumerate(preliminary_passes, start=1):
+                    for position, turn in enumerate(speaker_turns, start=1):
                         if _task_is_cancelled(task_id):
                             return
-                        item = serialized_results[result_index]
-                        output_path = work_dir / f"candidate_{result_index:05d}.wav"
+                        duration_s = turn.end_s - turn.start_s
+                        overlap_duration_s = (
+                            SpeakerVerifier._other_speaker_overlap_duration(
+                                diarization,
+                                speaker_id=turn.speaker_id,
+                                start_s=turn.start_s,
+                                end_s=turn.end_s,
+                            )
+                        )
+                        item = {
+                            "schema_version": "1.0",
+                            "audio_id": audio.source_id,
+                            "profile_name": profile_name,
+                            "speaker_id": turn.speaker_id,
+                            "start_s": turn.start_s,
+                            "end_s": turn.end_s,
+                            "decision": "pass",
+                            "reason": None,
+                            "error": None,
+                            "overlap_duration_s": overlap_duration_s,
+                            "overlap_ratio": (
+                                min(1.0, overlap_duration_s / duration_s)
+                                if duration_s > 0
+                                else 0.0
+                            ),
+                            "windows": [],
+                            "model": None,
+                            "duration_s": duration_s,
+                            "min_target_similarity": None,
+                            "direct_overlap": None,
+                        }
+                        output_path = work_dir / f"candidate_{position:05d}.wav"
 
-                        def verify_candidate():
+                        def verify_candidate(turn=turn, output_path=output_path):
                             segment = cutter.cut(
                                 audio,
-                                item["start_s"],
-                                item["end_s"],
+                                turn.start_s,
+                                turn.end_s,
                                 output_path=output_path,
                             )
                             return verifier.verify(segment)
@@ -4400,19 +4622,40 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
                                 item["decision"] = "error"
                                 item["reason"] = "direct_overlap_verification_failed"
                                 item["error"] = str(e)
-
-                        completed_fraction = position / max(1, len(preliminary_passes))
+                        serialized_results.append(item)
                         task_manager.update_task(
                             task_id,
-                            progress=0.45 + (0.5 * completed_fraction),
+                            progress=position / len(speaker_turns),
                             progress_known=True,
                             message=(
-                                f"Direct overlap check {position}/{len(preliminary_passes)} "
+                                f"Direct audio check {position}/{len(speaker_turns)} "
                                 f"with {backend}"
                             ),
                         )
                 finally:
                     shutil.rmtree(work_dir, ignore_errors=True)
+            else:
+                task_manager.update_task(
+                    task_id,
+                    status="running",
+                    progress=0.0,
+                    progress_known=False,
+                    message=(
+                        f"Verifying speaker purity for {len(speaker_turns)} turns "
+                        f"against '{profile_name}' on {target_device}..."
+                    ),
+                )
+                purity_results = await loop.run_in_executor(None, do_verify)
+                if _task_is_cancelled(task_id):
+                    return
+
+                serialized_results = []
+                for r in purity_results:
+                    item = asdict(r)
+                    item["passed"] = r.passed
+                    item["duration_s"] = r.duration_s
+                    item["min_target_similarity"] = r.min_target_similarity
+                    serialized_results.append(item)
 
             for item in serialized_results:
                 item["passed"] = item["decision"] == "pass"

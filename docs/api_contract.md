@@ -793,14 +793,27 @@ verifier = create_overlap_verifier(
 result = verifier.verify(audio_segment)
 ```
 
-SonicStudio exposes this as an optional second stage in Speaker Purity. It
-checks only candidates that pass duration, diarization-overlap, and sliding
-identity checks. A positive direct-audio result changes the decision to
-`reject` with reason `direct_overlap_detected`. Request failures either become
-`error` with reason `direct_overlap_verification_failed` (the default
-fail-closed policy) or preserve the stage-one pass when explicitly configured.
-The web report records backend, model, endpoint, timeout, token budget, prompt,
-and failure policy but never returns the API key.
+SonicStudio routes verification on two endpoints:
+
+- `POST /api/diarization/results/verify` is the durable-result filter. It
+  scores filtered turns with embedding `verify_purity` (duration, diarization
+  overlap, and sliding identity windows against the enrolled profile). It does
+  not call the direct-audio overlap verifier.
+- `POST /api/purity/verify` is the imported/session-audio workbench. When the
+  direct-audio verifier is enabled, every candidate turn is cut and sent to
+  the configured multimodal model, and that answer is the decision. The
+  speaker-embedding stage does not run there and never gates which candidates
+  the verifier sees. Duration and diarization-overlap checks are skipped as
+  vetoes (overlap measurements are still recorded on the report). A positive
+  overlap result rejects the candidate with reason `direct_overlap_detected`.
+  Request failures either become `error` with reason
+  `direct_overlap_verification_failed` (the default fail-closed policy) or
+  keep the candidate as `pass` (the fail-open policy). When the direct
+  verifier is disabled, this endpoint falls back to embedding-only
+  `verify_purity`.
+
+The web report records backend, model, endpoint, timeout, token budget,
+prompt, and failure policy but never returns the API key.
 
 When the mapping omits `backend`, selection falls back to
 `OVERLAP_VERIFIER`. Callers compose this verification step where needed; it is
@@ -949,10 +962,15 @@ The repository provides two specialized web platforms:
   `GET /api/diarization/results/{result_id}/turns/{turn_index}/audio` lazily
   cuts and streams a turn without registering it; and
   `POST /api/diarization/results/verify` queues filtered turns from one or more
-  result IDs as one batch. Filters cover speaker, min/max duration, overlap,
-  and prior verification state. Reports persist under
-  `.data/diarization/verifications/`. `POST /api/purity/verify` remains the
-  separate imported-audio fallback.
+  result IDs as one batch and scores them with embedding `verify_purity`.
+  Filters cover speaker, min/max duration, overlap, and prior verification
+  state. This is the workbench's **Verify All Eligible Turns** path; it never
+  invokes the direct-audio overlap verifier. Reports persist under
+  `.data/diarization/verifications/`. `POST /api/purity/verify` is the
+  imported/session-audio fallback (**Verify imported audio**): when the
+  direct-audio verifier is enabled, Gemma or Gemini decides every candidate
+  with no embedding gate; otherwise it falls back to embedding-only
+  `verify_purity`.
 - **Manual annotation and evaluation endpoints:**
   `GET /api/diarization/annotations` lists durable ground-truth references;
   `GET /api/diarization/annotations/{annotation_id}` returns a full reference

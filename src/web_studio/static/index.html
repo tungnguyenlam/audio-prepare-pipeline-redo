@@ -1617,7 +1617,7 @@
                 <h2 class="card-title">Speaker Purity Verification Workbench</h2>
                 <span class="badge badge-success">Sliding-Window Verification</span>
               </div>
-              <p class="card-subtitle">Verify candidate speech turns against an enrolled speaker profile using multi-window sliding identity verification, strict overlap veto, and cosine similarity checking to extract pristine single-speaker training data.</p>
+              <p class="card-subtitle">Verify candidate speech turns to extract pristine single-speaker training data. Enable the direct-audio verifier and Gemma or Gemini listens to every candidate and makes the decision with your prompt; otherwise sliding-window identity embeddings against the enrolled profile decide.</p>
             </div>
             <div class="card-actions">
               <button class="btn btn-ghost btn-sm" id="btn-purity-reset" title="Clear Current Purity Analysis">
@@ -1686,7 +1686,7 @@
 
             <!-- Right: Purity Parameters & Accelerator Controls -->
             <div class="purity-params-panel">
-              <label class="form-label">3. Sliding-Window Purity Verification Parameters:</label>
+              <label class="form-label">3. Sliding-Window Embedding Parameters (fallback when the direct-audio verifier is off):</label>
               
               <div class="purity-params-grid">
                 <!-- Similarity Threshold -->
@@ -1733,13 +1733,17 @@
                 </div>
               </div>
 
+              <p class="text-xs text-muted hidden" id="purity-embedding-bypass-note" style="margin: 8px 0 0;">
+                <strong>Bypassed:</strong> the direct-audio verifier below listens to every candidate and makes the decision — these embedding checks do not run while it is enabled.
+              </p>
+
               <div class="purity-overlap-panel" id="purity-overlap-panel">
                 <div class="purity-overlap-header">
                   <label class="purity-overlap-toggle" for="purity-overlap-enabled">
                     <input type="checkbox" id="purity-overlap-enabled">
                     <span>
-                      <strong>Direct-audio overlap veto</strong>
-                      <small>Optionally send stage-one passes to Gemma or Gemini for a second opinion.</small>
+                      <strong>Direct-audio verification</strong>
+                      <small>Gemma or Gemini listens to every candidate's audio and makes the decision. No embedding gate — the identity model above is skipped while this is enabled.</small>
                     </span>
                   </label>
                   <span class="badge badge-sm badge-ghost" id="purity-overlap-status-badge">Off</span>
@@ -1781,7 +1785,7 @@
                       <label class="form-label" for="purity-overlap-failure-policy">If the verifier request fails</label>
                       <select id="purity-overlap-failure-policy" class="select-input">
                         <option value="fail_closed">Fail closed — mark candidate as error</option>
-                        <option value="keep_embedding_decision">Keep the stage-one pass</option>
+                        <option value="fail_open">Fail open — keep candidate as pass</option>
                       </select>
                     </div>
                   </div>
@@ -1803,9 +1807,9 @@
               <!-- Hardware Device & HF Token Row -->
               <div class="purity-params-row" style="margin-top: 12px;">
                 <div class="form-group flex-2">
-                  <label class="form-label" for="purity-embedding-model">Stage 1 · Speaker identity embedding model</label>
+                  <label class="form-label" for="purity-embedding-model">Speaker identity embedding model (fallback)</label>
                   <input type="text" id="purity-embedding-model" class="text-input font-mono" value="pyannote/wespeaker-voxceleb-resnet34-LM" autocomplete="off">
-                  <p class="text-xs text-muted">Compares sliding windows from each candidate turn with the selected profile's enrolled reference clips. Gemma does not perform this identity match.</p>
+                  <p class="text-xs text-muted">Compares sliding windows from each candidate turn with the selected profile's enrolled reference clips. Only runs when the direct-audio verifier is disabled; it also serves as the upstream diarization-stage filter.</p>
                 </div>
                 <div class="form-group flex-1">
                   <label class="form-label" for="purity-device-select">Compute Device:</label>
@@ -1847,7 +1851,7 @@
             <div class="progress-bar-track">
               <div class="progress-bar-fill progress-animated" id="purity-progress-bar"></div>
             </div>
-            <div class="task-status-text" id="purity-task-status-text">Embedding sliding windows and evaluating overlap vetoes...</div>
+            <div class="task-status-text" id="purity-task-status-text">Verifying candidates...</div>
           </div>
         </div>
 

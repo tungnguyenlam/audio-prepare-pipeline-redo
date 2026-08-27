@@ -483,6 +483,7 @@ const el = {
   purityWindowDuration: document.getElementById('purity-window-duration'),
   purityWindowHop: document.getElementById('purity-window-hop'),
   purityEmbeddingModel: document.getElementById('purity-embedding-model'),
+  purityEmbeddingBypassNote: document.getElementById('purity-embedding-bypass-note'),
   purityOverlapEnabled: document.getElementById('purity-overlap-enabled'),
   purityOverlapConfig: document.getElementById('purity-overlap-config'),
   purityOverlapStatusBadge: document.getElementById('purity-overlap-status-badge'),
@@ -6779,8 +6780,9 @@ function syncPurityOverlapUi() {
   const overlap = state.purity.overlap;
   if (el.purityOverlapConfig) el.purityOverlapConfig.classList.toggle('hidden', !overlap.enabled);
   if (el.purityOverlapEndpointField) el.purityOverlapEndpointField.classList.toggle('hidden', overlap.backend !== 'gemma4');
+  if (el.purityEmbeddingBypassNote) el.purityEmbeddingBypassNote.classList.toggle('hidden', !overlap.enabled);
   if (el.purityOverlapStatusBadge) {
-    el.purityOverlapStatusBadge.textContent = overlap.enabled ? `${overlap.backend === 'gemini' ? 'Gemini' : 'Gemma 4'} enabled` : 'Off';
+    el.purityOverlapStatusBadge.textContent = overlap.enabled ? `${overlap.backend === 'gemini' ? 'Gemini' : 'Gemma 4'} decides` : 'Off';
     el.purityOverlapStatusBadge.className = `badge badge-sm ${overlap.enabled ? 'badge-accent' : 'badge-ghost'}`;
   }
   if (el.purityOverlapKeyStatus) {
@@ -6830,6 +6832,10 @@ async function loadSpeakerPurityConfig() {
       if (saved?.settings) state.purity.settings = { ...state.purity.settings, ...saved.settings };
       if (saved?.overlap) state.purity.overlap = { ...state.purity.overlap, ...saved.overlap };
     } catch (_) {}
+    // The staged embedding→verifier flow is gone; map its retired policy value.
+    if (state.purity.overlap.failurePolicy === 'keep_embedding_decision') {
+      state.purity.overlap.failurePolicy = 'fail_open';
+    }
     applyPurityControls();
   } catch (err) {
     console.warn('Speaker purity defaults unavailable:', err);
@@ -7176,8 +7182,10 @@ async function runSpeakerPurityVerification(forceManual = false) {
   if (el.btnRunPurityManual) el.btnRunPurityManual.disabled = true;
   if (el.purityTaskProgressBox) el.purityTaskProgressBox.classList.remove('hidden');
   if (el.purityTaskStatusText) {
-    const secondStage = overlap.enabled ? `, then checking passes with ${overlap.backend === 'gemini' ? 'Gemini' : 'Gemma 4'}` : '';
-    el.purityTaskStatusText.textContent = `Verifying ${turns.length} turns against “${profileName}” on ${device}${secondStage}...`;
+    const backendName = overlap.backend === 'gemini' ? 'Gemini' : 'Gemma 4';
+    el.purityTaskStatusText.textContent = overlap.enabled
+      ? `Checking ${turns.length} candidates directly with ${backendName}...`
+      : `Verifying ${turns.length} turns against “${profileName}” on ${device}...`;
   }
 
   let timerInterval = null;
@@ -7241,7 +7249,7 @@ async function runSpeakerPurityVerification(forceManual = false) {
     if (el.purityResultsWrapper) el.purityResultsWrapper.classList.remove('hidden');
 
     renderPurityResults();
-    const overlapLabel = result.settings?.overlap_verifier?.enabled ? ' after direct overlap checks' : '';
+    const overlapLabel = result.settings?.overlap_verifier?.enabled ? ' via direct-audio verifier' : '';
     showToast(`Speaker purity verification complete: ${result.metrics?.passed_candidates || 0}/${result.purity_results?.length || 0} passed${overlapLabel}`, 'success');
   } catch (err) {
     if (timerInterval) clearInterval(timerInterval);
@@ -7549,12 +7557,9 @@ function renderPurityResults() {
     const overlapStr = `${r.overlap_duration_s.toFixed(2)}s (${(r.overlap_ratio * 100).toFixed(0)}%)`;
     const hasOverlap = r.overlap_duration_s > runMaxOverlap;
     const direct = r.direct_overlap;
-    const directEnabled = state.purity.runSettings?.overlap_verifier?.enabled === true;
 
     let directOverlapHtml = '<span class="badge badge-xs badge-ghost">Off</span>';
-    if (directEnabled && !direct) {
-      directOverlapHtml = '<span class="text-xs text-muted">Not run — stage-one veto</span>';
-    } else if (direct?.error) {
+    if (direct?.error) {
       directOverlapHtml = `<span class="badge badge-xs badge-warning">Request error</span><small class="purity-direct-reason" title="${escapeHtml(direct.error)}">${escapeHtml(direct.error)}</small>`;
     } else if (direct?.overlap === true) {
       directOverlapHtml = `<span class="badge badge-xs badge-danger">Overlap detected</span><small class="purity-direct-reason" title="${escapeHtml(direct.reason || '')}">${escapeHtml(direct.reason || '')}</small>`;
@@ -7768,7 +7773,9 @@ async function savePurityEvaluation() {
         clip_path: audio.path || '',
         profile_name: state.purity.profileName,
         model_id: used.model_id || state.purity.settings.modelId,
-        model_name: used.overlap_verifier?.enabled ? 'Pyannote + Direct Audio Purity Verifier' : 'Pyannote Speaker Purity Verifier',
+        model_name: used.overlap_verifier?.enabled
+          ? `${used.overlap_verifier.backend === 'gemini' ? 'Gemini' : 'Gemma 4'} Direct Audio Verifier`
+          : 'Pyannote Speaker Purity Verifier',
         threshold: used.similarity_threshold ?? state.purity.settings.similarityThreshold,
         min_duration_s: used.min_candidate_duration_s ?? state.purity.settings.minDuration,
         max_overlap_duration_s: used.max_overlap_duration_s ?? state.purity.settings.maxOverlap,

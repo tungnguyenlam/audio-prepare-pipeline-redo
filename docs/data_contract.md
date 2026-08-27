@@ -118,9 +118,11 @@ Each result covers one diarization-turn candidate and records:
 - candidate identity (`audio_id`, `speaker_id`, `start_s`, `end_s`,
   `profile_name`);
 - `decision` (`pass`, `reject`, or `error`) plus a stable `reason`;
-- union overlap duration and ratio from other-speaker turns;
+- union overlap duration and ratio from other-speaker turns (recorded in
+  both embedding and direct-audio modes; only embedding `verify_purity`
+  uses them as a veto);
 - every successfully computed `SpeakerSimilarityWindow` and embedding model
-  metadata;
+  metadata (empty / null when the workbench used the direct-audio verifier);
 - an operational error message only when `decision == "error"`.
 
 `passed` and `min_target_similarity` are derived properties rather than stored
@@ -139,11 +141,15 @@ Every direct-audio overlap verifier returns the same two-field mapping:
 Malformed or incomplete model output raises `OverlapVerifierError` instead of
 being coerced into a decision.
 
-SonicStudio purity reports may attach a `direct_overlap` object to each
-serialized `SpeakerPurityResult`. It is `null` when the optional verifier was
-enabled but the candidate already failed stage one. Otherwise it records the
-backend, model, normalized `overlap` decision, model reason, and any request
-error. This web-report evidence does not change the core
+SonicStudio purity reports attach a `direct_overlap` object to each serialized
+`SpeakerPurityResult` whenever `POST /api/purity/verify` ran with the
+direct-audio verifier enabled. In that mode it is the decision evidence for
+every candidate — the embedding stage does not run, so `windows` is empty and
+`min_target_similarity` is null. Diarization overlap duration/ratio remain on
+the row but do not decide. The object records backend, model, normalized
+`overlap` decision, model reason, and any request error. Durable-result
+batch verification (`POST /api/diarization/results/verify`) does not attach
+this object. This web-report evidence does not change the core
 `SpeakerPurityResult` dataclass.
 
 ## Pipeline `AudioItem`
