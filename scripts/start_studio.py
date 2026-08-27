@@ -125,10 +125,7 @@ def main() -> None:
     print(f"   ⚡ SonicPipeline: http://{args.host}:{args.port}/pipeline/")
     print(f"   ⚡ Compute Device: {get_device()}")
     print("=" * 60)
-    try:
-        web.run_app(app, host=args.host, port=args.port, shutdown_timeout=5)
-    finally:
-        os._exit(0)
+    web.run_app(app, host=args.host, port=args.port, shutdown_timeout=5)
 
 
 if __name__ == "__main__":

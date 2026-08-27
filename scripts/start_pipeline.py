@@ -125,10 +125,7 @@ def main() -> None:
     print(f"   🎙️  SonicStudio: http://{args.host}:{args.port}/studio/")
     print(f"   ⚡ Compute Device: {get_device()}")
     print("=" * 65)
-    try:
-        web.run_app(app, host=args.host, port=args.port, shutdown_timeout=5)
-    finally:
-        os._exit(0)
+    web.run_app(app, host=args.host, port=args.port, shutdown_timeout=5)
 
 
 if __name__ == "__main__":

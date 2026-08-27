@@ -701,31 +701,6 @@ async def handle_submit_target_speaker(request: web.Request) -> web.Response:
         return json_error(str(e))
 
 
-async def handle_list_speaker_profiles(request: web.Request) -> web.Response:
-    """List globally reusable enrolled speaker profiles."""
-    from src.diarization.SpeakerVerifier import SpeakerVerifier, SpeakerVerifierError
-
-    verifier = SpeakerVerifier()
-    profiles = []
-    for name in verifier.list_profiles():
-        try:
-            p = verifier.load_profile(name)
-            profiles.append(
-                {
-                    "name": p.name,
-                    "num_clips": len(p.clip_paths),
-                    "created_at": p.created_at,
-                    "updated_at": p.updated_at,
-                    "channel_id": p.channel_id,
-                    "channel_name": p.channel_name,
-                    "channel_url": p.channel_url,
-                }
-            )
-        except SpeakerVerifierError:
-            continue
-    return json_response({"profiles": profiles})
-
-
 async def handle_submit_benchmark(request: web.Request) -> web.Response:
     """Submit separation benchmark job across speech and music pools."""
     try:
@@ -957,7 +932,6 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_post("/api/jobs/batch_separation", handle_submit_separation)
     app.router.add_post("/api/jobs/batch_diarization", handle_submit_diarization)
     app.router.add_post("/api/jobs/target_speaker_filter", handle_submit_target_speaker)
-    app.router.add_get("/api/speaker-profiles", handle_list_speaker_profiles)
     app.router.add_post("/api/jobs/batch_benchmark", handle_submit_benchmark)
 
     # Manifests and exports
