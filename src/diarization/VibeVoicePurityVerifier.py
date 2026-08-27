@@ -11,6 +11,7 @@ VibeVoice-ASR, counts distinct speaker IDs, and classifies:
 from __future__ import annotations
 
 import gc
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,8 @@ DEFAULT_VIBEVOICE_MODEL_ID = "microsoft/VibeVoice-ASR-HF"
 DEFAULT_MIN_SECONDARY_SPEECH_S = 0.25
 DEFAULT_MAX_NEW_TOKENS = 2048
 VIBEVOICE_PURITY_SCHEMA_VERSION = "1.0"
+
+logger = logging.getLogger(__name__)
 
 
 class VibeVoicePurityError(RuntimeError):
@@ -50,7 +53,7 @@ class VibeVoicePurityVerifier(ManagedModel):
         token: str | None = None,
         min_secondary_speech_s: float = DEFAULT_MIN_SECONDARY_SPEECH_S,
         max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
-        attn_implementation: str = "sdpa",
+        attn_implementation: str = "eager",
     ) -> None:
         """Initialize the verifier without loading weights.
 
@@ -74,10 +77,11 @@ class VibeVoicePurityVerifier(ManagedModel):
             min_secondary_speech_s
         )
         self.max_new_tokens = _validate_max_new_tokens(max_new_tokens)
-        self.attn_implementation = str(attn_implementation).strip() or "sdpa"
+        self.attn_implementation = str(attn_implementation).strip() or "eager"
         self._processor: Any = None
         self._model: Any = None
         self._torch_device: Any = None
+        self._effective_attn_implementation = self.attn_implementation
 
     def _load(self) -> None:
         """Load the VibeVoice-ASR processor and model."""
@@ -108,11 +112,43 @@ class VibeVoicePurityVerifier(ManagedModel):
             self._processor = AutoProcessor.from_pretrained(
                 self.model_id, token=token
             )
-            self._model = VibeVoiceAsrForConditionalGeneration.from_pretrained(
-                self.model_id, **load_kwargs
-            )
+            try:
+                self._model = (
+                    VibeVoiceAsrForConditionalGeneration.from_pretrained(
+                        self.model_id, **load_kwargs
+                    )
+                )
+                self._effective_attn_implementation = self.attn_implementation
+            except Exception as exc:
+                if not _is_unsupported_attention_error(exc):
+                    raise
+                logger.warning(
+                    "VibeVoice attention=%s is unsupported; retrying once "
+                    "with eager attention for every nested backbone",
+                    self.attn_implementation,
+                )
+                self._model = None
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                eager_kwargs = {
+                    **load_kwargs,
+                    "attn_implementation": {"": "eager"},
+                }
+                self._model = (
+                    VibeVoiceAsrForConditionalGeneration.from_pretrained(
+                        self.model_id, **eager_kwargs
+                    )
+                )
+                self._effective_attn_implementation = "eager"
             self._model = self._model.to(self._torch_device)
             self._model.eval()
+            logger.info(
+                "Loaded VibeVoice-ASR model=%s device=%s attention=%s",
+                self.model_id,
+                self._torch_device,
+                self._effective_attn_implementation,
+            )
         except Exception as exc:
             self._processor = None
             self._model = None
@@ -126,6 +162,7 @@ class VibeVoicePurityVerifier(ManagedModel):
         self._processor = None
         self._model = None
         self._torch_device = None
+        self._effective_attn_implementation = self.attn_implementation
         gc.collect()
         try:
             import torch
@@ -430,6 +467,15 @@ def _resolve_torch_device(device: str, torch: Any) -> Any:
                 f"Requested device {requested!r} but MPS is unavailable"
             )
     return resolved
+
+
+def _is_unsupported_attention_error(exc: BaseException) -> bool:
+    """Return whether Transformers rejected an attention backend for the model."""
+    message = str(exc).lower()
+    return (
+        "does not support an attention implementation" in message
+        and "scaled_dot_product_attention" in message
+    )
 
 
 def _validate_min_secondary_speech_s(value: float) -> float:

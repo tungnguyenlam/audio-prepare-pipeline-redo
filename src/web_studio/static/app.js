@@ -6844,6 +6844,7 @@ async function refreshPurityVerifierStatus() {
   try {
     const params = new URLSearchParams({ backend: overlap.backend || 'gemma4' });
     if (overlap.model) params.set('model', overlap.model);
+    if (overlap.backend === 'vibevoice') params.set('device', el.purityDeviceSelect?.value || 'auto');
     if (overlap.backend === 'gemma4' && overlap.endpoint) params.set('endpoint', overlap.endpoint);
     const response = await fetch(`/api/purity/verifier-status?${params}`);
     const text = await response.text();
@@ -9558,6 +9559,9 @@ async function loadAndRenderQueueModal() {
         return (b.created_at || 0) - (a.created_at || 0);
       });
     }
+    const errorsByItemId = new Map(
+      filteredItems.filter(item => item.error).map(item => [String(item.id), String(item.error)])
+    );
 
     if (filteredItems.length === 0) {
       el.studioQueueTaskList.innerHTML = `
@@ -9614,7 +9618,11 @@ async function loadAndRenderQueueModal() {
 
       let errorHtml = '';
       if (item.error) {
-        errorHtml = `<div class="task-card-error">${escapeHtml(item.error)}</div>`;
+        errorHtml = `
+          <div class="task-card-error">
+            <button class="btn-copy-task-error" data-item-id="${escapeHtml(item.id)}" title="Copy error message">Copy</button>
+            <div class="task-card-error-text">${escapeHtml(item.error)}</div>
+          </div>`;
       }
 
       let cancelBtnHtml = '';
@@ -9676,6 +9684,31 @@ async function loadAndRenderQueueModal() {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         cancelSharedQueueItem(btn.dataset.itemId);
+      });
+    });
+    el.studioQueueTaskList.querySelectorAll('.btn-copy-task-error').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const error = errorsByItemId.get(btn.dataset.itemId);
+        if (!error) return;
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(error);
+          } else {
+            const textarea = document.createElement('textarea');
+            textarea.value = error;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            const copied = document.execCommand('copy');
+            textarea.remove();
+            if (!copied) throw new Error('Clipboard copy was rejected');
+          }
+          showToast('Error message copied', 'success');
+        } catch (_) {
+          showToast('Could not copy error message', 'error');
+        }
       });
     });
 

@@ -864,11 +864,21 @@ with VibeVoicePurityVerifier(device="cuda") as verifier:
   decision function over already-parsed `{start_time, end_time, speaker_id}`
   dicts.
 - `_load()` / `_unload()` follow `ManagedModel`. CUDA uses `bfloat16`.
+- The model defaults to Transformers `attn_implementation="eager"`, which is
+  required because the current VibeVoice-ASR architecture does not implement
+  scaled-dot-product attention. If Transformers nevertheless rejects the
+  configured attention backend for that reason, loading clears partial state
+  and retries once with eager attention forced across every nested backbone.
+  Authentication, CUDA, out-of-memory, and other errors are not retried.
 
 The web applications use `VibeVoicePurityWorkerVerifier`, which starts
 `.venv-vibevoice/bin/python -m src.diarization.vibevoice_purity_worker`.
 Override the interpreter with `VIBEVOICE_PYTHON`. `cuda:N` is isolated with
 `CUDA_VISIBLE_DEVICES`. Create that environment only on the model server.
+`VibeVoicePurityWorkerVerifier.check_ready()` probes that local interpreter,
+the required Transformers class, and requested device without loading weights.
+The web readiness endpoint uses this local probe; VibeVoice is not an HTTP
+service, and model weights are still loaded only when verification starts.
 
 SonicStudio `overlap_verifier.backend: "vibevoice"` on
 `POST /api/diarization/results/verify` and `POST /api/purity/verify` cuts

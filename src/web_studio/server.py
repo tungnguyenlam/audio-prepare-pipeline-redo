@@ -1322,6 +1322,7 @@ def _vibevoice_verifier_from_config(
         max_new_tokens=int(
             overlap_config.get("max_new_tokens", DEFAULT_MAX_NEW_TOKENS)
         ),
+        attn_implementation="eager",
     )
 
 
@@ -3939,17 +3940,14 @@ async def handle_purity_verifier_status(request: web.Request) -> web.Response:
         backend = "gemma4"
     try:
         if backend == "vibevoice":
-            return web.json_response(
-                {
-                    "backend": "vibevoice",
-                    "ready": True,
-                    "message": (
-                        "VibeVoice-ASR is loaded at verification time; "
-                        "there is no HTTP probe."
-                    ),
-                    "models": [],
-                }
+            verifier = VibeVoicePurityWorkerVerifier(
+                model_id=str(
+                    request.query.get("model") or DEFAULT_VIBEVOICE_MODEL_ID
+                ),
+                device=str(request.query.get("device") or "auto"),
             )
+            status = await asyncio.to_thread(verifier.check_ready)
+            return web.json_response({"backend": "vibevoice", **status})
         config: dict[str, Any] = {"backend": backend}
         model = request.query.get("model")
         if model:
@@ -4319,7 +4317,7 @@ async def handle_verify_diarization_batch(request: web.Request) -> web.Response:
                     device=target_device,
                     token=token,
                 )
-                vibe_verifier.load()
+                await asyncio.to_thread(vibe_verifier.load)
                 overlap_verifier = vibe_verifier
                 overlap_model = str(
                     overlap_config.get("model") or DEFAULT_VIBEVOICE_MODEL_ID
@@ -4451,7 +4449,7 @@ async def handle_verify_diarization_batch(request: web.Request) -> web.Response:
                         )
             finally:
                 if vibe_verifier is not None:
-                    vibe_verifier.unload()
+                    await asyncio.to_thread(vibe_verifier.unload)
                 shutil.rmtree(work_dir, ignore_errors=True)
             verification_id = f"verify_{uuid.uuid4().hex}"
             counts = {
@@ -4689,7 +4687,7 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
                     device=target_device,
                     token=token,
                 )
-                verifier.load()
+                await asyncio.to_thread(verifier.load)
                 vibe_verifier = verifier
                 model = str(
                     overlap_config.get("model") or DEFAULT_VIBEVOICE_MODEL_ID
@@ -4806,7 +4804,7 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
                     )
             finally:
                 if vibe_verifier is not None:
-                    vibe_verifier.unload()
+                    await asyncio.to_thread(vibe_verifier.unload)
                 shutil.rmtree(work_dir, ignore_errors=True)
 
             for item in serialized_results:
@@ -5348,7 +5346,12 @@ async def handle_batch_separation_compare(request: web.Request) -> web.Response:
 
     task_id = task_manager.create_task(
         "multi_model_separation",
-        {"audio_id": audio_id, "models_count": len(models), "clip_title": audio.title},
+        {
+            "audio_id": audio_id,
+            "models_count": len(models),
+            "clip_title": audio.title,
+            "device": device,
+        },
     )
 
     async def run_batch():

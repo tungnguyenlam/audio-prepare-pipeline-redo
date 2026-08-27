@@ -44,7 +44,7 @@ class VibeVoicePurityWorkerVerifier(ManagedModel):
         token: str | None = None,
         min_secondary_speech_s: float = DEFAULT_MIN_SECONDARY_SPEECH_S,
         max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
-        attn_implementation: str = "sdpa",
+        attn_implementation: str = "eager",
         worker_python: str | Path | None = None,
     ) -> None:
         """Initialize the isolated VibeVoice proxy.
@@ -71,6 +71,94 @@ class VibeVoicePurityWorkerVerifier(ManagedModel):
         self._request_lock = threading.Lock()
         self._output_tail: deque[str] = deque(maxlen=100)
         self._cancel_requested = False
+
+    def check_ready(self) -> dict[str, Any]:
+        """Check the isolated worker environment without loading model weights.
+
+        Returns:
+            Readiness details for the configured interpreter and compute device.
+        """
+        worker_python = (
+            self.worker_python
+            if self.worker_python.is_absolute()
+            else _REPO_ROOT / self.worker_python
+        ).expanduser()
+        if not worker_python.is_file():
+            return {
+                "ready": False,
+                "message": (
+                    f"VibeVoice worker Python does not exist: {worker_python}. "
+                    "Create .venv-vibevoice from requirements-vibevoice.txt or "
+                    "set VIBEVOICE_PYTHON."
+                ),
+                "models": [],
+            }
+
+        worker_environment = os.environ.copy()
+        worker_environment["VIRTUAL_ENV"] = str(worker_python.parent.parent)
+        worker_environment["PATH"] = os.pathsep.join(
+            [str(worker_python.parent), worker_environment.get("PATH", "")]
+        )
+        worker_environment["PYTHONNOUSERSITE"] = "1"
+        requested_device = str(self._config["device"])
+        if requested_device.startswith("cuda:"):
+            worker_environment["CUDA_VISIBLE_DEVICES"] = requested_device.split(
+                ":", 1
+            )[1]
+        elif requested_device == "cpu":
+            worker_environment["CUDA_VISIBLE_DEVICES"] = ""
+        probe_code = (
+            "import json, torch, transformers; "
+            "from transformers import VibeVoiceAsrForConditionalGeneration; "
+            "print(json.dumps({'transformers': transformers.__version__, "
+            "'cuda_available': torch.cuda.is_available(), "
+            "'cuda_device_count': torch.cuda.device_count()}))"
+        )
+        try:
+            completed = subprocess.run(
+                [str(worker_python), "-c", probe_code],
+                cwd=str(_REPO_ROOT),
+                env=worker_environment,
+                text=True,
+                capture_output=True,
+                timeout=20,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return {
+                "ready": False,
+                "message": f"Could not probe the VibeVoice worker: {exc}",
+                "models": [],
+            }
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout or "unknown error").strip()
+            return {
+                "ready": False,
+                "message": f"VibeVoice worker probe failed: {detail[-1000:]}",
+                "models": [],
+            }
+        try:
+            details = json.loads(completed.stdout.strip().splitlines()[-1])
+        except (IndexError, json.JSONDecodeError):
+            details = {}
+        if requested_device.startswith("cuda") and not details.get("cuda_available"):
+            return {
+                "ready": False,
+                "message": (
+                    "VibeVoice worker cannot access requested device "
+                    f"{requested_device}."
+                ),
+                "models": [],
+            }
+        version = details.get("transformers", "unknown")
+        return {
+            "ready": True,
+            "message": (
+                f"Local VibeVoice worker is ready on {requested_device} "
+                f"(Transformers {version}); model weights load when verification starts."
+            ),
+            "models": [str(self._config["model_id"])],
+        }
 
     def _load(self) -> None:
         """Start the isolated worker and load VibeVoice-ASR once."""
@@ -103,6 +191,14 @@ class VibeVoicePurityWorkerVerifier(ManagedModel):
             worker_config["device"] = "cuda:0"
         elif requested_device == "cpu":
             worker_environment["CUDA_VISIBLE_DEVICES"] = ""
+        logger.info(
+            "Starting VibeVoice worker requested_device=%s worker_device=%s "
+            "CUDA_VISIBLE_DEVICES=%s attention=%s",
+            requested_device,
+            worker_config["device"],
+            worker_environment.get("CUDA_VISIBLE_DEVICES", "all"),
+            worker_config["attn_implementation"],
+        )
         process = subprocess.Popen(
             [
                 str(worker_python),

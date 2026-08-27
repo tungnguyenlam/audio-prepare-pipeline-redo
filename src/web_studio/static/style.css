@@ -5456,6 +5456,7 @@ button {
 }
 
 .task-card-error {
+  position: relative;
   font-size: 0.8rem;
   color: #ef4444;
   background-color: hsla(0, 84%, 60%, 0.08);
@@ -5463,6 +5464,29 @@ button {
   padding: 6px 10px;
   border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
   font-family: var(--font-mono);
+}
+
+.task-card-error-text {
+  padding-right: 3.5rem;
+  white-space: pre-wrap;
+}
+
+.btn-copy-task-error {
+  position: absolute;
+  top: 6px;
+  right: 7px;
+  border: 1px solid hsla(0, 84%, 60%, 0.35);
+  border-radius: var(--radius-xs);
+  background: var(--bg-surface-elevated);
+  color: var(--text-secondary);
+  padding: 2px 7px;
+  font: 600 0.7rem var(--font-sans);
+  cursor: pointer;
+}
+
+.btn-copy-task-error:hover {
+  color: var(--text-primary);
+  border-color: hsla(0, 84%, 60%, 0.65);
 }
 
 .task-card-progress {
