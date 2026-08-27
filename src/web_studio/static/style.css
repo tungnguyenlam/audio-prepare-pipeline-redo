@@ -6793,8 +6793,8 @@ button {
 }
 
 .purity-setup-grid {
-  display: grid;
-  grid-template-columns: minmax(320px, 1.1fr) minmax(380px, 1.4fr);
+  display: flex;
+  flex-direction: column;
   gap: 20px;
   margin-top: 16px;
 }
@@ -7203,9 +7203,6 @@ button {
 }
 
 @media (max-width: 1024px) {
-  .purity-setup-grid {
-    grid-template-columns: 1fr;
-  }
   .purity-metrics-grid {
     grid-template-columns: 1fr 1fr;
   }

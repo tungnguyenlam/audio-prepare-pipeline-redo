@@ -7245,7 +7245,7 @@ async function runSpeakerPurityVerification(forceManual = false) {
   }
 
   try {
-    const response = await fetch('/api/purity/verify', {
+    const data = await parseJsonResponse(await fetch('/api/purity/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -7261,10 +7261,7 @@ async function runSpeakerPurityVerification(forceManual = false) {
         token: token,
         overlap_verifier: overlapVerifier,
       }),
-    });
-
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Purity verification failed to start');
+    }));
 
     const result = await new Promise((resolve, reject) => pollTask(data.task_id, resolve, reject));
     if (timerInterval) clearInterval(timerInterval);
@@ -7328,7 +7325,7 @@ async function runDiarizationResultBatchVerification() {
     el.purityTaskStatusText.textContent = `Checking eligible turns from ${resultIds.length} result(s) with ${purityOverlapBackendLabel()}...`;
   }
   try {
-    const response = await fetch('/api/diarization/results/verify', {
+    const payload = await parseJsonResponse(await fetch('/api/diarization/results/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -7343,9 +7340,7 @@ async function runDiarizationResultBatchVerification() {
         token,
         overlap_verifier: overlapVerifier,
       }),
-    });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || 'Batch verification failed to start');
+    }));
     const report = await new Promise((resolve, reject) => pollTask(payload.task_id, resolve, reject));
     state.purity.results = report.results || [];
     state.purity.metrics = {
@@ -7725,7 +7720,7 @@ async function exportPurityAudio(mode = 'concat') {
   }
 
   try {
-    const response = await fetch('/api/purity/export-audio', {
+    const data = await parseJsonResponse(await fetch('/api/purity/export-audio', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -7738,10 +7733,7 @@ async function exportPurityAudio(mode = 'concat') {
         })),
         extraction_settings: readDiarizationExtractionSettings(),
       }),
-    });
-
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Failed to export pure audio');
+    }));
 
     await fetchAudioList();
     showToast(`Exported ${passed.length} pure segments (${data.duration_s?.toFixed(1)}s) to workspace audio!`, 'success');
