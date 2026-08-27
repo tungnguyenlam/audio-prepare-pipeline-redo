@@ -5443,10 +5443,27 @@ function syncDiarizationCandidateFilters() {
     el.purityCandidateSpeaker.innerHTML = '<option value="">All speakers</option>' + speakers.map(speaker => `<option value="${escapeHtml(speaker)}">${escapeHtml(speaker)}</option>`).join('');
     if (speakers.includes(current)) el.purityCandidateSpeaker.value = current;
   }
-  const turns = selected.reduce((sum, result) => sum + (result.turns?.length || 0), 0);
+  const turns = selected.reduce((sum, result) => sum + diarizationResultTurnCount(result), 0);
   if (el.purityResultSelectionSummary) {
     el.purityResultSelectionSummary.textContent = `${selected.length} result(s) selected • ${turns} turns before filters • all eligible turns will run as one batch`;
   }
+}
+
+function diarizationResultTurnCount(result) {
+  const fromSummary = Number(result?.summary?.turn_count);
+  if (Number.isFinite(fromSummary)) return fromSummary;
+  return Array.isArray(result?.turns) ? result.turns.length : 0;
+}
+
+function purityTurnsForSelectedAudio(audioId) {
+  if (audioId && state.diarization.audioId === audioId && state.diarization.turns?.length > 0) {
+    return state.diarization.turns.map(turn => ({
+      speaker_id: turn.speaker_id,
+      start_s: turn.start_s,
+      end_s: turn.end_s,
+    }));
+  }
+  return [];
 }
 
 // ==================== MANUAL DIARIZATION ANNOTATION ====================
@@ -7079,7 +7096,7 @@ function initPurityTab() {
   }
 
   if (el.btnRunPurity) {
-    el.btnRunPurity.addEventListener('click', runSpeakerPurityVerification);
+    el.btnRunPurity.addEventListener('click', () => runSpeakerPurityVerification(false));
   }
   el.btnRunPurityManual?.addEventListener('click', () => runSpeakerPurityVerification(true));
 
@@ -7161,49 +7178,51 @@ function syncPurityDiarizationStatus() {
   if (!audioId) {
     el.purityDiarTurnsChip.textContent = 'No track selected';
     el.purityDiarTurnsChip.className = 'badge badge-sm badge-ghost';
-    if (el.purityDiarDesc) el.purityDiarDesc.textContent = 'Select a target audio track first.';
+    if (el.purityDiarDesc) {
+      el.purityDiarDesc.textContent = 'Pick any session or library track. Diarization turns are optional.';
+    }
     return;
   }
-  const hasCurrentDiar = (state.diarization.audioId === audioId && (state.diarization.turns?.length > 0));
-  if (hasCurrentDiar) {
-    const count = state.diarization.turns.length;
-    const dur = state.diarization.turns.reduce((sum, t) => sum + (t.end_s - t.start_s), 0);
-    el.purityDiarTurnsChip.textContent = `${count} turns ready (${dur.toFixed(1)}s)`;
+  const turns = purityTurnsForSelectedAudio(audioId);
+  if (turns.length > 0) {
+    const dur = turns.reduce((sum, turn) => sum + (turn.end_s - turn.start_s), 0);
+    el.purityDiarTurnsChip.textContent = `${turns.length} turns ready (${dur.toFixed(1)}s)`;
     el.purityDiarTurnsChip.className = 'badge badge-sm badge-success';
-    if (el.purityDiarDesc) el.purityDiarDesc.textContent = `Using ${count} diarized speaker turns from active timeline.`;
-  } else {
-    el.purityDiarTurnsChip.textContent = 'No turns in memory';
-    el.purityDiarTurnsChip.className = 'badge badge-sm badge-warning';
-    if (el.purityDiarDesc) el.purityDiarDesc.textContent = 'Switch to Diarization tab to run or load turns for this track, then verify purity.';
+    if (el.purityDiarDesc) {
+      el.purityDiarDesc.textContent = `Using ${turns.length} diarized speaker turns from the active timeline.`;
+    }
+    return;
+  }
+  const item = state.audioList.find(audio => audio.id === audioId);
+  const dur = Number(item?.duration_s) || 0;
+  el.purityDiarTurnsChip.textContent = dur
+    ? `Whole file · 1 candidate (${dur.toFixed(1)}s)`
+    : 'Whole file · 1 candidate';
+  el.purityDiarTurnsChip.className = 'badge badge-sm badge-success';
+  if (el.purityDiarDesc) {
+    el.purityDiarDesc.textContent = 'No diarization turns in memory for this track. The verifier will listen to the whole file as one candidate.';
   }
 }
 
 async function runSpeakerPurityVerification(forceManual = false) {
+  if (typeof forceManual !== 'boolean') forceManual = false;
   if (!forceManual && state.purity.selectedResultIds.size > 0) {
     await runDiarizationResultBatchVerification();
-    return;
-  }
-  if (!forceManual) {
-    showToast('Select at least one diarization result, or use “Verify imported audio” in the fallback panel.', 'error');
     return;
   }
   const audioId = el.purityInputSelect?.value;
   const profileName = el.purityProfileSelect?.value || 'unlabeled';
 
   if (!audioId) {
-    showToast('Please select a target audio track', 'error');
+    showToast('Select at least one diarization result, or choose a session/library track to verify.', 'error');
+    return;
+  }
+  if (audioId.startsWith('lib:')) {
+    showToast('Wait for the library track to finish loading, then try again.', 'error');
     return;
   }
 
-  let turns = [];
-  if (state.diarization.audioId === audioId && state.diarization.turns?.length > 0) {
-    turns = state.diarization.turns;
-  }
-
-  if (!turns || turns.length === 0) {
-    showToast('No diarization turns available. Please run Diarization on this track first.', 'error');
-    return;
-  }
+  const turns = purityTurnsForSelectedAudio(audioId);
 
   const minDuration = Math.max(0.01, parseFloat(el.purityCandidateMinDuration?.value) || state.purity.settings.minDuration || 1.5);
   const device = el.purityDeviceSelect?.value || 'auto';
@@ -7231,7 +7250,9 @@ async function runSpeakerPurityVerification(forceManual = false) {
   if (el.btnRunPurityManual) el.btnRunPurityManual.disabled = true;
   if (el.purityTaskProgressBox) el.purityTaskProgressBox.classList.remove('hidden');
   if (el.purityTaskStatusText) {
-    el.purityTaskStatusText.textContent = `Checking ${turns.length} candidates with ${purityOverlapBackendLabel()}...`;
+    el.purityTaskStatusText.textContent = turns.length
+      ? `Checking ${turns.length} candidates with ${purityOverlapBackendLabel()}...`
+      : `Checking whole file with ${purityOverlapBackendLabel()}...`;
   }
 
   let timerInterval = null;
@@ -8661,7 +8682,7 @@ const LIBRARY_LOAD_TARGETS = {
   },
   purity: {
     title: 'Load into Speaker Purity',
-    subtitle: 'Choose imported audio to verify against an enrolled speaker',
+    subtitle: 'Choose a session or library track to verify as one clip, or with its diarization turns',
     button: 'Send to Speaker Purity',
   },
 };

@@ -6526,10 +6526,17 @@ button {
 }
 
 .purity-manual-fallback {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   margin-top: 12px;
   padding: 10px;
   border: 1px dashed var(--border-color, #d5d9e2);
   border-radius: 8px;
+}
+
+.purity-manual-fallback .select-input {
+  width: 100%;
 }
 
 .library-metadata-filters {

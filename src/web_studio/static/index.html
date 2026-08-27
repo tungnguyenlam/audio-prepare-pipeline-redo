@@ -1654,22 +1654,22 @@
                 </select>
               </div>
 
-              <details class="purity-manual-fallback">
-                <summary>Verify imported audio (fallback)</summary>
-                <p class="text-xs text-muted">Use this only for standalone imported audio with an active diarization timeline.</p>
+              <div class="purity-manual-fallback">
+                <label class="form-label">Or verify a chosen audio file:</label>
+                <p class="text-xs text-muted">Pick any session or library track. If this track already has diarization turns in memory, those turns run; otherwise the whole file is checked as one candidate.</p>
                 <div class="label-with-tool">
-                  <span class="text-xs text-muted" id="purity-audio-meta-chip">No imported track selected</span>
+                  <span class="text-xs text-muted" id="purity-audio-meta-chip">No track selected</span>
                   <button type="button" class="btn btn-ghost btn-xs" id="btn-purity-browse-library">Library</button>
                 </div>
-                <select id="purity-input-select" class="select-input"><option value="">-- Select imported/session track --</option></select>
+                <select id="purity-input-select" class="select-input"><option value="">-- Select session or library track --</option></select>
                 <div id="purity-input-preview-pill" class="purity-input-preview-pill hidden">
                   <button class="btn btn-xs btn-primary" id="btn-purity-preview-input">▶ Play Track</button>
                   <span class="purity-track-title-text" id="purity-track-title-text">audio_title</span>
                   <span class="purity-track-spec-chip" id="purity-track-spec-chip"></span>
                 </div>
-                <div class="purity-diar-status-box" id="purity-diar-status-box"><span id="purity-diar-turns-chip">0 turns available</span><p id="purity-diar-desc" class="text-xs text-muted"></p></div>
-                <button type="button" class="btn btn-secondary w-full" id="btn-run-purity-manual">Verify imported audio</button>
-              </details>
+                <div class="purity-diar-status-box" id="purity-diar-status-box"><span id="purity-diar-turns-chip">No track selected</span><p id="purity-diar-desc" class="text-xs text-muted"></p></div>
+                <button type="button" class="btn btn-secondary w-full" id="btn-run-purity-manual">Verify chosen audio</button>
+              </div>
             </div>
 
             <!-- Right: LLM Verifier -->
@@ -1795,7 +1795,7 @@
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
           </div>
           <h3 class="empty-title">No Speaker Purity Analysis Yet</h3>
-          <p class="empty-desc">Select diarization results, then verify eligible turns with Gemma 4, Gemini, or VibeVoice-ASR. Imported audio remains available in the fallback panel.</p>
+          <p class="empty-desc">Select saved diarization results, or choose any session/library track. Gemma 4, Gemini, or VibeVoice-ASR then judges each candidate.</p>
         </div>
 
         <!-- Results & Analytics Container -->

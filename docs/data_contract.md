@@ -172,7 +172,7 @@ being coerced into a decision.
 SonicStudio purity reports attach a `direct_overlap` object to each serialized
 row whenever the Gemma or Gemini overlap verifier ran — including
 **Verify All Eligible Turns** (`POST /api/diarization/results/verify`) and
-imported audio (`POST /api/purity/verify`). VibeVoice-ASR runs attach
+chosen session/library audio (`POST /api/purity/verify`). VibeVoice-ASR runs attach
 `vibevoice` instead (see `VibeVoicePurityResult`). In both modes embeddings
 do not run, so `windows` is empty and `min_target_similarity` is null.
 Diarization overlap duration/ratio remain on the row but do not decide. The

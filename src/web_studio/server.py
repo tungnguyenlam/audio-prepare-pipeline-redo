@@ -1157,6 +1157,21 @@ def _parse_overlap_verifier_request(
     return config, failure_policy
 
 
+def _audio_duration_s(audio: Audio) -> float:
+    """Return a positive duration for ``audio``, probing the file if needed."""
+    if audio.duration_s is not None:
+        duration_s = float(audio.duration_s)
+        if isfinite(duration_s) and duration_s > 0:
+            return duration_s
+    path = Path(audio.path)
+    if not path.is_file():
+        raise FileNotFoundError(f"Audio file is missing: {path}")
+    duration_s = float(sf.info(str(path)).duration)
+    if not isfinite(duration_s) or duration_s <= 0:
+        raise ValueError(f"Audio has no duration: {path}")
+    return duration_s
+
+
 def _direct_audio_purity_item(
     audio: Audio,
     diarization: DiarizationResult,
@@ -4560,7 +4575,10 @@ async def handle_verify_diarization_batch(request: web.Request) -> web.Response:
 
 
 async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
-    """Verify speaker purity of diarization turns with the LLM verifier."""
+    """Verify speaker purity of a chosen track with the LLM verifier.
+
+    ``turns`` may be omitted or empty: the whole file is then one candidate.
+    """
     data = await request.json()
     audio_id = data.get("audio_id")
     profile_name = str(data.get("profile") or data.get("profile_name") or "").strip() or "unlabeled"
@@ -4591,34 +4609,39 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
         return web.json_response({"error": "Audio not found"}, status=404)
 
     if not turns:
-        return web.json_response(
-            {"error": "Diarization turns are required for speaker purity verification"},
-            status=400,
-        )
+        try:
+            duration_s = _audio_duration_s(audio)
+            speaker_turns = [
+                SpeakerTurn(speaker_id="clip", start_s=0.0, end_s=duration_s)
+            ]
+        except FileNotFoundError as e:
+            return web.json_response({"error": str(e)}, status=404)
+        except (TypeError, ValueError) as e:
+            return web.json_response({"error": str(e)}, status=400)
+    else:
+        try:
+            speaker_turns = [
+                SpeakerTurn(
+                    speaker_id=str(t["speaker_id"]),
+                    start_s=float(t["start_s"]),
+                    end_s=float(t["end_s"]),
+                )
+                for t in turns
+            ]
+        except (KeyError, TypeError, ValueError) as e:
+            return web.json_response({"error": f"Invalid turns: {e}"}, status=400)
 
-    try:
-        speaker_turns = [
-            SpeakerTurn(
-                speaker_id=str(t["speaker_id"]),
-                start_s=float(t["start_s"]),
-                end_s=float(t["end_s"]),
+        if min_candidate_duration_s > 0:
+            speaker_turns = [
+                turn
+                for turn in speaker_turns
+                if (turn.end_s - turn.start_s) >= min_candidate_duration_s
+            ]
+        if not speaker_turns:
+            return web.json_response(
+                {"error": "No turns remain after the duration filter"},
+                status=400,
             )
-            for t in turns
-        ]
-    except (KeyError, TypeError, ValueError) as e:
-        return web.json_response({"error": f"Invalid turns: {e}"}, status=400)
-
-    if min_candidate_duration_s > 0:
-        speaker_turns = [
-            turn
-            for turn in speaker_turns
-            if (turn.end_s - turn.start_s) >= min_candidate_duration_s
-        ]
-    if not speaker_turns:
-        return web.json_response(
-            {"error": "No turns remain after the duration filter"},
-            status=400,
-        )
 
     diarization = DiarizationResult(
         schema_version="2.0",

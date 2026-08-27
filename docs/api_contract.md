@@ -807,8 +807,9 @@ that tab:
 - `POST /api/diarization/results/verify` first applies speaker / duration /
   overlap / prior-state filters, then every remaining candidate is cut and
   judged by Gemma 4, Gemini, or VibeVoice-ASR. Embeddings do not run.
-- `POST /api/purity/verify` is the imported/session-audio fallback with the
-  same LLM path. Disabling the verifier is rejected.
+- `POST /api/purity/verify` verifies a chosen session/library track with the
+  same LLM path. Omitted or empty `turns` means the whole file is one
+  candidate. Disabling the verifier is rejected.
 
 If Unsloth is down or still loading, the job fails immediately with that
 message. Per-candidate request failures stay visible (`error` plus the
@@ -1032,8 +1033,10 @@ The repository provides two specialized web platforms:
   `GET /api/purity/verifier-status` reports whether Unsloth (or Gemini) is
   ready before a run. If Unsloth is down, the job fails instead of marking
   candidates silently. Reports persist under `.data/diarization/verifications/`.
-  `POST /api/purity/verify` is the imported/session-audio fallback (**Verify
-  imported audio**) with the same LLM verifier.
+  `POST /api/purity/verify` verifies a chosen session/library track
+  (**Verify chosen audio**) with the same LLM verifier. Omitted or empty
+  `turns` means the whole file is one candidate; in-memory diarization
+  turns are used when that track is the active timeline.
 - **Manual annotation and evaluation endpoints:**
   `GET /api/diarization/annotations` lists durable ground-truth references;
   `GET /api/diarization/annotations/{annotation_id}` returns a full reference
