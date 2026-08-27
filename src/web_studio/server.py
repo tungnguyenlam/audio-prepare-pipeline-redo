@@ -4416,6 +4416,8 @@ async def handle_verify_diarization_batch(request: web.Request) -> web.Response:
     return web.json_response(
         {"task_id": task_id, "task": task_manager.get_task(task_id)}, status=202
     )
+
+
 async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
     """Verify speaker purity of diarization turns against an enrolled speaker profile."""
     data = await request.json()
@@ -4554,37 +4556,9 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
                     for position, turn in enumerate(speaker_turns, start=1):
                         if _task_is_cancelled(task_id):
                             return
-                        duration_s = turn.end_s - turn.start_s
-                        overlap_duration_s = (
-                            SpeakerVerifier._other_speaker_overlap_duration(
-                                diarization,
-                                speaker_id=turn.speaker_id,
-                                start_s=turn.start_s,
-                                end_s=turn.end_s,
-                            )
+                        item = _direct_audio_purity_item(
+                            audio, diarization, turn, profile_name
                         )
-                        item = {
-                            "schema_version": "1.0",
-                            "audio_id": audio.source_id,
-                            "profile_name": profile_name,
-                            "speaker_id": turn.speaker_id,
-                            "start_s": turn.start_s,
-                            "end_s": turn.end_s,
-                            "decision": "pass",
-                            "reason": None,
-                            "error": None,
-                            "overlap_duration_s": overlap_duration_s,
-                            "overlap_ratio": (
-                                min(1.0, overlap_duration_s / duration_s)
-                                if duration_s > 0
-                                else 0.0
-                            ),
-                            "windows": [],
-                            "model": None,
-                            "duration_s": duration_s,
-                            "min_target_similarity": None,
-                            "direct_overlap": None,
-                        }
                         output_path = work_dir / f"candidate_{position:05d}.wav"
 
                         def verify_candidate(turn=turn, output_path=output_path):
@@ -4600,28 +4574,25 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
                             direct_result = await loop.run_in_executor(
                                 None, verify_candidate
                             )
-                            item["direct_overlap"] = {
-                                "backend": backend,
-                                "model": model,
-                                "overlap": direct_result["overlap"],
-                                "reason": direct_result["reason"],
-                                "error": None,
-                            }
-                            if direct_result["overlap"]:
-                                item["decision"] = "reject"
-                                item["reason"] = "direct_overlap_detected"
+                            _apply_direct_overlap_decision(
+                                item,
+                                backend=backend,
+                                model=model,
+                                overlap=direct_result["overlap"],
+                                reason=direct_result["reason"],
+                                error=None,
+                                failure_policy=overlap_failure_policy,
+                            )
                         except Exception as e:
-                            item["direct_overlap"] = {
-                                "backend": backend,
-                                "model": model,
-                                "overlap": None,
-                                "reason": None,
-                                "error": f"{type(e).__name__}: {e}",
-                            }
-                            if overlap_failure_policy == "fail_closed":
-                                item["decision"] = "error"
-                                item["reason"] = "direct_overlap_verification_failed"
-                                item["error"] = str(e)
+                            _apply_direct_overlap_decision(
+                                item,
+                                backend=backend,
+                                model=model,
+                                overlap=None,
+                                reason=None,
+                                error=f"{type(e).__name__}: {e}",
+                                failure_policy=overlap_failure_policy,
+                            )
                         serialized_results.append(item)
                         task_manager.update_task(
                             task_id,
@@ -4740,23 +4711,10 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
                         "window_duration_s": window_duration_s,
                         "window_hop_s": window_hop_s,
                         "model_id": model_id,
-                        "overlap_verifier": (
-                            {
-                                "enabled": True,
-                                "backend": overlap_config["backend"],
-                                "model": getattr(verifier, "model", None),
-                                "endpoint": getattr(verifier, "endpoint", None),
-                                "timeout_s": overlap_config["timeout_s"],
-                                "prompt": overlap_config["prompt"],
-                                "max_output_tokens": overlap_config["max_output_tokens"],
-                                "failure_policy": overlap_failure_policy,
-                                "api_key_configured": bool(
-                                    overlap_config.get("api_key")
-                                    or getattr(verifier, "api_key", None)
-                                ),
-                            }
-                            if overlap_config
-                            else {"enabled": False}
+                        "overlap_verifier": _overlap_verifier_report_settings(
+                            overlap_config,
+                            overlap_failure_policy,
+                            verifier if overlap_config else None,
                         ),
                     },
                 },

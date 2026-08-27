@@ -1615,9 +1615,9 @@
               <div class="purity-header-title-row">
                 <span class="workflow-step">Precision Dataset Gate</span>
                 <h2 class="card-title">Speaker Purity Verification Workbench</h2>
-                <span class="badge badge-success">Sliding-Window Verification</span>
+                <span class="badge badge-success">Identity filter · Direct-audio verifier</span>
               </div>
-              <p class="card-subtitle">Verify candidate speech turns to extract pristine single-speaker training data. Enable the direct-audio verifier and Gemma or Gemini listens to every candidate and makes the decision with your prompt; otherwise sliding-window identity embeddings against the enrolled profile decide.</p>
+              <p class="card-subtitle">Speaker embeddings only filter candidate turns against the enrolled profile. They do not verify purity. Enable Gemma or Gemini to listen to every remaining candidate and make the decision.</p>
             </div>
             <div class="card-actions">
               <button class="btn btn-ghost btn-sm" id="btn-purity-reset" title="Clear Current Purity Analysis">
@@ -1686,7 +1686,7 @@
 
             <!-- Right: Purity Parameters & Accelerator Controls -->
             <div class="purity-params-panel">
-              <label class="form-label">3. Sliding-Window Embedding Parameters (fallback when the direct-audio verifier is off):</label>
+              <label class="form-label">3. Speaker identity filter (embedding — skipped while the direct-audio verifier is on):</label>
               
               <div class="purity-params-grid">
                 <!-- Similarity Threshold -->
@@ -1696,7 +1696,7 @@
                     <span class="badge badge-sm badge-primary font-mono" id="purity-threshold-val-badge">0.60</span>
                   </div>
                   <input type="range" id="purity-threshold-slider" min="0.0" max="1.0" step="0.01" value="0.60" class="range-slider">
-                  <p class="text-xs text-muted">Every sliding identity window must achieve at least this cosine similarity.</p>
+                  <p class="text-xs text-muted">Identity filter: every sliding window must meet this cosine similarity. This is not the purity decision.</p>
                 </div>
 
                 <!-- Min Candidate Duration -->
@@ -1705,7 +1705,7 @@
                     <label class="form-label font-bold" for="purity-min-duration">Min Candidate Duration (s)</label>
                   </div>
                   <input type="number" id="purity-min-duration" class="text-input" min="0.25" max="30" step="0.25" value="1.5">
-                  <p class="text-xs text-muted">Turns shorter than this are rejected immediately without noisy embeddings.</p>
+                  <p class="text-xs text-muted">Turns shorter than this are dropped by the identity filter without noisy embeddings.</p>
                 </div>
 
                 <!-- Max Overlap Duration -->
@@ -1714,7 +1714,7 @@
                     <label class="form-label font-bold" for="purity-max-overlap">Max Overlap Duration (s)</label>
                   </div>
                   <input type="number" id="purity-max-overlap" class="text-input" min="0.0" max="5.0" step="0.01" value="0.05">
-                  <p class="text-xs text-muted">Maximum allowed overlapping duration with other speakers before vetoing.</p>
+                  <p class="text-xs text-muted">Maximum allowed overlapping duration with other speakers before the identity filter drops a turn.</p>
                 </div>
 
                 <!-- Window Duration & Hop -->
@@ -1734,7 +1734,7 @@
               </div>
 
               <p class="text-xs text-muted hidden" id="purity-embedding-bypass-note" style="margin: 8px 0 0;">
-                <strong>Bypassed:</strong> the direct-audio verifier below listens to every candidate and makes the decision — these embedding checks do not run while it is enabled.
+                <strong>Filter skipped:</strong> embeddings do not verify. The direct-audio verifier below listens to every candidate and makes the purity decision.
               </p>
 
               <div class="purity-overlap-panel" id="purity-overlap-panel">
@@ -1742,8 +1742,8 @@
                   <label class="purity-overlap-toggle" for="purity-overlap-enabled">
                     <input type="checkbox" id="purity-overlap-enabled">
                     <span>
-                      <strong>Direct-audio verification</strong>
-                      <small>Gemma or Gemini listens to every candidate's audio and makes the decision. No embedding gate — the identity model above is skipped while this is enabled.</small>
+                      <strong>Direct-audio verifier</strong>
+                      <small>Gemma or Gemini listens to every candidate and decides pass or reject. Speaker embeddings are an identity filter only — they do not gate this decision.</small>
                     </span>
                   </label>
                   <span class="badge badge-sm badge-ghost" id="purity-overlap-status-badge">Off</span>
@@ -1807,9 +1807,9 @@
               <!-- Hardware Device & HF Token Row -->
               <div class="purity-params-row" style="margin-top: 12px;">
                 <div class="form-group flex-2">
-                  <label class="form-label" for="purity-embedding-model">Speaker identity embedding model (fallback)</label>
+                  <label class="form-label" for="purity-embedding-model">Speaker identity filter model</label>
                   <input type="text" id="purity-embedding-model" class="text-input font-mono" value="pyannote/wespeaker-voxceleb-resnet34-LM" autocomplete="off">
-                  <p class="text-xs text-muted">Compares sliding windows from each candidate turn with the selected profile's enrolled reference clips. Only runs when the direct-audio verifier is disabled; it also serves as the upstream diarization-stage filter.</p>
+                  <p class="text-xs text-muted">Filters turns by cosine similarity to the enrolled profile. This is not a purity verifier. Skipped while the direct-audio verifier is enabled.</p>
                 </div>
                 <div class="form-group flex-1">
                   <label class="form-label" for="purity-device-select">Compute Device:</label>
@@ -1861,7 +1861,7 @@
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
           </div>
           <h3 class="empty-title">No Speaker Purity Analysis Yet</h3>
-          <p class="empty-desc">Select one or more durable diarization results, choose an enrolled target speaker profile, filter candidates if needed, and run the complete turn batch. Imported audio remains available in the fallback panel.</p>
+          <p class="empty-desc">Select diarization results, optionally filter by identity embeddings, then verify remaining candidates with Gemma or Gemini. Imported audio remains available in the fallback panel.</p>
         </div>
 
         <!-- Results & Analytics Container -->

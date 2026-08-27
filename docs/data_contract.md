@@ -142,15 +142,15 @@ Malformed or incomplete model output raises `OverlapVerifierError` instead of
 being coerced into a decision.
 
 SonicStudio purity reports attach a `direct_overlap` object to each serialized
-`SpeakerPurityResult` whenever `POST /api/purity/verify` ran with the
-direct-audio verifier enabled. In that mode it is the decision evidence for
-every candidate — the embedding stage does not run, so `windows` is empty and
-`min_target_similarity` is null. Diarization overlap duration/ratio remain on
-the row but do not decide. The object records backend, model, normalized
-`overlap` decision, model reason, and any request error. Durable-result
-batch verification (`POST /api/diarization/results/verify`) does not attach
-this object. This web-report evidence does not change the core
-`SpeakerPurityResult` dataclass.
+`SpeakerPurityResult` whenever the direct-audio verifier ran — including
+**Verify All Eligible Turns** (`POST /api/diarization/results/verify`) and
+imported audio (`POST /api/purity/verify`). In that mode it is the decision
+evidence for every candidate. Speaker embeddings do not run, so `windows` is
+empty and `min_target_similarity` is null. Diarization overlap duration/ratio
+remain on the row but do not decide. The object records backend, model,
+normalized `overlap` decision, model reason, and any request error. Identity
+filter runs (direct-audio off) do not attach this object. This web-report
+evidence does not change the core `SpeakerPurityResult` dataclass.
 
 ## Pipeline `AudioItem`
 

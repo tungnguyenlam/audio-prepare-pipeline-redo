@@ -87,12 +87,12 @@ defaults to `8888`; set `UNSLOTH_ENDPOINT` when the server needs an otherwise
 custom full URL. The Gemini verifier reads `GEMINI_API_KEY` from `.env` and uses
 `gemini-3.1-pro-preview` by default. Set `GEMINI_MODEL` to override that model.
 SonicStudio's **Speaker Purity** tab uses these values as non-secret defaults
-for the imported-audio workbench (`POST /api/purity/verify`). When that
-direct-audio verifier is enabled, Gemma or Gemini listens to every candidate
-and makes the decision; embedding similarity is not a gate there. Embedding
-`verify_purity` remains the durable-result filter
-(`POST /api/diarization/results/verify`). Backend, model, endpoint, timeout,
-token budget, failure policy, and prompt can all be overridden per run.
+for the direct-audio **verifier**. Speaker embeddings are an identity
+**filter** only: they do not decide purity. When the verifier is enabled,
+Gemma or Gemini listens to every remaining candidate on both
+`POST /api/diarization/results/verify` and `POST /api/purity/verify`. Backend,
+model, endpoint, timeout, token budget, failure policy, and prompt can all
+be overridden per run.
 Hugging Face caches default to `.data/huggingface`. Set `HF_HOME` in `.env`
 only when a different writable cache location is needed.
 

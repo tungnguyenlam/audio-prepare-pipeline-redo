@@ -793,24 +793,25 @@ verifier = create_overlap_verifier(
 result = verifier.verify(audio_segment)
 ```
 
-SonicStudio routes verification on two endpoints:
+SonicStudio routes verification on two endpoints. Speaker embeddings are an
+identity **filter**, not the purity verifier:
 
-- `POST /api/diarization/results/verify` is the durable-result filter. It
-  scores filtered turns with embedding `verify_purity` (duration, diarization
-  overlap, and sliding identity windows against the enrolled profile). It does
-  not call the direct-audio overlap verifier.
-- `POST /api/purity/verify` is the imported/session-audio workbench. When the
-  direct-audio verifier is enabled, every candidate turn is cut and sent to
-  the configured multimodal model, and that answer is the decision. The
-  speaker-embedding stage does not run there and never gates which candidates
-  the verifier sees. Duration and diarization-overlap checks are skipped as
-  vetoes (overlap measurements are still recorded on the report). A positive
-  overlap result rejects the candidate with reason `direct_overlap_detected`.
-  Request failures either become `error` with reason
-  `direct_overlap_verification_failed` (the default fail-closed policy) or
-  keep the candidate as `pass` (the fail-open policy). When the direct
-  verifier is disabled, this endpoint falls back to embedding-only
-  `verify_purity`.
+- `POST /api/diarization/results/verify` first applies speaker / duration /
+  overlap / prior-state filters. When `overlap_verifier.enabled` is true
+  (the workbench **Verify All Eligible Turns** path with Gemma or Gemini on),
+  every remaining candidate is cut and judged by the direct-audio verifier;
+  embeddings do not run and do not gate that decision. When the direct-audio
+  verifier is off, remaining turns are scored with embedding `verify_purity`
+  as an identity filter against the enrolled profile.
+- `POST /api/purity/verify` is the imported/session-audio fallback. The same
+  split applies: the direct-audio verifier decides every candidate when
+  enabled; otherwise embedding `verify_purity` filters by identity.
+
+Duration and diarization-overlap measurements are still recorded on
+direct-audio rows but do not veto. A positive overlap result rejects the
+candidate with reason `direct_overlap_detected`. Request failures either
+become `error` with reason `direct_overlap_verification_failed` (the default
+fail-closed policy) or keep the candidate as `pass` (the fail-open policy).
 
 The web report records backend, model, endpoint, timeout, token budget,
 prompt, and failure policy but never returns the API key.
@@ -962,15 +963,14 @@ The repository provides two specialized web platforms:
   `GET /api/diarization/results/{result_id}/turns/{turn_index}/audio` lazily
   cuts and streams a turn without registering it; and
   `POST /api/diarization/results/verify` queues filtered turns from one or more
-  result IDs as one batch and scores them with embedding `verify_purity`.
-  Filters cover speaker, min/max duration, overlap, and prior verification
-  state. This is the workbench's **Verify All Eligible Turns** path; it never
-  invokes the direct-audio overlap verifier. Reports persist under
-  `.data/diarization/verifications/`. `POST /api/purity/verify` is the
-  imported/session-audio fallback (**Verify imported audio**): when the
-  direct-audio verifier is enabled, Gemma or Gemini decides every candidate
-  with no embedding gate; otherwise it falls back to embedding-only
-  `verify_purity`.
+  result IDs as one batch. This is the workbench's **Verify All Eligible
+  Turns** path. Dropdowns filter the candidate set first. When the
+  direct-audio verifier is enabled, Gemma or Gemini decides every remaining
+  candidate and embeddings do not run. When it is off, embedding
+  `verify_purity` is the identity filter only — not the purity verifier.
+  Reports persist under `.data/diarization/verifications/`.
+  `POST /api/purity/verify` is the imported/session-audio fallback (**Verify
+  imported audio**) with the same filter-vs-verifier split.
 - **Manual annotation and evaluation endpoints:**
   `GET /api/diarization/annotations` lists durable ground-truth references;
   `GET /api/diarization/annotations/{annotation_id}` returns a full reference

@@ -6755,6 +6755,24 @@ function savePurityPreferences() {
   } catch (_) {}
 }
 
+function purityOverlapVerifierPayload() {
+  const overlap = state.purity.overlap;
+  overlap.prompt = el.purityOverlapPrompt?.value.trim() || overlap.prompt;
+  overlap.model = el.purityOverlapModel?.value.trim() || overlap.model;
+  overlap.endpoint = el.purityOverlapEndpoint?.value.trim() || overlap.endpoint;
+  return {
+    enabled: overlap.enabled,
+    backend: overlap.backend,
+    model: overlap.model,
+    endpoint: overlap.backend === 'gemma4' ? overlap.endpoint : undefined,
+    api_key: el.purityOverlapApiKey?.value || undefined,
+    timeout_s: overlap.timeout,
+    max_output_tokens: overlap.maxOutputTokens,
+    prompt: overlap.prompt,
+    failure_policy: overlap.failurePolicy,
+  };
+}
+
 function applyPurityControls() {
   const settings = state.purity.settings;
   const overlap = state.purity.overlap;
@@ -7170,9 +7188,7 @@ async function runSpeakerPurityVerification(forceManual = false) {
     el.purityOverlapPrompt?.focus();
     return;
   }
-  overlap.prompt = overlapPrompt || overlap.prompt;
-  overlap.model = el.purityOverlapModel?.value.trim() || overlap.model;
-  overlap.endpoint = el.purityOverlapEndpoint?.value.trim() || overlap.endpoint;
+  const overlapVerifier = purityOverlapVerifierPayload();
   savePurityPreferences();
 
   state.purity.audioId = audioId;
@@ -7218,17 +7234,7 @@ async function runSpeakerPurityVerification(forceManual = false) {
         model_id: modelId,
         device: device,
         token: token,
-        overlap_verifier: {
-          enabled: overlap.enabled,
-          backend: overlap.backend,
-          model: overlap.model,
-          endpoint: overlap.backend === 'gemma4' ? overlap.endpoint : undefined,
-          api_key: el.purityOverlapApiKey?.value || undefined,
-          timeout_s: overlap.timeout,
-          max_output_tokens: overlap.maxOutputTokens,
-          prompt: overlap.prompt,
-          failure_policy: overlap.failurePolicy,
-        },
+        overlap_verifier: overlapVerifier,
       }),
     });
 
@@ -7274,10 +7280,24 @@ async function runDiarizationResultBatchVerification() {
   const modelId = el.purityEmbeddingModel?.value.trim() || state.purity.settings.modelId;
   const device = el.purityDeviceSelect?.value || 'auto';
   const token = el.purityHfTokenInput?.value || localStorage.getItem('sonic_hf_token') || undefined;
+  const overlap = state.purity.overlap;
+  const overlapPrompt = el.purityOverlapPrompt?.value.trim() || '';
+  if (overlap.enabled && !overlapPrompt) {
+    showToast('The direct-audio verifier prompt cannot be empty', 'error');
+    el.purityOverlapPrompt?.focus();
+    return;
+  }
+  const overlapVerifier = purityOverlapVerifierPayload();
+  savePurityPreferences();
   if (el.btnRunPurity) el.btnRunPurity.disabled = true;
   if (el.btnRunPurityManual) el.btnRunPurityManual.disabled = true;
   if (el.purityTaskProgressBox) el.purityTaskProgressBox.classList.remove('hidden');
-  if (el.purityTaskStatusText) el.purityTaskStatusText.textContent = `Queueing all eligible turns from ${resultIds.length} diarization result(s)…`;
+  if (el.purityTaskStatusText) {
+    const backendName = overlap.backend === 'gemini' ? 'Gemini' : 'Gemma 4';
+    el.purityTaskStatusText.textContent = overlap.enabled
+      ? `Checking eligible turns from ${resultIds.length} result(s) directly with ${backendName}...`
+      : `Filtering eligible turns from ${resultIds.length} diarization result(s) with embeddings…`;
+  }
   try {
     const response = await fetch('/api/diarization/results/verify', {
       method: 'POST',
@@ -7297,6 +7317,7 @@ async function runDiarizationResultBatchVerification() {
         model_id: modelId,
         device,
         token,
+        overlap_verifier: overlapVerifier,
       }),
     });
     const payload = await response.json();
@@ -7308,6 +7329,8 @@ async function runDiarizationResultBatchVerification() {
       passed_candidates: report.counts?.pass || 0,
       rejected_candidates: report.counts?.reject || 0,
       error_candidates: report.counts?.error || 0,
+      direct_overlap_checked: (report.results || []).filter(row => row.direct_overlap).length,
+      direct_overlap_errors: (report.results || []).filter(row => row.direct_overlap?.error).length,
     };
     state.purity.profileName = report.profile;
     state.purity.audioId = null;
@@ -7316,7 +7339,8 @@ async function runDiarizationResultBatchVerification() {
     if (el.purityResultsWrapper) el.purityResultsWrapper.classList.remove('hidden');
     renderPurityResults();
     await loadDiarizationResultsForVerification();
-    showToast(`Batch complete: ${report.counts?.pass || 0} passed, ${report.counts?.reject || 0} rejected, ${report.counts?.error || 0} errors`, 'success');
+    const overlapLabel = report.settings?.overlap_verifier?.enabled ? ' via direct-audio verifier' : ' via identity filter';
+    showToast(`Batch complete: ${report.counts?.pass || 0} passed, ${report.counts?.reject || 0} rejected, ${report.counts?.error || 0} errors${overlapLabel}`, 'success');
   } catch (err) {
     showToast(`Batch verification failed: ${err.message || String(err)}`, 'error');
   } finally {
@@ -7473,7 +7497,9 @@ function renderPurityResults() {
     el.purityResultsMeta.textContent = `${results.length} candidates evaluated (${passDur.toFixed(1)}s pure speech)${directBackend}${directErrors}`;
   }
   if (el.purityWindowsHeading) {
-    el.purityWindowsHeading.textContent = `Sliding Identity Windows (${runWindowDuration}s window / ${runWindowHop}s hop)`;
+    el.purityWindowsHeading.textContent = runSettings.overlap_verifier?.enabled
+      ? 'Identity windows skipped — direct-audio verifier decided'
+      : `Sliding Identity Windows (${runWindowDuration}s window / ${runWindowHop}s hop)`;
   }
 
   // Summary Metrics
@@ -7486,7 +7512,11 @@ function renderPurityResults() {
   const passedWindows = passed.flatMap(r => r.windows || []);
   const avgSim = passedWindows.length > 0 ? (passedWindows.reduce((s, w) => s + w.similarity, 0) / passedWindows.length) : null;
   if (el.purityMetricAvgSimilarity) el.purityMetricAvgSimilarity.textContent = avgSim !== null ? avgSim.toFixed(3) : '—';
-  if (el.purityMetricMinSimilarity) el.purityMetricMinSimilarity.textContent = `Threshold: ≥ ${threshold.toFixed(2)}`;
+  if (el.purityMetricMinSimilarity) {
+    el.purityMetricMinSimilarity.textContent = runSettings.overlap_verifier?.enabled
+      ? 'Identity filter skipped — direct-audio verifier decided'
+      : `Identity filter threshold: ≥ ${threshold.toFixed(2)}`;
+  }
 
   // Rejection Breakdown Pills
   if (el.purityReasonsPills) {
