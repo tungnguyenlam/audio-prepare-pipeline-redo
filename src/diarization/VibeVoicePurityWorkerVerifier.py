@@ -1,0 +1,261 @@
+"""Main-environment proxy for isolated VibeVoice-ASR purity inference."""
+
+from __future__ import annotations
+
+from collections import deque
+import json
+import logging
+import os
+import signal
+import subprocess
+import threading
+from pathlib import Path
+from typing import Any
+
+from src.base.model import ManagedModel
+from src.diarization.schemas import VibeVoicePurityResult
+from src.diarization.VibeVoicePurityVerifier import (
+    DEFAULT_MAX_NEW_TOKENS,
+    DEFAULT_MIN_SECONDARY_SPEECH_S,
+    DEFAULT_VIBEVOICE_MODEL_ID,
+    VibeVoicePurityError,
+)
+from src.utils.AudioClass import Audio
+
+logger = logging.getLogger(__name__)
+
+_PROTOCOL_PREFIX = "@@VIBEVOICE_PURITY_RPC@@"
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+
+class VibeVoicePurityWorkerVerifier(ManagedModel):
+    """Run VibeVoice-ASR purity verification in a persistent isolated process.
+
+    The public ``verify()`` / ``verify_batch()`` contract matches
+    :class:`VibeVoicePurityVerifier`. ``load()`` starts
+    ``.venv-vibevoice/bin/python -m src.diarization.vibevoice_purity_worker``.
+    """
+
+    def __init__(
+        self,
+        model_id: str = DEFAULT_VIBEVOICE_MODEL_ID,
+        *,
+        device: str = "auto",
+        token: str | None = None,
+        min_secondary_speech_s: float = DEFAULT_MIN_SECONDARY_SPEECH_S,
+        max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
+        attn_implementation: str = "sdpa",
+        worker_python: str | Path | None = None,
+    ) -> None:
+        """Initialize the isolated VibeVoice proxy.
+
+        Args mirror :class:`VibeVoicePurityVerifier`; ``worker_python``
+        overrides the default ``.venv-vibevoice/bin/python``.
+        """
+        ManagedModel.__init__(self)
+        configured_python = worker_python or os.getenv("VIBEVOICE_PYTHON")
+        self.worker_python = Path(
+            configured_python
+            if configured_python is not None
+            else _REPO_ROOT / ".venv-vibevoice" / "bin" / "python"
+        ).expanduser()
+        self._config: dict[str, Any] = {
+            "model_id": model_id,
+            "device": device,
+            "token": token,
+            "min_secondary_speech_s": min_secondary_speech_s,
+            "max_new_tokens": max_new_tokens,
+            "attn_implementation": attn_implementation,
+        }
+        self._process: subprocess.Popen[str] | None = None
+        self._request_lock = threading.Lock()
+        self._output_tail: deque[str] = deque(maxlen=100)
+        self._cancel_requested = False
+
+    def _load(self) -> None:
+        """Start the isolated worker and load VibeVoice-ASR once."""
+        worker_python = (
+            self.worker_python
+            if self.worker_python.is_absolute()
+            else _REPO_ROOT / self.worker_python
+        ).expanduser()
+        if not worker_python.is_file():
+            raise VibeVoicePurityError(
+                f"VibeVoice worker Python does not exist: {worker_python}. "
+                "Create .venv-vibevoice from requirements-vibevoice.txt or set "
+                "VIBEVOICE_PYTHON."
+            )
+        self._cancel_requested = False
+        worker_environment = os.environ.copy()
+        worker_environment["VIRTUAL_ENV"] = str(worker_python.parent.parent)
+        worker_environment["PATH"] = os.pathsep.join(
+            [str(worker_python.parent), worker_environment.get("PATH", "")]
+        )
+        worker_environment["PYTHONNOUSERSITE"] = "1"
+        worker_environment.setdefault(
+            "HF_HOME",
+            os.environ.get("HF_HOME") or str(_REPO_ROOT / ".data" / "huggingface"),
+        )
+        worker_config = dict(self._config)
+        requested_device = str(worker_config["device"])
+        if requested_device.startswith("cuda:"):
+            worker_environment["CUDA_VISIBLE_DEVICES"] = requested_device.split(":", 1)[1]
+            worker_config["device"] = "cuda:0"
+        elif requested_device == "cpu":
+            worker_environment["CUDA_VISIBLE_DEVICES"] = ""
+        process = subprocess.Popen(
+            [
+                str(worker_python),
+                "-u",
+                "-m",
+                "src.diarization.vibevoice_purity_worker",
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            cwd=str(_REPO_ROOT),
+            env=worker_environment,
+            start_new_session=True,
+        )
+        self._process = process
+        try:
+            self._request({"action": "load", "config": worker_config})
+        except Exception:
+            self._stop_process(process)
+            self._process = None
+            raise
+
+    def _unload(self) -> None:
+        """Unload the worker model and reap the isolated process."""
+        process = self._process
+        if process is None:
+            return
+        if process.poll() is None and not self._cancel_requested:
+            try:
+                self._request({"action": "close"})
+            except Exception:
+                logger.warning(
+                    "VibeVoice purity worker did not close cleanly",
+                    exc_info=True,
+                )
+        self._stop_process(process)
+        self._process = None
+
+    def verify(self, audio: Audio) -> VibeVoicePurityResult:
+        """Verify ``audio`` through the persistent isolated worker."""
+        if not self.is_loaded or self._process is None:
+            raise RuntimeError(
+                "VibeVoice purity worker is not loaded. Call load() first "
+                "or use it as a context manager."
+            )
+        if not Path(audio.path).is_file():
+            raise FileNotFoundError(f"Audio file does not exist: {audio.path}")
+        payload = self._request(
+            {
+                "action": "verify",
+                "audio": {
+                    "path": str(Path(audio.path).resolve()),
+                    "source_id": audio.source_id,
+                    "title": audio.title,
+                    "source_url": audio.source_url,
+                    "channel_id": audio.channel_id,
+                    "channel_name": audio.channel_name,
+                    "channel_url": audio.channel_url,
+                    "sample_rate": audio.sample_rate,
+                    "duration_s": audio.duration_s,
+                    "channels": audio.channels,
+                    "format": audio.format,
+                    "native_sample_rate": audio.native_sample_rate,
+                    "history": list(audio.history),
+                },
+            }
+        )
+        return VibeVoicePurityResult.from_dict(payload)
+
+    def verify_batch(self, audios: list[Audio]) -> list[VibeVoicePurityResult]:
+        """Verify candidates sequentially through the persistent worker."""
+        return [self.verify(audio) for audio in audios]
+
+    def close(self) -> None:
+        """Compatibility alias that unloads and reaps the worker."""
+        self.unload()
+
+    def _request(self, payload: dict[str, Any]) -> Any:
+        with self._request_lock:
+            process = self._process
+            if process is None or process.poll() is not None:
+                raise RuntimeError(self._worker_exit_message(process))
+            if process.stdin is None or process.stdout is None:
+                raise RuntimeError("VibeVoice purity worker pipes are unavailable")
+            try:
+                process.stdin.write(json.dumps(payload, ensure_ascii=False) + "\n")
+                process.stdin.flush()
+            except BrokenPipeError as exc:
+                raise RuntimeError(self._worker_exit_message(process)) from exc
+            for line in process.stdout:
+                message = line.rstrip()
+                if not message:
+                    continue
+                protocol_index = message.find(_PROTOCOL_PREFIX)
+                if protocol_index < 0:
+                    self._output_tail.append(message)
+                    logger.info("VibeVoice purity worker: %s", message)
+                    continue
+                preceding_output = message[:protocol_index].strip()
+                if preceding_output:
+                    self._output_tail.append(preceding_output)
+                    logger.info("VibeVoice purity worker: %s", preceding_output)
+                response = json.loads(
+                    message[protocol_index + len(_PROTOCOL_PREFIX) :]
+                )
+                if response.get("ok"):
+                    return response.get("result")
+                detail = response.get("error") or "unknown worker error"
+                traceback_text = response.get("traceback") or ""
+                raise RuntimeError(
+                    f"VibeVoice purity worker failed: {detail}\n"
+                    f"{traceback_text[-3000:]}"
+                )
+            raise RuntimeError(self._worker_exit_message(process))
+
+    def _worker_exit_message(
+        self,
+        process: subprocess.Popen[str] | None,
+    ) -> str:
+        returncode = process.poll() if process is not None else None
+        detail = "\n".join(self._output_tail).strip()
+        if self._cancel_requested:
+            return "VibeVoice purity worker was cancelled"
+        return (
+            f"VibeVoice purity worker exited unexpectedly (exit {returncode}): "
+            f"{detail[-3000:] or 'no output'}"
+        )
+
+    @staticmethod
+    def _stop_process(process: subprocess.Popen[str]) -> None:
+        if process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                return
+            except OSError:
+                process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    return
+                except OSError:
+                    process.kill()
+                process.wait(timeout=5)
+        if process.stdin is not None:
+            try:
+                process.stdin.close()
+            except BrokenPipeError:
+                pass
+        if process.stdout is not None:
+            process.stdout.close()

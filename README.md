@@ -71,28 +71,34 @@ UNSLOTH_PORT=8888
 UNSLOTH_MODEL=unsloth/gemma-4-12b-it-GGUF
 UNSLOTH_API_KEY=sk-unsloth-...
 
-# Or select Gemini overlap verification
-# OVERLAP_VERIFIER=gemini
+# Or select VibeVoice-ASR speaker-count verification (isolated .venv-vibevoice)
+# OVERLAP_VERIFIER=vibevoice
+# VIBEVOICE_MODEL=microsoft/VibeVoice-ASR-HF
+# VIBEVOICE_PYTHON=/path/to/.venv-vibevoice/bin/python
 # GEMINI_API_KEY=...
 ```
 
 `HF_TOKEN` is required for Pyannote and DiariZen (and for 3D-Speaker overlap
 refinement). DiariZen's released weights are CC BY-NC 4.0 and therefore only
 suitable for research and other non-commercial use.
-`OVERLAP_VERIFIER` selects `gemma4` or `gemini`. The Gemma verifier sends WAV
-or MP3 segments to the configured Unsloth Studio chat-completions endpoint;
-`UNSLOTH_API_KEY` is optional only when that endpoint does not require
-authentication. `UNSLOTH_HOST` defaults to `localhost` and `UNSLOTH_PORT`
-defaults to `8888`; set `UNSLOTH_ENDPOINT` when the server needs an otherwise
-custom full URL. The Gemini verifier reads `GEMINI_API_KEY` from `.env` and uses
-`gemini-3.1-pro-preview` by default. Set `GEMINI_MODEL` to override that model.
+`OVERLAP_VERIFIER` selects `gemma4`, `gemini`, or `vibevoice`. The Gemma
+verifier sends WAV or MP3 segments to the configured Unsloth Studio
+chat-completions endpoint; `UNSLOTH_API_KEY` is optional only when that
+endpoint does not require authentication. `UNSLOTH_HOST` defaults to
+`localhost` and `UNSLOTH_PORT` defaults to `8888`; set `UNSLOTH_ENDPOINT`
+when the server needs an otherwise custom full URL. The Gemini verifier
+reads `GEMINI_API_KEY` from `.env` and uses `gemini-3.1-pro-preview` by
+default. Set `GEMINI_MODEL` to override that model. VibeVoice-ASR counts
+distinct speakers on each whole candidate (no prompt, no embeddings); it
+runs in `.venv-vibevoice` and defaults to `microsoft/VibeVoice-ASR-HF`.
+Set `VIBEVOICE_MODEL` / `VIBEVOICE_PYTHON` to override.
 SonicStudio's **Speaker Purity** tab uses these values as non-secret defaults
 for the direct-audio **verifier**. Speaker embeddings are an identity
 **filter** only: they do not decide purity. When the verifier is enabled,
-Gemma or Gemini listens to every remaining candidate on both
+Gemma, Gemini, or VibeVoice listens to every remaining candidate on both
 `POST /api/diarization/results/verify` and `POST /api/purity/verify`. Backend,
 model, endpoint, timeout, token budget, failure policy, and prompt can all
-be overridden per run.
+be overridden per run (VibeVoice ignores prompt, API key, and timeout).
 Hugging Face caches default to `.data/huggingface`. Set `HF_HOME` in `.env`
 only when a different writable cache location is needed.
 
@@ -163,6 +169,16 @@ When an isolated backend is selected, the server starts a persistent worker in
 its corresponding environment and reuses the loaded model. Other models stay
 in the primary `.venv`; you do not need to restart the server when switching.
 
+**VibeVoice-ASR speaker-purity verifier** needs Transformers 5.3+
+(`VibeVoiceAsrForConditionalGeneration`), which is isolated from the primary
+stack. Create this only on the model server:
+
+```bash
+uv venv --python .venv/bin/python .venv-vibevoice
+UV_PROJECT_ENVIRONMENT=.venv-vibevoice uv sync --frozen --no-dev
+uv pip install --python .venv-vibevoice/bin/python -r requirements-vibevoice.txt
+```
+
 Optional overrides:
 
 | Variable | Purpose |
@@ -171,6 +187,8 @@ Optional overrides:
 | `DIARIZEN_PYTHON` | Path to the DiariZen interpreter if not `.venv-diarizen` |
 | `THREEDSPEAKER_PYTHON` | Path to the 3D-Speaker interpreter if not `.venv-3dspeaker` |
 | `THREEDSPEAKER_ROOT` | 3D-Speaker checkout path if not `.data/3d-speaker` |
+| `VIBEVOICE_PYTHON` | Path to the VibeVoice interpreter if not `.venv-vibevoice` |
+| `VIBEVOICE_MODEL` | Hugging Face ID if not `microsoft/VibeVoice-ASR-HF` |
 
 ### 4. Run the web applications
 
@@ -262,7 +280,7 @@ do not run model inference on it. The web backend and model inference run on
 Synchronize source changes with the scripts in `scripts/sync/` (credentials and
 runtime `.data/` stay machine-local). Install and maintain the model-serving
 environments (primary `.venv` plus optional `.venv-sortformer` /
-`.venv-diarizen` / `.venv-3dspeaker`) on the server rather than on the
+`.venv-diarizen` / `.venv-3dspeaker` / `.venv-vibevoice`) on the server rather than on the
 development machine.
 
 ---

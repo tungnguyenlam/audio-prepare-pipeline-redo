@@ -129,6 +129,33 @@ Each result covers one diarization-turn candidate and records:
 state. Only `pass` enters the dataset. Both `reject` and `error` fail closed,
 while `error` remains distinguishable so callers may retry it.
 
+## `VibeVoicePurityResult`
+
+Speaker-count purity from VibeVoice-ASR structured diarization. The transcript
+is not part of the decision.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema_version` | `str` | Currently `"1.0"`. |
+| `audio_id` | `str` | Candidate identity (`Audio.source_id`). |
+| `decision` | `pass` / `reject` / `uncertain` | Admit, exclude, or hold for review. |
+| `reason` | `str` | `single_speaker`, `multiple_speakers`, `tiny_secondary_speaker`, `empty_output`, `no_speaker_labels`, or `inference_error`. |
+| `num_speakers` | `int` | Distinct speaker IDs with positive duration. |
+| `secondary_speech_s` | `float` | Total duration of non-dominant speakers. |
+| `speaker_turns` | `tuple[VibeVoiceSpeakerTurn, ...]` | Timestamped speaker intervals (no text). |
+| `dominant_speaker_id` | `int \| None` | Speaker with the longest total duration. |
+| `model` | `DiarizationModelInfo \| None` | Backend metadata (`vibevoice-asr`). |
+| `error` | `str \| None` | Present only for `inference_error`. |
+
+`passed` is true only for `decision == "pass"`. A short secondary blip below
+`min_secondary_speech_s` is `uncertain`, not `pass` and not `reject`.
+
+SonicStudio purity rows attach a `vibevoice` object when this verifier ran:
+`num_speakers`, `dominant_speaker_id`, `secondary_speech_s`, `reason`, and
+`speaker_turns`. Those web rows may use `decision: "uncertain"`; that does not
+change the embedding `SpeakerPurityResult` dataclass, which remains
+`pass` / `reject` / `error`.
+
 ## `OverlapVerificationResult`
 
 Every direct-audio overlap verifier returns the same two-field mapping:
@@ -142,15 +169,16 @@ Malformed or incomplete model output raises `OverlapVerifierError` instead of
 being coerced into a decision.
 
 SonicStudio purity reports attach a `direct_overlap` object to each serialized
-`SpeakerPurityResult` whenever the direct-audio verifier ran — including
+row whenever the Gemma or Gemini overlap verifier ran — including
 **Verify All Eligible Turns** (`POST /api/diarization/results/verify`) and
-imported audio (`POST /api/purity/verify`). In that mode it is the decision
-evidence for every candidate. Speaker embeddings do not run, so `windows` is
-empty and `min_target_similarity` is null. Diarization overlap duration/ratio
-remain on the row but do not decide. The object records backend, model,
-normalized `overlap` decision, model reason, and any request error. Identity
-filter runs (direct-audio off) do not attach this object. This web-report
-evidence does not change the core `SpeakerPurityResult` dataclass.
+imported audio (`POST /api/purity/verify`). VibeVoice-ASR runs attach
+`vibevoice` instead (see `VibeVoicePurityResult`). In both modes embeddings
+do not run, so `windows` is empty and `min_target_similarity` is null.
+Diarization overlap duration/ratio remain on the row but do not decide. The
+`direct_overlap` object records backend, model, normalized `overlap`
+decision, model reason, and any request error. Identity filter runs
+(direct-audio off) attach neither object. This web-report evidence does not
+change the core `SpeakerPurityResult` dataclass.
 
 ## Pipeline `AudioItem`
 

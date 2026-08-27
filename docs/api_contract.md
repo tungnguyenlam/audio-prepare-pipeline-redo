@@ -10,6 +10,8 @@ flowchart TD
     DIARIZER --> DIARIZATION[DiarizationResult]
     AUDIO --> OVERLAP_VERIFIER[BaseOverlapVerifier implementation]
     OVERLAP_VERIFIER --> OVERLAP_RESULT[OverlapVerificationResult]
+    AUDIO --> VIBEVOICE[VibeVoicePurityVerifier]
+    VIBEVOICE --> VIBEVOICE_RESULT[VibeVoicePurityResult]
     AUDIO --> MIXER[AudioMixer]
     CLEAN_AUDIO --> MIXER
     MIXER --> MIX_RESULT[AudioMixResult]
@@ -798,11 +800,11 @@ identity **filter**, not the purity verifier:
 
 - `POST /api/diarization/results/verify` first applies speaker / duration /
   overlap / prior-state filters. When `overlap_verifier.enabled` is true
-  (the workbench **Verify All Eligible Turns** path with Gemma or Gemini on),
-  every remaining candidate is cut and judged by the direct-audio verifier;
-  embeddings do not run and do not gate that decision. When the direct-audio
-  verifier is off, remaining turns are scored with embedding `verify_purity`
-  as an identity filter against the enrolled profile.
+  (the workbench **Verify All Eligible Turns** path with Gemma, Gemini, or
+  VibeVoice-ASR on), every remaining candidate is cut and judged by that
+  verifier; embeddings do not run and do not gate that decision. When the
+  direct-audio verifier is off, remaining turns are scored with embedding
+  `verify_purity` as an identity filter against the enrolled profile.
 - `POST /api/purity/verify` is the imported/session-audio fallback. The same
   split applies: the direct-audio verifier decides every candidate when
   enabled; otherwise embedding `verify_purity` filters by identity.
@@ -819,6 +821,57 @@ prompt, and failure policy but never returns the API key.
 When the mapping omits `backend`, selection falls back to
 `OVERLAP_VERIFIER`. Callers compose this verification step where needed; it is
 not automatically chained to crawling, separation, or diarization.
+
+### `VibeVoicePurityVerifier`
+
+**Defined in:** `src/diarization/VibeVoicePurityVerifier.py`
+
+VibeVoice-ASR itself is the speaker-purity verifier. It runs the **whole**
+candidate file through Transformers-native `microsoft/VibeVoice-ASR-HF`
+(`transformers>=5.3.0`), ignores the transcript, and classifies from
+speaker-count plus per-speaker duration:
+
+- exactly one speaker → `pass` (`single_speaker`)
+- a second speaker whose total duration is `>= min_secondary_speech_s`
+  (default `0.25`) → `reject` (`multiple_speakers`)
+- empty output, missing speaker labels, a tiny secondary turn, or an
+  inference exception → `uncertain`
+
+This answers “does this clip contain more than one speaker?”, not “is this
+the enrolled identity?”. Do not slice the candidate into sub-second windows
+first; the model uses the full clip as context.
+
+```python
+from src.diarization import VibeVoicePurityVerifier
+
+with VibeVoicePurityVerifier(device="cuda") as verifier:
+    result = verifier.verify(candidate_audio)
+# result.decision in {"pass", "reject", "uncertain"}
+```
+
+- `verify(audio: Audio) -> VibeVoicePurityResult` requires `load()` (or a
+  `with` block). Missing files raise `FileNotFoundError`. Model/generation
+  failures return `uncertain` / `inference_error` so a batch can continue.
+- `verify_batch(audios)` calls `verify()` per file.
+- `classify_vibevoice_segments(segments, *, audio_id, ...)` is the pure
+  decision function over already-parsed `{start_time, end_time, speaker_id}`
+  dicts.
+- `_load()` / `_unload()` follow `ManagedModel`. CUDA uses `bfloat16`.
+
+The web applications use `VibeVoicePurityWorkerVerifier`, which starts
+`.venv-vibevoice/bin/python -m src.diarization.vibevoice_purity_worker`.
+Override the interpreter with `VIBEVOICE_PYTHON`. `cuda:N` is isolated with
+`CUDA_VISIBLE_DEVICES`. Create that environment only on the model server.
+
+SonicStudio `overlap_verifier.backend: "vibevoice"` on
+`POST /api/diarization/results/verify` and `POST /api/purity/verify` cuts
+each candidate and runs this verifier. Embeddings do not run. Serialized
+rows attach a `vibevoice` evidence object (speaker count, dominant speaker,
+secondary duration, speaker turns) and may use `decision: "uncertain"`.
+Worker-process failures follow `failure_policy` (`fail_closed` → `error` /
+`vibevoice_verification_failed`; `fail_open` → keep `pass`).
+`GET /api/purity/config` returns the VibeVoice defaults when
+`OVERLAP_VERIFIER=vibevoice`.
 
 ## 6. Benchmark mixing API
 
@@ -864,11 +917,13 @@ classes.
 
 `Speaker`, `SpeakerTurn`, `DiarizationModelInfo`, `DiarizationResult`,
 `ScoredSegment`, `TargetSpeakerResult`, `SpeakerProfile`,
+`SpeakerPurityResult`, `VibeVoiceSpeakerTurn`, `VibeVoicePurityResult`,
 `BenchmarkDefinition`, `MixingParameters`, `AudioMixResult`, and
 `SeparationBenchmarkSample` are dataclasses. `DiarizationResult` additionally
 defines canonical `to_dict()` / `from_dict()` round-tripping, atomic
 `save()` / `load()` persistence, source/turn validation, and derived summary
-properties. Python supplies the remaining standard dataclass methods.
+properties. `VibeVoicePurityResult` also defines `to_dict()` / `from_dict()`.
+Python supplies the remaining standard dataclass methods.
 
 ## 9. Web application platforms
 

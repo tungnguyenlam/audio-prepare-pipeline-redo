@@ -27,6 +27,7 @@ DEFAULT_UNSLOTH_ENDPOINT = (
 )
 DEFAULT_GEMMA4_MODEL_ID = "unsloth/gemma-4-12b-it-GGUF"
 DEFAULT_GEMINI_MODEL_ID = "gemini-3.1-pro-preview"
+UNSLOTH_PROBE_TIMEOUT_S = 5.0
 
 _OVERLAP_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -60,11 +61,24 @@ class OverlapVerificationResult(TypedDict):
 
 
 class OverlapVerifierError(RuntimeError):
-    """Raised when overlap verification cannot produce a valid decision."""
+    """Raised when overlap verification cannot produce a valid decision.
+
+    ``readiness`` is true when the backend itself is unreachable, still
+    loading, or has no model — as opposed to a single malformed answer.
+    """
+
+    def __init__(self, message: str, *, readiness: bool = False) -> None:
+        super().__init__(message)
+        self.readiness = bool(readiness)
 
 
 class BaseOverlapVerifier(ABC):
     """Backend-independent interface for direct-audio overlap verification."""
+
+    def check_ready(self, *, timeout_s: float | None = None) -> dict[str, Any]:
+        """Return whether this backend can accept candidate audio."""
+        del timeout_s
+        return {"ready": True, "message": "Ready.", "models": []}
 
     @abstractmethod
     def verify(self, audio: Audio) -> OverlapVerificationResult:
@@ -108,6 +122,61 @@ class Gemma4OverlapVerifier(BaseOverlapVerifier):
         self.timeout_s = _validate_timeout(timeout_s)
         self.prompt = _validate_prompt(prompt)
         self.max_output_tokens = _validate_max_output_tokens(max_output_tokens)
+
+    def check_ready(self, *, timeout_s: float | None = None) -> dict[str, Any]:
+        """Probe Unsloth before sending candidate audio.
+
+        Returns:
+            ``ready``, ``message``, and any model IDs advertised at
+            ``/v1/models``. Never raises; unreadiness is the result.
+        """
+        probe_timeout = (
+            UNSLOTH_PROBE_TIMEOUT_S if timeout_s is None else _validate_timeout(timeout_s)
+        )
+        headers = {}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        models_url = _unsloth_models_url(self.endpoint)
+        try:
+            payload = _get_json(
+                models_url,
+                headers=headers,
+                timeout_s=probe_timeout,
+                backend="Unsloth",
+            )
+        except OverlapVerifierError as exc:
+            return {
+                "ready": False,
+                "message": _unsloth_unready_message(self.endpoint, str(exc)),
+                "models": [],
+            }
+
+        models = _openai_model_ids(payload)
+        if not models:
+            return {
+                "ready": False,
+                "message": (
+                    "Unsloth is reachable but has no model loaded at "
+                    f"{models_url}. Wait until the Gemma checkpoint finishes "
+                    "loading, then retry."
+                ),
+                "models": [],
+            }
+        if self.model and self.model not in models:
+            return {
+                "ready": True,
+                "message": (
+                    f"Unsloth is up with {', '.join(models)}. Configured "
+                    f"model {self.model!r} is not in that list; requests may "
+                    "fail if the ID does not match the loaded checkpoint."
+                ),
+                "models": models,
+            }
+        return {
+            "ready": True,
+            "message": f"Unsloth is ready ({', '.join(models)}).",
+            "models": models,
+        }
 
     def verify(self, audio: Audio) -> OverlapVerificationResult:
         """Send the audio segment directly to the local Gemma model."""
@@ -158,11 +227,25 @@ class Gemma4OverlapVerifier(BaseOverlapVerifier):
             backend="Unsloth",
         )
         try:
-            content = response["choices"][0]["message"]["content"]
+            choice = response["choices"][0]
+            message = choice["message"]
+            content = message.get("content")
+            finish_reason = choice.get("finish_reason")
         except (KeyError, IndexError, TypeError) as exc:
             raise OverlapVerifierError(
-                "Unsloth returned no assistant message content"
+                "Unsloth returned no assistant message content. The server "
+                "may still be loading the model."
             ) from exc
+        if content in (None, "", []):
+            raise OverlapVerifierError(
+                "Unsloth returned empty assistant content"
+                + (
+                    f" (finish_reason={finish_reason!r})"
+                    if finish_reason
+                    else ""
+                )
+                + ". The model may still be loading or the request was dropped."
+            )
         return _normalize_result(content, backend="Unsloth")
 
 
@@ -194,11 +277,27 @@ class GeminiOverlapVerifier(BaseOverlapVerifier):
         self.prompt = _validate_prompt(prompt)
         self.max_output_tokens = _validate_max_output_tokens(max_output_tokens)
 
+    def check_ready(self, *, timeout_s: float | None = None) -> dict[str, Any]:
+        """Return whether Gemini can be called. ``timeout_s`` is unused."""
+        del timeout_s
+        if not self.api_key:
+            return {
+                "ready": False,
+                "message": "Gemini API key is not configured; set GEMINI_API_KEY.",
+                "models": [],
+            }
+        return {
+            "ready": True,
+            "message": f"Gemini API key is configured for {self.model}.",
+            "models": [self.model],
+        }
+
     def verify(self, audio: Audio) -> OverlapVerificationResult:
         """Send the audio segment directly to Gemini 3.1 Pro."""
         if not self.api_key:
             raise OverlapVerifierError(
-                "Gemini API key is not configured; set GEMINI_API_KEY"
+                "Gemini API key is not configured; set GEMINI_API_KEY",
+                readiness=True,
             )
 
         audio_bytes, _, mime_type = _read_audio(audio)
@@ -317,16 +416,42 @@ def _post_json(
         headers={"Content-Type": "application/json", **headers},
         method="POST",
     )
+    return _send_json_request(request, timeout_s=timeout_s, backend=backend)
+
+
+def _get_json(
+    endpoint: str,
+    *,
+    headers: Mapping[str, str],
+    timeout_s: float,
+    backend: str,
+) -> dict[str, Any]:
+    """GET JSON and return a decoded object with backend-specific errors."""
+    request = Request(endpoint, headers=dict(headers), method="GET")
+    return _send_json_request(request, timeout_s=timeout_s, backend=backend)
+
+
+def _send_json_request(
+    request: Request,
+    *,
+    timeout_s: float,
+    backend: str,
+) -> dict[str, Any]:
+    """Execute one JSON HTTP request and fail loudly on transport or API errors."""
     try:
         with urlopen(request, timeout=timeout_s) as response:
             body = response.read().decode("utf-8")
     except HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
         raise OverlapVerifierError(
-            f"{backend} request failed with HTTP {exc.code}: {detail}"
+            f"{backend} request failed with HTTP {exc.code}: {detail}",
+            readiness=_http_code_is_readiness(exc.code),
         ) from exc
     except (URLError, TimeoutError, OSError) as exc:
-        raise OverlapVerifierError(f"{backend} request failed: {exc}") from exc
+        raise OverlapVerifierError(
+            f"{backend} is not reachable: {exc}",
+            readiness=True,
+        ) from exc
 
     try:
         decoded = json.loads(body)
@@ -334,6 +459,16 @@ def _post_json(
         raise OverlapVerifierError(f"{backend} returned invalid JSON") from exc
     if not isinstance(decoded, dict):
         raise OverlapVerifierError(f"{backend} returned a non-object response")
+    api_error = decoded.get("error")
+    if api_error:
+        if isinstance(api_error, dict):
+            detail = str(api_error.get("message") or api_error)
+        else:
+            detail = str(api_error)
+        raise OverlapVerifierError(
+            f"{backend} returned an error: {detail}",
+            readiness=_message_is_readiness(detail),
+        )
     return decoded
 
 
@@ -412,3 +547,66 @@ def _default_unsloth_endpoint() -> str:
     if not 1 <= port <= 65535:
         raise ValueError("UNSLOTH_PORT must be between 1 and 65535")
     return f"http://{host}:{port}/v1/chat/completions"
+
+
+def _unsloth_models_url(endpoint: str) -> str:
+    """Derive the OpenAI-compatible ``/v1/models`` URL from a chat endpoint."""
+    url = str(endpoint).rstrip("/")
+    if url.endswith("/chat/completions"):
+        return url[: -len("/chat/completions")] + "/models"
+    if url.endswith("/v1"):
+        return f"{url}/models"
+    return f"{url}/models"
+
+
+def _openai_model_ids(payload: Mapping[str, Any]) -> list[str]:
+    """Extract model IDs from an OpenAI-style ``/v1/models`` body."""
+    data = payload.get("data")
+    if not isinstance(data, list):
+        model = payload.get("id") or payload.get("model")
+        return [str(model)] if model else []
+    ids: list[str] = []
+    for item in data:
+        if isinstance(item, dict) and item.get("id"):
+            ids.append(str(item["id"]))
+        elif isinstance(item, str) and item.strip():
+            ids.append(item.strip())
+    return ids
+
+
+def _http_code_is_readiness(code: int) -> bool:
+    """True when the HTTP status means the server is down or still loading."""
+    return code in {408, 429, 502, 503, 504} or code >= 500
+
+
+def _message_is_readiness(message: str) -> bool:
+    """True when an API error string means the backend is not ready."""
+    text = message.lower()
+    markers = (
+        "not ready",
+        "not loaded",
+        "still loading",
+        "model is loading",
+        "no model",
+        "unavailable",
+        "overloaded",
+        "connection refused",
+        "timed out",
+        "timeout",
+    )
+    return any(marker in text for marker in markers)
+
+
+def _unsloth_unready_message(endpoint: str, detail: str) -> str:
+    """Human-readable Unsloth unreadiness text for the workbench."""
+    return (
+        f"Unsloth is not ready at {endpoint}. {detail.rstrip('.')}."
+        " Start Unsloth Studio, wait until Gemma finishes loading, then retry."
+    )
+
+
+def is_overlap_readiness_error(exc: BaseException) -> bool:
+    """True when verification failed because the backend is down or loading."""
+    if isinstance(exc, OverlapVerifierError) and exc.readiness:
+        return True
+    return _message_is_readiness(str(exc))

@@ -22,6 +22,7 @@ from src.diarization.OverlapVerifier import (
     OverlapVerifierError,
     OVERLAP_PROMPT,
     create_overlap_verifier,
+    is_overlap_readiness_error,
 )
 from src.diarization.PyannoteDiarizer import (
     DEFAULT_PYANNOTE_MODEL_ID,
@@ -40,6 +41,15 @@ from src.diarization.SpeakerVerifier import (
 )
 from src.diarization.ThreeDSpeakerDiarizer import ThreeDSpeakerDiarizer
 from src.diarization.ThreeDSpeakerWorkerDiarizer import ThreeDSpeakerWorkerDiarizer
+from src.diarization.VibeVoicePurityVerifier import (
+    DEFAULT_MAX_NEW_TOKENS,
+    DEFAULT_MIN_SECONDARY_SPEECH_S,
+    DEFAULT_VIBEVOICE_MODEL_ID,
+    VibeVoicePurityError,
+    VibeVoicePurityVerifier,
+    classify_vibevoice_segments,
+)
+from src.diarization.VibeVoicePurityWorkerVerifier import VibeVoicePurityWorkerVerifier
 from src.diarization.turn_cleanup import (
     DEFAULT_BOUNDARY_COLLAR_S,
     DEFAULT_JITTER_MAX_DURATION_S,
@@ -59,6 +69,8 @@ from src.diarization.schemas import (
     SpeakerSimilarityWindow,
     SpeakerTurn,
     TargetSpeakerResult,
+    VibeVoicePurityResult,
+    VibeVoiceSpeakerTurn,
 )
 
 __all__ = [
@@ -78,6 +90,9 @@ __all__ = [
     "DEFAULT_UNSLOTH_ENDPOINT",
     "DEFAULT_UNSLOTH_HOST",
     "DEFAULT_UNSLOTH_PORT",
+    "DEFAULT_MAX_NEW_TOKENS",
+    "DEFAULT_MIN_SECONDARY_SPEECH_S",
+    "DEFAULT_VIBEVOICE_MODEL_ID",
     "DiarizationModelInfo",
     "DiarizationResult",
     "DiariZenDiarizer",
@@ -101,6 +116,12 @@ __all__ = [
     "TargetSpeakerResult",
     "ThreeDSpeakerDiarizer",
     "ThreeDSpeakerWorkerDiarizer",
+    "VibeVoicePurityError",
+    "VibeVoicePurityResult",
+    "VibeVoicePurityVerifier",
+    "VibeVoicePurityWorkerVerifier",
+    "VibeVoiceSpeakerTurn",
+    "classify_vibevoice_segments",
     "DEFAULT_BOUNDARY_COLLAR_S",
     "DEFAULT_JITTER_MAX_DURATION_S",
     "DEFAULT_MERGE_SAME_SPEAKER_GAP_S",
@@ -108,5 +129,6 @@ __all__ = [
     "clean_speaker_turns",
     "create_overlap_verifier",
     "evaluate_diarization",
+    "is_overlap_readiness_error",
     "pad_and_merge_intervals",
 ]

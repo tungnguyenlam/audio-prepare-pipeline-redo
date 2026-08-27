@@ -1,0 +1,5 @@
+# VibeVoice-ASR purity verification needs Transformers 5.3+ for
+# VibeVoiceAsrForConditionalGeneration. Keep it in .venv-vibevoice rather
+# than changing the primary uv environment.
+transformers>=5.3.0
+accelerate>=1.0.0

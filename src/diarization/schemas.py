@@ -301,6 +301,114 @@ class SpeakerPurityResult:
         return min(window.similarity for window in self.windows)
 
 
+@dataclass(frozen=True)
+class VibeVoiceSpeakerTurn:
+    """One VibeVoice-ASR speaker interval used for a purity decision."""
+
+    start_s: float
+    end_s: float
+    speaker_id: int
+
+    def __post_init__(self) -> None:
+        _validate_timestamp(self.start_s, "start_s")
+        _validate_timestamp(self.end_s, "end_s")
+        if self.end_s <= self.start_s:
+            raise ValueError("end_s must be greater than start_s")
+        if isinstance(self.speaker_id, bool) or not isinstance(self.speaker_id, int):
+            raise TypeError("speaker_id must be an integer")
+
+
+@dataclass(frozen=True)
+class VibeVoicePurityResult:
+    """Speaker-count purity decision from VibeVoice-ASR structured output."""
+
+    schema_version: str
+    audio_id: str
+    decision: Literal["pass", "reject", "uncertain"]
+    reason: str
+    num_speakers: int
+    secondary_speech_s: float
+    speaker_turns: tuple[VibeVoiceSpeakerTurn, ...]
+    dominant_speaker_id: int | None = None
+    model: DiarizationModelInfo | None = None
+    error: str | None = None
+
+    def __post_init__(self) -> None:
+        _validate_non_empty_string(self.schema_version, "schema_version")
+        _validate_non_empty_string(self.audio_id, "audio_id")
+        _validate_non_empty_string(self.reason, "reason")
+        if self.decision not in {"pass", "reject", "uncertain"}:
+            raise ValueError("decision must be 'pass', 'reject', or 'uncertain'")
+        if isinstance(self.num_speakers, bool) or not isinstance(self.num_speakers, int):
+            raise TypeError("num_speakers must be an integer")
+        if self.num_speakers < 0:
+            raise ValueError("num_speakers must be non-negative")
+        _validate_timestamp(self.secondary_speech_s, "secondary_speech_s")
+        if not isinstance(self.speaker_turns, tuple) or not all(
+            isinstance(turn, VibeVoiceSpeakerTurn) for turn in self.speaker_turns
+        ):
+            raise TypeError("speaker_turns must be a tuple of VibeVoiceSpeakerTurn")
+        if self.dominant_speaker_id is not None:
+            if isinstance(self.dominant_speaker_id, bool) or not isinstance(
+                self.dominant_speaker_id, int
+            ):
+                raise TypeError("dominant_speaker_id must be an integer or None")
+        if self.error is not None:
+            _validate_non_empty_string(self.error, "error")
+            if self.decision == "pass":
+                raise ValueError("passing results cannot contain an error message")
+
+    @property
+    def passed(self) -> bool:
+        """Whether this candidate is safe to admit to the dataset."""
+        return self.decision == "pass"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable snapshot."""
+        payload = asdict(self)
+        if self.model is not None:
+            payload["model"] = asdict(self.model)
+        return payload
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> VibeVoicePurityResult:
+        """Restore one result from ``to_dict()`` output."""
+        turns = tuple(
+            VibeVoiceSpeakerTurn(
+                start_s=float(item["start_s"]),
+                end_s=float(item["end_s"]),
+                speaker_id=int(item["speaker_id"]),
+            )
+            for item in payload.get("speaker_turns", [])
+        )
+        model_payload = payload.get("model")
+        model = (
+            DiarizationModelInfo(
+                backend=str(model_payload["backend"]),
+                model_id=str(model_payload["model_id"]),
+                revision=model_payload.get("revision"),
+            )
+            if isinstance(model_payload, dict)
+            else None
+        )
+        return cls(
+            schema_version=str(payload["schema_version"]),
+            audio_id=str(payload["audio_id"]),
+            decision=payload["decision"],
+            reason=str(payload["reason"]),
+            num_speakers=int(payload["num_speakers"]),
+            secondary_speech_s=float(payload["secondary_speech_s"]),
+            speaker_turns=turns,
+            dominant_speaker_id=(
+                None
+                if payload.get("dominant_speaker_id") is None
+                else int(payload["dominant_speaker_id"])
+            ),
+            model=model,
+            error=payload.get("error"),
+        )
+
+
 @dataclass
 class DiarizationResult:
     """Canonical, file-backed diarization handoff for one audio item.
