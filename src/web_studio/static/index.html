@@ -1702,8 +1702,10 @@
                       </select>
                     </div>
                     <div class="form-group mb-0 purity-overlap-model-field">
-                      <label class="form-label" for="purity-overlap-model">Model ID</label>
+                      <label class="form-label" for="purity-overlap-model" id="purity-overlap-model-label">Model ID</label>
                       <input id="purity-overlap-model" class="text-input font-mono" type="text" autocomplete="off">
+                      <select id="purity-overlap-vibevoice-model" class="select-input hidden"></select>
+                      <p class="text-xs text-muted hidden" id="purity-vibevoice-model-hint">INT8 keeps more quality; NF4 uses less VRAM. Quantized checkpoints need CUDA.</p>
                     </div>
                     <div class="form-group mb-0 purity-overlap-endpoint-field" id="purity-overlap-endpoint-field">
                       <label class="form-label" for="purity-overlap-endpoint">OpenAI-compatible endpoint</label>

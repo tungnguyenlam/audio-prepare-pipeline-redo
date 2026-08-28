@@ -71,6 +71,7 @@ from src.diarization import (
     evaluate_diarization,
     is_overlap_readiness_error,
     pad_and_merge_intervals,
+    vibevoice_studio_models,
 )
 from src.diarization.OverlapVerifier import OverlapVerifierError
 from src.diarization.SortformerDiarizer import (
@@ -3959,6 +3960,7 @@ async def handle_speaker_purity_config(request: web.Request) -> web.Response:
                 "min_secondary_speech_s": DEFAULT_MIN_SECONDARY_SPEECH_S,
                 "max_new_tokens": DEFAULT_MAX_NEW_TOKENS,
                 "batch_size": DEFAULT_VIBEVOICE_BATCH_SIZE,
+                "models": vibevoice_studio_models(),
             },
         }
     )

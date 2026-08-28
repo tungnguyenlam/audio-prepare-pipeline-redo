@@ -29,6 +29,30 @@ DEFAULT_MIN_SECONDARY_SPEECH_S = 0.25
 DEFAULT_MAX_NEW_TOKENS = 2048
 DEFAULT_VIBEVOICE_BATCH_SIZE = 1
 VIBEVOICE_PURITY_SCHEMA_VERSION = "1.0"
+VIBEVOICE_AUDIO_SKIP_MODULES = (
+    "acoustic_tokenizer_encoder",
+    "semantic_tokenizer_encoder",
+    "acoustic_projection",
+    "semantic_projection",
+    "lm_head",
+)
+VIBEVOICE_MODEL_CHOICES: tuple[dict[str, Any], ...] = (
+    {
+        "id": DEFAULT_VIBEVOICE_MODEL_ID,
+        "label": "Full BF16 (~17 GB VRAM)",
+        "quantized": False,
+    },
+    {
+        "id": "Dubedo/VibeVoice-ASR-HF-INT8",
+        "label": "INT8 (~10–11 GB VRAM)",
+        "quantized": True,
+    },
+    {
+        "id": "Dubedo/VibeVoice-ASR-HF-NF4",
+        "label": "NF4 4-bit (~7–8 GB VRAM)",
+        "quantized": True,
+    },
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,10 +64,11 @@ class VibeVoicePurityError(RuntimeError):
 class VibeVoicePurityVerifier(ManagedModel):
     """Verify single-speaker purity from VibeVoice-ASR speaker-count output.
 
-    Uses the Transformers-native checkpoint ``microsoft/VibeVoice-ASR-HF``
-    (requires ``transformers>=5.3.0``). Call ``load()`` first or use a
-    context manager. Inference is run on the dedicated model server, not the
-    development machine.
+    Uses Transformers-native ``microsoft/VibeVoice-ASR-HF`` or a selective
+    bitsandbytes checkpoint from :data:`VIBEVOICE_MODEL_CHOICES` (requires
+    ``transformers>=5.3.0``). Call ``load()`` first or use a context manager.
+    Inference is run on the dedicated model server, not the development
+    machine. Quantized checkpoints need CUDA and ``bitsandbytes>=0.48.1``.
     """
 
     def __init__(
@@ -60,7 +85,9 @@ class VibeVoicePurityVerifier(ManagedModel):
         """Initialize the verifier without loading weights.
 
         Args:
-            model_id: Hugging Face repository ID.
+            model_id: Hugging Face repository ID. Studio offers the
+                :data:`VIBEVOICE_MODEL_CHOICES` catalog; any Transformers-native
+                VibeVoice-ASR checkpoint also loads.
             device: ``auto``, ``cuda``, ``cuda:N``, ``mps``, or ``cpu``.
             token: Optional Hugging Face token (else ``HF_TOKEN``).
             min_secondary_speech_s: Reject only when non-dominant speaker
@@ -101,6 +128,15 @@ class VibeVoicePurityVerifier(ManagedModel):
 
         token = self.token if self.token is not None else os.getenv("HF_TOKEN")
         self._torch_device = _resolve_torch_device(self.device, torch)
+        quant_config = _peek_quantization_config(self.model_id, token)
+        quantized = _is_bitsandbytes_quantization(
+            quant_config
+        ) or vibevoice_model_is_quantized(self.model_id)
+        if quantized and self._torch_device.type != "cuda":
+            raise VibeVoicePurityError(
+                f"Quantized VibeVoice checkpoint {self.model_id!r} requires "
+                "CUDA (bitsandbytes does not run on CPU or MPS)."
+            )
         dtype = (
             torch.bfloat16
             if self._torch_device.type == "cuda"
@@ -110,6 +146,15 @@ class VibeVoicePurityVerifier(ManagedModel):
             "dtype": dtype,
             "attn_implementation": self.attn_implementation,
         }
+        if quantized:
+            device_index = (
+                self._torch_device.index
+                if self._torch_device.index is not None
+                else 0
+            )
+            load_kwargs["device_map"] = {"": device_index}
+            if quant_config:
+                _warn_if_missing_audio_skip_modules(self.model_id, quant_config)
         if token:
             load_kwargs["token"] = token
         try:
@@ -145,13 +190,15 @@ class VibeVoicePurityVerifier(ManagedModel):
                     )
                 )
                 self._effective_attn_implementation = "eager"
-            self._model = self._model.to(self._torch_device)
+            if not _model_is_quantized(self._model):
+                self._model = self._model.to(self._torch_device)
             self._model.eval()
             logger.info(
-                "Loaded VibeVoice-ASR model=%s device=%s attention=%s",
+                "Loaded VibeVoice-ASR model=%s device=%s attention=%s quantized=%s",
                 self.model_id,
-                self._torch_device,
+                self._model_runtime_device(),
                 self._effective_attn_implementation,
+                _model_is_quantized(self._model),
             )
         except Exception as exc:
             self._processor = None
@@ -280,7 +327,7 @@ class VibeVoicePurityVerifier(ManagedModel):
         processor = self._processor
         model = self._model
         inputs = processor.apply_transcription_request(audio=str(path))
-        inputs = inputs.to(self._torch_device, model.dtype)
+        inputs = inputs.to(self._model_runtime_device(), model.dtype)
         with torch.inference_mode():
             output_ids = model.generate(
                 **inputs,
@@ -301,7 +348,7 @@ class VibeVoicePurityVerifier(ManagedModel):
         inputs = processor.apply_transcription_request(
             audio=[str(path) for path in paths]
         )
-        inputs = inputs.to(self._torch_device, model.dtype)
+        inputs = inputs.to(self._model_runtime_device(), model.dtype)
         with torch.inference_mode():
             output_ids = model.generate(
                 **inputs,
@@ -318,6 +365,17 @@ class VibeVoicePurityVerifier(ManagedModel):
                 "VibeVoice-ASR returned an unexpected batch result shape"
             )
         return [_normalize_segments(parsed) for parsed in parsed_batch]
+
+    def _model_runtime_device(self) -> Any:
+        """Device tensors should land on after a full or quantized load."""
+        model = self._model
+        device = getattr(model, "device", None)
+        if device is not None:
+            return device
+        try:
+            return next(model.parameters()).device
+        except (StopIteration, TypeError, AttributeError):
+            return self._torch_device
 
     def _model_info(self) -> DiarizationModelInfo:
         return DiarizationModelInfo(
@@ -516,6 +574,96 @@ def _parse_speaker_id(value: Any) -> int | None:
         return int(digits)
     except ValueError:
         return None
+
+
+def vibevoice_studio_models() -> list[dict[str, str]]:
+    """Return ``id`` / ``label`` pairs for the SonicStudio checkpoint select."""
+    return [
+        {"id": str(choice["id"]), "label": str(choice["label"])}
+        for choice in VIBEVOICE_MODEL_CHOICES
+    ]
+
+
+def vibevoice_model_is_quantized(model_id: str) -> bool:
+    """Return whether ``model_id`` is a known bitsandbytes catalog checkpoint."""
+    requested = str(model_id).strip()
+    for choice in VIBEVOICE_MODEL_CHOICES:
+        if str(choice["id"]) == requested:
+            return bool(choice["quantized"])
+    return False
+
+
+def _peek_quantization_config(model_id: str, token: str | None) -> dict[str, Any]:
+    """Read ``quantization_config`` from the checkpoint without loading weights."""
+    try:
+        from transformers import AutoConfig
+    except ImportError:
+        return {}
+    try:
+        config = AutoConfig.from_pretrained(model_id, token=token)
+    except Exception as exc:
+        logger.warning(
+            "Could not read VibeVoice config for %s: %s", model_id, exc
+        )
+        return {}
+    return _as_quantization_dict(getattr(config, "quantization_config", None))
+
+
+def _as_quantization_dict(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return dict(value)
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        try:
+            payload = to_dict()
+        except Exception:
+            return {}
+        if isinstance(payload, dict):
+            return dict(payload)
+    return {}
+
+
+def _is_bitsandbytes_quantization(quant_config: dict[str, Any]) -> bool:
+    method = str(quant_config.get("quant_method") or "").strip().lower()
+    if method == "bitsandbytes":
+        return True
+    return bool(
+        quant_config.get("load_in_4bit") or quant_config.get("load_in_8bit")
+    )
+
+
+def _warn_if_missing_audio_skip_modules(
+    model_id: str, quant_config: dict[str, Any]
+) -> None:
+    skip_modules = quant_config.get("llm_int8_skip_modules") or []
+    if isinstance(skip_modules, str):
+        skip_names = {skip_modules}
+    else:
+        try:
+            skip_names = {str(name) for name in skip_modules}
+        except TypeError:
+            skip_names = set()
+    missing = [
+        name for name in VIBEVOICE_AUDIO_SKIP_MODULES if name not in skip_names
+    ]
+    if missing:
+        logger.warning(
+            "VibeVoice checkpoint %s is quantized without skip_modules %s; "
+            "speaker labels may collapse",
+            model_id,
+            missing,
+        )
+
+
+def _model_is_quantized(model: Any) -> bool:
+    return bool(
+        getattr(model, "is_quantized", False)
+        or getattr(model, "is_loaded_in_4bit", False)
+        or getattr(model, "is_loaded_in_8bit", False)
+        or getattr(model, "quantization_method", None)
+    )
 
 
 def _resolve_torch_device(device: str, torch: Any) -> Any:

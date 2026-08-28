@@ -20,6 +20,7 @@ from src.diarization.VibeVoicePurityVerifier import (
     DEFAULT_VIBEVOICE_BATCH_SIZE,
     DEFAULT_VIBEVOICE_MODEL_ID,
     VibeVoicePurityError,
+    vibevoice_model_is_quantized,
 )
 from src.utils.AudioClass import Audio
 
@@ -110,13 +111,24 @@ class VibeVoicePurityWorkerVerifier(ManagedModel):
             )[1]
         elif requested_device == "cpu":
             worker_environment["CUDA_VISIBLE_DEVICES"] = ""
-        probe_code = (
-            "import json, torch, transformers; "
-            "from transformers import VibeVoiceAsrForConditionalGeneration; "
-            "print(json.dumps({'transformers': transformers.__version__, "
-            "'cuda_available': torch.cuda.is_available(), "
-            "'cuda_device_count': torch.cuda.device_count()}))"
-        )
+        probe_code = """
+import json, torch, transformers
+from transformers import VibeVoiceAsrForConditionalGeneration
+bnb_ok = True
+bnb_error = ""
+try:
+    import bitsandbytes
+except Exception as exc:
+    bnb_ok = False
+    bnb_error = f"{type(exc).__name__}: {exc}"
+print(json.dumps({
+    "transformers": transformers.__version__,
+    "cuda_available": torch.cuda.is_available(),
+    "cuda_device_count": torch.cuda.device_count(),
+    "bitsandbytes": bnb_ok,
+    "bitsandbytes_error": bnb_error,
+}))
+"""
         try:
             completed = subprocess.run(
                 [str(worker_python), "-c", probe_code],
@@ -144,12 +156,45 @@ class VibeVoicePurityWorkerVerifier(ManagedModel):
             details = json.loads(completed.stdout.strip().splitlines()[-1])
         except (IndexError, json.JSONDecodeError):
             details = {}
+        model_id = str(self._config["model_id"])
+        quantized = vibevoice_model_is_quantized(model_id)
+        if quantized and requested_device in {"cpu", "mps"}:
+            return {
+                "ready": False,
+                "message": (
+                    f"Quantized VibeVoice checkpoint {model_id} requires CUDA "
+                    "(bitsandbytes)."
+                ),
+                "models": [],
+            }
         if requested_device.startswith("cuda") and not details.get("cuda_available"):
             return {
                 "ready": False,
                 "message": (
                     "VibeVoice worker cannot access requested device "
                     f"{requested_device}."
+                ),
+                "models": [],
+            }
+        if quantized and requested_device == "auto" and not details.get(
+            "cuda_available"
+        ):
+            return {
+                "ready": False,
+                "message": (
+                    f"Quantized VibeVoice checkpoint {model_id} requires CUDA, "
+                    "and the worker has no GPU."
+                ),
+                "models": [],
+            }
+        if quantized and not details.get("bitsandbytes"):
+            detail = str(details.get("bitsandbytes_error") or "import failed")
+            return {
+                "ready": False,
+                "message": (
+                    f"Quantized VibeVoice checkpoint {model_id} needs "
+                    "bitsandbytes>=0.48.1 in .venv-vibevoice "
+                    f"({detail[-400:]})."
                 ),
                 "models": [],
             }
@@ -160,7 +205,7 @@ class VibeVoicePurityWorkerVerifier(ManagedModel):
                 f"Local VibeVoice worker is ready on {requested_device} "
                 f"(Transformers {version}); model weights load when verification starts."
             ),
-            "models": [str(self._config["model_id"])],
+            "models": [model_id],
         }
 
     def _load(self) -> None:

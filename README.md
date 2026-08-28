@@ -73,7 +73,6 @@ UNSLOTH_API_KEY=sk-unsloth-...
 
 # Or select VibeVoice-ASR speaker-count verification (isolated .venv-vibevoice)
 # OVERLAP_VERIFIER=vibevoice
-# VIBEVOICE_MODEL=microsoft/VibeVoice-ASR-HF
 # VIBEVOICE_PYTHON=/path/to/.venv-vibevoice/bin/python
 # GEMINI_API_KEY=...
 ```
@@ -91,7 +90,12 @@ reads `GEMINI_API_KEY` from `.env` and uses `gemini-3.1-pro-preview` by
 default. Set `GEMINI_MODEL` to override that model. VibeVoice-ASR counts
 distinct speakers on each whole candidate (no prompt, no embeddings); it
 runs in `.venv-vibevoice` and defaults to `microsoft/VibeVoice-ASR-HF`.
-Set `VIBEVOICE_MODEL` / `VIBEVOICE_PYTHON` to override.
+Set `VIBEVOICE_PYTHON` if the worker is not at `.venv-vibevoice/bin/python`.
+`VIBEVOICE_MODEL` is an optional default only; SonicStudio's Speaker Purity
+tab selects the full BF16, INT8 (`Dubedo/VibeVoice-ASR-HF-INT8`, ~10–11 GB),
+or NF4 (`Dubedo/VibeVoice-ASR-HF-NF4`, ~7–8 GB) checkpoint per run. Quantized
+checkpoints need CUDA and `bitsandbytes>=0.48.1` in `.venv-vibevoice`. GGUF,
+AWQ, BitNet, and standalone `microsoft/VibeVoice-ASR` quants are unsupported.
 SonicStudio's **Speaker Purity** tab uses these values as non-secret defaults
 for the direct-audio **verifier**. Speaker embeddings are an identity
 **filter** only: they do not decide purity. When the verifier is enabled,
@@ -170,8 +174,9 @@ its corresponding environment and reuses the loaded model. Other models stay
 in the primary `.venv`; you do not need to restart the server when switching.
 
 **VibeVoice-ASR speaker-purity verifier** needs Transformers 5.3+
-(`VibeVoiceAsrForConditionalGeneration`), which is isolated from the primary
-stack. Create this only on the model server:
+(`VibeVoiceAsrForConditionalGeneration`) and, for INT8/NF4 checkpoints,
+`bitsandbytes>=0.48.1`. Keep this isolated from the primary stack. Create
+it only on the model server:
 
 ```bash
 uv venv --python .venv/bin/python .venv-vibevoice
@@ -188,7 +193,7 @@ Optional overrides:
 | `THREEDSPEAKER_PYTHON` | Path to the 3D-Speaker interpreter if not `.venv-3dspeaker` |
 | `THREEDSPEAKER_ROOT` | 3D-Speaker checkout path if not `.data/3d-speaker` |
 | `VIBEVOICE_PYTHON` | Path to the VibeVoice interpreter if not `.venv-vibevoice` |
-| `VIBEVOICE_MODEL` | Hugging Face ID if not `microsoft/VibeVoice-ASR-HF` |
+| `VIBEVOICE_MODEL` | Optional default checkpoint; Studio selects full / INT8 / NF4 per run |
 
 ### 4. Run the web applications
 

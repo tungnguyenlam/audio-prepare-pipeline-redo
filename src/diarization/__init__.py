@@ -49,6 +49,7 @@ from src.diarization.VibeVoicePurityVerifier import (
     VibeVoicePurityError,
     VibeVoicePurityVerifier,
     classify_vibevoice_segments,
+    vibevoice_studio_models,
 )
 from src.diarization.VibeVoicePurityWorkerVerifier import VibeVoicePurityWorkerVerifier
 from src.diarization.turn_cleanup import (
@@ -124,6 +125,7 @@ __all__ = [
     "VibeVoicePurityWorkerVerifier",
     "VibeVoiceSpeakerTurn",
     "classify_vibevoice_segments",
+    "vibevoice_studio_models",
     "DEFAULT_BOUNDARY_COLLAR_S",
     "DEFAULT_JITTER_MAX_DURATION_S",
     "DEFAULT_MERGE_SAME_SPEAKER_GAP_S",

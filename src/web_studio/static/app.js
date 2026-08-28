@@ -478,6 +478,9 @@ const el = {
   purityOverlapStatusBadge: document.getElementById('purity-overlap-status-badge'),
   purityOverlapBackend: document.getElementById('purity-overlap-backend'),
   purityOverlapModel: document.getElementById('purity-overlap-model'),
+  purityOverlapModelLabel: document.getElementById('purity-overlap-model-label'),
+  purityOverlapVibevoiceModel: document.getElementById('purity-overlap-vibevoice-model'),
+  purityVibevoiceModelHint: document.getElementById('purity-vibevoice-model-hint'),
   purityOverlapEndpointField: document.getElementById('purity-overlap-endpoint-field'),
   purityOverlapEndpoint: document.getElementById('purity-overlap-endpoint'),
   purityOverlapApiKey: document.getElementById('purity-overlap-api-key'),
@@ -5386,6 +5389,41 @@ function purityBackendDefaults(backend = state.purity.overlap.backend) {
   return state.purity.serverConfig?.[backend] || {};
 }
 
+function vibevoiceModelChoices() {
+  const models = state.purity.serverConfig?.vibevoice?.models;
+  if (Array.isArray(models) && models.length) return models;
+  return [
+    { id: 'microsoft/VibeVoice-ASR-HF', label: 'Full BF16 (~17 GB VRAM)' },
+    { id: 'Dubedo/VibeVoice-ASR-HF-INT8', label: 'INT8 (~10–11 GB VRAM)' },
+    { id: 'Dubedo/VibeVoice-ASR-HF-NF4', label: 'NF4 4-bit (~7–8 GB VRAM)' },
+  ];
+}
+
+function resolveVibevoiceModelId(modelId) {
+  const choices = vibevoiceModelChoices();
+  const requested = String(modelId || '').trim();
+  if (choices.some(choice => choice.id === requested)) return requested;
+  const fallback = state.purity.serverConfig?.vibevoice?.model || choices[0]?.id || '';
+  if (choices.some(choice => choice.id === fallback)) return fallback;
+  return choices[0]?.id || '';
+}
+
+function populateVibevoiceModelSelect(selectedId) {
+  const select = el.purityOverlapVibevoiceModel;
+  if (!select) return '';
+  const choices = vibevoiceModelChoices();
+  const resolved = resolveVibevoiceModelId(selectedId);
+  select.innerHTML = '';
+  for (const choice of choices) {
+    const option = document.createElement('option');
+    option.value = choice.id;
+    option.textContent = choice.label;
+    select.appendChild(option);
+  }
+  select.value = resolved;
+  return select.value;
+}
+
 function purityOverlapBackendLabel(backend = state.purity.overlap.backend) {
   if (backend === 'vibevoice') return 'VibeVoice-ASR';
   if (backend === 'gemini') return 'Gemini';
@@ -6793,7 +6831,9 @@ function savePurityPreferences() {
 function purityOverlapVerifierPayload() {
   const overlap = state.purity.overlap;
   overlap.prompt = el.purityOverlapPrompt?.value.trim() || overlap.prompt;
-  overlap.model = el.purityOverlapModel?.value.trim() || overlap.model;
+  overlap.model = overlap.backend === 'vibevoice'
+    ? (el.purityOverlapVibevoiceModel?.value || overlap.model)
+    : (el.purityOverlapModel?.value.trim() || overlap.model);
   overlap.endpoint = el.purityOverlapEndpoint?.value.trim() || overlap.endpoint;
   if (el.purityVibevoiceSecondary) {
     overlap.minSecondarySpeech = Math.max(0, parseFloat(el.purityVibevoiceSecondary.value) || 0.25);
@@ -6822,6 +6862,9 @@ function applyPurityControls() {
   overlap.enabled = true;
   if (el.purityOverlapBackend) el.purityOverlapBackend.value = overlap.backend;
   if (el.purityOverlapModel) el.purityOverlapModel.value = overlap.model;
+  if (overlap.backend === 'vibevoice') {
+    overlap.model = populateVibevoiceModelSelect(overlap.model);
+  }
   if (el.purityOverlapEndpoint) el.purityOverlapEndpoint.value = overlap.endpoint;
   if (el.purityOverlapTimeout) el.purityOverlapTimeout.value = overlap.timeout;
   if (el.purityOverlapMaxTokens) el.purityOverlapMaxTokens.value = overlap.maxOutputTokens;
@@ -6904,6 +6947,16 @@ function syncPurityOverlapUi() {
   if (el.purityVibevoiceBatchField) el.purityVibevoiceBatchField.classList.toggle('hidden', !isVibevoice);
   if (el.purityVibevoiceDeviceField) el.purityVibevoiceDeviceField.classList.toggle('hidden', !isVibevoice);
   if (el.purityVibevoiceHfField) el.purityVibevoiceHfField.classList.toggle('hidden', !isVibevoice);
+  if (el.purityOverlapModel) el.purityOverlapModel.classList.toggle('hidden', isVibevoice);
+  if (el.purityOverlapVibevoiceModel) el.purityOverlapVibevoiceModel.classList.toggle('hidden', !isVibevoice);
+  if (el.purityVibevoiceModelHint) el.purityVibevoiceModelHint.classList.toggle('hidden', !isVibevoice);
+  if (el.purityOverlapModelLabel) {
+    el.purityOverlapModelLabel.textContent = isVibevoice ? 'VibeVoice checkpoint' : 'Model ID';
+    el.purityOverlapModelLabel.setAttribute(
+      'for',
+      isVibevoice ? 'purity-overlap-vibevoice-model' : 'purity-overlap-model'
+    );
+  }
   if (el.purityOverlapMaxTokensLabel) {
     el.purityOverlapMaxTokensLabel.textContent = isVibevoice ? 'Max new tokens' : 'Max output tokens';
   }
@@ -7018,6 +7071,7 @@ function initPurityTab() {
       state.purity.overlap.endpoint = defaults.endpoint || state.purity.serverConfig?.gemma4?.endpoint || '';
     }
     if (e.target.value === 'vibevoice') {
+      state.purity.overlap.model = resolveVibevoiceModelId(defaults.model);
       if (previousBackend !== 'vibevoice' && state.purity.overlap.maxOutputTokens === 128) {
         state.purity.overlap.maxOutputTokens = defaults.max_new_tokens || 2048;
       }
@@ -7032,6 +7086,11 @@ function initPurityTab() {
   el.purityOverlapModel?.addEventListener('change', e => {
     state.purity.overlap.model = e.target.value.trim();
     savePurityPreferences();
+  });
+  el.purityOverlapVibevoiceModel?.addEventListener('change', e => {
+    state.purity.overlap.model = e.target.value;
+    savePurityPreferences();
+    refreshPurityVerifierStatus();
   });
   el.purityOverlapEndpoint?.addEventListener('change', e => {
     state.purity.overlap.endpoint = e.target.value.trim();

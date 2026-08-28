@@ -845,7 +845,8 @@ not automatically chained to crawling, separation, or diarization.
 
 VibeVoice-ASR itself is the speaker-purity verifier. It runs the **whole**
 candidate file through Transformers-native `microsoft/VibeVoice-ASR-HF`
-(`transformers>=5.3.0`), ignores the transcript, and classifies from
+(`transformers>=5.3.0`), or a selective bitsandbytes checkpoint from
+`VIBEVOICE_MODEL_CHOICES`, ignores the transcript, and classifies from
 speaker-count plus per-speaker duration:
 
 - exactly one speaker → `pass` (`single_speaker`)
@@ -874,7 +875,12 @@ with VibeVoicePurityVerifier(device="cuda") as verifier:
 - `classify_vibevoice_segments(segments, *, audio_id, ...)` is the pure
   decision function over already-parsed `{start_time, end_time, speaker_id}`
   dicts.
-- `_load()` / `_unload()` follow `ManagedModel`. CUDA uses `bfloat16`.
+- `_load()` / `_unload()` follow `ManagedModel`. Full-precision CUDA loads use
+  `bfloat16` and `.to(device)`. Bitsandbytes INT8 / NF4 checkpoints (catalog:
+  `Dubedo/VibeVoice-ASR-HF-INT8`, `Dubedo/VibeVoice-ASR-HF-NF4`) use
+  `device_map` on CUDA and are not moved with `.to()`. They require
+  `bitsandbytes>=0.48.1` in `.venv-vibevoice`. GGUF, AWQ, BitNet, and standalone
+  `microsoft/VibeVoice-ASR` quants are unsupported.
 - The model defaults to Transformers `attn_implementation="eager"`, which is
   required because the current VibeVoice-ASR architecture does not implement
   scaled-dot-product attention. If Transformers nevertheless rejects the
@@ -887,7 +893,8 @@ The web applications use `VibeVoicePurityWorkerVerifier`, which starts
 Override the interpreter with `VIBEVOICE_PYTHON`. `cuda:N` is isolated with
 `CUDA_VISIBLE_DEVICES`. Create that environment only on the model server.
 `VibeVoicePurityWorkerVerifier.check_ready()` probes that local interpreter,
-the required Transformers class, and requested device without loading weights.
+the required Transformers class, requested device, and (for catalog quantized
+checkpoints) bitsandbytes plus CUDA, without loading weights.
 The web readiness endpoint uses this local probe; VibeVoice is not an HTTP
 service, and model weights are still loaded only when verification starts.
 
@@ -902,8 +909,9 @@ The request's `overlap_verifier.batch_size` selects the VibeVoice model batch
 size from `1` to `256`; lower values use less inference VRAM.
 `GET /api/purity/config` returns LLM-verifier defaults only (backend, prompt,
 timeout, Unsloth/Gemini/VibeVoice settings). It does not return an embedding
-model or cosine threshold. VibeVoice defaults are included when
-`OVERLAP_VERIFIER=vibevoice`.
+model or cosine threshold. VibeVoice defaults include `models` (`id` / `label`
+catalog for the Studio checkpoint select). `VIBEVOICE_MODEL` is an optional
+default only; the Speaker Purity UI selects full BF16, INT8, or NF4 per run.
 
 ## 6. Benchmark mixing API
 
