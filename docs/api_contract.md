@@ -619,7 +619,8 @@ the upstream value `64`.
   `Audio` metadata.
 - Runs `speakerlab.bin.infer_diarization.Diarization3Dspeaker` and converts
   `[[start, end, speaker_id], ...]` segments into result-local IDs such as
-  `spk_00`, preserving first-seen speaker order.
+  `spk_00`, preserving first-seen speaker order. Frame-quantized segment
+  bounds are clamped to the source audio duration.
 - Per-call `num_speakers` overrides the constructor value for that inference.
   When an oracle count is set (constructor or call), or when min and max
   speaker bounds are equal via `resolve_speaker_settings`, clustering uses
