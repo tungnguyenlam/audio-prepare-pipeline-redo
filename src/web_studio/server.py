@@ -320,7 +320,7 @@ class AudioRegistry:
 
     def __init__(self, persist_path: Path = AUDIO_REGISTRY_PATH) -> None:
         self._items: Dict[str, Dict[str, Any]] = {}
-        self._waveform_cache: Dict[str, List[float]] = {}
+        self._waveform_cache: Dict[str, Dict[str, Any]] = {}
         self._persist_path = persist_path
         self._restoring = False
 
@@ -587,11 +587,15 @@ class AudioRegistry:
             )
         return result
 
-    def get_cached_waveform(self, audio_id: str) -> Optional[List[float]]:
-        return self._waveform_cache.get(audio_id)
+    def get_cached_waveform(self, audio_id: str, bins: int) -> Optional[Dict[str, Any]]:
+        cached = self._waveform_cache.get(audio_id)
+        if cached and cached.get("requested_bins") == bins:
+            return cached
+        return None
 
-    def cache_waveform(self, audio_id: str, peaks: List[float]) -> None:
-        self._waveform_cache[audio_id] = peaks
+    def cache_waveform(self, audio_id: str, waveform: Dict[str, Any]) -> None:
+        """Cache the latest full-track overview, never a zoomed window."""
+        self._waveform_cache[audio_id] = waveform
 
 
 class TaskManager:
@@ -2036,29 +2040,69 @@ def _created_at_value(item: dict[str, Any]) -> float:
         return 0.0
 
 
-def extract_waveform_peaks(audio_path: Path, num_points: int = 1200) -> List[float]:
-    """Extract downsampled peak amplitudes for high-performance waveform drawing."""
-    if not audio_path.is_file():
-        return []
-    try:
-        data, _sr = sf.read(str(audio_path), dtype="float32", always_2d=True)
-        # Convert to mono by averaging channels
-        mono = data.mean(axis=1)
-        total_samples = len(mono)
-        if total_samples == 0:
-            return []
+def extract_waveform_envelope(
+    audio_path: Path,
+    start_frame: int,
+    end_frame: int,
+    bins: int,
+) -> Dict[str, Any]:
+    """Read a bounded window and return signed min/max envelopes per channel."""
+    with sf.SoundFile(str(audio_path)) as source:
+        sample_rate = int(source.samplerate)
+        channel_count = int(source.channels)
+        total_frames = int(source.frames)
+        bounded_start = max(0, min(int(start_frame), total_frames))
+        bounded_end = max(bounded_start, min(int(end_frame), total_frames))
+        frame_count = bounded_end - bounded_start
+        output_bins = min(int(bins), frame_count) if frame_count else 0
+        channels = [
+            {"min": [], "max": []}
+            for _ in range(channel_count)
+        ]
 
-        chunk_size = max(1, total_samples // num_points)
-        peaks = []
-        for i in range(0, total_samples, chunk_size):
-            chunk = mono[i : i + chunk_size]
-            if len(chunk) > 0:
-                peak = float(np.max(np.abs(chunk)))
-                peaks.append(round(peak, 4))
-        return peaks
-    except Exception as e:
-        logger.error("Failed to extract waveform: %s", e)
-        return []
+        if output_bins:
+            boundaries = np.linspace(0, frame_count, output_bins + 1, dtype=np.int64)
+            source.seek(bounded_start)
+            for index in range(output_bins):
+                frames_left = int(boundaries[index + 1] - boundaries[index])
+                bin_min = np.full(channel_count, np.inf, dtype=np.float32)
+                bin_max = np.full(channel_count, -np.inf, dtype=np.float32)
+                while frames_left > 0:
+                    block = source.read(
+                        min(frames_left, 262_144),
+                        dtype="float32",
+                        always_2d=True,
+                    )
+                    if not len(block):
+                        break
+                    block = np.nan_to_num(block, nan=0.0, posinf=1.0, neginf=-1.0)
+                    bin_min = np.minimum(bin_min, block.min(axis=0))
+                    bin_max = np.maximum(bin_max, block.max(axis=0))
+                    frames_left -= len(block)
+                for channel_index in range(channel_count):
+                    minimum = bin_min[channel_index]
+                    maximum = bin_max[channel_index]
+                    channels[channel_index]["min"].append(
+                        float(minimum) if np.isfinite(minimum) else 0.0
+                    )
+                    channels[channel_index]["max"].append(
+                        float(maximum) if np.isfinite(maximum) else 0.0
+                    )
+
+    return {
+        "sample_rate": sample_rate,
+        "duration_s": total_frames / sample_rate if sample_rate else 0.0,
+        "total_frames": total_frames,
+        "start_frame": bounded_start,
+        "end_frame": bounded_end,
+        "start_s": bounded_start / sample_rate if sample_rate else 0.0,
+        "end_s": bounded_end / sample_rate if sample_rate else 0.0,
+        "frame_count": frame_count,
+        "channel_count": channel_count,
+        "requested_bins": int(bins),
+        "bins": output_bins,
+        "channels": channels,
+    }
 
 
 # ==================== API HANDLERS ====================
@@ -2741,80 +2785,138 @@ async def handle_stream_audio(request: web.Request) -> web.Response:
 
 
 async def handle_get_waveform(request: web.Request) -> web.Response:
-    """Return waveform peaks data."""
+    """Return a signed, per-channel envelope for one audio time window."""
     audio_id = request.match_info["id"]
     audio = registry.get_audio(audio_id)
     if not audio or not audio.path.is_file():
         return web.json_response({"error": "Audio file not found"}, status=404)
 
-    cached = registry.get_cached_waveform(audio_id)
-    if cached is not None:
-        return web.json_response({"peaks": cached, "duration_s": audio.duration_s})
+    try:
+        info = sf.info(str(audio.path))
+        duration_s = info.frames / info.samplerate if info.samplerate else 0.0
+        start_s = float(request.query.get("start_s", 0.0))
+        end_s = float(request.query.get("end_s", duration_s))
+        bins = int(request.query.get("bins", 1200))
+    except (TypeError, ValueError, RuntimeError) as exc:
+        return web.json_response({"error": f"Invalid waveform query: {exc}"}, status=400)
+
+    if not all(isfinite(value) for value in (start_s, end_s)):
+        return web.json_response({"error": "start_s and end_s must be finite"}, status=400)
+    if not 0 <= start_s < end_s <= duration_s:
+        return web.json_response(
+            {"error": f"Expected 0 <= start_s < end_s <= {duration_s:.9f}"},
+            status=400,
+        )
+    if not 1 <= bins <= 8192:
+        return web.json_response({"error": "bins must be between 1 and 8192"}, status=400)
+
+    start_frame = max(0, min(info.frames - 1, int(np.floor(start_s * info.samplerate))))
+    end_frame = max(start_frame + 1, min(info.frames, int(np.ceil(end_s * info.samplerate))))
+    is_full_track = start_frame == 0 and end_frame == info.frames
+    if is_full_track:
+        cached = registry.get_cached_waveform(audio_id, bins)
+        if cached is not None:
+            return web.json_response(cached)
 
     loop = asyncio.get_running_loop()
-    peaks = await loop.run_in_executor(None, extract_waveform_peaks, audio.path)
-    registry.cache_waveform(audio_id, peaks)
-    return web.json_response({"peaks": peaks, "duration_s": audio.duration_s})
+    try:
+        waveform = await loop.run_in_executor(
+            None,
+            extract_waveform_envelope,
+            audio.path,
+            start_frame,
+            end_frame,
+            bins,
+        )
+    except (OSError, RuntimeError, sf.LibsndfileError) as exc:
+        logger.error("Failed to extract waveform for %s: %s", audio.path, exc)
+        return web.json_response({"error": "Could not read audio waveform"}, status=500)
+    if is_full_track:
+        registry.cache_waveform(audio_id, waveform)
+    return web.json_response(waveform)
 
 
 async def handle_get_spectrogram(request: web.Request) -> web.Response:
-    """Generate and return a Mel Spectrogram image (PNG)."""
+    """Generate a marginless, linear-Hz STFT image for one visible window."""
     audio_id = request.match_info["id"]
     audio = registry.get_audio(audio_id)
     if not audio or not audio.path.is_file():
         return web.Response(text="Audio file not found", status=404)
 
-    is_raw = request.query.get("raw") in ("1", "true", "yes")
-
-    def generate_spec_png():
-        import io
-        import librosa
-        import numpy as np
-        import matplotlib.pyplot as plt
-
-        sr = 16000
-        y, _ = librosa.load(str(audio.path), sr=sr, mono=True)
-        mel = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=128, hop_length=512)
-        mel_db = librosa.power_to_db(mel, ref=np.max)
-
-        buf = io.BytesIO()
-        if is_raw:
-            plt.imsave(buf, mel_db, cmap="magma", origin="lower", format="png")
-            buf.seek(0)
-            return buf.getvalue()
-
-        import librosa.display
-        fig, ax = plt.subplots(figsize=(10, 3.5), facecolor="#ffffff")
-        ax.set_facecolor("#f8fafc")
-        img = librosa.display.specshow(
-            mel_db,
-            sr=sr,
-            hop_length=512,
-            x_axis="time",
-            y_axis="mel",
-            ax=ax,
-            cmap="magma",
+    try:
+        info = sf.info(str(audio.path))
+        duration_s = info.frames / info.samplerate if info.samplerate else 0.0
+        start_s = float(request.query.get("start_s", 0.0))
+        end_s = float(request.query.get("end_s", duration_s))
+        width = int(request.query.get("width", 1200))
+        height = int(request.query.get("height", 320))
+    except (TypeError, ValueError, RuntimeError) as exc:
+        return web.Response(text=f"Invalid spectrogram query: {exc}", status=400)
+    if not all(isfinite(value) for value in (start_s, end_s)):
+        return web.Response(text="start_s and end_s must be finite", status=400)
+    if not 0 <= start_s < end_s <= duration_s:
+        return web.Response(
+            text=f"Expected 0 <= start_s < end_s <= {duration_s:.9f}",
+            status=400,
         )
-        cbar = fig.colorbar(img, ax=ax, format="%+2.0f dB")
-        cbar.ax.yaxis.set_tick_params(color="#64748b")
-        plt.setp(plt.getp(cbar.ax.axes, "yticklabels"), color="#334155")
-        cbar.set_label("dB", color="#334155")
+    if not 32 <= width <= 4096 or not 32 <= height <= 2048:
+        return web.Response(text="width must be 32..4096 and height must be 32..2048", status=400)
 
-        ax.set_title(f"Mel Spectrogram: {audio.title}", color="#0f172a", fontsize=11)
-        ax.set_xlabel("Time (s)", color="#334155")
-        ax.set_ylabel("Hz", color="#334155")
-        ax.tick_params(colors="#334155")
-        for spine in ax.spines.values():
-            spine.set_color("#cbd5e1")
+    start_frame = max(0, min(info.frames - 1, int(np.floor(start_s * info.samplerate))))
+    end_frame = max(start_frame + 1, min(info.frames, int(np.ceil(end_s * info.samplerate))))
 
-        fig.tight_layout()
-        plt.savefig(buf, format="png", dpi=120, bbox_inches="tight", facecolor=fig.get_facecolor())
-        plt.close(fig)
-        buf.seek(0)
-        return buf.getvalue()
+    def generate_spec_png() -> bytes:
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+        from matplotlib.figure import Figure
+
+        frame_count = end_frame - start_frame
+        n_fft = min(4096, max(32, 2 ** int(np.floor(np.log2(max(32, frame_count))))))
+        power = np.empty((n_fft // 2 + 1, width), dtype=np.float32)
+        window = np.hanning(n_fft).astype(np.float32)[:, np.newaxis]
+        with sf.SoundFile(str(audio.path)) as source:
+            for column in range(width):
+                center = start_frame + int((column + 0.5) * frame_count / width)
+                desired_start = center - n_fft // 2
+                read_start = max(start_frame, desired_start)
+                read_end = min(end_frame, desired_start + n_fft)
+                source.seek(read_start)
+                block = source.read(read_end - read_start, dtype="float32", always_2d=True)
+                padded = np.zeros((n_fft, info.channels), dtype=np.float32)
+                offset = read_start - desired_start
+                usable = min(len(block), n_fft - offset)
+                if usable:
+                    padded[offset : offset + usable] = block[:usable]
+                spectrum = np.fft.rfft(np.nan_to_num(padded) * window, axis=0)
+                power[:, column] = np.mean(np.abs(spectrum) ** 2, axis=1)
+        peak = float(np.max(power)) if power.size else 1.0
+        power_db = 10.0 * np.log10(np.maximum(power, max(peak, 1e-20) * 1e-8))
+        power_db -= 10.0 * np.log10(max(peak, 1e-20))
+
+        dpi = 100
+        figure = Figure(figsize=(width / dpi, height / dpi), dpi=dpi, frameon=False)
+        canvas = FigureCanvasAgg(figure)
+        axis = figure.add_axes((0, 0, 1, 1))
+        axis.imshow(
+            power_db,
+            origin="lower",
+            aspect="auto",
+            interpolation="nearest",
+            cmap="magma",
+            vmin=-80,
+            vmax=0,
+            extent=(start_s, end_s, 0, info.samplerate / 2),
+        )
+        axis.set_axis_off()
+        buffer = io.BytesIO()
+        canvas.print_png(buffer)
+        return buffer.getvalue()
 
     loop = asyncio.get_running_loop()
-    png_bytes = await loop.run_in_executor(None, generate_spec_png)
+    try:
+        png_bytes = await loop.run_in_executor(None, generate_spec_png)
+    except (OSError, RuntimeError, sf.LibsndfileError) as exc:
+        logger.error("Failed to generate spectrogram for %s: %s", audio.path, exc)
+        return web.Response(text="Could not generate spectrogram", status=500)
     return web.Response(body=png_bytes, content_type="image/png")
 
 

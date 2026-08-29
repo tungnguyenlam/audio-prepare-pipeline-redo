@@ -1036,6 +1036,22 @@ The repository provides two specialized web platforms:
   `POST /api/queue/shared/{id}/cancel` cancel a workload in either domain.
 - **Telemetry:** `GET /api/telemetry` is owned by the Studio route table and
   returns host/GPU metrics from `hardware_monitor`.
+- **Waveform windows:** `GET /api/audio/{id}/waveform` accepts `start_s`,
+  `end_s`, and `bins` query parameters. Defaults are the full track and 1200
+  bins. Bounds must satisfy `0 <= start_s < end_s <= duration`; `bins` must be
+  an integer from 1 through 8192. The JSON response contains `sample_rate`,
+  `duration_s`, `total_frames`, `start_frame`, `end_frame`, `start_s`, `end_s`,
+  `frame_count`, `channel_count`, `requested_bins`, `bins`, and `channels`.
+  Every item in `channels` has equal-length signed `min` and `max` arrays;
+  channels are never averaged together and values retain their original
+  linear full-scale amplitude and polarity. The server reads bounded chunks
+  with `soundfile`, caches only a reusable full-track overview, and computes
+  zoomed windows on demand.
+- **Spectrogram windows:** `GET /api/audio/{id}/spectrogram` accepts `start_s`,
+  `end_s`, `width`, and `height`. Time validation matches the waveform endpoint;
+  image dimensions must be 32–4096 pixels wide and 32–2048 pixels high. It
+  returns a marginless PNG of the requested window using native sample rate,
+  a linear-Hz 0-to-Nyquist scale, and mean STFT power across channels.
 - **Known-speaker endpoints (registered once by Studio, shared by both
   frontends):** `GET/POST /api/speaker-profiles` list/create global profiles;
   `GET/DELETE /api/speaker-profiles/{name}` inspect/delete one;

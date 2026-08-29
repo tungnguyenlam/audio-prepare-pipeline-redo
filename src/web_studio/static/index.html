@@ -304,12 +304,12 @@
               <div class="waveform-header-left">
                 <span class="workflow-step">3 · Select a range</span>
                 <h3 class="card-title">Waveform</h3>
-                <span class="waveform-sub">Drag to select · drag either edge to refine · click to move the playhead</span>
+                <span class="waveform-sub">Click to seek · drag to select · drag either edge to refine</span>
               </div>
 
               <!-- Selection Quick Bar (appears when region is selected) -->
               <div class="selection-actions-bar" id="selection-actions-bar" style="display: none;">
-                <button class="btn btn-sm btn-primary" id="btn-audition-selection" title="Loop play selected range">
+                <button class="btn btn-sm btn-primary" id="btn-audition-selection" title="Preview the selected range once, stopping at its exact end">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                   <span>Preview Selection</span>
                 </button>
@@ -321,7 +321,7 @@
               <div class="waveform-controls-top">
                 <button class="btn btn-sm btn-ghost" id="btn-zoom-out" title="Zoom Out">−</button>
                 <div class="ws-zoom-input-group" title="Type zoom multiplier (e.g. 1.0, 2.5, 4.0)">
-                  <input type="number" id="ws-zoom-input" class="zoom-number-input" min="1" max="20" step="0.5" value="1.0">
+                  <input type="number" id="ws-zoom-input" class="zoom-number-input" min="1" step="0.5" value="1.0">
                   <span class="zoom-unit">x</span>
                 </div>
                 <span class="zoom-label hidden" id="zoom-level-label">100%</span>
@@ -349,26 +349,25 @@
                 </div>
 
                 <!-- Time Axis Ruler -->
-                <div class="time-ruler" id="time-ruler">
-                  <span class="ruler-tick">00:00</span>
-                  <span class="ruler-tick" id="ruler-mid">--:--</span>
-                  <span class="ruler-tick" id="ruler-end">--:--</span>
-                </div>
+                <div class="time-ruler" id="time-ruler"></div>
+                <input class="waveform-scrollbar" id="waveform-scrollbar" type="range" min="0" max="1000" step="1" value="0" aria-label="Pan visible waveform window">
 
                 <div class="selection-helper" id="selection-helper">
                   <span class="selection-helper-icon">↔</span>
-                  <span><strong>Select the useful moment.</strong> You can fine-tune its boundaries in the range panel.</span>
+                  <span><strong>Click to seek or drag to select.</strong> Zoom with the controls or Ctrl/Cmd-wheel; pan horizontally with the scrollbar, trackpad, or Shift-wheel.</span>
                 </div>
 
-                <!-- Mel Spectrogram View (Collapsible) -->
+                <!-- Linear Spectrogram View (Collapsible) -->
                 <div id="spectrogram-panel" class="spectrogram-panel hidden">
                   <div class="spec-header">
-                    <span class="spec-title">Mel-Frequency Spectrogram (16kHz Aligned)</span>
+                    <span class="spec-title">Mean-power spectrogram · native sample rate · linear Hz</span>
                     <button class="btn btn-sm btn-ghost" id="btn-refresh-spec">Refresh</button>
                   </div>
                   <div class="spec-img-wrapper" id="spec-img-wrapper">
                     <div class="skeleton-loader" id="spec-loader">Generating spectrogram...</div>
-                    <img id="spec-image" class="spec-image hidden" alt="Mel Spectrogram">
+                    <img id="spec-image" class="spec-image hidden" alt="Linear-frequency spectrogram for the visible time window">
+                    <div id="spec-selection-overlay" class="spec-selection-overlay hidden"></div>
+                    <div id="spec-playhead-line" class="spec-playhead-line"></div>
                   </div>
                 </div>
               </div>
@@ -419,9 +418,6 @@
                     </div>
                   </div>
 
-                  <button class="btn btn-sm btn-secondary btn-use-selection" id="btn-use-selection" title="Copy the waveform selection into the start and end fields">
-                    Use waveform selection
-                  </button>
                   <p class="cut-validation" id="cut-validation" role="status">Ready to create a clip.</p>
                 </div>
 

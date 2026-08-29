@@ -8,10 +8,21 @@
 const state = {
   activeTab: 'tab-workspace',
   activeAudio: null,       // Currently selected Audio metadata
-  activePeaks: [],         // Downsampled waveform peaks
   selection: { start: 0, end: 0, active: false },
   cutUnit: 'seconds',
   zoom: 1.0,
+  waveform: {
+    audioId: null,
+    start: 0,
+    end: 0,
+    data: null,
+    controller: null,
+    requestId: 0,
+    loading: false,
+    error: '',
+    editing: false,
+    panning: false,
+  },
   audioList: [],           // All registered Audio items
   serverFiles: [],         // Files on disk from /api/library
   systemStatus: null,
@@ -80,6 +91,7 @@ const state = {
     history: [],
     historySearch: '',
     activeHistoryId: null,
+    waveform: { data: null, controller: null, requestId: 0, loading: false, error: '' },
   },
 
   // Manual ground-truth diarization annotation and model evaluation
@@ -108,6 +120,7 @@ const state = {
     rangeDrag: null,
     suppressTimelineClick: false,
     loopTurnId: null,
+    waveform: { data: null, controller: null, requestId: 0, loading: false, error: '' },
   },
 
   // Post-diarization target-speaker review state
@@ -159,6 +172,7 @@ const state = {
 const puritySegmentAudio = new Audio();
 let activePuritySegmentKey = null;
 let puritySegmentPlayRaf = 0;
+let workspacePreviewRaf = 0;
 puritySegmentAudio.addEventListener('ended', stopPuritySegmentPreview);
 
 // DOM Elements Cache
@@ -235,8 +249,8 @@ const el = {
   btnClearSelection: document.getElementById('btn-clear-selection'),
   selectionHelper: document.getElementById('selection-helper'),
   timeTooltip: document.getElementById('waveform-time-tooltip'),
-  rulerMid: document.getElementById('ruler-mid'),
-  rulerEnd: document.getElementById('ruler-end'),
+  timeRuler: document.getElementById('time-ruler'),
+  waveformScrollbar: document.getElementById('waveform-scrollbar'),
   btnZoomIn: document.getElementById('btn-zoom-in'),
   btnZoomOut: document.getElementById('btn-zoom-out'),
   btnResetZoom: document.getElementById('btn-reset-zoom'),
@@ -244,9 +258,12 @@ const el = {
   wsZoomInput: document.getElementById('ws-zoom-input'),
   btnToggleSpec: document.getElementById('btn-toggle-spectrogram'),
   spectrogramPanel: document.getElementById('spectrogram-panel'),
+  specImageWrapper: document.getElementById('spec-img-wrapper'),
   specImage: document.getElementById('spec-image'),
   specLoader: document.getElementById('spec-loader'),
   btnRefreshSpec: document.getElementById('btn-refresh-spec'),
+  specSelectionOverlay: document.getElementById('spec-selection-overlay'),
+  specPlayheadLine: document.getElementById('spec-playhead-line'),
 
   // Audio Cutter
   cutStartInput: document.getElementById('cut-start-input'),
@@ -256,7 +273,6 @@ const el = {
   btnSetStartPlayhead: document.getElementById('btn-set-start-playhead'),
   btnSetEndPlayhead: document.getElementById('btn-set-end-playhead'),
   rangePresets: document.querySelectorAll('.range-preset'),
-  btnUseSelection: document.getElementById('btn-use-selection'),
   btnPreviewCut: document.getElementById('btn-preview-cut'),
   btnApplyCut: document.getElementById('btn-apply-cut'),
   btnCutAndAudition: document.getElementById('btn-cut-and-audition'),
@@ -655,12 +671,12 @@ function formatTime(seconds) {
 }
 
 function formatTimePrecise(seconds) {
-  if (isNaN(seconds) || seconds < 0) return "00:00.00";
-  const hundredths = Math.round(seconds * 100);
-  const m = Math.floor(hundredths / 6000);
-  const s = Math.floor((hundredths % 6000) / 100);
-  const fraction = hundredths % 100;
-  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${fraction.toString().padStart(2, '0')}`;
+  if (isNaN(seconds) || seconds < 0) return "00:00.000";
+  const milliseconds = Math.round(seconds * 1000);
+  const m = Math.floor(milliseconds / 60000);
+  const s = Math.floor((milliseconds % 60000) / 1000);
+  const fraction = milliseconds % 1000;
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${fraction.toString().padStart(3, '0')}`;
 }
 
 function parseTimestampToSeconds(value) {
@@ -696,7 +712,7 @@ function secondsToCutValue(seconds, unit, duration) {
   if (unit === 'timestamp') return formatTimePrecise(seconds);
   if (unit === 'minutes') return (seconds / 60).toFixed(3);
   if (unit === 'percent') return duration ? (seconds / duration * 100).toFixed(1) : '0.0';
-  return seconds.toFixed(2);
+  return seconds.toFixed(3);
 }
 
 function formatBytes(bytes) {
@@ -1223,25 +1239,46 @@ function seekRelative(offset) {
   seekTo(audio.currentTime + offset);
 }
 
+function previewWorkspaceRangeOnce(start, end) {
+  cancelAnimationFrame(workspacePreviewRaf);
+  seekTo(start);
+  state.player.previewEnd = end;
+  const monitor = () => {
+    if (state.player.previewEnd === null || el.audio.paused) return;
+    if (el.audio.currentTime >= end) {
+      el.audio.pause();
+      el.audio.currentTime = end;
+      state.player.previewEnd = null;
+      updatePlayheadPosition(end);
+      return;
+    }
+    workspacePreviewRaf = requestAnimationFrame(monitor);
+  };
+  el.audio.play()
+    .then(() => { workspacePreviewRaf = requestAnimationFrame(monitor); })
+    .catch(error => showToast(`Could not preview range: ${error.message}`, 'error'));
+}
+
 function onLoadedMetadata() {
   if (isAuditionPlaybackActive()) return;
   state.player.duration = el.audio.duration || (state.activeAudio ? state.activeAudio.duration_s : 0);
   el.timeTotal.textContent = formatTime(state.player.duration);
-  el.rulerEnd.textContent = formatTime(state.player.duration);
-  el.rulerMid.textContent = formatTime(state.player.duration / 2);
+  renderWorkspaceRuler();
 }
 
 function onTimeUpdate() {
   if (isAuditionPlaybackActive()) return;
-  const cur = el.audio.currentTime;
+  let cur = el.audio.currentTime;
   const dur = state.player.duration || 1;
-  state.player.currentTime = cur;
 
   // Check if we hit cut preview boundary
   if (state.player.previewEnd !== null && cur >= state.player.previewEnd) {
     el.audio.pause();
+    cur = state.player.previewEnd;
+    el.audio.currentTime = cur;
     state.player.previewEnd = null;
   }
+  state.player.currentTime = cur;
 
   el.timeCurrent.textContent = formatTime(cur);
 
@@ -1310,6 +1347,14 @@ async function setActiveAudio(audioId, options = { play: false }) {
     // Find registered wrapper
     const fullItem = state.audioList.find(a => a.id === audioId) || meta;
     state.activeAudio = { ...meta, id: audioId, source_type: fullItem.source_type || "local" };
+    state.waveform.controller?.abort();
+    state.waveform.requestId += 1;
+    state.waveform.specController?.abort();
+    state.waveform.specRequestId = (state.waveform.specRequestId || 0) + 1;
+    if (state.waveform.specUrl) {
+      URL.revokeObjectURL(state.waveform.specUrl);
+      state.waveform.specUrl = null;
+    }
     try {
       localStorage.setItem('sonic_active_audio_id', audioId);
     } catch (_) {}
@@ -1400,89 +1445,245 @@ async function setActiveAudio(audioId, options = { play: false }) {
 }
 
 async function loadWaveform(audioId) {
-  try {
-    const res = await fetch(`/api/audio/${audioId}/waveform`);
-    if (!res.ok) throw new Error("Failed to load waveform");
-    const data = await res.json();
-    state.activePeaks = data.peaks || [];
-    renderWaveform();
-  } catch (err) {
-    console.error("Waveform load error:", err);
-  }
+  const duration = state.activeAudio?.duration_s || 0;
+  state.waveform.audioId = audioId;
+  state.waveform.start = 0;
+  state.waveform.end = duration;
+  state.waveform.data = null;
+  state.waveform.error = '';
+  state.zoom = 1;
+  setWorkspaceViewport(0, duration, { request: false });
+  return requestWaveformWindow({
+    audioId,
+    canvas: el.waveformCanvas,
+    start: state.waveform.start,
+    end: state.waveform.end,
+    view: state.waveform,
+    draw: renderWaveform,
+  });
 }
 
 // ==================== WAVEFORM CANVAS RENDERER ====================
 
-function renderWaveform() {
-  const canvas = el.waveformCanvas;
+function drawWaveformEnvelope(canvas, view, fallbackMessage = 'No waveform data loaded') {
   if (!canvas) return;
-
-  const ctx = canvas.getContext('2d');
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(1, rect.width || canvas.parentElement?.clientWidth || 1);
+  const height = Math.max(1, rect.height || canvas.parentElement?.clientHeight || 1);
   const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.parentElement.getBoundingClientRect();
-  const width = rect.width || 1200;
-  const height = rect.height || 180;
-
-  canvas.width = Math.floor(width * dpr);
-  canvas.height = Math.floor(height * dpr);
-  ctx.scale(dpr, dpr);
-
+  const pixelWidth = Math.max(1, Math.round(width * dpr));
+  const pixelHeight = Math.max(1, Math.round(height * dpr));
+  if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
+  if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
-
-  const peaks = state.activePeaks;
-  if (!peaks || peaks.length === 0) {
+  const data = view.data;
+  const channels = data?.channels || [];
+  if (!channels.length || !channels[0]?.min?.length) {
     ctx.fillStyle = "rgba(148, 163, 184, 0.6)";
     ctx.font = "12px JetBrains Mono";
     ctx.textAlign = "center";
-    ctx.fillText("No waveform data loaded", width / 2, height / 2);
+    ctx.fillText(view.loading ? 'Loading waveform…' : (view.error || fallbackMessage), width / 2, height / 2);
     return;
   }
-
-  const numBars = peaks.length;
-  const barWidth = Math.max(1.2, (width / numBars) * state.zoom);
-  const centerY = height / 2;
-
   const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-
-  // Zero-crossing baseline
   ctx.strokeStyle = isLight ? "rgba(148, 163, 184, 0.4)" : "rgba(255, 255, 255, 0.1)";
   ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(0, centerY);
-  ctx.lineTo(width, centerY);
-  ctx.stroke();
+  const laneHeight = height / channels.length;
+  channels.forEach((channel, channelIndex) => {
+    const laneTop = laneHeight * channelIndex;
+    const centerY = laneTop + laneHeight / 2;
+    const amplitudeHeight = Math.max(1, laneHeight / 2 - 5);
+    ctx.beginPath();
+    ctx.moveTo(0, centerY);
+    ctx.lineTo(width, centerY);
+    ctx.stroke();
+    if (channelIndex) {
+      ctx.beginPath();
+      ctx.moveTo(0, laneTop);
+      ctx.lineTo(width, laneTop);
+      ctx.stroke();
+    }
+    const minima = channel.min;
+    const maxima = channel.max;
+    const count = Math.min(minima.length, maxima.length);
+    const isSampleTrace = count === data.frame_count;
+    ctx.strokeStyle = isLight ? 'hsl(205, 88%, 43%)' : 'hsl(188, 86%, 58%)';
+    ctx.lineWidth = isSampleTrace ? 1.25 : Math.max(1, width / count);
+    ctx.beginPath();
+    if (isSampleTrace) {
+      for (let index = 0; index < count; index += 1) {
+        const x = count > 1 ? index / (count - 1) * width : width / 2;
+        const y = centerY - Math.max(-1, Math.min(1, maxima[index] || 0)) * amplitudeHeight;
+        if (index) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+      }
+    } else {
+      for (let index = 0; index < count; index += 1) {
+        const x = (index + 0.5) / count * width;
+        ctx.moveTo(x, centerY - Math.max(-1, Math.min(1, maxima[index] || 0)) * amplitudeHeight);
+        ctx.lineTo(x, centerY - Math.max(-1, Math.min(1, minima[index] || 0)) * amplitudeHeight);
+      }
+    }
+    ctx.stroke();
+    if (channels.length > 1) {
+      ctx.fillStyle = 'rgba(148,163,184,.75)';
+      ctx.font = '9px JetBrains Mono';
+      ctx.textAlign = 'left';
+      ctx.fillText(`CH ${channelIndex + 1}`, 5, laneTop + 11);
+    }
+  });
+}
 
-  // Waveform vertical gradient
-  const grad = ctx.createLinearGradient(0, 0, 0, height);
-  if (isLight) {
-    grad.addColorStop(0, "hsl(217, 91%, 50%)");
-    grad.addColorStop(0.5, "hsl(190, 90%, 42%)");
-    grad.addColorStop(1, "hsl(217, 91%, 50%)");
-  } else {
-    grad.addColorStop(0, "hsl(188, 86%, 56%)");
-    grad.addColorStop(0.5, "hsl(217, 91%, 64%)");
-    grad.addColorStop(1, "hsl(188, 86%, 50%)");
-  }
-
-  ctx.fillStyle = grad;
-
-  for (let i = 0; i < numBars; i++) {
-    const x = i * barWidth;
-    if (x > width) break;
-    const amp = peaks[i] || 0.01;
-    const barHeight = Math.max(2, amp * (centerY - 10));
-
-    // Draw symmetrical waveform bar
-    ctx.fillRect(x, centerY - barHeight, Math.max(1, barWidth - 0.5), barHeight * 2);
+async function requestWaveformWindow({ audioId, canvas, start, end, view, draw }) {
+  if (!audioId || !canvas || !(end > start)) return;
+  view.controller?.abort();
+  const controller = new AbortController();
+  const requestId = ++view.requestId;
+  view.controller = controller;
+  view.loading = true;
+  view.error = '';
+  view.data = null;
+  draw();
+  const width = Math.max(1, canvas.getBoundingClientRect().width || canvas.parentElement?.clientWidth || 1);
+  const bins = Math.min(8192, Math.max(1, Math.ceil(width * (window.devicePixelRatio || 1))));
+  const query = new URLSearchParams({ start_s: String(start), end_s: String(end), bins: String(bins) });
+  try {
+    const response = await fetch(`/api/audio/${encodeURIComponent(audioId)}/waveform?${query}`, { signal: controller.signal });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to load waveform');
+    if (requestId !== view.requestId) return;
+    view.data = data;
+  } catch (error) {
+    if (error.name === 'AbortError' || requestId !== view.requestId) return;
+    view.error = error.message || 'Waveform unavailable';
+  } finally {
+    if (requestId === view.requestId) {
+      view.loading = false;
+      draw();
+    }
   }
 }
 
+function renderWaveform() {
+  drawWaveformEnvelope(el.waveformCanvas, state.waveform);
+}
+
+function workspaceDuration() {
+  return Math.max(0, state.activeAudio?.duration_s || state.player.duration || 0);
+}
+
+function workspaceTimeToX(time) {
+  const span = state.waveform.end - state.waveform.start;
+  const width = el.waveformViewport?.clientWidth || 1;
+  return span > 0 ? (time - state.waveform.start) / span * width : 0;
+}
+
+function workspaceXToTime(x) {
+  const width = el.waveformViewport?.clientWidth || 1;
+  return state.waveform.start + Math.max(0, Math.min(width, x)) / width * (state.waveform.end - state.waveform.start);
+}
+
+function workspaceMaxZoom() {
+  const duration = workspaceDuration();
+  const sampleRate = state.waveform.data?.sample_rate || state.activeAudio?.sample_rate || 44100;
+  const width = Math.max(1, el.waveformViewport?.clientWidth || 1);
+  return Math.max(1, duration * sampleRate / width);
+}
+
+function renderWorkspaceRuler() {
+  if (!el.timeRuler) return;
+  const start = state.waveform.start;
+  const end = state.waveform.end;
+  const span = end - start;
+  const width = el.timeRuler.clientWidth || 600;
+  if (!(span > 0)) {
+    el.timeRuler.innerHTML = '';
+    return;
+  }
+  const target = span / Math.max(2, width / 90);
+  const steps = [0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800];
+  const step = steps.find(value => value >= target) || Math.ceil(target / 1800) * 1800;
+  const first = Math.ceil(start / step) * step;
+  const ticks = [];
+  for (let time = first; time <= end + step * 1e-6; time += step) {
+    const left = (time - start) / span * 100;
+    const label = step < 1 ? `${time.toFixed(step < 0.01 ? 3 : 2)}s` : formatTime(time);
+    ticks.push(`<span class="ruler-tick" style="left:${left}%">${label}</span>`);
+  }
+  el.timeRuler.innerHTML = ticks.join('');
+}
+
+function updateWorkspaceScrollbar() {
+  if (!el.waveformScrollbar) return;
+  const duration = workspaceDuration();
+  const span = state.waveform.end - state.waveform.start;
+  const travel = Math.max(0, duration - span);
+  el.waveformScrollbar.disabled = travel <= 1e-12;
+  el.waveformScrollbar.value = travel > 0 ? String(Math.round(state.waveform.start / travel * 1000)) : '0';
+}
+
+function requestWorkspaceWaveform() {
+  clearTimeout(state.waveform.requestTimer);
+  state.waveform.requestTimer = setTimeout(() => {
+    requestWaveformWindow({
+      audioId: state.waveform.audioId,
+      canvas: el.waveformCanvas,
+      start: state.waveform.start,
+      end: state.waveform.end,
+      view: state.waveform,
+      draw: renderWaveform,
+    });
+  }, 45);
+}
+
+function setWorkspaceViewport(start, end, { request = true } = {}) {
+  const duration = workspaceDuration();
+  if (!(duration > 0)) return;
+  const sampleRate = Math.max(1, state.waveform.data?.sample_rate || state.activeAudio?.sample_rate || 44100);
+  const frameS = 1 / sampleRate;
+  const span = Math.max(frameS, Math.min(duration, end - start));
+  const boundedStart = Math.max(0, Math.min(start, duration - span));
+  const totalFrames = Math.max(1, Math.round(duration * sampleRate));
+  const startFrame = Math.max(0, Math.min(totalFrames - 1, Math.floor(boundedStart * sampleRate)));
+  const endFrame = Math.max(startFrame + 1, Math.min(totalFrames, Math.ceil((boundedStart + span) * sampleRate)));
+  state.waveform.start = startFrame / sampleRate;
+  state.waveform.end = endFrame / sampleRate;
+  if (state.waveform.data && (
+    Math.abs(state.waveform.data.start_s - state.waveform.start) > frameS / 2
+    || Math.abs(state.waveform.data.end_s - state.waveform.end) > frameS / 2
+  )) state.waveform.data = null;
+  state.zoom = duration / (state.waveform.end - state.waveform.start);
+  if (el.zoomLabel) el.zoomLabel.textContent = `${Math.round(state.zoom * 100)}%`;
+  if (el.wsZoomInput && document.activeElement !== el.wsZoomInput) {
+    el.wsZoomInput.value = state.zoom < 10 ? state.zoom.toFixed(1) : state.zoom.toFixed(0);
+  }
+  renderWaveform();
+  renderWorkspaceRuler();
+  updateWorkspaceScrollbar();
+  updatePlayheadPosition(state.player.currentTime);
+  updateSelectionOverlay();
+  if (request) requestWorkspaceWaveform();
+  if (!el.spectrogramPanel?.classList.contains('hidden')) scheduleSpectrogramImage();
+}
+
 function updatePlayheadPosition(currentTime) {
-  if (!state.player.duration || !el.waveformViewport) return;
-  const pct = currentTime / state.player.duration;
-  const width = el.waveformViewport.clientWidth;
-  const pos = pct * width;
+  if (!workspaceDuration() || !el.waveformViewport) return;
+  if (!el.audio?.paused && !state.waveform.editing && !state.waveform.panning) {
+    const span = state.waveform.end - state.waveform.start;
+    if (currentTime > state.waveform.end) setWorkspaceViewport(currentTime - span * 0.1, currentTime + span * 0.9);
+    else if (currentTime < state.waveform.start) setWorkspaceViewport(currentTime - span * 0.9, currentTime + span * 0.1);
+  }
+  const pos = workspaceTimeToX(currentTime);
+  const visible = pos >= 0 && pos <= el.waveformViewport.clientWidth;
+  el.playheadLine.style.opacity = visible ? '1' : '0';
   el.playheadLine.style.transform = `translateX(${pos}px)`;
+  if (el.specPlayheadLine) {
+    const specWidth = el.specImageWrapper?.clientWidth || el.waveformViewport.clientWidth;
+    const specPos = (currentTime - state.waveform.start) / (state.waveform.end - state.waveform.start) * specWidth;
+    el.specPlayheadLine.style.opacity = visible ? '1' : '0';
+    el.specPlayheadLine.style.left = `${specPos}px`;
+  }
 }
 
 function clearSelection() {
@@ -1493,102 +1694,91 @@ function clearSelection() {
   if (el.selectionActionsBar) el.selectionActionsBar.style.display = 'none';
   if (el.selectionHelper) {
     el.selectionHelper.classList.remove('has-selection');
-    el.selectionHelper.innerHTML = '<span class="selection-helper-icon">↔</span><span><strong>Select the useful moment.</strong> You can fine-tune its boundaries in the range panel.</span>';
+    el.selectionHelper.innerHTML = '<span class="selection-helper-icon">↔</span><span><strong>Click to seek or drag to select.</strong> Zoom with the controls or Ctrl/Cmd-wheel; pan horizontally with the scrollbar, trackpad, or Shift-wheel.</span>';
   }
+  updateSelectionOverlay();
 }
 
 function initWaveformInteractions() {
-  let isDragging = false;
-  let dragStartX = 0;
-  let dragMode = 'new';
-
   const viewport = el.waveformViewport;
-
   if (viewport) {
-    viewport.addEventListener('mousedown', (e) => {
-      if (!state.activeAudio) return;
+    let drag = null;
+    viewport.addEventListener('pointerdown', event => {
+      if (!state.activeAudio || event.button !== 0) return;
       const rect = viewport.getBoundingClientRect();
-      const handle = e.target.closest('.selection-handle');
-      dragMode = handle?.dataset.handle || 'new';
-      dragStartX = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
-      isDragging = true;
-
-      if (dragMode === 'new') {
-        const time = (dragStartX / rect.width) * (state.activeAudio.duration_s || 1);
-        seekTo(time);
-        state.selection.start = time;
-        state.selection.end = time;
-        state.selection.active = true;
-        updateSelectionOverlay(dragStartX, dragStartX, rect.width);
-      }
-      e.preventDefault();
+      const x = Math.max(0, Math.min(event.clientX - rect.left, rect.width));
+      drag = { pointerId: event.pointerId, mode: event.target.closest('.selection-handle')?.dataset.handle || 'new', startX: x, startTime: workspaceXToTime(x), moved: false };
+      state.waveform.editing = true;
+      viewport.setPointerCapture(event.pointerId);
+      event.preventDefault();
     });
-
-    window.addEventListener('mousemove', (e) => {
-      if (!state.activeAudio) return;
+    viewport.addEventListener('pointermove', event => {
       const rect = viewport.getBoundingClientRect();
-      const currentX = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
-
-      // Show hover time tooltip
+      const x = Math.max(0, Math.min(event.clientX - rect.left, rect.width));
       if (el.timeTooltip) {
-        if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) {
-          const hoverTime = (currentX / rect.width) * (state.activeAudio.duration_s || 1);
-          el.timeTooltip.classList.remove('hidden');
-          el.timeTooltip.textContent = formatTimePrecise(hoverTime);
-          el.timeTooltip.style.left = `${Math.min(currentX, rect.width - 60)}px`;
-        } else {
-          el.timeTooltip.classList.add('hidden');
+        el.timeTooltip.classList.remove('hidden');
+        el.timeTooltip.textContent = formatTimePrecise(workspaceXToTime(x));
+        el.timeTooltip.style.left = `${Math.min(x, rect.width - 60)}px`;
+      }
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      if (Math.abs(x - drag.startX) >= 3) drag.moved = true;
+      if (!drag.moved && drag.mode === 'new') return;
+      const time = workspaceXToTime(x);
+      const frameS = 1 / Math.max(1, state.waveform.data?.sample_rate || state.activeAudio.sample_rate || 44100);
+      if (drag.mode === 'start') state.selection.start = Math.min(time, state.selection.end - frameS);
+      else if (drag.mode === 'end') state.selection.end = Math.max(time, state.selection.start + frameS);
+      else {
+        state.selection.start = Math.min(drag.startTime, time);
+        state.selection.end = Math.max(drag.startTime, time);
+        state.selection.active = true;
+      }
+      state.selection.start = Math.max(0, state.selection.start);
+      state.selection.end = Math.min(workspaceDuration(), state.selection.end);
+      updateSelectionOverlay();
+    });
+    const finishPointer = event => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      if (!drag.moved && drag.mode === 'new') seekTo(drag.startTime);
+      else if (state.selection.active) {
+        if (el.selectionActionsBar) el.selectionActionsBar.style.display = 'flex';
+        populateCutBoundsFromSelection();
+        if (el.selectionHelper) {
+          el.selectionHelper.classList.add('has-selection');
+          el.selectionHelper.innerHTML = `<span class="selection-helper-icon">✓</span><span><strong>${formatTimePrecise(state.selection.end - state.selection.start)} selected.</strong> Drag either edge or edit millisecond-precision fields to refine it.</span>`;
         }
       }
-
-      if (!isDragging) return;
-
-      let minX;
-      let maxX;
-      if (dragMode === 'start') {
-        minX = Math.min(currentX, (state.selection.end / (state.activeAudio.duration_s || 1)) * rect.width - 1);
-        maxX = (state.selection.end / (state.activeAudio.duration_s || 1)) * rect.width;
-      } else if (dragMode === 'end') {
-        minX = (state.selection.start / (state.activeAudio.duration_s || 1)) * rect.width;
-        maxX = Math.max(currentX, minX + 1);
-      } else {
-        minX = Math.min(dragStartX, currentX);
-        maxX = Math.max(dragStartX, currentX);
+      state.waveform.editing = false;
+      if (viewport.hasPointerCapture(event.pointerId)) viewport.releasePointerCapture(event.pointerId);
+      drag = null;
+    };
+    viewport.addEventListener('pointerup', finishPointer);
+    viewport.addEventListener('pointercancel', finishPointer);
+    viewport.addEventListener('pointerleave', () => { if (!drag) el.timeTooltip?.classList.add('hidden'); });
+    viewport.addEventListener('wheel', event => {
+      if (!state.activeAudio) return;
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        const rect = viewport.getBoundingClientRect();
+        const fraction = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+        setZoom(state.zoom * Math.exp(-event.deltaY * 0.002), workspaceXToTime(fraction * rect.width), fraction);
+      } else if (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
+        event.preventDefault();
+        const delta = event.shiftKey ? event.deltaY : event.deltaX;
+        const span = state.waveform.end - state.waveform.start;
+        state.waveform.panning = true;
+        setWorkspaceViewport(state.waveform.start + delta / viewport.clientWidth * span, state.waveform.end + delta / viewport.clientWidth * span);
+        clearTimeout(state.waveform.panTimer);
+        state.waveform.panTimer = setTimeout(() => { state.waveform.panning = false; }, 140);
       }
-
-      updateSelectionOverlay(minX, maxX, rect.width);
-
-      const dur = state.activeAudio.duration_s || 1;
-      state.selection.start = (minX / rect.width) * dur;
-      state.selection.end = (maxX / rect.width) * dur;
-    });
-
-    window.addEventListener('mouseup', () => {
-      if (isDragging) {
-        isDragging = false;
-        // If minimal drag, clear selection
-        if (Math.abs(state.selection.end - state.selection.start) < 0.05) {
-          clearSelection();
-        } else {
-          if (el.selectionActionsBar) el.selectionActionsBar.style.display = 'flex';
-          populateCutBoundsFromSelection();
-          if (el.selectionHelper) {
-            el.selectionHelper.classList.add('has-selection');
-            el.selectionHelper.innerHTML = `<span class="selection-helper-icon">✓</span><span><strong>${formatTimePrecise(state.selection.end - state.selection.start)} selected.</strong> Drag the blue edges or edit the values to refine it.</span>`;
-          }
-        }
-      }
-    });
+    }, { passive: false });
   }
 
   // Audition Selection button
   if (el.btnAuditionSelection) {
     el.btnAuditionSelection.addEventListener('click', () => {
       if (!state.activeAudio || !state.selection.active) return;
-      seekTo(state.selection.start);
-      state.player.previewEnd = state.selection.end;
-      if (el.audio) el.audio.play();
-      showToast(`Auditioning selection: ${state.selection.start.toFixed(2)}s to ${state.selection.end.toFixed(2)}s`, "info");
+      previewWorkspaceRangeOnce(state.selection.start, state.selection.end);
+      showToast(`Previewing once: ${state.selection.start.toFixed(3)}s to ${state.selection.end.toFixed(3)}s`, "info");
     });
   }
 
@@ -1599,7 +1789,7 @@ function initWaveformInteractions() {
 
   // Zoom controls
   if (el.btnZoomIn) el.btnZoomIn.addEventListener('click', () => setZoom(state.zoom * 1.5));
-  if (el.btnZoomOut) el.btnZoomOut.addEventListener('click', () => setZoom(Math.max(1.0, state.zoom / 1.5)));
+  if (el.btnZoomOut) el.btnZoomOut.addEventListener('click', () => setZoom(state.zoom / 1.5));
   if (el.btnResetZoom) el.btnResetZoom.addEventListener('click', () => setZoom(1.0));
   if (el.wsZoomInput) {
     const handleWsZoom = (e) => {
@@ -1619,35 +1809,65 @@ function initWaveformInteractions() {
   // Spectrogram Toggle
   if (el.btnToggleSpec) el.btnToggleSpec.addEventListener('click', toggleSpectrogramPanel);
   if (el.btnRefreshSpec) el.btnRefreshSpec.addEventListener('click', loadSpectrogramImage);
+  el.waveformScrollbar?.addEventListener('input', () => {
+    const duration = workspaceDuration();
+    const span = state.waveform.end - state.waveform.start;
+    const start = (duration - span) * Number(el.waveformScrollbar.value) / 1000;
+    state.waveform.panning = true;
+    setWorkspaceViewport(start, start + span);
+    clearTimeout(state.waveform.panTimer);
+    state.waveform.panTimer = setTimeout(() => { state.waveform.panning = false; }, 140);
+  });
 
   window.addEventListener('resize', () => {
-    renderWaveform();
+    setWorkspaceViewport(state.waveform.start, state.waveform.end);
     if (state.activeTab === 'tab-diarization') {
       setDiarZoom(state.diarization.zoom || 1.0);
     }
   });
 }
 
-function setZoom(newZoom) {
+function setZoom(newZoom, anchorTime = null, anchorFraction = null) {
   const parsedZoom = parseFloat(newZoom);
-  state.zoom = Math.min(20.0, Math.max(0.5, !isNaN(parsedZoom) && parsedZoom > 0 ? parsedZoom : 1.0));
-  if (el.zoomLabel) el.zoomLabel.textContent = `${Math.round(state.zoom * 100)}%`;
-  if (el.wsZoomInput && document.activeElement !== el.wsZoomInput) {
-    el.wsZoomInput.value = Number.isInteger(state.zoom) ? state.zoom.toFixed(0) : state.zoom.toFixed(1);
-  }
-  renderWaveform();
-  updatePlayheadPosition(state.player.currentTime);
+  const zoom = Math.min(workspaceMaxZoom(), Math.max(1, Number.isFinite(parsedZoom) ? parsedZoom : 1));
+  const duration = workspaceDuration();
+  if (!(duration > 0)) return;
+  const oldSpan = state.waveform.end - state.waveform.start || duration;
+  const playhead = state.player.currentTime;
+  const defaultAnchor = playhead >= state.waveform.start && playhead <= state.waveform.end
+    ? playhead
+    : state.waveform.start + oldSpan / 2;
+  const anchor = Number.isFinite(anchorTime) ? anchorTime : defaultAnchor;
+  const fraction = Number.isFinite(anchorFraction) ? anchorFraction : (anchor - state.waveform.start) / oldSpan;
+  const span = duration / zoom;
+  setWorkspaceViewport(anchor - fraction * span, anchor + (1 - fraction) * span);
 }
 
-function updateSelectionOverlay(minX, maxX, totalWidth) {
-  el.selectionOverlay.classList.remove('hidden');
-  el.selectionOverlay.style.left = `${minX}px`;
-  el.selectionOverlay.style.width = `${maxX - minX}px`;
-
-  const dur = state.activeAudio.duration_s || 1;
-  const tStart = (minX / totalWidth) * dur;
-  const tEnd = (maxX / totalWidth) * dur;
-  el.selectionRangeLabel.textContent = `${tStart.toFixed(2)}s – ${tEnd.toFixed(2)}s (${(tEnd - tStart).toFixed(2)}s)`;
+function updateSelectionOverlay() {
+  if (!el.selectionOverlay) return;
+  const visibleStart = Math.max(state.selection.start, state.waveform.start);
+  const visibleEnd = Math.min(state.selection.end, state.waveform.end);
+  const visible = state.selection.active && visibleEnd > visibleStart;
+  el.selectionOverlay.classList.toggle('hidden', !visible);
+  if (el.specSelectionOverlay) el.specSelectionOverlay.classList.toggle('hidden', !visible);
+  if (!visible) return;
+  const left = workspaceTimeToX(visibleStart);
+  const right = workspaceTimeToX(visibleEnd);
+  el.selectionOverlay.style.left = `${left}px`;
+  el.selectionOverlay.style.width = `${right - left}px`;
+  const leftHandle = el.selectionOverlay.querySelector('.handle-left');
+  const rightHandle = el.selectionOverlay.querySelector('.handle-right');
+  if (leftHandle) leftHandle.style.display = state.selection.start >= state.waveform.start ? '' : 'none';
+  if (rightHandle) rightHandle.style.display = state.selection.end <= state.waveform.end ? '' : 'none';
+  el.selectionRangeLabel.textContent = `${state.selection.start.toFixed(3)}s – ${state.selection.end.toFixed(3)}s (${(state.selection.end - state.selection.start).toFixed(3)}s)`;
+  if (el.specSelectionOverlay) {
+    const specWidth = el.specImageWrapper?.clientWidth || el.waveformViewport.clientWidth;
+    const span = state.waveform.end - state.waveform.start;
+    const specLeft = (visibleStart - state.waveform.start) / span * specWidth;
+    const specRight = (visibleEnd - state.waveform.start) / span * specWidth;
+    el.specSelectionOverlay.style.left = `${specLeft}px`;
+    el.specSelectionOverlay.style.width = `${specRight - specLeft}px`;
+  }
 }
 
 async function toggleSpectrogramPanel() {
@@ -1659,18 +1879,39 @@ async function toggleSpectrogramPanel() {
 
 async function loadSpectrogramImage() {
   if (!state.activeAudio) return;
+  state.waveform.specController?.abort();
+  const controller = new AbortController();
+  const requestId = (state.waveform.specRequestId || 0) + 1;
+  state.waveform.specRequestId = requestId;
+  state.waveform.specController = controller;
   el.specLoader.classList.remove('hidden');
+  el.specLoader.textContent = 'Generating visible spectrogram…';
   el.specImage.classList.add('hidden');
-
   try {
-    el.specImage.src = `/api/audio/${state.activeAudio.id}/spectrogram?t=${Date.now()}`;
-    el.specImage.onload = () => {
-      el.specLoader.classList.add('hidden');
-      el.specImage.classList.remove('hidden');
-    };
+    const width = Math.max(32, Math.round(el.specImage.parentElement.clientWidth * (window.devicePixelRatio || 1)));
+    const height = Math.max(32, Math.round(180 * (window.devicePixelRatio || 1)));
+    const query = new URLSearchParams({ start_s: String(state.waveform.start), end_s: String(state.waveform.end), width: String(Math.min(4096, width)), height: String(Math.min(2048, height)) });
+    const response = await fetch(`/api/audio/${encodeURIComponent(state.activeAudio.id)}/spectrogram?${query}`, { signal: controller.signal });
+    if (!response.ok) throw new Error(await response.text() || 'Failed to load spectrogram');
+    const blob = await response.blob();
+    if (requestId !== state.waveform.specRequestId) return;
+    if (state.waveform.specUrl) URL.revokeObjectURL(state.waveform.specUrl);
+    state.waveform.specUrl = URL.createObjectURL(blob);
+    el.specImage.src = state.waveform.specUrl;
+    el.specLoader.classList.add('hidden');
+    el.specImage.classList.remove('hidden');
+    updateSelectionOverlay();
+    updatePlayheadPosition(state.player.currentTime);
   } catch (err) {
+    if (err.name === 'AbortError' || requestId !== state.waveform.specRequestId) return;
     el.specLoader.textContent = "Failed to load spectrogram.";
+    el.specLoader.classList.remove('hidden');
   }
+}
+
+function scheduleSpectrogramImage() {
+  clearTimeout(state.waveform.specTimer);
+  state.waveform.specTimer = setTimeout(loadSpectrogramImage, 240);
 }
 
 // ==================== AUDIO CUTTER ACTIONS ====================
@@ -1721,8 +1962,7 @@ function updateCutRangeUI(syncWaveform = false) {
 
   if (syncWaveform && el.waveformViewport) {
     state.selection = { start: range.start, end: range.effectiveEnd, active: true };
-    const width = el.waveformViewport.clientWidth;
-    updateSelectionOverlay(range.start / range.duration * width, range.effectiveEnd / range.duration * width, width);
+    updateSelectionOverlay();
     if (el.selectionActionsBar) el.selectionActionsBar.style.display = 'flex';
   }
   return true;
@@ -1740,13 +1980,6 @@ function populateCutBoundsFromSelection(showFeedback = false) {
 }
 
 function initAudioCutter() {
-  // Use Selection bounds
-  el.btnUseSelection.addEventListener('click', () => {
-    if (!populateCutBoundsFromSelection(true)) {
-      showToast("Select a region on the waveform first", "info");
-    }
-  });
-
   // Unit radio change styling
   el.cutUnitRadios.forEach(radio => {
     radio.addEventListener('change', () => {
@@ -1791,9 +2024,7 @@ function initAudioCutter() {
     const range = readCutRange();
     if (range.error) return updateCutRangeUI();
 
-    seekTo(range.start);
-    state.player.previewEnd = range.effectiveEnd;
-    el.audio.play();
+    previewWorkspaceRangeOnce(range.start, range.effectiveEnd);
     showToast(`Previewing ${formatTimePrecise(range.effectiveEnd - range.start)} clip`, "info");
   });
 
@@ -3015,6 +3246,11 @@ function initDiarizationStudio() {
   }
 
   setupDiarTimelineSeek();
+  el.diarMultitrackViewport?.addEventListener('scroll', () => {
+    state.diarization.waveform.data = null;
+    renderDiarWaveform();
+    scheduleDiarWaveform();
+  }, { passive: true });
 
   const btnScrollTop = document.getElementById('btn-scroll-to-top');
   const btnScrollTimeline = document.getElementById('btn-scroll-to-timeline');
@@ -3042,16 +3278,12 @@ function initDiarizationStudio() {
 
 async function loadDiarWaveform(audioId) {
   if (!audioId) return;
-  try {
-    const res = await fetch(`/api/audio/${audioId}/waveform`);
-    if (res.ok) {
-      const data = await res.json();
-      state.diarWaveformPeaks = data.peaks || [];
-      renderDiarWaveform();
-    }
-  } catch (err) {
-    console.warn("Could not fetch waveform peaks for diarization track:", err);
+  if (state.diarization.waveform.audioId !== audioId) {
+    state.diarization.waveform.data = null;
+    state.diarization.waveform.error = '';
   }
+  state.diarization.waveform.audioId = audioId;
+  scheduleDiarWaveform();
 }
 
 function updateDiarInputMeta(audioId) {
@@ -3569,8 +3801,10 @@ function setDiarZoom(zoom) {
     el.diarTracksArea.style.minWidth = `${targetWidth}px`;
   }
 
+  state.diarization.waveform.data = null;
   renderDiarWaveform();
   renderDiarRuler();
+  scheduleDiarWaveform();
 }
 
 function normalizedDiarizationTurns(turns, fallbackSpeakerId = "spk_00") {
@@ -3960,49 +4194,41 @@ function renderDiarRuler() {
 function renderDiarWaveform() {
   const canvas = el.diarWaveformCanvas;
   if (!canvas || !el.diarWaveformTrack) return;
+  const viewport = el.diarMultitrackViewport;
+  const labelWidth = el.diarLaneLabelsCol?.offsetWidth || 0;
+  const visibleWidth = Math.max(1, (viewport?.clientWidth || el.diarWaveformTrack.clientWidth) - labelWidth);
+  const left = Math.max(0, viewport?.scrollLeft || 0);
+  canvas.style.left = `${left}px`;
+  canvas.style.width = `${visibleWidth}px`;
+  drawWaveformEnvelope(canvas, state.diarization.waveform, 'Waveform unavailable');
+}
 
-  const rect = el.diarWaveformTrack.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  const w = el.diarWaveformTrack.clientWidth || rect.width || 800;
-  const h = el.diarWaveformTrack.clientHeight || rect.height || 44;
+function diarWaveformWindow() {
+  const duration = state.diarization.duration || 0;
+  const trackWidth = Math.max(1, el.diarTracksArea?.clientWidth || 1);
+  const labelWidth = el.diarLaneLabelsCol?.offsetWidth || 0;
+  const visibleWidth = Math.max(1, (el.diarMultitrackViewport?.clientWidth || trackWidth) - labelWidth);
+  const left = Math.max(0, el.diarMultitrackViewport?.scrollLeft || 0);
+  const start = Math.min(duration, left / trackWidth * duration);
+  return { start, end: Math.min(duration, start + visibleWidth / trackWidth * duration) };
+}
 
-  if (w <= 0 || h <= 0) return;
-
-  canvas.width = Math.floor(w * dpr);
-  canvas.height = Math.floor(h * dpr);
-
-  const ctx = canvas.getContext("2d");
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, w, h);
-
-  const peaks = state.diarWaveformPeaks || state.activePeaks || [];
-  if (peaks && peaks.length > 0) {
-    const numBars = peaks.length;
-    const barWidth = Math.max(1, w / numBars);
-    const centerY = h / 2;
-
-    const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, "hsl(188, 86%, 58%)");
-    grad.addColorStop(0.5, "hsl(217, 91%, 65%)");
-    grad.addColorStop(1, "hsl(188, 86%, 58%)");
-
-    ctx.fillStyle = grad;
-    for (let i = 0; i < numBars; i++) {
-      const val = peaks[i];
-      const barH = Math.max(2, val * (h - 8));
-      const y = centerY - barH / 2;
-      ctx.fillRect(i * barWidth, y, Math.max(1, barWidth - 0.5), barH);
-    }
-  } else {
-    const numBars = Math.floor(w / 4);
-    ctx.fillStyle = "rgba(100, 149, 237, 0.4)";
-    for (let i = 0; i < numBars; i++) {
-      const s = Math.sin(i * 0.12) * 0.4 + Math.sin(i * 0.04) * 0.3 + 0.3;
-      const barH = Math.max(2, s * (h - 10));
-      const y = (h - barH) / 2;
-      ctx.fillRect(i * 4, y, 2, barH);
-    }
-  }
+function scheduleDiarWaveform() {
+  clearTimeout(state.diarization.waveform.timer);
+  state.diarization.waveform.timer = setTimeout(() => {
+    const audioId = state.diarization.waveform.audioId || state.diarization.audioId;
+    const windowRange = diarWaveformWindow();
+    renderDiarWaveform();
+    if (!audioId || !(windowRange.end > windowRange.start)) return;
+    requestWaveformWindow({
+      audioId,
+      canvas: el.diarWaveformCanvas,
+      start: windowRange.start,
+      end: windowRange.end,
+      view: state.diarization.waveform,
+      draw: renderDiarWaveform,
+    });
+  }, 80);
 }
 
 function renderSpeakerSwimlanes() {
@@ -5936,7 +6162,13 @@ async function selectAnnotationAudio(audioId) {
     el.annAudioMeta.textContent = `${item.title || item.source_id} · ${formatAnnotationTime(item.duration_s)} · ${(item.sample_rate || 0).toLocaleString()} Hz · ${item.fingerprint || 'fingerprint pending'}`;
   }
   await setActiveAudio(audioId, { play: false });
+  if (state.annotation.waveform.audioId !== audioId) {
+    state.annotation.waveform.data = null;
+    state.annotation.waveform.error = '';
+  }
+  state.annotation.waveform.audioId = audioId;
   renderAnnotationTimeline();
+  scheduleAnnotationWaveform();
 }
 
 async function createAnnotationForSelectedAudio() {
@@ -6002,7 +6234,8 @@ async function loadAnnotation(annotationId) {
     await fetchAudioList();
     await selectAnnotationAudio(payload.session_audio_id);
   } else {
-    state.activePeaks = [];
+    state.annotation.waveform.data = null;
+    state.annotation.waveform.audioId = null;
     el.audio?.pause();
     el.audio?.removeAttribute('src');
     el.audio?.load();
@@ -6120,34 +6353,37 @@ function renderAnnotationWaveform() {
   const canvas = el.annWaveformCanvas;
   const stage = el.annTimelineStage;
   if (!canvas || !stage) return;
-  const cssWidth = Math.max(1, stage.clientWidth);
-  const cssHeight = 84;
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = Math.round(cssWidth * dpr);
-  canvas.height = Math.round(cssHeight * dpr);
-  const ctx = canvas.getContext('2d');
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, cssWidth, cssHeight);
-  const peaks = state.activePeaks || [];
-  if (!peaks.length) {
-    ctx.strokeStyle = '#43506a';
-    ctx.beginPath();
-    ctx.moveTo(0, cssHeight / 2);
-    ctx.lineTo(cssWidth, cssHeight / 2);
-    ctx.stroke();
-    return;
-  }
-  const center = cssHeight / 2;
-  const pointsPerPixel = peaks.length / cssWidth;
-  ctx.fillStyle = '#37b7d0';
-  for (let x = 0; x < cssWidth; x += 1) {
-    const start = Math.floor(x * pointsPerPixel);
-    const end = Math.max(start + 1, Math.floor((x + 1) * pointsPerPixel));
-    let peak = 0;
-    for (let index = start; index < Math.min(end, peaks.length); index += 1) peak = Math.max(peak, Math.abs(peaks[index] || 0));
-    const height = Math.max(1, peak * (cssHeight - 8));
-    ctx.fillRect(x, center - height / 2, 1, height);
-  }
+  const left = Math.max(0, el.annTimelineScroll?.scrollLeft || 0);
+  const width = Math.max(1, el.annTimelineScroll?.clientWidth || stage.clientWidth);
+  canvas.style.left = `${left}px`;
+  canvas.style.width = `${width}px`;
+  drawWaveformEnvelope(canvas, state.annotation.waveform, 'Waveform unavailable');
+}
+
+function annotationWaveformWindow() {
+  const duration = annotationDuration();
+  const stageWidth = Math.max(1, el.annTimelineStage?.clientWidth || 1);
+  const visibleWidth = Math.max(1, el.annTimelineScroll?.clientWidth || stageWidth);
+  const left = Math.max(0, el.annTimelineScroll?.scrollLeft || 0);
+  const start = Math.min(duration, left / stageWidth * duration);
+  return { start, end: Math.min(duration, start + visibleWidth / stageWidth * duration) };
+}
+
+function scheduleAnnotationWaveform() {
+  clearTimeout(state.annotation.waveform.timer);
+  state.annotation.waveform.timer = setTimeout(() => {
+    const range = annotationWaveformWindow();
+    renderAnnotationWaveform();
+    if (!state.annotation.waveform.audioId || !(range.end > range.start)) return;
+    requestWaveformWindow({
+      audioId: state.annotation.waveform.audioId,
+      canvas: el.annWaveformCanvas,
+      start: range.start,
+      end: range.end,
+      view: state.annotation.waveform,
+      draw: renderAnnotationWaveform,
+    });
+  }, 80);
 }
 
 function niceAnnotationTickStep(duration, width) {
@@ -6169,6 +6405,7 @@ function renderAnnotationTimeline() {
   if (el.annZoomLabel) el.annZoomLabel.textContent = `${Math.round(state.annotation.zoom * 100)}%`;
 
   renderAnnotationWaveform();
+  scheduleAnnotationWaveform();
   if (el.annRuler) {
     const step = niceAnnotationTickStep(duration || 1, width);
     const ticks = [];
@@ -6888,12 +7125,18 @@ function initAnnotationTab() {
 
   const setAnnotationZoom = value => {
     state.annotation.zoom = Math.max(1, Math.min(30, Number(value) || 1));
+    state.annotation.waveform.data = null;
     renderAnnotationTimeline();
   };
   el.btnAnnZoomOut?.addEventListener('click', () => setAnnotationZoom(state.annotation.zoom / 1.5));
   el.btnAnnZoomIn?.addEventListener('click', () => setAnnotationZoom(state.annotation.zoom * 1.5));
   el.btnAnnZoomFit?.addEventListener('click', () => setAnnotationZoom(1));
   el.annZoomRange?.addEventListener('input', () => setAnnotationZoom(el.annZoomRange.value));
+  el.annTimelineScroll?.addEventListener('scroll', () => {
+    state.annotation.waveform.data = null;
+    renderAnnotationWaveform();
+    scheduleAnnotationWaveform();
+  }, { passive: true });
   el.annTimelineStage?.addEventListener('click', annotationTimelineSeek);
   el.annTimelineStage?.addEventListener('pointerdown', beginAnnotationRangeDrag);
   el.annLanes?.addEventListener('pointerdown', beginAnnotationSegmentDrag);
