@@ -324,13 +324,15 @@ non-negative numbers. Existing `overlaps_other_speaker` evidence is retained
 through relabeling and merging; cleanup does not claim to remove overlapping
 speech.
 
-### `pad_and_merge_intervals(intervals, *, pre_roll_s=0.0, post_roll_s=0.0, start_bound_s=0.0, end_bound_s=None) -> list[tuple[float, float]]`
+### `pad_and_merge_intervals(intervals, *, pre_roll_s=0.0, post_roll_s=0.0, start_bound_s=0.0, end_bound_s=None, blocker_intervals=None) -> list[tuple[float, float]]`
 
 **Defined in:** `src/diarization/turn_cleanup.py`
 
 Expands extraction windows by `pre_roll_s` / `post_roll_s`, clamps them to
 `start_bound_s` and optional `end_bound_s` (typically source duration), and
-merges windows that overlap or touch. Canonical `start_s` / `end_s` values are
+merges windows that overlap or touch. Optional `blocker_intervals` are
+other-speaker windows; extra before/after stops at those bounds so foreign
+speech is not mixed into the cut. Canonical `start_s` / `end_s` values are
 not rewritten. Empty or inverted inputs are dropped. Bounds must be finite
 numbers; roll values must be non-negative.
 
@@ -1115,16 +1117,21 @@ The repository provides two specialized web platforms:
   `POST /api/diarization/extract-speaker` and
   `POST /api/diarization/extract-all-speakers` accept `clean_turns` plus the
   same `settings`. They and `POST /api/purity/export-audio` also accept
-  `extraction_settings` with `pre_roll_s` and `post_roll_s` (defaults 0.12 and
-  0.20 seconds). Padding is clamped to the source, and padded intervals that
-  overlap are merged before concatenated or time-aligned export. Registered
-  stems are tagged `turns:clean` or `turns:raw`. Canonical turns and RTTM export
-  remain unchanged. Studio exposes boundary detection, cleanup, and extraction
-  controls in that workflow order; its cleanup collar defaults to zero to
-  avoid removing speech at close boundaries. Turn Inspector **Play** uses the
-  same export pre/post-roll so audition matches extracted stems. Purity
-  verification preview clips stay tight for speaker identity; purity stem
-  export uses the same extraction padding.
+  `extraction_settings` with two opt-in post-processing flags. Default is
+  raw labeled windows (`add_extra` and `stop_at_other_speakers` both false).
+  `add_extra` applies `pre_roll_s` / `post_roll_s` (field presets 0.12 and
+  0.20 seconds). `stop_at_other_speakers` then clamps that extra to
+  neighboring other-speaker turns (optional `blocker_turns`, or other
+  speakers in the same `turns` list). Extra is clamped to the source, and
+  intervals that overlap after this expansion are merged before concatenated
+  or time-aligned export. Registered stems are tagged `turns:clean` or
+  `turns:raw`. Canonical turns and RTTM export remain unchanged. Studio
+  exposes boundary detection, cleanup, and extraction controls in that
+  workflow order; its cleanup collar defaults to zero to avoid removing
+  speech at close boundaries. Turn Inspector **Play**, **Download**, and
+  **Save Cut** use canonical `start_s`/`end_s` with no export
+  post-processing. Purity verification preview clips stay tight for speaker
+  identity; purity stem export uses the same two extraction options.
 - **Persistence:** Studio's diarization history and result-first verifier load
   the server-side canonical result catalog after refresh or restart. The
   history panel waits for that catalog before auto-restoring the selected

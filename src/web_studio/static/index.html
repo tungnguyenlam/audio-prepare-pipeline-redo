@@ -1278,18 +1278,28 @@
               <div class="subview-header">
                 <div>
                   <h3 class="subview-title">Speakers</h3>
-                  <p class="subview-desc">Rename speakers, inspect speech metrics, or extract isolated speaker audio stems.</p>
+                  <p class="subview-desc">Rename speakers, inspect speech metrics, or extract isolated speaker audio stems. Stem export post-processing is optional; with both options off the stem is the raw labeled turns.</p>
                 </div>
-                <div class="subview-actions flex-wrap gap-2">
-                  <div class="flex-row items-center gap-1">
-                    <label class="text-xs text-muted" for="diar-extract-pre-roll">4. Export Pre-roll:</label>
-                    <input type="number" id="diar-extract-pre-roll" class="filter-num-input" min="0" max="2" step="0.01" value="0.12" title="Seconds included before every exported turn. Canonical timestamps are unchanged.">
-                    <span class="text-xs text-muted">s</span>
-                  </div>
-                  <div class="flex-row items-center gap-1">
-                    <label class="text-xs text-muted" for="diar-extract-post-roll">Post-roll:</label>
-                    <input type="number" id="diar-extract-post-roll" class="filter-num-input" min="0" max="2" step="0.01" value="0.20" title="Seconds included after every exported turn. Overlapping padded intervals are merged.">
-                    <span class="text-xs text-muted">s</span>
+                <div class="subview-actions flex-wrap gap-2 extract-actions">
+                  <div class="extract-postprocess">
+                    <span class="extract-postprocess-label">Stem export post-processing</span>
+                    <span class="extract-postprocess-hint">Does not change Play, Download, or labeled times. Default is raw model turns.</span>
+                    <label class="extract-postprocess-option" for="diar-extract-add-extra">
+                      <input type="checkbox" id="diar-extract-add-extra">
+                      Add extra around each turn
+                    </label>
+                    <div class="extract-postprocess-amounts" id="diar-extract-amounts">
+                      <label class="text-xs text-muted" for="diar-extract-pre-roll">before</label>
+                      <input type="number" id="diar-extract-pre-roll" class="filter-num-input" min="0" max="2" step="0.01" value="0.12" disabled title="Seconds of extra audio before each labeled turn when Add extra is on.">
+                      <span class="text-xs text-muted">s</span>
+                      <label class="text-xs text-muted" for="diar-extract-post-roll">after</label>
+                      <input type="number" id="diar-extract-post-roll" class="filter-num-input" min="0" max="2" step="0.01" value="0.20" disabled title="Seconds of extra audio after each labeled turn when Add extra is on.">
+                      <span class="text-xs text-muted">s</span>
+                    </div>
+                    <label class="extract-postprocess-option" for="diar-extract-stop-other">
+                      <input type="checkbox" id="diar-extract-stop-other" disabled>
+                      Stop extra at another speaker
+                    </label>
                   </div>
                   <div class="flex-row items-center gap-1">
                     <label class="text-xs text-muted" for="diar-extract-mode-select">Stem Mode:</label>
@@ -1930,15 +1940,25 @@
                 <span class="text-xs text-muted" id="purity-footer-selection-info">0 passed candidates ready for export</span>
               </div>
               <div class="flex-row items-center gap-2 flex-wrap">
-                <div class="flex-row items-center gap-1">
-                  <label class="text-xs text-muted" for="purity-extract-pre-roll">4. Export Pre-roll:</label>
-                  <input type="number" id="purity-extract-pre-roll" class="filter-num-input" min="0" max="2" step="0.01" value="0.12" title="Seconds included before every exported segment. Canonical timestamps are unchanged.">
-                  <span class="text-xs text-muted">s</span>
-                </div>
-                <div class="flex-row items-center gap-1">
-                  <label class="text-xs text-muted" for="purity-extract-post-roll">Post-roll:</label>
-                  <input type="number" id="purity-extract-post-roll" class="filter-num-input" min="0" max="2" step="0.01" value="0.20" title="Seconds included after every exported segment. Overlapping padded intervals are merged.">
-                  <span class="text-xs text-muted">s</span>
+                <div class="extract-postprocess">
+                  <span class="extract-postprocess-label">Stem export post-processing</span>
+                  <span class="extract-postprocess-hint">Does not change preview clips. Default is raw passed segments.</span>
+                  <label class="extract-postprocess-option" for="purity-extract-add-extra">
+                    <input type="checkbox" id="purity-extract-add-extra">
+                    Add extra around each turn
+                  </label>
+                  <div class="extract-postprocess-amounts" id="purity-extract-amounts">
+                    <label class="text-xs text-muted" for="purity-extract-pre-roll">before</label>
+                    <input type="number" id="purity-extract-pre-roll" class="filter-num-input" min="0" max="2" step="0.01" value="0.12" disabled title="Seconds of extra audio before each passed segment when Add extra is on.">
+                    <span class="text-xs text-muted">s</span>
+                    <label class="text-xs text-muted" for="purity-extract-post-roll">after</label>
+                    <input type="number" id="purity-extract-post-roll" class="filter-num-input" min="0" max="2" step="0.01" value="0.20" disabled title="Seconds of extra audio after each passed segment when Add extra is on.">
+                    <span class="text-xs text-muted">s</span>
+                  </div>
+                  <label class="extract-postprocess-option" for="purity-extract-stop-other">
+                    <input type="checkbox" id="purity-extract-stop-other" disabled>
+                    Stop extra at another speaker
+                  </label>
                 </div>
                 <button type="button" class="btn btn-secondary btn-sm" id="btn-purity-download-json" title="Download standard SpeakerPurityResult JSON">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>

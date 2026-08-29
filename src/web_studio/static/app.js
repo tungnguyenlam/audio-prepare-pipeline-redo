@@ -68,6 +68,8 @@ const state = {
       jitter_max_duration_s: 3.0,
     },
     extractionSettings: {
+      add_extra: false,
+      stop_at_other_speakers: false,
       pre_roll_s: 0.12,
       post_roll_s: 0.20,
     },
@@ -173,7 +175,21 @@ const puritySegmentAudio = new Audio();
 let activePuritySegmentKey = null;
 let puritySegmentPlayRaf = 0;
 let workspacePreviewRaf = 0;
+let rangePreviewSeeking = false;
+let rangePreviewGeneration = 0;
+const turnPreviewAudio = new Audio();
+let turnPreviewUrl = null;
+let turnPreviewRaf = 0;
+let activeTurnPreviewKey = null;
+let turnPreviewRange = null;
+let turnPreviewGeneration = 0;
 puritySegmentAudio.addEventListener('ended', stopPuritySegmentPreview);
+turnPreviewAudio.addEventListener('ended', finishTurnPreview);
+turnPreviewAudio.addEventListener('error', () => {
+  if (!activeTurnPreviewKey) return;
+  showToast('Unable to play this turn', 'error');
+  stopTurnPreview();
+});
 
 // DOM Elements Cache
 const el = {
@@ -367,8 +383,14 @@ const el = {
   diarTurnTooltip: document.getElementById('diar-turn-tooltip'),
   diarSpeakersGrid: document.getElementById('diar-speakers-grid'),
   diarExtractModeSelect: document.getElementById('diar-extract-mode-select'),
+  diarExtractAddExtra: document.getElementById('diar-extract-add-extra'),
+  diarExtractStopOther: document.getElementById('diar-extract-stop-other'),
+  diarExtractAmounts: document.getElementById('diar-extract-amounts'),
   diarExtractPreRoll: document.getElementById('diar-extract-pre-roll'),
   diarExtractPostRoll: document.getElementById('diar-extract-post-roll'),
+  purityExtractAddExtra: document.getElementById('purity-extract-add-extra'),
+  purityExtractStopOther: document.getElementById('purity-extract-stop-other'),
+  purityExtractAmounts: document.getElementById('purity-extract-amounts'),
   purityExtractPreRoll: document.getElementById('purity-extract-pre-roll'),
   purityExtractPostRoll: document.getElementById('purity-extract-post-roll'),
   btnExtractAllSpeakers: document.getElementById('btn-extract-all-speakers'),
@@ -851,6 +873,7 @@ function setPlaybackRate(rate) {
   state.player.playbackRate = parsedRate;
   if (el.audio) el.audio.playbackRate = parsedRate;
   if (auditionAudio) auditionAudio.playbackRate = parsedRate;
+  turnPreviewAudio.playbackRate = parsedRate;
   syncSpeedControls(parsedRate);
 }
 
@@ -882,6 +905,7 @@ function initPlayer() {
       state.player.volume = parseFloat(e.target.value);
       if (el.audio) el.audio.volume = state.player.volume;
       if (auditionAudio) auditionAudio.volume = state.player.volume;
+      turnPreviewAudio.volume = state.player.volume;
       syncVolumeControls(state.player.volume);
     });
   }
@@ -893,11 +917,13 @@ function initPlayer() {
       if (audio.volume > 0) {
         if (el.audio) el.audio.volume = 0;
         if (auditionAudio) auditionAudio.volume = 0;
+        turnPreviewAudio.volume = 0;
         if (el.volumeSlider) el.volumeSlider.value = 0;
       } else {
         const restoredVolume = state.player.volume || 1.0;
         if (el.audio) el.audio.volume = restoredVolume;
         if (auditionAudio) auditionAudio.volume = restoredVolume;
+        turnPreviewAudio.volume = restoredVolume;
         if (el.volumeSlider) el.volumeSlider.value = restoredVolume;
       }
       syncVolumeControls(getPlaybackAudio().volume);
@@ -935,6 +961,7 @@ function initPlayer() {
       startDiarPlaybackWatch();
     });
     el.audio.addEventListener('pause', () => {
+      if (activeTurnPreviewKey) return;
       if (!isAuditionPlaybackActive()) setPlayingUI(false);
       updateAnnotationPlayhead(el.audio.currentTime || 0);
       stopDiarPlaybackWatch();
@@ -1186,6 +1213,10 @@ function setPlayingUI(isPlaying) {
 }
 
 function togglePlayPause() {
+  if (activeTurnPreviewKey) {
+    stopTurnPreview();
+    return;
+  }
   if (isAuditionPlaybackActive()) {
     toggleAuditionPlay();
     return;
@@ -1202,6 +1233,8 @@ function togglePlayPause() {
 }
 
 function playCurrentAudio() {
+  stopTurnPreview();
+  clearRangePreview();
   if (prepareDiarPlaybackGate() === false) {
     showToast("No more speaker segments", "info");
     return Promise.resolve();
@@ -1225,6 +1258,12 @@ function seekTo(time) {
     audio.addEventListener('loadedmetadata', () => seekTo(targetTime), { once: true });
     return;
   }
+  if (!rangePreviewSeeking) {
+    stopTurnPreview();
+    clearRangePreview();
+  } else {
+    stopRangePreviewMonitor();
+  }
   audio.currentTime = targetTime;
   if (audio === auditionAudio) {
     updateAuditionTimeDisplays();
@@ -1239,24 +1278,63 @@ function seekRelative(offset) {
   seekTo(audio.currentTime + offset);
 }
 
+function stopRangePreviewMonitor() {
+  if (workspacePreviewRaf) {
+    cancelAnimationFrame(workspacePreviewRaf);
+    workspacePreviewRaf = 0;
+  }
+}
+
+function clearRangePreview() {
+  stopRangePreviewMonitor();
+  rangePreviewGeneration += 1;
+  state.player.previewEnd = null;
+}
+
 function previewWorkspaceRangeOnce(start, end) {
-  cancelAnimationFrame(workspacePreviewRaf);
-  seekTo(start);
-  state.player.previewEnd = end;
-  const monitor = () => {
-    if (state.player.previewEnd === null || el.audio.paused) return;
-    if (el.audio.currentTime >= end) {
-      el.audio.pause();
-      el.audio.currentTime = end;
-      state.player.previewEnd = null;
-      updatePlayheadPosition(end);
-      return;
-    }
-    workspacePreviewRaf = requestAnimationFrame(monitor);
+  stopRangePreviewMonitor();
+  const startSec = Number(start) || 0;
+  const endSec = Number(end) || 0;
+  if (!el.audio || !(endSec > startSec)) return;
+  const generation = ++rangePreviewGeneration;
+
+  const begin = () => {
+    if (generation !== rangePreviewGeneration) return;
+    rangePreviewSeeking = true;
+    seekTo(startSec);
+    rangePreviewSeeking = false;
+    state.player.previewEnd = endSec;
+    const stopAt = Math.max(startSec, endSec - 0.01);
+    const monitor = () => {
+      workspacePreviewRaf = 0;
+      if (generation !== rangePreviewGeneration) return;
+      if (state.player.previewEnd === null || !el.audio || el.audio.paused) return;
+      if (el.audio.currentTime >= stopAt) {
+        el.audio.pause();
+        el.audio.currentTime = endSec;
+        state.player.previewEnd = null;
+        updatePlayheadPosition(endSec);
+        return;
+      }
+      workspacePreviewRaf = requestAnimationFrame(monitor);
+    };
+    el.audio.play()
+      .then(() => {
+        if (generation !== rangePreviewGeneration) return;
+        workspacePreviewRaf = requestAnimationFrame(monitor);
+      })
+      .catch(error => {
+        if (generation !== rangePreviewGeneration) return;
+        clearRangePreview();
+        showToast(`Could not preview range: ${error.message}`, 'error');
+      });
   };
-  el.audio.play()
-    .then(() => { workspacePreviewRaf = requestAnimationFrame(monitor); })
-    .catch(error => showToast(`Could not preview range: ${error.message}`, 'error'));
+
+  if (el.audio.readyState < 1) {
+    el.audio.addEventListener('loadedmetadata', begin, { once: true });
+    return;
+  }
+  begin();
 }
 
 function onLoadedMetadata() {
@@ -1271,12 +1349,12 @@ function onTimeUpdate() {
   let cur = el.audio.currentTime;
   const dur = state.player.duration || 1;
 
-  // Check if we hit cut preview boundary
+  // Backup stop if the animation-frame monitor is not running
   if (state.player.previewEnd !== null && cur >= state.player.previewEnd) {
+    const end = state.player.previewEnd;
     el.audio.pause();
-    cur = state.player.previewEnd;
-    el.audio.currentTime = cur;
-    state.player.previewEnd = null;
+    cur = end;
+    el.audio.currentTime = end;
   }
   state.player.currentTime = cur;
 
@@ -3220,11 +3298,21 @@ function initDiarizationStudio() {
     });
   });
 
-  [el.diarExtractPreRoll, el.diarExtractPostRoll, el.purityExtractPreRoll, el.purityExtractPostRoll]
+  [
+    el.diarExtractAddExtra,
+    el.diarExtractStopOther,
+    el.purityExtractAddExtra,
+    el.purityExtractStopOther,
+    el.diarExtractPreRoll,
+    el.diarExtractPostRoll,
+    el.purityExtractPreRoll,
+    el.purityExtractPostRoll,
+  ]
     .filter(Boolean)
     .forEach(input => {
       input.addEventListener('change', () => readDiarizationExtractionSettings(input));
     });
+  readDiarizationExtractionSettings();
 
   if (el.diarSortTurnsSelect) {
     el.diarSortTurnsSelect.addEventListener('change', (e) => {
@@ -3844,13 +3932,22 @@ function readDiarizationExtractionSettings(sourceInput) {
     const value = input ? parseFloat(input.value) : fallback;
     return Number.isFinite(value) && value >= 0 ? value : fallback;
   };
-  const preInput = sourceInput && sourceInput.id.includes('pre-roll')
+  const preInput = sourceInput && sourceInput.id && sourceInput.id.includes('pre-roll')
     ? sourceInput
     : (el.diarExtractPreRoll || el.purityExtractPreRoll);
-  const postInput = sourceInput && sourceInput.id.includes('post-roll')
+  const postInput = sourceInput && sourceInput.id && sourceInput.id.includes('post-roll')
     ? sourceInput
     : (el.diarExtractPostRoll || el.purityExtractPostRoll);
+  const addExtraInput = sourceInput && sourceInput.id && sourceInput.id.includes('add-extra')
+    ? sourceInput
+    : (el.diarExtractAddExtra || el.purityExtractAddExtra);
+  const stopOtherInput = sourceInput && sourceInput.id && sourceInput.id.includes('stop-other')
+    ? sourceInput
+    : (el.diarExtractStopOther || el.purityExtractStopOther);
+  const stopOtherChecked = Boolean(stopOtherInput?.checked);
   state.diarization.extractionSettings = {
+    add_extra: addExtra,
+    stop_at_other_speakers: addExtra && stopOtherChecked,
     pre_roll_s: readNonNegative(preInput, 0.12),
     post_roll_s: readNonNegative(postInput, 0.20),
   };
@@ -3862,16 +3959,37 @@ function readDiarizationExtractionSettings(sourceInput) {
   [el.diarExtractPostRoll, el.purityExtractPostRoll].filter(Boolean).forEach(input => {
     if (input !== postInput) input.value = postValue;
   });
+  [el.diarExtractAddExtra, el.purityExtractAddExtra].filter(Boolean).forEach(input => {
+    input.checked = addExtra;
+  });
+  const stopOther = stopOtherChecked;
+  [el.diarExtractStopOther, el.purityExtractStopOther].filter(Boolean).forEach(input => {
+    input.checked = stopOther;
+    input.disabled = !addExtra;
+    input.closest('.extract-postprocess-option')?.classList.toggle('is-disabled', !addExtra);
+  });
+  [el.diarExtractAmounts, el.purityExtractAmounts].filter(Boolean).forEach(row => {
+    row.classList.toggle('is-disabled', !addExtra);
+  });
+  [el.diarExtractPreRoll, el.diarExtractPostRoll, el.purityExtractPreRoll, el.purityExtractPostRoll]
+    .filter(Boolean)
+    .forEach(input => {
+      input.disabled = !addExtra;
+    });
   return state.diarization.extractionSettings;
 }
 
-function paddedPreviewWindow(turn) {
-  const settings = readDiarizationExtractionSettings();
-  const duration = state.diarization.duration || state.player.duration || Number.POSITIVE_INFINITY;
-  return {
-    start_s: Math.max(0, turn.start_s - settings.pre_roll_s),
-    end_s: Math.min(duration, turn.end_s + settings.post_roll_s),
-  };
+function extractionBlockerTurns() {
+  const settings = state.diarization.extractionSettings;
+  if (!settings.add_extra || !settings.stop_at_other_speakers) return [];
+  const turns = state.diarization.turns.length
+    ? state.diarization.turns
+    : (state.diarization.rawTurns || []);
+  return turns.map(turn => ({
+    speaker_id: turn.speaker_id,
+    start_s: turn.start_s,
+    end_s: turn.end_s,
+  }));
 }
 
 function updateDiarizationCleanTurnsControl() {
@@ -4505,7 +4623,7 @@ function updateDiarizationPlayhead(currentTime, totalDuration) {
   }
 
   applySpeakerSoloMuteAudio(currentTime);
-  maybeAutoAdvanceSegment(currentTime);
+  if (!activeTurnPreviewKey) maybeAutoAdvanceSegment(currentTime);
 }
 
 function applySpeakerSoloMuteAudio(currentTime) {
@@ -4809,7 +4927,7 @@ function renderTurnsTable() {
       <td class="turn-target-score">${targetScore}</td>
       <td class="table-actions">
         <div class="turn-row-actions">
-          <button class="btn btn-sm btn-ghost btn-play-turn" data-index="${idx}" title="Play turn segment">▶ Play</button>
+          <button class="btn btn-sm btn-ghost btn-play-turn" data-index="${idx}" data-preview-key="${escapeHtml(turnPreviewKey(turn))}" title="Play the labeled turn WAV (same file as Download)">▶ Play</button>
           <button type="button" class="btn btn-sm btn-ghost btn-download-turn" data-index="${idx}" title="Download this turn WAV onto this computer">⬇ Download</button>
           <button type="button" class="btn btn-sm btn-ghost btn-save-turn-cut" data-index="${idx}" title="Save this turn as a session audio cut">Save Cut</button>
           ${evaluationActions}
@@ -4828,12 +4946,7 @@ function renderTurnsTable() {
 
     tr.querySelector('.btn-play-turn').addEventListener('click', (e) => {
       e.stopPropagation();
-      const audioId = state.diarization.audioId || el.diarInputSelect.value;
-      const previewWindow = paddedPreviewWindow(turn);
-      loadAudioIntoPlayer(audioId);
-      seekTo(previewWindow.start_s);
-      state.player.previewEnd = previewWindow.end_s;
-      el.audio.play();
+      playTurnExact(turn, e.currentTarget);
     });
 
     tr.querySelector('.btn-download-turn').addEventListener('click', (e) => {
@@ -4855,6 +4968,132 @@ function renderTurnsTable() {
 
     el.turnsTableBody.appendChild(tr);
   });
+  updateTurnPreviewButtons();
+}
+
+function turnPreviewKey(turn) {
+  const audioId = state.diarization.audioId || el.diarInputSelect?.value || '';
+  return `${audioId}:${Number(turn.start_s).toFixed(3)}-${Number(turn.end_s).toFixed(3)}:${turn.speaker_id || ''}`;
+}
+
+function stopTurnPreviewMonitor() {
+  if (turnPreviewRaf) {
+    cancelAnimationFrame(turnPreviewRaf);
+    turnPreviewRaf = 0;
+  }
+}
+
+function stopTurnPreview() {
+  stopTurnPreviewMonitor();
+  turnPreviewGeneration += 1;
+  activeTurnPreviewKey = null;
+  turnPreviewRange = null;
+  turnPreviewAudio.pause();
+  turnPreviewAudio.removeAttribute('src');
+  turnPreviewAudio.load();
+  if (turnPreviewUrl) {
+    URL.revokeObjectURL(turnPreviewUrl);
+    turnPreviewUrl = null;
+  }
+  updateTurnPreviewButtons();
+  if (!isAuditionPlaybackActive() && el.audio?.paused) setPlayingUI(false);
+}
+
+function finishTurnPreview() {
+  if (turnPreviewRange) {
+    const end = turnPreviewRange.end_s;
+    const dur = state.diarization.duration || state.player.duration || 1;
+    state.player.currentTime = end;
+    if (el.audio && el.audio.readyState > 0) el.audio.currentTime = end;
+    updatePlayheadPosition(end);
+    updateDiarizationPlayhead(end, dur);
+  }
+  stopTurnPreview();
+}
+
+function updateTurnPreviewButtons() {
+  document.querySelectorAll('.btn-play-turn').forEach(btn => {
+    const isActive = Boolean(activeTurnPreviewKey) && btn.dataset.previewKey === activeTurnPreviewKey;
+    btn.textContent = isActive ? '■ Stop' : '▶ Play';
+    btn.disabled = false;
+    btn.setAttribute('aria-pressed', String(isActive));
+  });
+}
+
+function watchTurnPreviewPlayhead() {
+  const tick = () => {
+    turnPreviewRaf = 0;
+    if (!turnPreviewRange || turnPreviewAudio.paused) return;
+    const t = Math.min(
+      turnPreviewRange.end_s,
+      turnPreviewRange.start_s + (turnPreviewAudio.currentTime || 0),
+    );
+    const dur = state.diarization.duration || state.player.duration || 1;
+    state.player.currentTime = t;
+    if (el.timeCurrent) el.timeCurrent.textContent = formatTime(t);
+    updatePlayheadPosition(t);
+    updateDiarizationPlayhead(t, dur);
+    turnPreviewRaf = requestAnimationFrame(tick);
+  };
+  turnPreviewRaf = requestAnimationFrame(tick);
+}
+
+async function playTurnExact(turn, button) {
+  const { audioId } = diarizationSourceAudio();
+  if (!audioId) {
+    showToast('No active audio track selected', 'error');
+    return;
+  }
+  const start = turn.start_s;
+  const end = turn.end_s;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    showToast('This turn has an invalid time range', 'error');
+    return;
+  }
+
+  const key = turnPreviewKey(turn);
+  if (activeTurnPreviewKey === key) {
+    stopTurnPreview();
+    return;
+  }
+
+  stopTurnPreview();
+  if (el.audio && !el.audio.paused) el.audio.pause();
+  if (puritySegmentAudio && !puritySegmentAudio.paused) stopPuritySegmentPreview();
+
+  const generation = ++turnPreviewGeneration;
+  activeTurnPreviewKey = key;
+  turnPreviewRange = { start_s: start, end_s: end };
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Loading...';
+  }
+
+  try {
+    const params = new URLSearchParams({
+      start: String(start),
+      end: String(end),
+      filename: turnDownloadFilename(turn),
+    });
+    const res = await fetch(`/api/audio/${encodeURIComponent(audioId)}/segment?${params.toString()}`);
+    if (!res.ok) await parseJsonResponse(res);
+    const blob = await res.blob();
+    if (generation !== turnPreviewGeneration) return;
+    turnPreviewUrl = URL.createObjectURL(blob);
+    turnPreviewAudio.volume = state.player.volume;
+    turnPreviewAudio.playbackRate = state.player.playbackRate;
+    turnPreviewAudio.src = turnPreviewUrl;
+    await turnPreviewAudio.play();
+    if (generation !== turnPreviewGeneration) return;
+    setPlayingUI(true);
+    updateTurnPreviewButtons();
+    watchTurnPreviewPlayhead();
+  } catch (err) {
+    if (generation === turnPreviewGeneration) {
+      stopTurnPreview();
+      showToast(err.message || 'Unable to play this turn', 'error');
+    }
+  }
 }
 
 async function saveTurnAsCut(turn, button) {
@@ -5097,6 +5336,7 @@ async function extractSpeakerAudio(speakerId, speakerName) {
         clean_turns: state.diarization.cleanTurnsEnabled,
         settings: state.diarization.cleanTurnsSettings,
         extraction_settings: readDiarizationExtractionSettings(),
+        blocker_turns: extractionBlockerTurns(),
       }),
     });
     const data = await res.json();
@@ -5131,6 +5371,7 @@ async function extractAllSpeakers() {
         settings: state.diarization.cleanTurnsSettings,
         extraction_settings: readDiarizationExtractionSettings(),
         speaker_names: state.diarization.customNames,
+        blocker_turns: extractionBlockerTurns(),
       }),
     });
     const data = await res.json();
@@ -5762,6 +6003,7 @@ async function exportTargetSpeakerSegments() {
           end_s: segment.end_s,
         })),
         extraction_settings: readDiarizationExtractionSettings(),
+        blocker_turns: extractionBlockerTurns(),
       }),
     });
     const data = await response.json();
@@ -6513,10 +6755,14 @@ function selectAnnotationTurn(turnId, { seek = false } = {}) {
 function playAnnotationTurn(turn, { loop = false } = {}) {
   if (!turn || !el.audio?.src) return;
   state.annotation.loopTurnId = loop ? turn.turn_id : null;
-  state.player.previewEnd = loop ? null : turn.end_s;
-  seekTo(turn.start_s);
-  el.audio.play().catch(error => showToast(`Could not play turn: ${error.message}`, 'error'));
   if (el.btnAnnLoopSelected) el.btnAnnLoopSelected.classList.toggle('active', loop);
+  if (loop) {
+    clearRangePreview();
+    seekTo(turn.start_s);
+    el.audio.play().catch(error => showToast(`Could not play turn: ${error.message}`, 'error'));
+    return;
+  }
+  previewWorkspaceRangeOnce(turn.start_s, turn.end_s);
 }
 
 function deleteSelectedAnnotationTurn() {
@@ -7181,7 +7427,7 @@ function initAnnotationTab() {
     if (enable) playAnnotationTurn(turn, { loop: true });
     else {
       el.audio?.pause();
-      state.player.previewEnd = null;
+      clearRangePreview();
     }
   });
 
@@ -8244,6 +8490,7 @@ async function exportPurityAudio(mode = 'concat') {
           end_s: r.end_s,
         })),
         extraction_settings: readDiarizationExtractionSettings(),
+        blocker_turns: extractionBlockerTurns(),
       }),
     }));
 

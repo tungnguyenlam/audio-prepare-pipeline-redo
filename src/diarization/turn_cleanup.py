@@ -147,6 +147,30 @@ def clean_speaker_turns(
     ]
 
 
+def _clamp_pad_away_from_blockers(
+    start_s: float,
+    end_s: float,
+    padded_start: float,
+    padded_end: float,
+    blockers: list[tuple[float, float]],
+) -> tuple[float, float]:
+    """Keep extra-before/after out of other-speaker windows.
+
+    Extra may fill a gap up to the neighboring foreign turn. It does not trim
+    overlap that is already inside the labeled ``[start_s, end_s)`` window.
+    """
+    for other_start, other_end in blockers:
+        if other_end <= other_start:
+            continue
+        if other_start < padded_end and other_end > end_s:
+            limit = other_start if other_start >= end_s else end_s
+            padded_end = min(padded_end, limit)
+        if other_end > padded_start and other_start < start_s:
+            limit = other_end if other_end <= start_s else start_s
+            padded_start = max(padded_start, limit)
+    return padded_start, padded_end
+
+
 def pad_and_merge_intervals(
     intervals: Iterable[tuple[float, float]],
     *,
@@ -154,6 +178,7 @@ def pad_and_merge_intervals(
     post_roll_s: float = 0.0,
     start_bound_s: float = 0.0,
     end_bound_s: float | None = None,
+    blocker_intervals: Iterable[tuple[float, float]] | None = None,
 ) -> list[tuple[float, float]]:
     """Expand time windows for extraction, then merge any that overlap or touch.
 
@@ -166,6 +191,9 @@ def pad_and_merge_intervals(
         post_roll_s: Seconds added after each window.
         start_bound_s: Inclusive lower clamp, typically ``0``.
         end_bound_s: Optional inclusive upper clamp, typically source duration.
+        blocker_intervals: Optional other-speaker windows. When set, extra
+            before/after stops at those bounds instead of leaking foreign
+            speech into the cut.
 
     Returns:
         Merged windows ordered by start time. Empty or inverted inputs are
@@ -193,6 +221,23 @@ def pad_and_merge_intervals(
         if not isfinite(end_bound_s):
             raise ValueError("end_bound_s must be finite")
 
+    blockers: list[tuple[float, float]] = []
+    if blocker_intervals is not None:
+        for item in blocker_intervals:
+            if not isinstance(item, (tuple, list)) or len(item) < 2:
+                raise TypeError("blocker_intervals entries must be start/end pairs")
+            other_start, other_end = item[0], item[1]
+            if isinstance(other_start, bool) or isinstance(other_end, bool):
+                raise TypeError("blocker_intervals bounds must be numbers")
+            if not isinstance(other_start, (int, float)) or not isinstance(
+                other_end, (int, float)
+            ):
+                raise TypeError("blocker_intervals bounds must be numbers")
+            if not isfinite(other_start) or not isfinite(other_end):
+                raise ValueError("blocker_intervals bounds must be finite")
+            if other_end > other_start:
+                blockers.append((float(other_start), float(other_end)))
+
     padded: list[tuple[float, float]] = []
     for start_s, end_s in intervals:
         if end_s <= start_s:
@@ -201,6 +246,10 @@ def pad_and_merge_intervals(
         padded_end = end_s + post_roll_s
         if end_bound_s is not None:
             padded_end = min(end_bound_s, padded_end)
+        if blockers:
+            padded_start, padded_end = _clamp_pad_away_from_blockers(
+                start_s, end_s, padded_start, padded_end, blockers
+            )
         if padded_end > padded_start:
             padded.append((padded_start, padded_end))
 

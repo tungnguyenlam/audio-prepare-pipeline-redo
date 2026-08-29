@@ -1712,23 +1712,79 @@ def _sortformer_settings(data: dict[str, Any]) -> dict[str, float]:
     return settings
 
 
-def _extraction_settings(data: dict[str, Any]) -> dict[str, float]:
-    """Read non-destructive padding applied only while extracting stems."""
+def _validated_bool(value: Any, name: str, *, default: bool = False) -> bool:
+    """Parse one optional boolean request setting."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    raise TypeError(f"{name} must be a boolean")
+
+
+def _extraction_settings(data: dict[str, Any]) -> dict[str, Any]:
+    """Read optional stem-export post-processing. Default is raw labeled turns."""
     settings = data.get("extraction_settings") or {}
     if not isinstance(settings, dict):
         raise TypeError("extraction_settings must be an object")
+    add_extra = _validated_bool(
+        settings.get("add_extra"),
+        "extraction_settings.add_extra",
+        default=False,
+    )
+    stop_at_other_speakers = _validated_bool(
+        settings.get("stop_at_other_speakers"),
+        "extraction_settings.stop_at_other_speakers",
+        default=False,
+    )
+    pre_roll_s = _validated_float(
+        settings.get("pre_roll_s", DEFAULT_EXTRACTION_PRE_ROLL_S),
+        "extraction_settings.pre_roll_s",
+        minimum=0.0,
+    )
+    post_roll_s = _validated_float(
+        settings.get("post_roll_s", DEFAULT_EXTRACTION_POST_ROLL_S),
+        "extraction_settings.post_roll_s",
+        minimum=0.0,
+    )
+    if not add_extra:
+        pre_roll_s = 0.0
+        post_roll_s = 0.0
+        stop_at_other_speakers = False
     return {
-        "pre_roll_s": _validated_float(
-            settings.get("pre_roll_s", DEFAULT_EXTRACTION_PRE_ROLL_S),
-            "extraction_settings.pre_roll_s",
-            minimum=0.0,
-        ),
-        "post_roll_s": _validated_float(
-            settings.get("post_roll_s", DEFAULT_EXTRACTION_POST_ROLL_S),
-            "extraction_settings.post_roll_s",
-            minimum=0.0,
-        ),
+        "add_extra": add_extra,
+        "stop_at_other_speakers": stop_at_other_speakers,
+        "pre_roll_s": pre_roll_s,
+        "post_roll_s": post_roll_s,
     }
+
+
+def _turn_time_windows(turns: list[dict[str, Any]]) -> list[tuple[float, float]]:
+    """Collect finite ``[start, end)`` pairs from turn-like JSON objects."""
+    windows: list[tuple[float, float]] = []
+    for turn in turns:
+        try:
+            start_s = float(turn.get("start_s", 0))
+            end_s = float(turn.get("end_s", 0))
+        except (TypeError, ValueError):
+            continue
+        if isfinite(start_s) and isfinite(end_s) and end_s > start_s:
+            windows.append((start_s, end_s))
+    return windows
+
+
+def _request_blocker_turns(
+    data: dict[str, Any],
+    turns: list[dict[str, Any]],
+    *,
+    exclude_speaker_id: str | None,
+) -> list[dict[str, Any]]:
+    """Other-speaker windows used when stopping extra at a neighbor."""
+    raw = data.get("blocker_turns")
+    if isinstance(raw, list) and raw:
+        return [item for item in raw if isinstance(item, dict)]
+    if exclude_speaker_id is None:
+        return []
+    return [turn for turn in turns if turn.get("speaker_id") != exclude_speaker_id]
 
 
 def _padded_audio_intervals(
@@ -1738,17 +1794,23 @@ def _padded_audio_intervals(
     total_frames: int,
     pre_roll_s: float,
     post_roll_s: float,
+    add_extra: bool = False,
+    stop_at_other_speakers: bool = False,
+    blocker_turns: list[dict[str, Any]] | None = None,
 ) -> list[tuple[int, int]]:
-    """Resolve padded turn bounds and merge intervals that now overlap."""
+    """Resolve optional extra around turns and merge intervals that now overlap."""
     duration_s = total_frames / sample_rate if sample_rate else 0.0
+    blockers = (
+        _turn_time_windows(blocker_turns or [])
+        if add_extra and stop_at_other_speakers
+        else None
+    )
     windows = pad_and_merge_intervals(
-        [
-            (float(turn.get("start_s", 0)), float(turn.get("end_s", 0)))
-            for turn in turns
-        ],
-        pre_roll_s=pre_roll_s,
-        post_roll_s=post_roll_s,
+        _turn_time_windows(turns),
+        pre_roll_s=pre_roll_s if add_extra else 0.0,
+        post_roll_s=post_roll_s if add_extra else 0.0,
         end_bound_s=duration_s,
+        blocker_intervals=blockers,
     )
     intervals: list[tuple[int, int]] = []
     for start_s, end_s in windows:
@@ -3763,6 +3825,9 @@ async def handle_extract_speaker_audio(request: web.Request) -> web.Response:
             spk_turns,
             sample_rate=sr,
             total_frames=total_frames,
+            blocker_turns=_request_blocker_turns(
+                data, turns, exclude_speaker_id=speaker_id
+            ),
             **extraction_settings,
         )
 
@@ -3890,6 +3955,9 @@ async def handle_extract_all_speakers(request: web.Request) -> web.Response:
                 spk_turns,
                 sample_rate=sr,
                 total_frames=total_frames,
+                blocker_turns=[
+                    turn for turn in turns if turn.get("speaker_id") != spk_id
+                ],
                 **extraction_settings,
             )
 
@@ -5414,6 +5482,9 @@ async def handle_export_purity_audio(request: web.Request) -> web.Response:
             segments,
             sample_rate=sr,
             total_frames=total_frames,
+            blocker_turns=_request_blocker_turns(
+                data, segments, exclude_speaker_id=None
+            ),
             **extraction_settings,
         )
 

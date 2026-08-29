@@ -82,9 +82,12 @@ preview, verification, and speaker-stem extraction, while durable result JSON
 and RTTM export retain all raw turns and overlap evidence. Extracted audio is
 tagged `turns:clean` or `turns:raw` so downstream dataset selection can tell
 which boundary policy produced it. Speaker-stem, purity-stem, and target-speaker
-wav export apply optional pre-roll and post-roll only at cut time. Canonical
-`start_s`/`end_s` values are not rewritten. Padded windows that overlap after
-this expansion are merged before writing.
+wav export apply optional pre-roll and post-roll only at cut time, and only
+when the caller enables `add_extra`. Default stem export is the raw labeled
+`start_s`/`end_s` windows. When `stop_at_other_speakers` is also on, extra
+stops at neighboring other-speaker turns instead of mixing them into the
+stem. Canonical `start_s`/`end_s` values are not rewritten. Padded windows
+that overlap after this expansion are merged before writing.
 
 Studio listen/export cleanup defaults `boundary_collar_s` to `0` so close
 speaker boundaries are not trimmed. The library default of 40 ms remains the

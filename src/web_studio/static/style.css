@@ -2666,6 +2666,66 @@ button {
   gap: 0.5rem;
 }
 
+.extract-actions {
+  align-items: flex-start;
+}
+
+.extract-postprocess {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.28rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  background: var(--bg-surface-elevated);
+  min-width: 16rem;
+}
+
+.extract-postprocess-label {
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.extract-postprocess-hint {
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+  max-width: 18rem;
+}
+
+.extract-postprocess-option {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.extract-postprocess-option input {
+  margin: 0;
+}
+
+.extract-postprocess-amounts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding-left: 1.35rem;
+}
+
+.extract-postprocess-amounts.is-disabled,
+.extract-postprocess-option.is-disabled {
+  opacity: 0.45;
+}
+
+.extract-postprocess-option.is-disabled {
+  cursor: default;
+}
+
 .diar-timeline-card {
   background-color: var(--bg-surface);
 }
