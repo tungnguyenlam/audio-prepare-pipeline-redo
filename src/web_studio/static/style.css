@@ -3744,6 +3744,128 @@ button {
   font-size: 0.7rem;
 }
 
+.diar-duration-histogram {
+  padding: 10px 12px 8px;
+  margin-bottom: 0.8rem;
+  background-color: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.diar-duration-histogram-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.diar-duration-histogram-header h4 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 0.82rem;
+}
+
+.diar-duration-histogram-header p {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.diar-duration-histogram-plot {
+  width: 100%;
+  min-height: 78px;
+  overflow-x: auto;
+}
+
+.diar-duration-histogram-plot svg {
+  display: block;
+  width: 100%;
+  min-width: 600px;
+  height: auto;
+}
+
+.diar-histogram-axis,
+.diar-histogram-grid {
+  vector-effect: non-scaling-stroke;
+}
+
+.diar-histogram-axis {
+  stroke: var(--border-muted);
+  stroke-width: 1;
+}
+
+.diar-histogram-grid {
+  stroke: var(--border-subtle);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.diar-histogram-bar {
+  fill: var(--accent-cyan);
+  opacity: 0.72;
+  transition: opacity var(--transition-fast);
+}
+
+.diar-histogram-bin:hover .diar-histogram-bar {
+  opacity: 1;
+}
+
+.diar-histogram-hit-area {
+  fill: transparent;
+  pointer-events: all;
+}
+
+.diar-histogram-axis-tick,
+.diar-histogram-range,
+.diar-histogram-count,
+.diar-histogram-axis-title {
+  fill: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.diar-histogram-axis-tick,
+.diar-histogram-range {
+  font-size: 9px;
+}
+
+.diar-histogram-count {
+  fill: var(--text-secondary);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.diar-histogram-axis-title {
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.diar-duration-histogram-empty {
+  display: grid;
+  min-height: 72px;
+  place-items: center;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
+@media (max-width: 700px) {
+  .diar-duration-histogram {
+    padding-inline: 8px;
+  }
+
+  .diar-duration-histogram-header {
+    align-items: center;
+  }
+
+  .diar-duration-histogram-header p {
+    display: none;
+  }
+
+  .diar-duration-histogram-plot svg {
+    min-width: 560px;
+  }
+}
+
 .turn-time-range {
   white-space: nowrap;
 }

@@ -410,6 +410,8 @@ const el = {
   diarCleanTurnsSummary: document.getElementById('diar-clean-turns-summary'),
   diarSortTurnsSelect: document.getElementById('diar-sort-turns-select'),
   diarFilteredTurnsCount: document.getElementById('diar-filtered-turns-count'),
+  diarDurationHistogramPlot: document.getElementById('diar-duration-histogram-plot'),
+  diarDurationHistogramSummary: document.getElementById('diar-duration-histogram-summary'),
   diarReviewedCount: document.getElementById('diar-reviewed-count'),
   diarAcceptedCount: document.getElementById('diar-accepted-count'),
   diarRejectedCount: document.getElementById('diar-rejected-count'),
@@ -4884,12 +4886,123 @@ function renderTurnReviewStats(visibleCount) {
   }
 }
 
+function diarizationDurationHistogram(turns) {
+  const durations = turns.map(turn => {
+    const duration = Number(turn.end_s) - Number(turn.start_s);
+    return Number.isFinite(duration) ? Math.max(0, duration) : 0;
+  });
+  if (durations.length === 0) return null;
+
+  const minDuration = Math.min(...durations);
+  const maxDuration = Math.max(...durations);
+  let binWidth = 0.5;
+  let firstBinStart = 0;
+  let binCount = 1;
+
+  while (true) {
+    firstBinStart = Math.floor(minDuration / binWidth) * binWidth;
+    const coveredWidths = (maxDuration - firstBinStart) / binWidth;
+    binCount = Math.max(1, Math.ceil(coveredWidths - 1e-10));
+    if (binCount <= 24) break;
+
+    const exponent = Math.floor(Math.log10(binWidth));
+    const magnitude = 10 ** exponent;
+    const leading = binWidth / magnitude;
+    if (leading < 1) binWidth = magnitude;
+    else if (leading < 2) binWidth = 2 * magnitude;
+    else if (leading < 5) binWidth = 5 * magnitude;
+    else binWidth = 10 * magnitude;
+  }
+
+  const bins = Array.from({ length: binCount }, (_, index) => ({
+    start: firstBinStart + (index * binWidth),
+    end: firstBinStart + ((index + 1) * binWidth),
+    count: 0,
+  }));
+  durations.forEach(duration => {
+    const index = Math.min(
+      bins.length - 1,
+      Math.max(0, Math.floor(((duration - firstBinStart) / binWidth) + 1e-10)),
+    );
+    bins[index].count += 1;
+  });
+
+  return { bins, binWidth, minDuration, maxDuration };
+}
+
+function formatHistogramSeconds(value, binWidth) {
+  const decimals = binWidth < 1 ? 1 : 0;
+  return Number(value.toFixed(decimals)).toString();
+}
+
+function renderDiarizationDurationHistogram(turns) {
+  if (!el.diarDurationHistogramPlot) return;
+  const histogram = diarizationDurationHistogram(turns);
+  if (!histogram) {
+    el.diarDurationHistogramPlot.innerHTML = '<div class="diar-duration-histogram-empty">No turns match the active filters.</div>';
+    if (el.diarDurationHistogramSummary) el.diarDurationHistogramSummary.textContent = '0 segments';
+    return;
+  }
+
+  const { bins, binWidth } = histogram;
+  const width = 900;
+  const height = 220;
+  const margin = { top: 24, right: 18, bottom: 58, left: 52 };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const maxCount = Math.max(...bins.map(bin => bin.count), 1);
+  const slotWidth = plotWidth / bins.length;
+  const barGap = Math.min(5, slotWidth * 0.18);
+  const labelEvery = Math.max(1, Math.ceil(bins.length / 12));
+  const yTicks = [...new Set([0, Math.ceil(maxCount / 2), maxCount])].sort((a, b) => a - b);
+  const rangeText = bin => `${formatHistogramSeconds(bin.start, binWidth)}–${formatHistogramSeconds(bin.end, binWidth)}`;
+
+  const grid = yTicks.map(tick => {
+    const y = margin.top + plotHeight - ((tick / maxCount) * plotHeight);
+    return `<line class="diar-histogram-grid" x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}"></line>
+      <text class="diar-histogram-axis-tick" x="${margin.left - 8}" y="${y + 3}" text-anchor="end">${tick}</text>`;
+  }).join('');
+
+  const bars = bins.map((bin, index) => {
+    const x = margin.left + (index * slotWidth) + (barGap / 2);
+    const barWidth = Math.max(1, slotWidth - barGap);
+    const barHeight = (bin.count / maxCount) * plotHeight;
+    const y = margin.top + plotHeight - barHeight;
+    const upperRule = index === bins.length - 1 ? 'inclusive' : 'exclusive';
+    const tooltip = `${rangeText(bin)} seconds (lower inclusive, upper ${upperRule}): ${bin.count} segment${bin.count === 1 ? '' : 's'}`;
+    const showLabel = index % labelEvery === 0 || index === bins.length - 1;
+    return `<g class="diar-histogram-bin">
+        <title>${tooltip}</title>
+        <rect class="diar-histogram-hit-area" x="${margin.left + (index * slotWidth)}" y="${margin.top}" width="${slotWidth}" height="${plotHeight}"></rect>
+        <rect class="diar-histogram-bar" x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="2"></rect>
+        ${bin.count > 0 ? `<text class="diar-histogram-count" x="${x + (barWidth / 2)}" y="${Math.max(margin.top + 9, y - 5)}" text-anchor="middle">${bin.count}</text>` : ''}
+        ${showLabel ? `<text class="diar-histogram-range" x="${x + (barWidth / 2)}" y="${margin.top + plotHeight + 17}" text-anchor="middle">${rangeText(bin)}</text>` : ''}
+      </g>`;
+  }).join('');
+
+  const total = bins.reduce((sum, bin) => sum + bin.count, 0);
+  const unit = binWidth === 1 ? 'second' : 'seconds';
+  if (el.diarDurationHistogramSummary) {
+    el.diarDurationHistogramSummary.textContent = `${total} segment${total === 1 ? '' : 's'} · ${formatHistogramSeconds(binWidth, binWidth)} ${unit}/bin`;
+  }
+  el.diarDurationHistogramPlot.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Segment duration histogram with ${total} filtered turns in ${bins.length} bins of ${formatHistogramSeconds(binWidth, binWidth)} seconds">
+      <title>Filtered segment length distribution</title>
+      ${grid}
+      <line class="diar-histogram-axis" x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotHeight}"></line>
+      <line class="diar-histogram-axis" x1="${margin.left}" y1="${margin.top + plotHeight}" x2="${width - margin.right}" y2="${margin.top + plotHeight}"></line>
+      ${bars}
+      <text class="diar-histogram-axis-title" x="${margin.left + (plotWidth / 2)}" y="${height - 7}" text-anchor="middle">Duration range (seconds)</text>
+      <text class="diar-histogram-axis-title" x="14" y="${margin.top + (plotHeight / 2)}" text-anchor="middle" transform="rotate(-90 14 ${margin.top + (plotHeight / 2)})">Segment count</text>
+    </svg>`;
+}
+
 function renderTurnsTable() {
   if (!el.turnsTableBody) return;
   el.turnsTableBody.innerHTML = "";
 
   const turns = getFilteredAndSortedTurns();
   renderTurnReviewStats(turns.length);
+  renderDiarizationDurationHistogram(turns);
 
   if (turns.length === 0) {
     el.turnsTableBody.innerHTML = `<tr><td colspan="7" class="text-center text-muted" style="padding: 24px;">No turns match the active filter criteria.</td></tr>`;
