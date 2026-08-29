@@ -405,7 +405,10 @@ class ThreeDSpeakerDiarizer(BaseDiarizer, ManagedModel):
                     f"3D-Speaker diarization failed: {exc}"
                 ) from exc
 
-        turns, speakers = self._turns_from_segments(segments)
+        turns, speakers = self._turns_from_segments(
+            segments,
+            duration_s=audio.duration_s,
+        )
         return DiarizationResult(
             schema_version="2.0",
             audio_id=audio.source_id,
@@ -424,8 +427,14 @@ class ThreeDSpeakerDiarizer(BaseDiarizer, ManagedModel):
     @staticmethod
     def _turns_from_segments(
         segments: Any,
+        duration_s: float | None = None,
     ) -> tuple[list[SpeakerTurn], list[Speaker]]:
-        """Convert ``[[start, end, speaker_id], ...]`` into schema turns."""
+        """Convert ``[[start, end, speaker_id], ...]`` into schema turns.
+
+        3D-Speaker timestamps are quantized to model frames, so the final
+        segment can extend slightly past the source file. Clamp generated
+        turns to the known source duration before schema validation.
+        """
         if segments is None:
             return [], []
 
@@ -439,9 +448,14 @@ class ThreeDSpeakerDiarizer(BaseDiarizer, ManagedModel):
                 continue
             if not math.isfinite(start_s) or not math.isfinite(end_s):
                 continue
+            if duration_s is not None:
+                start_s = min(max(0.0, start_s), duration_s)
+                end_s = min(max(0.0, end_s), duration_s)
+            else:
+                start_s = max(0.0, start_s)
             if end_s <= start_s:
                 continue
-            raw_turns.append((label, max(0.0, start_s), end_s))
+            raw_turns.append((label, start_s, end_s))
 
         raw_turns.sort(key=lambda item: (item[1], item[2], item[0]))
         label_to_speaker_id: dict[str, str] = {}
