@@ -7392,14 +7392,58 @@ async function createMachineSeededAnnotation() {
   el.btnAnnCreateSeed.disabled = true;
   el.btnAnnCreateSeed.textContent = 'Creating…';
   try {
+    const result = await parseJsonResponse(await fetch(
+      `/api/diarization/results/${encodeURIComponent(seedResultId)}`
+    ));
+    const resultTurns = Array.isArray(result.turns) ? result.turns : [];
+    const speakerIds = [...new Set([
+      ...(Array.isArray(result.speakers) ? result.speakers.map(speaker => speaker.speaker_id) : []),
+      ...resultTurns.map(turn => turn.speaker_id),
+    ].filter(Boolean))];
+    const speakers = speakerIds.map((speakerId, index) => {
+      const source = result.speakers?.find(speaker => speaker.speaker_id === speakerId) || {};
+      return {
+        speaker_id: speakerId,
+        name: source.global_speaker_id || `Speaker ${index + 1}`,
+        color: ANNOTATION_SPEAKER_COLORS[index % ANNOTATION_SPEAKER_COLORS.length],
+        global_speaker_id: source.global_speaker_id || null,
+      };
+    });
+    const turnsBySpeaker = new Map();
+    resultTurns
+      .map(turn => ({
+        speaker_id: turn.speaker_id,
+        start_s: Number(turn.start_s),
+        end_s: Number(turn.end_s),
+      }))
+      .filter(turn => turn.speaker_id && Number.isFinite(turn.start_s) && Number.isFinite(turn.end_s) && turn.end_s > turn.start_s)
+      .sort((left, right) => left.speaker_id.localeCompare(right.speaker_id) || left.start_s - right.start_s || left.end_s - right.end_s)
+      .forEach(turn => {
+        const speakerTurns = turnsBySpeaker.get(turn.speaker_id) || [];
+        const previous = speakerTurns.at(-1);
+        if (previous && turn.start_s < previous.end_s) {
+          previous.end_s = Math.max(previous.end_s, turn.end_s);
+        } else {
+          speakerTurns.push({
+            turn_id: `turn_${crypto.randomUUID().replaceAll('-', '')}`,
+            ...turn,
+          });
+        }
+        turnsBySpeaker.set(turn.speaker_id, speakerTurns);
+      });
+    const turns = [...turnsBySpeaker.values()].flat()
+      .sort((left, right) => left.start_s - right.start_s || left.end_s - right.end_s);
+    if (!speakers.length || !turns.length) {
+      throw new Error('The selected diarization result has no editable speakers or turns');
+    }
     const saved = await parseJsonResponse(await fetch('/api/diarization/annotations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         session_audio_id: audioId,
         seed_result_id: seedResultId,
-        speakers: [],
-        turns: [],
+        speakers,
+        turns,
       }),
     }));
     await loadAnnotation(saved.annotation_id);
