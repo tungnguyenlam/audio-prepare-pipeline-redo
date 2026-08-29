@@ -4946,24 +4946,9 @@ function diarizationDurationHistogram(turns) {
 
   const minDuration = Math.min(...durations);
   const maxDuration = Math.max(...durations);
-  let binWidth = 0.5;
-  let firstBinStart = 0;
-  let binCount = 1;
-
-  while (true) {
-    firstBinStart = Math.floor(minDuration / binWidth) * binWidth;
-    const coveredWidths = (maxDuration - firstBinStart) / binWidth;
-    binCount = Math.max(1, Math.ceil(coveredWidths - 1e-10));
-    if (binCount <= 24) break;
-
-    const exponent = Math.floor(Math.log10(binWidth));
-    const magnitude = 10 ** exponent;
-    const leading = binWidth / magnitude;
-    if (leading < 1) binWidth = magnitude;
-    else if (leading < 2) binWidth = 2 * magnitude;
-    else if (leading < 5) binWidth = 5 * magnitude;
-    else binWidth = 10 * magnitude;
-  }
+  const binWidth = 1;
+  const firstBinStart = Math.floor(minDuration / binWidth) * binWidth;
+  const binCount = Math.max(1, Math.ceil(((maxDuration - firstBinStart) / binWidth) - 1e-10));
 
   const bins = Array.from({ length: binCount }, (_, index) => ({
     start: firstBinStart + (index * binWidth),
