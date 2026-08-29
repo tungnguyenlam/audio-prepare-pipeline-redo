@@ -1106,7 +1106,11 @@ The repository provides two specialized web platforms:
   reference with atomic file replacement;
   `DELETE /api/diarization/annotations/{annotation_id}` deletes only the
   reference JSON; and `POST /api/diarization/evaluate` compares selected
-  compatible durable model results with the reference. Evaluation accepts
+  compatible durable model results with the reference. A result is compatible
+  when it shares an exact audio fingerprint, an exact resolved path, or the
+  same `audio_id` and duration (within 50 ms) without an AudioCutter `cut_*`
+  history step. Full-length stems from the annotated YouTube source therefore
+  score against the same reference. Evaluation accepts
   `annotation_id`, `result_ids`, `collar_s` (seconds excluded on each side of
   reference boundaries), and `skip_overlap`. It returns ranked DER/JER reports,
   error components, optimal speaker mappings, and per-speaker coverage. Manual

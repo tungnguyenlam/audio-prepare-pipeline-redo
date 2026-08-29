@@ -14,6 +14,7 @@ import io
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 import time
@@ -1621,19 +1622,50 @@ def _validated_annotation_payload(
     }
 
 
+_CUT_SOURCE_ID_SUFFIX = re.compile(r"_\d+\.\d{3}-\d+\.\d{3}$")
+
+
+def _audio_is_cut(
+    *,
+    audio_id: str | None = None,
+    history: Any = None,
+    fingerprint: str | None = None,
+) -> bool:
+    """Return True when identity describes an AudioCutter excerpt.
+
+    Cuts occupy a different clock from the full-length YouTube mix and its
+    stems, so they must not family-match a mixture annotation.
+    """
+    steps = history if isinstance(history, (list, tuple)) else ()
+    if any(str(step).startswith("cut_") for step in steps):
+        return True
+    if fingerprint and "__cut_" in str(fingerprint):
+        return True
+    if audio_id and _CUT_SOURCE_ID_SUFFIX.search(str(audio_id)):
+        return True
+    return False
+
+
 def _annotation_matches_result(
     annotation: dict[str, Any], result: DiarizationResult
 ) -> tuple[bool, str]:
-    """Check that reference and hypothesis describe the same exact audio."""
+    """Check that reference and hypothesis share a scoring timeline.
+
+    Exact fingerprint or resolved path still wins. When those differ, a
+    full-length derivative (separator stem) matches if it keeps the same
+    ``audio_id`` and duration. Cuts are excluded from that family rule.
+    """
     source = annotation.get("source_audio") or {}
     result_source = result.source_audio
     if result_source is None:
         return False, "Model result has no source-audio identity"
     annotation_fingerprint = str(source.get("fingerprint") or "")
     result_fingerprint = str(result_source.fingerprint or "")
-    if annotation_fingerprint and result_fingerprint:
-        if annotation_fingerprint != result_fingerprint:
-            return False, "Audio fingerprints differ"
+    if (
+        annotation_fingerprint
+        and result_fingerprint
+        and annotation_fingerprint == result_fingerprint
+    ):
         return True, "Audio fingerprints match"
     try:
         annotation_path = Path(str(source.get("path") or "")).expanduser().resolve()
@@ -1644,13 +1676,27 @@ def _annotation_matches_result(
         pass
     annotation_duration = source.get("duration_s")
     result_duration = result_source.duration_s
+    annotation_is_cut = _audio_is_cut(
+        audio_id=str(annotation.get("audio_id") or ""),
+        history=source.get("history"),
+        fingerprint=annotation_fingerprint,
+    )
+    result_is_cut = _audio_is_cut(
+        audio_id=result.audio_id,
+        history=result_source.history,
+        fingerprint=result_fingerprint,
+    )
     if (
         annotation.get("audio_id") == result.audio_id
         and annotation_duration is not None
         and result_duration is not None
         and abs(float(annotation_duration) - float(result_duration)) <= 0.05
+        and not annotation_is_cut
+        and not result_is_cut
     ):
-        return True, "Stable source identity and duration match"
+        return True, "Same-timeline source identity and duration match"
+    if annotation_fingerprint and result_fingerprint:
+        return False, "Audio fingerprints differ and timelines are not the same"
     return False, "Result was produced from different audio"
 
 

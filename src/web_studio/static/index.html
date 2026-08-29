@@ -1415,7 +1415,7 @@
                 <h2 class="card-title">Annotate &amp; Evaluate</h2>
                 <span class="badge badge-accent">1 ms timestamps</span>
               </div>
-              <p class="card-subtitle">Build reliable speaker-reference timelines quickly, then score compatible diarization models against the same audio.</p>
+              <p class="card-subtitle">Build reliable speaker-reference timelines quickly, then score compatible diarization models against the same timeline.</p>
             </div>
             <div class="card-actions flex-wrap gap-2">
               <span class="ann-save-state" id="ann-save-state" data-state="idle">No annotation loaded</span>
@@ -1438,7 +1438,7 @@
               <select id="ann-audio-select" class="select-input">
                 <option value="">Select session or library audio…</option>
               </select>
-              <p class="text-xs text-muted" id="ann-audio-meta">Choose the exact file that model results were generated from.</p>
+              <p class="text-xs text-muted" id="ann-audio-meta">Choose the crawled clip or a same-timeline stem. Turns are timestamps on that shared clock.</p>
             </div>
             <div class="form-group mb-0">
               <label class="form-label" for="ann-saved-select">2. Reference annotation</label>
@@ -1610,14 +1610,14 @@
                   <span class="workflow-step">Model Benchmark</span>
                   <h3 class="card-title">Evaluate Diarization Results</h3>
                 </div>
-                <p class="card-subtitle">Only results whose source identity matches this reference can be scored.</p>
+                <p class="card-subtitle">Only results from this clip or same-timeline stems can be scored.</p>
               </div>
               <button class="btn btn-xs btn-ghost" id="btn-ann-refresh-results">↻ Refresh results</button>
             </div>
             <div class="ann-eval-grid">
               <div>
                 <label class="form-label">Compatible model results</label>
-                <div class="ann-result-list" id="ann-result-list"><div class="empty-placeholder">No matching results loaded.</div></div>
+                <div class="ann-result-list" id="ann-result-list"><div class="empty-placeholder">No compatible model results. Run diarization on this clip or a same-timeline stem, then refresh.</div></div>
               </div>
               <div class="ann-eval-settings">
                 <div class="form-group mb-0">

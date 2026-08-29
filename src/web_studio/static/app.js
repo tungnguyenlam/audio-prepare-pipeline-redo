@@ -7193,14 +7193,66 @@ function updateAnnotationTurnFromRow(row) {
   });
 }
 
-function annotationSourceMatchesResult(result) {
+const CUT_SOURCE_ID_SUFFIX = /_\d+\.\d{3}-\d+\.\d{3}$/;
+
+function annotationAudioIsCut(audioId, history, fingerprint) {
+  if (Array.isArray(history) && history.some(step => String(step).startsWith('cut_'))) return true;
+  if (fingerprint && String(fingerprint).includes('__cut_')) return true;
+  return Boolean(audioId && CUT_SOURCE_ID_SUFFIX.test(String(audioId)));
+}
+
+function annotationSourceMatchKind(result) {
   const annotation = state.annotation.current;
   const source = annotation?.source_audio || {};
   const resultSource = result.source_audio || {};
-  if (source.fingerprint && resultSource.fingerprint) return source.fingerprint === resultSource.fingerprint;
-  if (source.path && resultSource.path && normalizedAudioPath(source.path) === normalizedAudioPath(resultSource.path)) return true;
-  return annotation?.audio_id === result.audio_id
-    && Math.abs(Number(source.duration_s || 0) - Number(resultSource.duration_s || 0)) <= 0.05;
+  const annotationFingerprint = source.fingerprint || '';
+  const resultFingerprint = resultSource.fingerprint || '';
+  if (annotationFingerprint && resultFingerprint && annotationFingerprint === resultFingerprint) {
+    return 'fingerprint';
+  }
+  if (source.path && resultSource.path && normalizedAudioPath(source.path) === normalizedAudioPath(resultSource.path)) {
+    return 'path';
+  }
+  const annotationDuration = Number(source.duration_s);
+  const resultDuration = Number(resultSource.duration_s);
+  const annotationIsCut = annotationAudioIsCut(
+    annotation?.audio_id,
+    source.history,
+    annotationFingerprint,
+  );
+  const resultIsCut = annotationAudioIsCut(
+    result.audio_id || resultSource.source_id,
+    resultSource.history,
+    resultFingerprint,
+  );
+  if (
+    annotation?.audio_id
+    && annotation.audio_id === result.audio_id
+    && Number.isFinite(annotationDuration)
+    && Number.isFinite(resultDuration)
+    && Math.abs(annotationDuration - resultDuration) <= 0.05
+    && !annotationIsCut
+    && !resultIsCut
+  ) {
+    return 'timeline';
+  }
+  return null;
+}
+
+function annotationSourceMatchesResult(result) {
+  return annotationSourceMatchKind(result) != null;
+}
+
+function annotationResultTimelineLabel(result) {
+  const source = result?.source_audio || {};
+  const history = Array.isArray(source.history) ? source.history.filter(Boolean) : [];
+  if (history.length) return history.join(' · ');
+  const fingerprint = String(source.fingerprint || '');
+  if (fingerprint) {
+    const parts = fingerprint.split('__').filter(Boolean);
+    if (parts.length >= 3) return parts.slice(1, -1).join(' · ');
+  }
+  return 'source mix';
 }
 
 async function loadCompatibleDiarizationResults() {
@@ -7218,16 +7270,20 @@ function renderAnnotationResultList() {
   if (!el.annResultList) return;
   const results = state.annotation.resultCatalog || [];
   if (!results.length) {
-    el.annResultList.innerHTML = '<div class="empty-placeholder">No compatible model results. Run diarization on this exact audio, then refresh.</div>';
+    el.annResultList.innerHTML = '<div class="empty-placeholder">No compatible model results. Run diarization on this clip or a same-timeline stem, then refresh.</div>';
     return;
   }
   el.annResultList.innerHTML = results.map(result => {
     const model = result.model?.model_id || result.model?.backend || 'Unknown model';
     const summary = result.summary || {};
+    const matchKind = annotationSourceMatchKind(result);
+    const exact = matchKind === 'fingerprint' || matchKind === 'path';
+    const badge = exact ? 'exact file' : 'same timeline';
+    const audioLabel = annotationResultTimelineLabel(result);
     return `<label class="ann-result-option">
       <input type="checkbox" data-ann-result-id="${escapeHtml(result.result_id)}">
-      <span><strong>${escapeHtml(model)}</strong><small>${escapeHtml(result.result_id)} · ${summary.speaker_count || 0} speakers · ${summary.turn_count || 0} turns</small></span>
-      <span class="badge badge-success">source match</span>
+      <span><strong>${escapeHtml(model)}</strong><small>${escapeHtml(result.result_id)} · ${summary.speaker_count || 0} speakers · ${summary.turn_count || 0} turns</small><small>${escapeHtml(audioLabel)}</small></span>
+      <span class="badge ${exact ? 'badge-success' : 'badge-accent'}">${escapeHtml(badge)}</span>
     </label>`;
   }).join('');
 }
@@ -7279,9 +7335,11 @@ function renderAnnotationEvaluation() {
   if (el.btnAnnDownloadReport) el.btnAnnDownloadReport.disabled = reports.length === 0;
   el.annEvalResults.innerHTML = reports.map((report, index) => {
     const model = report.model?.model_id || report.model?.backend || report.result_id;
+    const catalogItem = (state.annotation.resultCatalog || []).find(item => item.result_id === report.result_id);
+    const audioLabel = catalogItem ? annotationResultTimelineLabel(catalogItem) : '';
     const mapping = (report.speaker_mapping || []).map(item => `${item.hypothesis_speaker_id} → ${annotationSpeaker(item.reference_speaker_id)?.name || item.reference_speaker_id}`).join(' · ');
     return `<section class="ann-eval-model">
-      <div class="flex-row items-center gap-2 flex-wrap"><span class="badge ${index === 0 ? 'badge-success' : 'badge-ghost'}">#${index + 1}</span><h4>${escapeHtml(model)}</h4><span class="text-xs text-muted">${escapeHtml(report.result_id)}</span></div>
+      <div class="flex-row items-center gap-2 flex-wrap"><span class="badge ${index === 0 ? 'badge-success' : 'badge-ghost'}">#${index + 1}</span><h4>${escapeHtml(model)}</h4><span class="text-xs text-muted">${escapeHtml(report.result_id)}${audioLabel ? ` · ${escapeHtml(audioLabel)}` : ''}</span></div>
       <div class="ann-score-grid">
         <div class="ann-score-card"><span>DER</span><strong>${Number(report.der_pct).toFixed(2)}%</strong></div>
         <div class="ann-score-card"><span>JER</span><strong>${Number(report.jer_pct).toFixed(2)}%</strong></div>

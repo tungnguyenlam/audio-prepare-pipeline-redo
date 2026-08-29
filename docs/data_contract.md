@@ -120,7 +120,9 @@ by turns on different speaker lanes. JSON and NIST RTTM are exchange formats.
 
 Manual evaluation compares one annotation with one or more compatible durable
 `DiarizationResult` values. Compatibility prefers an exact audio fingerprint,
-then an exact resolved path, then stable source identity plus duration. Reports
+then an exact resolved path, then the same stable `audio_id` and duration
+(within 50 ms) for full-length derivatives such as separator stems. Cuts are
+excluded from that family match because they occupy a different clock. Reports
 contain DER, JER, missed speech, false alarm, speaker confusion, scored duration,
 optimal one-to-one hypothesis/reference speaker mapping, and per-reference-
 speaker coverage. The boundary collar is excluded on each side of every
