@@ -1456,6 +1456,16 @@
               <input id="ann-name-input" class="text-input" placeholder="Ground truth annotation" disabled>
               <p class="text-xs text-muted" id="ann-revision-label">Autosave starts after the first edit.</p>
             </div>
+            <div class="form-group mb-0 ann-seed-setup">
+              <label class="form-label" for="ann-seed-result-select">Start from model result</label>
+              <select id="ann-seed-result-select" class="select-input" disabled>
+                <option value="">Select compatible saved result…</option>
+              </select>
+              <div class="flex-row items-center gap-2" style="margin-top: 6px;">
+                <button class="btn btn-xs btn-secondary" id="btn-ann-create-seed" disabled>Create editable draft</button>
+                <span class="text-xs text-muted" id="ann-seed-result-meta">Select source audio first.</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1466,6 +1476,10 @@
         </div>
 
         <div id="ann-workspace" class="hidden">
+          <div id="ann-seed-notice" class="ann-seed-notice hidden" role="status">
+            <strong>Machine-seeded—review required</strong>
+            <span id="ann-seed-notice-detail">Verify speaker identities and every boundary before treating this reference as ground truth.</span>
+          </div>
           <div class="ann-shortcuts-strip" aria-label="Annotation keyboard shortcuts">
             <span><kbd>Space</kbd> play / pause</span>
             <span><kbd>I</kbd> mark in</span>

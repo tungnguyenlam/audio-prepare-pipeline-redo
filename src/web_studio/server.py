@@ -1466,6 +1466,7 @@ def _annotation_summary(annotation: dict[str, Any]) -> dict[str, Any]:
         "audio_id": annotation.get("audio_id"),
         "session_audio_id": _annotation_session_audio_id(annotation),
         "source_audio": annotation.get("source_audio"),
+        "seed": annotation.get("seed"),
         "speaker_count": len(speakers),
         "turn_count": len(turns),
         "speech_duration_s": round(
@@ -1521,6 +1522,66 @@ def _validated_annotation_payload(
             "format": audio.format,
         }
         audio_id = audio.source_id
+
+    seed = existing.get("seed") if existing is not None else None
+    if existing is None and data.get("seed_result_id"):
+        seed_result_id = str(data.get("seed_result_id") or "").strip()
+        seed_result = _load_diarization_result(seed_result_id)
+        candidate_annotation = {
+            "audio_id": audio_id,
+            "source_audio": source_audio,
+        }
+        matches, reason = _annotation_matches_result(candidate_annotation, seed_result)
+        if not matches:
+            raise ValueError(
+                f"Diarization result {seed_result_id} cannot seed this audio: {reason}"
+            )
+        model = asdict(seed_result.model) if seed_result.model else None
+        model_name = (
+            seed_result.model.model_id
+            if seed_result.model is not None
+            else "Unknown model"
+        )
+        colors = (
+            "#168aad", "#2f9e6f", "#c98200", "#dc3656", "#805ad5",
+            "#2574c8", "#65a30d", "#d95f20", "#0891b2", "#be185d",
+        )
+        data = dict(data)
+        data["name"] = data.get("name") or (
+            f"{source_audio.get('title') or audio_id} — {model_name} assisted reference"
+        )
+        data["speakers"] = [
+            {
+                "speaker_id": speaker.speaker_id,
+                "name": speaker.global_speaker_id or f"Speaker {index + 1}",
+                "color": colors[index % len(colors)],
+                "global_speaker_id": speaker.global_speaker_id,
+            }
+            for index, speaker in enumerate(seed_result.speakers)
+        ]
+        merged_by_speaker: dict[str, list[dict[str, Any]]] = {}
+        for turn in sorted(
+            seed_result.turns,
+            key=lambda item: (item.speaker_id, item.start_s, item.end_s),
+        ):
+            start_s = round(float(turn.start_s), 3)
+            end_s = round(float(turn.end_s), 3)
+            speaker_turns = merged_by_speaker.setdefault(turn.speaker_id, [])
+            if speaker_turns and start_s < speaker_turns[-1]["end_s"]:
+                speaker_turns[-1]["end_s"] = max(speaker_turns[-1]["end_s"], end_s)
+            else:
+                speaker_turns.append(
+                    {
+                        "turn_id": f"turn_{uuid.uuid4().hex}",
+                        "speaker_id": turn.speaker_id,
+                        "start_s": start_s,
+                        "end_s": end_s,
+                    }
+                )
+        data["turns"] = [
+            turn for speaker_turns in merged_by_speaker.values() for turn in speaker_turns
+        ]
+        seed = {"result_id": seed_result_id, "model": model, "created_at": now}
 
     try:
         duration_s = float(source_audio.get("duration_s"))
@@ -1606,7 +1667,7 @@ def _validated_annotation_payload(
     name = str(data.get("name") or source_audio.get("title") or "Ground truth").strip()
     if not name:
         raise ValueError("Annotation name cannot be empty")
-    return {
+    payload = {
         "kind": "diarization.annotation",
         "schema_version": "1.0",
         "annotation_id": annotation_id,
@@ -1620,6 +1681,9 @@ def _validated_annotation_payload(
         "speakers": speakers,
         "turns": turns,
     }
+    if seed is not None:
+        payload["seed"] = seed
+    return payload
 
 
 _CUT_SOURCE_ID_SUFFIX = re.compile(r"_\d+\.\d{3}-\d+\.\d{3}$")

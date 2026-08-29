@@ -1103,7 +1103,11 @@ The repository provides two specialized web platforms:
   `GET /api/diarization/annotations/{annotation_id}` returns a full reference
   and re-registers its source audio when the file remains available;
   `POST /api/diarization/annotations` creates or revision-saves a validated
-  reference with atomic file replacement;
+  reference with atomic file replacement. For a new reference it optionally
+  accepts `seed_result_id`; the server requires that durable result to match the
+  selected source timeline, copies its speakers and raw turns into an editable
+  annotation, normalizes same-speaker overlap, and records immutable
+  `seed.result_id`, `seed.model`, and `seed.created_at` provenance;
   `DELETE /api/diarization/annotations/{annotation_id}` deletes only the
   reference JSON; and `POST /api/diarization/evaluate` compares selected
   compatible durable model results with the reference. A result is compatible

@@ -111,12 +111,19 @@ Manual ground truth uses `kind: "diarization.annotation"` and schema version
 - speakers with stable local `speaker_id`, display name, color, and optional
   `global_speaker_id` linking an enrolled speaker profile; and
 - turns with stable `turn_id`, `speaker_id`, and second-based `start_s` / `end_s`
-  values preserved to microsecond JSON precision.
+  values preserved to microsecond JSON precision; and
+- an optional immutable `seed` object for machine-assisted references containing
+  the saved diarization `result_id`, a `model` metadata snapshot, and the seed
+  `created_at` timestamp.
 
 Writes are atomic and revision checked. A stale client receives HTTP 409 rather
 than overwriting a newer revision. Turn validation requires finite in-bounds
 timestamps and rejects same-speaker overlap; simultaneous speech is represented
 by turns on different speaker lanes. JSON and NIST RTTM are exchange formats.
+When created from a saved model result, raw turns are copied at millisecond
+precision with new annotation turn IDs. Only overlapping turns from the same
+speaker are merged; cross-speaker overlap is preserved. The source result JSON
+and any previously open annotation remain unchanged.
 
 Manual evaluation compares one annotation with one or more compatible durable
 `DiarizationResult` values. Compatibility prefers an exact audio fingerprint,

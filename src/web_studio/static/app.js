@@ -117,6 +117,7 @@ const state = {
     dirty: false,
     editVersion: 0,
     resultCatalog: [],
+    seedResultId: null,
     evaluation: null,
     drag: null,
     rangeDrag: null,
@@ -468,6 +469,11 @@ const el = {
   btnAnnDelete: document.getElementById('btn-ann-delete'),
   annNameInput: document.getElementById('ann-name-input'),
   annRevisionLabel: document.getElementById('ann-revision-label'),
+  annSeedResultSelect: document.getElementById('ann-seed-result-select'),
+  annSeedResultMeta: document.getElementById('ann-seed-result-meta'),
+  btnAnnCreateSeed: document.getElementById('btn-ann-create-seed'),
+  annSeedNotice: document.getElementById('ann-seed-notice'),
+  annSeedNoticeDetail: document.getElementById('ann-seed-notice-detail'),
   annEmptyState: document.getElementById('ann-empty-state'),
   annWorkspace: document.getElementById('ann-workspace'),
   btnAnnStart: document.getElementById('btn-ann-start'),
@@ -6467,6 +6473,7 @@ async function saveAnnotationNow() {
     current.source_audio = saved.source_audio;
     current.audio_id = saved.audio_id;
     current.name = saved.name;
+    current.seed = saved.seed || null;
     state.annotation.turns = structuredClone(saved.turns || []);
     state.annotation.speakers = structuredClone(saved.speakers || []);
     if (state.annotation.editVersion === capturedVersion) {
@@ -6531,12 +6538,14 @@ function clearAnnotationEditor() {
   state.annotation.loopTurnId = null;
   state.annotation.dirty = false;
   state.annotation.evaluation = null;
+  state.annotation.seedResultId = null;
   el.annTimelineStage?.classList.remove('selecting');
   if (el.annNameInput) {
     el.annNameInput.value = '';
     el.annNameInput.disabled = true;
   }
   el.annWorkspace?.classList.add('hidden');
+  el.annSeedNotice?.classList.add('hidden');
   el.annEmptyState?.classList.remove('hidden');
   if (el.btnAnnExport) el.btnAnnExport.disabled = true;
   setAnnotationSaveState('No annotation loaded', 'idle');
@@ -6570,6 +6579,7 @@ async function selectAnnotationAudio(audioId) {
   state.annotation.waveform.audioId = audioId;
   renderAnnotationTimeline();
   scheduleAnnotationWaveform();
+  await loadCompatibleDiarizationResults();
 }
 
 async function createAnnotationForSelectedAudio() {
@@ -6618,6 +6628,7 @@ async function loadAnnotation(annotationId) {
   );
   clearAnnotationEditor();
   state.annotation.current = payload;
+  state.annotation.seedResultId = payload.seed?.result_id || null;
   state.annotation.audioId = payload.session_audio_id || null;
   state.annotation.speakers = structuredClone(payload.speakers || []);
   state.annotation.turns = structuredClone(payload.turns || []);
@@ -6647,6 +6658,7 @@ async function loadAnnotation(annotationId) {
   setAnnotationSaveState(`Saved · r${payload.revision}`, 'saved');
   if (el.btnAnnExport) el.btnAnnExport.disabled = false;
   renderAnnotationEditor();
+  renderAnnotationSeedNotice();
   await loadCompatibleDiarizationResults();
 }
 
@@ -6901,6 +6913,7 @@ function renderAnnotationTurnsTable() {
 
 function renderAnnotationEditor() {
   if (!state.annotation.current) return;
+  renderAnnotationSeedNotice();
   renderAnnotationSpeakers();
   renderAnnotationTimeline();
   renderAnnotationTurnsTable();
@@ -7275,7 +7288,11 @@ function annotationAudioIsCut(audioId, history, fingerprint) {
 }
 
 function annotationSourceMatchKind(result) {
-  const annotation = state.annotation.current;
+  const selectedAudio = state.audioList.find(item => item.id === state.annotation.audioId);
+  const annotation = state.annotation.current || (selectedAudio ? {
+    audio_id: selectedAudio.source_id,
+    source_audio: selectedAudio,
+  } : null);
   const source = annotation?.source_audio || {};
   const resultSource = result.source_audio || {};
   const annotationFingerprint = source.fingerprint || '';
@@ -7329,13 +7346,62 @@ function annotationResultTimelineLabel(result) {
 }
 
 async function loadCompatibleDiarizationResults() {
-  if (!el.annResultList || !state.annotation.current) return;
+  if (!state.annotation.current && !state.annotation.audioId) return;
   try {
     const payload = await parseJsonResponse(await fetch('/api/diarization/results'));
     state.annotation.resultCatalog = (payload.results || []).filter(annotationSourceMatchesResult);
     renderAnnotationResultList();
+    renderAnnotationSeedSelector();
   } catch (error) {
-    el.annResultList.innerHTML = `<div class="empty-placeholder">${escapeHtml(error.message)}</div>`;
+    if (el.annResultList) el.annResultList.innerHTML = `<div class="empty-placeholder">${escapeHtml(error.message)}</div>`;
+    if (el.annSeedResultMeta) el.annSeedResultMeta.textContent = error.message;
+  }
+}
+
+function renderAnnotationSeedSelector() {
+  if (!el.annSeedResultSelect) return;
+  const results = state.annotation.resultCatalog || [];
+  el.annSeedResultSelect.innerHTML = '<option value="">Select compatible saved result…</option>' + results.map(result => {
+    const model = result.model?.model_id || result.model?.backend || 'Unknown model';
+    const summary = result.summary || {};
+    const exact = ['fingerprint', 'path'].includes(annotationSourceMatchKind(result));
+    return `<option value="${escapeHtml(result.result_id)}">${escapeHtml(model)} — ${summary.speaker_count || 0} speakers · ${summary.turn_count || 0} turns · ${exact ? 'exact file' : 'same timeline'}</option>`;
+  }).join('');
+  el.annSeedResultSelect.disabled = !results.length;
+  el.btnAnnCreateSeed.disabled = true;
+  if (el.annSeedResultMeta) {
+    el.annSeedResultMeta.textContent = results.length
+      ? `${results.length} compatible saved result${results.length === 1 ? '' : 's'}.`
+      : 'No exact-file or same-timeline results available.';
+  }
+}
+
+function renderAnnotationSeedNotice() {
+  const seed = state.annotation.current?.seed;
+  el.annSeedNotice?.classList.toggle('hidden', !seed);
+  if (!seed || !el.annSeedNoticeDetail) return;
+  const model = seed.model?.model_id || seed.model?.backend || 'saved model result';
+  el.annSeedNoticeDetail.textContent = `Seeded from ${model} (${seed.result_id}). Verify speaker identities and every boundary before treating this reference as ground truth.`;
+}
+
+async function createMachineSeededAnnotation() {
+  const seedResultId = el.annSeedResultSelect?.value;
+  const audioId = state.annotation.audioId || el.annAudioSelect?.value;
+  if (!audioId || !seedResultId) return;
+  await saveAnnotationNow();
+  el.btnAnnCreateSeed.disabled = true;
+  el.btnAnnCreateSeed.textContent = 'Creating…';
+  try {
+    const saved = await parseJsonResponse(await fetch('/api/diarization/annotations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_audio_id: audioId, seed_result_id: seedResultId }),
+    }));
+    await loadAnnotation(saved.annotation_id);
+    showToast('Editable machine-seeded reference created', 'success');
+  } finally {
+    el.btnAnnCreateSeed.textContent = 'Create editable draft';
+    el.btnAnnCreateSeed.disabled = !el.annSeedResultSelect?.value;
   }
 }
 
@@ -7354,7 +7420,7 @@ function renderAnnotationResultList() {
     const badge = exact ? 'exact file' : 'same timeline';
     const audioLabel = annotationResultTimelineLabel(result);
     return `<label class="ann-result-option">
-      <input type="checkbox" data-ann-result-id="${escapeHtml(result.result_id)}">
+      <input type="checkbox" data-ann-result-id="${escapeHtml(result.result_id)}" ${result.result_id === state.annotation.seedResultId ? 'checked' : ''}>
       <span><strong>${escapeHtml(model)}</strong><small>${escapeHtml(result.result_id)} · ${summary.speaker_count || 0} speakers · ${summary.turn_count || 0} turns</small><small>${escapeHtml(audioLabel)}</small></span>
       <span class="badge ${exact ? 'badge-success' : 'badge-accent'}">${escapeHtml(badge)}</span>
     </label>`;
@@ -7528,6 +7594,18 @@ function initAnnotationTab() {
   });
   el.btnAnnBrowseLibrary?.addEventListener('click', () => openLibraryModal('annotation'));
   el.btnAnnNew?.addEventListener('click', createAnnotationForSelectedAudio);
+  el.annSeedResultSelect?.addEventListener('change', () => {
+    const result = state.annotation.resultCatalog.find(item => item.result_id === el.annSeedResultSelect.value);
+    el.btnAnnCreateSeed.disabled = !result;
+    if (!result || !el.annSeedResultMeta) return;
+    const model = result.model?.model_id || result.model?.backend || 'Unknown model';
+    const summary = result.summary || {};
+    const exact = ['fingerprint', 'path'].includes(annotationSourceMatchKind(result));
+    el.annSeedResultMeta.textContent = `${model} · ${summary.speaker_count || 0} speakers · ${summary.turn_count || 0} turns · ${exact ? 'exact file' : 'same timeline'}`;
+  });
+  el.btnAnnCreateSeed?.addEventListener('click', () => {
+    createMachineSeededAnnotation().catch(error => showToast(`Could not create draft: ${error.message}`, 'error'));
+  });
   el.btnAnnLoad?.addEventListener('click', () => {
     const annotationId = el.annSavedSelect?.value;
     if (!annotationId) showToast('Choose a saved annotation first', 'info');
