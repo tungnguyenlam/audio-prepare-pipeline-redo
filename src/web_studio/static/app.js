@@ -191,6 +191,35 @@ turnPreviewAudio.addEventListener('error', () => {
   stopTurnPreview();
 });
 
+const TIMELINE_MAX_ZOOM = 1000;
+const TIMELINE_ZOOM_SLIDER_MAX = 1000;
+
+function clampTimelineZoom(zoom, minZoom) {
+  const parsed = Number(zoom);
+  const fallback = Number.isFinite(minZoom) ? minZoom : 1;
+  return Math.min(
+    TIMELINE_MAX_ZOOM,
+    Math.max(fallback, Number.isFinite(parsed) && parsed > 0 ? parsed : fallback),
+  );
+}
+
+function timelineZoomToSlider(zoom, minZoom) {
+  const clamped = clampTimelineZoom(zoom, minZoom);
+  const t = Math.log(clamped / minZoom) / Math.log(TIMELINE_MAX_ZOOM / minZoom);
+  return Math.round(Math.max(0, Math.min(1, t)) * TIMELINE_ZOOM_SLIDER_MAX);
+}
+
+function timelineSliderToZoom(sliderValue, minZoom) {
+  const t = Math.max(0, Math.min(1, Number(sliderValue) / TIMELINE_ZOOM_SLIDER_MAX));
+  return minZoom * Math.pow(TIMELINE_MAX_ZOOM / minZoom, t);
+}
+
+function formatZoomMultiplier(zoom) {
+  if (!Number.isFinite(zoom)) return '1';
+  if (Number.isInteger(zoom) || Math.abs(zoom - Math.round(zoom)) < 1e-6) return String(Math.round(zoom));
+  return zoom.toFixed(1);
+}
+
 // DOM Elements Cache
 const el = {
   // Navigation
@@ -470,6 +499,7 @@ const el = {
   annOverlapCount: document.getElementById('ann-overlap-count'),
   btnAnnZoomOut: document.getElementById('btn-ann-zoom-out'),
   annZoomRange: document.getElementById('ann-zoom-range'),
+  annZoomInput: document.getElementById('ann-zoom-input'),
   btnAnnZoomIn: document.getElementById('btn-ann-zoom-in'),
   btnAnnZoomFit: document.getElementById('btn-ann-zoom-fit'),
   annZoomLabel: document.getElementById('ann-zoom-label'),
@@ -1084,9 +1114,9 @@ function handleGlobalKeydown(e) {
     if (e.key === 'z' || e.key === 'Z') {
       e.preventDefault();
       if (e.shiftKey) {
-        setDiarZoom(Math.max(1.0, state.diarization.zoom / 1.5));
+        setDiarZoom(state.diarization.zoom / 1.5);
       } else {
-        setDiarZoom(Math.min(10.0, state.diarization.zoom * 1.5));
+        setDiarZoom(state.diarization.zoom * 1.5);
       }
       return;
     }
@@ -3197,10 +3227,10 @@ function initDiarizationStudio() {
   }
 
   if (el.btnDiarZoomIn) {
-    el.btnDiarZoomIn.addEventListener('click', () => setDiarZoom(Math.min(30.0, (state.diarization.zoom || 1.0) * 1.5)));
+    el.btnDiarZoomIn.addEventListener('click', () => setDiarZoom((state.diarization.zoom || 1.0) * 1.5));
   }
   if (el.btnDiarZoomOut) {
-    el.btnDiarZoomOut.addEventListener('click', () => setDiarZoom(Math.max(0.2, (state.diarization.zoom || 1.0) / 1.5)));
+    el.btnDiarZoomOut.addEventListener('click', () => setDiarZoom((state.diarization.zoom || 1.0) / 1.5));
   }
   if (el.btnDiarZoomFit) {
     el.btnDiarZoomFit.addEventListener('click', () => setDiarZoom(1.0));
@@ -3339,6 +3369,7 @@ function initDiarizationStudio() {
   el.diarMultitrackViewport?.addEventListener('scroll', () => {
     state.diarization.waveform.data = null;
     renderDiarWaveform();
+    renderDiarRuler();
     scheduleDiarWaveform();
   }, { passive: true });
 
@@ -3874,13 +3905,12 @@ async function clearDiarizationHistory() {
 }
 
 function setDiarZoom(zoom) {
-  const parsedZoom = parseFloat(zoom);
-  const clampedZoom = Math.min(50.0, Math.max(0.2, !isNaN(parsedZoom) && parsedZoom > 0 ? parsedZoom : 1.0));
+  const clampedZoom = clampTimelineZoom(zoom, 0.2);
   state.diarization.zoom = clampedZoom;
   if (el.diarZoomInput && document.activeElement !== el.diarZoomInput) {
-    el.diarZoomInput.value = Number.isInteger(clampedZoom) ? clampedZoom.toFixed(0) : clampedZoom.toFixed(1);
+    el.diarZoomInput.value = formatZoomMultiplier(clampedZoom);
   }
-  if (el.diarZoomLevel) el.diarZoomLevel.textContent = `${clampedZoom.toFixed(1)}x`;
+  if (el.diarZoomLevel) el.diarZoomLevel.textContent = `${formatZoomMultiplier(clampedZoom)}x`;
 
   const viewportWidth = el.diarMultitrackViewport ? el.diarMultitrackViewport.clientWidth : 1000;
   const labelColWidth = el.diarLaneLabelsCol ? el.diarLaneLabelsCol.offsetWidth : 200;
@@ -4274,14 +4304,31 @@ function renderDiarRuler() {
   const dur = state.diarization.duration || 1;
   el.diarRulerTrack.innerHTML = "";
 
-  const tracksArea = el.diarTracksArea;
-  const trackWidth = tracksArea ? (tracksArea.clientWidth || 800) : 800;
-  const pixelsPerSec = trackWidth / dur;
+  const windowRange = diarWaveformWindow();
+  const visibleSpan = Math.max(0, windowRange.end - windowRange.start);
+  const labelWidth = el.diarLaneLabelsCol?.offsetWidth || 0;
+  const visibleWidth = Math.max(1, (el.diarMultitrackViewport?.clientWidth || 800) - labelWidth);
+  const useWindow = visibleSpan > 0 && visibleSpan < dur;
+  const viewStart = useWindow ? windowRange.start : 0;
+  const viewEnd = useWindow ? windowRange.end : dur;
+  const span = Math.max(1e-6, viewEnd - viewStart);
+  const pad = useWindow ? span * 0.25 : 0;
+  const start = Math.max(0, viewStart - pad);
+  const end = Math.min(dur, viewEnd + pad);
+  const pixelsPerSec = visibleWidth / span;
 
-  const candidateSteps = [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
+  const candidateSteps = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
   const stepSec = candidateSteps.find(s => s * pixelsPerSec >= 65) || 60;
+  const first = Math.ceil(start / stepSec - 1e-9) * stepSec;
+  const tickLabel = roundedT => {
+    if (stepSec < 0.01) return `${roundedT.toFixed(3)}s`;
+    if (stepSec < 1) return `${roundedT.toFixed(2)}s`;
+    return formatTime(roundedT);
+  };
 
-  for (let t = 0; t <= dur; t += stepSec) {
+  for (let i = 0; i < 80; i += 1) {
+    const t = first + i * stepSec;
+    if (t > end + stepSec * 0.25) break;
     const roundedT = Math.round(t * 1000) / 1000;
     const pct = Math.min(100, (roundedT / dur) * 100);
     const tick = document.createElement("div");
@@ -4294,17 +4341,15 @@ function renderDiarRuler() {
       tick.style.paddingRight = "4px";
       tick.style.paddingLeft = "0";
     }
-    tick.textContent = stepSec < 1 ? roundedT.toFixed(2) + 's' : formatTime(roundedT);
+    tick.textContent = tickLabel(roundedT);
     el.diarRulerTrack.appendChild(tick);
 
     if (stepSec >= 1 && stepSec <= 10) {
-      const subStep = stepSec / 2;
-      const subT = roundedT + subStep;
-      if (subT < dur) {
-        const subPct = (subT / dur) * 100;
+      const subT = roundedT + stepSec / 2;
+      if (subT < dur && subT <= end) {
         const subTick = document.createElement("div");
         subTick.className = "diar-ruler-subtick";
-        subTick.style.left = `${subPct}%`;
+        subTick.style.left = `${(subT / dur) * 100}%`;
         el.diarRulerTrack.appendChild(subTick);
       }
     }
@@ -6744,8 +6789,44 @@ function scheduleAnnotationWaveform() {
 
 function niceAnnotationTickStep(duration, width) {
   const target = duration / Math.max(2, width / 110);
-  const steps = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
+  const steps = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
   return steps.find(step => step >= target) || Math.ceil(target / 600) * 600;
+}
+
+function renderAnnotationRuler() {
+  if (!el.annRuler) return;
+  const duration = annotationDuration() || 1;
+  const range = annotationWaveformWindow();
+  const visibleWidth = Math.max(1, el.annTimelineScroll?.clientWidth || 600);
+  const visibleSpan = Math.max(0, range.end - range.start);
+  const useWindow = visibleSpan > 0 && visibleSpan < duration;
+  const viewStart = useWindow ? range.start : 0;
+  const viewEnd = useWindow ? range.end : duration;
+  const span = Math.max(1e-6, viewEnd - viewStart);
+  const pad = useWindow ? span * 0.25 : 0;
+  const start = Math.max(0, viewStart - pad);
+  const end = Math.min(duration, viewEnd + pad);
+  const step = niceAnnotationTickStep(span, visibleWidth);
+  const first = Math.ceil(start / step - 1e-9) * step;
+  const ticks = [];
+  for (let i = 0; i < 80; i += 1) {
+    const seconds = first + i * step;
+    if (seconds > end + step * 0.25) break;
+    const pct = duration ? Math.min(100, seconds / duration * 100) : 0;
+    ticks.push(`<div class="ann-ruler-tick" style="left:${pct}%"><span>${formatAnnotationTime(seconds).replace(/^00:/, '')}</span></div>`);
+  }
+  el.annRuler.innerHTML = ticks.join('');
+}
+
+function syncAnnotationZoomControls() {
+  const zoom = state.annotation.zoom;
+  if (el.annZoomRange && document.activeElement !== el.annZoomRange) {
+    el.annZoomRange.value = timelineZoomToSlider(zoom, 1);
+  }
+  if (el.annZoomInput && document.activeElement !== el.annZoomInput) {
+    el.annZoomInput.value = formatZoomMultiplier(zoom);
+  }
+  if (el.annZoomLabel) el.annZoomLabel.textContent = `${Math.round(zoom * 100)}%`;
 }
 
 function renderAnnotationTimeline() {
@@ -6757,19 +6838,11 @@ function renderAnnotationTimeline() {
   el.annTimelineStage.style.width = `${width}px`;
   el.annTimelineStage.style.height = `${height}px`;
   if (el.annLaneLabels) el.annLaneLabels.style.minHeight = `${height}px`;
-  if (el.annZoomRange) el.annZoomRange.value = state.annotation.zoom;
-  if (el.annZoomLabel) el.annZoomLabel.textContent = `${Math.round(state.annotation.zoom * 100)}%`;
+  syncAnnotationZoomControls();
 
   renderAnnotationWaveform();
   scheduleAnnotationWaveform();
-  if (el.annRuler) {
-    const step = niceAnnotationTickStep(duration || 1, width);
-    const ticks = [];
-    for (let seconds = 0; seconds <= duration + step * 0.25; seconds += step) {
-      ticks.push(`<div class="ann-ruler-tick" style="left:${duration ? Math.min(100, seconds / duration * 100) : 0}%"><span>${formatAnnotationTime(seconds).replace(/^00:/, '')}</span></div>`);
-    }
-    el.annRuler.innerHTML = ticks.join('');
-  }
+  renderAnnotationRuler();
   if (el.annLanes) {
     el.annLanes.innerHTML = state.annotation.speakers.map(speaker => {
       const turns = state.annotation.turns.filter(turn => turn.speaker_id === speaker.speaker_id);
@@ -7542,17 +7615,32 @@ function initAnnotationTab() {
   });
 
   const setAnnotationZoom = value => {
-    state.annotation.zoom = Math.max(1, Math.min(30, Number(value) || 1));
+    state.annotation.zoom = clampTimelineZoom(value, 1);
     state.annotation.waveform.data = null;
     renderAnnotationTimeline();
   };
   el.btnAnnZoomOut?.addEventListener('click', () => setAnnotationZoom(state.annotation.zoom / 1.5));
   el.btnAnnZoomIn?.addEventListener('click', () => setAnnotationZoom(state.annotation.zoom * 1.5));
   el.btnAnnZoomFit?.addEventListener('click', () => setAnnotationZoom(1));
-  el.annZoomRange?.addEventListener('input', () => setAnnotationZoom(el.annZoomRange.value));
+  el.annZoomRange?.addEventListener('input', () => setAnnotationZoom(timelineSliderToZoom(el.annZoomRange.value, 1)));
+  if (el.annZoomInput) {
+    const handleAnnZoomInput = event => {
+      const val = parseFloat(event.target.value);
+      if (!isNaN(val) && val > 0) setAnnotationZoom(val);
+    };
+    el.annZoomInput.addEventListener('input', handleAnnZoomInput);
+    el.annZoomInput.addEventListener('change', handleAnnZoomInput);
+    el.annZoomInput.addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        handleAnnZoomInput(event);
+        el.annZoomInput.blur();
+      }
+    });
+  }
   el.annTimelineScroll?.addEventListener('scroll', () => {
     state.annotation.waveform.data = null;
     renderAnnotationWaveform();
+    renderAnnotationRuler();
     scheduleAnnotationWaveform();
   }, { passive: true });
   el.annTimelineStage?.addEventListener('click', annotationTimelineSeek);

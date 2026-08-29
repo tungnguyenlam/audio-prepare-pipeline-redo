@@ -1034,8 +1034,8 @@
                 <div class="diar-zoom-wrap">
                   <span class="zoom-label">Zoom:</span>
                   <button class="btn btn-xs btn-ghost" id="btn-diar-zoom-out" title="Zoom Out">-</button>
-                  <div class="diar-zoom-input-group" title="Type zoom multiplier (e.g. 1.0, 2.5, 10.0)">
-                    <input type="number" id="diar-zoom-input" class="zoom-number-input" min="0.2" max="50" step="0.5" value="1.0">
+                  <div class="diar-zoom-input-group" title="Type zoom multiplier (e.g. 1.0, 10, 100, 1000)">
+                    <input type="number" id="diar-zoom-input" class="zoom-number-input" min="0.2" max="1000" step="0.5" value="1.0">
                     <span class="zoom-unit">x</span>
                   </div>
                   <span class="zoom-val hidden" id="diar-zoom-level">1.0x</span>
@@ -1559,7 +1559,11 @@
               </div>
               <div class="flex-row items-center gap-2">
                 <button class="btn btn-xs btn-ghost" id="btn-ann-zoom-out">−</button>
-                <input type="range" id="ann-zoom-range" min="1" max="30" step="0.5" value="1" aria-label="Timeline zoom">
+                <input type="range" id="ann-zoom-range" min="0" max="1000" step="1" value="0" aria-label="Timeline zoom">
+                <div class="ann-zoom-input-group" title="Type zoom multiplier (e.g. 1.0, 10, 100, 1000)">
+                  <input type="number" id="ann-zoom-input" class="zoom-number-input" min="1" max="1000" step="0.5" value="1.0">
+                  <span class="zoom-unit">x</span>
+                </div>
                 <button class="btn btn-xs btn-ghost" id="btn-ann-zoom-in">+</button>
                 <button class="btn btn-xs btn-ghost" id="btn-ann-zoom-fit">Fit</button>
                 <span class="font-mono text-xs" id="ann-zoom-label">100%</span>

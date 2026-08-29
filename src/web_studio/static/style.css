@@ -2814,6 +2814,7 @@ button {
 }
 
 .diar-zoom-input-group,
+.ann-zoom-input-group,
 .ws-zoom-input-group {
   display: inline-flex;
   align-items: center;
@@ -2826,13 +2827,14 @@ button {
 }
 
 .diar-zoom-input-group:focus-within,
+.ann-zoom-input-group:focus-within,
 .ws-zoom-input-group:focus-within {
   border-color: var(--accent-cyan);
   box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
 }
 
 .zoom-number-input {
-  width: 38px;
+  width: 52px;
   background: transparent;
   border: none;
   color: var(--text-primary);
