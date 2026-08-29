@@ -7395,7 +7395,12 @@ async function createMachineSeededAnnotation() {
     const saved = await parseJsonResponse(await fetch('/api/diarization/annotations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_audio_id: audioId, seed_result_id: seedResultId }),
+      body: JSON.stringify({
+        session_audio_id: audioId,
+        seed_result_id: seedResultId,
+        speakers: [],
+        turns: [],
+      }),
     }));
     await loadAnnotation(saved.annotation_id);
     showToast('Editable machine-seeded reference created', 'success');
