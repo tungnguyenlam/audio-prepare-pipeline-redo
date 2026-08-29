@@ -8,7 +8,6 @@ separate, or diarize.
 from __future__ import annotations
 
 import json
-import math
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -46,6 +45,7 @@ from src.visual.schemas import (
 DEFAULT_FACE_SIMILARITY_THRESHOLD = 0.50
 DEFAULT_ASD_PURITY_MIN = 0.95
 DEFAULT_TRANSITION_MARGIN_S = 0.08
+# Suggested floors for ``add_evidence`` so automatic enrollment does not drift.
 DEFAULT_EXPAND_FACE_THRESHOLD = 0.70
 DEFAULT_EXPAND_VOICE_THRESHOLD = 0.75
 
@@ -247,7 +247,9 @@ class AVVerifier:
         """Append high-confidence voice clips or face images to an entity.
 
         Only add evidence that already passed strict audiovisual gates.
-        This is the Phase-3 enrollment expansion hook.
+        Suggested floors are ``DEFAULT_EXPAND_FACE_THRESHOLD`` (0.70) and
+        ``DEFAULT_EXPAND_VOICE_THRESHOLD`` (0.75). This is the Phase-3
+        enrollment expansion hook.
 
         Raises:
             AVVerifierError: If the entity is missing or no files are given.
@@ -361,8 +363,6 @@ class AVVerifier:
             raise ValueError("face_similarity_threshold must be between -1 and 1")
         if transition_margin_s < 0:
             raise ValueError("transition_margin_s must be non-negative")
-
-        import numpy as np
 
         try:
             face_centroid = face_analyzer.embed_images(entity.face_paths)
@@ -487,9 +487,6 @@ def _visual_evidence(
                 exact_one += 1
         asd_purity = exact_one / len(times)
 
-    mean_by_track: dict[str, float] = {}
-    for item in interval_scores:
-        mean_by_track.setdefault(item.track_id, [])
     grouped: dict[str, list[float]] = {}
     for item in interval_scores:
         grouped.setdefault(item.track_id, []).append(item.score)

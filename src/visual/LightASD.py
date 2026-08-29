@@ -168,6 +168,10 @@ class LightASD(ManagedModel):
             track.track_id: _sample_track_frames(track, native_fps=native_fps)
             for track in tracks.tracks
         }
+        by_frame: dict[int, list[tuple[str, tuple[float, float, float, float]]]] = {}
+        for track_id, samples in needed.items():
+            for native_index, bbox in samples:
+                by_frame.setdefault(native_index, []).append((track_id, bbox))
         crops: dict[str, dict[int, Any]] = {track_id: {} for track_id in needed}
         frame_index = 0
         try:
@@ -175,13 +179,10 @@ class LightASD(ManagedModel):
                 ok, frame = cap.read()
                 if not ok:
                     break
-                for track_id, samples in needed.items():
-                    for native_index, bbox in samples:
-                        if native_index != frame_index:
-                            continue
-                        crop = _crop_face(frame, bbox, crop_scale=self.crop_scale)
-                        if crop is not None:
-                            crops[track_id][native_index] = crop
+                for track_id, bbox in by_frame.get(frame_index, []):
+                    crop = _crop_face(frame, bbox, crop_scale=self.crop_scale)
+                    if crop is not None:
+                        crops[track_id][frame_index] = crop
                 frame_index += 1
         finally:
             cap.release()
@@ -193,10 +194,12 @@ class LightASD(ManagedModel):
                 continue
             visual = []
             times = []
+            last_crop = None
             for native_index, _bbox in samples:
-                crop = crops[track.track_id].get(native_index)
+                crop = crops[track.track_id].get(native_index, last_crop)
                 if crop is None:
                     continue
+                last_crop = crop
                 visual.append(crop)
                 times.append(native_index / native_fps)
             if len(visual) < 2:
@@ -359,7 +362,6 @@ def _slice_waveform(waveform: Any, start_s: float, end_s: float) -> Any:
 
 
 def _mfcc16k(waveform: Any) -> Any:
-    import numpy as np
     from python_speech_features import mfcc
 
     if waveform.size < ASD_SAMPLE_RATE // 10:

@@ -25,6 +25,7 @@ from src.utils.AudioClass import (
     _sanitize_filename_component,
     _write_sidecar,
 )
+from src.visual.Video import Video, VideoError
 
 logger = logging.getLogger(__name__)
 
@@ -173,6 +174,37 @@ class YtCrawler:
             "no-certifi",
             "--postprocessor-args",
             f"ExtractAudio:-ac {self.channels}",
+        ]
+        if self.proxy:
+            cmd.extend(["--proxy", self.proxy])
+        if self.cookies_file:
+            cmd.extend(["--cookies", self.cookies_file])
+        elif self.cookies_from_browser:
+            cmd.extend(["--cookies-from-browser", self.cookies_from_browser])
+        cmd.append(url)
+        return cmd
+
+    def build_video_command(self, url: str, target_work_dir: Path) -> list[str]:
+        """Construct the yt-dlp command that keeps a muxed video file."""
+        out_template = str(target_work_dir / "%(id)s.%(ext)s")
+        cmd = self._yt_dlp_prefix() + [
+            "--no-playlist",
+            "--no-simulate",
+            "-f",
+            "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b",
+            "--merge-output-format",
+            "mp4",
+            "-o",
+            out_template,
+            "--write-info-json",
+            "--no-write-playlist-metafiles",
+            "--retries",
+            str(self.retries),
+            "--fragment-retries",
+            str(self.retries),
+            "--newline",
+            "--compat-options",
+            "no-certifi",
         ]
         if self.proxy:
             cmd.extend(["--proxy", self.proxy])
@@ -377,6 +409,115 @@ class YtCrawler:
             _write_sidecar(audio_obj)
 
             return audio_obj
+        finally:
+            shutil.rmtree(session_dir, ignore_errors=True)
+
+    def download_video(
+        self,
+        url: str,
+        *,
+        output_dir: str | Path | None = None,
+    ) -> Video:
+        """Download a muxed video file and return a file-backed ``Video``.
+
+        This is independent of :meth:`download`. It does not extract or
+        normalize audio; call ``Video.extract_audio()`` when an ``Audio``
+        object is also needed.
+
+        Args:
+            url: YouTube URL.
+            output_dir: Directory for the final video. Defaults to
+                ``.data/yt_crawler/videos``.
+
+        Returns:
+            A ``Video`` whose identity fields match a corresponding audio crawl.
+
+        Raises:
+            DownloadError: If yt-dlp fails or no video file is produced.
+        """
+        video_root = (
+            Path(output_dir).expanduser()
+            if output_dir is not None
+            else DATA_DIR / "yt_crawler" / "videos"
+        )
+        video_root.mkdir(parents=True, exist_ok=True)
+        self.work_dir.mkdir(parents=True, exist_ok=True)
+        session_dir = self.work_dir / f"job-{uuid.uuid4().hex}"
+        session_dir.mkdir(parents=True, exist_ok=False)
+        try:
+            cmd = self.build_video_command(url, session_dir)
+            logger.info("Running yt-dlp video command: %s", " ".join(cmd))
+            with self._process_lock:
+                self._cancel_requested = False
+            self._run_yt_dlp(cmd)
+
+            info_paths = sorted(
+                session_dir.glob("*.info.json"),
+                key=lambda path: path.stat().st_mtime,
+            )
+            if not info_paths:
+                raise DownloadError("yt-dlp completed but no *.info.json file was generated.")
+            info_file = info_paths[-1]
+            try:
+                info = json.loads(info_file.read_text(encoding="utf-8"))
+            except Exception as err:
+                raise DownloadError(f"Failed to parse yt-dlp metadata JSON: {err}") from err
+
+            source_id = str(info.get("id") or info_file.name.removesuffix(".info.json"))
+            title = info.get("title")
+            if title is not None:
+                title = str(title)
+            channel_id = info.get("channel_id") or info.get("uploader_id")
+            channel_name = info.get("channel") or info.get("uploader")
+            channel_url = info.get("channel_url") or info.get("uploader_url")
+            source_url = info.get("webpage_url") or info.get("original_url") or url
+
+            video_candidates = [
+                path
+                for path in session_dir.iterdir()
+                if path.is_file()
+                and path.suffix.lower() in _VIDEO_SUFFIXES
+                and source_id in path.stem
+            ]
+            if not video_candidates:
+                raise DownloadError(
+                    f"yt-dlp completed but no video file found for source_id={source_id}"
+                )
+            preferred = [
+                path for path in video_candidates if path.suffix.lower() == ".mp4"
+            ]
+            src_video = preferred[0] if preferred else video_candidates[0]
+
+            sanitized_title = _sanitize_filename_component(title) if title else ""
+            if sanitized_title:
+                if len(sanitized_title) > 100:
+                    sanitized_title = sanitized_title[:100].rstrip("._")
+                file_stem = f"{sanitized_title}__{source_id}"
+            else:
+                file_stem = source_id
+            channel_dir_name = _sanitize_filename_component(
+                channel_id or channel_name or "unknown_channel"
+            )
+            channel_output_dir = video_root / (channel_dir_name or "unknown_channel")
+            channel_output_dir.mkdir(parents=True, exist_ok=True)
+            final_dest = channel_output_dir / f"{file_stem}{src_video.suffix.lower()}"
+            if src_video.resolve() != final_dest.resolve():
+                shutil.copy2(src_video, final_dest)
+
+            try:
+                video = Video.from_file(
+                    final_dest,
+                    source_id=source_id,
+                    title=title,
+                    source_url=str(source_url) if source_url is not None else None,
+                    channel_id=str(channel_id) if channel_id is not None else None,
+                    channel_name=str(channel_name) if channel_name is not None else None,
+                    channel_url=str(channel_url) if channel_url is not None else None,
+                )
+            except VideoError as exc:
+                raise DownloadError(str(exc)) from exc
+            video.write_sidecar()
+            return video
         finally:
             shutil.rmtree(session_dir, ignore_errors=True)
 

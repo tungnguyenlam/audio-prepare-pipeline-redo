@@ -537,16 +537,7 @@ class AVVerificationResult:
             "source_video": source_video,
             "decisions": [
                 {
-                    **{
-                        key: (
-                            [asdict(window) for window in value]
-                            if key == "windows"
-                            else asdict(value)
-                            if key == "model" and value is not None
-                            else value
-                        )
-                        for key, value in asdict(decision).items()
-                    },
+                    **asdict(decision),
                     "duration_s": decision.duration_s,
                     "passed": decision.passed,
                     "admitted": decision.admitted,

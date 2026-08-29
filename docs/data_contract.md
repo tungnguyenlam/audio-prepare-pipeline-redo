@@ -25,6 +25,30 @@ The adjacent `audio.sidecar` JSON stores the same identity and rate fields.
 `Audio.from_file()` restores them, and `Audio.with_file()` preserves them for
 separation, cutting, resampling, and other derived artifacts.
 
+## `Video`
+
+`Video` is file-backed. Identity fields match `Audio` so a YouTube source can
+share `source_id` and channel metadata across the audio and video artifacts.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `path` | `Path` | Current video file on disk. |
+| `source_id` | `str` | Video/file identity. Stable across audio derivatives of the same source. |
+| `title` | `str \| None` | Display title. |
+| `source_url` | `str \| None` | Original video/source URL. |
+| `channel_id` | `str \| None` | Stable YouTube channel or uploader ID. |
+| `channel_name` | `str \| None` | Human-readable channel name. |
+| `channel_url` | `str \| None` | Canonical channel URL. |
+| `duration_s` | `float \| None` | Probed duration. |
+| `fps` | `float \| None` | Probed frame rate. |
+| `width` | `int \| None` | Frame width in pixels. |
+| `height` | `int \| None` | Frame height in pixels. |
+| `format` | `str` | File extension/format. |
+
+The adjacent `{stem}.json` sidecar (`kind: "video.sidecar"`) stores identity
+fields. `Video.from_file()` restores them. `Video.extract_audio()` writes a
+new `Audio` that copies this identity.
+
 ## Diarization and target-speaker results
 
 `DiarizationResult` schema 2.0 is the canonical handoff from diarization to
@@ -56,9 +80,11 @@ The derived Python properties are `speaker_count`, `turn_count`,
 file after a backend restart. Lazy audition cuts use
 `.data/diarization/preview/` and are not registered as audio assets.
 
-All default crawler, cutter, and separator output/work directories are anchored
-to the repository-root `.data/` directory, independent of the process working
-directory. Persisted registries, diarization results, annotations, evaluations,
+All default crawler, cutter, separator, and visual output/work directories are
+anchored to the repository-root `.data/` directory, independent of the process
+working directory. Face/ASD model caches live under `.data/insightface/` and
+`.data/light-asd/` (sync-excluded). Speaker entities live under
+`.data/speaker_entities/`. Persisted registries, diarization results, annotations, evaluations,
 and verification reports store repository-relative paths (for example,
 `.data/pipeline/ingest/example.wav`) and resolve them against the current
 checkout when loaded. Legacy absolute paths containing a `.data` component are
@@ -141,6 +167,52 @@ A profile stores `name`, reference `clip_paths`, `created_at`, `updated_at`, and
 optional channel provenance. Profiles are global identities reusable across
 channels. Reference clips are the portable source of truth; each supporting
 diarization pipeline builds its own enrollment representation before inference.
+
+## `SpeakerEntity`
+
+A multimodal person identity used by `AVVerifier`. Stored under
+`.data/speaker_entities/<name>/` as copied `clips/` (voice) and `faces/`
+(images) plus `profile.json`. Clips and face stills are the source of truth;
+ArcFace and speaker-embedding centroids are computed at verification time and
+are never compared to each other.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `name` | `str` | Display name. |
+| `clip_paths` | `list[Path]` | Enrolled voice clips. |
+| `face_paths` | `list[Path]` | Enrolled face stills. |
+| `created_at` / `updated_at` | `str` | UTC timestamps. |
+| `entity_dir` | `Path` | On-disk directory. |
+| `channel_id` / `channel_name` / `channel_url` | `str \| None` | Optional provenance. |
+
+## `FaceTrackSet` / `ASDResult`
+
+`FaceTrackSet` (`kind: "av.face_tracks"`) is the canonical handoff from
+`FaceAnalyzer.analyze`: per-track interpolated bounding boxes, optional
+ArcFace centroid, fps, and duration. `ASDResult` (`kind: "av.asd"`) is the
+handoff from `LightASD.score`: per-track 25 Hz logits plus a `speaking` flag
+at `active_threshold`. Both support `to_dict()` / `from_dict()` / `save()` /
+`load()`.
+
+## `AVSegmentDecision` / `AVVerificationResult`
+
+Each decision covers one diarization-turn candidate and records:
+
+- candidate identity (`audio_id`, `video_id`, `entity_name`, `speaker_id`,
+  `start_s`, `end_s`) plus optional ASD-refined bounds;
+- `decision` (`accept`, `audio_only`, `reject`, or `error`) and
+  `visual_status` (`visual_verified`, `audio_only`, or `visual_conflict`);
+- independent `face_similarity` and `voice_similarity` (never a face-vs-voice
+  cosine);
+- `asd_purity` (fraction of speech frames with exactly one active visible
+  speaker) and `associated_track_id`;
+- overlap measurements and sliding voice-identity `windows` from
+  `SpeakerVerifier.verify_purity`.
+
+`passed` is true only for `decision == "accept"`. `admitted` is true for
+`accept` and `audio_only` (offscreen narration that passed audio gates).
+`AVVerificationResult` (`kind: "av.verification"`) wraps every candidate for
+one source, with `to_dict()` / `save()` / `load()`.
 
 ## `SpeakerPurityResult`
 

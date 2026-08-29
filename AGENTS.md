@@ -65,6 +65,20 @@ BenchmarkDefinition + speech Audio + music Audio
   -> AudioMixResult
 ```
 
+Audiovisual identity (callers compose; there is no pipeline class):
+
+```text
+Video
+  -> FaceAnalyzer.analyze()
+  -> FaceTrackSet
+  -> LightASD.score(video, audio, tracks)
+  -> ASDResult
+
+Audio + DiarizationResult + FaceTrackSet + ASDResult + SpeakerEntity
+  -> AVVerifier.verify()
+  -> AVVerificationResult
+```
+
 ## Layout
 
 | Path | Role |
@@ -73,6 +87,7 @@ BenchmarkDefinition + speech Audio + music Audio
 | `src/yt_crawler/` | `YtCrawler` ingest/download |
 | `src/separation/` | `BaseSeparator` and backends (`HTDemucs`, `BSRoFormer`, `MelRoFormer`, `MVSepMDX23`) |
 | `src/diarization/` | `BaseDiarizer`, schemas, Pyannote/Sortformer/Clustering/3D-Speaker backends |
+| `src/visual/` | File-backed `Video`, face tracks, Light-ASD, multimodal speaker entities |
 | `src/benchmark/separation/` | `AudioMixer` and mix/benchmark schemas |
 | `src/base/model.py` | `ManagedModel` load/unload lifecycle |
 | `src/notebooks/` | Interactive callers (`pipeline1.ipynb`, mixer, benchmark) |
@@ -111,11 +126,13 @@ Notebooks run from `src/notebooks/` so `os.getcwd()` ends with `notebooks`. Keep
 ## Architecture conventions
 
 - **`Audio` is file-backed.** Identity is a path plus metadata (`source_id`, `title`, rates, duration, channels, format). Do not pass in-memory waveforms through the public pipeline APIs.
-- **Preserve identity across steps.** Separators keep `source_id`, `title`, and `native_sample_rate`. `native_sample_rate` is the original capture rate; `sample_rate` is the current file rate. Use `Audio.resample_action(target_sample_rate)` against the current file rate.
+- **`Video` is file-backed.** Identity is a path plus metadata (`source_id`, `title`, duration, fps, size, format, channel fields). Do not pass in-memory frames through the public visual APIs.
+- **Preserve identity across steps.** Separators keep `source_id`, `title`, and `native_sample_rate`. `native_sample_rate` is the original capture rate; `sample_rate` is the current file rate. Use `Audio.resample_action(target_sample_rate)` against the current file rate. `Video.extract_audio()` copies video identity onto the new `Audio`.
 - **Return new `Audio` for derived files** (`separate`, `cut`, mixer outputs). `Audio.save_to()` is the exception: it copies and mutates `self.path`.
-- **`ManagedModel`** (`BSRoFormer`, `MelRoFormer`, diarizers): call `load()` first or use `with model:`. `close()` on separators that wrap managed models should unload.
+- **Do not compare face and voice embeddings.** A `SpeakerEntity` holds separate face and voice reference sets; cosine similarity is computed inside each modality against that modality's centroid.
+- **`ManagedModel`** (`BSRoFormer`, `MelRoFormer`, diarizers, `FaceAnalyzer`, `LightASD`): call `load()` first or use `with model:`. `close()` on separators that wrap managed models should unload.
 - **Default audio target** is WAV, 44_100 Hz, mono (`DEFAULT_SAMPLE_RATE` in `AudioClass`). Runtime dirs default to `.data/<component>/{out,work,downloads}`.
-- **Custom errors** per backend (`DownloadError`, `DemucsError`, `AudioCutterError`, …), not generic `Exception`.
+- **Custom errors** per backend (`DownloadError`, `DemucsError`, `AudioCutterError`, `VideoError`, `FaceAnalyzerError`, `LightASDError`, `AVVerifierError`, …), not generic `Exception`.
 
 ## Web Architectures
 
@@ -148,6 +165,7 @@ Match neighboring files rather than introducing a new style.
 
 - New separator: subclass `BaseSeparator`, implement `separate(audio: Audio) -> Audio`, export from `src/separation/__init__.py`.
 - New diarizer: subclass `BaseDiarizer`, return `DiarizationResult` from `src/diarization/schemas.py` (do not leak backend-specific result types).
+- New visual identity piece: take/return `Video` / `FaceTrackSet` / `ASDResult` / `SpeakerEntity` from `src/visual/schemas.py`. Do not compare face embeddings to voice embeddings.
 - New notebook util: take/return `Audio`, write outputs under `.data/`, follow `AudioCutter` / comparer patterns.
 - Prefer small, independently usable classes over a shared mega-helper.
 

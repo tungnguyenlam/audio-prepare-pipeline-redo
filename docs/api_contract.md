@@ -4,6 +4,7 @@
 flowchart TD
     CALLER[Pipeline caller or notebook] --> CRAWLER[YtCrawler]
     CRAWLER --> AUDIO[Audio]
+    CRAWLER --> VIDEO[Video]
     AUDIO --> SEPARATOR[BaseSeparator implementation]
     SEPARATOR --> CLEAN_AUDIO[Audio]
     AUDIO --> DIARIZER[BaseDiarizer implementation]
@@ -15,9 +16,20 @@ flowchart TD
     AUDIO --> MIXER[AudioMixer]
     CLEAN_AUDIO --> MIXER
     MIXER --> MIX_RESULT[AudioMixResult]
+    VIDEO --> FACE[FaceAnalyzer]
+    FACE --> TRACKS[FaceTrackSet]
+    TRACKS --> ASD[LightASD]
+    AUDIO --> ASD
+    ASD --> ASD_RESULT[ASDResult]
+    DIARIZATION --> AV[AVVerifier]
+    TRACKS --> AV
+    ASD_RESULT --> AV
+    AV --> AV_RESULT[AVVerificationResult]
 
     MANAGED[ManagedModel lifecycle] -. load / unload .-> MANAGED_BACKENDS[BSRoFormer, MelRoFormer]
     MANAGED -. load / unload .-> DIARIZER
+    MANAGED -. load / unload .-> FACE
+    MANAGED -. load / unload .-> ASD
     CLEAN_AUDIO --> SAVE[Audio.save_to]
     SAVE --> FILE[Audio file on disk]
 ```
@@ -74,6 +86,31 @@ Downloads one URL and returns an `Audio` object.
 
 **Raises:** `DownloadError` when `yt-dlp`, metadata parsing, audio discovery,
 or `ffmpeg` processing fails.
+
+### `YtCrawler.build_video_command(url, target_work_dir) -> list[str]`
+
+Builds, but does not execute, the yt-dlp command that downloads a muxed
+video file (no audio extraction).
+
+### `YtCrawler.download_video(url, *, output_dir=None) -> Video`
+
+Downloads one URL as video and returns a `Video` object. Independent of
+`download()`: it does not extract or normalize audio.
+
+**Behavior contract:**
+
+1. Creates an isolated temporary session directory.
+2. Runs yt-dlp with a muxed MP4-preferring format, without `-x`.
+3. Reads the generated `.info.json` metadata.
+4. Copies the video into
+   `.data/yt_crawler/videos/<channel>/<title>__<source_id>.<ext>`
+   (or `output_dir` when given).
+5. Probes duration, fps, and frame size with `ffprobe`.
+6. Writes a companion `{stem}.json` sidecar with the same identity fields as
+   audio crawls.
+7. Removes the temporary session directory even if processing fails.
+
+**Raises:** `DownloadError` when yt-dlp or video discovery fails.
 
 ### `parse_crawl_sample_rate(value, *, default=44100) -> int | None`
 
@@ -756,6 +793,143 @@ consume the same profiles without changing their on-disk schema.
   the resolved device.
 - `_unload()` releases the inference wrapper and clears CUDA cache when
   available.
+
+## Audiovisual speaker identity
+
+Callers compose these APIs. There is no class that chains crawl → face
+analysis → ASD → diarization → gating. Face embeddings and voice embeddings
+are never compared to each other; each is scored against its own enrolled
+centroid for the same `SpeakerEntity`.
+
+Durable artifacts:
+
+- videos under `.data/yt_crawler/videos/`
+- extracted audio under `.data/visual/audio/`
+- InsightFace weights under `.data/insightface/models/buffalo_l/`
+- Light-ASD checkout/weights under `.data/light-asd/`
+- entities under `.data/speaker_entities/<name>/`
+- optional JSON dumps of `FaceTrackSet`, `ASDResult`, and
+  `AVVerificationResult` wherever the caller saves them
+
+### `Video.from_file(path, *, source_id=None, title=None, ...) -> Video`
+
+**Defined in:** `src/visual/Video.py`
+
+File-backed video identity, parallel to `Audio`. Probes duration, fps, and
+frame size with `ffprobe`. Restores identity from `{stem}.json` when present.
+Explicit keyword arguments override the sidecar; probed media properties win
+over sidecar snapshots.
+
+**Raises:** `FileNotFoundError` if the path is not a file; `VideoError` if
+ffprobe fails or the file has no video stream.
+
+### `Video.extract_audio(dest=None, *, sample_rate=44100, channels=1, audio_format="wav") -> Audio`
+
+Extracts a normalized audio file with ffmpeg and writes an `Audio` sidecar.
+Default destination is `.data/visual/audio/<source_id>.wav`. The returned
+`Audio` keeps the video's `source_id`, title, and channel identity.
+
+**Raises:** `FileNotFoundError` if the video is missing; `VideoError` if
+ffmpeg fails.
+
+### `FaceAnalyzer(*, device="auto", det_size=(640, 640), detection_fps=12.5, ...) `
+
+**Defined in:** `src/visual/FaceAnalyzer.py`
+
+InsightFace buffalo_l SCRFD detection plus ArcFace embeddings behind the
+`ManagedModel` lifecycle. ONNX weights are downloaded into
+`.data/insightface/models/buffalo_l` on first `load()` if missing.
+
+### `FaceAnalyzer.analyze(video) -> FaceTrackSet`
+
+Requires `load()` (or a `with` block). Samples frames at `detection_fps`,
+detects faces, IoU-links them into tracks, embeds the highest-scoring crops
+on each track, and merges tracks across cuts when ArcFace cosine similarity
+is at least `reid_threshold`. Temporally overlapping tracks are never merged.
+Returns interpolated bounding boxes plus a per-track face centroid.
+
+**Raises:** `RuntimeError` if not loaded; `FileNotFoundError` if the video
+file is missing; `FaceAnalyzerError` if the video cannot be read.
+
+### `FaceAnalyzer.embed_images(paths) -> ndarray`
+
+Requires `load()`. Embeds enrollment stills (largest face per image) and
+returns the L2-normalized mean ArcFace vector.
+
+**Raises:** `FaceAnalyzerError` if no face can be embedded.
+
+### `LightASD(*, device="auto", active_threshold=0.0, ...)`
+
+**Defined in:** `src/visual/LightASD.py`
+
+Light-ASD (CVPR 2023) active-speaker detector. Official weights are cloned
+into `.data/light-asd` on first `load()` when missing. The speaking flag is
+`score >= active_threshold`; the official demo uses `0` on the class-1 logit.
+
+### `LightASD.score(video, audio, tracks) -> ASDResult`
+
+Requires `load()`. For each face track, crops 112×112 grayscale faces at
+25 fps, extracts 13-dim MFCCs at 16 kHz, and averages the upstream duration
+ensemble. Returns per-track frame scores with `speaking` flags. This answers
+"is this visible face talking?", not "who is this?".
+
+**Raises:** `RuntimeError` if not loaded; `FileNotFoundError` if video or
+audio is missing; `LightASDError` if weights or MFCC extraction fail.
+
+### `AVVerifier(*, entities_dir=...)`
+
+**Defined in:** `src/visual/AVVerifier.py`
+
+Multimodal entity storage plus late-fusion gates. Entity
+`enroll` / `load_entity` / `list_entities` / `delete_entity` / `add_evidence`
+copy reference files and do not need models. Voice clips and face images are
+the source of truth; embeddings are computed at verify time.
+
+Entities live under `.data/speaker_entities/<name>/` as `clips/`, `faces/`,
+and `profile.json`.
+
+### `AVVerifier.enroll(name, *, voice_clips, face_images, overwrite=False, ...) -> SpeakerEntity`
+
+Does **not** require models. Copies voice clips and face stills. Replaces an
+existing entity only when `overwrite=True`.
+
+**Raises:** `AVVerifierError` for empty inputs, invalid names, or an existing
+entity without `overwrite`; `FileNotFoundError` for missing files.
+
+### `AVVerifier.add_evidence(name, *, voice_clips=None, face_images=None) -> SpeakerEntity`
+
+Phase-3 expansion hook: append only clips/images that already passed strict
+audiovisual gates. Does not recompute centroids on disk.
+
+### `AVVerifier.verify(audio, result, entity, tracks, asd, speaker_verifier, face_analyzer, *, similarity_threshold, face_similarity_threshold=0.5, asd_purity_min=0.95, transition_margin_s=0.08, ...) -> AVVerificationResult`
+
+Requires loaded `SpeakerVerifier` and `FaceAnalyzer`. Audio overlap and
+sliding voice-identity windows are delegated to
+`SpeakerVerifier.verify_purity`. Visual gates then classify each candidate.
+
+**Decision contract (precision-first, agreement-based):**
+
+- Audio rejection always wins. Vision cannot accept a turn that failed
+  overlap or voice-identity checks.
+- `accept` / `visual_verified`: exactly one active visible speaker for at
+  least `asd_purity_min` of speech frames, that face matches the entity, and
+  voice windows match the entity.
+- `audio_only`: audio purity passed and no speaking face is visible
+  (offscreen narration). These are admitted at lower trust via
+  `AVSegmentDecision.admitted`.
+- `reject` / `visual_conflict`: a speaking face is visible but face and
+  voice identity disagree, ASD purity is below threshold, or multiple people
+  appear to speak.
+- `error`: a required embedding failed.
+
+`passed` is true only for `accept`. `admitted` is true for `accept` and
+`audio_only`. Optional `transition_margin_s` trims candidate edges when the
+associated face is not speaking at the boundary. Acoustic/overlap LLM
+verifiers remain separate caller steps.
+
+**Raises:** `RuntimeError` if a required model is not loaded;
+`FileNotFoundError` if the audio file is missing; `AVVerifierError` if the
+entity face images cannot be embedded.
 
 ### Direct-audio overlap verifiers
 

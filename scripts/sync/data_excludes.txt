@@ -2,6 +2,8 @@
 /huggingface/
 /modelscope/
 /3d-speaker/
+/light-asd/
+/insightface/
 /uv-cache/
 /diarizen-import-check/
 /pipeline/jobs/

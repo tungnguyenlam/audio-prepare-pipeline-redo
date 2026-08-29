@@ -14,7 +14,7 @@ from typing import Any
 from src.base.model import ManagedModel
 from src.data_paths import DATA_DIR
 from src.diarization.schemas import DiarizationModelInfo
-from src.visual.Video import Video, VideoError
+from src.visual.Video import Video
 from src.visual.schemas import FaceObservation, FaceTrack, FaceTrackSet
 
 logger = logging.getLogger(__name__)
@@ -164,7 +164,6 @@ class FaceAnalyzer(ManagedModel):
             raise FileNotFoundError(f"Video file does not exist: {path}")
 
         import cv2
-        import numpy as np
 
         cap = cv2.VideoCapture(str(path))
         if not cap.isOpened():
@@ -223,7 +222,6 @@ class FaceAnalyzer(ManagedModel):
 
         raw_tracks = _link_detections(
             detections,
-            fps=fps,
             iou_threshold=self.iou_threshold,
             max_lost_frames=max(1, int(round(self.max_lost_s * fps))),
         )
@@ -402,7 +400,6 @@ def _iou(box_a: tuple[float, ...], box_b: tuple[float, ...]) -> float:
 def _link_detections(
     detections: dict[int, list[dict[str, Any]]],
     *,
-    fps: float,
     iou_threshold: float,
     max_lost_frames: int,
 ) -> list[list[dict[str, Any]]]:
