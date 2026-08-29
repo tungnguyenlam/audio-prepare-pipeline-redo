@@ -779,8 +779,10 @@ structured answer to:
 - `GeminiOverlapVerifier` calls Gemini `generateContent` with inline audio and
   a JSON response schema. It requires `GEMINI_API_KEY`; the model defaults to
   `gemini-3.1-pro-preview` and can be changed with `GEMINI_MODEL` or the
-  constructor. Web entrypoints load these values from the repository-root
-  `.env` before constructing pipeline components.
+  constructor. The `gemini-flash-lite` factory backend selects the
+  audio-capable `gemini-3.1-flash-lite` model using the same verifier and API
+  key. Web entrypoints load these values from the repository-root `.env`
+  before constructing pipeline components.
 - `Gemma4OverlapVerifier.check_ready()` probes Unsloth at `/v1/models` before
   any candidate audio is sent. Unreachable hosts, empty model lists, HTTP
   5xx, and OpenAI-style `error` objects fail as readiness errors instead of
@@ -800,7 +802,7 @@ from src.diarization import create_overlap_verifier
 
 verifier = create_overlap_verifier(
     {
-        "backend": "gemma4",  # or "gemini"
+        "backend": "gemma4",  # or "gemini" / "gemini-flash-lite"
         "endpoint": "http://localhost:8888/v1/chat/completions",
         "model": "unsloth/gemma-4-12b-it-GGUF",
         "prompt": "Reject if simultaneous speakers are audible.",
@@ -813,12 +815,14 @@ result = verifier.verify(audio_segment)
 SonicStudio Speaker Purity is LLM-only. Speaker embeddings are not used on
 that tab:
 
-- `GET /api/purity/verifier-status` probes Gemma 4 / Unsloth (or Gemini key
-  configuration) and returns `{ready, message, models}`. A not-ready Unsloth
-  server is reported instead of starting a candidate batch.
+- `GET /api/purity/verifier-status` probes Gemma 4 / Unsloth (or the Gemini
+  API-key configuration for Pro or Flash-Lite) and returns
+  `{ready, message, models}`. A not-ready Unsloth server is reported instead
+  of starting a candidate batch.
 - `POST /api/diarization/results/verify` first applies speaker / duration /
   overlap / prior-state filters, then every remaining candidate is cut and
-  judged by Gemma 4, Gemini, or VibeVoice-ASR. Embeddings do not run.
+  judged by Gemma 4, Gemini 3.1 Pro, Gemini 3.1 Flash-Lite, or VibeVoice-ASR.
+  Embeddings do not run.
 - `POST /api/purity/verify` verifies a chosen session/library track with the
   same LLM path. Omitted or empty `turns` means the whole file is one
   candidate. Disabling the verifier is rejected.

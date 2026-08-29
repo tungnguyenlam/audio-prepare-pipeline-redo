@@ -52,6 +52,7 @@ from src.separation import HTDemucs, BSRoFormer, MelRoFormer, MVSepMDX23
 from src.diarization import (
     ClusteringDiarizer,
     ClusteringWorkerDiarizer,
+    DEFAULT_GEMINI_FLASH_LITE_MODEL_ID,
     DEFAULT_GEMINI_MODEL_ID,
     DEFAULT_GEMMA4_MODEL_ID,
     DEFAULT_JITTER_MAX_DURATION_S,
@@ -4308,6 +4309,12 @@ async def handle_speaker_purity_config(request: web.Request) -> web.Response:
         configured_backend = "gemma4"
     elif configured_backend in {"gemini", "gemini-3.1", "gemini-3.1-pro"}:
         configured_backend = "gemini"
+    elif configured_backend in {
+        "gemini-flash-lite",
+        "gemini-3.1-flash-lite",
+        "gemini-flash-lite-3.1",
+    }:
+        configured_backend = "gemini-flash-lite"
     elif configured_backend in {"vibevoice", "vibevoice-asr"}:
         configured_backend = "vibevoice"
     else:
@@ -4332,6 +4339,10 @@ async def handle_speaker_purity_config(request: web.Request) -> web.Response:
             },
             "gemini": {
                 "model": os.getenv("GEMINI_MODEL") or DEFAULT_GEMINI_MODEL_ID,
+                "api_key_configured": bool(os.getenv("GEMINI_API_KEY")),
+            },
+            "gemini-flash-lite": {
+                "model": DEFAULT_GEMINI_FLASH_LITE_MODEL_ID,
                 "api_key_configured": bool(os.getenv("GEMINI_API_KEY")),
             },
             "vibevoice": {

@@ -6058,7 +6058,8 @@ function populateVibevoiceModelSelect(selectedId) {
 
 function purityOverlapBackendLabel(backend = state.purity.overlap.backend) {
   if (backend === 'vibevoice') return 'VibeVoice-ASR';
-  if (backend === 'gemini') return 'Gemini';
+  if (backend === 'gemini') return 'Gemini 3.1 Pro';
+  if (backend === 'gemini-flash-lite') return 'Gemini 3.1 Flash-Lite';
   return 'Gemma 4';
 }
 
@@ -7627,7 +7628,7 @@ function syncPurityOverlapUi() {
 
 function syncPurityPromptUi() {
   if (state.purity.overlap.backend === 'vibevoice') return;
-  const backendName = state.purity.overlap.backend === 'gemini' ? 'Gemini' : 'Gemma 4';
+  const backendName = purityOverlapBackendLabel();
   const prompt = (el.purityOverlapPrompt?.value ?? state.purity.overlap.prompt ?? '').trim();
   const defaultPrompt = (
     state.purity.serverConfig?.overlap_prompt

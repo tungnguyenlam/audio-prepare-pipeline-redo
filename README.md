@@ -80,14 +80,17 @@ UNSLOTH_API_KEY=sk-unsloth-...
 `HF_TOKEN` is required for Pyannote and DiariZen (and for 3D-Speaker overlap
 refinement). DiariZen's released weights are CC BY-NC 4.0 and therefore only
 suitable for research and other non-commercial use.
-`OVERLAP_VERIFIER` selects `gemma4`, `gemini`, or `vibevoice`. The Gemma
-verifier sends WAV or MP3 segments to the configured Unsloth Studio
+`OVERLAP_VERIFIER` selects `gemma4`, `gemini`, `gemini-flash-lite`, or
+`vibevoice`. The Gemma verifier sends WAV or MP3 segments to the configured
+Unsloth Studio
 chat-completions endpoint; `UNSLOTH_API_KEY` is optional only when that
 endpoint does not require authentication. `UNSLOTH_HOST` defaults to
 `localhost` and `UNSLOTH_PORT` defaults to `8888`; set `UNSLOTH_ENDPOINT`
 when the server needs an otherwise custom full URL. The Gemini verifier
 reads `GEMINI_API_KEY` from `.env` and uses `gemini-3.1-pro-preview` by
-default. Set `GEMINI_MODEL` to override that model. VibeVoice-ASR counts
+default. Select `gemini-flash-lite` to use the audio-capable
+`gemini-3.1-flash-lite` verifier. Set `GEMINI_MODEL` to override the model for
+the generic `gemini` backend. VibeVoice-ASR counts
 distinct speakers on each whole candidate (no prompt, no embeddings); it
 runs in `.venv-vibevoice` and defaults to `microsoft/VibeVoice-ASR-HF`.
 Set `VIBEVOICE_PYTHON` if the worker is not at `.venv-vibevoice/bin/python`.
@@ -99,10 +102,11 @@ AWQ, BitNet, and standalone `microsoft/VibeVoice-ASR` quants are unsupported.
 SonicStudio's **Speaker Purity** tab uses these values as non-secret defaults
 for the direct-audio **verifier**. Speaker embeddings are an identity
 **filter** only: they do not decide purity. When the verifier is enabled,
-Gemma, Gemini, or VibeVoice listens to every remaining candidate on both
-`POST /api/diarization/results/verify` and `POST /api/purity/verify`. Backend,
-model, endpoint, timeout, token budget, failure policy, and prompt can all
-be overridden per run (VibeVoice ignores prompt, API key, and timeout).
+Gemma, Gemini Pro, Gemini Flash-Lite, or VibeVoice listens to every remaining
+candidate on both `POST /api/diarization/results/verify` and
+`POST /api/purity/verify`. Backend, model, endpoint, timeout, token budget,
+failure policy, and prompt can all be overridden per run (VibeVoice ignores
+prompt, API key, and timeout).
 Hugging Face caches default to `.data/huggingface`. Set `HF_HOME` in `.env`
 only when a different writable cache location is needed.
 

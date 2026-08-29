@@ -1697,7 +1697,7 @@
                 <div class="purity-overlap-header">
                   <div>
                     <strong>Direct-audio verifier</strong>
-                    <small class="purity-overlap-lead">Gemma 4 via Unsloth, Gemini, or VibeVoice-ASR listens to every whole candidate. Unsloth must be up before a run starts.</small>
+                    <small class="purity-overlap-lead">Gemma 4 via Unsloth, Gemini 3.1 Pro, Gemini 3.1 Flash-Lite, or VibeVoice-ASR listens to every whole candidate. Unsloth must be up before a run starts.</small>
                   </div>
                   <span class="badge badge-sm badge-ghost" id="purity-overlap-status-badge">Checking…</span>
                 </div>
@@ -1709,7 +1709,8 @@
                       <label class="form-label" for="purity-overlap-backend">Backend</label>
                       <select id="purity-overlap-backend" class="select-input">
                         <option value="gemma4">Gemma 4 via Unsloth</option>
-                        <option value="gemini">Gemini API</option>
+                        <option value="gemini">Gemini 3.1 Pro</option>
+                        <option value="gemini-flash-lite">Gemini 3.1 Flash-Lite</option>
                         <option value="vibevoice">VibeVoice-ASR (speaker count)</option>
                       </select>
                     </div>
@@ -1818,7 +1819,7 @@
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
           </div>
           <h3 class="empty-title">No Speaker Purity Analysis Yet</h3>
-          <p class="empty-desc">Select saved diarization results, or choose any session/library track. Gemma 4, Gemini, or VibeVoice-ASR then judges each candidate.</p>
+          <p class="empty-desc">Select saved diarization results, or choose any session/library track. Gemma 4, Gemini 3.1 Pro, Gemini 3.1 Flash-Lite, or VibeVoice-ASR then judges each candidate.</p>
         </div>
 
         <!-- Results & Analytics Container -->

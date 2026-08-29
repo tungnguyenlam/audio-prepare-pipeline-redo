@@ -27,6 +27,7 @@ DEFAULT_UNSLOTH_ENDPOINT = (
 )
 DEFAULT_GEMMA4_MODEL_ID = "unsloth/gemma-4-12b-it-GGUF"
 DEFAULT_GEMINI_MODEL_ID = "gemini-3.1-pro-preview"
+DEFAULT_GEMINI_FLASH_LITE_MODEL_ID = "gemini-3.1-flash-lite"
 UNSLOTH_PROBE_TIMEOUT_S = 5.0
 
 _OVERLAP_SCHEMA: dict[str, Any] = {
@@ -250,7 +251,7 @@ class Gemma4OverlapVerifier(BaseOverlapVerifier):
 
 
 class GeminiOverlapVerifier(BaseOverlapVerifier):
-    """Verify overlap with Gemini 3.1 Pro through the Gemini API."""
+    """Verify overlap with an audio-capable model through the Gemini API."""
 
     def __init__(
         self,
@@ -293,7 +294,7 @@ class GeminiOverlapVerifier(BaseOverlapVerifier):
         }
 
     def verify(self, audio: Audio) -> OverlapVerificationResult:
-        """Send the audio segment directly to Gemini 3.1 Pro."""
+        """Send the audio segment directly to the configured Gemini model."""
         if not self.api_key:
             raise OverlapVerifierError(
                 "Gemini API key is not configured; set GEMINI_API_KEY",
@@ -359,11 +360,11 @@ def create_overlap_verifier(
     """Create the selected verifier from a small flat configuration mapping.
 
     Args:
-        config: Settings containing ``backend`` (``"gemma4"`` or
-            ``"gemini"``) and optional ``endpoint``, ``model``, ``api_key``,
-            ``timeout_s``, ``prompt``, and ``max_output_tokens`` values.
-            ``backend`` falls back to the ``OVERLAP_VERIFIER`` environment
-            variable.
+        config: Settings containing ``backend`` (``"gemma4"``, ``"gemini"``,
+            or ``"gemini-flash-lite"``) and optional ``endpoint``, ``model``,
+            ``api_key``, ``timeout_s``, ``prompt``, and ``max_output_tokens``
+            values. ``backend`` falls back to the ``OVERLAP_VERIFIER``
+            environment variable.
 
     Returns:
         The selected overlap verifier.
@@ -381,8 +382,19 @@ def create_overlap_verifier(
         if "endpoint" in settings:
             raise ValueError("Gemini overlap verifier does not accept endpoint")
         return GeminiOverlapVerifier(**settings)
+    if backend in {
+        "gemini-flash-lite",
+        "gemini-3.1-flash-lite",
+        "gemini-flash-lite-3.1",
+    }:
+        if "endpoint" in settings:
+            raise ValueError("Gemini overlap verifier does not accept endpoint")
+        if not settings.get("model"):
+            settings["model"] = DEFAULT_GEMINI_FLASH_LITE_MODEL_ID
+        return GeminiOverlapVerifier(**settings)
     raise ValueError(
-        "Select an overlap verifier with backend='gemma4' or backend='gemini'"
+        "Select an overlap verifier with backend='gemma4', 'gemini', or "
+        "'gemini-flash-lite'"
     )
 
 

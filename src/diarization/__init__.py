@@ -9,6 +9,7 @@ from src.diarization.DiariZenDiarizer import (
 )
 from src.diarization.DiariZenWorkerDiarizer import DiariZenWorkerDiarizer
 from src.diarization.OverlapVerifier import (
+    DEFAULT_GEMINI_FLASH_LITE_MODEL_ID,
     DEFAULT_GEMINI_MODEL_ID,
     DEFAULT_GEMMA4_MODEL_ID,
     DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS,
@@ -82,6 +83,7 @@ __all__ = [
     "ClusteringWorkerDiarizer",
     "DEFAULT_DIARIZEN_MODEL_ID",
     "DEFAULT_EMBEDDING_MODEL_ID",
+    "DEFAULT_GEMINI_FLASH_LITE_MODEL_ID",
     "DEFAULT_GEMINI_MODEL_ID",
     "DEFAULT_GEMMA4_MODEL_ID",
     "DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS",

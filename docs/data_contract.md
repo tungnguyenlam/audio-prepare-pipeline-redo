@@ -192,7 +192,8 @@ Malformed or incomplete model output raises `OverlapVerifierError` instead of
 being coerced into a decision.
 
 SonicStudio purity reports attach a `direct_overlap` object to each serialized
-row whenever the Gemma or Gemini overlap verifier ran — including
+row whenever the Gemma or Gemini (3.1 Pro or 3.1 Flash-Lite) overlap verifier
+ran — including
 **Verify All Eligible Turns** (`POST /api/diarization/results/verify`) and
 chosen session/library audio (`POST /api/purity/verify`). VibeVoice-ASR runs attach
 `vibevoice` instead (see `VibeVoicePurityResult`). In both modes embeddings
