@@ -14,6 +14,7 @@ from typing import Optional
 from bs_roformer import BSRoformerSession
 
 from src.base.model import ManagedModel
+from src.data_paths import DATA_DIR
 from src.utils.audio_utils import (
     AudioConvertError,
     normalize_wav,
@@ -45,8 +46,8 @@ class BSRoFormer(BaseSeparator, ManagedModel):
         model: str = "roformer-model-bs-roformer-sw-by-jarredou",
         device: str = "auto",
         two_stems: str = "vocals",
-        output_dir: str | Path = ".data/bs_roformer/out",
-        work_dir: str | Path = ".data/bs_roformer/work",
+        output_dir: str | Path = DATA_DIR / "bs_roformer" / "out",
+        work_dir: str | Path = DATA_DIR / "bs_roformer" / "work",
         sample_rate: int = DEFAULT_SAMPLE_RATE,
         channels: int = 1,
         ffmpeg_bin: Optional[str] = None,

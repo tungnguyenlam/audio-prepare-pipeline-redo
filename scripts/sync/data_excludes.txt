@@ -1,0 +1,11 @@
+# Rebuilt or host-specific state. Keep these local to each machine.
+/huggingface/
+/modelscope/
+/3d-speaker/
+/uv-cache/
+/diarizen-import-check/
+/pipeline/jobs/
+/*/work/
+/*/repo/
+/.cache/
+*.tmp

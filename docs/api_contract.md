@@ -161,7 +161,7 @@ the audio with identity metadata (`source_id`, `title`, `native_sample_rate`,
 ### `Audio.quick_save(output_dir=None, *, name=None, prefix=None, suffix=None, tag=None) -> Audio`
 
 Copies the represented audio file to a quick-save temporary directory (defaulting to
-`<project_root>/temp/`) as WAV unless `name` includes another extension, with an
+`<project_root>/.data/quick_save/`) as WAV unless `name` includes another extension, with an
 informative filename generated from the `Audio` object's `fingerprint` (or explicit
 `name`), prints `Quick saved to: <destination>` to standard output, and updates the
 same object's `path` to the destination. It returns the same `Audio` instance.
@@ -1056,7 +1056,15 @@ The repository provides two specialized web platforms:
   `DELETE /api/diarization/results/{result_id}` removes one persisted result;
   `POST /api/diarization/results/clear` deletes the catalog;
   `GET /api/diarization/results/{result_id}/turns/{turn_index}/audio` lazily
-  cuts and streams a turn without registering it; and
+  cuts and streams a turn without registering it;
+  `GET /api/audio/{id}/segment?start=&end=` lazily cuts `[start, end)`
+  (seconds) of a session audio item without registering a cut and returns the
+  WAV as an attachment (optional `filename`);
+  `POST /api/audio/{id}/segments.zip` accepts
+  `{segments: [{start, end, filename}], filename}` and returns a zip of those
+  cuts after reading the source file once (Studio's Turns Inspector download
+  path; at most 2000 segments). These download endpoints are not
+  `POST /api/audio/{id}/cut`, which still registers a session cut; and
   `POST /api/diarization/results/verify` queues filtered turns from one or more
   result IDs as one batch. This is the workbench's **Verify All Eligible
   Turns** path. Dropdowns filter the candidate set first. Gemma 4, Gemini, or
@@ -1129,6 +1137,11 @@ The repository provides two specialized web platforms:
   `sortformer_pad_offset_s`. Their Pipeline forms expose these settings and the
   same channel selector.
 - **Frontend layout:** Flat `static/index.html` + `app.js` + `style.css`.
+- **Portable registry:** Registered source audio and attached stems are owned
+  by repository-root `.data/pipeline/`. `register_audio()` and `attach_stem()`
+  copy external files into that tree when needed. Registry JSON and generated
+  manifests store repository-relative paths and resolve them against the
+  current checkout after synchronization.
 - **Job progress:** Server-Sent Events on `GET /api/events` (queue/job updates
   plus telemetry heartbeats). Initial hydrate still uses `GET /api/jobs`.
 - **Per-GPU queues:** Batch jobs are routed by `params.device` onto independent

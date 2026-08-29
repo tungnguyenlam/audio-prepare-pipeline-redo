@@ -56,6 +56,25 @@ The derived Python properties are `speaker_count`, `turn_count`,
 file after a backend restart. Lazy audition cuts use
 `.data/diarization/preview/` and are not registered as audio assets.
 
+All default crawler, cutter, and separator output/work directories are anchored
+to the repository-root `.data/` directory, independent of the process working
+directory. Persisted registries, diarization results, annotations, evaluations,
+and verification reports store repository-relative paths (for example,
+`.data/pipeline/ingest/example.wav`) and resolve them against the current
+checkout when loaded. Legacy absolute paths containing a `.data` component are
+remapped to the current checkout automatically. Pipeline registration copies
+files from outside `.data/` into
+`.data/pipeline/imports/`, so its durable registry never depends on an external
+machine-local source path.
+
+The scripts under `scripts/sync/` synchronize this canonical `.data/` tree and
+fold the legacy `src/notebooks/.data/` tree into it before transfer. Host-local
+model/package caches, virtual environments, backend work directories, cloned
+model repositories, and interrupted queue snapshots are excluded by
+`scripts/sync/data_excludes.txt`; they are rebuilt on each server. Remote hosts
+and checkout paths can be overridden with `SYNC_SERVER_HOST`,
+`SYNC_SERVER_REPO`, `SYNC_ANHNCT_HOST`, and `SYNC_ANHNCT_REPO`.
+
 Clean turns are a derived output policy, not a second diarization result.
 `clean_speaker_turns()` returns new `SpeakerTurn` values and never mutates the
 canonical result. The Studio toggle may use those derived boundaries for

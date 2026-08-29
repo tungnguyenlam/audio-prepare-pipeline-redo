@@ -11,6 +11,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
+from src.data_paths import DATA_DIR
 from src.utils.AudioClass import DEFAULT_SAMPLE_RATE, Audio
 
 
@@ -26,8 +27,8 @@ class BaseSeparator(abc.ABC):
         model: str,
         device: str = "cpu",
         two_stems: str = "vocals",
-        output_dir: str | Path = ".data/separated/out",
-        work_dir: str | Path = ".data/separated/work",
+        output_dir: str | Path = DATA_DIR / "separated" / "out",
+        work_dir: str | Path = DATA_DIR / "separated" / "work",
         sample_rate: int = DEFAULT_SAMPLE_RATE,
         channels: int = 1,
         ffmpeg_bin: Optional[str] = None,

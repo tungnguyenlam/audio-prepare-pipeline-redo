@@ -17,6 +17,13 @@ from typing import Any, Dict, List, Optional, Set
 
 import soundfile as sf
 
+from src.data_paths import (
+    DATA_DIR as ROOT_DATA_DIR,
+    portable_data_path,
+    portable_data_payload,
+    resolve_data_path,
+    resolve_data_payload,
+)
 from src.utils.AudioClass import Audio
 
 logger = logging.getLogger("dataset_manager")
@@ -26,10 +33,14 @@ DATA_DIR = ROOT_DIR / ".data" / "pipeline"
 REGISTRY_FILE = DATA_DIR / "dataset_registry.json"
 DATASETS_FILE = DATA_DIR / "datasets.json"
 EXPORTS_DIR = DATA_DIR / "exports"
+IMPORTS_DIR = DATA_DIR / "imports"
+STEMS_DIR = DATA_DIR / "stems"
 SYSTEM_TAG_PREFIXES = ("type:", "stage:", "speaker:", "profile:", "verification:")
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+IMPORTS_DIR.mkdir(parents=True, exist_ok=True)
+STEMS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @dataclass
@@ -182,7 +193,7 @@ class DatasetManager:
                 with open(REGISTRY_FILE, "r", encoding="utf-8") as f:
                     raw_items = json.load(f)
                     for item_id, item_data in raw_items.items():
-                        # Verify file still exists on disk
+                        item_data = self._resolve_item_paths(item_data)
                         if Path(item_data.get("path", "")).exists():
                             self._items[item_id] = AudioItem.from_dict(item_data)
             except Exception as e:
@@ -192,7 +203,11 @@ class DatasetManager:
         """Persist items to disk."""
         try:
             with open(REGISTRY_FILE, "w", encoding="utf-8") as f:
-                json.dump({k: v.to_dict() for k, v in self._items.items()}, f, indent=2)
+                json.dump(
+                    {k: self._portable_item(v) for k, v in self._items.items()},
+                    f,
+                    indent=2,
+                )
         except Exception as e:
             logger.error(f"Error saving registry: {e}")
 
@@ -203,6 +218,30 @@ class DatasetManager:
                 json.dump(self._datasets, f, indent=2)
         except Exception as e:
             logger.error(f"Error saving datasets: {e}")
+
+    @staticmethod
+    def _portable_item(item: AudioItem) -> Dict[str, Any]:
+        data = item.to_dict()
+        data["path"] = portable_data_path(item.path)
+        data["stems"] = {
+            model: {stem: portable_data_path(path) for stem, path in paths.items()}
+            for model, paths in item.stems.items()
+        }
+        data["diarization"] = portable_data_payload(item.diarization)
+        data["metadata"] = portable_data_payload(item.metadata)
+        return data
+
+    @staticmethod
+    def _resolve_item_paths(data: Dict[str, Any]) -> Dict[str, Any]:
+        resolved = dict(data)
+        resolved["path"] = str(resolve_data_path(data.get("path", "")))
+        resolved["stems"] = {
+            model: {stem: str(resolve_data_path(path)) for stem, path in paths.items()}
+            for model, paths in data.get("stems", {}).items()
+        }
+        resolved["diarization"] = resolve_data_payload(data.get("diarization"))
+        resolved["metadata"] = resolve_data_payload(data.get("metadata", {}))
+        return resolved
 
     def register_audio(
         self,
@@ -227,11 +266,20 @@ class DatasetManager:
         if dataset not in self._datasets:
             self.create_dataset(dataset)
 
+        source_path = Path(audio.path).expanduser().resolve()
+        try:
+            source_path.relative_to(ROOT_DATA_DIR)
+            stored_path = source_path
+        except ValueError:
+            suffix = source_path.suffix or f".{audio.format.lower()}"
+            stored_path = IMPORTS_DIR / f"{item_id}{suffix}"
+            shutil.copy2(source_path, stored_path)
+
         item = AudioItem(
             id=item_id,
             source_id=audio.source_id or item_id,
             title=audio.title or Path(audio.path).stem,
-            path=str(Path(audio.path).resolve()),
+            path=str(stored_path),
             dataset=dataset,
             duration=round(audio.duration_s or 0.0, 3),
             sample_rate=audio.sample_rate,
@@ -395,7 +443,16 @@ class DatasetManager:
             return
         if model_name not in item.stems:
             item.stems[model_name] = {}
-        item.stems[model_name][stem_name] = str(Path(stem_path).resolve())
+        source_path = Path(stem_path).expanduser().resolve()
+        try:
+            source_path.relative_to(ROOT_DATA_DIR)
+            stored_path = source_path
+        except ValueError:
+            suffix = source_path.suffix or ".wav"
+            stored_path = STEMS_DIR / item_id / model_name / f"{stem_name}{suffix}"
+            stored_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_path, stored_path)
+        item.stems[model_name][stem_name] = str(stored_path)
         item.system_tags = sorted(set(item.system_tags) | {"stage:separated"})
         self._save_items()
 
@@ -467,13 +524,13 @@ class DatasetManager:
                 deleted += 1
                 if delete_files:
                     try:
-                        p = Path(item.path)
+                        p = resolve_data_path(item.path)
                         if p.exists():
                             p.unlink()
                         # Also delete stem files
                         for model_stems in item.stems.values():
                             for stem_path in model_stems.values():
-                                sp = Path(stem_path)
+                                sp = resolve_data_path(stem_path)
                                 if sp.exists():
                                     sp.unlink()
                     except Exception as e:
@@ -663,7 +720,7 @@ class DatasetManager:
                     it.id,
                     it.source_id,
                     it.title,
-                    it.path,
+                    portable_data_path(it.path),
                     it.duration,
                     it.sample_rate,
                     it.channels,
@@ -679,7 +736,7 @@ class DatasetManager:
         for it in items:
             record = {
                 "id": it.id,
-                "audio_filepath": it.path,
+                "audio_filepath": portable_data_path(it.path),
                 "duration": it.duration,
                 "sample_rate": it.sample_rate,
                 "channels": it.channels,
@@ -688,11 +745,14 @@ class DatasetManager:
                 "dataset": it.dataset,
                 "custom_tags": it.custom_tags,
                 "system_tags": it.system_tags,
-                "stems": it.stems,
+                "stems": {
+                    model: {stem: portable_data_path(path) for stem, path in paths.items()}
+                    for model, paths in it.stems.items()
+                },
                 "diarization": it.diarization,
                 "metadata": it.metadata,
             }
-            lines.append(json.dumps(record))
+            lines.append(json.dumps(portable_data_payload(record)))
         return "\n".join(lines)
 
     def create_export_bundle(
@@ -721,14 +781,14 @@ class DatasetManager:
                 zf.writestr("manifest.csv", csv_data)
 
             for it in items:
-                src_p = Path(it.path)
+                src_p = resolve_data_path(it.path)
                 if src_p.exists():
                     zf.write(src_p, arcname=f"audio/{src_p.name}")
 
                 if include_stems and it.stems:
                     for model_name, stem_dict in it.stems.items():
                         for stem_name, stem_p_str in stem_dict.items():
-                            stem_p = Path(stem_p_str)
+                            stem_p = resolve_data_path(stem_p_str)
                             if stem_p.exists():
                                 zf.write(stem_p, arcname=f"stems/{model_name}/{it.id}_{stem_name}{stem_p.suffix}")
 

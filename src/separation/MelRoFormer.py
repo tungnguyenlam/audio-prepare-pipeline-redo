@@ -15,6 +15,7 @@ from typing import Any, Optional
 from mel_band_roformer import MelBandRoformerSession
 
 from src.base.model import ManagedModel
+from src.data_paths import DATA_DIR
 from src.utils.audio_utils import (
     AudioConvertError,
     normalize_wav,
@@ -62,8 +63,8 @@ class MelRoFormer(BaseSeparator, ManagedModel):
         model: str = "melband-roformer-kim-vocals",
         device: str = "auto",
         two_stems: str = "vocals",
-        output_dir: str | Path = ".data/mel_roformer/out",
-        work_dir: str | Path = ".data/mel_roformer/work",
+        output_dir: str | Path = DATA_DIR / "mel_roformer" / "out",
+        work_dir: str | Path = DATA_DIR / "mel_roformer" / "work",
         sample_rate: int = DEFAULT_SAMPLE_RATE,
         channels: int = 1,
         ffmpeg_bin: Optional[str] = None,

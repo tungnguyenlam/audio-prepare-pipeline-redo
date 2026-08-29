@@ -18,6 +18,7 @@ import threading
 from pathlib import Path
 from typing import Callable, Optional
 
+from src.data_paths import DATA_DIR
 from src.utils.audio_utils import normalize_wav, probe_wav
 from src.separation.BaseSeparator import BaseSeparator
 from src.utils.AudioClass import DEFAULT_SAMPLE_RATE, Audio
@@ -86,8 +87,8 @@ class MVSepMDX23(BaseSeparator):
         model: str = "mvsep-mdx23",
         device: str = "auto",
         two_stems: str = "vocals",
-        output_dir: str | Path = ".data/mvsep_mdx23/out",
-        work_dir: str | Path = ".data/mvsep_mdx23/work",
+        output_dir: str | Path = DATA_DIR / "mvsep_mdx23" / "out",
+        work_dir: str | Path = DATA_DIR / "mvsep_mdx23" / "work",
         sample_rate: int = DEFAULT_SAMPLE_RATE,
         channels: int = 1,
         ffmpeg_bin: Optional[str] = None,
@@ -114,7 +115,7 @@ class MVSepMDX23(BaseSeparator):
             channels=channels,
             ffmpeg_bin=ffmpeg_bin,
         )
-        self.repo_dir = Path(repo_dir) if repo_dir else Path(".data/mvsep_mdx23/repo")
+        self.repo_dir = Path(repo_dir) if repo_dir else DATA_DIR / "mvsep_mdx23" / "repo"
         self.repo_url = repo_url
         self.single_onnx = single_onnx
         self.large_gpu = large_gpu

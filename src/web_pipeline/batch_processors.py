@@ -19,6 +19,7 @@ import soundfile as sf
 import torch
 
 from src.benchmark.separation.mixer import AudioMixer
+from src.data_paths import portable_data_path, portable_data_payload
 from src.diarization import (
     ClusteringDiarizer,
     ClusteringWorkerDiarizer,
@@ -807,7 +808,7 @@ async def process_target_speaker_filter(job: PipelineJob, queue: JobQueueManager
                         exported_paths.append(str(clip.path))
 
                 summary = {key: value for key, value in report.items() if key != "all_segments"}
-                summary["json_path"] = str(json_path)
+                summary["json_path"] = portable_data_path(json_path)
                 if exported_paths:
                     summary["exported_cuts"] = exported_paths
                 dataset_manager.attach_target_speaker(it.id, summary)
@@ -1071,19 +1072,21 @@ async def process_batch_benchmark(job: PipelineJob, queue: JobQueueManager) -> N
     report_file = BENCHMARK_DIR / f"{job.id}_report.json"
     with open(report_file, "w", encoding="utf-8") as f:
         json.dump(
-            {
-                "job_id": job.id,
-                "timestamp": time.time(),
-                "models": models_to_test,
-                "leaderboard": leaderboard,
-                "runs": evaluated_records,
-            },
+            portable_data_payload(
+                {
+                    "job_id": job.id,
+                    "timestamp": time.time(),
+                    "models": models_to_test,
+                    "leaderboard": leaderboard,
+                    "runs": evaluated_records,
+                }
+            ),
             f,
             indent=2,
         )
 
     job.params["leaderboard"] = leaderboard
-    job.params["report_path"] = str(report_file)
+    job.params["report_path"] = portable_data_path(report_file)
     job.add_log(f"Benchmark finished. Leaderboard: {leaderboard}", "info")
 
 

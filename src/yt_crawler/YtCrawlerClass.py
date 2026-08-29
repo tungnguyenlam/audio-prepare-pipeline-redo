@@ -18,6 +18,7 @@ import wave
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from src.data_paths import DATA_DIR
 from src.utils.AudioClass import (
     DEFAULT_SAMPLE_RATE,
     Audio,
@@ -87,8 +88,8 @@ class YtCrawler:
 
     def __init__(
         self,
-        output_dir: str | Path = ".data/yt_crawler/downloads",
-        work_dir: str | Path = ".data/yt_crawler/work",
+        output_dir: str | Path = DATA_DIR / "yt_crawler" / "downloads",
+        work_dir: str | Path = DATA_DIR / "yt_crawler" / "work",
         audio_format: str = "wav",
         sample_rate: int | None = DEFAULT_SAMPLE_RATE,
         channels: int = 1,
@@ -120,8 +121,8 @@ class YtCrawler:
     def ingest(
         cls,
         link: str,
-        output_dir: str | Path = ".data/yt_crawler/downloads",
-        work_dir: str | Path = ".data/yt_crawler/work",
+        output_dir: str | Path = DATA_DIR / "yt_crawler" / "downloads",
+        work_dir: str | Path = DATA_DIR / "yt_crawler" / "work",
         audio_format: str = "wav",
         sample_rate: int | None = DEFAULT_SAMPLE_RATE,
         channels: int = 1,

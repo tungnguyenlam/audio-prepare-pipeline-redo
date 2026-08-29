@@ -7,6 +7,7 @@ from typing import Literal, Optional, Union
 
 import soundfile as sf
 
+from src.data_paths import DATA_DIR
 from src.utils.AudioClass import Audio, _sanitize_filename_component
 
 TimeUnit = Literal["seconds", "minutes", "hours", "percent", "timestamp"]
@@ -46,7 +47,7 @@ class AudioCutter:
 
     def __init__(
         self,
-        output_dir: str | Path = ".data/audio_cutter/out",
+        output_dir: str | Path = DATA_DIR / "audio_cutter" / "out",
     ) -> None:
         self.output_dir = Path(output_dir)
 

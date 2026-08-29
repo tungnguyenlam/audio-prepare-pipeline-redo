@@ -375,6 +375,8 @@ const el = {
   diarReviewedCount: document.getElementById('diar-reviewed-count'),
   diarAcceptedCount: document.getElementById('diar-accepted-count'),
   diarRejectedCount: document.getElementById('diar-rejected-count'),
+  btnDownloadFilteredTurns: document.getElementById('btn-download-filtered-turns'),
+  btnDownloadFilteredTurnsLabel: document.getElementById('btn-download-filtered-turns-label'),
   turnsTableBody: document.getElementById('turns-table-body'),
   btnDownloadExport: document.getElementById('btn-download-export'),
   diarHistoryCountBadge: document.getElementById('diar-history-count-badge'),
@@ -3004,6 +3006,10 @@ function initDiarizationStudio() {
     el.btnExtractAllSpeakers.addEventListener('click', extractAllSpeakers);
   }
 
+  if (el.btnDownloadFilteredTurns) {
+    el.btnDownloadFilteredTurns.addEventListener('click', downloadFilteredTurns);
+  }
+
   if (el.btnDownloadExport) {
     el.btnDownloadExport.addEventListener('click', downloadDiarizationRttm);
   }
@@ -4524,6 +4530,14 @@ function renderTurnReviewStats(visibleCount) {
   if (el.diarRejectedCount) {
     el.diarRejectedCount.textContent = `${stats.rejected} rejected`;
   }
+  if (el.btnDownloadFilteredTurns) {
+    el.btnDownloadFilteredTurns.disabled = visibleCount === 0 || el.btnDownloadFilteredTurns.dataset.busy === '1';
+  }
+  if (el.btnDownloadFilteredTurnsLabel && el.btnDownloadFilteredTurns?.dataset.busy !== '1') {
+    el.btnDownloadFilteredTurnsLabel.textContent = visibleCount === 1
+      ? 'Download 1 Filtered Turn'
+      : `Download ${visibleCount} Filtered Turns`;
+  }
 }
 
 function renderTurnsTable() {
@@ -4570,6 +4584,7 @@ function renderTurnsTable() {
       <td class="table-actions">
         <div class="turn-row-actions">
           <button class="btn btn-sm btn-ghost btn-play-turn" data-index="${idx}" title="Play turn segment">▶ Play</button>
+          <button type="button" class="btn btn-sm btn-ghost btn-download-turn" data-index="${idx}" title="Download this turn WAV onto this computer">⬇ Download</button>
           <button type="button" class="btn btn-sm btn-ghost btn-save-turn-cut" data-index="${idx}" title="Save this turn as a session audio cut">Save Cut</button>
           ${evaluationActions}
         </div>
@@ -4593,6 +4608,11 @@ function renderTurnsTable() {
       seekTo(previewWindow.start_s);
       state.player.previewEnd = previewWindow.end_s;
       el.audio.play();
+    });
+
+    tr.querySelector('.btn-download-turn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      downloadTurnAudio(turn, e.currentTarget);
     });
 
     tr.querySelector('.btn-save-turn-cut').addEventListener('click', (e) => {
@@ -4648,6 +4668,150 @@ async function saveTurnAsCut(turn, button) {
     if (button) {
       button.disabled = false;
       button.innerHTML = originalLabel;
+    }
+  }
+}
+
+function diarizationSourceAudio() {
+  const audioId = state.diarization.audioId || el.diarInputSelect?.value;
+  const item = state.audioList.find(entry => entry.id === audioId);
+  return { audioId, item };
+}
+
+function sanitizeDownloadStem(value, fallback = 'audio') {
+  const cleaned = String(value || '').replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '');
+  return cleaned.slice(0, 60) || fallback;
+}
+
+function turnDownloadFilename(turn) {
+  const { item } = diarizationSourceAudio();
+  const title = sanitizeDownloadStem(item?.title, 'audio');
+  const speaker = sanitizeDownloadStem(getSpeakerName(turn.speaker_id), turn.speaker_id || 'spk');
+  const n = String((turn.originalIndex ?? 0) + 1).padStart(3, '0');
+  return `${title}_turn${n}_${speaker}_${Number(turn.start_s).toFixed(2)}-${Number(turn.end_s).toFixed(2)}.wav`;
+}
+
+function filenameFromContentDisposition(header, fallback) {
+  if (!header) return fallback;
+  const star = /filename\*=(?:UTF-8'')?([^;]+)/i.exec(header);
+  if (star) {
+    try {
+      return decodeURIComponent(star[1].trim().replace(/^"+|"+$/g, ''));
+    } catch (_) { /* fall through */ }
+  }
+  const quoted = /filename="([^"]+)"/i.exec(header);
+  if (quoted) return quoted[1];
+  const plain = /filename=([^;]+)/i.exec(header);
+  return plain ? plain[1].trim() : fallback;
+}
+
+async function downloadResponseBlob(res, fallbackName) {
+  if (!res.ok) {
+    await parseJsonResponse(res);
+  }
+  const blob = await res.blob();
+  const name = filenameFromContentDisposition(res.headers.get('Content-Disposition'), fallbackName);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  return name;
+}
+
+async function downloadTurnAudio(turn, button) {
+  const { audioId } = diarizationSourceAudio();
+  if (!audioId) {
+    showToast("No active audio track selected", "error");
+    return;
+  }
+  const start = turn.start_s;
+  const end = turn.end_s;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    showToast("This turn has an invalid time range", "error");
+    return;
+  }
+
+  const filename = turnDownloadFilename(turn);
+  const originalLabel = button ? button.innerHTML : "⬇ Download";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Downloading...";
+  }
+
+  try {
+    const params = new URLSearchParams({
+      start: String(start),
+      end: String(end),
+      filename,
+    });
+    const res = await fetch(`/api/audio/${encodeURIComponent(audioId)}/segment?${params.toString()}`);
+    const savedAs = await downloadResponseBlob(res, filename);
+    showToast(`Downloaded ${savedAs}`, "success");
+  } catch (err) {
+    showToast(err.message, "error");
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = originalLabel;
+    }
+  }
+}
+
+async function downloadFilteredTurns() {
+  const { audioId, item } = diarizationSourceAudio();
+  if (!audioId) {
+    showToast("No active audio track selected", "error");
+    return;
+  }
+  const turns = getFilteredAndSortedTurns();
+  if (turns.length === 0) {
+    showToast("No filtered turns to download", "info");
+    return;
+  }
+
+  const zipName = `${sanitizeDownloadStem(item?.title, 'audio')}_${turns.length}_turns.zip`;
+  const button = el.btnDownloadFilteredTurns;
+  const label = el.btnDownloadFilteredTurnsLabel;
+  const originalLabel = label ? label.textContent : "Download Filtered Turns";
+  if (button) {
+    button.disabled = true;
+    button.dataset.busy = '1';
+  }
+  if (label) label.textContent = turns.length === 1 ? "Preparing 1 turn…" : `Preparing ${turns.length} turns…`;
+
+  try {
+    const res = await fetch(`/api/audio/${encodeURIComponent(audioId)}/segments.zip`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        filename: zipName,
+        segments: turns.map(turn => ({
+          start: turn.start_s,
+          end: turn.end_s,
+          filename: turnDownloadFilename(turn),
+        })),
+      }),
+    });
+    const savedAs = await downloadResponseBlob(res, zipName);
+    showToast(`Downloaded ${savedAs}`, "success");
+  } catch (err) {
+    showToast(err.message, "error");
+  } finally {
+    if (button) {
+      button.dataset.busy = '0';
+      button.disabled = getFilteredAndSortedTurns().length === 0;
+    }
+    if (label) {
+      const visibleCount = getFilteredAndSortedTurns().length;
+      label.textContent = visibleCount === 1
+        ? 'Download 1 Filtered Turn'
+        : `Download ${visibleCount} Filtered Turns`;
+    } else if (button) {
+      button.textContent = originalLabel;
     }
   }
 }

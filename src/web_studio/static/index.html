@@ -1141,7 +1141,13 @@
               <div class="subview-header">
                 <div>
                   <h3 class="subview-title">Turns Inspector & Evaluation</h3>
-                  <p class="subview-desc">Filters below apply to both the timeline lanes above and the turns table. Score a target speaker, audition each diarized turn, then accept or reject it.</p>
+                  <p class="subview-desc">Filters below apply to both the timeline lanes above and the turns table. Score a target speaker, audition each diarized turn, then accept or reject it. Download a single turn or every currently filtered turn onto this computer.</p>
+                </div>
+                <div class="subview-actions flex-wrap gap-2">
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-download-filtered-turns" disabled title="Download the currently filtered turns as WAV files onto this computer">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    <span id="btn-download-filtered-turns-label">Download Filtered Turns</span>
+                  </button>
                 </div>
               </div>
 
@@ -1264,7 +1270,7 @@
                       <th style="width: 95px;">Duration</th>
                       <th style="width: 90px;">Overlap</th>
                       <th style="width: 130px;">Target Score</th>
-                      <th style="width: 340px;">Actions</th>
+                      <th style="width: 420px;">Actions</th>
                     </tr>
                   </thead>
                   <tbody id="turns-table-body"></tbody>

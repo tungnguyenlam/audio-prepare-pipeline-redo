@@ -19,6 +19,7 @@ import sys
 import time
 import uuid
 import wave
+import zipfile
 from dataclasses import asdict
 from math import isfinite
 from pathlib import Path
@@ -38,6 +39,12 @@ ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 load_dotenv(ROOT_DIR / ".env", override=False)
 os.environ.setdefault("HF_HOME", str(ROOT_DIR / ".data" / "huggingface"))
 
+from src.data_paths import (
+    portable_data_path,
+    portable_data_payload,
+    resolve_data_path,
+    resolve_data_payload,
+)
 from src.utils.AudioClass import DEFAULT_SAMPLE_RATE, Audio, _sanitize_filename_component
 from src.utils.AudioCutter import AudioCutter, AudioCutterError
 from src.utils.SpectrogramComparer import SpectrogramComparer
@@ -136,7 +143,9 @@ DIARIZATION_RESULTS_DIR = DATA_DIR / "diarization" / "results"
 DIARIZATION_VERIFICATIONS_DIR = DATA_DIR / "diarization" / "verifications"
 DIARIZATION_PREVIEW_DIR = DATA_DIR / "diarization" / "preview"
 DIARIZATION_ANNOTATIONS_DIR = DATA_DIR / "diarization" / "annotations"
+AUDIO_SEGMENT_DIR = DATA_DIR / "audio_cutter" / "segments"
 AUDIO_REGISTRY_PATH = DATA_DIR / "studio" / "audio_registry.json"
+MAX_SEGMENT_ZIP_ITEMS = 2000
 
 DEFAULT_EXTRACTION_PRE_ROLL_S = DEFAULT_SORTFORMER_PAD_ONSET_S
 DEFAULT_EXTRACTION_POST_ROLL_S = DEFAULT_SORTFORMER_PAD_OFFSET_S
@@ -149,6 +158,7 @@ DIARIZATION_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 DIARIZATION_VERIFICATIONS_DIR.mkdir(parents=True, exist_ok=True)
 DIARIZATION_PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
 DIARIZATION_ANNOTATIONS_DIR.mkdir(parents=True, exist_ok=True)
+AUDIO_SEGMENT_DIR.mkdir(parents=True, exist_ok=True)
 AUDIO_REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
@@ -458,7 +468,7 @@ class AudioRegistry:
                 raw_path = record.get("path")
                 if not raw_path:
                     continue
-                path = Path(str(raw_path)).expanduser()
+                path = resolve_data_path(str(raw_path))
                 try:
                     exists = path.is_file()
                 except OSError as exc:
@@ -502,6 +512,10 @@ class AudioRegistry:
                 continue
             if not exists:
                 continue
+            stored_path = portable_data_path(path)
+            if Path(stored_path).is_absolute():
+                logger.info("Not persisting machine-local audio path: %s", path)
+                continue
             try:
                 model_info = json.loads(
                     json.dumps(item.get("model_info") or {}, default=str, allow_nan=False)
@@ -511,7 +525,7 @@ class AudioRegistry:
             records.append(
                 {
                     "id": audio_id,
-                    "path": str(path),
+                    "path": stored_path,
                     "source_type": item["source_type"],
                     "parent_id": item["parent_id"],
                     "custom_tags": list(item["custom_tags"]),
@@ -939,7 +953,9 @@ class EvaluationManager:
     def _load(self):
         if self.file_path.is_file():
             try:
-                data = json.loads(self.file_path.read_text(encoding="utf-8"))
+                data = resolve_data_payload(
+                    json.loads(self.file_path.read_text(encoding="utf-8"))
+                )
                 if isinstance(data, list):
                     self.evaluations = {item["id"]: item for item in data if isinstance(item, dict) and "id" in item}
                 elif isinstance(data, dict):
@@ -951,7 +967,11 @@ class EvaluationManager:
     def _save(self):
         try:
             self.file_path.write_text(
-                json.dumps(list(self.evaluations.values()), indent=2, ensure_ascii=False) + "\n",
+                json.dumps(
+                    portable_data_payload(list(self.evaluations.values())),
+                    indent=2,
+                    ensure_ascii=False,
+                ) + "\n",
                 encoding="utf-8",
             )
         except Exception as e:
@@ -1382,7 +1402,7 @@ def _load_annotation(annotation_id: str) -> dict[str, Any]:
     path = _annotation_path(annotation_id)
     if not path.is_file():
         raise FileNotFoundError(f"Annotation not found: {annotation_id}")
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = resolve_data_payload(json.loads(path.read_text(encoding="utf-8")))
     if not isinstance(payload, dict) or payload.get("annotation_id") != annotation_id:
         raise ValueError("Annotation ID does not match its filename")
     return payload
@@ -1406,7 +1426,7 @@ def _ensure_annotation_source_registered(annotation: dict[str, Any]) -> str | No
     raw_path = source.get("path")
     if not raw_path:
         return None
-    path = Path(str(raw_path)).expanduser()
+    path = resolve_data_path(str(raw_path))
     try:
         path = path.resolve()
     except OSError:
@@ -2841,8 +2861,197 @@ async def handle_cut_audio(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=500)
 
 
+def _download_filename(name: str | None, default_stem: str, suffix: str) -> str:
+    """Return a filesystem-safe download name with the requested suffix."""
+    stem = _sanitize_filename_component(Path(name or "").stem) or default_stem
+    ext = Path(name or "").suffix.lower() or suffix
+    if not ext.startswith("."):
+        ext = f".{ext}"
+    return f"{stem}{ext}"
+
+
+def _attachment_headers(filename: str, content_type: str | None = None) -> dict[str, str]:
+    """Build Content-Disposition headers for a browser file download."""
+    ascii_name = filename.encode("ascii", "ignore").decode("ascii") or "download"
+    headers = {
+        "Content-Disposition": (
+            f'attachment; filename="{ascii_name}"; '
+            f"filename*=UTF-8''{quote(filename)}"
+        ),
+        "Cache-Control": "no-store",
+    }
+    if content_type:
+        headers["Content-Type"] = content_type
+    return headers
+
+
+def _slice_audio_frames(
+    waveform: np.ndarray,
+    sample_rate: int,
+    start_s: float,
+    end_s: float,
+) -> np.ndarray:
+    """Return ``[start_s, end_s)`` of a 2-D waveform."""
+    start_frame = int(round(float(start_s) * sample_rate))
+    end_frame = int(round(float(end_s) * sample_rate))
+    start_frame = max(0, min(start_frame, waveform.shape[0]))
+    end_frame = max(start_frame, min(end_frame, waveform.shape[0]))
+    if end_frame <= start_frame:
+        raise AudioCutterError(
+            f"resolved empty cut: start={start_s:.6f}s end={end_s:.6f}s"
+        )
+    return waveform[start_frame:end_frame]
+
+
+def _unique_zip_entry(name: str, used: set[str]) -> str:
+    """Return a zip entry name that does not collide with ``used``."""
+    base = _sanitize_filename_component(Path(name).stem) or "turn"
+    suffix = Path(name).suffix or ".wav"
+    candidate = f"{base}{suffix}"
+    index = 2
+    while candidate in used:
+        candidate = f"{base}_{index}{suffix}"
+        index += 1
+    used.add(candidate)
+    return candidate
+
+
+async def handle_download_audio_segment(request: web.Request) -> web.StreamResponse:
+    """Cut ``[start, end)`` and return it as a downloadable WAV.
+
+    Does not register a new session audio item. Repeated downloads of the
+    same range reuse a cached cut under ``.data/audio_cutter/segments/``.
+    """
+    audio_id = request.match_info["id"]
+    audio = registry.get_audio(audio_id)
+    if not audio or not Path(audio.path).is_file():
+        return web.json_response({"error": "Audio not found"}, status=404)
+
+    try:
+        start = float(request.query.get("start", ""))
+        end = float(request.query.get("end", ""))
+    except (TypeError, ValueError):
+        return web.json_response(
+            {"error": "start and end query params (seconds) are required"},
+            status=400,
+        )
+    if not isfinite(start) or not isfinite(end) or end <= start:
+        return web.json_response(
+            {"error": "end must be greater than start"}, status=400
+        )
+
+    default_stem = _sanitize_filename_component(
+        f"{audio.title or audio_id}_{start:.3f}-{end:.3f}"
+    ) or "turn"
+    filename = _download_filename(
+        request.query.get("filename"), default_stem, ".wav"
+    )
+    cache_dir = AUDIO_SEGMENT_DIR / (_sanitize_filename_component(audio_id) or "audio")
+    output_path = cache_dir / f"{start:.3f}_{end:.3f}.wav"
+    if not output_path.is_file():
+        cutter = AudioCutter(output_dir=cache_dir)
+        try:
+            await asyncio.to_thread(
+                cutter.cut, audio, start, end, output_path=output_path
+            )
+        except (AudioCutterError, FileNotFoundError) as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    return web.FileResponse(output_path, headers=_attachment_headers(filename))
+
+
+async def handle_download_audio_segments_zip(request: web.Request) -> web.StreamResponse:
+    """Cut many ``[start, end)`` ranges into one zip without registering cuts.
+
+    Reads the source audio once. Intended for the Turns Inspector bulk
+    download of the currently filtered table.
+    """
+    audio_id = request.match_info["id"]
+    audio = registry.get_audio(audio_id)
+    if not audio or not Path(audio.path).is_file():
+        return web.json_response({"error": "Audio not found"}, status=404)
+
+    try:
+        data = await request.json()
+    except (json.JSONDecodeError, aiohttp.ContentTypeError):
+        return web.json_response({"error": "JSON body is required"}, status=400)
+
+    raw_segments = data.get("segments") if isinstance(data, dict) else None
+    if not isinstance(raw_segments, list) or not raw_segments:
+        return web.json_response({"error": "segments must be a non-empty list"}, status=400)
+    if len(raw_segments) > MAX_SEGMENT_ZIP_ITEMS:
+        return web.json_response(
+            {"error": f"At most {MAX_SEGMENT_ZIP_ITEMS} segments can be downloaded at once"},
+            status=400,
+        )
+
+    parsed: list[tuple[float, float, str]] = []
+    try:
+        for index, item in enumerate(raw_segments):
+            if not isinstance(item, dict):
+                raise ValueError(f"segments[{index}] must be an object")
+            start = float(item.get("start"))
+            end = float(item.get("end"))
+            if not isfinite(start) or not isfinite(end) or end <= start:
+                raise ValueError(f"segments[{index}] needs end > start")
+            parsed.append((start, end, str(item.get("filename") or f"turn_{index + 1:03d}.wav")))
+    except (TypeError, ValueError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+
+    zip_name = _download_filename(
+        data.get("filename") if isinstance(data, dict) else None,
+        _sanitize_filename_component(f"{audio.title or audio_id}_turns") or "turns",
+        ".zip",
+    )
+    cache_dir = AUDIO_SEGMENT_DIR / (_sanitize_filename_component(audio_id) or "audio")
+    zip_path = cache_dir / f"download_{uuid.uuid4().hex}.zip"
+
+    def build_zip() -> None:
+        waveform, sample_rate = sf.read(str(audio.path), always_2d=True)
+        if waveform.shape[0] == 0:
+            raise AudioCutterError(f"Audio source is empty: {audio.path}")
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        used: set[str] = set()
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for start, end, given_name in parsed:
+                frames = _slice_audio_frames(waveform, int(sample_rate), start, end)
+                buf = io.BytesIO()
+                sf.write(buf, frames, int(sample_rate), format="WAV")
+                archive.writestr(_unique_zip_entry(given_name, used), buf.getvalue())
+
+    try:
+        await asyncio.to_thread(build_zip)
+    except (AudioCutterError, FileNotFoundError, OSError) as exc:
+        zip_path.unlink(missing_ok=True)
+        return web.json_response({"error": str(exc)}, status=400)
+    except Exception:
+        zip_path.unlink(missing_ok=True)
+        logger.exception("Turn-segment zip failed")
+        return web.json_response({"error": "Failed to build turn download zip"}, status=500)
+
+    response = web.StreamResponse(
+        status=200,
+        headers={
+            **_attachment_headers(zip_name, "application/zip"),
+            "Content-Length": str(zip_path.stat().st_size),
+        },
+    )
+    try:
+        await response.prepare(request)
+        with zip_path.open("rb") as handle:
+            while True:
+                chunk = handle.read(64 * 1024)
+                if not chunk:
+                    break
+                await response.write(chunk)
+        await response.write_eof()
+        return response
+    finally:
+        zip_path.unlink(missing_ok=True)
+
+
 async def handle_quick_save(request: web.Request) -> web.Response:
-    """Perform Audio.quick_save() to temp/ or specified directory."""
+    """Perform Audio.quick_save() in canonical runtime storage."""
     audio_id = request.match_info["id"]
     audio = registry.get_audio(audio_id)
     if not audio:
@@ -2859,7 +3068,7 @@ async def handle_quick_save(request: web.Request) -> web.Response:
         saved = await loop.run_in_executor(
             None,
             lambda: audio.quick_save(
-                TEMP_DIR,
+                DATA_DIR / "quick_save",
                 name=name,
                 prefix=prefix,
                 suffix=suffix,
@@ -4073,7 +4282,12 @@ async def handle_save_diarization_annotation(request: web.Request) -> web.Respon
         path = _annotation_path(payload["annotation_id"])
         temp_path = path.with_suffix(".json.tmp")
         temp_path.write_text(
-            json.dumps(payload, indent=2, ensure_ascii=False, allow_nan=False) + "\n",
+            json.dumps(
+                portable_data_payload(payload),
+                indent=2,
+                ensure_ascii=False,
+                allow_nan=False,
+            ) + "\n",
             encoding="utf-8",
         )
         temp_path.replace(path)
@@ -4577,7 +4791,7 @@ async def handle_verify_diarization_batch(request: web.Request) -> web.Response:
             report_path = DIARIZATION_VERIFICATIONS_DIR / f"{verification_id}.json"
             report_temp_path = report_path.with_suffix(".json.tmp")
             report_temp_path.write_text(
-                json.dumps(report, indent=2, ensure_ascii=False) + "\n",
+                json.dumps(portable_data_payload(report), indent=2, ensure_ascii=False) + "\n",
                 encoding="utf-8",
             )
             report_temp_path.replace(report_path)
@@ -5730,6 +5944,8 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_get("/api/audio/{id}/stream", handle_stream_audio)
     app.router.add_get("/api/audio/{id}/waveform", handle_get_waveform)
     app.router.add_get("/api/audio/{id}/spectrogram", handle_get_spectrogram)
+    app.router.add_get("/api/audio/{id}/segment", handle_download_audio_segment)
+    app.router.add_post("/api/audio/{id}/segments.zip", handle_download_audio_segments_zip)
     app.router.add_post("/api/audio/{id}/cut", handle_cut_audio)
     app.router.add_post("/api/audio/{id}/quick-save", handle_quick_save)
     app.router.add_post("/api/audio/{id}/save-to", handle_save_to)

@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-REMOTE="vsf@10.148.21.12:~/Documents/tts-data-pipeline/audio-prepare-pipeline-redo"
+REMOTE_HOST="${SYNC_SERVER_HOST:-vsf@10.148.21.12}"
+REMOTE_REPO="${SYNC_SERVER_REPO:-Documents/tts-data-pipeline/audio-prepare-pipeline-redo}"
+EXCLUDES="$REPO_ROOT/scripts/sync/data_excludes.txt"
 
 cd "$REPO_ROOT"
 mkdir -p .data
+ssh "$REMOTE_HOST" "cd '$REMOTE_REPO' && mkdir -p .data && if [ -d src/notebooks/.data ]; then rsync -a src/notebooks/.data/ .data/; fi"
 
 rsync -avzP \
-  "${REMOTE}/.data/" .data/
+  --safe-links \
+  --prune-empty-dirs \
+  --exclude-from="$EXCLUDES" \
+  "${REMOTE_HOST}:${REMOTE_REPO}/.data/" .data/

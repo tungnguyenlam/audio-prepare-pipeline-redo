@@ -10,6 +10,7 @@ from math import isfinite
 from pathlib import Path
 from typing import Any, Literal
 
+from src.data_paths import portable_data_path, resolve_data_path
 from src.utils.AudioClass import Audio
 
 
@@ -598,7 +599,7 @@ class DiarizationResult:
             raw_source_id = source_payload.get("source_id") or data.get("audio_id")
             if raw_path and raw_source_id:
                 source_audio = Audio(
-                    path=Path(raw_path).expanduser().resolve(),
+                    path=resolve_data_path(raw_path),
                     source_id=str(raw_source_id),
                     title=source_payload.get("title"),
                     sample_rate=source_payload.get("sample_rate"),
@@ -663,8 +664,12 @@ class DiarizationResult:
         )
         path.parent.mkdir(parents=True, exist_ok=True)
         temp_path = path.with_suffix(".json.tmp")
+        payload = self.to_dict()
+        source_audio = payload.get("source_audio")
+        if isinstance(source_audio, dict) and source_audio.get("path"):
+            source_audio["path"] = portable_data_path(source_audio["path"])
         temp_path.write_text(
-            json.dumps(self.to_dict(), indent=2, ensure_ascii=False) + "\n",
+            json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
         temp_path.replace(path)

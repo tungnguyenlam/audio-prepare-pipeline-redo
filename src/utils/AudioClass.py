@@ -10,6 +10,8 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Literal, Optional
 
+from src.data_paths import DATA_DIR
+
 DEFAULT_SAMPLE_RATE = 44100
 DEFAULT_AUDIO_FORMAT = "wav"
 ResampleAction = Literal["upscale", "downscale", "keep"]
@@ -466,12 +468,13 @@ class Audio:
     ) -> Audio:
         """Quickly save (copy) the audio file to a temp directory with fingerprint in the filename.
 
-        By default, saves as WAV into ``<project_root>/temp/`` and generates a
+        By default, saves as WAV into ``<project_root>/.data/quick_save/`` and generates a
         filename from the step fingerprint. A JSON sidecar ``{stem}.json`` is
         written next to the audio. Prints the destination path.
 
         Args:
-            output_dir: Target directory. Defaults to ``<project_root>/temp``.
+            output_dir: Target directory. Defaults to
+                ``<project_root>/.data/quick_save``.
             name: Optional explicit filename to override metadata/fingerprint-based naming.
             prefix: Optional prefix prepended to the generated filename.
             suffix: Optional suffix appended to the generated filename before extension.
@@ -521,7 +524,7 @@ class Audio:
         target_dir = (
             Path(output_dir)
             if output_dir is not None
-            else Path(__file__).resolve().parents[2] / "temp"
+            else DATA_DIR / "quick_save"
         )
         target_dir.mkdir(parents=True, exist_ok=True)
         target_file = (target_dir / filename).resolve()

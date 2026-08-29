@@ -16,6 +16,7 @@ import threading
 from pathlib import Path
 from typing import Callable, Optional
 
+from src.data_paths import DATA_DIR
 from src.utils.audio_utils import normalize_wav, probe_wav
 from src.separation.BaseSeparator import BaseSeparator
 from src.utils.AudioClass import DEFAULT_SAMPLE_RATE, Audio
@@ -40,8 +41,8 @@ class HTDemucs(BaseSeparator):
         model: str = "htdemucs",
         device: str = "cpu",
         two_stems: str = "vocals",
-        output_dir: str | Path = ".data/demucs/out",
-        work_dir: str | Path = ".data/demucs/work",
+        output_dir: str | Path = DATA_DIR / "demucs" / "out",
+        work_dir: str | Path = DATA_DIR / "demucs" / "work",
         sample_rate: int = DEFAULT_SAMPLE_RATE,
         channels: int = 1,
         demucs_bin: Optional[str] = None,
