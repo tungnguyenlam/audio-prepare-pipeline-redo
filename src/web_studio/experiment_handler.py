@@ -7,8 +7,6 @@ Gemma 4 probe/test API, and hardware telemetry.
 from __future__ import annotations
 
 import asyncio
-import gc
-import json
 import logging
 from pathlib import Path
 import tempfile
@@ -25,14 +23,17 @@ from src.diarization.OverlapVerifier import (
     Gemma4OverlapVerifier,
     OverlapVerifierError,
 )
-from src.diarization.schemas import DiarizationResult
 from src.diarization.zero_contamination import (
     DEFAULT_COLLAR_EROSION_S,
     DEFAULT_COMPETITOR_ONSET,
+    DEFAULT_ENERGY_SEARCH_WINDOW_S,
+    DEFAULT_ENERGY_VALLEY_FLOOR_DB,
+    DEFAULT_HANDOFF_RISK_DISTANCE_S,
     DEFAULT_HOMOGENEITY_HOP_S,
     DEFAULT_HOMOGENEITY_WINDOW_S,
     DEFAULT_MIN_HOMOGENEITY_SIMILARITY,
     DEFAULT_MIN_TURN_DURATION_S,
+    DEFAULT_SILENCE_TAIL_BUFFER_S,
     DEFAULT_TARGET_OFFSET,
     DEFAULT_TARGET_ONSET,
     DEFAULT_TRANSITION_EXCLUSION_S,
@@ -231,7 +232,8 @@ class ExperimentRouteHandler:
             return web.json_response({"error": "Audio track not found"}, status=404)
 
         # Resolve per-step devices
-        primary_device = self._resolve_device(body.get("primary_device") or body.get("device"))
+        device = self._resolve_device(body.get("primary_device") or body.get("device"))
+        primary_device = device
 
         sec_dev_req = body.get("secondary_device")
         secondary_device = (
@@ -279,11 +281,11 @@ class ExperimentRouteHandler:
             allow_gap_merge=bool(body.get("allow_gap_merge", False)),
             # Stage 3: Syllable & Boundary Integrity Gate
             enable_context_collar=bool(body.get("enable_context_collar", True)),
-            handoff_risk_distance_s=float(body.get("handoff_risk_distance_s", 0.80)),
-            silence_tail_buffer_s=float(body.get("silence_tail_buffer_s", 0.15)),
+            handoff_risk_distance_s=float(body.get("handoff_risk_distance_s", DEFAULT_HANDOFF_RISK_DISTANCE_S)),
+            silence_tail_buffer_s=float(body.get("silence_tail_buffer_s", DEFAULT_SILENCE_TAIL_BUFFER_S)),
             enable_energy_snapping=bool(body.get("enable_energy_snapping", False)),
-            energy_search_window_s=float(body.get("energy_search_window_s", 0.15)),
-            energy_valley_floor_db=float(body.get("energy_valley_floor_db", -30.0)),
+            energy_search_window_s=float(body.get("energy_search_window_s", DEFAULT_ENERGY_SEARCH_WINDOW_S)),
+            energy_valley_floor_db=float(body.get("energy_valley_floor_db", DEFAULT_ENERGY_VALLEY_FLOOR_DB)),
             enable_syllable_alignment=bool(body.get("enable_syllable_alignment", False)),
             aligner_engine=body.get("aligner_engine", "whisper_timestamped"),
             aligner_model=body.get("aligner_model", "vinai/PhoWhisper-small"),
