@@ -319,6 +319,15 @@ development machine.
 │   ├── start_studio.py
 │   └── sync/               # Server synchronization scripts (code & data)
 └── docs/
-    ├── api_contract.md     # Public API documentation
-    └── data_contract.md    # Return-object schemas and contracts
+    ├── README.md                           # Master documentation index & architecture map
+    ├── api_contract.md                     # API contract gateway
+    ├── data_contract.md                    # Data contract gateway
+    ├── 01_audio_and_ingestion.md           # Audio representation & YouTube crawler
+    ├── 02_source_separation.md             # Source separation & ManagedModel lifecycle
+    ├── 03_speaker_diarization.md           # Diarization backends, turn cleanup & verifiers
+    ├── 04_zero_contamination_diarization.md # Extreme-precision single-speaker pipeline
+    ├── 05_benchmark_and_mixing.md          # Benchmark mixer & literature comparisons
+    ├── 06_web_applications.md              # SonicStudio & SonicPipeline web platforms
+    ├── 07_data_contracts.md                # Canonical data schemas & persistence
+    └── bench-paper-diarize.md              # Published diarization benchmark reference
 ```

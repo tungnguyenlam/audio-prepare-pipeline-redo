@@ -81,8 +81,9 @@ BenchmarkDefinition + speech Audio + music Audio
 | `src/web_studio/` | **SonicStudio** — Interactive audio exploration API domain, Experiment tab, and frontend |
 | `src/web_pipeline/` | **SonicPipeline** — Large-scale task queue, dataset management API domain and frontend |
 | `scripts/` | Runner scripts (`start_pipeline.sh`, `start_studio.sh`, `sync/` scripts) |
-| `docs/api_contract.md` | Public method behavior |
-| `docs/data_contract.md` | Return-object field contracts |
+| `docs/` | Modular documentation (`README.md`, `01_` through `07_`) |
+| `docs/api_contract.md` | Public method behavior gateway |
+| `docs/data_contract.md` | Return-object field contracts gateway |
 
 Imports are `from src....`. The repo is not installed as a package (`tool.uv.package = false`); notebooks and server scripts put the repo root on `sys.path`.
 
