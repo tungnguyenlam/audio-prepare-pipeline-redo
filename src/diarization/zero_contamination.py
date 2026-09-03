@@ -25,6 +25,7 @@ from typing import Any, Callable, Sequence
 
 import numpy as np
 import soundfile as sf
+import torch
 
 from src.base.model import ManagedModel
 from src.diarization.evaluation import _maximum_weight_assignment
@@ -61,6 +62,7 @@ class ZeroContaminationConfig:
 
     # Stage 1: Primary Diarizer
     primary_backend: str = "sortformer"  # "sortformer", "diarizen", "pyannote"
+    primary_device: str | None = None  # e.g. "cuda:0", "cpu", or None for general device
     target_onset: float = DEFAULT_TARGET_ONSET
     target_offset: float = DEFAULT_TARGET_OFFSET
     competitor_onset: float = DEFAULT_COMPETITOR_ONSET
@@ -68,6 +70,7 @@ class ZeroContaminationConfig:
     # Stage 2: Dual-Engine Consensus
     enable_consensus: bool = True
     secondary_backend: str = "diarizen"  # "diarizen", "pyannote", "sortformer"
+    secondary_device: str | None = None  # e.g. "same", "cuda:1", "cpu"
 
     # Stage 3: Boundary & Syllable Integrity Gate
     enable_collar_erosion: bool = True
@@ -88,12 +91,15 @@ class ZeroContaminationConfig:
 
     # Stage 3c: Option C - Syllable / Word Forced Alignment Lock (High-Compute)
     enable_syllable_alignment: bool = False
-    aligner_engine: str = "mms_fa"  # "mms_fa" or "remote_whisper"
+    aligner_engine: str = "whisper_timestamped"  # "whisper_timestamped", "mms_fa", "remote_whisper"
+    aligner_model: str = "vinai/PhoWhisper-small"  # Vietnamese fine-tuned model or standard Whisper
+    aligner_language: str = "vi"  # Target language (e.g. "vi" for Vietnamese)
     aligner_endpoint: str | None = None
-    aligner_device: str | None = None
+    aligner_device: str | None = "cpu"  # CPU recommended to prevent GPU VRAM exhaustion
 
     # Stage 4: Dense Sliding-Window Embedding Homogeneity
     enable_homogeneity: bool = False
+    homogeneity_device: str | None = None  # e.g. "same", "cuda:0", "cpu"
     homogeneity_window_s: float = DEFAULT_HOMOGENEITY_WINDOW_S
     homogeneity_hop_s: float = DEFAULT_HOMOGENEITY_HOP_S
     min_homogeneity_similarity: float = DEFAULT_MIN_HOMOGENEITY_SIMILARITY
@@ -109,7 +115,7 @@ class ZeroContaminationConfig:
     # Stage 5b: In-Loop VibeVoice-ASR Speaker Count Verifier (Dedicated GPU or Remote Host)
     enable_vibevoice: bool = False
     vibevoice_model_id: str = "Dubedo/VibeVoice-ASR-HF-INT8"
-    vibevoice_device: str | None = None  # e.g. "cuda:1" to run on a dedicated secondary GPU
+    vibevoice_device: str | None = None  # e.g. "cuda:1" to run on a dedicated secondary GPU, or "cpu"
     vibevoice_endpoint: str | None = None  # optional remote HTTP endpoint if hosted on another server
     max_secondary_speech_s: float = 0.0
 
@@ -594,112 +600,459 @@ def snap_boundaries_to_acoustic_valleys(
     return snapped, audits
 
 
-def align_and_lock_syllable_boundaries(
-    audio: Audio,
+def _lock_turns_with_words(
     turns: Sequence[SpeakerTurn],
-    *,
-    aligner_engine: str = "mms_fa",
-    aligner_endpoint: str | None = None,
-    aligner_device: str = "auto",
-    token: str | None = None,
+    words: list[dict[str, Any]],
+    policy: str = "whisper_word_lock",
 ) -> tuple[list[SpeakerTurn], list[dict[str, Any]]]:
-    """Lock boundaries to complete syllable/word timestamps using forced alignment or ASR.
+    """Snap speaker turn boundaries to complete words to prevent syllable clipping.
 
-    Strictly forbids slicing through the interior of an active syllable.
+    Preserves trailing syllable codas and vocalic release by extending turns that
+    cut through the interior of a word, and attaches word-level transcripts.
     """
     if not turns:
         return [], []
 
+    aligned_turns: list[SpeakerTurn] = []
+    audits: list[dict[str, Any]] = []
+
+    for turn in turns:
+        orig_start = getattr(turn, "_original_start_s", turn.start_s)
+        orig_end = getattr(turn, "_original_end_s", turn.end_s)
+        raw_start = getattr(turn, "_raw_start_s", turn.start_s)
+        raw_end = getattr(turn, "_raw_end_s", turn.end_s)
+
+        new_start = turn.start_s
+        new_end = turn.end_s
+
+        # 1. End boundary protection (Syllable Coda / Trailing Word Guard)
+        for w in words:
+            w_start = float(w["start"])
+            w_end = float(w["end"])
+            # Mid-word cut: turn ends during active word
+            if w_start <= new_end < w_end:
+                new_end = max(new_end, w_end + 0.05)
+            # Immediate trailing word: word ended within 150ms after turn end
+            elif 0.0 < (w_end - new_end) <= 0.15 and w_start < new_end:
+                new_end = max(new_end, w_end + 0.05)
+
+        # 2. Start boundary protection (Leading Word Guard)
+        for w in words:
+            w_start = float(w["start"])
+            w_end = float(w["end"])
+            # Turn starts inside a word
+            if w_start < new_start <= w_end:
+                new_start = min(new_start, max(0.0, w_start - 0.05))
+
+        new_start_s = round(new_start, 4)
+        new_end_s = round(new_end, 4)
+
+        # Collect words for turn transcript
+        words_in_turn = [
+            str(w.get("text", "")).strip()
+            for w in words
+            if (float(w["start"]) >= new_start_s - 0.15 and float(w["end"]) <= new_end_s + 0.15)
+        ]
+        transcript = " ".join([wt for wt in words_in_turn if wt]) if words_in_turn else None
+
+        delta_start = round((new_start_s - raw_start) * 1000.0, 1)
+        delta_end = round((new_end_s - orig_end) * 1000.0, 1)
+        tail_rescued = new_end_s > orig_end
+
+        refined_turn = SpeakerTurn(
+            speaker_id=turn.speaker_id,
+            start_s=new_start_s,
+            end_s=new_end_s,
+            confidence=turn.confidence,
+        )
+        refined_turn._original_start_s = orig_start
+        refined_turn._original_end_s = orig_end
+        refined_turn._raw_start_s = raw_start
+        refined_turn._raw_end_s = raw_end
+        refined_turn._delta_start_ms = delta_start
+        refined_turn._delta_end_ms = delta_end
+        refined_turn._boundary_policy = policy
+        refined_turn._tail_rescued = tail_rescued
+        refined_turn._transcript = transcript
+
+        aligned_turns.append(refined_turn)
+        audits.append({
+            "raw_start_s": raw_start,
+            "raw_end_s": raw_end,
+            "original_start_s": orig_start,
+            "original_end_s": orig_end,
+            "start_s": new_start_s,
+            "end_s": new_end_s,
+            "delta_start_ms": delta_start,
+            "delta_end_ms": delta_end,
+            "policy": policy,
+            "tail_rescued": tail_rescued,
+            "transcript": transcript,
+        })
+
+    return aligned_turns, audits
+
+
+def _run_whisper_timestamped_alignment(
+    audio: Audio,
+    turns: Sequence[SpeakerTurn],
+    *,
+    model_name: str = "vinai/PhoWhisper-small",
+    language: str = "vi",
+    device: str = "cpu",
+) -> tuple[list[SpeakerTurn], list[dict[str, Any]]]:
+    """Align turns using whisper-timestamped with Vietnamese or multilingual models.
+
+    Supports CPU as a real inference device and automatically frees VRAM and falls
+    back to CPU if CUDA OutOfMemoryError is encountered.
+    """
+    import torch
+
+    device_str = "cpu"
+    if device and device != "cpu" and device != "same":
+        if device.startswith("cuda:"):
+            device_str = device if torch.cuda.is_available() else "cpu"
+        elif device in {"auto", "cuda"}:
+            device_str = "cuda:0" if torch.cuda.is_available() else "cpu"
+        elif device == "mps" and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            device_str = "mps"
+
+    try:
+        import whisper_timestamped as whisperts
+    except ImportError:
+        whisperts = None
+
+    whisper_mod = None
+    if whisperts is None:
+        try:
+            import whisper as whisper_mod
+        except ImportError:
+            raise RuntimeError(
+                "Package 'whisper-timestamped' (or 'openai-whisper') is required for Whisper alignment. "
+                "Please run: uv pip install whisper-timestamped"
+            )
+
+    model = None
+    words: list[dict[str, Any]] = []
+
+    def _extract_words(res_obj: dict[str, Any]) -> list[dict[str, Any]]:
+        extracted = []
+        for seg in res_obj.get("segments", []):
+            for w in seg.get("words", []):
+                text = w.get("text") or w.get("word") or ""
+                start_val = w.get("start")
+                end_val = w.get("end")
+                conf = w.get("confidence", 1.0)
+                if text and start_val is not None and end_val is not None:
+                    extracted.append({
+                        "text": str(text).strip(),
+                        "start": float(start_val),
+                        "end": float(end_val),
+                        "confidence": float(conf),
+                    })
+        return extracted
+
+    try:
+        logger.info(
+            "Loading Whisper alignment model '%s' on %s (lang=%s)...",
+            model_name,
+            device_str,
+            language,
+        )
+        if whisperts is not None:
+            model = whisperts.load_model(model_name, device=device_str)
+            transcribe_opts = {
+                "language": language or "vi",
+                "vad": True,
+                "detect_disfluencies": True,
+            }
+            res = whisperts.transcribe(model, str(audio.path), **transcribe_opts)
+        else:
+            model = whisper_mod.load_model(model_name, device=device_str)
+            res = model.transcribe(str(audio.path), language=language or "vi", word_timestamps=True)
+
+        words = _extract_words(res)
+
+    except (torch.cuda.OutOfMemoryError, RuntimeError) as exc:
+        if ("out of memory" in str(exc).lower() or isinstance(exc, torch.cuda.OutOfMemoryError)) and device_str != "cpu":
+            logger.warning(
+                "CUDA OOM on device %s during Whisper alignment (%s). Freeing GPU VRAM and retrying on CPU.",
+                device_str,
+                exc,
+            )
+            try:
+                del model
+            except Exception:
+                pass
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
+
+            device_str = "cpu"
+            logger.info("Executing Whisper alignment on CPU fallback...")
+            if whisperts is not None:
+                cpu_model = whisperts.load_model(model_name, device="cpu")
+                res = whisperts.transcribe(cpu_model, str(audio.path), language=language or "vi", vad=True)
+                del cpu_model
+            else:
+                cpu_model = whisper_mod.load_model(model_name, device="cpu")
+                res = cpu_model.transcribe(str(audio.path), language=language or "vi", word_timestamps=True)
+                del cpu_model
+
+            words = _extract_words(res)
+        else:
+            raise
+
+    finally:
+        try:
+            del model
+        except Exception:
+            pass
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+
+    return _lock_turns_with_words(turns, words, policy=f"whisper_lock_{Path(model_name).name}")
+
+
+def _run_remote_whisper_alignment(
+    audio: Audio,
+    turns: Sequence[SpeakerTurn],
+    *,
+    endpoint: str,
+    language: str = "vi",
+) -> tuple[list[SpeakerTurn], list[dict[str, Any]]]:
+    """Query a remote OpenAI-compatible Whisper transcription server for word timestamps."""
+    import json
+    import urllib.parse
+    import urllib.request
+    import uuid
+
+    boundary = f"----WebKitFormBoundary{uuid.uuid4().hex}"
+    body = bytearray()
+
+    def add_field(name: str, value: str):
+        body.extend(f"--{boundary}\r\n".encode("utf-8"))
+        body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"))
+        body.extend(f"{value}\r\n".encode("utf-8"))
+
+    add_field("response_format", "verbose_json")
+    add_field("timestamp_granularities[]", "word")
+    if language:
+        add_field("language", language)
+
+    with open(str(audio.path), "rb") as f:
+        file_bytes = f.read()
+
+    body.extend(f"--{boundary}\r\n".encode("utf-8"))
+    body.extend(f'Content-Disposition: form-data; name="file"; filename="{Path(audio.path).name}"\r\n'.encode("utf-8"))
+    body.extend(b"Content-Type: audio/wav\r\n\r\n")
+    body.extend(file_bytes)
+    body.extend(b"\r\n")
+    body.extend(f"--{boundary}--\r\n".encode("utf-8"))
+
+    req = urllib.request.Request(
+        endpoint,
+        data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )
+
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+
+    words: list[dict[str, Any]] = []
+    for w in data.get("words", []):
+        text = w.get("word") or w.get("text") or ""
+        s = w.get("start")
+        e = w.get("end")
+        if text and s is not None and e is not None:
+            words.append({
+                "text": str(text).strip(),
+                "start": float(s),
+                "end": float(e),
+                "confidence": float(w.get("confidence", 1.0)),
+            })
+
+    return _lock_turns_with_words(turns, words, policy="remote_whisper_lock")
+
+
+def _run_mms_fa_alignment(
+    audio: Audio,
+    turns: Sequence[SpeakerTurn],
+    *,
+    device: str = "cpu",
+) -> tuple[list[SpeakerTurn], list[dict[str, Any]]]:
+    """Run PyTorch MMS forced alignment with CPU support and CUDA OOM fallback."""
     import torch
     import torchaudio
 
-    device_str = "cuda" if torch.cuda.is_available() and aligner_device != "cpu" else "cpu"
-    if aligner_device and aligner_device.startswith("cuda:"):
-        device_str = aligner_device
+    device_str = "cpu"
+    if device and device != "cpu" and device != "same":
+        if device.startswith("cuda:"):
+            device_str = device if torch.cuda.is_available() else "cpu"
+        elif device in {"auto", "cuda"}:
+            device_str = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+    bundle = torchaudio.pipelines.MMS_FA
+    model = None
+
+    audio_data, sr = sf.read(str(audio.path), dtype="float32", always_2d=True)
+    waveform = torch.from_numpy(audio_data.T)
+    if waveform.shape[0] > 1:
+        waveform = waveform.mean(dim=0, keepdim=True)
+    if sr != bundle.sample_rate:
+        resampler = torchaudio.transforms.Resample(sr, bundle.sample_rate)
+        waveform = resampler(waveform)
+        sr = bundle.sample_rate
+
+    emission = None
+    try:
+        model = bundle.get_model().to(device_str)
+        model.eval()
+        with torch.inference_mode():
+            emission, _ = model(waveform.to(device_str))
+            emission = torch.log_softmax(emission, dim=-1)
+    except (torch.cuda.OutOfMemoryError, RuntimeError) as exc:
+        if ("out of memory" in str(exc).lower() or isinstance(exc, torch.cuda.OutOfMemoryError)) and device_str != "cpu":
+            logger.warning("CUDA OOM during MMS-FA on %s (%s). Falling back to CPU.", device_str, exc)
+            try:
+                del model
+            except Exception:
+                pass
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
+
+            device_str = "cpu"
+            model = bundle.get_model().to("cpu")
+            model.eval()
+            with torch.inference_mode():
+                emission, _ = model(waveform.to("cpu"))
+                emission = torch.log_softmax(emission, dim=-1)
+        else:
+            raise
+    finally:
+        try:
+            del model
+        except Exception:
+            pass
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
 
     aligned_turns: list[SpeakerTurn] = []
     audits: list[dict[str, Any]] = []
 
+    num_frames = emission.shape[1]
+    total_duration = waveform.shape[1] / sr
+    frame_to_sec = total_duration / num_frames
+
+    blank_prob = torch.exp(emission[0, :, 0]).cpu().numpy()
+    speech_prob = 1.0 - blank_prob
+
+    for turn in turns:
+        orig_start = getattr(turn, "_original_start_s", turn.start_s)
+        orig_end = getattr(turn, "_original_end_s", turn.end_s)
+        raw_start = getattr(turn, "_raw_start_s", turn.start_s)
+        raw_end = getattr(turn, "_raw_end_s", turn.end_s)
+
+        start_f = max(0, int(round(turn.start_s / frame_to_sec)))
+        end_f = min(num_frames - 1, int(round(turn.end_s / frame_to_sec)))
+
+        search_f = int(round(0.30 / frame_to_sec))
+        new_end_f = end_f
+
+        if speech_prob[end_f] > 0.3:
+            for f in range(end_f, min(num_frames - 1, end_f + search_f)):
+                if speech_prob[f] < 0.2:
+                    new_end_f = f
+                    break
+
+        new_end_s = round(new_end_f * frame_to_sec, 4)
+        new_start_s = round(start_f * frame_to_sec, 4)
+
+        delta_start = round((new_start_s - raw_start) * 1000.0, 1)
+        delta_end = round((new_end_s - orig_end) * 1000.0, 1)
+        tail_rescued = new_end_s > orig_end
+
+        refined_turn = SpeakerTurn(
+            speaker_id=turn.speaker_id,
+            start_s=new_start_s,
+            end_s=new_end_s,
+            confidence=turn.confidence,
+        )
+        refined_turn._original_start_s = orig_start
+        refined_turn._original_end_s = orig_end
+        refined_turn._raw_start_s = raw_start
+        refined_turn._raw_end_s = raw_end
+        refined_turn._delta_start_ms = delta_start
+        refined_turn._delta_end_ms = delta_end
+        refined_turn._boundary_policy = "syllable_word_lock"
+        refined_turn._tail_rescued = tail_rescued
+
+        aligned_turns.append(refined_turn)
+        audits.append({
+            "raw_start_s": raw_start,
+            "raw_end_s": raw_end,
+            "original_start_s": orig_start,
+            "original_end_s": orig_end,
+            "start_s": new_start_s,
+            "end_s": new_end_s,
+            "delta_start_ms": delta_start,
+            "delta_end_ms": delta_end,
+            "policy": "syllable_word_lock",
+            "tail_rescued": tail_rescued,
+        })
+
+    return aligned_turns, audits
+
+
+def align_and_lock_syllable_boundaries(
+    audio: Audio,
+    turns: Sequence[SpeakerTurn],
+    *,
+    aligner_engine: str = "whisper_timestamped",
+    aligner_model: str = "vinai/PhoWhisper-small",
+    aligner_language: str = "vi",
+    aligner_endpoint: str | None = None,
+    aligner_device: str = "cpu",
+    token: str | None = None,
+) -> tuple[list[SpeakerTurn], list[dict[str, Any]]]:
+    """Lock boundaries to complete syllable/word timestamps using Whisper or MMS-FA.
+
+    Strictly forbids slicing through the interior of an active syllable.
+    Supports CPU as a real inference device to eliminate GPU VRAM exhaustion.
+    """
+    if not turns:
+        return [], []
+
+    eng = (aligner_engine or "whisper_timestamped").lower().strip()
     try:
-        bundle = torchaudio.pipelines.MMS_FA
-        model = bundle.get_model().to(device_str)
-        model.eval()
-
-        waveform, sr = torchaudio.load(str(audio.path))
-        if waveform.shape[0] > 1:
-            waveform = waveform.mean(dim=0, keepdim=True)
-        if sr != bundle.sample_rate:
-            resampler = torchaudio.transforms.Resample(sr, bundle.sample_rate)
-            waveform = resampler(waveform)
-            sr = bundle.sample_rate
-
-        with torch.inference_mode():
-            emission, _ = model(waveform.to(device_str))
-            emission = torch.log_softmax(emission, dim=-1)
-
-        num_frames = emission.shape[1]
-        total_duration = waveform.shape[1] / sr
-        frame_to_sec = total_duration / num_frames
-
-        # Non-blank speech probability (emission[:, :, 0] is CTC blank token)
-        blank_prob = torch.exp(emission[0, :, 0]).cpu().numpy()
-        speech_prob = 1.0 - blank_prob
-
-        for turn in turns:
-            orig_start = getattr(turn, "_original_start_s", turn.start_s)
-            orig_end = getattr(turn, "_original_end_s", turn.end_s)
-            raw_start = getattr(turn, "_raw_start_s", turn.start_s)
-            raw_end = getattr(turn, "_raw_end_s", turn.end_s)
-
-            start_f = max(0, int(round(turn.start_s / frame_to_sec)))
-            end_f = min(num_frames - 1, int(round(turn.end_s / frame_to_sec)))
-
-            # If end boundary falls during active speech emission (speech_prob > 0.3),
-            # scan forward up to 300ms to find the speech offset (syllable coda release into blank)
-            search_f = int(round(0.30 / frame_to_sec))
-            new_end_f = end_f
-
-            if speech_prob[end_f] > 0.3:
-                for f in range(end_f, min(num_frames - 1, end_f + search_f)):
-                    if speech_prob[f] < 0.2:
-                        new_end_f = f
-                        break
-
-            new_end_s = round(new_end_f * frame_to_sec, 4)
-            new_start_s = round(start_f * frame_to_sec, 4)
-
-            delta_start = round((new_start_s - raw_start) * 1000.0, 1)
-            delta_end = round((new_end_s - orig_end) * 1000.0, 1)
-            tail_rescued = new_end_s > orig_end
-
-            refined_turn = SpeakerTurn(
-                speaker_id=turn.speaker_id,
-                start_s=new_start_s,
-                end_s=new_end_s,
-                confidence=turn.confidence,
+        if eng in {"whisper_timestamped", "whisper", "whisperts"}:
+            return _run_whisper_timestamped_alignment(
+                audio,
+                turns,
+                model_name=aligner_model or "vinai/PhoWhisper-small",
+                language=aligner_language or "vi",
+                device=aligner_device or "cpu",
             )
-            refined_turn._original_start_s = orig_start
-            refined_turn._original_end_s = orig_end
-            refined_turn._raw_start_s = raw_start
-            refined_turn._raw_end_s = raw_end
-            refined_turn._delta_start_ms = delta_start
-            refined_turn._delta_end_ms = delta_end
-            refined_turn._boundary_policy = "syllable_word_lock"
-            refined_turn._tail_rescued = tail_rescued
-
-            aligned_turns.append(refined_turn)
-            audits.append({
-                "raw_start_s": raw_start,
-                "raw_end_s": raw_end,
-                "original_start_s": orig_start,
-                "original_end_s": orig_end,
-                "start_s": new_start_s,
-                "end_s": new_end_s,
-                "delta_start_ms": delta_start,
-                "delta_end_ms": delta_end,
-                "policy": "syllable_word_lock",
-                "tail_rescued": tail_rescued,
-            })
+        elif eng in {"remote_whisper", "remote_asr"}:
+            if not aligner_endpoint:
+                raise ValueError("Remote Whisper endpoint URL required for remote_whisper engine.")
+            return _run_remote_whisper_alignment(
+                audio,
+                turns,
+                endpoint=aligner_endpoint,
+                language=aligner_language or "vi",
+            )
+        elif eng in {"mms_fa", "mms"}:
+            return _run_mms_fa_alignment(
+                audio,
+                turns,
+                device=aligner_device or "cpu",
+            )
+        else:
+            raise ValueError(f"Unsupported aligner engine: {aligner_engine}")
 
     except Exception as exc:
         logger.warning("Forced alignment syllable lock failed (%s), keeping candidate turns: %s", aligner_engine, exc)
@@ -720,8 +1073,6 @@ def align_and_lock_syllable_boundaries(
             for t in turns
         ]
         return list(turns), fallback_audits
-
-    return aligned_turns, audits
 
 
 def filter_by_embedding_homogeneity(
@@ -998,18 +1349,22 @@ def run_zero_contamination_pipeline(
     log_stage("Starting Zero-Contamination Diarization Pipeline")
 
     # ==================== STAGE 1: Primary Diarizer ====================
+    primary_dev = config.primary_device if (config.primary_device and config.primary_device != "same") else config.device
     if progress_callback:
-        progress_callback(0.05, f"Running primary diarizer ({config.primary_backend})...")
-    log_stage(f"Stage 1: Running primary backend '{config.primary_backend}'")
+        progress_callback(0.05, f"Running primary diarizer ({config.primary_backend} on {primary_dev})...")
+    log_stage(f"Stage 1: Running primary backend '{config.primary_backend}' on device '{primary_dev}'")
 
     primary_result = _run_backend(
         config.primary_backend,
         audio,
-        device=config.device,
+        device=primary_dev,
         token=config.token,
         onset=config.target_onset,
         offset=config.target_offset,
     )
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    gc.collect()
 
     initial_turns = sorted(primary_result.turns, key=lambda t: t.start_s)
     funnel["initial_turns_count"] = len(initial_turns)
@@ -1038,18 +1393,22 @@ def run_zero_contamination_pipeline(
 
     # ==================== STAGE 2: Dual-Engine Consensus ====================
     if config.enable_consensus:
+        secondary_dev = config.secondary_device if (config.secondary_device and config.secondary_device != "same") else config.device
         if progress_callback:
-            progress_callback(0.25, f"Running secondary diarizer ({config.secondary_backend})...")
-        log_stage(f"Stage 2: Running secondary backend '{config.secondary_backend}' for consensus")
+            progress_callback(0.25, f"Running secondary diarizer ({config.secondary_backend} on {secondary_dev})...")
+        log_stage(f"Stage 2: Running secondary backend '{config.secondary_backend}' on device '{secondary_dev}' for consensus")
 
         secondary_result = _run_backend(
             config.secondary_backend,
             audio,
-            device=config.device,
+            device=secondary_dev,
             token=config.token,
             onset=config.target_onset,
             offset=config.target_offset,
         )
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
 
         if progress_callback:
             progress_callback(0.45, "Computing Hungarian mutual consensus...")
@@ -1121,19 +1480,25 @@ def run_zero_contamination_pipeline(
 
     # 3b. Option C: Syllable / Word Forced Alignment Lock (High-Compute)
     if config.enable_syllable_alignment:
+        aligner_dev = config.aligner_device if (config.aligner_device and config.aligner_device != "same") else config.device
         if progress_callback:
-            progress_callback(0.58, f"Running forced alignment syllable lock ({config.aligner_engine})...")
-        log_stage(f"Stage 3b: Locking syllables with forced alignment ({config.aligner_engine})")
+            progress_callback(0.58, f"Running syllable & word lock ({config.aligner_engine} on {aligner_dev})...")
+        log_stage(f"Stage 3b: Locking syllables with {config.aligner_engine} on {aligner_dev} (model={config.aligner_model}, lang={config.aligner_language})")
         aligned_turns, align_audits = align_and_lock_syllable_boundaries(
             audio,
             current_turns,
             aligner_engine=config.aligner_engine,
+            aligner_model=config.aligner_model,
+            aligner_language=config.aligner_language,
             aligner_endpoint=config.aligner_endpoint,
-            aligner_device=config.aligner_device or config.device,
+            aligner_device=aligner_dev,
             token=config.token,
         )
         current_turns = aligned_turns
         boundary_audits = align_audits
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
 
     # 3c. Option B: Micro-Acoustic Energy & RMS Silence Valley Snapping
     if config.enable_energy_snapping:
@@ -1163,10 +1528,11 @@ def run_zero_contamination_pipeline(
 
     # ==================== STAGE 4: Embedding Homogeneity ====================
     if config.enable_homogeneity:
+        homo_dev = config.homogeneity_device if (config.homogeneity_device and config.homogeneity_device != "same") else config.device
         if progress_callback:
-            progress_callback(0.65, "Verifying sliding-window WeSpeaker embedding homogeneity...")
+            progress_callback(0.65, f"Verifying sliding-window WeSpeaker embedding homogeneity on {homo_dev}...")
         log_stage(
-            f"Stage 4: Running sliding WeSpeaker homogeneity filter "
+            f"Stage 4: Running sliding WeSpeaker homogeneity filter on {homo_dev} "
             f"(window={config.homogeneity_window_s:.2f}s, hop={config.homogeneity_hop_s:.2f}s, min_sim={config.min_homogeneity_similarity:.2f})"
         )
         homo_turns, homo_audits = filter_by_embedding_homogeneity(
@@ -1175,7 +1541,7 @@ def run_zero_contamination_pipeline(
             window_s=config.homogeneity_window_s,
             hop_s=config.homogeneity_hop_s,
             min_similarity=config.min_homogeneity_similarity,
-            device=config.device,
+            device=homo_dev,
             token=config.token,
         )
         funnel["homogeneity_turns_count"] = len(homo_turns)
@@ -1187,6 +1553,9 @@ def run_zero_contamination_pipeline(
             f"(rejected {len(current_turns) - len(homo_turns)} turns with foreign timbre/drift)"
         )
         current_turns = homo_turns
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
 
     # ==================== STAGE 5: Foundation Model Audits ====================
     if config.enable_gemma or config.enable_vibevoice:
@@ -1203,6 +1572,9 @@ def run_zero_contamination_pipeline(
             f"(rejected {len(current_turns) - len(fm_turns)} multi-speaker/overlap turns)"
         )
         current_turns = fm_turns
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
 
     # Final Assembly
     elapsed_total = time.time() - t0
@@ -1244,6 +1616,7 @@ def run_zero_contamination_pipeline(
         delta_end = getattr(t, "_delta_end_ms", round((t.end_s - orig_end) * 1000.0, 1))
         policy = getattr(t, "_boundary_policy", "standard")
         tail_rescued = getattr(t, "_tail_rescued", (delta_end > 0.0))
+        transcript = getattr(t, "_transcript", None)
 
         if tail_rescued:
             rescued_count += 1
@@ -1269,6 +1642,7 @@ def run_zero_contamination_pipeline(
                 delta_end_ms=delta_end,
                 boundary_policy=policy,
                 tail_rescued=tail_rescued,
+                transcript=transcript,
             )
         )
 

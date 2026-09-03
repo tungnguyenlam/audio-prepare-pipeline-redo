@@ -52,6 +52,7 @@
         // Stage 2: Dual-Engine Consensus
         enableConsensus: document.getElementById('exp-enable-consensus'),
         secondaryBackend: document.getElementById('exp-secondary-backend'),
+        secondaryDevice: document.getElementById('exp-secondary-device'),
         consensusFields: document.getElementById('exp-consensus-fields'),
 
         // Stage 3: Boundary & Syllable Integrity Gate
@@ -92,11 +93,15 @@
         syllableAlignFields: document.getElementById('exp-syllable-align-fields'),
         alignerEngine: document.getElementById('exp-aligner-engine'),
         alignerDevice: document.getElementById('exp-aligner-device'),
+        alignerModel: document.getElementById('exp-aligner-model'),
+        alignerLang: document.getElementById('exp-aligner-lang'),
+        whisperOptions: document.getElementById('exp-whisper-options'),
         alignerEndpoint: document.getElementById('exp-aligner-endpoint'),
         alignerEndpointWrap: document.getElementById('exp-aligner-endpoint-wrap'),
 
         // Stage 4: Dense WeSpeaker Homogeneity
         enableHomo: document.getElementById('exp-enable-homo'),
+        homoDevice: document.getElementById('exp-homo-device'),
         homoSim: document.getElementById('exp-homo-sim'),
         homoSimNum: document.getElementById('exp-homo-sim-num'),
         homoSimValue: document.getElementById('exp-homo-sim-val'),
@@ -286,7 +291,10 @@
         if (self.el.syllableAlignFields) self.el.syllableAlignFields.style.display = e.target.checked ? 'block' : 'none';
       });
       this.el.alignerEngine?.addEventListener('change', e => {
-        if (self.el.alignerEndpointWrap) self.el.alignerEndpointWrap.style.display = e.target.value === 'remote_whisper' ? 'block' : 'none';
+        const isWhisper = e.target.value === 'whisper_timestamped';
+        const isRemote = e.target.value === 'remote_whisper';
+        if (self.el.whisperOptions) self.el.whisperOptions.style.display = isWhisper ? 'flex' : 'none';
+        if (self.el.alignerEndpointWrap) self.el.alignerEndpointWrap.style.display = isRemote ? 'block' : 'none';
       });
       this.el.enableHomo?.addEventListener('change', e => {
         if (self.el.homoFields) self.el.homoFields.style.display = e.target.checked ? 'block' : 'none';
@@ -441,11 +449,56 @@
         const res = await fetch('/api/experiment/status');
         if (!res.ok) return;
         const data = await res.json();
-        if (data.device && this.el.deviceSelect) {
-          this.el.deviceSelect.value = data.device;
+        const devices = data.devices || ['cpu', 'cuda:0', 'cuda:1'];
+
+        // Populate per-stage device dropdowns
+        this.populateDeviceSelect(this.el.deviceSelect, devices, data.device || 'cuda:0', false);
+        this.populateDeviceSelect(this.el.secondaryDevice, devices, 'same', true);
+        this.populateDeviceSelect(this.el.alignerDevice, devices, 'cpu', true);
+        this.populateDeviceSelect(this.el.homoDevice, devices, 'same', true);
+        this.populateDeviceSelect(this.el.vibevoiceDevice, devices, 'same', true);
+
+        if (data.defaults) {
+          if (data.defaults.aligner_engine && this.el.alignerEngine) {
+            this.el.alignerEngine.value = data.defaults.aligner_engine;
+            this.el.alignerEngine.dispatchEvent(new Event('change'));
+          }
+          if (data.defaults.aligner_model && this.el.alignerModel) {
+            this.el.alignerModel.value = data.defaults.aligner_model;
+          }
+          if (data.defaults.aligner_language && this.el.alignerLang) {
+            this.el.alignerLang.value = data.defaults.aligner_language;
+          }
         }
       } catch (err) {
         console.warn('Could not load experiment status defaults:', err);
+      }
+    },
+
+    populateDeviceSelect(selectEl, devices, defaultValue, includeSame = false) {
+      if (!selectEl || !Array.isArray(devices)) return;
+      const currentVal = selectEl.value || defaultValue;
+      selectEl.innerHTML = '';
+      if (includeSame) {
+        const opt = document.createElement('option');
+        opt.value = 'same';
+        opt.textContent = 'Same as Primary';
+        selectEl.appendChild(opt);
+      }
+      devices.forEach(dev => {
+        const opt = document.createElement('option');
+        opt.value = dev;
+        if (dev === 'cpu') {
+          opt.textContent = selectEl.id === 'exp-aligner-device' ? 'CPU (Recommended - No GPU VRAM risk)' : 'CPU';
+        } else {
+          opt.textContent = dev;
+        }
+        selectEl.appendChild(opt);
+      });
+      if (currentVal && Array.from(selectEl.options).some(o => o.value === currentVal)) {
+        selectEl.value = currentVal;
+      } else if (defaultValue && Array.from(selectEl.options).some(o => o.value === defaultValue)) {
+        selectEl.value = defaultValue;
       }
     },
 
@@ -528,6 +581,7 @@
       this.setParamValue(this.el.competitorOnset, this.el.competitorOnsetNum, 0.20);
       if (this.el.enableConsensus) { this.el.enableConsensus.checked = true; this.el.consensusFields.style.display = 'block'; }
       if (this.el.secondaryBackend) this.el.secondaryBackend.value = 'diarizen';
+      if (this.el.secondaryDevice) this.el.secondaryDevice.value = 'same';
       if (this.el.enableCollar) { this.el.enableCollar.checked = true; this.el.collarFields.style.display = 'block'; }
       this.setParamValue(this.el.boundaryCollar, this.el.boundaryCollarNum, 0.35);
       this.setParamValue(this.el.minDuration, this.el.minDurationNum, 0.80);
@@ -542,9 +596,16 @@
       this.setParamValue(this.el.energyFloor, this.el.energyFloorNum, -30);
       // Option C
       if (this.el.enableSyllableAlign) { this.el.enableSyllableAlign.checked = false; this.el.syllableAlignFields.style.display = 'none'; }
-      if (this.el.alignerEngine) this.el.alignerEngine.value = 'mms_fa';
+      if (this.el.alignerEngine) {
+        this.el.alignerEngine.value = 'whisper_timestamped';
+        this.el.alignerEngine.dispatchEvent(new Event('change'));
+      }
+      if (this.el.alignerModel) this.el.alignerModel.value = 'vinai/PhoWhisper-small';
+      if (this.el.alignerLang) this.el.alignerLang.value = 'vi';
+      if (this.el.alignerDevice) this.el.alignerDevice.value = 'cpu';
       // Stage 4
       if (this.el.enableHomo) { this.el.enableHomo.checked = false; this.el.homoFields.style.display = 'none'; }
+      if (this.el.homoDevice) this.el.homoDevice.value = 'same';
       this.setParamValue(this.el.homoSim, this.el.homoSimNum, 0.75);
       this.setParamValue(this.el.homoWin, this.el.homoWinNum, 1.00);
       this.setParamValue(this.el.homoHop, this.el.homoHopNum, 0.25);
@@ -645,12 +706,14 @@
       return {
         audio_id: audioId,
         device: this.el.deviceSelect?.value || 'auto',
+        primary_device: this.el.deviceSelect?.value || 'auto',
         primary_backend: this.el.primaryBackend?.value || 'sortformer',
         target_onset: parseFloat(this.el.targetOnsetNum?.value || this.el.targetOnset?.value || '0.80'),
         target_offset: parseFloat(this.el.targetOffsetNum?.value || this.el.targetOffset?.value || '0.65'),
         competitor_onset: parseFloat(this.el.competitorOnsetNum?.value || this.el.competitorOnset?.value || '0.20'),
         enable_consensus: Boolean(this.el.enableConsensus?.checked),
         secondary_backend: this.el.secondaryBackend?.value || 'diarizen',
+        secondary_device: this.el.secondaryDevice?.value || 'same',
         // Stage 3 Base
         enable_collar_erosion: Boolean(this.el.enableCollar?.checked),
         boundary_collar_s: parseFloat(this.el.boundaryCollarNum?.value || this.el.boundaryCollar?.value || '0.35'),
@@ -666,11 +729,14 @@
         energy_valley_floor_db: parseFloat(this.el.energyFloorNum?.value || this.el.energyFloor?.value || '-30'),
         // Stage 3c: Option C
         enable_syllable_alignment: Boolean(this.el.enableSyllableAlign?.checked),
-        aligner_engine: this.el.alignerEngine?.value || 'mms_fa',
-        aligner_device: this.el.alignerDevice?.value || 'auto',
+        aligner_engine: this.el.alignerEngine?.value || 'whisper_timestamped',
+        aligner_model: this.el.alignerModel?.value || 'vinai/PhoWhisper-small',
+        aligner_language: this.el.alignerLang?.value || 'vi',
+        aligner_device: this.el.alignerDevice?.value || 'cpu',
         aligner_endpoint: this.el.alignerEndpoint?.value || '',
         // Stage 4
         enable_homogeneity: Boolean(this.el.enableHomo?.checked),
+        homogeneity_device: this.el.homoDevice?.value || 'same',
         min_homogeneity_similarity: parseFloat(this.el.homoSimNum?.value || this.el.homoSim?.value || '0.75'),
         homogeneity_window_s: parseFloat(this.el.homoWinNum?.value || this.el.homoWin?.value || '1.00'),
         homogeneity_hop_s: parseFloat(this.el.homoHopNum?.value || this.el.homoHop?.value || '0.25'),
@@ -873,6 +939,8 @@
         context_aware_collar: 'Context Guard',
         acoustic_energy_valley: 'RMS Valley',
         syllable_word_lock: 'Syllable Lock',
+        whisper_word_lock: 'Whisper Lock',
+        remote_whisper_lock: 'Remote Whisper',
         standard: 'Standard Collar',
       };
 
@@ -893,7 +961,14 @@
             deltaBadge = `<span class="badge badge-sm badge-ghost">0ms</span>`;
           }
 
-          const policyLabel = policyMap[t.boundary_policy] || t.boundary_policy || 'Standard';
+          let policyLabel = policyMap[t.boundary_policy] || t.boundary_policy || 'Standard';
+          if (typeof t.boundary_policy === 'string' && t.boundary_policy.startsWith('whisper_lock_')) {
+            policyLabel = `Whisper (${t.boundary_policy.replace('whisper_lock_', '')})`;
+          }
+
+          const transcriptHtml = t.transcript
+            ? `<div class="text-xs text-muted" style="margin-top: 3px; font-style: italic; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${t.transcript.replace(/"/g, '&quot;')}">“${t.transcript}”</div>`
+            : '';
 
           return `
           <tr data-index="${idx}">
@@ -907,7 +982,10 @@
                 </button>
               </div>
             </td>
-            <td><span class="exp-speaker-chip">${t.speaker_id}</span></td>
+            <td>
+              <span class="exp-speaker-chip">${t.speaker_id}</span>
+              ${transcriptHtml}
+            </td>
             <td><code>${t.start_s.toFixed(2)}s</code></td>
             <td><code>${t.end_s.toFixed(2)}s</code></td>
             <td><strong>${dur}s</strong></td>

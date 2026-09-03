@@ -72,39 +72,67 @@ class ExperimentRouteHandler:
         """Report available backends and default experiment configurations."""
         del request
         default_dev = self._resolve_device("auto")
+        
+        devices = ["cpu"]
+        if torch.cuda.is_available():
+            devices.extend([f"cuda:{i}" for i in range(torch.cuda.device_count())])
+        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            devices.append("mps")
+
         backends = {
             "sortformer": True,
             "diarizen": True,
             "pyannote": True,
             "wespeaker_homogeneity": True,
+            "whisper_timestamped": True,
             "vibevoice": True,
             "gemma4": True,
         }
         defaults = {
             "primary_backend": "sortformer",
+            "primary_device": default_dev,
             "target_onset": DEFAULT_TARGET_ONSET,
             "target_offset": DEFAULT_TARGET_OFFSET,
             "competitor_onset": DEFAULT_COMPETITOR_ONSET,
             "enable_consensus": True,
             "secondary_backend": "diarizen",
+            "secondary_device": "same",
             "enable_collar_erosion": True,
             "boundary_collar_s": DEFAULT_COLLAR_EROSION_S,
             "min_turn_duration_s": DEFAULT_MIN_TURN_DURATION_S,
             "transition_exclusion_s": DEFAULT_TRANSITION_EXCLUSION_S,
-            "enable_homogeneity": True,
+            # Syllable & Boundary Integrity Gate
+            "enable_context_collar": True,
+            "handoff_risk_distance_s": DEFAULT_HANDOFF_RISK_DISTANCE_S,
+            "silence_tail_buffer_s": DEFAULT_SILENCE_TAIL_BUFFER_S,
+            "enable_energy_snapping": False,
+            "energy_search_window_s": DEFAULT_ENERGY_SEARCH_WINDOW_S,
+            "energy_valley_floor_db": DEFAULT_ENERGY_VALLEY_FLOOR_DB,
+            "enable_syllable_alignment": False,
+            "aligner_engine": "whisper_timestamped",
+            "aligner_model": "vinai/PhoWhisper-small",
+            "aligner_language": "vi",
+            "aligner_device": "cpu",
+            "aligner_endpoint": "",
+            # Homogeneity
+            "enable_homogeneity": False,
+            "homogeneity_device": "same",
             "homogeneity_window_s": DEFAULT_HOMOGENEITY_WINDOW_S,
             "homogeneity_hop_s": DEFAULT_HOMOGENEITY_HOP_S,
             "min_homogeneity_similarity": DEFAULT_MIN_HOMOGENEITY_SIMILARITY,
+            # Foundation Models
             "enable_gemma": False,
             "gemma_endpoint": DEFAULT_UNSLOTH_ENDPOINT,
             "gemma_model": DEFAULT_GEMMA4_MODEL_ID,
             "enable_vibevoice": False,
             "vibevoice_model_id": "Dubedo/VibeVoice-ASR-HF-INT8",
+            "vibevoice_device": "same",
             "device": default_dev,
         }
         return web.json_response({
             "status": "ready",
             "device": default_dev,
+            "devices": devices,
             "backends": backends,
             "defaults": defaults,
         })
@@ -202,16 +230,48 @@ class ExperimentRouteHandler:
         if not audio or not Path(audio.path).is_file():
             return web.json_response({"error": "Audio track not found"}, status=404)
 
-        device = self._resolve_device(body.get("device"))
+        # Resolve per-step devices
+        primary_device = self._resolve_device(body.get("primary_device") or body.get("device"))
+
+        sec_dev_req = body.get("secondary_device")
+        secondary_device = (
+            self._resolve_device(sec_dev_req)
+            if sec_dev_req and sec_dev_req != "same"
+            else primary_device
+        )
+
+        align_dev_req = body.get("aligner_device")
+        aligner_device = (
+            self._resolve_device(align_dev_req)
+            if align_dev_req and align_dev_req != "same"
+            else "cpu"
+        )
+
+        homo_dev_req = body.get("homogeneity_device")
+        homo_device = (
+            self._resolve_device(homo_dev_req)
+            if homo_dev_req and homo_dev_req != "same"
+            else primary_device
+        )
+
+        vv_dev_req = body.get("vibevoice_device")
+        vibevoice_device = (
+            self._resolve_device(vv_dev_req)
+            if vv_dev_req and vv_dev_req != "same"
+            else primary_device
+        )
+
         token = body.get("token")
 
         config = ZeroContaminationConfig(
             primary_backend=body.get("primary_backend", "sortformer"),
+            primary_device=primary_device,
             target_onset=float(body.get("target_onset", DEFAULT_TARGET_ONSET)),
             target_offset=float(body.get("target_offset", DEFAULT_TARGET_OFFSET)),
             competitor_onset=float(body.get("competitor_onset", DEFAULT_COMPETITOR_ONSET)),
             enable_consensus=bool(body.get("enable_consensus", True)),
             secondary_backend=body.get("secondary_backend", "diarizen"),
+            secondary_device=secondary_device,
             enable_collar_erosion=bool(body.get("enable_collar_erosion", True)),
             boundary_collar_s=float(body.get("boundary_collar_s", DEFAULT_COLLAR_EROSION_S)),
             min_turn_duration_s=float(body.get("min_turn_duration_s", DEFAULT_MIN_TURN_DURATION_S)),
@@ -225,11 +285,14 @@ class ExperimentRouteHandler:
             energy_search_window_s=float(body.get("energy_search_window_s", 0.15)),
             energy_valley_floor_db=float(body.get("energy_valley_floor_db", -30.0)),
             enable_syllable_alignment=bool(body.get("enable_syllable_alignment", False)),
-            aligner_engine=body.get("aligner_engine", "mms_fa"),
+            aligner_engine=body.get("aligner_engine", "whisper_timestamped"),
+            aligner_model=body.get("aligner_model", "vinai/PhoWhisper-small"),
+            aligner_language=body.get("aligner_language", "vi"),
             aligner_endpoint=body.get("aligner_endpoint") or None,
-            aligner_device=body.get("aligner_device") or None,
+            aligner_device=aligner_device,
             # Stage 4: Homogeneity
             enable_homogeneity=bool(body.get("enable_homogeneity", False)),
+            homogeneity_device=homo_device,
             homogeneity_window_s=float(body.get("homogeneity_window_s", DEFAULT_HOMOGENEITY_WINDOW_S)),
             homogeneity_hop_s=float(body.get("homogeneity_hop_s", DEFAULT_HOMOGENEITY_HOP_S)),
             min_homogeneity_similarity=float(body.get("min_homogeneity_similarity", DEFAULT_MIN_HOMOGENEITY_SIMILARITY)),
@@ -242,26 +305,27 @@ class ExperimentRouteHandler:
             gemma_timeout_s=float(body.get("gemma_timeout_s", 120.0)),
             enable_vibevoice=bool(body.get("enable_vibevoice", False)),
             vibevoice_model_id=body.get("vibevoice_model_id", "Dubedo/VibeVoice-ASR-HF-INT8"),
-            vibevoice_device=body.get("vibevoice_device") or None,
+            vibevoice_device=vibevoice_device,
             vibevoice_endpoint=body.get("vibevoice_endpoint") or None,
             max_secondary_speech_s=float(body.get("max_secondary_speech_s", 0.0)),
-            device=device,
+            device=primary_device,
             token=token,
         )
 
-        models_list = [config.primary_backend]
+        models_list = [f"{config.primary_backend} ({primary_device})"]
         if config.enable_consensus:
-            models_list.append(f"{config.secondary_backend} (∩)")
+            models_list.append(f"{config.secondary_backend} ∩ ({secondary_device})")
         if config.enable_syllable_alignment:
-            models_list.append("MMS-Align" if config.aligner_engine == "mms_fa" else "Whisper-Align")
+            eng_lbl = "Whisper-VI" if "whisper" in config.aligner_engine.lower() else "MMS-FA"
+            models_list.append(f"{eng_lbl} ({aligner_device})")
         if config.enable_energy_snapping:
             models_list.append("RMS-Snap")
         if config.enable_homogeneity:
-            models_list.append("WeSpeaker")
+            models_list.append(f"WeSpeaker ({homo_device})")
         if config.enable_gemma:
             models_list.append("Gemma-4")
         if config.enable_vibevoice:
-            models_list.append("VibeVoice")
+            models_list.append(f"VibeVoice ({vibevoice_device})")
         model_display = " + ".join(models_list)
 
         task_id = self.task_manager.create_task(

@@ -2078,7 +2078,7 @@
 
               <div class="form-row" style="margin-bottom: 0;">
                 <div class="form-group col-half" style="margin-bottom: 0;">
-                  <label class="form-label" for="exp-device-select">Primary Compute Device:</label>
+                  <label class="form-label" for="exp-device-select">Primary Diarizer Device (Default):</label>
                   <select id="exp-device-select" class="select-input">
                     <option value="auto">Auto Detect</option>
                     <option value="cuda:0">cuda:0</option>
@@ -2162,17 +2162,28 @@
                   </label>
                 </div>
                 <div id="exp-consensus-fields">
-                  <div class="form-group mb-0">
-                    <label class="form-label" for="exp-secondary-backend">Secondary Orthogonal Model:</label>
-                    <select id="exp-secondary-backend" class="select-input">
-                      <option value="diarizen" selected>DiariZen (WavLM Large + VBx)</option>
-                      <option value="pyannote_31">Pyannote 3.1</option>
-                      <option value="sortformer">Sortformer</option>
-                    </select>
-                    <span class="text-xs text-muted" style="margin-top: 4px; display: block;">
-                      Hungarian bipartite speaker alignment. Keeps speech <strong>if and only if both models unanimously agree</strong> and neither detects overlap.
-                    </span>
+                  <div class="form-row mb-0">
+                    <div class="form-group col-half mb-0">
+                      <label class="form-label" for="exp-secondary-backend">Secondary Orthogonal Model:</label>
+                      <select id="exp-secondary-backend" class="select-input">
+                        <option value="diarizen" selected>DiariZen (WavLM Large + VBx)</option>
+                        <option value="pyannote_31">Pyannote 3.1</option>
+                        <option value="sortformer">Sortformer</option>
+                      </select>
+                    </div>
+                    <div class="form-group col-half mb-0">
+                      <label class="form-label" for="exp-secondary-device">Secondary Device:</label>
+                      <select id="exp-secondary-device" class="select-input">
+                        <option value="same" selected>Same as Primary</option>
+                        <option value="cuda:1">Dedicated cuda:1</option>
+                        <option value="cuda:0">Dedicated cuda:0</option>
+                        <option value="cpu">CPU</option>
+                      </select>
+                    </div>
                   </div>
+                  <span class="text-xs text-muted" style="margin-top: 4px; display: block;">
+                    Hungarian bipartite speaker alignment. Keeps speech <strong>if and only if both models unanimously agree</strong> and neither detects overlap.
+                  </span>
                 </div>
               </div>
 
@@ -2326,7 +2337,7 @@
                     <div class="purity-overlap-header" style="margin-bottom: 6px;">
                       <div>
                         <strong>Option C: Syllable &amp; Word Forced Alignment Lock</strong>
-                        <small class="purity-overlap-lead">Strictly forbids slicing through a word. Aligns syllable tokens with PyTorch MMS-FA.</small>
+                        <small class="purity-overlap-lead">Strictly forbids slicing through a word or syllable coda. Supports Whisper-Timestamped &amp; Vietnamese fine-tuned models.</small>
                       </div>
                       <label class="toggle-switch-wrap">
                         <input type="checkbox" id="exp-enable-syllable-align">
@@ -2335,21 +2346,48 @@
                     </div>
                     <div id="exp-syllable-align-fields" style="display: none;">
                       <div class="form-row">
-                        <div class="form-group col-half mb-0">
+                        <div class="form-group col-half mb-2">
                           <label class="form-label" for="exp-aligner-engine">Aligner Model Engine:</label>
                           <select id="exp-aligner-engine" class="select-input">
-                            <option value="mms_fa" selected>PyTorch MMS-FA (Multilingual CTC)</option>
+                            <option value="whisper_timestamped" selected>Whisper-Timestamped (Vietnamese SOTA &amp; Multilingual)</option>
+                            <option value="mms_fa">PyTorch MMS-FA (Multilingual CTC)</option>
                             <option value="remote_whisper">Remote Whisper / ASR Endpoint</option>
                           </select>
                         </div>
-                        <div class="form-group col-half mb-0">
+                        <div class="form-group col-half mb-2">
                           <label class="form-label" for="exp-aligner-device">Aligner Device:</label>
                           <select id="exp-aligner-device" class="select-input">
+                            <option value="cpu" selected>CPU (Recommended - Prevents GPU OOM)</option>
+                            <option value="same">Same as Primary</option>
+                            <option value="cuda:0">Dedicated cuda:0</option>
+                            <option value="cuda:1">Dedicated cuda:1</option>
                             <option value="auto">Auto Detect</option>
-                            <option value="cuda:0">cuda:0</option>
-                            <option value="cuda:1">cuda:1</option>
-                            <option value="cpu">CPU</option>
                           </select>
+                        </div>
+                      </div>
+                      <div id="exp-whisper-options" class="form-row" style="margin-bottom: 0;">
+                        <div class="form-group col-half mb-0">
+                          <label class="form-label" for="exp-aligner-model">Whisper Model / Checkpoint:</label>
+                          <input list="exp-whisper-model-list" id="exp-aligner-model" class="text-input font-mono" value="vinai/PhoWhisper-small" placeholder="Model ID or local path (e.g. vinai/PhoWhisper-small)">
+                          <datalist id="exp-whisper-model-list">
+                            <option value="vinai/PhoWhisper-small">PhoWhisper Small (Vietnamese SOTA)</option>
+                            <option value="vinai/PhoWhisper-base">PhoWhisper Base (Vietnamese)</option>
+                            <option value="vinai/PhoWhisper-large">PhoWhisper Large (Vietnamese)</option>
+                            <option value="Viet-Speech/whisper-large-v3-vietnamese">Viet-Speech Whisper Large V3</option>
+                            <option value="openai/whisper-small">OpenAI Whisper Small</option>
+                            <option value="openai/whisper-base">OpenAI Whisper Base</option>
+                            <option value="openai/whisper-large-v3-turbo">OpenAI Whisper Large V3 Turbo</option>
+                          </datalist>
+                          <span class="text-xs text-muted" style="margin-top: 3px; display: block;">Vietnamese fine-tuned model or any custom HuggingFace repo / local .pt file.</span>
+                        </div>
+                        <div class="form-group col-half mb-0">
+                          <label class="form-label" for="exp-aligner-lang">Audio Language:</label>
+                          <select id="exp-aligner-lang" class="select-input">
+                            <option value="vi" selected>Vietnamese (vi)</option>
+                            <option value="en">English (en)</option>
+                            <option value="auto">Auto Detect</option>
+                          </select>
+                          <span class="text-xs text-muted" style="margin-top: 3px; display: block;">Target language hint passed to Whisper decoder.</span>
                         </div>
                       </div>
                       <div class="form-group mb-0" id="exp-aligner-endpoint-wrap" style="display: none; margin-top: 6px;">
@@ -2374,19 +2412,29 @@
                   </label>
                 </div>
                 <div id="exp-homo-fields" style="display: none;">
-                  <div class="form-group mb-2">
-                    <div class="exp-param-header">
-                      <label class="form-label" for="exp-homo-sim">Min Cosine Floor</label>
-                      <div class="exp-param-ctrl">
-                        <div class="exp-num-input-wrap" title="Type min cosine floor similarity (0.00 – 1.00)">
-                          <input type="number" id="exp-homo-sim-num" class="exp-num-input" min="0.00" max="1.00" step="0.005" value="0.75">
-                          <span class="exp-num-unit">cos</span>
-                        </div>
-                        <span class="badge badge-sm badge-accent" id="exp-homo-sim-val">0.75</span>
-                      </div>
+                  <div class="form-row mb-2">
+                    <div class="form-group col-half mb-0">
+                      <label class="form-label" for="exp-homo-device">Homogeneity Device:</label>
+                      <select id="exp-homo-device" class="select-input">
+                        <option value="same" selected>Same as Primary</option>
+                        <option value="cuda:0">Dedicated cuda:0</option>
+                        <option value="cuda:1">Dedicated cuda:1</option>
+                        <option value="cpu">CPU</option>
+                      </select>
                     </div>
-                    <input type="range" id="exp-homo-sim" class="slider-input exp-slider" min="0.30" max="0.99" step="0.005" value="0.75">
-                    <span class="text-xs text-muted">Slides window with WeSpeaker VoxCeleb ResNet-34. Drops turn if any window dips below floor.</span>
+                    <div class="form-group col-half mb-0">
+                      <div class="exp-param-header">
+                        <label class="form-label" for="exp-homo-sim">Min Cosine Floor</label>
+                        <div class="exp-param-ctrl">
+                          <div class="exp-num-input-wrap" title="Type min cosine floor similarity (0.00 – 1.00)">
+                            <input type="number" id="exp-homo-sim-num" class="exp-num-input" min="0.00" max="1.00" step="0.005" value="0.75">
+                            <span class="exp-num-unit">cos</span>
+                          </div>
+                          <span class="badge badge-sm badge-accent" id="exp-homo-sim-val">0.75</span>
+                        </div>
+                      </div>
+                      <input type="range" id="exp-homo-sim" class="slider-input exp-slider" min="0.30" max="0.99" step="0.005" value="0.75">
+                    </div>
                   </div>
                   <div class="form-row">
                     <div class="form-group col-half mb-0">
