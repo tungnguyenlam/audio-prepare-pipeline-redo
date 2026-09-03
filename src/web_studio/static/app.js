@@ -673,6 +673,8 @@ const el = {
   libraryModalTitle: document.getElementById('library-modal-title'),
   libraryModalSubtitle: document.getElementById('library-modal-subtitle'),
   libraryModalSort: document.getElementById('library-modal-sort'),
+  libraryModalSelectAll: document.getElementById('library-modal-select-all'),
+  btnBulkDeleteLibraryModal: document.getElementById('btn-bulk-delete-library-modal'),
   btnRefreshLibraryModal: document.getElementById('btn-refresh-library-modal'),
   tabLibrarySearch: document.getElementById('tab-library-search'),
   tabLibraryCategories: document.getElementById('tab-library-categories'),
@@ -10069,11 +10071,29 @@ function visibleTagChips(file) {
     .join('');
 }
 
+let lastCheckedLibraryCheck = null;
+
 function updateLibrarySelectionUi() {
   const count = state.librarySelectedPaths.size;
-  if (el.btnBulkDeleteLibrary) el.btnBulkDeleteLibrary.disabled = count === 0;
   if (el.btnBulkDeleteLibrary) {
+    el.btnBulkDeleteLibrary.disabled = count === 0;
     el.btnBulkDeleteLibrary.textContent = count ? `Delete selected (${count})` : 'Delete selected';
+  }
+  if (el.btnBulkDeleteLibraryModal) {
+    el.btnBulkDeleteLibraryModal.disabled = count === 0;
+    el.btnBulkDeleteLibraryModal.textContent = count ? `Delete selected (${count})` : 'Delete selected';
+  }
+
+  if (el.tabLibrarySelectAll) {
+    const tabFiles = currentTabLibraryFiles();
+    el.tabLibrarySelectAll.checked = tabFiles.length > 0 && tabFiles.every(file => state.librarySelectedPaths.has(file.path));
+    el.tabLibrarySelectAll.indeterminate = tabFiles.some(file => state.librarySelectedPaths.has(file.path)) && !el.tabLibrarySelectAll.checked;
+  }
+
+  if (el.libraryModalSelectAll) {
+    const modalFiles = currentModalLibraryFiles();
+    el.libraryModalSelectAll.checked = modalFiles.length > 0 && modalFiles.every(file => state.librarySelectedPaths.has(file.path));
+    el.libraryModalSelectAll.indeterminate = modalFiles.some(file => state.librarySelectedPaths.has(file.path)) && !el.libraryModalSelectAll.checked;
   }
 }
 
@@ -10162,12 +10182,35 @@ function buildFileItemCard(file, { isModal = false, selectable = false } = {}) {
   const btnPrev = card.querySelector('.btn-preview-file');
   btnPrev.addEventListener('click', () => toggleFilePreview(file.path, btnPrev));
 
-  card.querySelector('.file-select-check')?.addEventListener('change', (event) => {
-    if (event.target.checked) state.librarySelectedPaths.add(file.path);
-    else state.librarySelectedPaths.delete(file.path);
-    card.classList.toggle('selected', event.target.checked);
-    updateLibrarySelectionUi();
-  });
+  const chk = card.querySelector('.file-select-check');
+  if (chk) {
+    chk.addEventListener('click', (event) => {
+      const container = chk.closest('.library-list-wrapper, .library-modal-list');
+      if (event.shiftKey && lastCheckedLibraryCheck && container && container.contains(lastCheckedLibraryCheck)) {
+        const checks = Array.from(container.querySelectorAll('.file-select-check'));
+        const start = checks.indexOf(lastCheckedLibraryCheck);
+        const end = checks.indexOf(chk);
+        if (start !== -1 && end !== -1) {
+          const [low, high] = start < end ? [start, end] : [end, start];
+          for (let i = low; i <= high; i++) {
+            checks[i].checked = chk.checked;
+            const p = checks[i].dataset.path;
+            if (p) {
+              if (chk.checked) state.librarySelectedPaths.add(p);
+              else state.librarySelectedPaths.delete(p);
+            }
+            checks[i].closest('.file-item-card')?.classList.toggle('selected', chk.checked);
+          }
+        }
+      } else {
+        if (chk.checked) state.librarySelectedPaths.add(file.path);
+        else state.librarySelectedPaths.delete(file.path);
+        card.classList.toggle('selected', chk.checked);
+      }
+      lastCheckedLibraryCheck = chk;
+      updateLibrarySelectionUi();
+    });
+  }
 
   card.querySelector('.btn-load-target').addEventListener('click', () => {
     loadLibraryFileTo(file.path, loadTarget);
@@ -10219,6 +10262,12 @@ function currentTabLibraryFiles() {
   );
 }
 
+function currentModalLibraryFiles() {
+  return sortLibraryFiles(
+    filterServerFiles(state.serverFiles, state.libraryModalSearch, state.libraryModalCategory)
+  );
+}
+
 function renderServerFiles() {
   const container = el.serverFilesList;
   if (!container) return;
@@ -10229,10 +10278,6 @@ function renderServerFiles() {
 
   if (el.tabLibraryCount) {
     el.tabLibraryCount.textContent = `${filtered.length} of ${(state.serverFiles || []).length} files`;
-  }
-  if (el.tabLibrarySelectAll) {
-    el.tabLibrarySelectAll.checked = filtered.length > 0 && filtered.every(file => state.librarySelectedPaths.has(file.path));
-    el.tabLibrarySelectAll.indeterminate = filtered.some(file => state.librarySelectedPaths.has(file.path)) && !el.tabLibrarySelectAll.checked;
   }
   updateLibrarySelectionUi();
 
@@ -10258,6 +10303,9 @@ async function deleteServerFile(filePath, fileName) {
     });
     await parseJsonResponse(res);
     state.librarySelectedPaths.delete(filePath);
+    if (currentPreviewingPath === filePath) {
+      stopFilePreview();
+    }
     showToast(`Deleted ${displayName}`, "success");
     await fetchServerFiles();
     await fetchAudioList();
@@ -10281,6 +10329,9 @@ async function bulkDeleteSelectedLibraryFiles() {
     });
     const data = await parseJsonResponse(res);
     state.librarySelectedPaths = new Set();
+    if (paths.includes(currentPreviewingPath)) {
+      stopFilePreview();
+    }
     const failed = (data.errors || []).length;
     showToast(`Deleted ${data.deleted_count || 0} file${(data.deleted_count || 0) === 1 ? '' : 's'}${failed ? ` (${failed} failed)` : ''}`, failed ? "warning" : "success");
     await fetchServerFiles();
@@ -10388,13 +10439,12 @@ function renderLibraryModalItems() {
 
   const searchMatches = filterServerFiles(state.serverFiles, state.libraryModalSearch, "all");
   updateCategoryPills(el.libraryModalCategories, searchMatches, state.libraryModalCategory);
-  const filtered = sortLibraryFiles(
-    filterServerFiles(state.serverFiles, state.libraryModalSearch, state.libraryModalCategory)
-  );
+  const filtered = currentModalLibraryFiles();
 
   if (el.libraryModalCount) {
     el.libraryModalCount.textContent = `${filtered.length} of ${(state.serverFiles || []).length} sample files`;
   }
+  updateLibrarySelectionUi();
 
   if (filtered.length === 0) {
     el.modalLibraryItems.innerHTML = `
@@ -10406,7 +10456,7 @@ function renderLibraryModalItems() {
     return;
   }
 
-  renderGroupedFileList(el.modalLibraryItems, filtered, { isModal: true, selectable: false });
+  renderGroupedFileList(el.modalLibraryItems, filtered, { isModal: true, selectable: true });
 }
 
 // ==================== STUDIO TASK QUEUE MODAL LOGIC ====================
@@ -10956,6 +11006,23 @@ function initModals() {
         el.btnRefreshLibraryModal.disabled = false;
       }
     });
+  }
+
+  if (el.libraryModalSelectAll) {
+    el.libraryModalSelectAll.addEventListener('change', () => {
+      const visible = currentModalLibraryFiles();
+      if (el.libraryModalSelectAll.checked) {
+        visible.forEach(file => state.librarySelectedPaths.add(file.path));
+      } else {
+        visible.forEach(file => state.librarySelectedPaths.delete(file.path));
+      }
+      renderLibraryModalItems();
+      renderServerFiles();
+    });
+  }
+
+  if (el.btnBulkDeleteLibraryModal) {
+    el.btnBulkDeleteLibraryModal.addEventListener('click', bulkDeleteSelectedLibraryFiles);
   }
 }
 
@@ -11588,6 +11655,7 @@ function initNavigation() {
         visible.forEach(file => state.librarySelectedPaths.delete(file.path));
       }
       renderServerFiles();
+      renderLibraryModalItems();
     });
   }
 
