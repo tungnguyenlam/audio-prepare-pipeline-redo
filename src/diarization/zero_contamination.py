@@ -328,14 +328,23 @@ def erode_turn_boundaries(
                     end -= extra
 
         if end - start >= min_duration_s:
-            eroded.append(
-                SpeakerTurn(
-                    speaker_id=turn.speaker_id,
-                    start_s=round(start, 4),
-                    end_s=round(end, 4),
-                    confidence=turn.confidence,
-                )
+            final_start = round(start, 4)
+            final_end = round(end, 4)
+            t = SpeakerTurn(
+                speaker_id=turn.speaker_id,
+                start_s=final_start,
+                end_s=final_end,
+                confidence=turn.confidence,
             )
+            t._original_start_s = getattr(turn, "_original_start_s", turn.start_s)
+            t._original_end_s = getattr(turn, "_original_end_s", turn.end_s)
+            t._raw_start_s = final_start
+            t._raw_end_s = final_end
+            t._delta_start_ms = 0.0
+            t._delta_end_ms = 0.0
+            t._boundary_policy = "standard"
+            t._tail_rescued = False
+            eroded.append(t)
 
     return eroded
 
@@ -367,16 +376,21 @@ def apply_context_aware_collar(
     for index, turn in enumerate(sorted_turns):
         start = turn.start_s
         end = turn.end_s
-        raw_start = start
-        raw_end = end
         start_shaved = False
         end_shaved = False
+
+        # Calculate standard blunt collar baseline for A/B auditioning
+        blunt_start = turn.start_s + collar_s
+        blunt_end = turn.end_s - collar_s
 
         # 1. Start boundary check
         if index > 0:
             prev_turn = sorted_turns[index - 1]
             if prev_turn.speaker_id != turn.speaker_id:
                 gap = turn.start_s - prev_turn.end_s
+                if gap < transition_exclusion_s:
+                    extra = max(0.0, (transition_exclusion_s - gap) / 2.0)
+                    blunt_start += extra
                 if gap < handoff_risk_s:
                     extra = max(0.0, (transition_exclusion_s - gap) / 2.0) if gap < transition_exclusion_s else 0.0
                     start = turn.start_s + collar_s + extra
@@ -387,6 +401,9 @@ def apply_context_aware_collar(
             next_turn = sorted_turns[index + 1]
             if next_turn.speaker_id != turn.speaker_id:
                 gap = next_turn.start_s - turn.end_s
+                if gap < transition_exclusion_s:
+                    extra = max(0.0, (transition_exclusion_s - gap) / 2.0)
+                    blunt_end -= extra
                 if gap < handoff_risk_s:
                     extra = max(0.0, (transition_exclusion_s - gap) / 2.0) if gap < transition_exclusion_s else 0.0
                     end = turn.end_s - (collar_s + extra)
@@ -399,23 +416,46 @@ def apply_context_aware_collar(
             max_limit = audio_duration_s if audio_duration_s else (turn.end_s + silence_tail_s + 1.0)
             end = min(turn.end_s + silence_tail_s, max_limit)
 
+        if blunt_end <= blunt_start + 0.05:
+            blunt_start = turn.start_s
+            blunt_end = turn.end_s
+        else:
+            blunt_start = round(blunt_start, 4)
+            blunt_end = round(blunt_end, 4)
+
         if end - start >= min_duration_s:
             final_start = round(start, 4)
             final_end = round(end, 4)
+            orig_start = getattr(turn, "_original_start_s", turn.start_s)
+            orig_end = getattr(turn, "_original_end_s", turn.end_s)
+            delta_start = round((final_start - blunt_start) * 1000.0, 1)
+            delta_end = round((final_end - orig_end) * 1000.0, 1)
+
             refined_turn = SpeakerTurn(
                 speaker_id=turn.speaker_id,
                 start_s=final_start,
                 end_s=final_end,
                 confidence=turn.confidence,
             )
+            refined_turn._original_start_s = orig_start
+            refined_turn._original_end_s = orig_end
+            refined_turn._raw_start_s = blunt_start
+            refined_turn._raw_end_s = blunt_end
+            refined_turn._delta_start_ms = delta_start
+            refined_turn._delta_end_ms = delta_end
+            refined_turn._boundary_policy = "context_aware_collar"
+            refined_turn._tail_rescued = not end_shaved
+
             refined.append(refined_turn)
             audits.append({
-                "raw_start_s": raw_start,
-                "raw_end_s": raw_end,
+                "raw_start_s": blunt_start,
+                "raw_end_s": blunt_end,
+                "original_start_s": orig_start,
+                "original_end_s": orig_end,
                 "start_s": final_start,
                 "end_s": final_end,
-                "delta_start_ms": round((final_start - raw_start) * 1000.0, 1),
-                "delta_end_ms": round((final_end - raw_end) * 1000.0, 1),
+                "delta_start_ms": delta_start,
+                "delta_end_ms": delta_end,
                 "start_shaved": start_shaved,
                 "end_shaved": end_shaved,
                 "tail_rescued": not end_shaved,
@@ -498,26 +538,58 @@ def snap_boundaries_to_acoustic_valleys(
         new_start_s = round(new_start_samp / sr, 4)
         new_end_s = round(new_end_samp / sr, 4)
 
+        orig_start = getattr(turn, "_original_start_s", turn.start_s)
+        orig_end = getattr(turn, "_original_end_s", turn.end_s)
+        raw_start = getattr(turn, "_raw_start_s", turn.start_s)
+        raw_end = getattr(turn, "_raw_end_s", turn.end_s)
+
         if new_end_s - new_start_s >= 0.30:
-            snapped.append(
-                SpeakerTurn(
-                    speaker_id=turn.speaker_id,
-                    start_s=new_start_s,
-                    end_s=new_end_s,
-                    confidence=turn.confidence,
-                )
+            delta_start = round((new_start_s - raw_start) * 1000.0, 1)
+            delta_end = round((new_end_s - orig_end) * 1000.0, 1)
+            tail_rescued = new_end_s > orig_end
+
+            refined_turn = SpeakerTurn(
+                speaker_id=turn.speaker_id,
+                start_s=new_start_s,
+                end_s=new_end_s,
+                confidence=turn.confidence,
             )
+            refined_turn._original_start_s = orig_start
+            refined_turn._original_end_s = orig_end
+            refined_turn._raw_start_s = raw_start
+            refined_turn._raw_end_s = raw_end
+            refined_turn._delta_start_ms = delta_start
+            refined_turn._delta_end_ms = delta_end
+            refined_turn._boundary_policy = "acoustic_energy_valley"
+            refined_turn._tail_rescued = tail_rescued
+
+            snapped.append(refined_turn)
             audits.append({
-                "raw_start_s": turn.start_s,
-                "raw_end_s": turn.end_s,
+                "raw_start_s": raw_start,
+                "raw_end_s": raw_end,
+                "original_start_s": orig_start,
+                "original_end_s": orig_end,
                 "start_s": new_start_s,
                 "end_s": new_end_s,
-                "delta_start_ms": round((new_start_s - turn.start_s) * 1000.0, 1),
-                "delta_end_ms": round((new_end_s - turn.end_s) * 1000.0, 1),
+                "delta_start_ms": delta_start,
+                "delta_end_ms": delta_end,
                 "policy": "acoustic_energy_valley",
+                "tail_rescued": tail_rescued,
             })
         else:
             snapped.append(turn)
+            audits.append({
+                "raw_start_s": raw_start,
+                "raw_end_s": raw_end,
+                "original_start_s": orig_start,
+                "original_end_s": orig_end,
+                "start_s": turn.start_s,
+                "end_s": turn.end_s,
+                "delta_start_ms": getattr(turn, "_delta_start_ms", 0.0),
+                "delta_end_ms": getattr(turn, "_delta_end_ms", 0.0),
+                "policy": getattr(turn, "_boundary_policy", "standard"),
+                "tail_rescued": getattr(turn, "_tail_rescued", False),
+            })
 
     return snapped, audits
 
@@ -574,8 +646,10 @@ def align_and_lock_syllable_boundaries(
         speech_prob = 1.0 - blank_prob
 
         for turn in turns:
-            raw_start = turn.start_s
-            raw_end = turn.end_s
+            orig_start = getattr(turn, "_original_start_s", turn.start_s)
+            orig_end = getattr(turn, "_original_end_s", turn.end_s)
+            raw_start = getattr(turn, "_raw_start_s", turn.start_s)
+            raw_end = getattr(turn, "_raw_end_s", turn.end_s)
 
             start_f = max(0, int(round(turn.start_s / frame_to_sec)))
             end_f = min(num_frames - 1, int(round(turn.end_s / frame_to_sec)))
@@ -594,27 +668,58 @@ def align_and_lock_syllable_boundaries(
             new_end_s = round(new_end_f * frame_to_sec, 4)
             new_start_s = round(start_f * frame_to_sec, 4)
 
+            delta_start = round((new_start_s - raw_start) * 1000.0, 1)
+            delta_end = round((new_end_s - orig_end) * 1000.0, 1)
+            tail_rescued = new_end_s > orig_end
+
             refined_turn = SpeakerTurn(
                 speaker_id=turn.speaker_id,
                 start_s=new_start_s,
                 end_s=new_end_s,
                 confidence=turn.confidence,
             )
+            refined_turn._original_start_s = orig_start
+            refined_turn._original_end_s = orig_end
+            refined_turn._raw_start_s = raw_start
+            refined_turn._raw_end_s = raw_end
+            refined_turn._delta_start_ms = delta_start
+            refined_turn._delta_end_ms = delta_end
+            refined_turn._boundary_policy = "syllable_word_lock"
+            refined_turn._tail_rescued = tail_rescued
+
             aligned_turns.append(refined_turn)
             audits.append({
                 "raw_start_s": raw_start,
                 "raw_end_s": raw_end,
+                "original_start_s": orig_start,
+                "original_end_s": orig_end,
                 "start_s": new_start_s,
                 "end_s": new_end_s,
-                "delta_start_ms": round((new_start_s - raw_start) * 1000.0, 1),
-                "delta_end_ms": round((new_end_s - raw_end) * 1000.0, 1),
+                "delta_start_ms": delta_start,
+                "delta_end_ms": delta_end,
                 "policy": "syllable_word_lock",
-                "tail_rescued": new_end_s > raw_end,
+                "tail_rescued": tail_rescued,
             })
 
     except Exception as exc:
         logger.warning("Forced alignment syllable lock failed (%s), keeping candidate turns: %s", aligner_engine, exc)
-        return list(turns), [{"error": str(exc)}]
+        fallback_audits = [
+            {
+                "raw_start_s": getattr(t, "_raw_start_s", t.start_s),
+                "raw_end_s": getattr(t, "_raw_end_s", t.end_s),
+                "original_start_s": getattr(t, "_original_start_s", t.start_s),
+                "original_end_s": getattr(t, "_original_end_s", t.end_s),
+                "start_s": t.start_s,
+                "end_s": t.end_s,
+                "delta_start_ms": getattr(t, "_delta_start_ms", 0.0),
+                "delta_end_ms": getattr(t, "_delta_end_ms", 0.0),
+                "policy": getattr(t, "_boundary_policy", "standard"),
+                "tail_rescued": getattr(t, "_tail_rescued", False),
+                "error": str(exc),
+            }
+            for t in turns
+        ]
+        return list(turns), fallback_audits
 
     return aligned_turns, audits
 
@@ -695,6 +800,7 @@ def filter_by_embedding_homogeneity(
             sims = [float(np.dot(vec, centroid)) for vec in vectors]
             min_sim = min(sims)
 
+            turn._min_similarity = min_sim
             if min_sim >= min_similarity:
                 passed.append(turn)
                 audits.append(
@@ -847,6 +953,10 @@ def filter_by_foundation_models(
                             audit_meta["vibevoice_error"] = str(exc)
 
                 if is_pure:
+                    if "gemma" in audit_meta:
+                        turn._gemma_decision = audit_meta["gemma"]
+                    if "vibevoice" in audit_meta:
+                        turn._vibevoice_decision = audit_meta["vibevoice"]
                     passed.append(turn)
                     audits.append((turn, True, "Passed foundation audit", audit_meta))
                 else:
@@ -961,6 +1071,17 @@ def run_zero_contamination_pipeline(
         current_turns = consensus_turns
 
     # ==================== STAGE 3: Boundary & Syllable Integrity Gate ====================
+    for t in current_turns:
+        if not hasattr(t, "_original_start_s"):
+            t._original_start_s = t.start_s
+            t._original_end_s = t.end_s
+            t._raw_start_s = t.start_s
+            t._raw_end_s = t.end_s
+            t._delta_start_ms = 0.0
+            t._delta_end_ms = 0.0
+            t._boundary_policy = "standard"
+            t._tail_rescued = False
+
     boundary_audits: list[dict[str, Any]] = []
 
     # 3a. Option A: Context-Aware Collar Erosion (Silence vs Handoff Guard)
@@ -981,7 +1102,7 @@ def run_zero_contamination_pipeline(
             audio_duration_s=audio.duration_s,
         )
         current_turns = ctx_turns
-        boundary_audits.extend(ctx_audits)
+        boundary_audits = ctx_audits
     elif config.enable_collar_erosion:
         if progress_callback:
             progress_callback(0.55, "Applying aggressive blunt collar erosion...")
@@ -996,6 +1117,7 @@ def run_zero_contamination_pipeline(
             transition_exclusion_s=config.transition_exclusion_s,
         )
         current_turns = eroded_turns
+        boundary_audits = []
 
     # 3b. Option C: Syllable / Word Forced Alignment Lock (High-Compute)
     if config.enable_syllable_alignment:
@@ -1011,7 +1133,7 @@ def run_zero_contamination_pipeline(
             token=config.token,
         )
         current_turns = aligned_turns
-        boundary_audits.extend(align_audits)
+        boundary_audits = align_audits
 
     # 3c. Option B: Micro-Acoustic Energy & RMS Silence Valley Snapping
     if config.enable_energy_snapping:
@@ -1028,7 +1150,7 @@ def run_zero_contamination_pipeline(
             energy_floor_db=config.energy_valley_floor_db,
         )
         current_turns = snapped_turns
-        boundary_audits.extend(snap_audits)
+        boundary_audits = snap_audits
 
     funnel["eroded_turns_count"] = len(current_turns)
     funnel["eroded_speech_duration_s"] = round(
@@ -1114,13 +1236,14 @@ def run_zero_contamination_pipeline(
     final_audits = []
 
     for i, t in enumerate(current_turns):
-        matched_audit = boundary_audits[i] if i < len(boundary_audits) else {}
-        raw_start = matched_audit.get("raw_start_s", t.start_s)
-        raw_end = matched_audit.get("raw_end_s", t.end_s)
-        delta_start = matched_audit.get("delta_start_ms", round((t.start_s - raw_start) * 1000.0, 1))
-        delta_end = matched_audit.get("delta_end_ms", round((t.end_s - raw_end) * 1000.0, 1))
-        policy = matched_audit.get("policy", "standard")
-        tail_rescued = matched_audit.get("tail_rescued", (delta_end > 0.0))
+        raw_start = getattr(t, "_raw_start_s", t.start_s)
+        raw_end = getattr(t, "_raw_end_s", t.end_s)
+        orig_start = getattr(t, "_original_start_s", raw_start)
+        orig_end = getattr(t, "_original_end_s", raw_end)
+        delta_start = getattr(t, "_delta_start_ms", round((t.start_s - raw_start) * 1000.0, 1))
+        delta_end = getattr(t, "_delta_end_ms", round((t.end_s - orig_end) * 1000.0, 1))
+        policy = getattr(t, "_boundary_policy", "standard")
+        tail_rescued = getattr(t, "_tail_rescued", (delta_end > 0.0))
 
         if tail_rescued:
             rescued_count += 1
@@ -1130,13 +1253,16 @@ def run_zero_contamination_pipeline(
             TurnAuditRecord(
                 turn_id=f"pure_turn_{i:04d}",
                 speaker_id=t.speaker_id,
-                original_start_s=raw_start,
-                original_end_s=raw_end,
+                original_start_s=orig_start,
+                original_end_s=orig_end,
                 start_s=t.start_s,
                 end_s=t.end_s,
                 duration_s=t.duration_s,
                 status="passed",
                 rejection_reason="Pure single-speaker guaranteed",
+                min_similarity=getattr(t, "_min_similarity", None),
+                gemma_decision=getattr(t, "_gemma_decision", None),
+                vibevoice_decision=getattr(t, "_vibevoice_decision", None),
                 raw_start_s=raw_start,
                 raw_end_s=raw_end,
                 delta_start_ms=delta_start,

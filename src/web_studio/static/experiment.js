@@ -120,6 +120,7 @@
         turnsBody: document.getElementById('exp-turns-body'),
         tableCard: document.getElementById('exp-table-card'),
         btnExportRttm: document.getElementById('btn-exp-export-rttm'),
+        btnExportManifest: document.getElementById('btn-exp-export-manifest'),
       };
     },
 
@@ -199,6 +200,7 @@
 
       // Export
       this.el.btnExportRttm?.addEventListener('click', () => self.exportRttm());
+      this.el.btnExportManifest?.addEventListener('click', () => self.exportManifest());
     },
 
     bindSlider(slider, label, unit, multiplier = 1, prefix = '') {
@@ -665,7 +667,10 @@
       }
       this.stopTurnPreview();
 
-      const audioId = this.el.audioSelect?.value || (window.state && window.state.activeAudio && window.state.activeAudio.id);
+      const audioId =
+        this.lastResult?.diarization?.audio_id ||
+        this.el.audioSelect?.value ||
+        (window.state && window.state.activeAudio && window.state.activeAudio.id);
       if (!audioId) return;
 
       this.activePlayingBtn = btn;
@@ -673,7 +678,7 @@
       btn.classList.add('btn-danger');
       btn.textContent = '⏹ Stop';
 
-      const streamUrl = `/api/audio/${audioId}/segment?start=${start}&end=${end}`;
+      const streamUrl = `/api/audio/${encodeURIComponent(audioId)}/segment?start=${start}&end=${end}`;
       this.previewAudio.src = streamUrl;
       this.previewAudio.play().catch(err => {
         console.warn('Playback error:', err);
@@ -712,6 +717,39 @@
       const a = document.createElement('a');
       a.href = url;
       a.download = `${audioId}_pure_single_speaker.rttm`;
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+
+    exportManifest() {
+      if (!this.lastResult || !this.lastResult.diarization) {
+        if (window.showToast) window.showToast('No experiment result available to export', 'warning');
+        return;
+      }
+      const diar = this.lastResult.diarization;
+      const audioId = diar.audio_id || 'experiment_audio';
+      const lines = (diar.turns || []).map((t, idx) => {
+        const dur = Number((t.end_s - t.start_s).toFixed(3));
+        return JSON.stringify({
+          audio_id: audioId,
+          turn_id: t.turn_id || `pure_${String(idx).padStart(4, '0')}`,
+          speaker_id: t.speaker_id,
+          start: Number(t.start_s.toFixed(3)),
+          end: Number(t.end_s.toFixed(3)),
+          duration: dur,
+          raw_start: t.raw_start_s !== undefined ? Number(t.raw_start_s.toFixed(3)) : Number(t.start_s.toFixed(3)),
+          raw_end: t.raw_end_s !== undefined ? Number(t.raw_end_s.toFixed(3)) : Number(t.end_s.toFixed(3)),
+          boundary_policy: t.boundary_policy || 'standard',
+          tail_rescued: !!t.tail_rescued,
+          delta_end_ms: t.delta_end_ms || 0,
+          purity_status: 'pure_single_speaker',
+        });
+      });
+      const blob = new Blob([lines.join('\n') + '\n'], { type: 'application/x-ndjson' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${audioId}_pure_tts_manifest.jsonl`;
       a.click();
       URL.revokeObjectURL(url);
     },
