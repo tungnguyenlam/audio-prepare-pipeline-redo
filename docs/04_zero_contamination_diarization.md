@@ -85,11 +85,11 @@ Candidate turns passing acoustic gates are verified by multimodal foundation mod
 def run_zero_contamination_pipeline(
     audio: Audio,
     config: ZeroContaminationConfig,
-    progress_callback: Callable[[str, float], None] | None = None,
+    progress_callback: Callable[[float, str], None] | None = None,
 ) -> ZeroContaminationResult:
 ```
 
-Executes the complete multi-stage pipeline, streaming monotonic progress updates and returning an audit-backed `ZeroContaminationResult`.
+Executes the complete multi-stage pipeline, streaming monotonic progress updates as `(progress_0_to_1, message)` and returning an audit-backed `ZeroContaminationResult`.
 
 ### Modular Building Blocks
 
@@ -124,7 +124,7 @@ filter_by_foundation_models(audio, turns, config, progress_callback=None) -> tup
 class ZeroContaminationConfig:
     # Stage 1: Primary Diarizer
     primary_backend: str = "sortformer"      # "sortformer", "diarizen", "pyannote"
-    primary_device: str | None = None        # "cuda:0", "cpu", etc.
+    primary_device: str | None = None        # "cuda:0", "cpu", None (= general device)
     target_onset: float = 0.80
     target_offset: float = 0.65
     competitor_onset: float = 0.20
@@ -132,47 +132,58 @@ class ZeroContaminationConfig:
     # Stage 2: Dual-Engine Consensus
     enable_consensus: bool = True
     secondary_backend: str = "diarizen"      # "diarizen", "sortformer", "pyannote"
-    secondary_device: str | None = None      # "cuda:1", etc.
+    secondary_device: str | None = None      # "same", "cuda:1", "cpu"
+
+    # Stage 3: Boundary & Syllable Integrity Gate
+    enable_collar_erosion: bool = True
+    boundary_collar_s: float = 0.35
+    min_turn_duration_s: float = 0.80
+    transition_exclusion_s: float = 0.50
+    allow_gap_merge: bool = False
 
     # Stage 3a: Context-Aware Collar
     enable_context_collar: bool = True
-    boundary_collar_s: float = 0.35
     handoff_risk_distance_s: float = 0.80
     silence_tail_buffer_s: float = 0.15
-    min_turn_duration_s: float = 0.80
-    transition_exclusion_s: float = 0.50
 
-    # Stage 3b: Syllable Forced Alignment Lock
-    enable_syllable_alignment: bool = True
-    aligner_engine: str = "whisper_timestamped" # "whisper_timestamped", "mms_fa", "remote_whisper"
-    aligner_model: str = "vinai/PhoWhisper-small"
-    aligner_language: str = "vi"
-    aligner_endpoint: str | None = None
-    aligner_device: str = "cpu"
-
-    # Stage 3c: Energy Valley Snapping
-    enable_energy_snapping: bool = True
+    # Stage 3b: Energy Valley Snapping (OFF by default)
+    enable_energy_snapping: bool = False
     energy_search_window_s: float = 0.15
     energy_valley_floor_db: float = -30.0
 
-    # Stage 4: WeSpeaker Homogeneity
-    enable_homogeneity: bool = True
-    homogeneity_device: str | None = None
+    # Stage 3c: Syllable Forced Alignment Lock (OFF by default)
+    enable_syllable_alignment: bool = False
+    aligner_engine: str = "whisper_timestamped" # "whisper_timestamped", "mms_fa", "remote_whisper"
+    aligner_model: str = "vinai/PhoWhisper-small"
+    aligner_language: str = "vi"
+    aligner_endpoint: str | None = None      # required for remote_whisper
+    aligner_device: str | None = "cpu"       # CPU recommended to avoid VRAM exhaustion
+
+    # Stage 4: WeSpeaker Homogeneity (OFF by default)
+    enable_homogeneity: bool = False
+    homogeneity_device: str | None = None    # "same", "cuda:0", "cpu"
     homogeneity_window_s: float = 1.00
     homogeneity_hop_s: float = 0.25
     min_homogeneity_similarity: float = 0.75
 
-    # Stage 5: Foundation Models
+    # Stage 5a: Gemma Overlap Verifier (OFF by default)
     enable_gemma: bool = False
-    gemma_endpoint: str = "http://localhost:8888/v1/chat/completions"
-    gemma_model: str = "unsloth/gemma-4-12b-it-GGUF"
+    gemma_endpoint: str | None = None        # else UNSLOTH_ENDPOINT / localhost:8888
+    gemma_model: str | None = None           # else UNSLOTH_MODEL / unsloth/gemma-4-12b-it-GGUF
+    gemma_prompt: str | None = None
     gemma_api_key: str | None = None
-    gemma_timeout_s: float = 30.0
+    gemma_timeout_s: float = 120.0
 
+    # Stage 5b: VibeVoice Speaker-Count Verifier (OFF by default)
     enable_vibevoice: bool = False
-    vibevoice_device: str | None = "cuda:1"
-    vibevoice_endpoint: str | None = None
+    vibevoice_model_id: str = "Dubedo/VibeVoice-ASR-HF-INT8"
+    vibevoice_device: str | None = None      # e.g. "cuda:1"; "same" = general device
+    vibevoice_endpoint: str | None = None    # optional remote HTTP endpoint
     max_secondary_speech_s: float = 0.0
+
+    # General compute
+    device: str = "auto"
+    token: str | None = None                 # HF token fallback (HF_TOKEN env)
 ```
 
 ---
@@ -200,7 +211,7 @@ from src.diarization.zero_contamination import (
     run_zero_contamination_pipeline,
 )
 
-vocal_audio = Audio.from_file(".data/separation/out/clean_vocals.wav")
+vocal_audio = Audio.from_file(".data/mvsep_mdx23/out/clean_vocals.wav")
 
 config = ZeroContaminationConfig(
     primary_backend="sortformer",
@@ -219,7 +230,7 @@ config = ZeroContaminationConfig(
 result = run_zero_contamination_pipeline(
     audio=vocal_audio,
     config=config,
-    progress_callback=lambda msg, pct: print(f"[{pct:5.1f}%] {msg}"),
+    progress_callback=lambda progress, message: print(f"[{progress * 100:5.1f}%] {message}"),
 )
 
 print(f"Retained {len(result.diarization.turns)} pure turns ({result.funnel_stats['final_pure_speech_duration_s']:.1f}s)")

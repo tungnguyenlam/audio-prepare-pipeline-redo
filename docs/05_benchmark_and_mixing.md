@@ -25,7 +25,7 @@ flowchart LR
 
 **Defined in:** [`src/benchmark/separation/mixer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/benchmark/separation/mixer.py)
 
-`AudioMixer` combines isolated speech stems with musical accompaniment under controlled, repeatable Signal-to-Music Ratio (SMR / SNR dB) levels to evaluate source separators.
+`AudioMixer` combines isolated speech stems with musical accompaniment under controlled, repeatable Signal-to-Music Ratio (SMR / SNR dB) levels to evaluate source separators. Constructor: `AudioMixer(sample_rate=44100, channels=2, peak_ceiling_dbfs=-1.0)`.
 
 ### `AudioMixer.mix(...) -> AudioMixResult`
 
@@ -36,27 +36,29 @@ def mix(
     music: Audio,
     *,
     target_smr_db: float,
-    seed: int = 42,
-    output_dir: str | Path | None = None,
+    seed: int,
+    output_dir: str | Path,
 ) -> AudioMixResult:
 ```
 
+`target_smr_db`, `seed`, and `output_dir` are all **required** keyword arguments (no defaults).
+
 ### Mixing Contract & Step-by-Step Execution
 
-1. **Waveform Ingestion:** Decodes both `speech` and `music` files as floating-point numpy waveforms.
-2. **Channel Standardization:** Normalizes both tracks to the mixer's configured channel count (default mono).
-3. **Time Alignment & Looping:** Crops or seamlessly loops the music track to match the duration of the speech track. Uses `seed` for deterministic pseudo-random cropping offsets.
-4. **RMS Level Calibration:** Calculates root-mean-square energy of both sources and computes the exact gain offset required to achieve `target_smr_db`:
-   $$\text{Gain}_{\text{music}} = \text{RMS}_{\text{speech}} \cdot 10^{-\frac{\text{target\_smr\_db}}{20}}$$
-5. **Peak Ceiling Protection:** If the combined peak amplitude exceeds the ceiling (default -0.5 dBFS), a common attenuation gain is applied equally to both stems and the mixture to prevent digital clipping.
-6. **Artifact Generation:** Writes three pristine 44.1 kHz WAV files into `output_dir`:
-   - `speech_reference.wav`: Clean speech target with applied global gain.
-   - `music_reference.wav`: Time-aligned accompaniment target.
-   - `mixture.wav`: Mixed audio track.
-7. **Sidecar Generation:** Writes identity sidecar JSON metadata alongside each generated WAV artifact.
+1. **Waveform Ingestion:** Decodes both `speech` and `music` files as `float64` waveforms via `soundfile` (`always_2d=True`), resampling with `librosa` when source rates differ from the mixer rate.
+2. **Channel Standardization:** Normalizes both tracks to the mixer's configured channel count (default stereo `channels=2`; mono folds via mean, mono→stereo duplicates).
+3. **Time Alignment & Looping:** Crops or seamlessly loops the music track to match the duration of the speech track. Uses `seed` for deterministic pseudo-random cropping offsets (`np.random.default_rng(seed)`; wrap-around looping when music is shorter).
+4. **RMS Level Calibration:** Calculates root-mean-square energy of both sources and computes the exact gain offset required to achieve `target_smr_db` (`music_gain = RMS_speech / (RMS_music * 10^(target_smr_db/20))`; speech gain stays 0 dB):
+   $$\text{Gain}_{\text{music}} = \frac{\text{RMS}_{\text{speech}}}{\text{RMS}_{\text{music}} \cdot 10^{\frac{\text{target\_smr\_db}}{20}}}$$
+5. **Peak Ceiling Protection:** If the combined peak amplitude exceeds the ceiling (`peak_ceiling_dbfs`, default -1.0 dBFS), a common attenuation gain is applied equally to both stems and the mixture to prevent digital clipping (SMR is preserved; the applied gain is recorded as `common_output_gain_db`, and the realized post-limiting SMR as `realized_rms_smr_db`).
+6. **Artifact Generation:** Writes three 32-bit-float WAV files (`subtype="FLOAT"`) at the mixer sample rate into `output_dir`:
+   - `speech_reference.wav`: Clean speech target with applied global gain (`source_id="<speech>__speech_reference"`, history `+ "speech_ref"`).
+   - `music_reference.wav`: Time-aligned accompaniment target (`source_id="<music>__music_reference"`, history `+ "music_ref"`).
+   - `mixture.wav`: Mixed audio track (`source_id="<speech>__<music>__mixture"`, history `("mixed_speech_music", "smr_<X.X>dB")`).
+7. **Sidecar Generation:** Writes identity sidecar JSON metadata alongside each generated WAV artifact (via `Audio.from_file`, which probes the written files).
 8. **Returns:** One `AudioMixResult` dataclass instance.
 
-**Raises:** `ValueError` if either input is effectively silent, if mixer parameters are invalid, or if `output_dir` would overwrite an input file.
+**Raises:** `ValueError` if either input is effectively silent (RMS ≤ 1e-12), if mixer parameters are invalid (`sample_rate <= 0`, `channels not in (1,2)`, `peak_ceiling_dbfs > 0`), or if `output_dir` would overwrite an input file.
 
 ---
 
@@ -69,10 +71,18 @@ def mix(
 @dataclass
 class MixingParameters:
     target_smr_db: float
+    sample_rate: int
+    channels: int
     seed: int
-    speech_gain_linear: float
-    music_gain_linear: float
-    peak_limited: bool
+    music_start_sample: int
+    speech_gain_db: float            # always 0.0 (speech is the reference)
+    music_gain_db: float
+    common_output_gain_db: float     # peak-limiting attenuation (0.0 when untouched)
+    peak_ceiling_dbfs: float
+    mixer_version: str               # "2"
+    speech_lufs_before: float | None = None
+    music_lufs_before: float | None = None
+    realized_rms_smr_db: float | None = None
 ```
 
 ### `AudioMixResult`
@@ -86,7 +96,19 @@ class AudioMixResult:
 ```
 
 ### `BenchmarkDefinition`
-Defines an evaluation suite specifying speech audio items, background music pools, SMR ranges (e.g. `[-5.0, 0.0, 5.0, 10.0]`), seed matrices, and output stems.
+One planned mixture *before* it is rendered:
+```python
+@dataclass
+class BenchmarkDefinition:
+    sample_id: str
+    speech_path: str
+    music_path: str
+    music_category: MusicCategory   # ACOUSTIC | ORCHESTRAL | TRADITIONAL
+    difficulty: Difficulty           # EASY | MEDIUM | HARD
+    target_smr_db: float
+    seed: int
+```
+(A fully rendered sample is a `SeparationBenchmarkSample`: planned definition + speech/music sources + the three rendered `AudioMixResult` files + mixing parameters.)
 
 ---
 

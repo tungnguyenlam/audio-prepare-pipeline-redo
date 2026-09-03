@@ -50,7 +50,7 @@ flowchart TD
 ### 1. Ingestion & Audio
 👉 *Full specification:* [**01. Audio Representation & Ingestion**](01_audio_and_ingestion.md)
 
-- `YtCrawler.ingest(link, output_dir=None, sample_rate=44100, channels=1, **kwargs) -> Audio`: Downloads and normalizes YouTube audio.
+- `YtCrawler.ingest(link, output_dir=.data/yt_crawler/downloads, work_dir=.data/yt_crawler/work, audio_format="wav", sample_rate=44100, channels=1, **kwargs) -> Audio`: Downloads and normalizes YouTube audio.
 - `YtCrawler.download(url) -> Audio`: Executes download workflow into `.data/yt_crawler/`.
 - `Audio.from_file(path, ...) -> Audio`: Instantiates file-backed `Audio`, restoring metadata from sidecar `{stem}.json` if present.
 - `Audio.save_to(dest) -> Audio`: Copies audio file and writes `{stem}.json` sidecar. Returns same mutated instance.
@@ -62,13 +62,13 @@ flowchart TD
 👉 *Full specification:* [**02. Source Separation & Model Lifecycle**](02_source_separation.md)
 
 - `BaseSeparator.separate(audio: Audio) -> Audio`: Universal interface producing a normalized separated stem (e.g. vocals).
-- `ManagedModel.load() / unload() / with model:`: Explicit neural model resource management.
-- Backends: `HTDemucs` (Demucs CLI), `BSRoFormer` & `MelRoFormer` (RoFormer neural models), `MVSepMDX23` (Fast Kim ONNX / full ensemble).
+- `ManagedModel.load() / unload() / with model:`: Explicit neural model resource management (one-shot `load()`/`unload()`; repeats are no-ops; `__exit__` unloads even on exception).
+- Backends: `HTDemucs` (Demucs CLI, `cpu` default), `BSRoFormer` & `MelRoFormer` (RoFormer neural models, `auto` default), `MVSepMDX23` (Fast Kim ONNX / full ensemble, `auto` default).
 
 ### 3. Speaker Diarization
 👉 *Full specification:* [**03. Speaker Diarization, Evaluation & Verification**](03_speaker_diarization.md)
 
-- `BaseDiarizer.diarize(audio: Audio) -> DiarizationResult`: Universal diarization contract returning schema 2.0.
+- `BaseDiarizer.diarize(audio: Audio) -> DiarizationResult`: Universal diarization contract returning schema 2.0. Per-call options live on `diarize()` for some backends (Pyannote: `num_speakers`/`min_speakers`/`max_speakers`/`hook`; Sortformer: `enrollment_name`/`enrollment_clips`).
 - Backends & Workers:
   - `SortformerWorkerDiarizer`: NVIDIA NeMo Sortformer (streaming 4-speaker model, enrollment anchor).
   - `DiariZenWorkerDiarizer`: BUT-FIT WavLM Large + WeSpeaker + VBx clustering (SOTA overlap).
@@ -86,12 +86,12 @@ flowchart TD
 ### 4. Zero-Contamination Diarization
 👉 *Full specification:* [**04. Zero-Contamination Diarization Pipeline**](04_zero_contamination_diarization.md)
 
-- `run_zero_contamination_pipeline(audio, config, progress_callback=None) -> ZeroContaminationResult`: Complete 5-stage pipeline (Asymmetric detection → Dual-engine Hungarian consensus → Context-aware collar & Syllable lock → WeSpeaker homogeneity → Foundation models).
+- `run_zero_contamination_pipeline(audio, config, progress_callback=None) -> ZeroContaminationResult`: Complete 5-stage pipeline (Asymmetric detection → Dual-engine Hungarian consensus → Context-aware collar & Syllable lock → WeSpeaker homogeneity → Foundation models). Progress callback receives `(progress_0_to_1, message)`.
 
 ### 5. Benchmark Audio Mixing
 👉 *Full specification:* [**05. Benchmark Separation & Audio Mixing**](05_benchmark_and_mixing.md)
 
-- `AudioMixer.mix(speech, music, target_smr_db, seed=42, output_dir=None) -> AudioMixResult`: Calibrated mixing with peak limiting, music cropping/looping, and reference stem generation.
+- `AudioMixer.mix(speech, music, *, target_smr_db, seed, output_dir) -> AudioMixResult`: Calibrated mixing with peak limiting, music cropping/looping, and reference stem generation. All three keyword args are required. Constructor defaults: `AudioMixer(sample_rate=44100, channels=2, peak_ceiling_dbfs=-1.0)`.
 
 ### 6. Web Applications
 👉 *Full specification:* [**06. Web Applications (SonicStudio & SonicPipeline)**](06_web_applications.md)

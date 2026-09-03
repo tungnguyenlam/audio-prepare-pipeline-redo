@@ -182,8 +182,8 @@ clean_speaker_turns(
 **Defined in:** [`src/diarization/turn_cleanup.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/turn_cleanup.py)
 
 Controls audio expansion during WAV cutting and stem export:
-- **`pre_roll_s` & `post_roll_s` (`float`, defaults: `0.12s` / `0.20s` when `add_extra=True`):** Expands window boundaries outward into surrounding room tone/silence. Captures natural acoustic decay and reverbs.
-- **`blocker_intervals` (`list` of other-speaker intervals):** When `stop_at_other_speakers=True`, outward expansion stops immediately at neighboring other-speaker bounds.
+- **`pre_roll_s` & `post_roll_s` (`float`, function defaults: `0.0` / `0.0`):** Expands window boundaries outward into surrounding room tone/silence. Captures natural acoustic decay and reverbs. The Studio stem-export path (`extraction_settings`) defaults them to `0.12s` / `0.20s` (Sortformer pad values) but applies them only when `add_extra=True` (otherwise forced to `0.0`).
+- **`blocker_intervals` (`list` of other-speaker intervals):** The Studio path wires these from neighboring turns only when `add_extra=True` **and** `stop_at_other_speakers=True`; outward expansion then stops immediately at neighboring other-speaker bounds.
 - **The Trade-off:** Reverb/Decay Preservation vs. Other-Speaker Contamination.
 - **Certainty:** **Guaranteed** mathematical clamping.
 
@@ -255,7 +255,7 @@ Controls audio expansion during WAV cutting and stem export:
 - **Certainty:** **Empirical**. LLM instruction adherence is non-deterministic.
 
 #### `failure_policy` (`"fail_closed"` vs. `"fail_open"`, default: `"fail_closed"`)
-- **What it is:** Determines the candidate decision when the remote LLM endpoint times out or returns HTTP 5xx.
+- **What it is:** Studio batch-verification setting (`handle_verify_diarization_batch` overlap config) determining the candidate decision when the remote LLM endpoint times out or returns HTTP 5xx. It is **not** a `Gemma4OverlapVerifier`/`GeminiOverlapVerifier` constructor argument (those take `endpoint`, `model`, `api_key`, `timeout_s=120.0`, `prompt`, `max_output_tokens`).
 - **`fail_closed`:** Marks candidate as `error` (excluded from dataset).
 - **`fail_open`:** Keeps candidate as `pass` while logging the warning.
 - **The Trade-off:** Zero-Risk Data Integrity vs. Pipeline Robustness to Network Glitches.
@@ -295,7 +295,7 @@ flowchart TD
   - *Certainty:* **Guaranteed** conditional interval math.
 
 ### Stage 3b: Syllable Forced Alignment Lock
-- **`aligner_engine` (`"whisper_timestamped"`, `"mms_fa"`):** Snaps candidate boundaries outward to word/syllable bounds.
+- **`aligner_engine` (`"whisper_timestamped"`, `"mms_fa"`, `"remote_whisper"`):** Snaps candidate boundaries outward to word/syllable bounds. Disabled by default (`enable_syllable_alignment=False`); `remote_whisper` requires `aligner_endpoint`.
   - *Trade-off:* Guarantees boundaries never slice through an active vocal syllable. May pull in up to 100ms of surrounding silence to achieve alignment.
   - *Certainty:* **Guaranteed** word-boundary snapping.
 
@@ -324,7 +324,7 @@ flowchart TD
 - **The Trade-off:** Difficulty level of the separation benchmark.
 - **Certainty:** **Guaranteed** RMS linear scaling.
 
-#### `seed` (`int`, default: `42`)
-- **What it is:** Pseudorandom seed controlling the temporal crop offset of the background music file.
+#### `seed` (`int`, required — no default)
+- **What it is:** Pseudorandom seed controlling the temporal crop offset of the background music file. Callers pass it explicitly (e.g. `seed=42`).
 - **The Trade-off:** Guarantees 100% bit-exact reproducibility across benchmark runs on different machines.
 - **Certainty:** **Guaranteed**.

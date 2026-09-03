@@ -87,6 +87,7 @@ classDiagram
 Whenever an `Audio` object is saved, an adjacent JSON sidecar is written:
 ```json
 {
+  "kind": "audio.sidecar",
   "source_id": "dQw4w9WgXcQ",
   "title": "Rick Astley - Never Gonna Give You Up",
   "source_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
@@ -94,13 +95,14 @@ Whenever an `Audio` object is saved, an adjacent JSON sidecar is written:
   "channel_name": "Rick Astley",
   "channel_url": "https://www.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw",
   "sample_rate": 44100,
-  "native_sample_rate": 48000,
   "duration_s": 213.25,
   "channels": 1,
   "format": "wav",
+  "native_sample_rate": 48000,
   "history": ["yt_download", "demucs_vocals"]
 }
 ```
+(Sidecars without `"kind": "audio.sidecar"` are ignored on load; only WAV files are re-probed.)
 
 ---
 
@@ -112,14 +114,16 @@ Whenever an `Audio` object is saved, an adjacent JSON sidecar is written:
 
 ### `DiarizationResult`
 - **Fields:**
-  - `result_id`: Unique stable UUID string.
-  - `audio_id`: Identifier matching `source_audio.source_id`.
-  - `source_audio`: Complete embedded `Audio` snapshot.
-  - `created_at`: ISO-8601 creation timestamp.
-  - `speakers`: Tuple of distinct `Speaker` records.
-  - `turns`: Tuple of chronological `SpeakerTurn` records.
-  - `model`: `DiarizationModelInfo` (backend name, model ID, parameters).
-  - `channel_id`, `channel_name`, `channel_url`: Provenance copied from `source_audio`.
+  - `schema_version`: `"2.0"`.
+  - `audio_id`: Identifier matching `source_audio.source_id` (enforced).
+  - `speakers`: **List** of distinct `Speaker` records (duplicate IDs rejected).
+  - `turns`: **List** of chronological `SpeakerTurn` records.
+  - `source_audio`: Complete embedded `Audio` snapshot (**required** for schema 2.x; `None` accepted only to migrate schema-1.0 payloads).
+  - `model`: `DiarizationModelInfo` (backend name, model ID, optional revision).
+  - `result_id`: Unique ID, default `diar_<hex>`.
+  - `created_at`: Unix-epoch **float** (`time.time()`), not an ISO string.
+  - `channel_id`, `channel_name`, `channel_url`: Provenance backfilled from `source_audio` when missing; mismatches raise.
+  - `overlaps_other_speaker` is auto-normalized in `__post_init__` (any cross-speaker interval intersection sets it), and turns ending beyond `duration_s + 0.05` are rejected.
 - **Derived Properties:**
   - `speaker_count`: Number of distinct speakers.
   - `turn_count`: Total number of turns.
@@ -135,22 +139,22 @@ Whenever an `Audio` object is saved, an adjacent JSON sidecar is written:
 ### `SpeakerTurn`
 Represents an individual continuous speech segment:
 ```python
-@dataclass(frozen=True)
+@dataclass
 class SpeakerTurn:
-    start_s: float
-    end_s: float
     speaker_id: str
-    confidence: float = 1.0
+    start_s: float
+    end_s: float                        # must be > start_s
+    confidence: float | None = None     # 0..1 when the backend reports it
     overlaps_other_speaker: bool = False
 ```
+`duration_s` is a derived property (`end_s - start_s`).
 
 ### `Speaker`
-Represents a distinct speaker identity:
+Represents a distinct speaker identity (no display-label field):
 ```python
-@dataclass(frozen=True)
+@dataclass
 class Speaker:
     speaker_id: str                 # Local ID, e.g. "spk_00"
-    label: str                      # Display label
     global_speaker_id: str | None   # Profile link if enrolled
 ```
 
@@ -172,44 +176,47 @@ Stored under `.data/diarization/annotations/<id>.json`:
 
 ## 4. Speaker Profile Schema (`SpeakerProfile`)
 
-Stored under `.data/speaker_profiles/<name>/profile.json`:
+**Defined in:** [`src/diarization/SpeakerVerifier.py`](../../src/diarization/SpeakerVerifier.py) (not `schemas.py`). Profiles live under `.data/speaker_profiles/<sanitized_name>/` with reference clips at `clips/clip_<NN>.<ext>`.
+
+`profile.json` manifest (written by `enroll`, `schema_version="2.0"`):
 ```json
 {
-  "schema_version": "1.0",
+  "schema_version": "2.0",
   "name": "narrator_01",
-  "clip_names": ["clip_00.wav", "clip_01.wav"],
-  "clip_paths": [
-    ".data/speaker_profiles/narrator_01/clips/clip_00.wav",
-    ".data/speaker_profiles/narrator_01/clips/clip_01.wav"
-  ],
-  "created_at": "2026-09-01T12:00:00Z",
-  "updated_at": "2026-09-01T12:30:00Z",
+  "created_at": "2026-09-01T12:00:00+00:00",
+  "updated_at": "2026-09-01T12:30:00+00:00",
+  "clips": ["clip_00.wav", "clip_01.wav"],
   "channel_id": "UC...",
-  "channel_name": "Channel Name"
+  "channel_name": "Channel Name",
+  "channel_url": null
 }
 ```
+(`clips` is the clip filename list; the runtime `SpeakerProfile` object additionally exposes resolved `clip_paths`, `profile_dir`, and timestamps.)
 
 ---
 
 ## 5. Purity Verification Schemas
 
 ### `SpeakerPurityResult` (Embedding Purity)
+Frozen dataclass in `src/diarization/schemas.py`:
 ```python
-@dataclass
+@dataclass(frozen=True)
 class SpeakerPurityResult:
+    schema_version: str              # e.g. "1.0"
     audio_id: str
+    profile_name: str
     speaker_id: str
     start_s: float
     end_s: float
-    profile_name: str
-    decision: str                      # "pass", "reject", "error"
-    reason: str                        # "single_speaker", "overlap_detected", etc.
-    overlap_duration_s: float = 0.0
-    overlap_ratio: float = 0.0
-    windows: list[dict] = field(default_factory=list)
-    min_target_similarity: float | None = None
-    error_message: str | None = None
+    decision: Literal["pass", "reject", "error"]
+    overlap_duration_s: float
+    overlap_ratio: float              # 0..1
+    windows: tuple[SpeakerSimilarityWindow, ...]
+    reason: str | None = None         # required unless pass; pass carries no reason
+    model: DiarizationModelInfo | None = None
+    error: str | None = None          # required for error; forbidden otherwise
 ```
+Derived: `passed` (`decision == "pass"`), `duration_s`, `min_target_similarity` (min window similarity, `None` when no windows).
 
 ### `VibeVoicePurityResult` (Foundation ASR Purity)
 ```python
@@ -228,10 +235,9 @@ class VibeVoicePurityResult:
 ```
 
 ### `OverlapVerificationResult` (Multimodal LLM Purity)
-Returned by Gemma 4 and Gemini overlap verifiers:
+A `TypedDict` (not a dataclass) returned by `Gemma4OverlapVerifier.verify()` and `GeminiOverlapVerifier.verify()`:
 ```python
-@dataclass
-class OverlapVerificationResult:
+class OverlapVerificationResult(TypedDict):
     overlap: bool
     reason: str
 ```
@@ -286,12 +292,13 @@ Defined in [`src/diarization/zero_contamination.py`](file:///home/nguyenlt/Docum
 
 ## 7. Pipeline `AudioItem` Schema
 
-Stored in `.data/pipeline/dataset_registry.json`:
-- Contains `Audio` fields directly (`source_id`, `title`, `sample_rate`, etc.).
-- `custom_tags`: User-editable tags (e.g. `podcast`, `favorite`).
-- `system_tags`: Machine-managed namespaced tags (`type:speech`, `stage:diarized`, `speaker:narrator`, `profile:verified`, `turns:clean`).
-- `stems`: Mapping of stem names to relative file paths.
+**Defined in:** [`src/web_pipeline/dataset_manager.py`](../../src/web_pipeline/dataset_manager.py). Stored in `.data/pipeline/dataset_registry.json` (`REGISTRY_FILE`; sibling `datasets.json`, `exports/`, `imports/`, `stems/`):
+- Identity: `id`, `source_id`, `title`, `path` (repo-relative), `dataset` (default `"Default"`), `duration`, `sample_rate`, `channels`, `native_sample_rate`, `format`, `source_url`, channel fields.
+- `custom_tags`: User-editable tags; `system_tags`: machine-managed namespaced tags (`type:`, `stage:`, `speaker:`, `profile:`, `verification:`; legacy `tags` migrated on load). `tags` property returns both combined.
+- `stems`: Mapping of model → `{stem_name: path}`.
+- `diarization`: Optional embedded canonical `DiarizationResult` JSON (presence implies `stage:diarized` + `verification:unverified` when no `verification:` tag).
 - `metadata["target_speakers"]`: Target speaker filtering summaries per profile, including qualified segment count and duration percentages.
+- `created_at`: Unix-epoch float.
 
 ---
 

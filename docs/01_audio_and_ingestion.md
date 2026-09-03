@@ -74,7 +74,7 @@ Creates an `Audio` object for an existing audio file on disk.
 - Resolves `path` to an absolute path.
 - Checks for `{stem}.json` next to the audio file; if found, restores `source_id`, `title`, `source_url`, channel metadata, `native_sample_rate`, and `history`. Explicit arguments override sidecar contents.
 - Uses the file stem as fallback for `source_id` and `title` when no sidecar exists.
-- Probes WAV files via `soundfile` for `sample_rate`, `duration_s`, and `channels` (probed values supersede sidecar snapshots).
+- Probes WAV files via the stdlib `wave` header reader for `sample_rate`, `duration_s`, and `channels` (probed values supersede sidecar snapshots). Non-WAV formats keep sidecar/default values.
 - **Raises:** `FileNotFoundError` if `path` does not exist on disk.
 
 ### `Audio.metadata(*, target_sample_rate: int | None = None) -> dict`
@@ -99,8 +99,9 @@ Returns a **new** `Audio` instance with the sanitized `step_tag` appended to `hi
 
 Computes a compact, human-readable fingerprint summarizing the audio's lineage:
 ```text
-<source_id>__<history_steps>__<duration_s>s_<sample_rate>hz_<channels>ch
+<source_id>__<history_steps>__<duration_s>s_<sample_rate>Hz_<channels>ch
 ```
+Duration renders with two decimals (e.g. `213.25s_44100Hz_1ch`).
 
 ### `Audio.save_to(dest: str | Path) -> Audio`
 
@@ -122,7 +123,7 @@ def quick_save(
 ) -> Audio:
 ```
 
-Saves the audio file to `<project_root>/.data/quick_save/` (or a custom `output_dir`) with an automatically generated filename based on `self.fingerprint`. Writes sidecar metadata and logs the target path to stdout.
+Saves the audio file to `<project_root>/.data/quick_save/` (or a custom `output_dir`) with a filename built from `self.fingerprint` (plus optional `prefix`/`tag`/`suffix`, or an explicit `name`). Writes sidecar metadata and logs the target path to stdout.
 
 ### `Audio.write_sidecar() -> Audio`
 
@@ -151,10 +152,9 @@ Computes and plots a log-mel spectrogram using Librosa and Matplotlib. Automatic
 def ingest(
     cls,
     link: str,
-    *,
-    output_dir: str | Path | None = None,
-    work_dir: str | Path | None = None,
-    format: str = "wav",
+    output_dir: str | Path = DATA_DIR / "yt_crawler" / "downloads",
+    work_dir: str | Path = DATA_DIR / "yt_crawler" / "work",
+    audio_format: str = "wav",
     sample_rate: int | None = 44100,
     channels: int = 1,
     **kwargs: Any,
@@ -165,17 +165,17 @@ Convenience class method that instantiates `YtCrawler` and invokes `download()`.
 - `link`: YouTube video URL.
 - `sample_rate`: Target rate in Hz (default `44100`). Pass `sample_rate=None` to preserve source rate.
 - `channels`: Output channel count (default `1` mono).
-- `**kwargs`: Forwarded crawler options (e.g. cookies, proxy).
+- `**kwargs`: Forwarded crawler options (e.g. `retries`, `cookies_file`, `cookies_from_browser`, `proxy`, `progress_callback`, `yt_dlp_bin`, `ffmpeg_bin`).
 
 ### `YtCrawler.download(url: str) -> Audio`
 
 Executes the download process:
-1. Creates an isolated temporary session workspace under `.data/yt_crawler/work/`.
-2. Executes `yt-dlp` with `--newline` to extract single-video metadata (`.info.json`).
-3. Discovers the downloaded audio stream (ignoring video streams).
-4. Records `native_sample_rate` from source metadata.
-5. Normalizes the audio via `ffmpeg` to the requested channel count (default mono) and sample rate.
-6. Saves the artifact under `.data/yt_crawler/downloads/<channel_id-or-name>/<sanitized_title>__<source_id>.<format>`.
+1. Creates an isolated temporary session workspace under `.data/yt_crawler/work/` (`job-<uuid>`).
+2. Executes `yt-dlp` (`--no-playlist`, `-f bestaudio/best`, `-x --audio-format <fmt>`, `--write-info-json`, `--newline`) honoring `retries`, proxy, and cookies options.
+3. Discovers the downloaded audio stream (ignoring video streams and `.json` files).
+4. Records `native_sample_rate` from the pre-normalize WAV header, else yt-dlp `asr` metadata.
+5. Normalizes the audio via `ffmpeg` (`-ac <channels>`, `-ar <rate>` unless `sample_rate=None`, `-c:a pcm_s16le` for WAV).
+6. Saves the artifact under `.data/yt_crawler/downloads/<channel_id-or-name>/<sanitized_title>__<source_id>.<format>` (title truncated to 100 chars; bare `source_id` when untitled).
 7. Generates companion identity sidecar `<stem>.json`.
 8. Reaps the temporary session workspace even if processing encounters an error.
 9. Returns the normalized `Audio` instance.
@@ -202,8 +202,9 @@ Low-level audio utility routines supporting the pipeline:
 
 | Function | Signature | Return | Description |
 |---|---|---|---|
-| `probe_wav` | `probe_wav(path: str \| Path)` | `tuple[int, float, int]` | Probes WAV headers for `(sample_rate, duration_s, channels)`. Fast header read without full decode. |
-| `normalize_wav` | `normalize_wav(src, dest, *, sample_rate=None, channels=1)` | `None` | Converts/resamples audio using `ffmpeg` CLI. Raises `AudioConvertError` on failure. |
+| `probe_wav` | `probe_wav(path: Path)` | `tuple[int, float, int]` | Probes WAV headers via stdlib `wave` for `(sample_rate, duration_s, channels)`. Fast header read without full decode. (Mirrors `YtCrawler.probe_wav`.) |
+| `normalize_wav` | `normalize_wav(src, dest, *, sample_rate: int, channels: int, ffmpeg_bin: str)` | `None` | Converts/resamples audio using `ffmpeg` CLI (`pcm_s16le` for WAV). Copies without re-encode when rate and channels already match. Raises `AudioConvertError` on failure. |
+| `prepare_separator_wav` | `prepare_separator_wav(src, dest, *, sample_rate: int, channels: int, ffmpeg_bin: str)` | `None` | Converts source to the layout separator checkpoints expect (44.1 kHz stereo, `pcm_f32le`), so corpus 16 kHz audio does not warp RoFormer STFT bands. |
 
 ---
 
@@ -214,11 +215,12 @@ Runtime audio files default to the `.data/` directory anchored at repository roo
 ```text
 .data/
 ├── yt_crawler/
-│   ├── downloads/       # Completed, normalized ingest files
-│   └── work/            # Temporary session workdirs (cleaned up automatically)
-├── separation/
-│   ├── out/             # Separated stems (vocals, accompaniment)
-│   └── work/            # Intermediate separation chunks
+│   ├── downloads/       # Completed, normalized ingest files (<channel>/<title>__<id>.wav)
+│   └── work/            # Temporary session workdirs job-<uuid> (cleaned up automatically)
+├── demucs/out/          # HTDemucs stems (per-backend dirs; base default .data/separated/out/)
+├── bs_roformer/out/     # BSRoFormer stems (+ work/ inputs)
+├── mel_roformer/out/    # MelRoFormer stems (+ work/ inputs)
+├── mvsep_mdx23/out/     # MVSepMDX23 stems (+ work/, repo/)
 ├── diarization/
 │   ├── results/         # Canonical DiarizationResult JSON
 │   ├── annotations/     # Ground-truth reference JSON
@@ -226,5 +228,8 @@ Runtime audio files default to the `.data/` directory anchored at repository roo
 ├── quick_save/          # Audio.quick_save() artifacts
 └── pipeline/
     ├── dataset_registry.json
-    └── imports/         # External files imported into portable pipeline registry
+    ├── datasets.json
+    ├── imports/         # External files imported into portable pipeline registry
+    ├── exports/
+    └── stems/
 ```

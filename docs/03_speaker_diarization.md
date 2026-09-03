@@ -41,11 +41,10 @@ def diarize(self, audio: Audio) -> DiarizationResult:
 
 ### Schema 2.0 Result Contract
 All backends return canonical **`DiarizationResult`** schema 2.0:
-- Contains `audio_id`, creation timestamp, and a snapshot of the source `Audio` under `source_audio`.
-- Records normalized `Speaker` entries (`speaker_id="spk_00"`, `"spk_01"`, etc.).
-- Emits chronological `SpeakerTurn` intervals (`start_s`, `end_s`, `speaker_id`, confidence, and `overlaps_other_speaker`).
-- Preserves YouTube video and channel provenance from the input `Audio`.
-- Validates that turn timestamps are strictly within `[0, audio.duration_s]`.
+- Contains `audio_id` (must equal `source_audio.source_id`), a `result_id` (`diar_<hex>`), a `created_at` Unix-epoch float, and a snapshot of the source `Audio` under `source_audio` (required for schema 2.x).
+- Records normalized `Speaker` entries (`speaker_id="spk_00"`, `"spk_01"`, etc.) in a **list**, with `turns` as a chronological **list** of `SpeakerTurn` intervals (`start_s`, `end_s`, `speaker_id`, optional `confidence`, and `overlaps_other_speaker` auto-normalized in `__post_init__`).
+- Preserves YouTube video and channel provenance from the input `Audio` (missing result-level channel fields are backfilled from `source_audio`; mismatches raise).
+- Validates that turn timestamps are within `[0, audio.duration_s + 0.05]`.
 
 ---
 
@@ -70,10 +69,10 @@ To prevent severe library version collisions (e.g. NVIDIA NeMo pinning specific 
 - [`src/diarization/SortformerWorkerDiarizer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/SortformerWorkerDiarizer.py)
 
 NVIDIA NeMo Sortformer model:
-- **Input Normalization:** Automatically resamples and downmixes input audio to mono 16 kHz WAV.
-- **Windowed Inference:** Processes up to 6 minutes per window with a 1-minute overlap between adjacent windows. Automatic fallback to 3-minute windows if GPU OOM occurs.
+- **Input Normalization:** Automatically resamples and downmixes input audio to mono 16 kHz WAV (raises if normalization does not yield mono).
+- **Windowed Inference:** Processes up to 6 minutes per window (`window_duration_s=360.0`) with a 1-minute overlap (`overlap_duration_s=60.0`) between adjacent windows. Automatic fallback to 3-minute windows (`oom_retry_window_s=180.0`) if GPU OOM occurs.
 - **Hysteresis Post-Processing:** Configurable `onset=0.74`, `offset=0.64`, `pad_onset_s=0.12`, `pad_offset_s=0.20`.
-- **Pre-Inference Enrollment:** Accepts `enrollment_name` and `enrollment_clips`. Embeds clean reference clips with TitaNet before target inference; seeds global speaker 0 during window stitching.
+- **Pre-Inference Enrollment:** `diarize()` (not the constructor) accepts `enrollment_name` and `enrollment_clips`. Embeds clean reference clips with TitaNet before target inference; seeds global speaker 0 during window stitching.
 - **Worker Isolation:** `SortformerWorkerDiarizer` launches `.venv-sortformer/bin/python -m src.diarization.sortformer_worker` to keep NeMo out of the web server runtime. Supports `cancel()`.
 
 ---
@@ -97,8 +96,8 @@ DiariZen overlap-aware diarization system:
 **Defined in:** [`src/diarization/PyannoteDiarizer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/PyannoteDiarizer.py)
 
 Hugging Face Pyannote Audio pipeline (`pyannote/speaker-diarization-community-1`):
-- Decodes directly using `soundfile` to remain resilient against `torchcodec` environment differences.
-- Accepts `num_speakers`, `min_speakers`, `max_speakers`, and progress hooks.
+- Decodes with `soundfile` (`float32`, `always_2d=True`); raises `ValueError` on empty audio; requires `load()` first.
+- `diarize()` (not just the constructor) accepts per-call `num_speakers`, `min_speakers`, `max_speakers`, and a progress `hook`.
 - Automatically handles both Pyannote 3.1 `Annotation` objects and Pyannote 3.3/4.0 `output.speaker_diarization`.
 
 ---
@@ -184,13 +183,13 @@ Calculates exact interval-based Diarization Error Rate (DER) and Jaccard Error R
 **Defined in:** [`src/diarization/SpeakerVerifier.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/SpeakerVerifier.py)
 
 Manages persistent speaker identity profiles and embedding verification:
-- **Enrollment:** `enroll(name, clips, ...)` saves reference audio clips under `.data/speaker_profiles/<name>/clips/` with a `profile.json` manifest. Reference clips are the ground truth; embeddings are computed on demand.
+- **Enrollment:** `enroll(name, clips, *, overwrite=False, channel_id=None, channel_name=None, channel_url=None)` copies clips to `.data/speaker_profiles/<name>/clips/clip_<NN>.<ext>` with a `profile.json` manifest (`schema_version="2.0"`, keys: `name`, `created_at`, `updated_at`, `clips`, channel provenance). Reference clips are the ground truth; embeddings are computed on demand. Raises `SpeakerVerifierError` when clips are empty or the profile exists without `overwrite=True`.
 - **Profile Lifecycle:** `load_profile()`, `list_profiles()`, `delete_profile()`, `add_clips()`, `remove_clip()`.
-- **Embedding Extraction:** `extract_embedding(audio, start_s, end_s)` computes L2-normalized 1D embeddings using `pyannote/wespeaker-voxceleb-resnet34-LM`.
+- **Embedding Extraction:** `extract_embedding(audio, start_s, end_s)` computes L2-normalized 1D embeddings using `pyannote/wespeaker-voxceleb-resnet34-LM`. Turns shorter than `MIN_EMBEDDING_DURATION_S` (0.15 s) score `-1.0` (never selected).
 - **Scoring & Filtering:**
-  - `score(audio, result, profile) -> TargetSpeakerResult`: Computes cosine similarity of all turns against the enrolled profile centroid.
-  - `filter(scored, threshold, min_duration_s, exclude_overlap) -> TargetSpeakerResult`: Pure post-processing filter yielding qualified target-speaker turns.
-  - `verify_purity(source, profile, ...)`: Sliding-window purity analysis rejecting candidate turns failing the cosine similarity floor or containing other-speaker overlap.
+  - `score(audio, result, profile) -> TargetSpeakerResult`: Computes cosine similarity of all turns against the enrolled profile centroid. Requires `load()`/`with`. Returns schema `"1.0"` with per-turn `ScoredSegment`s.
+  - `filter(scored, *, threshold, min_duration_s=1.5, exclude_overlap=True) -> TargetSpeakerResult`: Pure post-processing filter yielding qualified target-speaker turns (note: `threshold` is keyword-only and required).
+  - `verify_purity(source, profile, *, candidates=None, similarity_threshold, min_candidate_duration_s=1.5, max_overlap_duration_s=0.05, window_duration_s=2.0, window_hop_s=0.75)`: Sliding-window purity analysis (`similarity_threshold` is required). `source` is a `DiarizationResult` (turns = candidates, result = overlap authority) or a whole-file `Audio` (no overlap authority). Unembeddable candidates return `decision="error"` (never pass).
 
 ---
 
@@ -203,15 +202,15 @@ Manages persistent speaker identity profiles and embedding verification:
 In addition to acoustic embeddings, the pipeline provides direct-audio foundation model verifiers to ensure candidates contain zero overlapping speech:
 
 ### `OverlapVerifier` (Gemma 4 & Gemini)
-Sends candidate audio directly to multimodal foundation models:
-- **`Gemma4OverlapVerifier`:** Queries an OpenAI-compatible Unsloth Studio endpoint running Gemma 4 (e.g. `unsloth/gemma-4-12b-it-GGUF`) with audio inputs. Returns `{"overlap": bool, "reason": str}`.
-- **`GeminiOverlapVerifier`:** Sends audio directly to Google Gemini 3.1 Pro Preview or Gemini 3.1 Flash-Lite via structured JSON output.
+Sends candidate audio directly to multimodal foundation models. Both verifiers return the `OverlapVerificationResult` TypedDict (`{"overlap": bool, "reason": str}`) via `verify(audio)`:
+- **`Gemma4OverlapVerifier`:** Queries an OpenAI-compatible Unsloth Studio endpoint. Endpoint resolves as explicit arg → `UNSLOTH_ENDPOINT` → `http://<UNSLOTH_HOST=localhost>:<UNSLOTH_PORT=8888>/v1/chat/completions`; model resolves as arg → `UNSLOTH_MODEL` → `unsloth/gemma-4-12b-it-GGUF`. `check_ready()` probes `/v1/models`; default prompt asks whether two or more speakers overlap at the same time.
+- **`GeminiOverlapVerifier`:** Sends audio directly to Google Gemini (default `gemini-3.1-pro-preview` via `GEMINI_MODEL`; flash-lite `gemini-3.1-flash-lite` also supported) via structured JSON output. Requires `GEMINI_API_KEY`.
 
 ### `VibeVoicePurityVerifier`
-Uses Microsoft VibeVoice-ASR (`microsoft/VibeVoice-ASR-HF` or quantized INT8/NF4 checkpoints):
-- Analyzes candidate audio with autoregressive speaker tokens across the full clip context.
-- Classifies turns:
+Uses Microsoft VibeVoice-ASR (default checkpoint `microsoft/VibeVoice-ASR-HF`; verified quantized choices include INT8/NF4; the zero-contamination default is `Dubedo/VibeVoice-ASR-HF-INT8`):
+- Analyzes candidate audio with autoregressive speaker tokens across the full clip context (`verify(audio)` / `verify_batch(audios)`; quantized checkpoints require CUDA).
+- Classifies turns (`classify_vibevoice_segments`):
   - Exactly 1 speaker → `pass` (`single_speaker`).
   - Secondary speaker duration `>= min_secondary_speech_s` (default 0.25s) → `reject` (`multiple_speakers`).
-  - Empty or ambiguous output → `uncertain`.
+  - Empty output (no segments/speaker labels) or sub-threshold secondary speech → `uncertain` (`empty_output` / `no_speaker_labels` / tiny-secondary).
 - `VibeVoicePurityWorkerVerifier` runs in `.venv-vibevoice` to isolate dependencies.

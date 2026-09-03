@@ -58,12 +58,14 @@ Default no-op teardown method. Backends override `close()` to clean up:
 
 ## 2. Concrete Separation Backends
 
-| Backend Class | Stem Options | Lifecycle Requirement | Compute Device | Notes |
-|---|---|---|---|---|
-| **`HTDemucs`** | `vocals`, `drums`, `bass`, `other` | No explicit `load()`. Subprocess CLI. | `auto`, `cuda`, `cpu` | Streams CLI stdout; supports `progress_callback` and `cancel()`. |
-| **`BSRoFormer`** | `vocals`, `instrumental` | Requires `load()` or `with model:`. | `cuda`, `cpu`, `mps` | Sub-band RoFormer architecture for high-fidelity vocal isolation. |
-| **`MelRoFormer`** | `vocals`, `instrumental` | Requires `load()` or `with model:`. | `cuda`, `cpu`, `mps` | Mel-band RoFormer architecture. |
-| **`MVSepMDX23`** | `vocals`, `instrumental` | Standalone CLI runner with ONNX models. | `cuda:N`, `cpu` | Fast Kim ONNX default; supports full ensemble. Requires `onnxruntime-gpu`. |
+| Backend Class | Default Checkpoint | Stem Options | Lifecycle Requirement | Compute Device | Default `out` / `work` dirs | Notes |
+|---|---|---|---|---|---|---|
+| **`HTDemucs`** | `htdemucs` | `vocals`, `drums`, `bass`, `other` | No explicit `load()`. Subprocess CLI. | `cpu` default; pass `cuda`/`cuda:N` | `.data/demucs/out`, `.data/demucs/work` | Streams CLI stdout; supports `progress_callback` and `cancel()`. |
+| **`BSRoFormer`** | `roformer-model-bs-roformer-sw-by-jarredou` | `vocals`, `instrumental` | Requires `load()` or `with model:`. | `auto` default (CUDA-else-CPU); `mps` on Apple Silicon | `.data/bs_roformer/out`, `.data/bs_roformer/work` | Sub-band RoFormer architecture for high-fidelity vocal isolation. Input pre-converted to 44.1 kHz stereo (`model_sample_rate=44100`). |
+| **`MelRoFormer`** | `melband-roformer-kim-vocals` | `vocals`, `instrumental` | Requires `load()` or `with model:`. | `auto` default; `mps` on Apple Silicon | `.data/mel_roformer/out`, `.data/mel_roformer/work` | Mel-band RoFormer architecture. Input pre-converted to 44.1 kHz stereo. |
+| **`MVSepMDX23`** | Kim ONNX (`single_onnx=True`) | `vocals`, `instrumental` | Standalone CLI runner with ONNX models. | `auto` default; `cuda:N`, `cpu`, `mps` | `.data/mvsep_mdx23/out`, `.data/mvsep_mdx23/work` (repo at `.data/mvsep_mdx23/repo`) | Fast Kim ONNX default; supports full ensemble. Requires `onnxruntime-gpu` + PyTorch CUDA when CUDA is requested. Extra knobs: `large_gpu`, `chunk_size`, `only_vocals`, `repo_dir`, `python_bin`. |
+
+(`BaseSeparator` itself defaults to `device="cpu"`, `output_dir=.data/separated/out`, `work_dir=.data/separated/work`; each backend above overrides the directories.)
 
 ---
 
@@ -87,8 +89,7 @@ Wraps the Facebook Demucs CLI:
 
 Neural stem separators implementing the `ManagedModel` contract:
 - Pre-trained checkpoints are loaded on demand via `model.load()` or context manager `with model:`.
-- Automatically moves model weights to the target GPU and clears VRAM on `unload()`.
-- Supports FP16 inference on CUDA to optimize memory usage.
+- `unload()` closes the inference session and drops the reference (`_unload()`); repeated calls while unloaded are no-ops.
 - Raises `BSRoFormerError` or `MelRoFormerError` if invoked prior to `load()` or if inference fails.
 
 ---
@@ -98,12 +99,12 @@ Neural stem separators implementing the `ManagedModel` contract:
 **Defined in:** [`src/separation/MVSepMDX23.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/separation/MVSepMDX23.py)
 
 High-performance MDX23 vocal separator runner:
-- **Defaults:** Configured with a resource-conscious single Kim ONNX model (`single_onnx=True`) and `0.25` overlap for high speed and low VRAM footprint.
-- **Ensemble Mode:** High-quality vocal separation can be enabled by passing `single_onnx=False`, `overlap_large=0.6`, and `overlap_small=0.5`.
-- **Chunked Processing:** Long audio files are split into bounded 10-minute WAV chunks (`max_segment_seconds=600`) to prevent OOM errors, with the separated stem concatenated afterward.
+- **Defaults:** Configured with a resource-conscious single Kim ONNX model (`single_onnx=True`, `use_kim_model_1=False` selects Kim checkpoint 2) and `0.25` overlap for high speed and low VRAM footprint.
+- **Ensemble Mode:** High-quality vocal separation can be enabled by passing `single_onnx=False`, `overlap_large=0.6`, and `overlap_small=0.5`. `large_gpu=True` opts into higher-VRAM settings; `chunk_size` overrides the CLI chunking; `only_vocals` defaults from `two_stems` (`vocals`/`instrumental` → vocals-only).
+- **Chunked Processing:** Long audio files are split into bounded 10-minute WAV chunks (`max_segment_seconds=600`) to prevent OOM errors, with the separated stem concatenated afterward. Pass `None` to process in one pass.
 - **Progress Tracking:** The internal CLI prints `PROGRESS: N%` lines, allowing the web task queue to report smooth percentage updates.
 - **Subprocess Isolation:** Device selection (e.g. `device="cuda:1"`) is isolated using `CUDA_VISIBLE_DEVICES` so child processes strictly execute on the specified physical GPU.
-- Raises `MVSepMDX23Error` if `onnxruntime-gpu` is missing when CUDA is requested, or if the subprocess exits non-zero.
+- Raises `MVSepMDX23Error` if PyTorch CUDA or `onnxruntime-gpu` (`CUDAExecutionProvider`) is missing when CUDA is requested, if `max_segment_seconds <= 0`, for unsupported `two_stems`, or if the subprocess exits non-zero.
 
 ---
 
@@ -111,7 +112,7 @@ High-performance MDX23 vocal separator runner:
 
 **Defined in:** [`src/base/model.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/base/model.py)
 
-Heavy neural models inherit `ManagedModel` to guarantee explicit, predictable memory management. Used by `BSRoFormer`, `MelRoFormer`, `PyannoteDiarizer`, `SortformerDiarizer`, `DiariZenDiarizer`, `ThreeDSpeakerDiarizer`, `ClusteringDiarizer`, and `SpeakerVerifier`.
+Heavy neural models inherit `ManagedModel` to guarantee explicit, predictable memory management. Used by `BSRoFormer`, `MelRoFormer`, `PyannoteDiarizer`, `SortformerDiarizer`, `DiariZenDiarizer`, `ThreeDSpeakerDiarizer`, `ClusteringDiarizer`, `SpeakerVerifier`, and `VibeVoicePurityVerifier`.
 
 ### Properties & Methods
 
@@ -122,7 +123,7 @@ Read-only boolean property indicating whether model weights and accelerators are
 Executes subclass `_load()` once. Repeated calls while already loaded are no-ops.
 
 #### `unload() -> None`
-Releases neural weights and executes subclass `_unload()` once. Triggers `gc.collect()` and accelerator cache clearing (e.g. `torch.cuda.empty_cache()`). Repeated calls while unloaded are no-ops.
+Releases neural weights and executes subclass `_unload()` once. Repeated calls while unloaded are no-ops. (Cache clearing such as `gc.collect()` / `torch.cuda.empty_cache()` lives in individual `_unload()` implementations that need it — e.g. `SpeakerVerifier` — not in the base class.)
 
 #### Context Manager Protocol
 ```python
@@ -153,5 +154,5 @@ print("History:", vocals.history)
 # Example B: Managed BSRoFormer with context manager
 with BSRoFormer(device="cuda:0") as bs_sep:
     bs_vocals = bs_sep.separate(input_audio)
-    bs_vocals.save_to(".data/separation/out/bs_vocals.wav")
+    bs_vocals.save_to(".data/bs_roformer/out/bs_vocals.wav")
 ```

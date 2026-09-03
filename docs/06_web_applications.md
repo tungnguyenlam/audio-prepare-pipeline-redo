@@ -128,7 +128,9 @@ Designed for high-throughput batch operations: channel ingestion, bulk separatio
 
 ---
 
-## 4. Complete Endpoint Catalog
+## 4. Key Endpoint Catalog
+
+Representative routes (see `register_api_routes` in `src/web_studio/server.py`, `register_experiment_routes` in `src/web_studio/experiment_handler.py`, and the route table in `src/web_pipeline/server.py` for the exhaustive list):
 
 | Method | Endpoint | Domain | Description |
 |---|---|---|---|
@@ -136,23 +138,50 @@ Designed for high-throughput batch operations: channel ingestion, bulk separatio
 | `GET` | `/api/telemetry` | Shared | Real-time CPU, RAM, disk, and GPU hardware metrics. |
 | `GET` | `/api/queue/shared` | Shared | Unified cross-platform task queue status. |
 | `DELETE` | `/api/queue/shared/{id}` | Shared | Cancels a queued or running task in either application. |
-| `GET` | `/api/library` | Studio | Scans filesystem audio files and returns category counts. |
+| `GET` | `/api/library` | Studio | Scans filesystem audio files (roots: `.data/`, `data/`, `temp/`, `benchmarks/`) and returns category counts. |
 | `POST` | `/api/library/load` | Studio | Registers an existing file into the active audio session. |
 | `GET` | `/api/audio/{id}/waveform` | Studio | Generates min/max envelope points for interactive waveform rendering. |
 | `GET` | `/api/audio/{id}/spectrogram` | Studio | Generates linear-frequency PNG spectrogram. |
 | `GET` | `/api/audio/{id}/segment` | Studio | Fast HTTP stream / download of bounded audio cuts. |
-| `POST` | `/api/audio/{id}/segments.zip` | Studio | ZIP export of multiple turn audio cuts. |
+| `POST` | `/api/audio/{id}/cut` | Studio | Registers a bounded cut as a new session audio. |
+| `POST` | `/api/audio/{id}/quick-save` | Studio | Persists to `.data/quick_save/` with fingerprint filename. |
+| `POST` | `/api/audio/{id}/save-to` | Studio | Copies to an explicit destination + sidecar. |
+| `POST` | `/api/audio/upload` | Studio | Uploads audio (500 MB max) into the session. |
+| `POST` | `/api/audio/youtube` | Studio | Ingests a YouTube URL via `YtCrawler`. |
+| `POST` | `/api/audio/{id}/segments.zip` | Studio | ZIP export of up to 2,000 (`MAX_SEGMENT_ZIP_ITEMS`) turn audio cuts. |
+| `POST` | `/api/separation/run` | Studio | Single-model separation job. |
+| `POST` | `/api/separation/batch-compare` | Studio | Multi-backend comparison job. |
+| `POST` | `/api/diarization/run` | Studio | Multi-engine diarization job. |
 | `GET/POST`| `/api/speaker-profiles` | Studio | Lists or enrolls global speaker profiles. |
 | `GET` | `/api/diarization/results` | Studio | Lists persisted diarization results catalog. |
 | `POST` | `/api/diarization/clean-turns` | Studio | Derives cleaned, non-overlapping turns from raw intervals. |
 | `POST` | `/api/diarization/extract-speaker` | Studio | Slices and exports speaker vocal stems. |
+| `POST` | `/api/diarization/extract-all-speakers` | Studio | Batch-extracts every speaker's stems. |
 | `POST` | `/api/diarization/evaluate` | Studio | Computes Hungarian-matched DER/JER against manual ground truth. |
 | `POST` | `/api/diarization/results/verify` | Studio | Batch direct-audio overlap verification of candidate turns. |
+| `GET` | `/api/diarization/results/{result_id}/turns/{turn_index}/audio` | Studio | Previews a single turn's audio. |
+| `GET/POST/DELETE` | `/api/diarization/annotations...` | Studio | Lists, saves (revision-checked), fetches, deletes manual annotations. |
+| `POST` | `/api/diarization/target-speaker-score` | Studio | Scores turns against an enrolled profile. |
+| `GET/POST` | `/api/purity/config`, `/api/purity/verify`, `/api/purity/export-audio` | Studio | Purity verifier config, verification, audio export. |
+| `GET/POST/DELETE` | `/api/tasks`, `/api/tasks/{id}` | Studio | Task queue listing, clearing, cancellation. |
+| `GET` | `/api/queue/shared` | Shared | Unified cross-platform task queue status. |
+| `DELETE` | `/api/queue/shared/{id}` | Shared | Cancels a queued or running task in either application. |
+| `GET` | `/api/telemetry` | Shared | Real-time CPU, RAM, disk, and GPU hardware metrics. |
 | `GET` | `/api/experiment/status` | Studio | Probes engines and GPUs for zero-contamination pipeline. |
 | `POST` | `/api/experiment/run` | Studio | Launches zero-contamination extreme-precision diarization job. |
 | `GET` | `/api/events` | Pipeline | Server-Sent Events (SSE) telemetry and job status stream. |
+| `GET/POST/DELETE` | `/api/datasets`, `/api/datasets/{name}` | Pipeline | Dataset collection CRUD. |
 | `GET` | `/api/channels` | Pipeline | Channel-level summary statistics and coverage metrics. |
 | `GET` | `/api/items` | Pipeline | Filtered dataset audio item query. |
+| `GET/PATCH/POST` | `/api/items/{id}`, `/api/items/delete`, `/api/items/bulk_tag`, `/api/items/bulk_dataset` | Pipeline | Item fetch/update/delete, bulk tagging and dataset moves. |
+| `GET` | `/api/items/{id}/stream`, `/api/items/{id}/download` | Pipeline | Audio streaming and download. |
+| `GET/POST/DELETE` | `/api/jobs`, `/api/jobs/{id}`, `/api/jobs/{id}/cancel` | Pipeline | Job listing, fetch, cancel, delete. |
+| `POST` | `/api/jobs/batch_ingest_yt`, `/api/jobs/batch_ingest_files`, `/api/jobs/batch_upload` | Pipeline | Bulk ingestion job launchers. |
 | `POST` | `/api/jobs/batch_separation` | Pipeline | Bulk stem separation job launcher. |
 | `POST` | `/api/jobs/batch_diarization` | Pipeline | Bulk multi-file diarization job launcher. |
 | `POST` | `/api/jobs/target_speaker_filter` | Pipeline | Target speaker profile scoring and cut exporter job. |
+| `POST` | `/api/jobs/batch_benchmark` | Pipeline | Benchmark-matrix generation job launcher. |
+| `POST` | `/api/queue/controls` | Pipeline | Alters workers-per-device concurrency or pauses lanes. |
+| `POST` | `/api/manifests/generate` | Pipeline | ML manifest export (JSONL/CSV). |
+| `POST/GET` | `/api/exports/create`, `/api/exports/download/{filename}` | Pipeline | ZIP bundle export creation and download. |
+| `GET` | `/api/benchmarks`, `/api/benchmarks/{id}` | Pipeline | Benchmark suite listing and fetch. |
