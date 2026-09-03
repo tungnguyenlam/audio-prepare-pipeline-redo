@@ -10623,6 +10623,7 @@ function formatTaskType(type) {
     case 'speaker_purity_verify': return 'Speaker Purity';
     case 'benchmark_mix': return 'Benchmark Mix';
     case 'batch_process': return 'Batch Processor';
+    case 'experiment_zero_contamination': return 'Zero-Contamination Diarization';
     default: return (type || 'Task').replace(/_/g, ' ').toUpperCase();
   }
 }
@@ -10878,8 +10879,10 @@ async function loadAndRenderQueueModal() {
       // Metadata summary
       const meta = item.metadata || {};
       let metaSummary = [];
-      if (item.title && item.title !== typeLabel) metaSummary.push(item.title);
-      if (meta.model) metaSummary.push(`Model: ${meta.model}`);
+      const title = item.title || meta.title;
+      if (title && title !== typeLabel) metaSummary.push(title);
+      const modelName = meta.model || meta.model_type;
+      if (modelName) metaSummary.push(`Model: ${modelName}`);
       if (meta.backend) metaSummary.push(`Backend: ${meta.backend}`);
       const itemDevice = item.device || meta.queue_device || meta.device || item.params?.device || (item.result && item.result.device);
       const itemPower = meta.power_w ?? (item.result && item.result.power_w);

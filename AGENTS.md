@@ -8,6 +8,7 @@ Instructions for coding agents working in this repository.
 - Do not commit, push, or amend unless the user asked.
 - Do not add orchestration that chains crawl → separate → diarize → mix. Callers (notebooks / web processors) compose the public APIs.
 - Keep runtime artifacts out of git. Write downloads, stems, cuts, and plots under `.data/` (gitignored). Do not commit `.wav` / `.mp3` / similar media.
+- Constantly write and maintain documentation. Proactively update or archive stale docs so that documentation accurately and truthfully reflects the current state of the pipeline, APIs, models, and interfaces. Never let documentation drift behind code changes.
 
 ## Engineering ideology
 
@@ -72,12 +73,12 @@ BenchmarkDefinition + speech Audio + music Audio
 | `src/utils/` | File-backed `Audio` plus notebook helpers (`AudioCutter`, comparers) |
 | `src/yt_crawler/` | `YtCrawler` ingest/download |
 | `src/separation/` | `BaseSeparator` and backends (`HTDemucs`, `BSRoFormer`, `MelRoFormer`, `MVSepMDX23`) |
-| `src/diarization/` | `BaseDiarizer`, schemas, Pyannote/Sortformer/Clustering/3D-Speaker backends |
+| `src/diarization/` | `BaseDiarizer`, schemas, Pyannote/Sortformer/Clustering/3D-Speaker backends, `zero_contamination.py` |
 | `src/benchmark/separation/` | `AudioMixer` and mix/benchmark schemas |
 | `src/base/model.py` | `ManagedModel` load/unload lifecycle |
 | `src/notebooks/` | Interactive callers (`pipeline1.ipynb`, mixer, benchmark) |
 | `src/web_backend/` | Shared REST backend and frontend mounts (port `8765`) |
-| `src/web_studio/` | **SonicStudio** — Interactive audio exploration API domain and frontend |
+| `src/web_studio/` | **SonicStudio** — Interactive audio exploration API domain, Experiment tab, and frontend |
 | `src/web_pipeline/` | **SonicPipeline** — Large-scale task queue, dataset management API domain and frontend |
 | `scripts/` | Runner scripts (`start_pipeline.sh`, `start_studio.sh`, `sync/` scripts) |
 | `docs/api_contract.md` | Public method behavior |
@@ -122,7 +123,7 @@ Notebooks run from `src/notebooks/` so `os.getcwd()` ends with `notebooks`. Keep
 - **`src/web_backend/`:** One aiohttp application owns both API domains and
   serves the independent frontends at `/studio/` and `/pipeline/`.
 
-- **`src/web_studio/` (SonicStudio):** Designed for single-sample inspection, visual waveform/spectrogram comparer, manual cutting, fast preview, and A/B audition. Frontend is flat `static/{index.html,app.js,style.css}`.
+- **`src/web_studio/` (SonicStudio):** Designed for single-sample inspection, visual waveform/spectrogram comparer, manual cutting, fast preview, A/B audition, and the **Experiment tab** (zero-contamination single-speaker diarization with Gemma 4 direct-audio UI and funnel visualizer). Frontend is flat `static/{index.html,app.js,style.css,experiment.js,experiment.css}`.
 - **`src/web_pipeline/` (SonicPipeline):** Designed for large-scale operations:
  - Frontend is flat `static/{index.html,app.js,style.css}`; job updates use SSE (`GET /api/events`).
  - Queues are **per GPU** (plus a `cpu`/`mps` lane): jobs for `cuda:0` and `cuda:1` never share a worker slot.

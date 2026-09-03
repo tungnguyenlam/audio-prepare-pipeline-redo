@@ -231,3 +231,82 @@ contains the most recent result for compatibility.
 
 Each target-speaker summary includes segment and duration denominators plus
 `qualified_segment_percent` and `qualified_duration_percent`.
+
+## Zero-contamination experiment results
+
+`ZeroContaminationResult` encapsulates the outputs of the extreme-precision zero-contamination diarization pipeline (`src/diarization/zero_contamination.py`).
+
+```json
+{
+  "diarization": { ... },
+  "audit_records": [
+    {
+      "turn_id": "pure_turn_0000",
+      "speaker_id": "spk_00",
+      "original_start_s": 1.25,
+      "original_end_s": 5.40,
+      "start_s": 1.60,
+      "end_s": 5.05,
+      "duration_s": 3.45,
+      "status": "passed",
+      "rejection_reason": "Pure single-speaker guaranteed",
+      "min_similarity": 0.882,
+      "gemma_decision": { "overlap": false, "reason": "Single speaker clear speech" },
+      "vibevoice_decision": null
+    }
+  ],
+  "funnel_stats": {
+    "audio_duration_s": 120.5,
+    "initial_turns_count": 28,
+    "initial_speech_duration_s": 78.4,
+    "consensus_turns_count": 22,
+    "consensus_speech_duration_s": 64.2,
+    "eroded_turns_count": 18,
+    "eroded_speech_duration_s": 49.8,
+    "homogeneity_turns_count": 16,
+    "homogeneity_speech_duration_s": 45.2,
+    "foundation_turns_count": 15,
+    "foundation_speech_duration_s": 42.6,
+    "final_pure_turns_count": 15,
+    "final_pure_speech_duration_s": 42.6,
+    "total_elapsed_s": 8.42,
+    "contamination_risk_rating": "NEGLIGIBLE (<0.1% estimated 2-speaker leakage)"
+  },
+  "stage_log": [
+    "[0.0s] Starting Zero-Contamination Diarization Pipeline",
+    "[3.2s] Stage 1: Running primary backend 'sortformer'",
+    "[5.8s] Stage 2: Running secondary backend 'diarizen' for consensus",
+    "[6.1s] Consensus retained 22 turns (64.2s)",
+    "[6.4s] Stage 3: Eroding boundaries by 0.35s",
+    "[8.4s] Pipeline complete in 8.42s! Produced 15 guaranteed pure turns (42.6s)."
+  ],
+  "config": {
+    "primary_backend": "sortformer",
+    "target_onset": 0.8,
+    "target_offset": 0.65,
+    "competitor_onset": 0.2,
+    "enable_consensus": true,
+    "secondary_backend": "diarizen",
+    "enable_collar_erosion": true,
+    "boundary_collar_s": 0.35,
+    "min_turn_duration_s": 0.8,
+    "transition_exclusion_s": 0.5,
+    "enable_homogeneity": true,
+    "min_homogeneity_similarity": 0.75,
+    "enable_gemma": false,
+    "gemma_endpoint": "http://localhost:8888/v1/chat/completions",
+    "enable_vibevoice": false,
+    "vibevoice_device": "cuda:1",
+    "vibevoice_endpoint": null,
+    "device": "cuda:0"
+  }
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `diarization` | `DiarizationResult` | Canonical schema-2.0 diarization containing only verified single-speaker turns. Compatible with all Studio preview, extraction, and RTTM export routines. |
+| `audit_records` | `list[TurnAuditRecord]` | Per-turn traceability records tracking start/end adjustments, stage of survival or rejection, min WeSpeaker cosine similarity, and foundation model decisions. |
+| `funnel_stats` | `dict` | Step-by-step attrition metrics quantifying speech duration and turn count reductions at each filter stage. |
+| `stage_log` | `list[str]` | Monotonic timeline of stage completions with elapsed timings. |
+| `config` | `dict` | Serialized `ZeroContaminationConfig` capturing all hyperparameters used during inference. |

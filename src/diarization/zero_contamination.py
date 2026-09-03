@@ -76,16 +76,19 @@ class ZeroContaminationConfig:
     homogeneity_hop_s: float = DEFAULT_HOMOGENEITY_HOP_S
     min_homogeneity_similarity: float = DEFAULT_MIN_HOMOGENEITY_SIMILARITY
 
-    # Stage 5a: In-Loop Gemma 4 Overlap Verifier
+    # Stage 5a: In-Loop Gemma 4 Overlap Verifier (Remote Host / GPU)
     enable_gemma: bool = False
     gemma_endpoint: str | None = None
     gemma_model: str | None = None
     gemma_prompt: str | None = None
-    gemma_timeout_s: float = 60.0
+    gemma_api_key: str | None = None
+    gemma_timeout_s: float = 120.0
 
-    # Stage 5b: In-Loop VibeVoice-ASR Speaker Count Verifier
+    # Stage 5b: In-Loop VibeVoice-ASR Speaker Count Verifier (Dedicated GPU or Remote Host)
     enable_vibevoice: bool = False
     vibevoice_model_id: str = "Dubedo/VibeVoice-ASR-HF-INT8"
+    vibevoice_device: str | None = None  # e.g. "cuda:1" to run on a dedicated secondary GPU
+    vibevoice_endpoint: str | None = None  # optional remote HTTP endpoint if hosted on another server
     max_secondary_speech_s: float = 0.0
 
     # General compute settings
@@ -416,7 +419,7 @@ def filter_by_foundation_models(
     if waveform.ndim > 1:
         waveform = waveform.mean(axis=1)
 
-    # 1. Initialize Gemma 4 if requested
+    # 1. Initialize Gemma 4 if requested (Local or Remote)
     gemma_verifier = None
     if config.enable_gemma:
         from src.diarization.OverlapVerifier import (
@@ -428,19 +431,21 @@ def filter_by_foundation_models(
             endpoint=config.gemma_endpoint,
             model=config.gemma_model or DEFAULT_GEMMA4_MODEL_ID,
             prompt=config.gemma_prompt or "Does this audio contain overlapping speech from two or more speakers at the same time?",
+            api_key=config.gemma_api_key,
             timeout_s=config.gemma_timeout_s,
         )
 
-    # 2. Initialize VibeVoice if requested
+    # 2. Initialize VibeVoice if requested (Dedicated Secondary GPU or Remote Host)
     vibevoice_verifier = None
-    if config.enable_vibevoice:
+    if config.enable_vibevoice and not config.vibevoice_endpoint:
         from src.diarization.VibeVoicePurityWorkerVerifier import (
             VibeVoicePurityWorkerVerifier,
         )
 
+        vv_device = config.vibevoice_device if (config.vibevoice_device and config.vibevoice_device != "same") else config.device
         vibevoice_verifier = VibeVoicePurityWorkerVerifier(
             model_id=config.vibevoice_model_id,
-            device=config.device,
+            device=vv_device,
             min_secondary_speech_s=config.max_secondary_speech_s,
         )
         vibevoice_verifier.load()
@@ -478,20 +483,53 @@ def filter_by_foundation_models(
                         logger.warning("Gemma 4 check failed on turn %s: %s", idx, exc)
                         audit_meta["gemma_error"] = str(exc)
 
-                # VibeVoice-ASR multi-speaker check
-                if is_pure and vibevoice_verifier is not None:
-                    try:
-                        vv_res = vibevoice_verifier.verify(clip_audio)
-                        audit_meta["vibevoice"] = vv_res.to_dict()
-                        if vv_res.num_speakers > 1 or vv_res.secondary_speech_s > config.max_secondary_speech_s:
-                            is_pure = False
-                            rejection_reason = (
-                                f"VibeVoice detected {vv_res.num_speakers} speakers "
-                                f"({vv_res.secondary_speech_s:.2f}s secondary speech)"
+                # VibeVoice-ASR multi-speaker check (Local Worker or Remote Endpoint)
+                if is_pure and config.enable_vibevoice:
+                    if config.vibevoice_endpoint:
+                        try:
+                            import base64
+                            import json
+                            import urllib.request
+
+                            with open(clip_path, "rb") as f:
+                                b64 = base64.b64encode(f.read()).decode("utf-8")
+                            req_data = json.dumps({
+                                "audio_base64": b64,
+                                "model_id": config.vibevoice_model_id,
+                                "min_secondary_speech_s": config.max_secondary_speech_s,
+                            }).encode("utf-8")
+                            req = urllib.request.Request(
+                                config.vibevoice_endpoint,
+                                data=req_data,
+                                headers={"Content-Type": "application/json"},
                             )
-                    except Exception as exc:
-                        logger.warning("VibeVoice check failed on turn %s: %s", idx, exc)
-                        audit_meta["vibevoice_error"] = str(exc)
+                            with urllib.request.urlopen(req, timeout=120) as resp:
+                                resp_data = json.loads(resp.read().decode("utf-8"))
+                                num_spk = resp_data.get("num_speakers", 1)
+                                sec_dur = resp_data.get("secondary_speech_s", 0.0)
+                                audit_meta["vibevoice"] = resp_data
+                                if num_spk > 1 or sec_dur > config.max_secondary_speech_s:
+                                    is_pure = False
+                                    rejection_reason = (
+                                        f"Remote VibeVoice detected {num_spk} speakers "
+                                        f"({sec_dur:.2f}s secondary speech)"
+                                    )
+                        except Exception as exc:
+                            logger.warning("Remote VibeVoice check failed on turn %s: %s", idx, exc)
+                            audit_meta["vibevoice_error"] = str(exc)
+                    elif vibevoice_verifier is not None:
+                        try:
+                            vv_res = vibevoice_verifier.verify(clip_audio)
+                            audit_meta["vibevoice"] = vv_res.to_dict()
+                            if vv_res.num_speakers > 1 or vv_res.secondary_speech_s > config.max_secondary_speech_s:
+                                is_pure = False
+                                rejection_reason = (
+                                    f"VibeVoice detected {vv_res.num_speakers} speakers "
+                                    f"({vv_res.secondary_speech_s:.2f}s secondary speech)"
+                                )
+                        except Exception as exc:
+                            logger.warning("VibeVoice check failed on turn %s: %s", idx, exc)
+                            audit_meta["vibevoice_error"] = str(exc)
 
                 if is_pure:
                     passed.append(turn)

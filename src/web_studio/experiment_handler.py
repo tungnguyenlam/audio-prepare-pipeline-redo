@@ -225,18 +225,39 @@ class ExperimentRouteHandler:
             gemma_endpoint=body.get("gemma_endpoint") or DEFAULT_UNSLOTH_ENDPOINT,
             gemma_model=body.get("gemma_model") or DEFAULT_GEMMA4_MODEL_ID,
             gemma_prompt=body.get("gemma_prompt") or None,
+            gemma_api_key=body.get("gemma_api_key") or None,
+            gemma_timeout_s=float(body.get("gemma_timeout_s", 120.0)),
             enable_vibevoice=bool(body.get("enable_vibevoice", False)),
             vibevoice_model_id=body.get("vibevoice_model_id", "Dubedo/VibeVoice-ASR-HF-INT8"),
+            vibevoice_device=body.get("vibevoice_device") or None,
+            vibevoice_endpoint=body.get("vibevoice_endpoint") or None,
+            max_secondary_speech_s=float(body.get("max_secondary_speech_s", 0.0)),
             device=device,
             token=token,
         )
 
+        models_list = [config.primary_backend]
+        if config.enable_consensus:
+            models_list.append(f"{config.secondary_backend} (∩)")
+        if config.enable_homogeneity:
+            models_list.append("WeSpeaker")
+        if config.enable_gemma:
+            models_list.append("Gemma-4")
+        if config.enable_vibevoice:
+            models_list.append("VibeVoice")
+        model_display = " + ".join(models_list)
+
         task_id = self.task_manager.create_task(
             "experiment_zero_contamination",
             {
+                "title": f"Zero-Contamination: {audio.title or audio.source_id}",
+                "model": model_display,
+                "model_type": model_display,
+                "backend": "zero_contamination",
                 "audio_id": audio_id,
                 "audio_title": audio.title or audio.source_id,
                 "device": device,
+                "queue_device": device,
                 "config": config.to_dict(),
             },
         )

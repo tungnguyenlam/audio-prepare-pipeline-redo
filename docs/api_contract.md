@@ -920,6 +920,27 @@ model or cosine threshold. VibeVoice defaults include `models` (`id` / `label`
 catalog for the Studio checkpoint select). `VIBEVOICE_MODEL` is an optional
 default only; the Speaker Purity UI selects full BF16, INT8, or NF4 per run.
 
+### `run_zero_contamination_pipeline(audio: Audio, config: ZeroContaminationConfig, progress_callback=None) -> ZeroContaminationResult`
+
+**Defined in:** `src/diarization/zero_contamination.py`
+
+High-precision speaker diarization pipeline engineered specifically for TTS training data harvesting, where missed speech (false negatives) carries zero penalty and multi-speaker contamination / boundary bleed is strictly unacceptable.
+
+#### Pipeline stages:
+1. **Asymmetric Detection & Competitor Tripwires:** Runs the primary model (`Sortformer`, `DiariZen`, or `Pyannote 3.1`) with a strict target onset threshold (`target_onset`, default 0.80) and a paranoid competitor tripwire threshold (`competitor_onset`, default 0.20) that vetoes frames if any secondary speaker is even faintly detected.
+2. **Dual-Engine Mutual Consensus:** When `enable_consensus=True`, runs an orthogonal secondary engine (e.g. DiariZen or Pyannote 3.1) and maps speakers using the Hungarian bipartite matching algorithm (`_maximum_weight_assignment`). An interval is kept **if and only if both engines unanimously agree** on the speaker identity and neither model detects overlapping speech.
+3. **Aggressive Collar Erosion & Gap Guard:** Shaves `boundary_collar_s` (default 0.35s) inward from both the start and end of every turn to eliminate boundary co-articulation and handoff bleed. Excavates `transition_exclusion_s` (default 0.50s) buffers when speakers alternate rapidly. Never merges across pauses (`allow_gap_merge=False`). Discards turns shorter than `min_turn_duration_s` (default 0.80s).
+4. **Dense Sliding WeSpeaker Homogeneity Filter:** When `enable_homogeneity=True`, slides short `homogeneity_window_s` (1.0s, hop 0.25s) across candidate turns using `pyannote/wespeaker-voxceleb-resnet34-LM`. Drops any turn where the cosine similarity between sub-windows and the turn centroid dips below `min_homogeneity_similarity` (default 0.75).
+5. **In-Loop Foundation Model Verification (Remote Host or Dedicated Secondary GPU):**
+   - **Microsoft VibeVoice-ASR:** When `enable_vibevoice=True`, analyzes candidate audio with autoregressive speaker tokens. Drops turn immediately if secondary speech duration exceeds `max_secondary_speech_s` (default 0.0s). Can run on a dedicated device (`vibevoice_device`, e.g. `cuda:1` to prevent OOM with primary diarizer on `cuda:0`) or call a remote HTTP server via `vibevoice_endpoint`.
+   - **Gemma 4 Direct Audio:** When `enable_gemma=True`, sends direct audio to Gemma 4 via Unsloth, vLLM, or OpenAI-compatible multimodal endpoint (`gemma_endpoint`, `gemma_api_key`, `gemma_timeout_s`). Drops turn if `overlap == True`.
+
+#### Reusable modular functions:
+- `compute_consensus_turns(primary_turns, secondary_turns, audio_duration_s) -> tuple[list[SpeakerTurn], dict[str, str]]`
+- `erode_turn_boundaries(turns, collar_s=0.35, min_duration_s=0.80, transition_exclusion_s=0.50) -> list[SpeakerTurn]`
+- `filter_by_embedding_homogeneity(audio, turns, window_s=1.0, hop_s=0.25, min_similarity=0.75, device="auto", token=None) -> tuple[list[SpeakerTurn], list[tuple]]`
+- `filter_by_foundation_models(audio, turns, config, progress_callback=None) -> tuple[list[SpeakerTurn], list[tuple]]`
+
 ## 6. Benchmark mixing API
 
 ### `AudioMixer.mix(...) -> AudioMixResult`
@@ -1154,6 +1175,13 @@ The repository provides two specialized web platforms:
   result re-registers its source audio when the file is still present.
   Browser storage contains viewer-only speaker labels/colors and verifier
   preferences, not the authoritative turns or source identity.
+- **Experiment tab (Zero-Contamination Diarization):**
+  Mounted at `/studio/#tab-experiment` with dedicated controller `static/experiment.js` and styling `static/experiment.css`.
+  - `GET /api/experiment/status`: Reports available backends, compute devices, and default configuration parameters.
+  - `POST /api/experiment/run`: Enqueues an asynchronous `experiment_zero_contamination` task executing the zero-contamination pipeline. Returns `task_id` with 202 Accepted. Updates report real-time SSE progress across all stages. Saves the durable `DiarizationResult` to `.data/diarization/results/`.
+  - `POST /api/experiment/gemma/probe`: Pings the local or remote Unsloth/Gemma 4 endpoint and returns `{ready: bool, message: str, models: list}`.
+  - `POST /api/experiment/gemma/test`: Auditions Gemma 4 direct-audio overlap classification live on the active track or workspace selection. Returns `{overlap: bool, reason: str, latency_s: float, tested_duration_s: float}`.
+  - UI visualizes the pipeline's attrition funnel (retained speech duration and turn counts through Primary, Consensus, Collar Erosion, WeSpeaker Homogeneity, and Foundation Model gates) and renders an interactive table of surviving guaranteed pure turns with per-turn audio previews and NIST RTTM export.
 
 ### `src/web_pipeline/` (SonicPipeline API domain and frontend)
 - **Role:** Large-scale channel-oriented batch engine for high-throughput
