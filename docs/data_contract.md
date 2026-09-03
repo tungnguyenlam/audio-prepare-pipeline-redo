@@ -74,6 +74,9 @@ model repositories, and interrupted queue snapshots are excluded by
 `scripts/sync/data_excludes.txt`; they are rebuilt on each server. Remote hosts
 and checkout paths can be overridden with `SYNC_SERVER_HOST`,
 `SYNC_SERVER_REPO`, `SYNC_ANHNCT_HOST`, and `SYNC_ANHNCT_REPO`.
+Data sync scripts forward CLI arguments (such as `--delete`, `--dry-run`, or
+`-n`) directly to `rsync` and honor `SYNC_DELETE=1` (or `SYNC_DELETE=true`) to
+synchronize deletions safely without modifying excluded caches.
 
 Clean turns are a derived output policy, not a second diarization result.
 `clean_speaker_turns()` returns new `SpeakerTurn` values and never mutates the
