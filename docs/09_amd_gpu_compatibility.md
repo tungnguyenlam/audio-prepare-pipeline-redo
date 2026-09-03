@@ -101,9 +101,17 @@ These operations do not have native ROCm GPU acceleration in the standard scient
 
 ---
 
-## 5. RDNA 4 (`gfx1200` / RX 9060 XT) Setup Prerequisites
+## 5. Automated Hardware Detection & Setup (`start_web.sh`)
 
-To run PyTorch models on the Radeon RX 9060 XT under Linux:
+Running `./scripts/start_web.sh` (or `start_studio.sh` / `start_pipeline.sh`) automatically detects whether the host is equipped with an AMD GPU (ROCm) or NVIDIA GPU (CUDA), sets the required environment flags, and reconciles the virtual environment's PyTorch stack without manual intervention:
+
+- **Automatic AMD ROCm Bootstrap:** Detects AMD GPU hardware, ensures ROCm tools are in `PATH`, sets `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1`, verifies PyTorch HIP support, and installs the modular ROCm wheels if needed.
+- **Automatic NVIDIA CUDA Bootstrap:** Detects NVIDIA GPU hardware and ensures CUDA-enabled PyTorch wheels are in place.
+- **Hardware Telemetry Integration:** Automatically polls `rocm-smi` (for AMD) or `nvidia-smi` (for NVIDIA) to display live GPU temperature, utilization, VRAM usage, and power draw in the SonicStudio and SonicPipeline web dashboards.
+
+### Manual RDNA 4 (`gfx1200` / RX 9060 XT) Setup Reference
+
+If setting up a manual standalone virtual environment outside the launcher scripts:
 
 1. **Use AMD ROCm Modular Wheels:**
    Standard PyPI `torch` defaults to NVIDIA CUDA. For ROCm with `gfx1200` support, install from AMD's official wheel repository:

@@ -11518,7 +11518,16 @@ function renderSidebarGpuCards(devices, gpuInfo) {
   const container = document.getElementById('sidebar-gpu-cards-list');
   if (!container) return;
 
-  const currentSelected = state.selectedGpu || localStorage.getItem('sonic_selected_gpu') || (devices && devices[0] ? devices[0].id : 'cuda:0');
+  let currentSelected = state.selectedGpu || localStorage.getItem('sonic_selected_gpu');
+  if (devices && devices.length > 0) {
+    if (!currentSelected || !devices.some(d => d.id === currentSelected)) {
+      currentSelected = devices[0].id;
+    }
+  } else if (gpuInfo && gpuInfo.type === 'mps') {
+    currentSelected = 'mps';
+  } else {
+    currentSelected = 'cpu';
+  }
   state.selectedGpu = currentSelected;
 
   if (!devices || devices.length === 0) {

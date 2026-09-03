@@ -24,7 +24,6 @@ dependencies = [
     "soundfile>=0.14.0",
     "torch>=2.13.0",
     "torchaudio>=2.11.0",
-    "torchcodec>=0.15.0",
     "transformers>=4.40.0",
     "whisper-timestamped>=1.15.0",
     "yt-dlp>=2026.8.4.234419.dev0",

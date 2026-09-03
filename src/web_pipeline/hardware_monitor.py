@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -98,6 +100,67 @@ class HardwareMonitor:
             return {}
 
     @staticmethod
+    def _query_all_rocm_gpus() -> Dict[int, Dict[str, Any]]:
+        """Read host-level GPU load, temp, power, and VRAM counters for AMD ROCm devices."""
+        rocm_smi = shutil.which("rocm-smi") or ("/opt/rocm/bin/rocm-smi" if os.path.exists("/opt/rocm/bin/rocm-smi") else None)
+        if not rocm_smi:
+            return {}
+
+        try:
+            result = subprocess.run(
+                [rocm_smi, "-u", "-t", "-p", "-P", "--showmeminfo", "vram", "--json"],
+                capture_output=True,
+                text=True,
+                timeout=2.0,
+            )
+            if result.returncode != 0 or not result.stdout.strip():
+                return {}
+
+            stdout = result.stdout.strip()
+            idx = stdout.find("{")
+            if idx == -1:
+                return {}
+            data = json.loads(stdout[idx:])
+            smi_data: Dict[int, Dict[str, Any]] = {}
+            for card_key, info in data.items():
+                m = re.search(r"\d+", card_key)
+                card_idx = int(m.group()) if m else 0
+
+                def parse_num(v: Any) -> Optional[float]:
+                    try:
+                        return float(v)
+                    except (TypeError, ValueError):
+                        return None
+
+                temp = parse_num(info.get("Temperature (Sensor edge) (C)") or info.get("Temperature (Sensor junction) (C)"))
+                power_w = parse_num(info.get("Average Graphics Package Power (W)"))
+                load_pct = parse_num(info.get("GPU use (%)"))
+                vram_total_b = parse_num(info.get("VRAM Total Memory (B)"))
+                vram_used_b = parse_num(info.get("VRAM Total Used Memory (B)"))
+
+                total_mb = round(vram_total_b / (1024 * 1024), 1) if vram_total_b else None
+                used_mb = round(vram_used_b / (1024 * 1024), 1) if vram_used_b else None
+                free_mb = round(total_mb - used_mb, 1) if (total_mb is not None and used_mb is not None) else None
+
+                smi_data[card_idx] = {
+                    "physical_index": card_idx,
+                    "id": f"cuda:{card_idx}",
+                    "name": "AMD ROCm GPU",
+                    "utilization_percent": load_pct,
+                    "used_vram_mb": used_mb,
+                    "total_vram_mb": total_mb,
+                    "free_vram_mb": free_mb,
+                    "temperature_c": temp,
+                    "power_w": power_w,
+                    "power_draw_w": power_w,
+                    "power_limit_w": None,
+                    "power_percent": None,
+                }
+            return smi_data
+        except Exception:
+            return {}
+
+    @staticmethod
     def _normalize_gpu_uuid(value: Any) -> str:
         """Normalize PyTorch and nvidia-smi UUIDs for stable device matching."""
         normalized = str(value or "").strip().lower()
@@ -106,12 +169,12 @@ class HardwareMonitor:
     @classmethod
     def _query_nvidia_smi(cls, device_index: int) -> Dict[str, Any]:
         """Read host-level GPU load and VRAM counters for one CUDA device."""
-        smi_all = cls._query_all_nvidia_gpus()
+        smi_all = cls._query_all_nvidia_gpus() or cls._query_all_rocm_gpus()
         return smi_all.get(device_index, {})
 
     def get_gpu_info(self) -> Dict[str, Any]:
-        """Query GPU telemetry via PyTorch and nvidia-smi if present."""
-        smi_devices = self._query_all_nvidia_gpus()
+        """Query GPU telemetry via PyTorch and nvidia-smi / rocm-smi if present."""
+        smi_devices = self._query_all_nvidia_gpus() or self._query_all_rocm_gpus()
         smi_devices_by_uuid = {
             self._normalize_gpu_uuid(device.get("uuid")): device
             for device in smi_devices.values()
@@ -126,9 +189,9 @@ class HardwareMonitor:
                 props = torch.cuda.get_device_properties(i)
                 torch_uuid = self._normalize_gpu_uuid(getattr(props, "uuid", None))
                 smi_info = (
-                    smi_devices_by_uuid.get(torch_uuid, {})
-                    if torch_uuid
-                    else smi_devices.get(i, {})
+                    smi_devices_by_uuid.get(torch_uuid)
+                    or smi_devices.get(i)
+                    or {}
                 )
 
                 total_vram_mb = round(

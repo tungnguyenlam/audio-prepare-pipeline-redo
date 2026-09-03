@@ -3450,7 +3450,7 @@ async def handle_run_separation(request: web.Request) -> web.Response:
     )
 
     async def run_sep():
-        target_device = get_default_device() if device == "auto" else device
+        target_device = normalize_queue_device(device)
         power_w = _get_device_power_w(target_device)
         power_msg = f" (⚡ {power_w}W)" if power_w is not None else ""
         task_manager.update_task(
@@ -3681,7 +3681,7 @@ async def handle_run_diarization(request: web.Request) -> web.Response:
     )
 
     async def run_diar():
-        target_device = get_default_device() if device == "auto" else device
+        target_device = normalize_queue_device(device)
         power_w = _get_device_power_w(target_device)
         power_msg = f" (⚡ {power_w}W)" if power_w is not None else ""
         task_manager.update_task(
@@ -4397,7 +4397,7 @@ async def handle_target_speaker_score(request: web.Request) -> web.Response:
     )
 
     async def run_score():
-        target_device = get_default_device() if device == "auto" else device
+        target_device = normalize_queue_device(device)
         task_manager.update_task(
             task_id,
             status="running",
@@ -4851,7 +4851,7 @@ async def handle_verify_diarization_batch(request: web.Request) -> web.Response:
         return web.json_response({"error": "No turns match the selected filters"}, status=400)
 
     device = str(data.get("device", "auto"))
-    target_device = get_default_device() if device == "auto" else device
+    target_device = normalize_queue_device(device)
     token = data.get("token") or os.getenv("HF_TOKEN")
     overlap_backend = str(overlap_config["backend"])
     task_id = task_manager.create_task(
@@ -5307,7 +5307,7 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
     )
 
     async def run_verify():
-        target_device = get_default_device() if device == "auto" else device
+        target_device = normalize_queue_device(device)
         loop = asyncio.get_running_loop()
         backend = str(overlap_config["backend"])
         use_vibevoice = backend == "vibevoice"
@@ -6050,7 +6050,7 @@ async def handle_batch_separation_compare(request: web.Request) -> web.Response:
 
     async def run_batch():
         results = []
-        target_device = get_default_device() if device == "auto" else device
+        target_device = normalize_queue_device(device)
         total = len(models)
         
         for idx, m_spec in enumerate(models, start=1):
