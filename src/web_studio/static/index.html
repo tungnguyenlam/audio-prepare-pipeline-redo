@@ -2106,20 +2106,46 @@
                   </div>
                 </div>
                 <div class="form-group mb-2">
-                  <div class="label-with-tool">
+                  <div class="exp-param-header">
                     <label class="form-label" for="exp-target-onset">Target Speaker Onset Threshold</label>
-                    <span class="badge badge-sm badge-accent" id="exp-target-onset-val">80%</span>
+                    <div class="exp-param-ctrl">
+                      <div class="exp-num-input-wrap" title="Type exact onset threshold (0.01 – 1.00 or %)">
+                        <input type="number" id="exp-target-onset-num" class="exp-num-input" min="0.01" max="1.00" step="0.005" value="0.80">
+                        <span class="exp-num-unit">prob</span>
+                      </div>
+                      <span class="badge badge-sm badge-accent" id="exp-target-onset-val">80%</span>
+                    </div>
                   </div>
-                  <input type="range" id="exp-target-onset" class="slider-input" min="0.50" max="0.95" step="0.01" value="0.80">
+                  <input type="range" id="exp-target-onset" class="slider-input exp-slider" min="0.05" max="0.99" step="0.005" value="0.80">
                   <span class="text-xs text-muted">Strict confidence required before classifying primary speaker.</span>
                 </div>
-                <div class="form-group mb-0">
-                  <div class="label-with-tool">
-                    <label class="form-label" for="exp-competitor-onset">Competitor Speaker Tripwire Veto</label>
-                    <span class="badge badge-sm badge-accent" id="exp-competitor-onset-val">20%</span>
+                <div class="form-group mb-2">
+                  <div class="exp-param-header">
+                    <label class="form-label" for="exp-target-offset">Target Speaker Offset Threshold</label>
+                    <div class="exp-param-ctrl">
+                      <div class="exp-num-input-wrap" title="Type exact offset threshold (0.01 – 1.00 or %)">
+                        <input type="number" id="exp-target-offset-num" class="exp-num-input" min="0.01" max="1.00" step="0.005" value="0.65">
+                        <span class="exp-num-unit">prob</span>
+                      </div>
+                      <span class="badge badge-sm badge-accent" id="exp-target-offset-val">65%</span>
+                    </div>
                   </div>
-                  <input type="range" id="exp-competitor-onset" class="slider-input" min="0.05" max="0.50" step="0.01" value="0.20">
-                  <span class="text-xs text-muted">Paranoid tripwire: vetoes frames if any other voice reaches ≥20%.</span>
+                  <input type="range" id="exp-target-offset" class="slider-input exp-slider" min="0.05" max="0.95" step="0.005" value="0.65">
+                  <span class="text-xs text-muted">Hysteresis turn release threshold; lower than onset to prevent turn fragmentation.</span>
+                </div>
+                <div class="form-group mb-0">
+                  <div class="exp-param-header">
+                    <label class="form-label" for="exp-competitor-onset">Competitor Speaker Tripwire Veto</label>
+                    <div class="exp-param-ctrl">
+                      <div class="exp-num-input-wrap" title="Type exact tripwire threshold (0.01 – 1.00 or %)">
+                        <input type="number" id="exp-competitor-onset-num" class="exp-num-input" min="0.01" max="1.00" step="0.005" value="0.20">
+                        <span class="exp-num-unit">prob</span>
+                      </div>
+                      <span class="badge badge-sm badge-accent" id="exp-competitor-onset-val">20%</span>
+                    </div>
+                  </div>
+                  <input type="range" id="exp-competitor-onset" class="slider-input exp-slider" min="0.01" max="0.60" step="0.005" value="0.20">
+                  <span class="text-xs text-muted">Paranoid tripwire: vetoes frames if any other voice reaches threshold.</span>
                 </div>
               </div>
 
@@ -2165,19 +2191,46 @@
                 <div id="exp-collar-fields">
                   <div class="form-row">
                     <div class="form-group col-half mb-2">
-                      <div class="label-with-tool">
+                      <div class="exp-param-header">
                         <label class="form-label" for="exp-boundary-collar">Base Collar Inward Shave</label>
-                        <span class="badge badge-sm badge-accent" id="exp-boundary-collar-val">0.35s</span>
+                        <div class="exp-param-ctrl">
+                          <div class="exp-num-input-wrap" title="Type exact collar shave (seconds)">
+                            <input type="number" id="exp-boundary-collar-num" class="exp-num-input" min="0.00" max="5.00" step="0.01" value="0.35">
+                            <span class="exp-num-unit">s</span>
+                          </div>
+                          <span class="badge badge-sm badge-accent" id="exp-boundary-collar-val">0.35s</span>
+                        </div>
                       </div>
-                      <input type="range" id="exp-boundary-collar" class="slider-input" min="0.05" max="0.80" step="0.05" value="0.35">
+                      <input type="range" id="exp-boundary-collar" class="slider-input exp-slider" min="0.00" max="1.20" step="0.01" value="0.35">
                     </div>
                     <div class="form-group col-half mb-2">
-                      <div class="label-with-tool">
+                      <div class="exp-param-header">
                         <label class="form-label" for="exp-min-duration">Min Surviving Turn</label>
-                        <span class="badge badge-sm badge-ghost" id="exp-min-duration-val">0.80s</span>
+                        <div class="exp-param-ctrl">
+                          <div class="exp-num-input-wrap" title="Type min duration (seconds)">
+                            <input type="number" id="exp-min-duration-num" class="exp-num-input" min="0.05" max="10.00" step="0.01" value="0.80">
+                            <span class="exp-num-unit">s</span>
+                          </div>
+                          <span class="badge badge-sm badge-ghost" id="exp-min-duration-val">0.80s</span>
+                        </div>
                       </div>
-                      <input type="range" id="exp-min-duration" class="slider-input" min="0.40" max="2.50" step="0.10" value="0.80">
+                      <input type="range" id="exp-min-duration" class="slider-input exp-slider" min="0.10" max="3.00" step="0.02" value="0.80">
                     </div>
+                  </div>
+
+                  <div class="form-group mb-2">
+                    <div class="exp-param-header">
+                      <label class="form-label" for="exp-transition-exclusion">Transition Exclusion Gap</label>
+                      <div class="exp-param-ctrl">
+                        <div class="exp-num-input-wrap" title="Type transition exclusion gap (seconds)">
+                          <input type="number" id="exp-transition-exclusion-num" class="exp-num-input" min="0.00" max="5.00" step="0.01" value="0.50">
+                          <span class="exp-num-unit">s</span>
+                        </div>
+                        <span class="badge badge-sm badge-ghost" id="exp-transition-exclusion-val">0.50s</span>
+                      </div>
+                    </div>
+                    <input type="range" id="exp-transition-exclusion" class="slider-input exp-slider" min="0.00" max="2.00" step="0.02" value="0.50">
+                    <span class="text-xs text-muted">Extra erosion applied between consecutive speaker alternations smaller than this gap.</span>
                   </div>
 
                   <!-- Option A: Context-Aware Handoff Guard -->
@@ -2195,18 +2248,30 @@
                     <div id="exp-context-collar-fields">
                       <div class="form-row">
                         <div class="form-group col-half mb-0">
-                          <div class="label-with-tool">
+                          <div class="exp-param-header">
                             <label class="form-label" for="exp-handoff-risk">Handoff Risk Distance</label>
-                            <span class="badge badge-sm badge-accent" id="exp-handoff-risk-val">0.80s</span>
+                            <div class="exp-param-ctrl">
+                              <div class="exp-num-input-wrap" title="Type handoff risk distance (seconds)">
+                                <input type="number" id="exp-handoff-risk-num" class="exp-num-input" min="0.05" max="5.00" step="0.01" value="0.80">
+                                <span class="exp-num-unit">s</span>
+                              </div>
+                              <span class="badge badge-sm badge-accent" id="exp-handoff-risk-val">0.80s</span>
+                            </div>
                           </div>
-                          <input type="range" id="exp-handoff-risk" class="slider-input" min="0.20" max="2.00" step="0.10" value="0.80">
+                          <input type="range" id="exp-handoff-risk" class="slider-input exp-slider" min="0.05" max="2.50" step="0.02" value="0.80">
                         </div>
                         <div class="form-group col-half mb-0">
-                          <div class="label-with-tool">
+                          <div class="exp-param-header">
                             <label class="form-label" for="exp-silence-tail">Silence Tail Release</label>
-                            <span class="badge badge-sm badge-ghost" id="exp-silence-tail-val">+0.15s</span>
+                            <div class="exp-param-ctrl">
+                              <div class="exp-num-input-wrap" title="Type tail release buffer (seconds)">
+                                <input type="number" id="exp-silence-tail-num" class="exp-num-input" min="0.00" max="2.00" step="0.01" value="0.15">
+                                <span class="exp-num-unit">s</span>
+                              </div>
+                              <span class="badge badge-sm badge-ghost" id="exp-silence-tail-val">+0.15s</span>
+                            </div>
                           </div>
-                          <input type="range" id="exp-silence-tail" class="slider-input" min="0.00" max="0.50" step="0.05" value="0.15">
+                          <input type="range" id="exp-silence-tail" class="slider-input exp-slider" min="0.00" max="0.60" step="0.01" value="0.15">
                         </div>
                       </div>
                     </div>
@@ -2227,18 +2292,30 @@
                     <div id="exp-energy-snapping-fields" style="display: none;">
                       <div class="form-row">
                         <div class="form-group col-half mb-0">
-                          <div class="label-with-tool">
+                          <div class="exp-param-header">
                             <label class="form-label" for="exp-energy-window">Search Window</label>
-                            <span class="badge badge-sm badge-accent" id="exp-energy-window-val">±150ms</span>
+                            <div class="exp-param-ctrl">
+                              <div class="exp-num-input-wrap" title="Type search window (seconds or ms)">
+                                <input type="number" id="exp-energy-window-num" class="exp-num-input" min="0.005" max="1.00" step="0.005" value="0.15">
+                                <span class="exp-num-unit">s</span>
+                              </div>
+                              <span class="badge badge-sm badge-accent" id="exp-energy-window-val">±150ms</span>
+                            </div>
                           </div>
-                          <input type="range" id="exp-energy-window" class="slider-input" min="0.05" max="0.35" step="0.05" value="0.15">
+                          <input type="range" id="exp-energy-window" class="slider-input exp-slider" min="0.01" max="0.50" step="0.005" value="0.15">
                         </div>
                         <div class="form-group col-half mb-0">
-                          <div class="label-with-tool">
+                          <div class="exp-param-header">
                             <label class="form-label" for="exp-energy-floor">Silence Floor</label>
-                            <span class="badge badge-sm badge-ghost" id="exp-energy-floor-val">-30 dB</span>
+                            <div class="exp-param-ctrl">
+                              <div class="exp-num-input-wrap" title="Type energy floor (dB)">
+                                <input type="number" id="exp-energy-floor-num" class="exp-num-input" min="-100" max="0" step="0.5" value="-30">
+                                <span class="exp-num-unit">dB</span>
+                              </div>
+                              <span class="badge badge-sm badge-ghost" id="exp-energy-floor-val">-30 dB</span>
+                            </div>
                           </div>
-                          <input type="range" id="exp-energy-floor" class="slider-input" min="-50" max="-15" step="5" value="-30">
+                          <input type="range" id="exp-energy-floor" class="slider-input exp-slider" min="-70" max="-10" step="0.5" value="-30">
                         </div>
                       </div>
                     </div>
@@ -2298,19 +2375,46 @@
                 </div>
                 <div id="exp-homo-fields" style="display: none;">
                   <div class="form-group mb-2">
-                    <div class="label-with-tool">
+                    <div class="exp-param-header">
                       <label class="form-label" for="exp-homo-sim">Min Cosine Floor</label>
-                      <span class="badge badge-sm badge-accent" id="exp-homo-sim-val">0.75</span>
+                      <div class="exp-param-ctrl">
+                        <div class="exp-num-input-wrap" title="Type min cosine floor similarity (0.00 – 1.00)">
+                          <input type="number" id="exp-homo-sim-num" class="exp-num-input" min="0.00" max="1.00" step="0.005" value="0.75">
+                          <span class="exp-num-unit">cos</span>
+                        </div>
+                        <span class="badge badge-sm badge-accent" id="exp-homo-sim-val">0.75</span>
+                      </div>
                     </div>
-                    <input type="range" id="exp-homo-sim" class="slider-input" min="0.50" max="0.95" step="0.01" value="0.75">
-                    <span class="text-xs text-muted">Slides 1.0s window (0.25s hop) with WeSpeaker VoxCeleb ResNet-34. Drops turn if any window dips below floor.</span>
+                    <input type="range" id="exp-homo-sim" class="slider-input exp-slider" min="0.30" max="0.99" step="0.005" value="0.75">
+                    <span class="text-xs text-muted">Slides window with WeSpeaker VoxCeleb ResNet-34. Drops turn if any window dips below floor.</span>
                   </div>
-                  <div class="form-group mb-0">
-                    <div class="label-with-tool">
-                      <label class="form-label" for="exp-homo-win">Sliding Window</label>
-                      <span class="badge badge-sm badge-ghost" id="exp-homo-win-val">1.00s</span>
+                  <div class="form-row">
+                    <div class="form-group col-half mb-0">
+                      <div class="exp-param-header">
+                        <label class="form-label" for="exp-homo-win">Sliding Window</label>
+                        <div class="exp-param-ctrl">
+                          <div class="exp-num-input-wrap" title="Type sliding window length (seconds)">
+                            <input type="number" id="exp-homo-win-num" class="exp-num-input" min="0.10" max="10.00" step="0.05" value="1.00">
+                            <span class="exp-num-unit">s</span>
+                          </div>
+                          <span class="badge badge-sm badge-ghost" id="exp-homo-win-val">1.00s</span>
+                        </div>
+                      </div>
+                      <input type="range" id="exp-homo-win" class="slider-input exp-slider" min="0.25" max="3.00" step="0.05" value="1.00">
                     </div>
-                    <input type="range" id="exp-homo-win" class="slider-input" min="0.50" max="2.00" step="0.25" value="1.00">
+                    <div class="form-group col-half mb-0">
+                      <div class="exp-param-header">
+                        <label class="form-label" for="exp-homo-hop">Sliding Hop Step</label>
+                        <div class="exp-param-ctrl">
+                          <div class="exp-num-input-wrap" title="Type sliding hop step (seconds)">
+                            <input type="number" id="exp-homo-hop-num" class="exp-num-input" min="0.02" max="5.00" step="0.01" value="0.25">
+                            <span class="exp-num-unit">s</span>
+                          </div>
+                          <span class="badge badge-sm badge-ghost" id="exp-homo-hop-val">0.25s</span>
+                        </div>
+                      </div>
+                      <input type="range" id="exp-homo-hop" class="slider-input exp-slider" min="0.05" max="1.00" step="0.01" value="0.25">
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2356,8 +2460,17 @@
                       <input type="text" id="exp-gemma-model" class="text-input font-mono" value="unsloth/gemma-4-12b-it-GGUF">
                     </div>
                     <div class="form-group col-half mb-2">
-                      <label class="form-label" for="exp-gemma-timeout">Timeout (seconds):</label>
-                      <input type="number" id="exp-gemma-timeout" class="text-input" min="10" max="600" value="120">
+                      <div class="exp-param-header">
+                        <label class="form-label" for="exp-gemma-timeout">Timeout (seconds):</label>
+                        <div class="exp-param-ctrl">
+                          <div class="exp-num-input-wrap" title="Type timeout (seconds)">
+                            <input type="number" id="exp-gemma-timeout" class="exp-num-input" min="5" max="600" step="1" value="120">
+                            <span class="exp-num-unit">s</span>
+                          </div>
+                          <span class="badge badge-sm badge-ghost" id="exp-gemma-timeout-val">120s</span>
+                        </div>
+                      </div>
+                      <input type="range" id="exp-gemma-timeout-slider" class="slider-input exp-slider" min="10" max="300" step="5" value="120">
                     </div>
                   </div>
 
@@ -2421,6 +2534,21 @@
                     </div>
                   </div>
 
+                  <div class="form-group mb-2">
+                    <div class="exp-param-header">
+                      <label class="form-label" for="exp-vibevoice-max-sec">Max Secondary Speech Tolerance</label>
+                      <div class="exp-param-ctrl">
+                        <div class="exp-num-input-wrap" title="Type max allowable secondary speech in seconds (0.00s for zero contamination)">
+                          <input type="number" id="exp-vibevoice-max-sec-num" class="exp-num-input" min="0.00" max="5.00" step="0.05" value="0.00">
+                          <span class="exp-num-unit">s</span>
+                        </div>
+                        <span class="badge badge-sm badge-ghost" id="exp-vibevoice-max-sec-val">0.00s</span>
+                      </div>
+                    </div>
+                    <input type="range" id="exp-vibevoice-max-sec" class="slider-input exp-slider" min="0.00" max="2.00" step="0.05" value="0.00">
+                    <span class="text-xs text-muted">Strictly 0.0s for zero-contamination; allows small tolerance if audio contains breath artifacts.</span>
+                  </div>
+
                   <div class="form-group mb-0">
                     <label class="form-label" for="exp-vibevoice-endpoint">Remote VibeVoice Endpoint (Optional):</label>
                     <input type="url" id="exp-vibevoice-endpoint" class="text-input font-mono" placeholder="Leave empty for local worker, or enter http://<remote-ip>:8765/api/purity/verify">
@@ -2430,6 +2558,7 @@
                   </div>
                 </div>
               </div>
+
 
               <!-- Action Card & Execution -->
               <div class="exp-action-card-styled">

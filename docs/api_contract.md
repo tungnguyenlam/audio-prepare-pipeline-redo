@@ -1204,6 +1204,7 @@ The repository provides two specialized web platforms:
   - `POST /api/experiment/gemma/probe`: Pings the local or remote Unsloth/Gemma 4 endpoint and returns `{ready: bool, message: str, models: list}`.
   - `POST /api/experiment/gemma/test`: Auditions Gemma 4 direct-audio overlap classification live on the active track or workspace selection. Returns `{overlap: bool, reason: str, latency_s: float, tested_duration_s: float}`.
   - UI visualizes the pipeline's attrition funnel (retained speech duration and turn counts through Primary, Consensus, Collar Erosion, WeSpeaker Homogeneity, and Foundation Model gates) and renders an interactive table of surviving guaranteed pure turns with per-turn audio previews and NIST RTTM export.
+  - Granular parameter controls provide two-way synchronized numeric input fields (allowing direct keyboard entry and fine decimal precision) alongside smooth range sliders with fine-grained step sizes across all pipeline stages: Target Speaker Onset/Offset thresholds, Competitor Tripwire Veto, Collar Inward Shave, Min Turn Duration, Transition Exclusion Gap, Handoff Risk Distance, Silence Tail Release, RMS Silence Window and Floor, WeSpeaker Cosine Floor and Sliding Window/Hop, Gemma Timeout, and VibeVoice Secondary Speech Tolerance.
 
 ### `src/web_pipeline/` (SonicPipeline API domain and frontend)
 - **Role:** Large-scale channel-oriented batch engine for high-throughput

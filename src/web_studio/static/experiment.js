@@ -34,11 +34,16 @@
         deviceSelect: document.getElementById('exp-device-select'),
         btnReset: document.getElementById('btn-exp-reset'),
 
-        // Stage 1: Asymmetric Sensitivity
+        // Stage 1: Asymmetric Sensitivity & Competitor Tripwire
         primaryBackend: document.getElementById('exp-primary-backend'),
         targetOnset: document.getElementById('exp-target-onset'),
+        targetOnsetNum: document.getElementById('exp-target-onset-num'),
         targetOnsetValue: document.getElementById('exp-target-onset-val'),
+        targetOffset: document.getElementById('exp-target-offset'),
+        targetOffsetNum: document.getElementById('exp-target-offset-num'),
+        targetOffsetValue: document.getElementById('exp-target-offset-val'),
         competitorOnset: document.getElementById('exp-competitor-onset'),
+        competitorOnsetNum: document.getElementById('exp-competitor-onset-num'),
         competitorOnsetValue: document.getElementById('exp-competitor-onset-val'),
 
         // Stage 2: Dual-Engine Consensus
@@ -49,25 +54,34 @@
         // Stage 3: Boundary & Syllable Integrity Gate
         enableCollar: document.getElementById('exp-enable-collar'),
         boundaryCollar: document.getElementById('exp-boundary-collar'),
+        boundaryCollarNum: document.getElementById('exp-boundary-collar-num'),
         boundaryCollarValue: document.getElementById('exp-boundary-collar-val'),
         minDuration: document.getElementById('exp-min-duration'),
+        minDurationNum: document.getElementById('exp-min-duration-num'),
         minDurationValue: document.getElementById('exp-min-duration-val'),
+        transitionExclusion: document.getElementById('exp-transition-exclusion'),
+        transitionExclusionNum: document.getElementById('exp-transition-exclusion-num'),
+        transitionExclusionValue: document.getElementById('exp-transition-exclusion-val'),
         collarFields: document.getElementById('exp-collar-fields'),
 
         // Stage 3a: Option A - Context-Aware Handoff Guard
         enableContextCollar: document.getElementById('exp-enable-context-collar'),
         contextCollarFields: document.getElementById('exp-context-collar-fields'),
         handoffRisk: document.getElementById('exp-handoff-risk'),
+        handoffRiskNum: document.getElementById('exp-handoff-risk-num'),
         handoffRiskValue: document.getElementById('exp-handoff-risk-val'),
         silenceTail: document.getElementById('exp-silence-tail'),
+        silenceTailNum: document.getElementById('exp-silence-tail-num'),
         silenceTailValue: document.getElementById('exp-silence-tail-val'),
 
         // Stage 3b: Option B - Micro-Acoustic Energy & RMS Valley Snapping
         enableEnergySnapping: document.getElementById('exp-enable-energy-snapping'),
         energySnappingFields: document.getElementById('exp-energy-snapping-fields'),
         energyWindow: document.getElementById('exp-energy-window'),
+        energyWindowNum: document.getElementById('exp-energy-window-num'),
         energyWindowValue: document.getElementById('exp-energy-window-val'),
         energyFloor: document.getElementById('exp-energy-floor'),
+        energyFloorNum: document.getElementById('exp-energy-floor-num'),
         energyFloorValue: document.getElementById('exp-energy-floor-val'),
 
         // Stage 3c: Option C - Syllable & Word Forced Alignment Lock
@@ -81,9 +95,14 @@
         // Stage 4: Dense WeSpeaker Homogeneity
         enableHomo: document.getElementById('exp-enable-homo'),
         homoSim: document.getElementById('exp-homo-sim'),
+        homoSimNum: document.getElementById('exp-homo-sim-num'),
         homoSimValue: document.getElementById('exp-homo-sim-val'),
         homoWin: document.getElementById('exp-homo-win'),
+        homoWinNum: document.getElementById('exp-homo-win-num'),
         homoWinValue: document.getElementById('exp-homo-win-val'),
+        homoHop: document.getElementById('exp-homo-hop'),
+        homoHopNum: document.getElementById('exp-homo-hop-num'),
+        homoHopValue: document.getElementById('exp-homo-hop-val'),
         homoFields: document.getElementById('exp-homo-fields'),
 
         // Stage 5a: Gemma 4 Remote
@@ -92,6 +111,8 @@
         gemmaEndpoint: document.getElementById('exp-gemma-endpoint'),
         gemmaModel: document.getElementById('exp-gemma-model'),
         gemmaTimeout: document.getElementById('exp-gemma-timeout'),
+        gemmaTimeoutSlider: document.getElementById('exp-gemma-timeout-slider'),
+        gemmaTimeoutValue: document.getElementById('exp-gemma-timeout-val'),
         gemmaPrompt: document.getElementById('exp-gemma-prompt'),
         btnGemmaPromptReset: document.getElementById('btn-exp-gemma-prompt-reset'),
         btnGemmaProbe: document.getElementById('btn-exp-gemma-probe'),
@@ -105,6 +126,9 @@
         vibevoiceDevice: document.getElementById('exp-vibevoice-device'),
         vibevoiceEndpoint: document.getElementById('exp-vibevoice-endpoint'),
         vibevoiceFields: document.getElementById('exp-vibevoice-fields'),
+        vibevoiceMaxSec: document.getElementById('exp-vibevoice-max-sec'),
+        vibevoiceMaxSecNum: document.getElementById('exp-vibevoice-max-sec-num'),
+        vibevoiceMaxSecValue: document.getElementById('exp-vibevoice-max-sec-val'),
 
         // Action & Progress
         btnRun: document.getElementById('btn-run-experiment'),
@@ -127,17 +151,120 @@
     bindEvents() {
       const self = this;
 
-      // Sliders dynamic values
-      this.bindSlider(this.el.targetOnset, this.el.targetOnsetValue, '%', 100);
-      this.bindSlider(this.el.competitorOnset, this.el.competitorOnsetValue, '%', 100);
-      this.bindSlider(this.el.boundaryCollar, this.el.boundaryCollarValue, 's');
-      this.bindSlider(this.el.minDuration, this.el.minDurationValue, 's');
-      this.bindSlider(this.el.handoffRisk, this.el.handoffRiskValue, 's');
-      this.bindSlider(this.el.silenceTail, this.el.silenceTailValue, 's', 1, '+');
-      this.bindSlider(this.el.energyWindow, this.el.energyWindowValue, 'ms', 1000, '±');
-      this.bindSlider(this.el.energyFloor, this.el.energyFloorValue, ' dB');
-      this.bindSlider(this.el.homoSim, this.el.homoSimValue, '');
-      this.bindSlider(this.el.homoWin, this.el.homoWinValue, 's');
+      // Two-way synchronized granular sliders and numeric inputs
+      this.bindDualControl({
+        slider: this.el.targetOnset,
+        numInput: this.el.targetOnsetNum,
+        badge: this.el.targetOnsetValue,
+        unit: '%',
+        multiplier: 100,
+        decimals: 3,
+        isPercent: true,
+      });
+      this.bindDualControl({
+        slider: this.el.targetOffset,
+        numInput: this.el.targetOffsetNum,
+        badge: this.el.targetOffsetValue,
+        unit: '%',
+        multiplier: 100,
+        decimals: 3,
+        isPercent: true,
+      });
+      this.bindDualControl({
+        slider: this.el.competitorOnset,
+        numInput: this.el.competitorOnsetNum,
+        badge: this.el.competitorOnsetValue,
+        unit: '%',
+        multiplier: 100,
+        decimals: 3,
+        isPercent: true,
+      });
+      this.bindDualControl({
+        slider: this.el.boundaryCollar,
+        numInput: this.el.boundaryCollarNum,
+        badge: this.el.boundaryCollarValue,
+        unit: 's',
+        decimals: 2,
+      });
+      this.bindDualControl({
+        slider: this.el.minDuration,
+        numInput: this.el.minDurationNum,
+        badge: this.el.minDurationValue,
+        unit: 's',
+        decimals: 2,
+      });
+      this.bindDualControl({
+        slider: this.el.transitionExclusion,
+        numInput: this.el.transitionExclusionNum,
+        badge: this.el.transitionExclusionValue,
+        unit: 's',
+        decimals: 2,
+      });
+      this.bindDualControl({
+        slider: this.el.handoffRisk,
+        numInput: this.el.handoffRiskNum,
+        badge: this.el.handoffRiskValue,
+        unit: 's',
+        decimals: 2,
+      });
+      this.bindDualControl({
+        slider: this.el.silenceTail,
+        numInput: this.el.silenceTailNum,
+        badge: this.el.silenceTailValue,
+        unit: 's',
+        prefix: '+',
+        decimals: 2,
+      });
+      this.bindDualControl({
+        slider: this.el.energyWindow,
+        numInput: this.el.energyWindowNum,
+        badge: this.el.energyWindowValue,
+        unit: 's',
+        isMs: true,
+        decimals: 3,
+      });
+      this.bindDualControl({
+        slider: this.el.energyFloor,
+        numInput: this.el.energyFloorNum,
+        badge: this.el.energyFloorValue,
+        unit: ' dB',
+        decimals: 1,
+      });
+      this.bindDualControl({
+        slider: this.el.homoSim,
+        numInput: this.el.homoSimNum,
+        badge: this.el.homoSimValue,
+        unit: '',
+        decimals: 3,
+      });
+      this.bindDualControl({
+        slider: this.el.homoWin,
+        numInput: this.el.homoWinNum,
+        badge: this.el.homoWinValue,
+        unit: 's',
+        decimals: 2,
+      });
+      this.bindDualControl({
+        slider: this.el.homoHop,
+        numInput: this.el.homoHopNum,
+        badge: this.el.homoHopValue,
+        unit: 's',
+        decimals: 2,
+      });
+      this.bindDualControl({
+        slider: this.el.gemmaTimeoutSlider,
+        numInput: this.el.gemmaTimeout,
+        badge: this.el.gemmaTimeoutValue,
+        unit: 's',
+        decimals: 0,
+      });
+      this.bindDualControl({
+        slider: this.el.vibevoiceMaxSec,
+        numInput: this.el.vibevoiceMaxSecNum,
+        badge: this.el.vibevoiceMaxSecValue,
+        unit: 's',
+        decimals: 2,
+      });
 
       // Toggles
       this.el.enableConsensus?.addEventListener('change', e => {
@@ -203,12 +330,106 @@
       this.el.btnExportManifest?.addEventListener('click', () => self.exportManifest());
     },
 
-    bindSlider(slider, label, unit, multiplier = 1, prefix = '') {
-      if (!slider || !label) return;
-      slider.addEventListener('input', () => {
-        const val = parseFloat(slider.value) * multiplier;
-        label.textContent = prefix + (multiplier === 100 || multiplier === 1000 ? Math.round(val) : val.toFixed(2)) + unit;
-      });
+    bindDualControl({
+      slider,
+      numInput,
+      badge,
+      unit = '',
+      multiplier = 1,
+      prefix = '',
+      decimals = 2,
+      isPercent = false,
+      isMs = false,
+      onUpdate = null,
+    }) {
+      if (!slider && !numInput) return;
+
+      const formatNum = (val) => {
+        if (Number.isInteger(val)) return String(val);
+        return String(parseFloat(val.toFixed(decimals)));
+      };
+
+      const updateBadge = (val) => {
+        if (!badge) return;
+        if (isPercent) {
+          badge.textContent = Math.round(val * 100) + '%';
+        } else if (isMs) {
+          badge.textContent = `±${Math.round(val * 1000)}ms`;
+        } else if (prefix === '+') {
+          badge.textContent = `+${val.toFixed(decimals)}s`;
+        } else {
+          badge.textContent = prefix + (multiplier !== 1 ? Math.round(val * multiplier) : val.toFixed(decimals)) + unit;
+        }
+      };
+
+      if (slider) {
+        slider.addEventListener('input', () => {
+          const val = parseFloat(slider.value);
+          if (numInput && document.activeElement !== numInput) {
+            numInput.value = formatNum(val);
+          }
+          updateBadge(val);
+          if (onUpdate) onUpdate(val);
+        });
+      }
+
+      if (numInput) {
+        numInput.addEventListener('input', () => {
+          let val = parseFloat(numInput.value);
+          if (isNaN(val)) return;
+          if (slider) {
+            const sMin = parseFloat(slider.min);
+            const sMax = parseFloat(slider.max);
+            slider.value = String(Math.min(Math.max(val, sMin), sMax));
+          }
+          updateBadge(val);
+          if (onUpdate) onUpdate(val);
+        });
+
+        numInput.addEventListener('change', () => {
+          let val = parseFloat(numInput.value);
+          if (isNaN(val)) {
+            if (slider) numInput.value = formatNum(parseFloat(slider.value));
+            return;
+          }
+          if (isPercent && val > 1.0) {
+            val = val / 100;
+            numInput.value = formatNum(val);
+          }
+          if (isMs && val > 2.0) {
+            val = val / 1000;
+            numInput.value = formatNum(val);
+          }
+          if (slider) {
+            const sMin = parseFloat(slider.min);
+            const sMax = parseFloat(slider.max);
+            slider.value = String(Math.min(Math.max(val, sMin), sMax));
+          }
+          updateBadge(val);
+          if (onUpdate) onUpdate(val);
+        });
+
+        numInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') numInput.blur();
+        });
+      }
+
+      // Initialize badge and input value on binding
+      const initialVal = slider ? parseFloat(slider.value) : (numInput ? parseFloat(numInput.value) : NaN);
+      if (!isNaN(initialVal)) {
+        if (numInput && !numInput.value) numInput.value = formatNum(initialVal);
+        updateBadge(initialVal);
+      }
+    },
+
+    setParamValue(slider, numInput, val) {
+      if (slider) slider.value = String(val);
+      if (numInput) numInput.value = String(val);
+      if (slider) {
+        slider.dispatchEvent(new Event('input'));
+      } else if (numInput) {
+        numInput.dispatchEvent(new Event('input'));
+      }
     },
 
     async loadDefaults() {
@@ -271,30 +492,39 @@
 
     resetToDefaults() {
       if (this.el.primaryBackend) this.el.primaryBackend.value = 'sortformer';
-      if (this.el.targetOnset) { this.el.targetOnset.value = '0.80'; this.el.targetOnsetValue.textContent = '80%'; }
-      if (this.el.competitorOnset) { this.el.competitorOnset.value = '0.20'; this.el.competitorOnsetValue.textContent = '20%'; }
+      this.setParamValue(this.el.targetOnset, this.el.targetOnsetNum, 0.80);
+      this.setParamValue(this.el.targetOffset, this.el.targetOffsetNum, 0.65);
+      this.setParamValue(this.el.competitorOnset, this.el.competitorOnsetNum, 0.20);
       if (this.el.enableConsensus) { this.el.enableConsensus.checked = true; this.el.consensusFields.style.display = 'block'; }
       if (this.el.secondaryBackend) this.el.secondaryBackend.value = 'diarizen';
       if (this.el.enableCollar) { this.el.enableCollar.checked = true; this.el.collarFields.style.display = 'block'; }
-      if (this.el.boundaryCollar) { this.el.boundaryCollar.value = '0.35'; this.el.boundaryCollarValue.textContent = '0.35s'; }
-      if (this.el.minDuration) { this.el.minDuration.value = '0.80'; this.el.minDurationValue.textContent = '0.80s'; }
+      this.setParamValue(this.el.boundaryCollar, this.el.boundaryCollarNum, 0.35);
+      this.setParamValue(this.el.minDuration, this.el.minDurationNum, 0.80);
+      this.setParamValue(this.el.transitionExclusion, this.el.transitionExclusionNum, 0.50);
       // Option A
       if (this.el.enableContextCollar) { this.el.enableContextCollar.checked = true; this.el.contextCollarFields.style.display = 'block'; }
-      if (this.el.handoffRisk) { this.el.handoffRisk.value = '0.80'; this.el.handoffRiskValue.textContent = '0.80s'; }
-      if (this.el.silenceTail) { this.el.silenceTail.value = '0.15'; this.el.silenceTailValue.textContent = '+0.15s'; }
+      this.setParamValue(this.el.handoffRisk, this.el.handoffRiskNum, 0.80);
+      this.setParamValue(this.el.silenceTail, this.el.silenceTailNum, 0.15);
       // Option B
       if (this.el.enableEnergySnapping) { this.el.enableEnergySnapping.checked = false; this.el.energySnappingFields.style.display = 'none'; }
-      if (this.el.energyWindow) { this.el.energyWindow.value = '0.15'; this.el.energyWindowValue.textContent = '±150ms'; }
-      if (this.el.energyFloor) { this.el.energyFloor.value = '-30'; this.el.energyFloorValue.textContent = '-30 dB'; }
+      this.setParamValue(this.el.energyWindow, this.el.energyWindowNum, 0.15);
+      this.setParamValue(this.el.energyFloor, this.el.energyFloorNum, -30);
       // Option C
       if (this.el.enableSyllableAlign) { this.el.enableSyllableAlign.checked = false; this.el.syllableAlignFields.style.display = 'none'; }
       if (this.el.alignerEngine) this.el.alignerEngine.value = 'mms_fa';
       // Stage 4
       if (this.el.enableHomo) { this.el.enableHomo.checked = false; this.el.homoFields.style.display = 'none'; }
-      if (this.el.homoSim) { this.el.homoSim.value = '0.75'; this.el.homoSimValue.textContent = '0.75'; }
-      if (this.el.homoWin) { this.el.homoWin.value = '1.00'; this.el.homoWinValue.textContent = '1.00s'; }
-      // Stage 5
+      this.setParamValue(this.el.homoSim, this.el.homoSimNum, 0.75);
+      this.setParamValue(this.el.homoWin, this.el.homoWinNum, 1.00);
+      this.setParamValue(this.el.homoHop, this.el.homoHopNum, 0.25);
+      // Stage 5a
+      this.setParamValue(this.el.gemmaTimeoutSlider, this.el.gemmaTimeout, 120);
       if (this.el.gemmaPrompt) this.el.gemmaPrompt.value = DEFAULT_GEMMA_PROMPT;
+      // Stage 5b
+      if (this.el.enableVibeVoice) { this.el.enableVibeVoice.checked = false; this.el.vibevoiceFields.style.display = 'none'; }
+      if (this.el.vibevoiceModel) this.el.vibevoiceModel.value = 'Dubedo/VibeVoice-ASR-HF-INT8';
+      if (this.el.vibevoiceDevice) this.el.vibevoiceDevice.value = 'same';
+      this.setParamValue(this.el.vibevoiceMaxSec, this.el.vibevoiceMaxSecNum, 0.00);
       if (window.showToast) window.showToast('Experiment parameters reset to recommended defaults', 'info');
     },
 
@@ -385,24 +615,24 @@
         audio_id: audioId,
         device: this.el.deviceSelect?.value || 'auto',
         primary_backend: this.el.primaryBackend?.value || 'sortformer',
-        target_onset: parseFloat(this.el.targetOnset?.value || '0.80'),
-        target_offset: 0.65,
-        competitor_onset: parseFloat(this.el.competitorOnset?.value || '0.20'),
+        target_onset: parseFloat(this.el.targetOnsetNum?.value || this.el.targetOnset?.value || '0.80'),
+        target_offset: parseFloat(this.el.targetOffsetNum?.value || this.el.targetOffset?.value || '0.65'),
+        competitor_onset: parseFloat(this.el.competitorOnsetNum?.value || this.el.competitorOnset?.value || '0.20'),
         enable_consensus: Boolean(this.el.enableConsensus?.checked),
         secondary_backend: this.el.secondaryBackend?.value || 'diarizen',
         // Stage 3 Base
         enable_collar_erosion: Boolean(this.el.enableCollar?.checked),
-        boundary_collar_s: parseFloat(this.el.boundaryCollar?.value || '0.35'),
-        min_turn_duration_s: parseFloat(this.el.minDuration?.value || '0.80'),
-        transition_exclusion_s: 0.50,
+        boundary_collar_s: parseFloat(this.el.boundaryCollarNum?.value || this.el.boundaryCollar?.value || '0.35'),
+        min_turn_duration_s: parseFloat(this.el.minDurationNum?.value || this.el.minDuration?.value || '0.80'),
+        transition_exclusion_s: parseFloat(this.el.transitionExclusionNum?.value || this.el.transitionExclusion?.value || '0.50'),
         // Stage 3a: Option A
         enable_context_collar: Boolean(this.el.enableContextCollar?.checked),
-        handoff_risk_distance_s: parseFloat(this.el.handoffRisk?.value || '0.80'),
-        silence_tail_buffer_s: parseFloat(this.el.silenceTail?.value || '0.15'),
+        handoff_risk_distance_s: parseFloat(this.el.handoffRiskNum?.value || this.el.handoffRisk?.value || '0.80'),
+        silence_tail_buffer_s: parseFloat(this.el.silenceTailNum?.value || this.el.silenceTail?.value || '0.15'),
         // Stage 3b: Option B
         enable_energy_snapping: Boolean(this.el.enableEnergySnapping?.checked),
-        energy_search_window_s: parseFloat(this.el.energyWindow?.value || '0.15'),
-        energy_valley_floor_db: parseFloat(this.el.energyFloor?.value || '-30'),
+        energy_search_window_s: parseFloat(this.el.energyWindowNum?.value || this.el.energyWindow?.value || '0.15'),
+        energy_valley_floor_db: parseFloat(this.el.energyFloorNum?.value || this.el.energyFloor?.value || '-30'),
         // Stage 3c: Option C
         enable_syllable_alignment: Boolean(this.el.enableSyllableAlign?.checked),
         aligner_engine: this.el.alignerEngine?.value || 'mms_fa',
@@ -410,19 +640,21 @@
         aligner_endpoint: this.el.alignerEndpoint?.value || '',
         // Stage 4
         enable_homogeneity: Boolean(this.el.enableHomo?.checked),
-        min_homogeneity_similarity: parseFloat(this.el.homoSim?.value || '0.75'),
-        homogeneity_window_s: parseFloat(this.el.homoWin?.value || '1.00'),
+        min_homogeneity_similarity: parseFloat(this.el.homoSimNum?.value || this.el.homoSim?.value || '0.75'),
+        homogeneity_window_s: parseFloat(this.el.homoWinNum?.value || this.el.homoWin?.value || '1.00'),
+        homogeneity_hop_s: parseFloat(this.el.homoHopNum?.value || this.el.homoHop?.value || '0.25'),
         // Stage 5a
         enable_gemma: Boolean(this.el.enableGemma?.checked),
         gemma_endpoint: this.el.gemmaEndpoint?.value,
         gemma_model: this.el.gemmaModel?.value,
         gemma_prompt: this.el.gemmaPrompt?.value,
-        gemma_timeout_s: parseFloat(this.el.gemmaTimeout?.value || '120'),
+        gemma_timeout_s: parseFloat(this.el.gemmaTimeout?.value || this.el.gemmaTimeoutSlider?.value || '120'),
         // Stage 5b
         enable_vibevoice: Boolean(this.el.enableVibeVoice?.checked),
         vibevoice_model_id: this.el.vibevoiceModel?.value || 'Dubedo/VibeVoice-ASR-HF-INT8',
         vibevoice_device: this.el.vibevoiceDevice?.value || 'same',
         vibevoice_endpoint: this.el.vibevoiceEndpoint?.value || '',
+        max_secondary_speech_s: parseFloat(this.el.vibevoiceMaxSecNum?.value || this.el.vibevoiceMaxSec?.value || '0.0'),
       };
     },
 

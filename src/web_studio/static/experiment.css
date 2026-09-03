@@ -188,3 +188,99 @@
   gap: 4px;
   min-width: 68px;
 }
+
+/* ==========================================================================
+   Granular Parameter Controls: Two-Way Synchronized Type-In & Range Slider
+   ========================================================================== */
+
+.exp-param-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.exp-param-header .form-label {
+  margin-bottom: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.exp-param-ctrl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.exp-num-input-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-input, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border-muted, #374151);
+  border-radius: var(--radius-sm, 6px);
+  padding: 2px 6px;
+  transition: border-color var(--transition-fast, 0.15s), box-shadow var(--transition-fast, 0.15s), background var(--transition-fast, 0.15s);
+}
+
+.exp-num-input-wrap:hover {
+  border-color: var(--text-muted, #64748b);
+}
+
+.exp-num-input-wrap:focus-within {
+  border-color: var(--accent-primary, #3b82f6);
+  background: var(--bg-surface, #1e2433);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-primary, #3b82f6) 25%, transparent);
+}
+
+.exp-num-input {
+  width: 58px;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.80rem;
+  font-weight: 700;
+  padding: 1px 0;
+  outline: none;
+  text-align: right;
+  -moz-appearance: textfield;
+}
+
+.exp-num-input::-webkit-outer-spin-button,
+.exp-num-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.exp-num-unit {
+  font-size: 0.72rem;
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+  color: var(--text-muted);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.exp-param-secondary {
+  font-size: 0.72rem;
+  font-family: var(--font-mono, monospace);
+  font-weight: 700;
+  color: var(--accent-cyan, #06b6d4);
+  background: color-mix(in srgb, var(--accent-cyan, #06b6d4) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-cyan, #06b6d4) 28%, transparent);
+  border-radius: var(--radius-xs, 4px);
+  padding: 1px 5px;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.exp-slider {
+  width: 100%;
+  margin: 3px 0 1px;
+  accent-color: var(--accent-primary, #3b82f6);
+  cursor: pointer;
+}
