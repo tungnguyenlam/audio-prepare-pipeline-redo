@@ -56,6 +56,17 @@ DEFAULT_ENERGY_SEARCH_WINDOW_S = 0.15
 DEFAULT_ENERGY_VALLEY_FLOOR_DB = -30.0
 
 
+def _json_compatible(value: Any) -> Any:
+    """Convert NumPy scalars nested in a result to native JSON values."""
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, dict):
+        return {key: _json_compatible(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_compatible(item) for item in value]
+    return value
+
+
 @dataclass
 class ZeroContaminationConfig:
     """Settings controlling each stage of the zero-contamination pipeline."""
@@ -153,7 +164,7 @@ class TurnAuditRecord:
     tail_rescued: bool = False
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return _json_compatible(asdict(self))
 
 
 @dataclass
@@ -183,13 +194,13 @@ class ZeroContaminationResult:
             enriched_turns.append(t_data)
         diar_dict["turns"] = enriched_turns
 
-        return {
+        return _json_compatible({
             "diarization": diar_dict,
             "audit_records": [rec.to_dict() for rec in self.audit_records],
             "funnel_stats": self.funnel_stats,
             "stage_log": self.stage_log,
             "config": self.config,
-        }
+        })
 
 
 def compute_consensus_turns(

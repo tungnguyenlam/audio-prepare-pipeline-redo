@@ -236,6 +236,11 @@ Each target-speaker summary includes segment and duration denominators plus
 
 `ZeroContaminationResult` encapsulates the outputs of the extreme-precision zero-contamination diarization pipeline (`src/diarization/zero_contamination.py`).
 
+`ZeroContaminationResult.to_dict()` returns a JSON-compatible snapshot. NumPy
+scalar values produced by model and signal-processing comparisons are normalized
+to native Python numbers and booleans before the result is returned through the
+Studio task API.
+
 ```json
 {
   "diarization": { ... },
