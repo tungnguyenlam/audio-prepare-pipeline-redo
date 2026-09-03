@@ -86,6 +86,8 @@ const state = {
     reviewFilter: 'all',
     searchQuery: '',
     sortMode: 'time-asc',
+    histogramBinWidth: localStorage.getItem('sonic_diar_hist_bin') || 'auto',
+    histogramCustomBinWidth: parseFloat(localStorage.getItem('sonic_diar_hist_bin_custom') || '1.0') || 1.0,
     isScrubbing: false,
     soloSpeaker: null,
     mutedSpeakers: new Set(),
@@ -442,6 +444,8 @@ const el = {
   diarFilteredTurnsCount: document.getElementById('diar-filtered-turns-count'),
   diarDurationHistogramPlot: document.getElementById('diar-duration-histogram-plot'),
   diarDurationHistogramSummary: document.getElementById('diar-duration-histogram-summary'),
+  diarHistogramBinSelect: document.getElementById('diar-histogram-bin-select'),
+  diarHistogramBinCustom: document.getElementById('diar-histogram-bin-custom'),
   diarReviewedCount: document.getElementById('diar-reviewed-count'),
   diarAcceptedCount: document.getElementById('diar-accepted-count'),
   diarRejectedCount: document.getElementById('diar-rejected-count'),
@@ -3361,6 +3365,58 @@ function initDiarizationStudio() {
     });
   }
 
+  if (el.diarHistogramBinSelect) {
+    const rawSaved = state.diarization.histogramBinWidth;
+    const isCustom = rawSaved === 'custom' || (!['auto', '0.1', '0.25', '0.5', '1', '2', '3', '5', '10'].includes(String(rawSaved)) && rawSaved !== 'auto');
+    if (isCustom) {
+      el.diarHistogramBinSelect.value = 'custom';
+      if (el.diarHistogramBinCustom) {
+        el.diarHistogramBinCustom.classList.remove('hidden');
+        el.diarHistogramBinCustom.value = state.diarization.histogramCustomBinWidth || 1.0;
+      }
+    } else {
+      el.diarHistogramBinSelect.value = String(rawSaved || 'auto');
+      if (el.diarHistogramBinCustom) {
+        el.diarHistogramBinCustom.classList.add('hidden');
+      }
+    }
+
+    el.diarHistogramBinSelect.addEventListener('change', (e) => {
+      const val = e.target.value;
+      if (val === 'custom') {
+        if (el.diarHistogramBinCustom) {
+          el.diarHistogramBinCustom.classList.remove('hidden');
+          if (!el.diarHistogramBinCustom.value) {
+            el.diarHistogramBinCustom.value = state.diarization.histogramCustomBinWidth || 1.0;
+          }
+          el.diarHistogramBinCustom.focus();
+        }
+        state.diarization.histogramBinWidth = 'custom';
+        try { localStorage.setItem('sonic_diar_hist_bin', 'custom'); } catch {}
+      } else {
+        if (el.diarHistogramBinCustom) {
+          el.diarHistogramBinCustom.classList.add('hidden');
+        }
+        state.diarization.histogramBinWidth = val === 'auto' ? 'auto' : parseFloat(val);
+        try { localStorage.setItem('sonic_diar_hist_bin', String(val)); } catch {}
+      }
+      renderTurnsHistogramOnly();
+    });
+  }
+
+  if (el.diarHistogramBinCustom) {
+    const handleCustomBin = () => {
+      const val = parseFloat(el.diarHistogramBinCustom.value);
+      if (Number.isFinite(val) && val > 0) {
+        state.diarization.histogramCustomBinWidth = val;
+        try { localStorage.setItem('sonic_diar_hist_bin_custom', String(val)); } catch {}
+        renderTurnsHistogramOnly();
+      }
+    };
+    el.diarHistogramBinCustom.addEventListener('input', handleCustomBin);
+    el.diarHistogramBinCustom.addEventListener('change', handleCustomBin);
+  }
+
   if (el.btnExtractAllSpeakers) {
     el.btnExtractAllSpeakers.addEventListener('click', extractAllSpeakers);
   }
@@ -4939,7 +4995,7 @@ function renderTurnReviewStats(visibleCount) {
   }
 }
 
-function diarizationDurationHistogram(turns) {
+function diarizationDurationHistogram(turns, requestedBinWidth = 'auto') {
   const durations = turns.map(turn => {
     const duration = Number(turn.end_s) - Number(turn.start_s);
     return Number.isFinite(duration) ? Math.max(0, duration) : 0;
@@ -4952,26 +5008,51 @@ function diarizationDurationHistogram(turns) {
   let firstBinStart = 0;
   let binCount = 1;
 
-  while (true) {
-    firstBinStart = Math.floor(minDuration / binWidth) * binWidth;
+  const isAuto = !requestedBinWidth || requestedBinWidth === 'auto';
+
+  if (isAuto) {
+    while (true) {
+      firstBinStart = Math.floor(minDuration / binWidth) * binWidth;
+      const coveredWidths = (maxDuration - firstBinStart) / binWidth;
+      binCount = Math.max(1, Math.ceil(coveredWidths - 1e-10));
+      if (binCount <= 24) break;
+
+      const exponent = Math.floor(Math.log10(binWidth));
+      const magnitude = 10 ** exponent;
+      const leading = binWidth / magnitude;
+      if (leading < 1) binWidth = magnitude;
+      else if (leading < 2) binWidth = 2 * magnitude;
+      else if (leading < 5) binWidth = 5 * magnitude;
+      else binWidth = 10 * magnitude;
+    }
+  } else {
+    binWidth = Math.max(0.01, Number(requestedBinWidth) || 1);
+    firstBinStart = Math.max(0, Math.floor(minDuration / binWidth) * binWidth);
     const coveredWidths = (maxDuration - firstBinStart) / binWidth;
     binCount = Math.max(1, Math.ceil(coveredWidths - 1e-10));
-    if (binCount <= 24) break;
-
-    const exponent = Math.floor(Math.log10(binWidth));
-    const magnitude = 10 ** exponent;
-    const leading = binWidth / magnitude;
-    if (leading < 1) binWidth = magnitude;
-    else if (leading < 2) binWidth = 2 * magnitude;
-    else if (leading < 5) binWidth = 5 * magnitude;
-    else binWidth = 10 * magnitude;
+    const MAX_BINS = 250;
+    if (binCount > MAX_BINS) {
+      binWidth = Math.ceil(((maxDuration - firstBinStart) / MAX_BINS) * 10) / 10;
+      firstBinStart = Math.max(0, Math.floor(minDuration / binWidth) * binWidth);
+      binCount = Math.max(1, Math.ceil(((maxDuration - firstBinStart) / binWidth) - 1e-10));
+    }
   }
 
-  const bins = Array.from({ length: binCount }, (_, index) => ({
-    start: firstBinStart + (index * binWidth),
-    end: firstBinStart + ((index + 1) * binWidth),
-    count: 0,
-  }));
+  firstBinStart = Math.max(0, Number(firstBinStart.toFixed(6)));
+
+  const decimalsCount = (binWidth.toString().split('.')[1] || '').length;
+  const factor = Math.pow(10, Math.min(4, Math.max(2, decimalsCount + 1)));
+
+  const bins = Array.from({ length: binCount }, (_, index) => {
+    const rawStart = firstBinStart + (index * binWidth);
+    const rawEnd = firstBinStart + ((index + 1) * binWidth);
+    return {
+      start: Math.round(rawStart * factor) / factor,
+      end: Math.round(rawEnd * factor) / factor,
+      count: 0,
+    };
+  });
+
   durations.forEach(duration => {
     const index = Math.min(
       bins.length - 1,
@@ -4980,33 +5061,59 @@ function diarizationDurationHistogram(turns) {
     bins[index].count += 1;
   });
 
-  return { bins, binWidth, minDuration, maxDuration };
+  return { bins, binWidth, minDuration, maxDuration, isAuto };
 }
 
 function formatHistogramSeconds(value, binWidth) {
-  const decimals = binWidth < 1 ? 1 : 0;
+  let decimals = 0;
+  if (binWidth < 0.1) {
+    decimals = 2;
+  } else if (binWidth < 1 || !Number.isInteger(binWidth)) {
+    const str = binWidth.toString();
+    const dot = str.indexOf('.');
+    decimals = dot >= 0 ? Math.min(2, str.length - dot - 1) : 1;
+  }
   return Number(value.toFixed(decimals)).toString();
+}
+
+function renderTurnsHistogramOnly() {
+  const turns = getFilteredAndSortedTurns();
+  renderDiarizationDurationHistogram(turns);
 }
 
 function renderDiarizationDurationHistogram(turns) {
   if (!el.diarDurationHistogramPlot) return;
-  const histogram = diarizationDurationHistogram(turns);
+
+  let targetBinWidth = state.diarization.histogramBinWidth;
+  if (targetBinWidth === 'custom') {
+    targetBinWidth = state.diarization.histogramCustomBinWidth || 1.0;
+  }
+
+  const histogram = diarizationDurationHistogram(turns, targetBinWidth);
   if (!histogram) {
     el.diarDurationHistogramPlot.innerHTML = '<div class="diar-duration-histogram-empty">No turns match the active filters.</div>';
     if (el.diarDurationHistogramSummary) el.diarDurationHistogramSummary.textContent = '0 segments';
+    if (el.diarHistogramBinSelect) {
+      const autoOption = el.diarHistogramBinSelect.querySelector('option[value="auto"]');
+      if (autoOption) autoOption.textContent = 'Auto';
+    }
     return;
   }
 
-  const { bins, binWidth } = histogram;
-  const width = 900;
-  const height = 220;
+  const { bins, binWidth, isAuto } = histogram;
+  const minSlotWidth = 18;
+  const idealPlotWidth = bins.length * minSlotWidth;
   const margin = { top: 24, right: 18, bottom: 58, left: 52 };
+  const minSvgWidth = 900;
+  const width = Math.max(minSvgWidth, margin.left + margin.right + idealPlotWidth);
+  const height = 220;
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
   const maxCount = Math.max(...bins.map(bin => bin.count), 1);
   const slotWidth = plotWidth / bins.length;
-  const barGap = Math.min(5, slotWidth * 0.18);
-  const labelEvery = Math.max(1, Math.ceil(bins.length / 12));
+  const barGap = Math.min(5, Math.max(1, slotWidth * 0.18));
+  const maxLabels = Math.max(8, Math.min(20, Math.floor(plotWidth / 65)));
+  const labelEvery = Math.max(1, Math.ceil(bins.length / maxLabels));
   const yTicks = [...new Set([0, Math.ceil(maxCount / 2), maxCount])].sort((a, b) => a - b);
   const rangeText = bin => `${formatHistogramSeconds(bin.start, binWidth)}–${formatHistogramSeconds(bin.end, binWidth)}`;
 
@@ -5023,22 +5130,33 @@ function renderDiarizationDurationHistogram(turns) {
     const y = margin.top + plotHeight - barHeight;
     const upperRule = index === bins.length - 1 ? 'inclusive' : 'exclusive';
     const tooltip = `${rangeText(bin)} seconds (lower inclusive, upper ${upperRule}): ${bin.count} segment${bin.count === 1 ? '' : 's'}`;
-    const showLabel = index % labelEvery === 0 || index === bins.length - 1;
+    const showLabel = (index % labelEvery === 0 && (bins.length - 1 - index) >= Math.floor(labelEvery * 0.5)) || index === bins.length - 1;
+    const showCount = bin.count > 0 && (slotWidth >= 16 || index % Math.ceil(16 / slotWidth) === 0);
     return `<g class="diar-histogram-bin">
         <title>${tooltip}</title>
         <rect class="diar-histogram-hit-area" x="${margin.left + (index * slotWidth)}" y="${margin.top}" width="${slotWidth}" height="${plotHeight}"></rect>
         <rect class="diar-histogram-bar" x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="2"></rect>
-        ${bin.count > 0 ? `<text class="diar-histogram-count" x="${x + (barWidth / 2)}" y="${Math.max(margin.top + 9, y - 5)}" text-anchor="middle">${bin.count}</text>` : ''}
+        ${showCount ? `<text class="diar-histogram-count" x="${x + (barWidth / 2)}" y="${Math.max(margin.top + 9, y - 5)}" text-anchor="middle">${bin.count}</text>` : ''}
         ${showLabel ? `<text class="diar-histogram-range" x="${x + (barWidth / 2)}" y="${margin.top + plotHeight + 17}" text-anchor="middle">${rangeText(bin)}</text>` : ''}
       </g>`;
   }).join('');
 
   const total = bins.reduce((sum, bin) => sum + bin.count, 0);
+  const formattedBinWidth = formatHistogramSeconds(binWidth, binWidth);
   const unit = binWidth === 1 ? 'second' : 'seconds';
   if (el.diarDurationHistogramSummary) {
-    el.diarDurationHistogramSummary.textContent = `${total} segment${total === 1 ? '' : 's'} · ${formatHistogramSeconds(binWidth, binWidth)} ${unit}/bin`;
+    el.diarDurationHistogramSummary.textContent = `${total} segment${total === 1 ? '' : 's'} · ${formattedBinWidth} ${unit}/bin`;
   }
-  el.diarDurationHistogramPlot.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Segment duration histogram with ${total} filtered turns in ${bins.length} bins of ${formatHistogramSeconds(binWidth, binWidth)} seconds">
+  if (el.diarHistogramBinSelect) {
+    const autoOption = el.diarHistogramBinSelect.querySelector('option[value="auto"]');
+    if (autoOption) {
+      autoOption.textContent = isAuto
+        ? `Auto (${formattedBinWidth}s)`
+        : 'Auto';
+    }
+  }
+  const minWidthAttr = width > minSvgWidth ? ` style="min-width: ${width}px;"` : '';
+  el.diarDurationHistogramPlot.innerHTML = `<svg viewBox="0 0 ${width} ${height}"${minWidthAttr} role="img" aria-label="Segment duration histogram with ${total} filtered turns in ${bins.length} bins of ${formattedBinWidth} seconds">
       <title>Filtered segment length distribution</title>
       ${grid}
       <line class="diar-histogram-axis" x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotHeight}"></line>
