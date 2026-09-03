@@ -113,11 +113,30 @@ only when a different writable cache location is needed.
 Runtime artifacts (downloads, stems, plots, model checkouts) go under `.data/`
 and are gitignored — do not commit media or caches.
 
-### 3. Optional isolated diarizer environments
+### 3. Optional isolated diarizer & verifier environments
 
-Sortformer/Clustering, DiariZen, and 3D-Speaker pin packages that conflict with the
-primary stack. Create these only on the model server, and only if you need
-those backends.
+Sortformer/Clustering, DiariZen, 3D-Speaker, and VibeVoice pin packages that conflict with the
+primary stack.
+
+You can provision and reconcile **all** or **individual** isolated environments in a **device-agnostic** way (automatically detecting AMD ROCm, NVIDIA CUDA, Apple Silicon MPS, or CPU) using the unified script:
+
+```bash
+# Provision all worker environments in one step:
+./scripts/setup_worker_envs.sh all
+
+# Or provision specific environments:
+./scripts/setup_worker_envs.sh sortformer   # NeMo Sortformer & Clustering (.venv-sortformer)
+./scripts/setup_worker_envs.sh 3dspeaker    # ModelScope 3D-Speaker (.venv-3dspeaker)
+./scripts/setup_worker_envs.sh vibevoice    # VibeVoice-ASR purity verifier (.venv-vibevoice)
+./scripts/setup_worker_envs.sh diarizen     # DiariZen WavLM (.venv-diarizen)
+
+# Check installation and hardware acceleration status across all environments:
+./scripts/setup_worker_envs.sh status
+```
+
+On server startup (`./scripts/start_web.sh`), the backend automatically inspects and reconciles any existing worker environments to match the host accelerator (e.g. swapping CUDA PyTorch for ROCm wheels on AMD GPUs and removing `torchcodec`), ensuring zero configuration drift.
+
+If provisioning manually:
 
 **Sortformer / Clustering (NeMo)** — from the repo root, after `uv sync`:
 
@@ -127,45 +146,27 @@ UV_PROJECT_ENVIRONMENT=.venv-sortformer uv sync --frozen --no-dev
 uv pip install --python .venv-sortformer/bin/python -r requirements-sortformer.txt
 ```
 
-**DiariZen Large s80-v2** — uses the upstream Python 3.10 / Torch 2.1 stack
-and DiariZen's Pyannote fork:
+**DiariZen Large s80-v2** — uses Python 3.10 / Torch 2.1 stack and DiariZen's Pyannote fork:
 
 ```bash
-# Run these commands from the repository root on the model server.
 uv python install 3.10
 uv venv --python 3.10 .venv-diarizen
+
+# On NVIDIA CUDA:
 uv pip install --python .venv-diarizen/bin/python \
   torch==2.1.1 torchvision==0.16.1 torchaudio==2.1.1 \
   --index-url https://download.pytorch.org/whl/cu121
-uv pip install --python .venv-diarizen/bin/python -r requirements-diarizen.txt
 
-# Confirm the exact pipeline import used by the worker succeeds.
+# On AMD ROCm or CPU:
+uv pip install --python .venv-diarizen/bin/python \
+  torch==2.1.1 torchvision==0.16.1 torchaudio==2.1.1 \
+  --index-url https://download.pytorch.org/whl/cpu
+
+uv pip install --python .venv-diarizen/bin/python -r requirements-diarizen.txt
 .venv-diarizen/bin/python -c "import torch, psutil, accelerate; from diarizen.pipelines.inference import DiariZenPipeline; print(torch.__version__)"
 ```
 
-The commands above are the direct fix for an error like:
-
-```text
-DiariZen worker Python does not exist: .../.venv-diarizen/bin/python
-```
-
-The default location is `<repo-root>/.venv-diarizen/bin/python`, so no
-additional configuration is needed when the environment is created there. If
-an existing DiariZen environment lives elsewhere, set its absolute interpreter
-path in the repository-root `.env` instead:
-
-```env
-DIARIZEN_PYTHON=/absolute/path/to/diarizen-venv/bin/python
-```
-
-Restart the web backend after creating the environment or changing `.env`.
-The source synchronization scripts deliberately exclude `.venv` and
-`.venv-*`, so each isolated environment must be created separately on the
-model server; it is not copied from the development machine.
-
-**3D-Speaker** ([modelscope/3D-Speaker](https://github.com/modelscope/3D-Speaker);
-`speakerlab` is not on PyPI). Toolkit sources are shallow-cloned into
-`.data/3d-speaker` automatically on first use:
+**3D-Speaker** ([modelscope/3D-Speaker](https://github.com/modelscope/3D-Speaker); `speakerlab` is not on PyPI). Toolkit sources are shallow-cloned into `.data/3d-speaker` automatically on first use:
 
 ```bash
 uv venv --python .venv/bin/python .venv-3dspeaker
@@ -173,14 +174,7 @@ UV_PROJECT_ENVIRONMENT=.venv-3dspeaker uv sync --frozen --no-dev
 uv pip install --python .venv-3dspeaker/bin/python -r requirements-3dspeaker.txt
 ```
 
-When an isolated backend is selected, the server starts a persistent worker in
-its corresponding environment and reuses the loaded model. Other models stay
-in the primary `.venv`; you do not need to restart the server when switching.
-
-**VibeVoice-ASR speaker-purity verifier** needs Transformers 5.3+
-(`VibeVoiceAsrForConditionalGeneration`) and, for INT8/NF4 checkpoints,
-`bitsandbytes>=0.48.1`. Keep this isolated from the primary stack. Create
-it only on the model server:
+**VibeVoice-ASR speaker-purity verifier** needs Transformers 5.3+ (`VibeVoiceAsrForConditionalGeneration`):
 
 ```bash
 uv venv --python .venv/bin/python .venv-vibevoice

@@ -412,13 +412,25 @@ class MVSepMDX23(BaseSeparator):
         return destination
 
     def _subprocess_env(self) -> dict[str, str]:
-        """Build an environment that exposes only the requested CUDA device."""
+        """Build an environment that exposes only the requested device."""
         env = os.environ.copy()
         device = str(self.device).lower()
         if device.startswith("cuda:"):
-            env["CUDA_VISIBLE_DEVICES"] = device.split(":", 1)[1]
+            gpu_idx = device.split(":", 1)[1]
+            env["CUDA_VISIBLE_DEVICES"] = gpu_idx
+            env["HIP_VISIBLE_DEVICES"] = gpu_idx
+            env["ROCR_VISIBLE_DEVICES"] = gpu_idx
         elif device.isdigit():
             env["CUDA_VISIBLE_DEVICES"] = device
+            env["HIP_VISIBLE_DEVICES"] = device
+            env["ROCR_VISIBLE_DEVICES"] = device
+        elif device == "cpu":
+            env["CUDA_VISIBLE_DEVICES"] = ""
+            env["HIP_VISIBLE_DEVICES"] = ""
+            env["ROCR_VISIBLE_DEVICES"] = ""
+        if os.path.isdir("/opt/rocm/bin") and "/opt/rocm/bin" not in env.get("PATH", ""):
+            env["PATH"] = f"/opt/rocm/bin:{env.get('PATH', '')}"
+        env.setdefault("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL", "1")
         return env
 
     @staticmethod

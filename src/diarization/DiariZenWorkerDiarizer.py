@@ -87,19 +87,27 @@ class DiariZenWorkerDiarizer(BaseDiarizer, ManagedModel):
         worker_environment["PATH"] = os.pathsep.join(
             [str(worker_python.parent), worker_environment.get("PATH", "")]
         )
+        if os.path.isdir("/opt/rocm/bin") and "/opt/rocm/bin" not in worker_environment["PATH"]:
+            worker_environment["PATH"] = f"/opt/rocm/bin:{worker_environment['PATH']}"
         worker_environment["PYTHONNOUSERSITE"] = "1"
         worker_environment.setdefault(
             "HF_HOME",
             os.environ.get("HF_HOME") or str(_REPO_ROOT / ".data" / "huggingface"),
         )
+        worker_environment.setdefault("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL", "1")
 
         worker_config = dict(self._config)
-        requested_device = str(worker_config["device"])
+        requested_device = str(worker_config.get("device", "auto"))
         if requested_device.startswith("cuda:"):
-            worker_environment["CUDA_VISIBLE_DEVICES"] = requested_device.split(":", 1)[1]
+            gpu_idx = requested_device.split(":", 1)[1]
+            worker_environment["CUDA_VISIBLE_DEVICES"] = gpu_idx
+            worker_environment["HIP_VISIBLE_DEVICES"] = gpu_idx
+            worker_environment["ROCR_VISIBLE_DEVICES"] = gpu_idx
             worker_config["device"] = "cuda:0"
         elif requested_device == "cpu":
             worker_environment["CUDA_VISIBLE_DEVICES"] = ""
+            worker_environment["HIP_VISIBLE_DEVICES"] = ""
+            worker_environment["ROCR_VISIBLE_DEVICES"] = ""
 
         process = subprocess.Popen(
             [

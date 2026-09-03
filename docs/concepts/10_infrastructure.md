@@ -48,9 +48,10 @@ flowchart LR
     WEB --> V[".venv-vibevoice: VibeVoice-ASR"]
 ```
 
-`CUDA_VISIBLE_DEVICES` pins each child to its GPU (`cuda:0` vs `cuda:1`), so
-primary/secondary consensus engines truly run in parallel. `cancel()` kills the
-process group; shutdown reaps `yt-dlp`/`ffmpeg`/Demucs/MVSEP descendants.
+`CUDA_VISIBLE_DEVICES`, `HIP_VISIBLE_DEVICES`, and `ROCR_VISIBLE_DEVICES` pin each child to its GPU (`cuda:0` vs `cuda:1`), so
+primary/secondary consensus engines truly run in parallel across NVIDIA and AMD ROCm architectures.
+On startup, `scripts/start_web.sh` automatically reconciles any existing worker environments to match the host hardware.
+`cancel()` kills the process group; shutdown reaps `yt-dlp`/`ffmpeg`/Demucs/MVSEP descendants.
 
 ## 4. Per-device queues + SSE telemetry
 

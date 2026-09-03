@@ -45,9 +45,11 @@ This document details hardware compatibility, benchmark test results, and execut
 | **Pyannote Audio** (`PyannoteDiarizer.py`) | SincNet + BiLSTM + Linear | ✅ **Yes** | ✅ Supported | **PASS** (PyanNet forward pass: `[2, 293, 4]`) | Gated weights require `HF_TOKEN`. `torchcodec` must be disabled in favor of `torchaudio`. |
 | **SpeakerVerifier** (`SpeakerVerifier.py`) | WeSpeaker ResNet34 | ✅ **Yes** | ✅ Supported | **PASS** (4.20s extraction, 256-dim embedding) | Uses public HuggingFace model `pyannote/wespeaker-voxceleb-resnet34-LM`. |
 | **Whisper Timestamped** (`openai-whisper`) | Transformer Encoder-Decoder | ✅ **Yes** | ✅ Supported | **PASS** (Logits shape: `[1, 1, 51865]`) | Attention accelerated via Flash/Mem-Efficient SDPA on ROCm. |
-| **Clustering Diarizer** (`ClusteringDiarizer.py`) | NeMo MarbleNet + TitaNet | ⚠️ **Isolated** | ✅ Supported | Requires `.venv-nemo` worker environment | Worker script delegates to dedicated NeMo sub-environment. |
+| **Clustering Diarizer** (`ClusteringDiarizer.py`) | NeMo MarbleNet + TitaNet | ⚠️ **Isolated** | ✅ Supported | Requires `.venv-sortformer` worker environment | Worker script delegates to dedicated NeMo sub-environment. |
 | **Sortformer Diarizer** (`SortformerDiarizer.py`) | NeMo Transformer | ⚠️ **Isolated** | ✅ Supported | Requires `.venv-sortformer` worker environment | Worker script delegates to dedicated Sortformer sub-environment. |
-| **3D-Speaker Diarizer** (`ThreeDSpeakerDiarizer.py`) | ModelScope CAM++ / ERes2Net | ⚠️ **Isolated** | ✅ Supported | Requires `.venv-threed` worker environment | Worker script delegates to dedicated 3D-Speaker sub-environment. |
+| **3D-Speaker Diarizer** (`ThreeDSpeakerDiarizer.py`) | ModelScope CAM++ / ERes2Net | ⚠️ **Isolated** | ✅ Supported | Requires `.venv-3dspeaker` worker environment | Worker script delegates to dedicated 3D-Speaker sub-environment. |
+| **DiariZen Diarizer** (`DiariZenDiarizer.py`) | BUT WavLM + VBx | ⚠️ **Isolated** | ✅ Supported | Requires `.venv-diarizen` worker environment (Python 3.10) | Runs on CPU fallback for RDNA 4 architectures. |
+| **VibeVoice-ASR Verifier** (`VibeVoicePurityVerifier.py`) | Microsoft VibeVoice-ASR | ⚠️ **Isolated** | ✅ Supported | Requires `.venv-vibevoice` worker environment | Uses bfloat16 SDPA attention on ROCm GPU. |
 
 ---
 
@@ -101,11 +103,13 @@ These operations do not have native ROCm GPU acceleration in the standard scient
 
 ---
 
-## 5. Automated Hardware Detection & Setup (`start_web.sh`)
+## 5. Automated Hardware Detection & Setup (`start_web.sh` & `setup_worker_envs.sh`)
 
 Running `./scripts/start_web.sh` (or `start_studio.sh` / `start_pipeline.sh`) automatically detects whether the host is equipped with an AMD GPU (ROCm) or NVIDIA GPU (CUDA), sets the required environment flags, and reconciles the virtual environment's PyTorch stack without manual intervention:
 
-- **Automatic AMD ROCm Bootstrap:** Detects AMD GPU hardware, ensures ROCm tools are in `PATH`, sets `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1`, verifies PyTorch HIP support, and installs the modular ROCm wheels if needed.
+- **Primary & Worker Virtual Environments Reconciled:** On server startup, `start_web.sh` inspects the primary `.venv` and **all existing worker environments** (`.venv-sortformer`, `.venv-3dspeaker`, `.venv-vibevoice`, `.venv-diarizen`). If an environment is running mismatched wheels (e.g. CUDA wheels on an AMD machine), it automatically swaps them for the host accelerator without user intervention.
+- **Dedicated Worker Provisioning Script (`setup_worker_envs.sh`):** Use `./scripts/setup_worker_envs.sh [all|sortformer|3dspeaker|vibevoice|diarizen|status]` to bootstrap any or all worker environments with auto-detected hardware configuration.
+- **Automatic AMD ROCm Bootstrap:** Detects AMD GPU hardware, ensures ROCm tools are in `PATH`, sets `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1`, verifies PyTorch HIP support, and installs modular ROCm wheels if needed.
 - **Automatic NVIDIA CUDA Bootstrap:** Detects NVIDIA GPU hardware and ensures CUDA-enabled PyTorch wheels are in place.
 - **Hardware Telemetry Integration:** Automatically polls `rocm-smi` (for AMD) or `nvidia-smi` (for NVIDIA) to display live GPU temperature, utilization, VRAM usage, and power draw in the SonicStudio and SonicPipeline web dashboards.
 
@@ -130,3 +134,13 @@ If setting up a manual standalone virtual environment outside the launcher scrip
    export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1
    ```
    This enables AOTriton fused attention kernels on newer AMD architectures.
+
+---
+
+## 6. Device-Agnostic Process Isolation & GPU Pinning
+
+When worker models (`SortformerWorkerDiarizer`, `ClusteringWorkerDiarizer`, `ThreeDSpeakerWorkerDiarizer`, `DiariZenWorkerDiarizer`, `VibeVoicePurityWorkerVerifier`, `MVSepMDX23`) execute in subprocesses, device allocation is completely device-agnostic:
+
+- **AMD ROCm / HIP Device Isolation:** When a task specifies a GPU index (e.g. `cuda:1`), the worker manager sets `HIP_VISIBLE_DEVICES`, `ROCR_VISIBLE_DEVICES`, and `CUDA_VISIBLE_DEVICES` simultaneously. This guarantees that ROCm HIP and CUDA runtime layers both expose only the target physical GPU to the child process as device 0.
+- **CPU Fallback Lane:** When running in the `cpu` queue, `CUDA_VISIBLE_DEVICES`, `HIP_VISIBLE_DEVICES`, and `ROCR_VISIBLE_DEVICES` are set to `""`, completely suppressing GPU runtime initialization and ensuring pure CPU execution.
+- **ROCm Path & Kernel Propagation:** All worker subprocesses inherit `/opt/rocm/bin` in `PATH` and `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1` for optimal kernel performance across all isolated environments.
