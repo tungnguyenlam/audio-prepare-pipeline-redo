@@ -211,6 +211,13 @@ Start the single backend that serves both frontends (default port `8765`):
 uv run python scripts/start_web.py --host 127.0.0.1 --port 8765
 ```
 
+On Linux AMD hosts, `start_web.sh` detects the GPU and installs the ROCm 10
+PyTorch build with `gfx1200` kernels into `.venv` when needed. Override the
+defaults with `SONIC_ROCM_VERSION`, `SONIC_AMD_GPU_TARGET`,
+`SONIC_TORCH_VERSION`, and `SONIC_TORCHAUDIO_VERSION`. If GPU access is
+intentionally unavailable, set `SONIC_ALLOW_CPU_FALLBACK=1`; otherwise startup
+fails instead of silently running model work on CPU.
+
 Then open:
 
 - SonicStudio: `http://127.0.0.1:8765/studio/`

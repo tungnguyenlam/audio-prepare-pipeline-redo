@@ -105,6 +105,16 @@ async def handle_root(request: web.Request) -> web.Response:
     raise web.HTTPFound("/studio/")
 
 
+async def handle_studio_redirect(request: web.Request) -> web.Response:
+    """Redirect to the canonical SonicStudio URL with a trailing slash."""
+    raise web.HTTPFound("/studio/")
+
+
+async def handle_pipeline_redirect(request: web.Request) -> web.Response:
+    """Redirect to the canonical SonicPipeline URL with a trailing slash."""
+    raise web.HTTPFound("/pipeline/")
+
+
 async def handle_health(request: web.Request) -> web.Response:
     """Report the unified backend and its frontend mount points."""
     return web.json_response(
@@ -148,9 +158,9 @@ def create_app() -> web.Application:
 
     app.router.add_get("/api/health", handle_health)
     app.router.add_get("/", handle_root)
-    app.router.add_get("/studio", studio_server.handle_index)
+    app.router.add_get("/studio", handle_studio_redirect)
     app.router.add_get("/studio/", studio_server.handle_index)
-    app.router.add_get("/pipeline", pipeline_server.handle_index)
+    app.router.add_get("/pipeline", handle_pipeline_redirect)
     app.router.add_get("/pipeline/", pipeline_server.handle_index)
     app.router.add_static(
         "/studio/static/",

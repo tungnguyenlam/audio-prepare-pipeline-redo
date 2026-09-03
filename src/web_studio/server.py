@@ -213,6 +213,7 @@ def discover_queue_devices() -> List[str]:
 def get_system_device_info() -> dict[str, Any]:
     """Return hardware accelerator and environment details."""
     cuda_available = torch.cuda.is_available()
+    rocm_available = cuda_available and bool(getattr(torch.version, "hip", None))
     mps_available = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
     
     device_name = "CPU"
@@ -230,10 +231,11 @@ def get_system_device_info() -> dict[str, Any]:
     if cuda_available:
         device_type = "cuda"
         device_count = torch.cuda.device_count()
+        accelerator_name = "ROCm" if rocm_available else "CUDA"
         if device_count > 1:
-            device_name = f"CUDA ({device_count} GPUs: {torch.cuda.get_device_name(0)})"
+            device_name = f"{accelerator_name} ({device_count} GPUs: {torch.cuda.get_device_name(0)})"
         else:
-            device_name = f"CUDA: {torch.cuda.get_device_name(0)}"
+            device_name = f"{accelerator_name}: {torch.cuda.get_device_name(0)}"
         if telemetry_gpu and telemetry_gpu.get("devices"):
             devices = telemetry_gpu["devices"]
         else:
@@ -258,6 +260,8 @@ def get_system_device_info() -> dict[str, Any]:
         "device_count": device_count,
         "devices": devices,
         "cuda_available": cuda_available,
+        "rocm_available": rocm_available,
+        "rocm_version": getattr(torch.version, "hip", None),
         "mps_available": mps_available,
         "torch_version": torch.__version__,
         "python_version": sys.version.split()[0],

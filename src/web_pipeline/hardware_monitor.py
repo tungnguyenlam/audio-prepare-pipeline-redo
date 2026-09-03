@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -98,6 +99,137 @@ class HardwareMonitor:
             return {}
 
     @staticmethod
+    def _query_all_amd_gpus() -> Dict[int, Dict[str, Any]]:
+        """Read host-level AMD GPU counters from sysfs or rocm-smi."""
+        devices: Dict[int, Dict[str, Any]] = {}
+        drm_dir = Path("/sys/class/drm")
+        for device_path in sorted(drm_dir.glob("card[0-9]*/device")):
+            try:
+                if (device_path / "vendor").read_text().strip().lower() != "0x1002":
+                    continue
+
+                def read_number(path: Path) -> Optional[float]:
+                    try:
+                        return float(path.read_text().strip())
+                    except (OSError, ValueError):
+                        return None
+
+                total_bytes = read_number(device_path / "mem_info_vram_total")
+                used_bytes = read_number(device_path / "mem_info_vram_used")
+                utilization = read_number(device_path / "gpu_busy_percent")
+                hwmon_path = next(device_path.glob("hwmon/hwmon*"), None)
+                temperature_c = None
+                power_w = None
+                power_limit_w = None
+                if hwmon_path is not None:
+                    temperature = read_number(hwmon_path / "temp1_input")
+                    power = read_number(hwmon_path / "power1_average")
+                    power_limit = read_number(hwmon_path / "power1_cap")
+                    temperature_c = temperature / 1000 if temperature is not None else None
+                    power_w = power / 1_000_000 if power is not None else None
+                    power_limit_w = power_limit / 1_000_000 if power_limit is not None else None
+
+                index = len(devices)
+                card_index = int(device_path.parent.name.removeprefix("card"))
+                devices[index] = {
+                    "physical_index": card_index,
+                    "id": f"cuda:{index}",
+                    "name": f"AMD GPU {index}",
+                    "utilization_percent": utilization,
+                    "used_vram_mb": round(used_bytes / (1024 * 1024), 1)
+                    if used_bytes is not None
+                    else None,
+                    "total_vram_mb": round(total_bytes / (1024 * 1024), 1)
+                    if total_bytes is not None
+                    else None,
+                    "free_vram_mb": round((total_bytes - used_bytes) / (1024 * 1024), 1)
+                    if total_bytes is not None and used_bytes is not None
+                    else None,
+                    "temperature_c": temperature_c,
+                    "power_w": power_w,
+                    "power_draw_w": power_w,
+                    "power_limit_w": power_limit_w,
+                    "power_percent": round(power_w / power_limit_w * 100, 1)
+                    if power_w is not None and power_limit_w
+                    else None,
+                }
+            except (OSError, ValueError):
+                continue
+
+        if devices:
+            return devices
+
+        rocm_smi = shutil.which("rocm-smi")
+        if not rocm_smi and Path("/opt/rocm/bin/rocm-smi").is_file():
+            rocm_smi = "/opt/rocm/bin/rocm-smi"
+        if not rocm_smi:
+            return {}
+
+        try:
+            result = subprocess.run(
+                [
+                    rocm_smi,
+                    "--json",
+                    "--showproductname",
+                    "--showmeminfo",
+                    "vram",
+                    "--showuse",
+                    "--showtemp",
+                    "--showpower",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=8.0,
+            )
+            if result.returncode != 0 or not result.stdout.strip():
+                return {}
+            payload = json.loads(result.stdout)
+        except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
+            return {}
+
+        def number(value: Any) -> Optional[float]:
+            try:
+                return float(str(value).split()[0])
+            except (TypeError, ValueError, IndexError):
+                return None
+
+        devices = {}
+        for card, values in payload.items():
+            if not isinstance(values, dict):
+                continue
+            try:
+                index = int(str(card).removeprefix("card"))
+            except ValueError:
+                continue
+
+            total_bytes = number(values.get("VRAM Total Memory (B)"))
+            used_bytes = number(values.get("VRAM Total Used Memory (B)"))
+            power_w = number(values.get("Average Graphics Package Power (W)"))
+            power_limit_w = number(values.get("Max Graphics Package Power (W)"))
+            name = values.get("Card Series")
+            if not name or name == "N/A":
+                name = values.get("Card Model") or f"AMD GPU {index}"
+            devices[index] = {
+                "physical_index": index,
+                "id": f"cuda:{index}",
+                "name": name,
+                "utilization_percent": number(values.get("GPU use (%)")),
+                "used_vram_mb": round(used_bytes / (1024 * 1024), 1) if used_bytes is not None else None,
+                "total_vram_mb": round(total_bytes / (1024 * 1024), 1) if total_bytes is not None else None,
+                "free_vram_mb": round((total_bytes - used_bytes) / (1024 * 1024), 1)
+                if total_bytes is not None and used_bytes is not None
+                else None,
+                "temperature_c": number(values.get("Temperature (Sensor edge) (C)")),
+                "power_w": power_w,
+                "power_draw_w": power_w,
+                "power_limit_w": power_limit_w,
+                "power_percent": round(power_w / power_limit_w * 100, 1)
+                if power_w is not None and power_limit_w
+                else None,
+            }
+        return devices
+
+    @staticmethod
     def _normalize_gpu_uuid(value: Any) -> str:
         """Normalize PyTorch and nvidia-smi UUIDs for stable device matching."""
         normalized = str(value or "").strip().lower()
@@ -112,6 +244,9 @@ class HardwareMonitor:
     def get_gpu_info(self) -> Dict[str, Any]:
         """Query GPU telemetry via PyTorch and nvidia-smi if present."""
         smi_devices = self._query_all_nvidia_gpus()
+        is_rocm = bool(getattr(torch.version, "hip", None))
+        if is_rocm:
+            smi_devices = self._query_all_amd_gpus()
         smi_devices_by_uuid = {
             self._normalize_gpu_uuid(device.get("uuid")): device
             for device in smi_devices.values()
@@ -125,11 +260,9 @@ class HardwareMonitor:
             for i in range(device_count):
                 props = torch.cuda.get_device_properties(i)
                 torch_uuid = self._normalize_gpu_uuid(getattr(props, "uuid", None))
-                smi_info = (
-                    smi_devices_by_uuid.get(torch_uuid, {})
-                    if torch_uuid
-                    else smi_devices.get(i, {})
-                )
+                smi_info = smi_devices_by_uuid.get(torch_uuid) if torch_uuid else None
+                if not smi_info:
+                    smi_info = smi_devices.get(i, {})
 
                 total_vram_mb = round(
                     smi_info.get("total_vram_mb")
@@ -199,6 +332,7 @@ class HardwareMonitor:
             return {
                 "available": True,
                 "type": "cuda",
+                "backend": "rocm" if is_rocm else "cuda",
                 "name": primary.get("name", "CUDA GPU"),
                 "device_count": device_count,
                 "devices": devices,
