@@ -18,6 +18,7 @@ import gc
 import json
 import logging
 import math
+import os
 from pathlib import Path
 import tempfile
 import time
@@ -54,6 +55,49 @@ DEFAULT_HANDOFF_RISK_DISTANCE_S = 0.80
 DEFAULT_SILENCE_TAIL_BUFFER_S = 0.15
 DEFAULT_ENERGY_SEARCH_WINDOW_S = 0.15
 DEFAULT_ENERGY_VALLEY_FLOOR_DB = -30.0
+
+
+def _ensure_torch_hub_trusted() -> None:
+    """Ensure torch.hub trusts known repositories non-interactively (e.g. Silero VAD)."""
+    try:
+        import torch.hub
+
+        # Allow snakers4 in repo owners tuple
+        if hasattr(torch.hub, "_TRUSTED_REPO_OWNERS") and isinstance(torch.hub._TRUSTED_REPO_OWNERS, tuple):
+            if "snakers4" not in torch.hub._TRUSTED_REPO_OWNERS:
+                torch.hub._TRUSTED_REPO_OWNERS = (*torch.hub._TRUSTED_REPO_OWNERS, "snakers4")
+
+        # Persist to hub trusted_list cache file
+        hub_dir = torch.hub.get_dir()
+        os.makedirs(hub_dir, exist_ok=True)
+        trusted_file = os.path.join(hub_dir, "trusted_list")
+        existing: set[str] = set()
+        if os.path.exists(trusted_file):
+            with open(trusted_file, "r", encoding="utf-8") as f:
+                existing = {line.strip() for line in f if line.strip()}
+        needed = {"snakers4_silero-vad", "snakers4_silero-vad_master", "snakers4/silero-vad"}
+        to_add = [name for name in needed if name not in existing]
+        if to_add:
+            with open(trusted_file, "a", encoding="utf-8") as f:
+                for name in to_add:
+                    f.write(f"{name}\n")
+
+        # Monkeypatch torch.hub.load to default trust_repo=True if not explicitly provided
+        if not getattr(torch.hub, "_trust_repo_patched", False):
+            orig_load = torch.hub.load
+
+            def _patched_hub_load(repo_or_dir, model, *args, **kwargs):
+                if kwargs.get("trust_repo") in (None, "check"):
+                    kwargs["trust_repo"] = True
+                return orig_load(repo_or_dir, model, *args, **kwargs)
+
+            torch.hub.load = _patched_hub_load
+            torch.hub._trust_repo_patched = True
+    except Exception as exc:
+        logger.debug("Failed to pre-trust torch.hub repositories: %s", exc)
+
+
+_ensure_torch_hub_trusted()
 
 
 def _json_compatible(value: Any) -> Any:
@@ -764,6 +808,7 @@ def _run_whisper_timestamped_alignment(
         return extracted
 
     try:
+        _ensure_torch_hub_trusted()
         logger.info(
             "Loading Whisper alignment model '%s' on %s (lang=%s)...",
             model_name,
@@ -777,7 +822,19 @@ def _run_whisper_timestamped_alignment(
                 "vad": True,
                 "detect_disfluencies": True,
             }
-            res = whisperts.transcribe(model, str(audio.path), **transcribe_opts)
+            try:
+                res = whisperts.transcribe(model, str(audio.path), **transcribe_opts)
+            except Exception as vad_exc:
+                err_msg = str(vad_exc).lower()
+                if "silero" in err_msg or "vad" in err_msg or "untrusted" in err_msg:
+                    logger.warning(
+                        "Silero VAD pre-segmentation failed (%s). Retrying Whisper alignment with vad=False...",
+                        vad_exc,
+                    )
+                    transcribe_opts["vad"] = False
+                    res = whisperts.transcribe(model, str(audio.path), **transcribe_opts)
+                else:
+                    raise
         else:
             model = whisper_mod.load_model(model_name, device=device_str)
             res = model.transcribe(str(audio.path), language=language or "vi", word_timestamps=True)
@@ -803,7 +860,30 @@ def _run_whisper_timestamped_alignment(
             logger.info("Executing Whisper alignment on CPU fallback...")
             if whisperts is not None:
                 cpu_model = whisperts.load_model(model_name, device="cpu")
-                res = whisperts.transcribe(cpu_model, str(audio.path), language=language or "vi", vad=True)
+                try:
+                    res = whisperts.transcribe(
+                        cpu_model,
+                        str(audio.path),
+                        language=language or "vi",
+                        vad=True,
+                        detect_disfluencies=True,
+                    )
+                except Exception as vad_exc:
+                    err_msg = str(vad_exc).lower()
+                    if "silero" in err_msg or "vad" in err_msg or "untrusted" in err_msg:
+                        logger.warning(
+                            "Silero VAD pre-segmentation failed on CPU fallback (%s). Retrying with vad=False...",
+                            vad_exc,
+                        )
+                        res = whisperts.transcribe(
+                            cpu_model,
+                            str(audio.path),
+                            language=language or "vi",
+                            vad=False,
+                            detect_disfluencies=True,
+                        )
+                    else:
+                        raise
                 del cpu_model
             else:
                 cpu_model = whisper_mod.load_model(model_name, device="cpu")

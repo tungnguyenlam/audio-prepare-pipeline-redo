@@ -127,6 +127,12 @@ def create_app() -> web.Application:
         mounts.
     """
     _ensure_own_process_group()
+    try:
+        from src.diarization.zero_contamination import _ensure_torch_hub_trusted
+        _ensure_torch_hub_trusted()
+    except Exception as exc:
+        logger.debug("Could not pre-initialize torch.hub trust: %s", exc)
+
     app = web.Application(
         client_max_size=2048 * 1024 * 1024,
         middlewares=[no_cache_frontend_middleware],
