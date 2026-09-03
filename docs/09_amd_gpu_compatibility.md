@@ -117,16 +117,24 @@ Running `./scripts/start_web.sh` (or `start_studio.sh` / `start_pipeline.sh`) au
 
 If setting up a manual standalone virtual environment outside the launcher scripts:
 
-1. **Use AMD ROCm Modular Wheels:**
-   Standard PyPI `torch` defaults to NVIDIA CUDA. For ROCm with `gfx1200` support, install from AMD's official wheel repository:
+1. **Use AMD ROCm Modular Wheels & SDK:**
+   Standard PyPI `torch` defaults to NVIDIA CUDA. For ROCm with `gfx1200` support, install PyTorch, ROCm SDK, and device kernel pack (`amd-torch-device-gfx1200`) from AMD's official wheel repository:
    ```bash
-   pip install --no-deps \
-     https://stable.repo.amd.com/rocm/pytorch/whl-next/torch/torch-2.13.0%2Brocm10.0.0-cp313-cp313-linux_x86_64.whl \
-     https://stable.repo.amd.com/rocm/pytorch/whl-next/torchaudio/torchaudio-2.11.0.2%2Brocm10.0.0-cp313-cp313-linux_x86_64.whl \
-     https://stable.repo.amd.com/rocm/pytorch/whl-next/triton/triton-3.8.0%2Bgit4cff872c.rocm10.0.0-cp313-cp313-linux_x86_64.whl
+   uv pip install \
+     --extra-index-url https://stable.repo.amd.com/rocm/core/whl-next/ \
+     --extra-index-url https://stable.repo.amd.com/rocm/pytorch/whl-next/ \
+     --index-strategy unsafe-best-match \
+     "torch==2.13.0+rocm10.0.0" \
+     "torchaudio==2.11.0.2+rocm10.0.0" \
+     "triton==3.8.0+git4cff872c.rocm10.0.0" \
+     "rocm==10.0.0" \
+     "rocm-sdk-core==10.0.0" \
+     "rocm-sdk-libraries==10.0.0" \
+     "rocm-sdk-device-gfx1200==10.0.0" \
+     "amd-torch-device-gfx1200==2.13.0+rocm10.0.0"
    ```
 2. **Device Kernel Pack (`kpack`):**
-   Ensure `amd-torch-device-gfx1200` is present so that PyTorch finds the compiled kernel binaries for Navi 44 (`torch_gfx1200.kpack`).
+   The `amd-torch-device-gfx1200` package bundles the compiled kernel binaries for Navi 44 (`torch_gfx1200.kpack`) and `rocm-sdk-device-gfx1200`. Note: do not install `amd-torch-device-gfx1200` directly from PyPI as PyPI only hosts an empty 0.0.1 dummy package.
 3. **Avoid CUDA `torchcodec`:**
    Do not install `torchcodec` from PyPI, as it requires NVIDIA's `libnvrtc.so.13`. Pyannote and torchaudio seamlessly fall back to `torchaudio` and `soundfile` without it.
 4. **Environment Flag for Flash / Mem-Efficient Attention:**

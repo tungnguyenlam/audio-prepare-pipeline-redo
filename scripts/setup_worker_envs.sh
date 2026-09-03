@@ -91,13 +91,18 @@ reconcile_py313_hardware() {
 
         if [ "$needs_rocm" -eq 1 ]; then
             echo "⚡ Installing AMD ROCm PyTorch wheels into ${target_venv}..."
-            uv pip install --python "$py_bin" --no-deps \
-              https://stable.repo.amd.com/rocm/pytorch/whl-next/torch/torch-2.13.0%2Brocm10.0.0-cp313-cp313-linux_x86_64.whl \
-              https://stable.repo.amd.com/rocm/pytorch/whl-next/torchaudio/torchaudio-2.11.0.2%2Brocm10.0.0-cp313-cp313-linux_x86_64.whl \
-              https://stable.repo.amd.com/rocm/pytorch/whl-next/triton/triton-3.8.0%2Bgit4cff872c.rocm10.0.0-cp313-cp313-linux_x86_64.whl 2>/dev/null || true
-            
-            "$py_bin" -c "import importlib.util; exit(0 if importlib.util.find_spec('amd_torch_device_gfx1200') else 1)" 2>/dev/null || \
-              uv pip install --python "$py_bin" amd-torch-device-gfx1200 2>/dev/null || true
+            uv pip install --python "$py_bin" \
+              --extra-index-url https://stable.repo.amd.com/rocm/core/whl-next/ \
+              --extra-index-url https://stable.repo.amd.com/rocm/pytorch/whl-next/ \
+              --index-strategy unsafe-best-match \
+              "torch==2.13.0+rocm10.0.0" \
+              "torchaudio==2.11.0.2+rocm10.0.0" \
+              "triton==3.8.0+git4cff872c.rocm10.0.0" \
+              "rocm==10.0.0" \
+              "rocm-sdk-core==10.0.0" \
+              "rocm-sdk-libraries==10.0.0" \
+              "rocm-sdk-device-gfx1200==10.0.0" \
+              "amd-torch-device-gfx1200==2.13.0+rocm10.0.0"
         fi
 
         if "$py_bin" -c "import importlib.util; exit(0 if importlib.util.find_spec('torchcodec') else 1)" 2>/dev/null; then
