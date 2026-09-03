@@ -1,6 +1,6 @@
 /**
  * SonicStudio — Experiment Tab: Zero-Contamination Single-Speaker Diarization
- * Modular ES6 Frontend Controller
+ * Modular ES6 Frontend Controller with Syllable & Boundary Integrity Gate
  */
 
 (function () {
@@ -13,7 +13,7 @@
     activeTaskId: null,
     taskPollInterval: null,
     previewAudio: new Audio(),
-    activePlayingTurnIndex: null,
+    activePlayingBtn: null,
     lastResult: null,
 
     init() {
@@ -34,29 +34,51 @@
         deviceSelect: document.getElementById('exp-device-select'),
         btnReset: document.getElementById('btn-exp-reset'),
 
-        // Stage 1
+        // Stage 1: Asymmetric Sensitivity
         primaryBackend: document.getElementById('exp-primary-backend'),
         targetOnset: document.getElementById('exp-target-onset'),
         targetOnsetValue: document.getElementById('exp-target-onset-val'),
         competitorOnset: document.getElementById('exp-competitor-onset'),
         competitorOnsetValue: document.getElementById('exp-competitor-onset-val'),
 
-        // Stage 2
+        // Stage 2: Dual-Engine Consensus
         enableConsensus: document.getElementById('exp-enable-consensus'),
         secondaryBackend: document.getElementById('exp-secondary-backend'),
         consensusFields: document.getElementById('exp-consensus-fields'),
 
-        // Stage 3
+        // Stage 3: Boundary & Syllable Integrity Gate
         enableCollar: document.getElementById('exp-enable-collar'),
         boundaryCollar: document.getElementById('exp-boundary-collar'),
         boundaryCollarValue: document.getElementById('exp-boundary-collar-val'),
         minDuration: document.getElementById('exp-min-duration'),
         minDurationValue: document.getElementById('exp-min-duration-val'),
-        transExclusion: document.getElementById('exp-trans-exclusion'),
-        transExclusionValue: document.getElementById('exp-trans-exclusion-val'),
         collarFields: document.getElementById('exp-collar-fields'),
 
-        // Stage 4
+        // Stage 3a: Option A - Context-Aware Handoff Guard
+        enableContextCollar: document.getElementById('exp-enable-context-collar'),
+        contextCollarFields: document.getElementById('exp-context-collar-fields'),
+        handoffRisk: document.getElementById('exp-handoff-risk'),
+        handoffRiskValue: document.getElementById('exp-handoff-risk-val'),
+        silenceTail: document.getElementById('exp-silence-tail'),
+        silenceTailValue: document.getElementById('exp-silence-tail-val'),
+
+        // Stage 3b: Option B - Micro-Acoustic Energy & RMS Valley Snapping
+        enableEnergySnapping: document.getElementById('exp-enable-energy-snapping'),
+        energySnappingFields: document.getElementById('exp-energy-snapping-fields'),
+        energyWindow: document.getElementById('exp-energy-window'),
+        energyWindowValue: document.getElementById('exp-energy-window-val'),
+        energyFloor: document.getElementById('exp-energy-floor'),
+        energyFloorValue: document.getElementById('exp-energy-floor-val'),
+
+        // Stage 3c: Option C - Syllable & Word Forced Alignment Lock
+        enableSyllableAlign: document.getElementById('exp-enable-syllable-align'),
+        syllableAlignFields: document.getElementById('exp-syllable-align-fields'),
+        alignerEngine: document.getElementById('exp-aligner-engine'),
+        alignerDevice: document.getElementById('exp-aligner-device'),
+        alignerEndpoint: document.getElementById('exp-aligner-endpoint'),
+        alignerEndpointWrap: document.getElementById('exp-aligner-endpoint-wrap'),
+
+        // Stage 4: Dense WeSpeaker Homogeneity
         enableHomo: document.getElementById('exp-enable-homo'),
         homoSim: document.getElementById('exp-homo-sim'),
         homoSimValue: document.getElementById('exp-homo-sim-val'),
@@ -84,7 +106,7 @@
         vibevoiceEndpoint: document.getElementById('exp-vibevoice-endpoint'),
         vibevoiceFields: document.getElementById('exp-vibevoice-fields'),
 
-        // Action
+        // Action & Progress
         btnRun: document.getElementById('btn-run-experiment'),
         btnCancel: document.getElementById('btn-cancel-experiment'),
         progressWrap: document.getElementById('exp-progress-wrap'),
@@ -109,7 +131,10 @@
       this.bindSlider(this.el.competitorOnset, this.el.competitorOnsetValue, '%', 100);
       this.bindSlider(this.el.boundaryCollar, this.el.boundaryCollarValue, 's');
       this.bindSlider(this.el.minDuration, this.el.minDurationValue, 's');
-      this.bindSlider(this.el.transExclusion, this.el.transExclusionValue, 's');
+      this.bindSlider(this.el.handoffRisk, this.el.handoffRiskValue, 's');
+      this.bindSlider(this.el.silenceTail, this.el.silenceTailValue, 's', 1, '+');
+      this.bindSlider(this.el.energyWindow, this.el.energyWindowValue, 'ms', 1000, '±');
+      this.bindSlider(this.el.energyFloor, this.el.energyFloorValue, ' dB');
       this.bindSlider(this.el.homoSim, this.el.homoSimValue, '');
       this.bindSlider(this.el.homoWin, this.el.homoWinValue, 's');
 
@@ -119,6 +144,18 @@
       });
       this.el.enableCollar?.addEventListener('change', e => {
         if (self.el.collarFields) self.el.collarFields.style.display = e.target.checked ? 'block' : 'none';
+      });
+      this.el.enableContextCollar?.addEventListener('change', e => {
+        if (self.el.contextCollarFields) self.el.contextCollarFields.style.display = e.target.checked ? 'block' : 'none';
+      });
+      this.el.enableEnergySnapping?.addEventListener('change', e => {
+        if (self.el.energySnappingFields) self.el.energySnappingFields.style.display = e.target.checked ? 'block' : 'none';
+      });
+      this.el.enableSyllableAlign?.addEventListener('change', e => {
+        if (self.el.syllableAlignFields) self.el.syllableAlignFields.style.display = e.target.checked ? 'block' : 'none';
+      });
+      this.el.alignerEngine?.addEventListener('change', e => {
+        if (self.el.alignerEndpointWrap) self.el.alignerEndpointWrap.style.display = e.target.value === 'remote_whisper' ? 'block' : 'none';
       });
       this.el.enableHomo?.addEventListener('change', e => {
         if (self.el.homoFields) self.el.homoFields.style.display = e.target.checked ? 'block' : 'none';
@@ -164,11 +201,11 @@
       this.el.btnExportRttm?.addEventListener('click', () => self.exportRttm());
     },
 
-    bindSlider(slider, label, unit, multiplier = 1) {
+    bindSlider(slider, label, unit, multiplier = 1, prefix = '') {
       if (!slider || !label) return;
       slider.addEventListener('input', () => {
         const val = parseFloat(slider.value) * multiplier;
-        label.textContent = (multiplier === 100 ? Math.round(val) : val.toFixed(2)) + unit;
+        label.textContent = prefix + (multiplier === 100 || multiplier === 1000 ? Math.round(val) : val.toFixed(2)) + unit;
       });
     },
 
@@ -239,10 +276,22 @@
       if (this.el.enableCollar) { this.el.enableCollar.checked = true; this.el.collarFields.style.display = 'block'; }
       if (this.el.boundaryCollar) { this.el.boundaryCollar.value = '0.35'; this.el.boundaryCollarValue.textContent = '0.35s'; }
       if (this.el.minDuration) { this.el.minDuration.value = '0.80'; this.el.minDurationValue.textContent = '0.80s'; }
-      if (this.el.transExclusion) { this.el.transExclusion.value = '0.50'; this.el.transExclusionValue.textContent = '0.50s'; }
+      // Option A
+      if (this.el.enableContextCollar) { this.el.enableContextCollar.checked = true; this.el.contextCollarFields.style.display = 'block'; }
+      if (this.el.handoffRisk) { this.el.handoffRisk.value = '0.80'; this.el.handoffRiskValue.textContent = '0.80s'; }
+      if (this.el.silenceTail) { this.el.silenceTail.value = '0.15'; this.el.silenceTailValue.textContent = '+0.15s'; }
+      // Option B
+      if (this.el.enableEnergySnapping) { this.el.enableEnergySnapping.checked = false; this.el.energySnappingFields.style.display = 'none'; }
+      if (this.el.energyWindow) { this.el.energyWindow.value = '0.15'; this.el.energyWindowValue.textContent = '±150ms'; }
+      if (this.el.energyFloor) { this.el.energyFloor.value = '-30'; this.el.energyFloorValue.textContent = '-30 dB'; }
+      // Option C
+      if (this.el.enableSyllableAlign) { this.el.enableSyllableAlign.checked = false; this.el.syllableAlignFields.style.display = 'none'; }
+      if (this.el.alignerEngine) this.el.alignerEngine.value = 'mms_fa';
+      // Stage 4
       if (this.el.enableHomo) { this.el.enableHomo.checked = false; this.el.homoFields.style.display = 'none'; }
       if (this.el.homoSim) { this.el.homoSim.value = '0.75'; this.el.homoSimValue.textContent = '0.75'; }
       if (this.el.homoWin) { this.el.homoWin.value = '1.00'; this.el.homoWinValue.textContent = '1.00s'; }
+      // Stage 5
       if (this.el.gemmaPrompt) this.el.gemmaPrompt.value = DEFAULT_GEMMA_PROMPT;
       if (window.showToast) window.showToast('Experiment parameters reset to recommended defaults', 'info');
     },
@@ -339,20 +388,35 @@
         competitor_onset: parseFloat(this.el.competitorOnset?.value || '0.20'),
         enable_consensus: Boolean(this.el.enableConsensus?.checked),
         secondary_backend: this.el.secondaryBackend?.value || 'diarizen',
+        // Stage 3 Base
         enable_collar_erosion: Boolean(this.el.enableCollar?.checked),
         boundary_collar_s: parseFloat(this.el.boundaryCollar?.value || '0.35'),
         min_turn_duration_s: parseFloat(this.el.minDuration?.value || '0.80'),
-        transition_exclusion_s: parseFloat(this.el.transExclusion?.value || '0.50'),
+        transition_exclusion_s: 0.50,
+        // Stage 3a: Option A
+        enable_context_collar: Boolean(this.el.enableContextCollar?.checked),
+        handoff_risk_distance_s: parseFloat(this.el.handoffRisk?.value || '0.80'),
+        silence_tail_buffer_s: parseFloat(this.el.silenceTail?.value || '0.15'),
+        // Stage 3b: Option B
+        enable_energy_snapping: Boolean(this.el.enableEnergySnapping?.checked),
+        energy_search_window_s: parseFloat(this.el.energyWindow?.value || '0.15'),
+        energy_valley_floor_db: parseFloat(this.el.energyFloor?.value || '-30'),
+        // Stage 3c: Option C
+        enable_syllable_alignment: Boolean(this.el.enableSyllableAlign?.checked),
+        aligner_engine: this.el.alignerEngine?.value || 'mms_fa',
+        aligner_device: this.el.alignerDevice?.value || 'auto',
+        aligner_endpoint: this.el.alignerEndpoint?.value || '',
+        // Stage 4
         enable_homogeneity: Boolean(this.el.enableHomo?.checked),
         min_homogeneity_similarity: parseFloat(this.el.homoSim?.value || '0.75'),
         homogeneity_window_s: parseFloat(this.el.homoWin?.value || '1.00'),
-        // Remote Gemma 4
+        // Stage 5a
         enable_gemma: Boolean(this.el.enableGemma?.checked),
         gemma_endpoint: this.el.gemmaEndpoint?.value,
         gemma_model: this.el.gemmaModel?.value,
         gemma_prompt: this.el.gemmaPrompt?.value,
         gemma_timeout_s: parseFloat(this.el.gemmaTimeout?.value || '120'),
-        // Remote or Dedicated GPU VibeVoice
+        // Stage 5b
         enable_vibevoice: Boolean(this.el.enableVibeVoice?.checked),
         vibevoice_model_id: this.el.vibevoiceModel?.value || 'Dubedo/VibeVoice-ASR-HF-INT8',
         vibevoice_device: this.el.vibevoiceDevice?.value || 'same',
@@ -474,9 +538,17 @@
 
       if (funnel.eroded_speech_duration_s !== undefined) {
         stages.push({
-          name: '3. Collar Eroded',
+          name: '3. Boundary Gate',
           val: `${(funnel.eroded_speech_duration_s).toFixed(1)}s`,
-          sub: `${funnel.eroded_turns_count} shaved turns`,
+          sub: `${funnel.eroded_turns_count} turns`,
+        });
+      }
+
+      if (funnel.syllables_rescued_count !== undefined && funnel.syllables_rescued_count > 0) {
+        stages.push({
+          name: 'Syllables Rescued',
+          val: `${funnel.syllables_rescued_count} tails`,
+          sub: `Avg +${funnel.avg_tail_preservation_ms || 0}ms preserved`,
         });
       }
 
@@ -520,46 +592,74 @@
       if (!this.el.turnsBody) return;
       if (!turns || turns.length === 0) {
         this.el.turnsBody.innerHTML = `
-          <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2.5rem 1rem;">
+          <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2.5rem 1rem;">
             No turns survived the zero-contamination constraints. Consider slightly relaxing boundary collar erosion or target onset threshold.
           </td></tr>`;
         return;
       }
 
+      const policyMap = {
+        context_aware_collar: 'Context Guard',
+        acoustic_energy_valley: 'RMS Valley',
+        syllable_word_lock: 'Syllable Lock',
+        standard: 'Standard Collar',
+      };
+
       const self = this;
       this.el.turnsBody.innerHTML = turns
         .map((t, idx) => {
           const dur = (t.end_s - t.start_s).toFixed(2);
+          const rawStart = t.raw_start_s !== undefined ? t.raw_start_s : t.start_s;
+          const rawEnd = t.raw_end_s !== undefined ? t.raw_end_s : t.end_s;
+          const deltaEnd = t.delta_end_ms || 0;
+
+          let deltaBadge = '';
+          if (t.tail_rescued || deltaEnd > 0) {
+            deltaBadge = `<span class="badge badge-sm badge-success" title="Tail preserved into silence">+${Math.round(deltaEnd)}ms (rescued)</span>`;
+          } else if (deltaEnd < 0) {
+            deltaBadge = `<span class="badge badge-sm badge-warning" title="Eroded due to neighboring competitor">${Math.round(deltaEnd)}ms (handoff)</span>`;
+          } else {
+            deltaBadge = `<span class="badge badge-sm badge-ghost">0ms</span>`;
+          }
+
+          const policyLabel = policyMap[t.boundary_policy] || t.boundary_policy || 'Standard';
+
           return `
           <tr data-index="${idx}">
             <td>
-              <button class="btn btn-secondary btn-xs exp-table-play-btn" data-index="${idx}" data-start="${t.start_s}" data-end="${t.end_s}">
-                ▶ Play
-              </button>
+              <div style="display: flex; gap: 4px; align-items: center;">
+                <button type="button" class="btn btn-ghost btn-xs exp-table-play-blunt" data-start="${rawStart}" data-end="${rawEnd}" title="Play with blunt collar erosion (before syllable rescue)">
+                  ▶ Blunt
+                </button>
+                <button type="button" class="btn btn-primary btn-xs exp-table-play-pure" data-start="${t.start_s}" data-end="${t.end_s}" title="Play with refined boundary (syllable & energy snapped)">
+                  ▶ Refined
+                </button>
+              </div>
             </td>
             <td><span class="exp-speaker-chip">${t.speaker_id}</span></td>
             <td><code>${t.start_s.toFixed(2)}s</code></td>
             <td><code>${t.end_s.toFixed(2)}s</code></td>
             <td><strong>${dur}s</strong></td>
+            <td>${deltaBadge}</td>
+            <td><span class="badge badge-sm badge-ghost">${policyLabel}</span></td>
             <td><span class="badge badge-sm badge-success">Pure Single Speaker</span></td>
           </tr>
         `;
         })
         .join('');
 
-      // Play listeners
-      this.el.turnsBody.querySelectorAll('.exp-table-play-btn').forEach(btn => {
+      // Play listeners for both Blunt and Pure buttons
+      this.el.turnsBody.querySelectorAll('.exp-table-play-blunt, .exp-table-play-pure').forEach(btn => {
         btn.addEventListener('click', () => {
-          const idx = parseInt(btn.dataset.index, 10);
           const start = parseFloat(btn.dataset.start);
           const end = parseFloat(btn.dataset.end);
-          self.togglePlayTurn(idx, start, end, btn);
+          self.togglePlayTurn(start, end, btn);
         });
       });
     },
 
-    togglePlayTurn(index, start, end, btn) {
-      if (this.activePlayingTurnIndex === index) {
+    togglePlayTurn(start, end, btn) {
+      if (this.activePlayingBtn === btn) {
         this.stopTurnPreview();
         return;
       }
@@ -568,8 +668,8 @@
       const audioId = this.el.audioSelect?.value || (window.state && window.state.activeAudio && window.state.activeAudio.id);
       if (!audioId) return;
 
-      this.activePlayingTurnIndex = index;
-      btn.classList.remove('btn-secondary');
+      this.activePlayingBtn = btn;
+      btn.dataset.prevHtml = btn.innerHTML;
       btn.classList.add('btn-danger');
       btn.textContent = '⏹ Stop';
 
@@ -584,15 +684,13 @@
     stopTurnPreview() {
       this.previewAudio.pause();
       this.previewAudio.currentTime = 0;
-      if (this.activePlayingTurnIndex !== null && this.el.turnsBody) {
-        const btn = this.el.turnsBody.querySelector(`.exp-table-play-btn[data-index="${this.activePlayingTurnIndex}"]`);
-        if (btn) {
-          btn.classList.remove('btn-danger');
-          btn.classList.add('btn-secondary');
-          btn.textContent = '▶ Play';
+      if (this.activePlayingBtn) {
+        this.activePlayingBtn.classList.remove('btn-danger');
+        if (this.activePlayingBtn.dataset.prevHtml) {
+          this.activePlayingBtn.innerHTML = this.activePlayingBtn.dataset.prevHtml;
         }
+        this.activePlayingBtn = null;
       }
-      this.activePlayingTurnIndex = null;
       if (this.el.previewBtn) {
         this.el.previewBtn.textContent = '▶ Play Track';
       }

@@ -929,7 +929,10 @@ High-precision speaker diarization pipeline engineered specifically for TTS trai
 #### Pipeline stages:
 1. **Asymmetric Detection & Competitor Tripwires:** Runs the primary model (`Sortformer`, `DiariZen`, or `Pyannote 3.1`) with a strict target onset threshold (`target_onset`, default 0.80) and a paranoid competitor tripwire threshold (`competitor_onset`, default 0.20) that vetoes frames if any secondary speaker is even faintly detected.
 2. **Dual-Engine Mutual Consensus:** When `enable_consensus=True`, runs an orthogonal secondary engine (e.g. DiariZen or Pyannote 3.1) and maps speakers using the Hungarian bipartite matching algorithm (`_maximum_weight_assignment`). An interval is kept **if and only if both engines unanimously agree** on the speaker identity and neither model detects overlapping speech.
-3. **Aggressive Collar Erosion & Gap Guard:** Shaves `boundary_collar_s` (default 0.35s) inward from both the start and end of every turn to eliminate boundary co-articulation and handoff bleed. Excavates `transition_exclusion_s` (default 0.50s) buffers when speakers alternate rapidly. Never merges across pauses (`allow_gap_merge=False`). Discards turns shorter than `min_turn_duration_s` (default 0.80s).
+3. **Boundary & Syllable Integrity Gate (Premature Truncation Prevention):**
+   - **Option A: Context-Aware Handoff Guard (`enable_context_collar`):** Only shaves inward margins if another speaker speaks within `handoff_risk_distance_s` (default 0.80s). If the utterance transitions into natural silence, the tail is preserved and gently extended by `silence_tail_buffer_s` (default +0.15s), preventing truncation of Vietnamese syllable codas ($-p, -t, -k, -m, -n, -ng$) and tonal contours.
+   - **Option B: Micro-Acoustic Energy & RMS Valley Snapping (`enable_energy_snapping`):** Scans the audio micro-waveform in a `±energy_search_window_s` (default ±150ms) window with 2ms hop. Snaps the boundary timestamp directly to the nearest vocal cord closure valley / zero-crossing, preventing slicing through voiced phonemes.
+   - **Option C: Syllable & Word Forced Alignment Lock (`enable_syllable_alignment`):** Employs PyTorch's `torchaudio.pipelines.MMS_FA` (or a remote Whisper ASR endpoint) to lock boundaries to complete word/syllable tokens, strictly forbidding mid-word slicing.
 4. **Dense Sliding WeSpeaker Homogeneity Filter:** When `enable_homogeneity=True`, slides short `homogeneity_window_s` (1.0s, hop 0.25s) across candidate turns using `pyannote/wespeaker-voxceleb-resnet34-LM`. Drops any turn where the cosine similarity between sub-windows and the turn centroid dips below `min_homogeneity_similarity` (default 0.75).
 5. **In-Loop Foundation Model Verification (Remote Host or Dedicated Secondary GPU):**
    - **Microsoft VibeVoice-ASR:** When `enable_vibevoice=True`, analyzes candidate audio with autoregressive speaker tokens. Drops turn immediately if secondary speech duration exceeds `max_secondary_speech_s` (default 0.0s). Can run on a dedicated device (`vibevoice_device`, e.g. `cuda:1` to prevent OOM with primary diarizer on `cuda:0`) or call a remote HTTP server via `vibevoice_endpoint`.
@@ -938,6 +941,9 @@ High-precision speaker diarization pipeline engineered specifically for TTS trai
 #### Reusable modular functions:
 - `compute_consensus_turns(primary_turns, secondary_turns, audio_duration_s) -> tuple[list[SpeakerTurn], dict[str, str]]`
 - `erode_turn_boundaries(turns, collar_s=0.35, min_duration_s=0.80, transition_exclusion_s=0.50) -> list[SpeakerTurn]`
+- `apply_context_aware_collar(turns, collar_s=0.35, handoff_risk_s=0.80, silence_tail_s=0.15, min_duration_s=0.80, transition_exclusion_s=0.50, audio_duration_s=None) -> tuple[list[SpeakerTurn], list[dict]]`
+- `snap_boundaries_to_acoustic_valleys(audio, turns, search_window_s=0.15, energy_floor_db=-30.0, frame_len_ms=10.0, hop_len_ms=2.0) -> tuple[list[SpeakerTurn], list[dict]]`
+- `align_and_lock_syllable_boundaries(audio, turns, aligner_engine="mms_fa", aligner_endpoint=None, aligner_device="auto", token=None) -> tuple[list[SpeakerTurn], list[dict]]`
 - `filter_by_embedding_homogeneity(audio, turns, window_s=1.0, hop_s=0.25, min_similarity=0.75, device="auto", token=None) -> tuple[list[SpeakerTurn], list[tuple]]`
 - `filter_by_foundation_models(audio, turns, config, progress_callback=None) -> tuple[list[SpeakerTurn], list[tuple]]`
 

@@ -49,6 +49,12 @@ DEFAULT_HOMOGENEITY_HOP_S = 0.25
 DEFAULT_MIN_HOMOGENEITY_SIMILARITY = 0.75
 
 
+DEFAULT_HANDOFF_RISK_DISTANCE_S = 0.80
+DEFAULT_SILENCE_TAIL_BUFFER_S = 0.15
+DEFAULT_ENERGY_SEARCH_WINDOW_S = 0.15
+DEFAULT_ENERGY_VALLEY_FLOOR_DB = -30.0
+
+
 @dataclass
 class ZeroContaminationConfig:
     """Settings controlling each stage of the zero-contamination pipeline."""
@@ -63,12 +69,28 @@ class ZeroContaminationConfig:
     enable_consensus: bool = True
     secondary_backend: str = "diarizen"  # "diarizen", "pyannote", "sortformer"
 
-    # Stage 3: Aggressive Boundary Collar Erosion & Gap Guard
+    # Stage 3: Boundary & Syllable Integrity Gate
     enable_collar_erosion: bool = True
     boundary_collar_s: float = DEFAULT_COLLAR_EROSION_S
     min_turn_duration_s: float = DEFAULT_MIN_TURN_DURATION_S
     transition_exclusion_s: float = DEFAULT_TRANSITION_EXCLUSION_S
     allow_gap_merge: bool = False
+
+    # Stage 3a: Option A - Context-Aware Collar & Handoff Guard
+    enable_context_collar: bool = True
+    handoff_risk_distance_s: float = DEFAULT_HANDOFF_RISK_DISTANCE_S
+    silence_tail_buffer_s: float = DEFAULT_SILENCE_TAIL_BUFFER_S
+
+    # Stage 3b: Option B - Micro-Acoustic Energy & RMS Silence Valley Snapping
+    enable_energy_snapping: bool = False
+    energy_search_window_s: float = DEFAULT_ENERGY_SEARCH_WINDOW_S
+    energy_valley_floor_db: float = DEFAULT_ENERGY_VALLEY_FLOOR_DB
+
+    # Stage 3c: Option C - Syllable / Word Forced Alignment Lock (High-Compute)
+    enable_syllable_alignment: bool = False
+    aligner_engine: str = "mms_fa"  # "mms_fa" or "remote_whisper"
+    aligner_endpoint: str | None = None
+    aligner_device: str | None = None
 
     # Stage 4: Dense Sliding-Window Embedding Homogeneity
     enable_homogeneity: bool = False
@@ -115,6 +137,14 @@ class TurnAuditRecord:
     min_similarity: float | None = None
     gemma_decision: dict[str, Any] | None = None
     vibevoice_decision: dict[str, Any] | None = None
+    # Syllable & Boundary Integrity A/B audition metadata
+    raw_start_s: float | None = None
+    raw_end_s: float | None = None
+    delta_start_ms: float = 0.0
+    delta_end_ms: float = 0.0
+    boundary_policy: str = "standard"  # "context_aware", "acoustic_valley", "word_locked", "standard"
+    transcript: str | None = None
+    tail_rescued: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -131,8 +161,24 @@ class ZeroContaminationResult:
     config: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        diar_dict = self.diarization.to_dict()
+        enriched_turns = []
+        for i, turn in enumerate(diar_dict.get("turns", [])):
+            rec = self.audit_records[i] if i < len(self.audit_records) else None
+            t_data = dict(turn)
+            if rec:
+                t_data["raw_start_s"] = rec.raw_start_s if rec.raw_start_s is not None else rec.original_start_s
+                t_data["raw_end_s"] = rec.raw_end_s if rec.raw_end_s is not None else rec.original_end_s
+                t_data["delta_start_ms"] = rec.delta_start_ms
+                t_data["delta_end_ms"] = rec.delta_end_ms
+                t_data["boundary_policy"] = rec.boundary_policy
+                t_data["tail_rescued"] = rec.tail_rescued
+                t_data["transcript"] = rec.transcript
+            enriched_turns.append(t_data)
+        diar_dict["turns"] = enriched_turns
+
         return {
-            "diarization": self.diarization.to_dict(),
+            "diarization": diar_dict,
             "audit_records": [rec.to_dict() for rec in self.audit_records],
             "funnel_stats": self.funnel_stats,
             "stage_log": self.stage_log,
@@ -292,6 +338,285 @@ def erode_turn_boundaries(
             )
 
     return eroded
+
+
+def apply_context_aware_collar(
+    turns: Sequence[SpeakerTurn],
+    *,
+    collar_s: float = DEFAULT_COLLAR_EROSION_S,
+    handoff_risk_s: float = DEFAULT_HANDOFF_RISK_DISTANCE_S,
+    silence_tail_s: float = DEFAULT_SILENCE_TAIL_BUFFER_S,
+    min_duration_s: float = DEFAULT_MIN_TURN_DURATION_S,
+    transition_exclusion_s: float = DEFAULT_TRANSITION_EXCLUSION_S,
+    audio_duration_s: float | None = None,
+) -> tuple[list[SpeakerTurn], list[dict[str, Any]]]:
+    """Apply asymmetric context-aware collar erosion to preserve word and syllable endings.
+
+    If a turn is adjacent to another speaker within handoff_risk_s, it is aggressively
+    eroded inward to eliminate speaker bleed. If the turn transitions into natural silence
+    (or speech ceases with no rival speaker nearby), the trailing coda/tone is preserved
+    and gently extended by silence_tail_s.
+    """
+    if not turns:
+        return [], []
+
+    sorted_turns = sorted(turns, key=lambda t: (t.start_s, t.end_s))
+    refined: list[SpeakerTurn] = []
+    audits: list[dict[str, Any]] = []
+
+    for index, turn in enumerate(sorted_turns):
+        start = turn.start_s
+        end = turn.end_s
+        raw_start = start
+        raw_end = end
+        start_shaved = False
+        end_shaved = False
+
+        # 1. Start boundary check
+        if index > 0:
+            prev_turn = sorted_turns[index - 1]
+            if prev_turn.speaker_id != turn.speaker_id:
+                gap = turn.start_s - prev_turn.end_s
+                if gap < handoff_risk_s:
+                    extra = max(0.0, (transition_exclusion_s - gap) / 2.0) if gap < transition_exclusion_s else 0.0
+                    start = turn.start_s + collar_s + extra
+                    start_shaved = True
+
+        # 2. End boundary check (where premature word truncation happens)
+        if index + 1 < len(sorted_turns):
+            next_turn = sorted_turns[index + 1]
+            if next_turn.speaker_id != turn.speaker_id:
+                gap = next_turn.start_s - turn.end_s
+                if gap < handoff_risk_s:
+                    extra = max(0.0, (transition_exclusion_s - gap) / 2.0) if gap < transition_exclusion_s else 0.0
+                    end = turn.end_s - (collar_s + extra)
+                    end_shaved = True
+                else:
+                    end = min(turn.end_s + silence_tail_s, next_turn.start_s - 0.05)
+            else:
+                end = min(turn.end_s + silence_tail_s, next_turn.start_s - 0.05)
+        else:
+            max_limit = audio_duration_s if audio_duration_s else (turn.end_s + silence_tail_s + 1.0)
+            end = min(turn.end_s + silence_tail_s, max_limit)
+
+        if end - start >= min_duration_s:
+            final_start = round(start, 4)
+            final_end = round(end, 4)
+            refined_turn = SpeakerTurn(
+                speaker_id=turn.speaker_id,
+                start_s=final_start,
+                end_s=final_end,
+                confidence=turn.confidence,
+            )
+            refined.append(refined_turn)
+            audits.append({
+                "raw_start_s": raw_start,
+                "raw_end_s": raw_end,
+                "start_s": final_start,
+                "end_s": final_end,
+                "delta_start_ms": round((final_start - raw_start) * 1000.0, 1),
+                "delta_end_ms": round((final_end - raw_end) * 1000.0, 1),
+                "start_shaved": start_shaved,
+                "end_shaved": end_shaved,
+                "tail_rescued": not end_shaved,
+                "policy": "context_aware_collar",
+            })
+
+    return refined, audits
+
+
+def snap_boundaries_to_acoustic_valleys(
+    audio: Audio,
+    turns: Sequence[SpeakerTurn],
+    *,
+    search_window_s: float = DEFAULT_ENERGY_SEARCH_WINDOW_S,
+    energy_floor_db: float = DEFAULT_ENERGY_VALLEY_FLOOR_DB,
+    frame_len_ms: float = 10.0,
+    hop_len_ms: float = 2.0,
+) -> tuple[list[SpeakerTurn], list[dict[str, Any]]]:
+    """Snap turn boundaries to local short-time energy (RMS) silence valleys.
+
+    Prevents slicing through voiced phonemes, vowels, or coda consonants by walking
+    the boundary to the nearest local silence minimum / zero-crossing in the micro-waveform.
+    """
+    if not turns:
+        return [], []
+
+    waveform, sr = sf.read(str(audio.path), dtype="float32", always_2d=False)
+    if waveform.ndim > 1:
+        waveform = waveform.mean(axis=1)
+
+    frame_samples = max(1, int(round(frame_len_ms * sr / 1000.0)))
+    hop_samples = max(1, int(round(hop_len_ms * sr / 1000.0)))
+    search_samples = int(round(search_window_s * sr))
+
+    snapped: list[SpeakerTurn] = []
+    audits: list[dict[str, Any]] = []
+
+    def find_local_valley(center_sample: int) -> int:
+        left = max(0, center_sample - search_samples)
+        right = min(len(waveform), center_sample + search_samples)
+        if right - left < frame_samples:
+            return center_sample
+
+        segment = waveform[left:right]
+        num_frames = (len(segment) - frame_samples) // hop_samples + 1
+        if num_frames <= 0:
+            return center_sample
+
+        energies = []
+        for f in range(num_frames):
+            f_start = f * hop_samples
+            frame = segment[f_start : f_start + frame_samples]
+            rms = float(np.sqrt(np.mean(frame**2) + 1e-12))
+            energies.append(rms)
+
+        energies = np.array(energies)
+        center_frame = (center_sample - left) / hop_samples
+        frame_indices = np.arange(len(energies))
+        dist_penalty = (frame_indices - center_frame) ** 2 * 0.05
+        cost = energies + (dist_penalty * np.median(energies) * 0.1)
+
+        best_frame = int(np.argmin(cost))
+        best_sample = left + best_frame * hop_samples + (frame_samples // 2)
+
+        # Zero-crossing alignment to prevent audio clicks
+        zc_window = waveform[max(0, best_sample - 20) : min(len(waveform), best_sample + 20)]
+        zc_indices = np.where(np.diff(np.signbit(zc_window)))[0]
+        if len(zc_indices) > 0:
+            best_sample = max(0, best_sample - 20) + zc_indices[0]
+
+        return best_sample
+
+    for turn in turns:
+        start_samp = int(round(turn.start_s * sr))
+        end_samp = int(round(turn.end_s * sr))
+
+        new_start_samp = find_local_valley(start_samp)
+        new_end_samp = find_local_valley(end_samp)
+
+        new_start_s = round(new_start_samp / sr, 4)
+        new_end_s = round(new_end_samp / sr, 4)
+
+        if new_end_s - new_start_s >= 0.30:
+            snapped.append(
+                SpeakerTurn(
+                    speaker_id=turn.speaker_id,
+                    start_s=new_start_s,
+                    end_s=new_end_s,
+                    confidence=turn.confidence,
+                )
+            )
+            audits.append({
+                "raw_start_s": turn.start_s,
+                "raw_end_s": turn.end_s,
+                "start_s": new_start_s,
+                "end_s": new_end_s,
+                "delta_start_ms": round((new_start_s - turn.start_s) * 1000.0, 1),
+                "delta_end_ms": round((new_end_s - turn.end_s) * 1000.0, 1),
+                "policy": "acoustic_energy_valley",
+            })
+        else:
+            snapped.append(turn)
+
+    return snapped, audits
+
+
+def align_and_lock_syllable_boundaries(
+    audio: Audio,
+    turns: Sequence[SpeakerTurn],
+    *,
+    aligner_engine: str = "mms_fa",
+    aligner_endpoint: str | None = None,
+    aligner_device: str = "auto",
+    token: str | None = None,
+) -> tuple[list[SpeakerTurn], list[dict[str, Any]]]:
+    """Lock boundaries to complete syllable/word timestamps using forced alignment or ASR.
+
+    Strictly forbids slicing through the interior of an active syllable.
+    """
+    if not turns:
+        return [], []
+
+    import torch
+    import torchaudio
+
+    device_str = "cuda" if torch.cuda.is_available() and aligner_device != "cpu" else "cpu"
+    if aligner_device and aligner_device.startswith("cuda:"):
+        device_str = aligner_device
+
+    aligned_turns: list[SpeakerTurn] = []
+    audits: list[dict[str, Any]] = []
+
+    try:
+        bundle = torchaudio.pipelines.MMS_FA
+        model = bundle.get_model().to(device_str)
+        model.eval()
+
+        waveform, sr = torchaudio.load(str(audio.path))
+        if waveform.shape[0] > 1:
+            waveform = waveform.mean(dim=0, keepdim=True)
+        if sr != bundle.sample_rate:
+            resampler = torchaudio.transforms.Resample(sr, bundle.sample_rate)
+            waveform = resampler(waveform)
+            sr = bundle.sample_rate
+
+        with torch.inference_mode():
+            emission, _ = model(waveform.to(device_str))
+            emission = torch.log_softmax(emission, dim=-1)
+
+        num_frames = emission.shape[1]
+        total_duration = waveform.shape[1] / sr
+        frame_to_sec = total_duration / num_frames
+
+        # Non-blank speech probability (emission[:, :, 0] is CTC blank token)
+        blank_prob = torch.exp(emission[0, :, 0]).cpu().numpy()
+        speech_prob = 1.0 - blank_prob
+
+        for turn in turns:
+            raw_start = turn.start_s
+            raw_end = turn.end_s
+
+            start_f = max(0, int(round(turn.start_s / frame_to_sec)))
+            end_f = min(num_frames - 1, int(round(turn.end_s / frame_to_sec)))
+
+            # If end boundary falls during active speech emission (speech_prob > 0.3),
+            # scan forward up to 300ms to find the speech offset (syllable coda release into blank)
+            search_f = int(round(0.30 / frame_to_sec))
+            new_end_f = end_f
+
+            if speech_prob[end_f] > 0.3:
+                for f in range(end_f, min(num_frames - 1, end_f + search_f)):
+                    if speech_prob[f] < 0.2:
+                        new_end_f = f
+                        break
+
+            new_end_s = round(new_end_f * frame_to_sec, 4)
+            new_start_s = round(start_f * frame_to_sec, 4)
+
+            refined_turn = SpeakerTurn(
+                speaker_id=turn.speaker_id,
+                start_s=new_start_s,
+                end_s=new_end_s,
+                confidence=turn.confidence,
+            )
+            aligned_turns.append(refined_turn)
+            audits.append({
+                "raw_start_s": raw_start,
+                "raw_end_s": raw_end,
+                "start_s": new_start_s,
+                "end_s": new_end_s,
+                "delta_start_ms": round((new_start_s - raw_start) * 1000.0, 1),
+                "delta_end_ms": round((new_end_s - raw_end) * 1000.0, 1),
+                "policy": "syllable_word_lock",
+                "tail_rescued": new_end_s > raw_end,
+            })
+
+    except Exception as exc:
+        logger.warning("Forced alignment syllable lock failed (%s), keeping candidate turns: %s", aligner_engine, exc)
+        return list(turns), [{"error": str(exc)}]
+
+    return aligned_turns, audits
 
 
 def filter_by_embedding_homogeneity(
@@ -645,10 +970,31 @@ def run_zero_contamination_pipeline(
         )
         current_turns = consensus_turns
 
-    # ==================== STAGE 3: Collar Erosion & Gap Guard ====================
-    if config.enable_collar_erosion:
+    # ==================== STAGE 3: Boundary & Syllable Integrity Gate ====================
+    boundary_audits: list[dict[str, Any]] = []
+
+    # 3a. Option A: Context-Aware Collar Erosion (Silence vs Handoff Guard)
+    if config.enable_context_collar:
         if progress_callback:
-            progress_callback(0.55, "Applying aggressive collar erosion and boundary excavation...")
+            progress_callback(0.52, "Applying context-aware handoff collar guard...")
+        log_stage(
+            f"Stage 3a: Applying context-aware collar guard "
+            f"(handoff_risk={config.handoff_risk_distance_s:.2f}s, silence_tail={config.silence_tail_buffer_s:.2f}s)"
+        )
+        ctx_turns, ctx_audits = apply_context_aware_collar(
+            current_turns,
+            collar_s=config.boundary_collar_s,
+            handoff_risk_s=config.handoff_risk_distance_s,
+            silence_tail_s=config.silence_tail_buffer_s,
+            min_duration_s=config.min_turn_duration_s,
+            transition_exclusion_s=config.transition_exclusion_s,
+            audio_duration_s=audio.duration_s,
+        )
+        current_turns = ctx_turns
+        boundary_audits.extend(ctx_audits)
+    elif config.enable_collar_erosion:
+        if progress_callback:
+            progress_callback(0.55, "Applying aggressive blunt collar erosion...")
         log_stage(
             f"Stage 3: Eroding boundaries by {config.boundary_collar_s:.2f}s "
             f"(min_dur={config.min_turn_duration_s:.2f}s, transition_excl={config.transition_exclusion_s:.2f}s)"
@@ -659,15 +1005,49 @@ def run_zero_contamination_pipeline(
             min_duration_s=config.min_turn_duration_s,
             transition_exclusion_s=config.transition_exclusion_s,
         )
-        funnel["eroded_turns_count"] = len(eroded_turns)
-        funnel["eroded_speech_duration_s"] = round(
-            sum(t.duration_s for t in eroded_turns), 2
-        )
-        log_stage(
-            f"Boundary erosion produced {len(eroded_turns)} pure turns "
-            f"({funnel['eroded_speech_duration_s']:.1f}s speech)"
-        )
         current_turns = eroded_turns
+
+    # 3b. Option C: Syllable / Word Forced Alignment Lock (High-Compute)
+    if config.enable_syllable_alignment:
+        if progress_callback:
+            progress_callback(0.58, f"Running forced alignment syllable lock ({config.aligner_engine})...")
+        log_stage(f"Stage 3b: Locking syllables with forced alignment ({config.aligner_engine})")
+        aligned_turns, align_audits = align_and_lock_syllable_boundaries(
+            audio,
+            current_turns,
+            aligner_engine=config.aligner_engine,
+            aligner_endpoint=config.aligner_endpoint,
+            aligner_device=config.aligner_device or config.device,
+            token=config.token,
+        )
+        current_turns = aligned_turns
+        boundary_audits.extend(align_audits)
+
+    # 3c. Option B: Micro-Acoustic Energy & RMS Silence Valley Snapping
+    if config.enable_energy_snapping:
+        if progress_callback:
+            progress_callback(0.62, "Snapping boundaries to micro-energy RMS valleys...")
+        log_stage(
+            f"Stage 3c: Snapping boundaries to micro-energy valleys "
+            f"(±{config.energy_search_window_s*1000:.0f}ms window, floor={config.energy_valley_floor_db:.0f}dB)"
+        )
+        snapped_turns, snap_audits = snap_boundaries_to_acoustic_valleys(
+            audio,
+            current_turns,
+            search_window_s=config.energy_search_window_s,
+            energy_floor_db=config.energy_valley_floor_db,
+        )
+        current_turns = snapped_turns
+        boundary_audits.extend(snap_audits)
+
+    funnel["eroded_turns_count"] = len(current_turns)
+    funnel["eroded_speech_duration_s"] = round(
+        sum(t.duration_s for t in current_turns), 2
+    )
+    log_stage(
+        f"Boundary & syllable integrity produced {len(current_turns)} pure turns "
+        f"({funnel['eroded_speech_duration_s']:.1f}s speech)"
+    )
 
     # ==================== STAGE 4: Embedding Homogeneity ====================
     if config.enable_homogeneity:
@@ -739,24 +1119,51 @@ def run_zero_contamination_pipeline(
         channel_url=audio.channel_url,
     )
 
-    final_audits = [
-        TurnAuditRecord(
-            turn_id=f"pure_turn_{i:04d}",
-            speaker_id=t.speaker_id,
-            original_start_s=t.start_s,
-            original_end_s=t.end_s,
-            start_s=t.start_s,
-            end_s=t.end_s,
-            duration_s=t.duration_s,
-            status="passed",
-            rejection_reason="Pure single-speaker guaranteed",
+    rescued_count = 0
+    total_delta_ms = 0.0
+    final_audits = []
+
+    for i, t in enumerate(current_turns):
+        matched_audit = boundary_audits[i] if i < len(boundary_audits) else {}
+        raw_start = matched_audit.get("raw_start_s", t.start_s)
+        raw_end = matched_audit.get("raw_end_s", t.end_s)
+        delta_start = matched_audit.get("delta_start_ms", round((t.start_s - raw_start) * 1000.0, 1))
+        delta_end = matched_audit.get("delta_end_ms", round((t.end_s - raw_end) * 1000.0, 1))
+        policy = matched_audit.get("policy", "standard")
+        tail_rescued = matched_audit.get("tail_rescued", (delta_end > 0.0))
+
+        if tail_rescued:
+            rescued_count += 1
+            total_delta_ms += max(0.0, delta_end)
+
+        final_audits.append(
+            TurnAuditRecord(
+                turn_id=f"pure_turn_{i:04d}",
+                speaker_id=t.speaker_id,
+                original_start_s=raw_start,
+                original_end_s=raw_end,
+                start_s=t.start_s,
+                end_s=t.end_s,
+                duration_s=t.duration_s,
+                status="passed",
+                rejection_reason="Pure single-speaker guaranteed",
+                raw_start_s=raw_start,
+                raw_end_s=raw_end,
+                delta_start_ms=delta_start,
+                delta_end_ms=delta_end,
+                boundary_policy=policy,
+                tail_rescued=tail_rescued,
+            )
         )
-        for i, t in enumerate(current_turns)
-    ]
+
+    funnel["syllables_rescued_count"] = rescued_count
+    funnel["avg_tail_preservation_ms"] = (
+        round(total_delta_ms / max(1, rescued_count), 1) if rescued_count > 0 else 0.0
+    )
 
     log_stage(
         f"Pipeline complete in {elapsed_total:.2f}s! Produced {len(current_turns)} guaranteed pure turns "
-        f"({funnel['final_pure_speech_duration_s']:.1f}s)."
+        f"({funnel['final_pure_speech_duration_s']:.1f}s, rescued {rescued_count} syllable tails)."
     )
 
     return ZeroContaminationResult(

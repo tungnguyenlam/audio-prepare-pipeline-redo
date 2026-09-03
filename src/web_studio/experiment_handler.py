@@ -217,10 +217,23 @@ class ExperimentRouteHandler:
             min_turn_duration_s=float(body.get("min_turn_duration_s", DEFAULT_MIN_TURN_DURATION_S)),
             transition_exclusion_s=float(body.get("transition_exclusion_s", DEFAULT_TRANSITION_EXCLUSION_S)),
             allow_gap_merge=bool(body.get("allow_gap_merge", False)),
+            # Stage 3: Syllable & Boundary Integrity Gate
+            enable_context_collar=bool(body.get("enable_context_collar", True)),
+            handoff_risk_distance_s=float(body.get("handoff_risk_distance_s", 0.80)),
+            silence_tail_buffer_s=float(body.get("silence_tail_buffer_s", 0.15)),
+            enable_energy_snapping=bool(body.get("enable_energy_snapping", False)),
+            energy_search_window_s=float(body.get("energy_search_window_s", 0.15)),
+            energy_valley_floor_db=float(body.get("energy_valley_floor_db", -30.0)),
+            enable_syllable_alignment=bool(body.get("enable_syllable_alignment", False)),
+            aligner_engine=body.get("aligner_engine", "mms_fa"),
+            aligner_endpoint=body.get("aligner_endpoint") or None,
+            aligner_device=body.get("aligner_device") or None,
+            # Stage 4: Homogeneity
             enable_homogeneity=bool(body.get("enable_homogeneity", False)),
             homogeneity_window_s=float(body.get("homogeneity_window_s", DEFAULT_HOMOGENEITY_WINDOW_S)),
             homogeneity_hop_s=float(body.get("homogeneity_hop_s", DEFAULT_HOMOGENEITY_HOP_S)),
             min_homogeneity_similarity=float(body.get("min_homogeneity_similarity", DEFAULT_MIN_HOMOGENEITY_SIMILARITY)),
+            # Stage 5: Foundation Models
             enable_gemma=bool(body.get("enable_gemma", False)),
             gemma_endpoint=body.get("gemma_endpoint") or DEFAULT_UNSLOTH_ENDPOINT,
             gemma_model=body.get("gemma_model") or DEFAULT_GEMMA4_MODEL_ID,
@@ -239,6 +252,10 @@ class ExperimentRouteHandler:
         models_list = [config.primary_backend]
         if config.enable_consensus:
             models_list.append(f"{config.secondary_backend} (∩)")
+        if config.enable_syllable_alignment:
+            models_list.append("MMS-Align" if config.aligner_engine == "mms_fa" else "Whisper-Align")
+        if config.enable_energy_snapping:
+            models_list.append("RMS-Snap")
         if config.enable_homogeneity:
             models_list.append("WeSpeaker")
         if config.enable_gemma:

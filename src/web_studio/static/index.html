@@ -2150,12 +2150,12 @@
                 </div>
               </div>
 
-              <!-- Stage 3: Collar Erosion & Gap Guard -->
+              <!-- Stage 3: Boundary & Syllable Integrity Gate -->
               <div class="exp-stage-box">
                 <div class="exp-stage-header">
                   <div class="exp-stage-title-wrap">
                     <span class="exp-stage-num">3</span>
-                    <strong>Aggressive Collar Erosion &amp; Gap Guard</strong>
+                    <strong>Boundary &amp; Syllable Integrity Gate</strong>
                   </div>
                   <label class="toggle-switch-wrap">
                     <input type="checkbox" id="exp-enable-collar" checked>
@@ -2163,28 +2163,122 @@
                   </label>
                 </div>
                 <div id="exp-collar-fields">
-                  <div class="form-group mb-2">
-                    <div class="label-with-tool">
-                      <label class="form-label" for="exp-boundary-collar">Boundary Collar Inward Shave</label>
-                      <span class="badge badge-sm badge-accent" id="exp-boundary-collar-val">0.35s</span>
-                    </div>
-                    <input type="range" id="exp-boundary-collar" class="slider-input" min="0.05" max="0.80" step="0.05" value="0.35">
-                    <span class="text-xs text-muted">Shaves 350ms off start and end of every turn to erase co-articulation bleed.</span>
-                  </div>
                   <div class="form-row">
-                    <div class="form-group col-half mb-0">
+                    <div class="form-group col-half mb-2">
                       <div class="label-with-tool">
-                        <label class="form-label" for="exp-trans-exclusion">Transition Exclusion</label>
-                        <span class="badge badge-sm badge-ghost" id="exp-trans-exclusion-val">0.50s</span>
+                        <label class="form-label" for="exp-boundary-collar">Base Collar Inward Shave</label>
+                        <span class="badge badge-sm badge-accent" id="exp-boundary-collar-val">0.35s</span>
                       </div>
-                      <input type="range" id="exp-trans-exclusion" class="slider-input" min="0.10" max="1.50" step="0.05" value="0.50">
+                      <input type="range" id="exp-boundary-collar" class="slider-input" min="0.05" max="0.80" step="0.05" value="0.35">
                     </div>
-                    <div class="form-group col-half mb-0">
+                    <div class="form-group col-half mb-2">
                       <div class="label-with-tool">
                         <label class="form-label" for="exp-min-duration">Min Surviving Turn</label>
                         <span class="badge badge-sm badge-ghost" id="exp-min-duration-val">0.80s</span>
                       </div>
                       <input type="range" id="exp-min-duration" class="slider-input" min="0.40" max="2.50" step="0.10" value="0.80">
+                    </div>
+                  </div>
+
+                  <!-- Option A: Context-Aware Handoff Guard -->
+                  <div class="purity-overlap-panel" style="margin-top: 8px; padding: 10px 12px;">
+                    <div class="purity-overlap-header" style="margin-bottom: 6px;">
+                      <div>
+                        <strong>Option A: Context-Aware Handoff Guard</strong>
+                        <small class="purity-overlap-lead">Only shave if rival speaker nearby; if silence follows, preserve the natural coda &amp; tone.</small>
+                      </div>
+                      <label class="toggle-switch-wrap">
+                        <input type="checkbox" id="exp-enable-context-collar" checked>
+                        <span>Enable</span>
+                      </label>
+                    </div>
+                    <div id="exp-context-collar-fields">
+                      <div class="form-row">
+                        <div class="form-group col-half mb-0">
+                          <div class="label-with-tool">
+                            <label class="form-label" for="exp-handoff-risk">Handoff Risk Distance</label>
+                            <span class="badge badge-sm badge-accent" id="exp-handoff-risk-val">0.80s</span>
+                          </div>
+                          <input type="range" id="exp-handoff-risk" class="slider-input" min="0.20" max="2.00" step="0.10" value="0.80">
+                        </div>
+                        <div class="form-group col-half mb-0">
+                          <div class="label-with-tool">
+                            <label class="form-label" for="exp-silence-tail">Silence Tail Release</label>
+                            <span class="badge badge-sm badge-ghost" id="exp-silence-tail-val">+0.15s</span>
+                          </div>
+                          <input type="range" id="exp-silence-tail" class="slider-input" min="0.00" max="0.50" step="0.05" value="0.15">
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Option B: Micro-Acoustic Energy RMS Valley Snapping -->
+                  <div class="purity-overlap-panel" style="margin-top: 8px; padding: 10px 12px;">
+                    <div class="purity-overlap-header" style="margin-bottom: 6px;">
+                      <div>
+                        <strong>Option B: Micro-Acoustic Energy &amp; RMS Valley Snapping</strong>
+                        <small class="purity-overlap-lead">Scans ±150ms waveform at 2ms hop; pins boundary to vocal tract closure minimum.</small>
+                      </div>
+                      <label class="toggle-switch-wrap">
+                        <input type="checkbox" id="exp-enable-energy-snapping">
+                        <span>Enable</span>
+                      </label>
+                    </div>
+                    <div id="exp-energy-snapping-fields" style="display: none;">
+                      <div class="form-row">
+                        <div class="form-group col-half mb-0">
+                          <div class="label-with-tool">
+                            <label class="form-label" for="exp-energy-window">Search Window</label>
+                            <span class="badge badge-sm badge-accent" id="exp-energy-window-val">±150ms</span>
+                          </div>
+                          <input type="range" id="exp-energy-window" class="slider-input" min="0.05" max="0.35" step="0.05" value="0.15">
+                        </div>
+                        <div class="form-group col-half mb-0">
+                          <div class="label-with-tool">
+                            <label class="form-label" for="exp-energy-floor">Silence Floor</label>
+                            <span class="badge badge-sm badge-ghost" id="exp-energy-floor-val">-30 dB</span>
+                          </div>
+                          <input type="range" id="exp-energy-floor" class="slider-input" min="-50" max="-15" step="5" value="-30">
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Option C: Syllable & Word Forced Alignment Lock -->
+                  <div class="purity-overlap-panel" style="margin-top: 8px; padding: 10px 12px;">
+                    <div class="purity-overlap-header" style="margin-bottom: 6px;">
+                      <div>
+                        <strong>Option C: Syllable &amp; Word Forced Alignment Lock</strong>
+                        <small class="purity-overlap-lead">Strictly forbids slicing through a word. Aligns syllable tokens with PyTorch MMS-FA.</small>
+                      </div>
+                      <label class="toggle-switch-wrap">
+                        <input type="checkbox" id="exp-enable-syllable-align">
+                        <span>Enable</span>
+                      </label>
+                    </div>
+                    <div id="exp-syllable-align-fields" style="display: none;">
+                      <div class="form-row">
+                        <div class="form-group col-half mb-0">
+                          <label class="form-label" for="exp-aligner-engine">Aligner Model Engine:</label>
+                          <select id="exp-aligner-engine" class="select-input">
+                            <option value="mms_fa" selected>PyTorch MMS-FA (Multilingual CTC)</option>
+                            <option value="remote_whisper">Remote Whisper / ASR Endpoint</option>
+                          </select>
+                        </div>
+                        <div class="form-group col-half mb-0">
+                          <label class="form-label" for="exp-aligner-device">Aligner Device:</label>
+                          <select id="exp-aligner-device" class="select-input">
+                            <option value="auto">Auto Detect</option>
+                            <option value="cuda:0">cuda:0</option>
+                            <option value="cuda:1">cuda:1</option>
+                            <option value="cpu">CPU</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div class="form-group mb-0" id="exp-aligner-endpoint-wrap" style="display: none; margin-top: 6px;">
+                        <label class="form-label" for="exp-aligner-endpoint">Remote Whisper Endpoint URL:</label>
+                        <input type="url" id="exp-aligner-endpoint" class="text-input font-mono" placeholder="http://<remote-ip>:8888/v1/audio/transcriptions">
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2400,11 +2494,13 @@
             <table class="table">
               <thead>
                 <tr>
-                  <th style="width: 80px;">Audition</th>
+                  <th style="width: 140px;">A/B Audition</th>
                   <th>Speaker</th>
                   <th>Start (s)</th>
                   <th>End (s)</th>
                   <th>Duration</th>
+                  <th>Boundary Delta</th>
+                  <th>Integrity Policy</th>
                   <th>Verified Status</th>
                 </tr>
               </thead>
