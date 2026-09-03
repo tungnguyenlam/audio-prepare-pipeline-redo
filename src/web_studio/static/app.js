@@ -11179,6 +11179,7 @@ function populateAllAudioSelects() {
     el.diarInputSelect,
     el.annAudioSelect,
     el.purityInputSelect,
+    document.getElementById('exp-audio-select'),
   ];
 
   standardSelects.forEach(select => {
@@ -11850,6 +11851,10 @@ function switchTab(tabId) {
         updatePurityInputMeta(audioId);
         syncPurityDiarizationStatus();
       }
+    }
+  } else if (tabId === 'tab-experiment') {
+    if (window.ExperimentTab && typeof window.ExperimentTab.onTabActivated === 'function') {
+      window.ExperimentTab.onTabActivated();
     }
   }
 

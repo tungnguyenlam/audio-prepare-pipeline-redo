@@ -6317,8 +6317,10 @@ def register_api_routes(app: web.Application) -> None:
     app.router.add_delete("/api/tasks/{id}", handle_cancel_task)
     app.router.add_get("/api/queue/shared", handle_shared_queue)
     app.router.add_delete("/api/queue/shared/{id}", handle_shared_queue_cancel)
-    app.router.add_post("/api/queue/shared/{id}/cancel", handle_shared_queue_cancel)
     app.router.add_get("/api/telemetry", handle_telemetry)
+
+    from src.web_studio.experiment_handler import register_experiment_routes
+    register_experiment_routes(app, task_manager, registry)
 
 
 def register_lifecycle(app: web.Application) -> None:

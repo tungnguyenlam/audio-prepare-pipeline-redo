@@ -62,6 +62,13 @@ from src.diarization.turn_cleanup import (
     pad_and_merge_intervals,
 )
 from src.diarization.evaluation import evaluate_diarization
+from src.diarization.zero_contamination import (
+    ZeroContaminationConfig,
+    ZeroContaminationResult,
+    compute_consensus_turns,
+    erode_turn_boundaries,
+    run_zero_contamination_pipeline,
+)
 
 from src.diarization.schemas import (
     DiarizationModelInfo,
@@ -137,4 +144,9 @@ __all__ = [
     "evaluate_diarization",
     "is_overlap_readiness_error",
     "pad_and_merge_intervals",
+    "compute_consensus_turns",
+    "erode_turn_boundaries",
+    "run_zero_contamination_pipeline",
+    "ZeroContaminationConfig",
+    "ZeroContaminationResult",
 ]
