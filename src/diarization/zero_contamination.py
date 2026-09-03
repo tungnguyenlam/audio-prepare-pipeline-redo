@@ -652,10 +652,6 @@ def filter_by_embedding_homogeneity(
     audits: list[tuple[SpeakerTurn, bool, float | None, str]] = []
 
     with verifier:
-        waveform, sr = sf.read(str(audio.path), dtype="float32", always_2d=False)
-        if waveform.ndim > 1:
-            waveform = waveform.mean(axis=1)
-
         for turn in turns:
             dur = turn.end_s - turn.start_s
             if dur < window_s:
@@ -664,33 +660,27 @@ def filter_by_embedding_homogeneity(
                 audits.append((turn, True, 1.0, "Turn shorter than homogeneity window"))
                 continue
 
-            start_samp = max(0, int(round(turn.start_s * sr)))
-            end_samp = min(len(waveform), int(round(turn.end_s * sr)))
-            turn_wave = waveform[start_samp:end_samp]
-            if len(turn_wave) < int(window_s * sr):
+            windows = SpeakerVerifier._candidate_windows(
+                turn.start_s,
+                turn.end_s,
+                window_duration_s=window_s,
+                window_hop_s=hop_s,
+            )
+            if len(windows) < 2:
                 passed.append(turn)
-                audits.append((turn, True, 1.0, "Audio chunk too short to window"))
+                audits.append((turn, True, 1.0, "Single window extracted"))
                 continue
 
-            # Slide window across the turn
-            win_samples = int(round(window_s * sr))
-            hop_samples = int(round(hop_s * sr))
             vectors: list[np.ndarray] = []
-
-            with tempfile.TemporaryDirectory(prefix="homogeneity-") as tmpdir:
-                pos = 0
-                clip_idx = 0
-                while pos + win_samples <= len(turn_wave):
-                    sub_clip = turn_wave[pos : pos + win_samples]
-                    sub_path = Path(tmpdir) / f"sub_{clip_idx:04d}.wav"
-                    sf.write(sub_path, sub_clip, sr, subtype="PCM_16")
-                    emb = verifier.extract_embedding(Audio.from_file(sub_path))
+            for win_start, win_end in windows:
+                try:
+                    emb = verifier.extract_embedding(audio, start_s=win_start, end_s=win_end)
                     v = np.asarray(emb, dtype=np.float32).reshape(-1)
                     norm = float(np.linalg.norm(v))
                     if norm > 0 and np.isfinite(v).all():
                         vectors.append(v / norm)
-                    pos += hop_samples
-                    clip_idx += 1
+                except Exception:
+                    pass
 
             if len(vectors) < 2:
                 passed.append(turn)

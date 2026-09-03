@@ -2057,11 +2057,10 @@
             </div>
           </div>
 
-          <!-- 2-Column Workbench Setup Grid -->
-          <div class="exp-workbench-grid">
-            <!-- LEFT COLUMN: Pipeline Stages & Thresholds -->
-            <div class="exp-left-panel">
-              <!-- Track & Compute Device -->
+          <!-- Top-Down Workbench Setup Flow -->
+          <div class="exp-workbench-flow">
+            <!-- Track & Compute Device -->
+            <div class="exp-stage-box exp-input-box">
               <div class="form-group">
                 <div class="label-with-tool">
                   <label class="form-label" for="exp-audio-select">Target Audio Track:</label>
@@ -2077,8 +2076,8 @@
                 </div>
               </div>
 
-              <div class="form-row">
-                <div class="form-group col-half">
+              <div class="form-row" style="margin-bottom: 0;">
+                <div class="form-group col-half" style="margin-bottom: 0;">
                   <label class="form-label" for="exp-device-select">Primary Compute Device:</label>
                   <select id="exp-device-select" class="select-input">
                     <option value="auto">Auto Detect</option>
@@ -2087,7 +2086,7 @@
                     <option value="cpu">CPU</option>
                   </select>
                 </div>
-                <div class="form-group col-half">
+                <div class="form-group col-half" style="margin-bottom: 0;">
                   <label class="form-label" for="exp-primary-backend">Primary Diarizer:</label>
                   <select id="exp-primary-backend" class="select-input">
                     <option value="sortformer" selected>Sortformer (Continuous Tracking)</option>
@@ -2096,8 +2095,9 @@
                   </select>
                 </div>
               </div>
+            </div>
 
-              <!-- Stage 1: Asymmetric Sensitivity & Competitor Tripwire -->
+            <!-- Stage 1: Asymmetric Sensitivity & Competitor Tripwire -->
               <div class="exp-stage-box">
                 <div class="exp-stage-header">
                   <div class="exp-stage-title-wrap">
@@ -2314,12 +2314,9 @@
                   </div>
                 </div>
               </div>
-            </div>
 
-            <!-- RIGHT COLUMN: Remote Model Hosting & Foundation Audits (Gemma 4 & VibeVoice) -->
-            <div class="exp-right-panel">
-              <!-- 5a: Gemma 4 Direct Audio -->
-              <div class="purity-overlap-panel" style="margin-bottom: 16px;">
+              <!-- Stage 5a: Gemma 4 Direct Audio -->
+              <div class="exp-stage-box purity-overlap-panel">
                 <div class="purity-overlap-header">
                   <div>
                     <div style="display: flex; align-items: center; gap: 8px;">
@@ -2384,8 +2381,8 @@
                 </div>
               </div>
 
-              <!-- 5b: VibeVoice-ASR Gate -->
-              <div class="purity-overlap-panel">
+              <!-- Stage 5b: VibeVoice-ASR Gate -->
+              <div class="exp-stage-box purity-overlap-panel">
                 <div class="purity-overlap-header">
                   <div>
                     <div style="display: flex; align-items: center; gap: 8px;">
@@ -2435,7 +2432,7 @@
               </div>
 
               <!-- Action Card & Execution -->
-              <div class="exp-action-card-styled" style="margin-top: 16px;">
+              <div class="exp-action-card-styled">
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                   <div style="display: flex; gap: 10px; align-items: center;">
                     <button type="button" class="btn btn-primary btn-lg" id="btn-run-experiment" style="font-weight: 700;">
@@ -2462,7 +2459,6 @@
                   </div>
                 </div>
               </div>
-            </div>
           </div>
         </div>
 

@@ -403,6 +403,35 @@ class SpeakerVerifier(ManagedModel):
     # Scoring and filtering
     # ------------------------------------------------------------------
 
+    def extract_embedding(
+        self,
+        audio: Audio | Path | str,
+        start_s: float | None = None,
+        end_s: float | None = None,
+    ) -> Any:
+        """Extract an L2-normalized speaker embedding for an audio item or interval.
+
+        Args:
+            audio: File-backed Audio instance, Path, or string path to audio file.
+            start_s: Optional start timestamp in seconds.
+            end_s: Optional end timestamp in seconds.
+
+        Returns:
+            1D float64 numpy array normalized to unit length.
+
+        Raises:
+            RuntimeError: If the model is not loaded.
+            FileNotFoundError: If the audio file does not exist.
+            SpeakerVerifierError: If embedding extraction fails or parameters are invalid.
+        """
+        if not self.is_loaded or self._inference is None:
+            raise RuntimeError(
+                "SpeakerVerifier is not loaded. Call load() before extract_embedding(), "
+                "or use it as a context manager."
+            )
+        path = Path(audio.path) if isinstance(audio, Audio) else Path(audio)
+        return self._embed(path, start_s, end_s)
+
     def score(
         self,
         audio: Audio,

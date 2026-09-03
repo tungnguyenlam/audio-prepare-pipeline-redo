@@ -669,6 +669,22 @@ remain the source of truth; adding or removing one updates the profile
 timestamp. Removing the final clip is rejected—delete the speaker profile
 instead.
 
+### `SpeakerVerifier.extract_embedding(audio, start_s=None, end_s=None) -> np.ndarray`
+
+Requires `load()` (or a `with` block) first. `audio` is `Audio | Path | str`.
+
+**Behavior contract:**
+
+- Extracts a single L2-normalized 1D embedding vector representing the whole
+  audio file, or a specific `[start_s, end_s]` interval.
+- Reads only the requested audio frames via soundfile seeking without loading
+  the entire audio track into memory.
+- Returns a 1D float64 numpy vector normalized to unit length.
+
+**Raises:** `RuntimeError` if not loaded; `FileNotFoundError` for missing audio
+files; `SpeakerVerifierError` if interval bounds are empty/invalid or embedding
+fails.
+
 ### `SpeakerVerifier.score(audio, result: DiarizationResult, profile) -> TargetSpeakerResult`
 
 Requires `load()` (or a `with` block) first.
