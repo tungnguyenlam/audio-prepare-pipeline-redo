@@ -1264,12 +1264,12 @@
                 <div class="diar-duration-histogram-header">
                   <div>
                     <h4 id="diar-duration-histogram-title">Segment Length Distribution</h4>
-                    <p>Duration of the turns currently visible in the timeline and table.</p>
+                    <p>Duration of the turns currently visible in the timeline and table. Fixed widths are applied exactly.</p>
                   </div>
                   <div class="diar-duration-histogram-controls">
                     <div class="diar-histogram-bin-picker">
-                      <label class="diar-histogram-bin-label" for="diar-histogram-bin-select">Bin Size</label>
-                      <select id="diar-histogram-bin-select" class="diar-histogram-bin-select select-input" aria-label="Segment length histogram bin size" title="Change histogram bin size">
+                      <label class="diar-histogram-bin-label" for="diar-histogram-bin-select">Bin Width</label>
+                      <select id="diar-histogram-bin-select" class="diar-histogram-bin-select select-input" aria-label="Segment length histogram bin width" title="Change histogram bin width">
                         <option value="auto">Auto</option>
                         <option value="0.1">0.1s</option>
                         <option value="0.25">0.25s</option>
@@ -1281,7 +1281,7 @@
                         <option value="10">10.0s</option>
                         <option value="custom">Custom...</option>
                       </select>
-                      <input type="number" id="diar-histogram-bin-custom" class="text-input diar-histogram-bin-custom hidden" min="0.05" max="60" step="0.1" placeholder="Sec" title="Custom bin size in seconds (e.g. 0.5)" aria-label="Custom bin size in seconds">
+                      <input type="number" id="diar-histogram-bin-custom" class="text-input diar-histogram-bin-custom hidden" min="0.05" max="60" step="0.05" placeholder="Sec" title="Custom bin width in seconds (e.g. 0.5)" aria-label="Custom bin width in seconds">
                     </div>
                     <span class="badge badge-ghost" id="diar-duration-histogram-summary">0 segments</span>
                   </div>

@@ -10,11 +10,14 @@
 
   const ExperimentTab = {
     currentAudioId: null,
+    lastAudioId: null,
     activeTaskId: null,
     taskPollInterval: null,
     previewAudio: new Audio(),
     activePlayingBtn: null,
     lastResult: null,
+    turnPreviewGeneration: 0,
+    currentBlobUrl: null,
 
     init() {
       this.bindDOMElements();
@@ -299,7 +302,7 @@
       this.el.audioSelect?.addEventListener('change', () => self.onAudioSelected());
       this.el.btnBrowseLibrary?.addEventListener('click', () => {
         if (typeof window.openLibraryModal === 'function') {
-          window.openLibraryModal();
+          window.openLibraryModal('experiment');
         }
       });
       this.el.previewBtn?.addEventListener('click', () => self.toggleTrackPreview());
@@ -320,8 +323,9 @@
 
       // Audio Preview
       this.previewAudio.addEventListener('ended', () => self.stopTurnPreview());
-      this.previewAudio.addEventListener('error', () => {
+      this.previewAudio.addEventListener('error', (e) => {
         self.stopTurnPreview();
+        console.warn('Audio preview element error:', e);
         if (window.showToast) window.showToast('Could not play audio preview', 'error');
       });
 
@@ -454,12 +458,23 @@
       }
     },
 
-    onAudioSelected() {
+    async onAudioSelected() {
       const audioId = this.el.audioSelect?.value;
       if (!audioId) {
         if (this.el.previewPill) this.el.previewPill.classList.add('hidden');
+        if (this.el.trackSpecChip) this.el.trackSpecChip.textContent = '';
+        if (this.el.trackTitleText) this.el.trackTitleText.textContent = '';
+        this.currentAudioId = null;
         return;
       }
+      if (audioId.startsWith('lib:')) {
+        const filePath = audioId.slice(4);
+        if (typeof window.loadLibraryFileTo === 'function') {
+          await window.loadLibraryFileTo(filePath, 'experiment');
+        }
+        return;
+      }
+      this.currentAudioId = audioId;
       const audioItem = window.state && window.state.audioList ? window.state.audioList.find(a => a.id === audioId) : null;
       if (audioItem) {
         if (this.el.previewPill) this.el.previewPill.classList.remove('hidden');
@@ -469,25 +484,41 @@
           const sr = audioItem.sample_rate ? `${audioItem.sample_rate}Hz` : '';
           this.el.trackSpecChip.textContent = [dur, sr].filter(Boolean).join(' • ');
         }
+      } else {
+        if (this.el.previewPill) this.el.previewPill.classList.remove('hidden');
+        if (this.el.trackTitleText) this.el.trackTitleText.textContent = audioId;
+        if (this.el.trackSpecChip) this.el.trackSpecChip.textContent = '';
       }
     },
 
-    toggleTrackPreview() {
-      const audioId = this.el.audioSelect?.value;
+    async toggleTrackPreview() {
+      const audioId = this.el.audioSelect?.value || this.currentAudioId;
       if (!audioId) return;
-      if (!this.previewAudio.paused && this.previewAudio.src.includes(`/api/audio/${audioId}/stream`)) {
-        this.previewAudio.pause();
-        if (this.el.previewBtn) this.el.previewBtn.textContent = '▶ Play Track';
+
+      const isPlayingCurrent = !this.previewAudio.paused && (
+        this.previewAudio.src.includes(`/api/audio/${encodeURIComponent(audioId)}/stream`) ||
+        (audioId.startsWith('lib:') && this.previewAudio.src.includes(`/api/library/stream?path=${encodeURIComponent(audioId.slice(4))}`))
+      );
+      if (isPlayingCurrent) {
+        this.stopTurnPreview();
         return;
       }
+
       this.stopTurnPreview();
-      this.previewAudio.src = `/api/audio/${audioId}/stream`;
-      this.previewAudio.play().then(() => {
+
+      const streamUrl = audioId.startsWith('lib:')
+        ? `/api/library/stream?path=${encodeURIComponent(audioId.slice(4))}`
+        : `/api/audio/${encodeURIComponent(audioId)}/stream`;
+
+      try {
+        this.previewAudio.src = streamUrl;
+        await this.previewAudio.play();
         if (this.el.previewBtn) this.el.previewBtn.textContent = '⏹ Stop';
-      }).catch(err => {
-        console.warn('Playback error:', err);
-        if (this.el.previewBtn) this.el.previewBtn.textContent = '▶ Play Track';
-      });
+      } catch (err) {
+        console.warn('Track preview error:', err);
+        this.stopTurnPreview();
+        if (window.showToast) window.showToast(`Track preview error: ${err.message || 'Playback failed'}`, 'error');
+      }
     },
 
     resetToDefaults() {
@@ -664,6 +695,11 @@
         if (window.showToast) window.showToast('Please select a target audio track first', 'warning');
         return;
       }
+      if (payload.audio_id.startsWith('lib:')) {
+        if (window.showToast) window.showToast('Wait for the library track to finish loading, then try again.', 'warning');
+        return;
+      }
+      this.lastAudioId = payload.audio_id;
 
       this.el.btnRun.disabled = true;
       if (this.el.btnCancel) this.el.btnCancel.style.display = 'inline-block';
@@ -743,6 +779,7 @@
     finishExperiment(result) {
       this.resetActionButtons();
       this.lastResult = result;
+      this.lastAudioId = this.el.audioSelect?.value || result.session_audio_id || result.audio_id || this.lastAudioId;
       if (window.showToast) window.showToast('Zero-contamination pipeline completed successfully!', 'success');
 
       if (this.el.resultsCard) this.el.resultsCard.style.display = 'block';
@@ -892,7 +929,7 @@
       });
     },
 
-    togglePlayTurn(start, end, btn) {
+    async togglePlayTurn(start, end, btn) {
       if (this.activePlayingBtn === btn) {
         this.stopTurnPreview();
         return;
@@ -900,27 +937,64 @@
       this.stopTurnPreview();
 
       const audioId =
-        this.lastResult?.diarization?.audio_id ||
+        this.lastAudioId ||
+        this.lastResult?.session_audio_id ||
+        this.lastResult?.audio_id ||
         this.el.audioSelect?.value ||
+        this.lastResult?.diarization?.audio_id ||
         (window.state && window.state.activeAudio && window.state.activeAudio.id);
-      if (!audioId) return;
+      if (!audioId) {
+        if (window.showToast) window.showToast('No audio track found for preview', 'error');
+        return;
+      }
 
       this.activePlayingBtn = btn;
       btn.dataset.prevHtml = btn.innerHTML;
       btn.classList.add('btn-danger');
       btn.textContent = '⏹ Stop';
 
-      const streamUrl = `/api/audio/${encodeURIComponent(audioId)}/segment?start=${start}&end=${end}`;
-      this.previewAudio.src = streamUrl;
-      this.previewAudio.play().catch(err => {
-        console.warn('Playback error:', err);
-        this.stopTurnPreview();
-      });
+      const generation = ++this.turnPreviewGeneration;
+      const streamUrl = `/api/audio/${encodeURIComponent(audioId)}/segment?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&inline=1`;
+
+      try {
+        const res = await fetch(streamUrl);
+        if (!res.ok) {
+          let errMsg = `Server returned ${res.status}`;
+          try {
+            const json = await res.json();
+            if (json.error) errMsg = json.error;
+          } catch (_) {}
+          throw new Error(errMsg);
+        }
+        const blob = await res.blob();
+        if (generation !== this.turnPreviewGeneration || this.activePlayingBtn !== btn) return;
+
+        if (this.currentBlobUrl) {
+          URL.revokeObjectURL(this.currentBlobUrl);
+          this.currentBlobUrl = null;
+        }
+        this.currentBlobUrl = URL.createObjectURL(blob);
+        this.previewAudio.src = this.currentBlobUrl;
+        await this.previewAudio.play();
+      } catch (err) {
+        if (generation === this.turnPreviewGeneration) {
+          console.warn('Turn preview error:', err);
+          this.stopTurnPreview();
+          if (window.showToast) window.showToast(`Turn preview error: ${err.message}`, 'error');
+        }
+      }
     },
 
     stopTurnPreview() {
-      this.previewAudio.pause();
+      this.turnPreviewGeneration = (this.turnPreviewGeneration || 0) + 1;
+      if (!this.previewAudio.paused) {
+        this.previewAudio.pause();
+      }
       this.previewAudio.currentTime = 0;
+      if (this.currentBlobUrl) {
+        URL.revokeObjectURL(this.currentBlobUrl);
+        this.currentBlobUrl = null;
+      }
       if (this.activePlayingBtn) {
         this.activePlayingBtn.classList.remove('btn-danger');
         if (this.activePlayingBtn.dataset.prevHtml) {

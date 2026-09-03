@@ -3407,7 +3407,12 @@ function initDiarizationStudio() {
   if (el.diarHistogramBinCustom) {
     const handleCustomBin = () => {
       const val = parseFloat(el.diarHistogramBinCustom.value);
-      if (Number.isFinite(val) && val > 0) {
+      const isValid = Number.isFinite(val) && val >= 0.05 && val <= 60;
+      el.diarHistogramBinCustom.setAttribute(
+        'aria-invalid',
+        String(el.diarHistogramBinCustom.value !== '' && !isValid),
+      );
+      if (isValid) {
         state.diarization.histogramCustomBinWidth = val;
         try { localStorage.setItem('sonic_diar_hist_bin_custom', String(val)); } catch {}
         renderTurnsHistogramOnly();
@@ -5030,11 +5035,17 @@ function diarizationDurationHistogram(turns, requestedBinWidth = 'auto') {
     firstBinStart = Math.max(0, Math.floor(minDuration / binWidth) * binWidth);
     const coveredWidths = (maxDuration - firstBinStart) / binWidth;
     binCount = Math.max(1, Math.ceil(coveredWidths - 1e-10));
-    const MAX_BINS = 250;
-    if (binCount > MAX_BINS) {
-      binWidth = Math.ceil(((maxDuration - firstBinStart) / MAX_BINS) * 10) / 10;
-      firstBinStart = Math.max(0, Math.floor(minDuration / binWidth) * binWidth);
-      binCount = Math.max(1, Math.ceil(((maxDuration - firstBinStart) / binWidth) - 1e-10));
+    const maxRenderedBins = 1000;
+    if (binCount > maxRenderedBins) {
+      return {
+        bins: null,
+        binWidth,
+        binCount,
+        minDuration,
+        maxDuration,
+        isAuto,
+        maxRenderedBins,
+      };
     }
   }
 
@@ -5093,6 +5104,19 @@ function renderDiarizationDurationHistogram(turns) {
   if (!histogram) {
     el.diarDurationHistogramPlot.innerHTML = '<div class="diar-duration-histogram-empty">No turns match the active filters.</div>';
     if (el.diarDurationHistogramSummary) el.diarDurationHistogramSummary.textContent = '0 segments';
+    if (el.diarHistogramBinSelect) {
+      const autoOption = el.diarHistogramBinSelect.querySelector('option[value="auto"]');
+      if (autoOption) autoOption.textContent = 'Auto';
+    }
+    return;
+  }
+
+  if (!histogram.bins) {
+    const formattedBinWidth = formatHistogramSeconds(histogram.binWidth, histogram.binWidth);
+    el.diarDurationHistogramPlot.innerHTML = `<div class="diar-duration-histogram-empty">The selected ${formattedBinWidth}s bin width would create ${histogram.binCount.toLocaleString()} bins (chart limit: ${histogram.maxRenderedBins.toLocaleString()}). Choose a larger width or Auto.</div>`;
+    if (el.diarDurationHistogramSummary) {
+      el.diarDurationHistogramSummary.textContent = `${turns.length} segment${turns.length === 1 ? '' : 's'} · ${formattedBinWidth} seconds/bin`;
+    }
     if (el.diarHistogramBinSelect) {
       const autoOption = el.diarHistogramBinSelect.querySelector('option[value="auto"]');
       if (autoOption) autoOption.textContent = 'Auto';
@@ -9881,6 +9905,11 @@ const LIBRARY_LOAD_TARGETS = {
     subtitle: 'Choose a session or library track to verify as one clip, or with its diarization turns',
     button: 'Send to Speaker Purity',
   },
+  experiment: {
+    title: 'Load into Zero-Contamination Experiment',
+    subtitle: 'Choose a source track for zero-contamination speaker diarization',
+    button: 'Send to Experiment',
+  },
 };
 const PREVIEW_PLAY_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
 const PREVIEW_PAUSE_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>';
@@ -10288,6 +10317,7 @@ function buildFileItemCard(file, { isModal = false, selectable = false } = {}) {
           <button class="menu-item-btn btn-send-sep" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">🎛️ Send to Separation</button>
           <button class="menu-item-btn btn-send-diar" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">👥 Send to Diarization</button>
           <button class="menu-item-btn btn-send-purity" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">🛡️ Send to Speaker Purity</button>
+          <button class="menu-item-btn btn-send-exp" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--text-primary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">🔬 Send to Experiment</button>
           <a href="/api/library/download?path=${encodeURIComponent(file.path)}" download="${escapeHtml(file.name)}" class="menu-item-btn" style="text-align: left; padding: 6px 10px; font-size: 0.78rem; background: none; border: none; color: var(--accent-primary-hover); text-decoration: none; cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px;">⬇️ Download File</a>
         </div>
       </div>
@@ -10369,6 +10399,7 @@ function buildFileItemCard(file, { isModal = false, selectable = false } = {}) {
   card.querySelector('.btn-send-sep')?.addEventListener('click', () => { popupMenu.classList.add('hidden'); loadLibraryFileTo(file.path, 'separation'); });
   card.querySelector('.btn-send-diar')?.addEventListener('click', () => { popupMenu.classList.add('hidden'); loadLibraryFileTo(file.path, 'diarization'); });
   card.querySelector('.btn-send-purity')?.addEventListener('click', () => { popupMenu.classList.add('hidden'); loadLibraryFileTo(file.path, 'purity'); });
+  card.querySelector('.btn-send-exp')?.addEventListener('click', () => { popupMenu.classList.add('hidden'); loadLibraryFileTo(file.path, 'experiment'); });
   card.querySelector('.btn-delete-file').addEventListener('click', () => deleteServerFile(file.path, file.name));
 
   return card;
@@ -10511,6 +10542,14 @@ async function loadLibraryFileTo(filePath, target = 'workspace') {
           el.purityInputSelect.dispatchEvent(new Event('change'));
         }
         showToast(`Selected "${title}" for Speaker Purity`, "success");
+      } else if (target === 'experiment') {
+        switchTab('tab-experiment');
+        const expSelect = document.getElementById('exp-audio-select');
+        if (expSelect) {
+          expSelect.value = data.audio_id;
+          expSelect.dispatchEvent(new Event('change'));
+        }
+        showToast(`Selected "${title}" for Zero-Contamination Experiment`, "success");
       } else {
         switchTab('tab-workspace');
         await setActiveAudio(data.audio_id, { play: true });
@@ -10521,6 +10560,7 @@ async function loadLibraryFileTo(filePath, target = 'workspace') {
     showToast(`Failed to load file: ${err.message}`, "error");
   }
 }
+window.loadLibraryFileTo = loadLibraryFileTo;
 
 function applyLibraryModalContext(target) {
   const meta = LIBRARY_LOAD_TARGETS[target] || LIBRARY_LOAD_TARGETS.workspace;
@@ -11873,6 +11913,10 @@ function switchTab(tabId) {
 
   if (tabId !== 'tab-purity') {
     stopPuritySegmentPreview();
+  }
+
+  if (tabId !== 'tab-experiment' && window.ExperimentTab && typeof window.ExperimentTab.stopTurnPreview === 'function') {
+    window.ExperimentTab.stopTurnPreview();
   }
 
   if (tabId !== 'tab-comparison') syncActivePlaybackControls();

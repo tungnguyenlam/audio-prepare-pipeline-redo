@@ -391,12 +391,40 @@ class AudioRegistry:
 
     def get_audio(self, audio_id: str) -> Optional[Audio]:
         """Retrieve the Audio object for an ID."""
+        if not audio_id:
+            return None
         item = self._items.get(audio_id)
-        return item["audio"] if item else None
+        if item:
+            return item["audio"]
+        for it in self._items.values():
+            if it["audio"].source_id == audio_id:
+                return it["audio"]
+        found_id = self.find_id_by_path(audio_id)
+        if found_id:
+            return self._items[found_id]["audio"]
+        raw_id = audio_id[4:] if audio_id.startswith("lib:") else audio_id
+        lib_path = resolve_library_path(raw_id)
+        if lib_path and lib_path.is_file():
+            try:
+                return Audio.from_file(lib_path)
+            except Exception:
+                pass
+        return None
 
     def get_item(self, audio_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve the full registered item dictionary."""
-        return self._items.get(audio_id)
+        if not audio_id:
+            return None
+        item = self._items.get(audio_id)
+        if item:
+            return item
+        for it in self._items.values():
+            if it["audio"].source_id == audio_id:
+                return it
+        found_id = self.find_id_by_path(audio_id)
+        if found_id:
+            return self._items[found_id]
+        return None
 
     def find_id_by_path(self, path: str | Path) -> str | None:
         """Return the registered ID for a file path, if present."""
@@ -3231,8 +3259,23 @@ async def handle_download_audio_segment(request: web.Request) -> web.StreamRespo
             )
         except (AudioCutterError, FileNotFoundError) as exc:
             return web.json_response({"error": str(exc)}, status=400)
+        except Exception as exc:
+            logger.exception("Failed to cut audio segment: %s", exc)
+            return web.json_response({"error": f"Failed to cut segment: {exc}"}, status=500)
 
-    return web.FileResponse(output_path, headers=_attachment_headers(filename))
+    inline = request.query.get("inline") in ("1", "true")
+    if inline:
+        headers = {
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "no-cache",
+            "Content-Disposition": f'inline; filename="{output_path.name}"',
+            "Content-Type": "audio/wav",
+        }
+        return web.FileResponse(output_path, headers=headers)
+
+    return web.FileResponse(
+        output_path, headers=_attachment_headers(filename, content_type="audio/wav")
+    )
 
 
 async def handle_download_audio_segments_zip(request: web.Request) -> web.StreamResponse:

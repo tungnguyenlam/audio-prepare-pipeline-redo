@@ -305,6 +305,8 @@ class ExperimentRouteHandler:
                 saved_path = exp_res.diarization.save(DIARIZATION_RESULTS_DIR)
                 res_dict = exp_res.to_dict()
                 res_dict["saved_path"] = str(saved_path)
+                res_dict["audio_id"] = audio_id
+                res_dict["session_audio_id"] = audio_id
                 return res_dict
 
             try:

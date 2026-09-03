@@ -1125,7 +1125,8 @@ The repository provides two specialized web platforms:
   cuts and streams a turn without registering it;
   `GET /api/audio/{id}/segment?start=&end=` lazily cuts `[start, end)`
   (seconds) of a session audio item without registering a cut and returns the
-  WAV as an attachment (optional `filename`);
+  WAV as an attachment (optional `filename`), or as an inline audio stream
+  when `inline=1` (with `Accept-Ranges` and `Content-Type: audio/wav` for in-browser playback);
   `POST /api/audio/{id}/segments.zip` accepts
   `{segments: [{start, end, filename}], filename}` and returns a zip of those
   cuts after reading the source file once (Studio's Turns Inspector download
