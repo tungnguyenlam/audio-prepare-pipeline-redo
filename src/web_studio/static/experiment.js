@@ -25,6 +25,7 @@ Return only the requested structured result and never include a transcript.`;
     init() {
       this.bindDOMElements();
       this.bindEvents();
+      this.syncDirectAudioProvider();
       this.loadDefaults();
       this.probeGemma();
     },
@@ -126,11 +127,14 @@ Return only the requested structured result and never include a transcript.`;
         enableGemma: document.getElementById('exp-enable-gemma'),
         gemmaFields: document.getElementById('exp-gemma-fields'),
         gemmaBackend: document.getElementById('exp-gemma-backend'),
+        gemmaBackendHint: document.getElementById('exp-gemma-backend-hint'),
+        gemmaLocalFields: document.getElementById('exp-gemma-local-fields'),
         gemmaModelGroup: document.getElementById('exp-gemma-model-group'),
         gemmaEndpointControls: document.getElementById('exp-gemma-endpoint-controls'),
         gemmaEndpoint: document.getElementById('exp-gemma-endpoint'),
         gemmaModel: document.getElementById('exp-gemma-model'),
         gemmaMaxTokens: document.getElementById('exp-gemma-max-tokens'),
+        gemmaTokensHint: document.getElementById('exp-gemma-tokens-hint'),
         gemmaTimeout: document.getElementById('exp-gemma-timeout'),
         gemmaTimeoutSlider: document.getElementById('exp-gemma-timeout-slider'),
         gemmaTimeoutValue: document.getElementById('exp-gemma-timeout-val'),
@@ -139,6 +143,7 @@ Return only the requested structured result and never include a transcript.`;
         btnGemmaProbe: document.getElementById('btn-exp-gemma-probe'),
         gemmaBadge: document.getElementById('exp-gemma-badge'),
         btnGemmaTest: document.getElementById('btn-exp-gemma-test'),
+        btnGemmaTestDesc: document.getElementById('btn-exp-gemma-test-desc'),
         gemmaTestOut: document.getElementById('exp-gemma-test-output'),
 
         // Stage 5b: VibeVoice-ASR
@@ -672,8 +677,30 @@ Return only the requested structured result and never include a transcript.`;
 
     syncDirectAudioProvider() {
       const isGemini = this.selectedDirectAudioBackend() === 'gemini';
-      if (this.el.gemmaModelGroup) this.el.gemmaModelGroup.style.display = isGemini ? 'none' : '';
-      if (this.el.gemmaEndpointControls) this.el.gemmaEndpointControls.style.display = isGemini ? 'none' : 'block';
+      if (this.el.gemmaLocalFields) {
+        this.el.gemmaLocalFields.style.display = isGemini ? 'none' : 'block';
+      }
+      if (this.el.gemmaModelGroup) {
+        this.el.gemmaModelGroup.style.display = isGemini ? 'none' : '';
+      }
+      if (this.el.gemmaEndpointControls) {
+        this.el.gemmaEndpointControls.style.display = isGemini ? 'none' : 'block';
+      }
+      if (this.el.gemmaBackendHint) {
+        this.el.gemmaBackendHint.textContent = isGemini
+          ? 'Choose the exact verifier model here. Gemini uses GEMINI_API_KEY from the repository-root .env; the key is never sent to the browser.'
+          : 'Local Gemma 4 running on an OpenAI-compatible multimodal audio server (Unsloth Studio, vLLM, etc.).';
+      }
+      if (this.el.gemmaTokensHint) {
+        this.el.gemmaTokensHint.textContent = isGemini
+          ? 'Gemini results record per-sample token usage and estimated paid-Standard USD cost; the result funnel shows the run total.'
+          : 'Max tokens allowed for structured JSON evaluation from the local verifier.';
+      }
+      if (this.el.btnGemmaTestDesc) {
+        this.el.btnGemmaTestDesc.textContent = isGemini
+          ? 'Auditions candidate slice against Google Gemini to verify API key and model before running.'
+          : 'Auditions candidate slice against local verifier endpoint before running.';
+      }
     },
 
     selectedDirectAudioBackend() {
@@ -691,6 +718,7 @@ Return only the requested structured result and never include a transcript.`;
       if (!this.el.gemmaBadge) return;
       this.el.gemmaBadge.className = 'badge badge-sm badge-ghost';
       this.el.gemmaBadge.textContent = 'Pinging…';
+      this.el.gemmaBadge.title = 'Probing verifier connection…';
 
       const endpoint = this.el.gemmaEndpoint?.value || 'http://localhost:8888/v1/chat/completions';
       const backend = this.selectedDirectAudioBackend();
@@ -708,14 +736,20 @@ Return only the requested structured result and never include a transcript.`;
         if (data.ready) {
           this.el.gemmaBadge.className = 'badge badge-sm badge-success';
           this.el.gemmaBadge.textContent = `Connected (${elapsed}ms)`;
+          this.el.gemmaBadge.title = data.message || `Ready (${model})`;
           if (this.el.btnGemmaTest) this.el.btnGemmaTest.disabled = false;
         } else {
           this.el.gemmaBadge.className = 'badge badge-sm badge-danger';
-          this.el.gemmaBadge.textContent = data.error ? `Error: ${data.error.substring(0, 24)}` : 'Offline / Refused';
+          const errMsg = data.error || data.message || 'Offline / Refused';
+          this.el.gemmaBadge.textContent = errMsg.length > 24 ? errMsg.substring(0, 22) + '…' : errMsg;
+          this.el.gemmaBadge.title = errMsg;
+          if (this.el.btnGemmaTest) this.el.btnGemmaTest.disabled = true;
         }
       } catch (err) {
         this.el.gemmaBadge.className = 'badge badge-sm badge-danger';
         this.el.gemmaBadge.textContent = 'Unreachable';
+        this.el.gemmaBadge.title = err.message || 'Network request failed';
+        if (this.el.btnGemmaTest) this.el.btnGemmaTest.disabled = true;
       }
     },
 

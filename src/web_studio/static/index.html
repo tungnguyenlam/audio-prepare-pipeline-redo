@@ -2556,8 +2556,15 @@
                 </div>
 
                 <div id="exp-gemma-fields" style="margin-top: 14px;">
+                  <!-- Model Selection with Integrated Readiness Probe & Badge -->
                   <div class="form-group mb-2">
-                    <label class="form-label" for="exp-gemma-backend">Direct-audio model:</label>
+                    <div class="label-with-tool">
+                      <label class="form-label" for="exp-gemma-backend">Direct-audio model:</label>
+                      <div style="display: flex; align-items: center; gap: 8px;">
+                        <span class="badge badge-sm badge-ghost" id="exp-gemma-badge" title="Verifier connection status">Checking…</span>
+                        <button type="button" class="btn btn-ghost btn-xs" id="btn-exp-gemma-probe" title="Check whether the selected direct-audio model or endpoint is ready.">↻ Check Readiness</button>
+                      </div>
+                    </div>
                     <select id="exp-gemma-backend" class="select-input font-mono">
                       <optgroup label="Google Gemini API">
                         <option value="gemini:gemini-3.8-flash" selected>Gemini 3.8 Flash — Recommended</option>
@@ -2572,29 +2579,34 @@
                         <option value="gemma4">Local Gemma 4</option>
                       </optgroup>
                     </select>
-                    <span class="text-xs text-muted">Choose the exact verifier model here. Gemini uses GEMINI_API_KEY from the repository-root .env; the key is never sent to the browser.</span>
-                  </div>
-                  <!-- Endpoint URL with Probe & Status -->
-                  <div class="form-group mb-2" id="exp-gemma-endpoint-group">
-                    <div class="label-with-tool">
-                      <label class="form-label" for="exp-gemma-endpoint">Verifier readiness</label>
-                      <span class="badge badge-sm badge-ghost" id="exp-gemma-badge">Checking…</span>
-                    </div>
-                    <div id="exp-gemma-endpoint-controls">
-                      <input type="url" id="exp-gemma-endpoint" class="text-input font-mono" value="http://localhost:8888/v1/chat/completions" placeholder="http://<remote-ip>:8888/v1/chat/completions" style="flex: 1;" title="OpenAI-compatible multimodal chat completions endpoint URL.">
-                      <span class="text-xs text-muted" style="margin-top: 4px; display: block;">
-                        Compatible with Unsloth Studio, vLLM, or any OpenAI-compatible multimodal audio server.
-                      </span>
-                    </div>
-                    <button type="button" class="btn btn-secondary btn-sm" id="btn-exp-gemma-probe" title="Check whether the selected direct-audio model is ready." style="margin-top: 8px;">Check Selected Model</button>
+                    <span class="text-xs text-muted" id="exp-gemma-backend-hint">Choose the exact verifier model here. Gemini uses GEMINI_API_KEY from the repository-root .env; the key is never sent to the browser.</span>
                   </div>
 
-                  <div class="form-row">
-                    <div class="form-group col-half mb-2 exp-purity-compute-param" id="exp-gemma-model-group">
-                      <label class="form-label" for="exp-gemma-model">Model Repo / Checkpoint:</label>
-                      <input type="text" id="exp-gemma-model" class="text-input font-mono" value="unsloth/gemma-4-12b-it-GGUF" title="Target model identifier registered on the remote endpoint.">
+                  <!-- Local Gemma 4 Server Settings (Hidden by default when Gemini is selected) -->
+                  <div id="exp-gemma-local-fields" style="display: none;">
+                    <div class="form-row mb-2">
+                      <div class="form-group col-half mb-0" id="exp-gemma-endpoint-group">
+                        <label class="form-label" for="exp-gemma-endpoint">OpenAI-compatible Endpoint URL:</label>
+                        <div id="exp-gemma-endpoint-controls">
+                          <input type="url" id="exp-gemma-endpoint" class="text-input font-mono" value="http://localhost:8888/v1/chat/completions" placeholder="http://<remote-ip>:8888/v1/chat/completions" title="OpenAI-compatible multimodal chat completions endpoint URL.">
+                        </div>
+                        <span class="text-xs text-muted" style="margin-top: 4px; display: block;">
+                          Compatible with Unsloth Studio, vLLM, or any OpenAI-compatible multimodal audio server.
+                        </span>
+                      </div>
+                      <div class="form-group col-half mb-0 exp-purity-compute-param" id="exp-gemma-model-group">
+                        <label class="form-label" for="exp-gemma-model">Model Repo / Checkpoint:</label>
+                        <input type="text" id="exp-gemma-model" class="text-input font-mono" value="unsloth/gemma-4-12b-it-GGUF" placeholder="unsloth/gemma-4-12b-it-GGUF" title="Target model identifier registered on the remote endpoint.">
+                        <span class="text-xs text-muted" style="margin-top: 4px; display: block;">
+                          Target model identifier registered on the remote endpoint.
+                        </span>
+                      </div>
                     </div>
-                    <div class="form-group col-half mb-2">
+                  </div>
+
+                  <!-- Inference Limits: Timeout and Max Tokens -->
+                  <div class="form-row mb-2">
+                    <div class="form-group col-half mb-0">
                       <div class="exp-param-header">
                         <label class="form-label" for="exp-gemma-timeout" title="Direct-audio request timeout [5 – 600s, Default: 120s].">Timeout (seconds):</label>
                         <div class="exp-param-ctrl">
@@ -2605,7 +2617,12 @@
                           <span class="badge badge-sm badge-ghost" id="exp-gemma-timeout-val">120s</span>
                         </div>
                       </div>
-                      <input type="range" id="exp-gemma-timeout-slider" class="slider-input exp-slider" min="10" max="300" step="5" value="120" title="Gemma Timeout [10 – 300s, Default: 120s]. Maximum wait time per candidate verification request.">
+                      <input type="range" id="exp-gemma-timeout-slider" class="slider-input exp-slider" min="10" max="300" step="5" value="120" title="Direct-Audio Timeout [10 – 300s, Default: 120s]. Maximum wait time per candidate verification request.">
+                    </div>
+                    <div class="form-group col-half mb-0">
+                      <label class="form-label" for="exp-gemma-max-tokens">Max structured-output tokens:</label>
+                      <input type="number" id="exp-gemma-max-tokens" class="text-input" min="64" max="4096" step="1" value="256" title="Maximum tokens allocated for the structured JSON verdict.">
+                      <span class="text-xs text-muted" id="exp-gemma-tokens-hint" style="margin-top: 4px; display: block;">Gemini results record per-sample token usage and estimated paid-Standard USD cost; the result funnel shows the run total.</span>
                     </div>
                   </div>
 
@@ -2615,24 +2632,18 @@
                       <label class="form-label" for="exp-gemma-prompt">Direct-Audio Prompt:</label>
                       <button type="button" class="btn btn-ghost btn-xs" id="btn-exp-gemma-prompt-reset" title="Reset to default prompt">Reset Prompt</button>
                     </div>
-                    <textarea id="exp-gemma-prompt" class="text-input purity-prompt-input" rows="8" title="Instruction passed alongside the audio to the multimodal LLM. No transcript is requested.">Listen to the supplied audio directly. Do not transcribe it.
+                    <textarea id="exp-gemma-prompt" class="text-input purity-prompt-input" rows="5" title="Instruction passed alongside the audio to the multimodal LLM. No transcript is requested.">Listen to the supplied audio directly. Do not transcribe it.
 Judge speaker purity: exactly one human speaker must be audible throughout; reject overlap, sequential second speakers, whispers, distant speech, and intelligible background speech.
 Judge word completeness (lẹm chữ): speech must begin and end on complete acoustic word boundaries; reject a clipped initial or final phoneme or syllable. Do not reject a grammatical fragment when its audible words are intact.
 Return only the requested structured result and never include a transcript.</textarea>
                   </div>
 
-                  <div class="form-group mb-2">
-                    <label class="form-label" for="exp-gemma-max-tokens">Max structured-output tokens:</label>
-                    <input type="number" id="exp-gemma-max-tokens" class="text-input" min="64" max="4096" step="1" value="256">
-                    <span class="text-xs text-muted">Gemini results record per-sample token usage and estimated paid-Standard USD cost; the result funnel shows the run total.</span>
-                  </div>
-
                   <!-- Audition Live on Selection Button -->
-                  <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
-                    <button type="button" class="btn btn-secondary btn-sm" id="btn-exp-gemma-test" title="Auditions candidate slice to verify remote server before running.">
+                  <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px;">
+                    <button type="button" class="btn btn-secondary btn-sm" id="btn-exp-gemma-test" title="Auditions candidate slice to verify direct-audio verifier before running.">
                       ⚡ Test Verifier on Current Selection
                     </button>
-                    <span class="text-xs text-muted">Auditions candidate slice to verify remote server before running.</span>
+                    <span class="text-xs text-muted" id="btn-exp-gemma-test-desc">Auditions candidate slice to verify direct-audio verifier before running.</span>
                   </div>
                   <div id="exp-gemma-test-output" class="gemma-test-result" style="display: none; margin-top: 8px;"></div>
                 </div>

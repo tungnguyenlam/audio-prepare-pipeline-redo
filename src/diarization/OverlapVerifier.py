@@ -428,12 +428,8 @@ class GeminiOverlapVerifier(BaseOverlapVerifier):
                 }
             ],
             "generationConfig": {
-                "responseFormat": {
-                    "text": {
-                        "mimeType": "application/json",
-                        "schema": _OVERLAP_SCHEMA,
-                    }
-                },
+                "responseMimeType": "application/json",
+                "responseJsonSchema": _OVERLAP_SCHEMA,
                 "maxOutputTokens": self.max_output_tokens,
             },
         }
