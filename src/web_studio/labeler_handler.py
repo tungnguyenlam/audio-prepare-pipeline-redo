@@ -171,13 +171,57 @@ def _train_quality_classifier_worker(
     device_str: str,
     progress_callback: Any,
     cancel_check: Any,
+    use_wandb: bool = False,
+    wandb_project: str = "tts-quality-classifier",
+    wandb_entity: str | None = None,
+    wandb_run_name: str | None = None,
 ) -> dict[str, Any]:
-    """Execute end-to-end training loop with boundary-aware multi-scale pooling."""
+    """Execute end-to-end training loop with boundary-aware multi-scale pooling and optional WandB tracking."""
     import pandas as pd
     from transformers import AutoModel
 
     device = torch.device(device_str)
     output_model_dir.mkdir(parents=True, exist_ok=True)
+
+    # Initialize optional Weights & Biases tracker
+    wandb_run = None
+    wandb_url = None
+    if use_wandb:
+        try:
+            import wandb
+            api_key = os.environ.get("WANDB_API_KEY", "").strip()
+            if api_key:
+                wandb.login(key=api_key, relogin=False)
+            mode = "online" if api_key else "offline"
+            wandb_run = wandb.init(
+                project=wandb_project or "tts-quality-classifier",
+                entity=wandb_entity or None,
+                name=wandb_run_name or f"{dataset_dir.name}_{backbone_id.split('/')[-1]}_{int(time.time())}",
+                config={
+                    "dataset": dataset_dir.name,
+                    "backbone": backbone_id,
+                    "finetune_mode": finetune_mode,
+                    "lr_backbone": lr_backbone,
+                    "lr_head": lr_head,
+                    "epochs": epochs,
+                    "batch_size": batch_size,
+                    "device": device_str,
+                    "boundary_frames": 15,
+                    "pooling": "tri_scale_boundary_pooling",
+                    "loss": "BCEWithLogitsLoss",
+                },
+                mode=mode,
+                reinit=True,
+            )
+            if wandb_run:
+                try:
+                    wandb_url = wandb_run.get_url()
+                except Exception:
+                    wandb_url = None
+                logger.info("WandB run initialized: %s (url: %s)", wandb_run.name, wandb_url)
+        except Exception as w_exc:
+            logger.warning("Failed to initialize Weights & Biases run: %s", w_exc)
+            wandb_run = None
 
     train_csv = dataset_dir / "train.csv"
     val_csv = dataset_dir / "val.csv"
@@ -201,7 +245,7 @@ def _train_quality_classifier_worker(
     train_loader = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=False)
     val_loader = torch.utils.data.DataLoader(val_ds, batch_size=batch_size, shuffle=False)
 
-    progress_callback(0.05, f"Loading backbone model: {backbone_id}...", {})
+    progress_callback(0.05, f"Loading backbone model: {backbone_id}...", {"wandb_url": wandb_url})
 
     backbone = AutoModel.from_pretrained(backbone_id)
     emb_dim = backbone.config.hidden_size
@@ -248,55 +292,32 @@ def _train_quality_classifier_worker(
     criterion = nn.BCEWithLogitsLoss()
 
     history: list[dict[str, Any]] = []
+    step_history: list[dict[str, Any]] = []
     best_val_score = -1.0
     best_epoch = 0
+    global_step = 0
 
-    for epoch in range(1, epochs + 1):
-        if cancel_check():
-            raise InterruptedError("Training cancelled by user.")
-
-        backbone.train(finetune_mode != "frozen")
-        classifier.train()
-        train_loss = 0.0
-        n_train_batches = 0
-
-        for batch in train_loader:
+    try:
+        for epoch in range(1, epochs + 1):
             if cancel_check():
+                if wandb_run:
+                    wandb_run.finish(exit_code=1)
                 raise InterruptedError("Training cancelled by user.")
-            wavs = batch["waveform"].to(device)
-            targets = batch["targets"].to(device)
 
-            optimizer.zero_grad()
-            outputs = backbone(wavs)
-            hidden = outputs.last_hidden_state
-            k = min(boundary_frames, hidden.shape[1] // 3)
-            h_start = hidden[:, :k, :].mean(dim=1)
-            h_global = hidden.mean(dim=1)
-            h_end = hidden[:, -k:, :].mean(dim=1)
-            fused = torch.cat([h_start, h_global, h_end], dim=-1)
-            logits = classifier(fused)
+            backbone.train(finetune_mode != "frozen")
+            classifier.train()
+            train_loss = 0.0
+            n_train_batches = 0
 
-            loss = criterion(logits, targets)
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(list(backbone_params) + list(head_params), 1.0)
-            optimizer.step()
-
-            train_loss += float(loss.item())
-            n_train_batches += 1
-
-        avg_train_loss = train_loss / max(1, n_train_batches)
-
-        backbone.eval()
-        classifier.eval()
-        val_loss = 0.0
-        n_val_batches = 0
-        all_preds: list[np.ndarray] = []
-        all_targets: list[np.ndarray] = []
-
-        with torch.no_grad():
-            for batch in val_loader:
+            for batch in train_loader:
+                if cancel_check():
+                    if wandb_run:
+                        wandb_run.finish(exit_code=1)
+                    raise InterruptedError("Training cancelled by user.")
                 wavs = batch["waveform"].to(device)
                 targets = batch["targets"].to(device)
+
+                optimizer.zero_grad()
                 outputs = backbone(wavs)
                 hidden = outputs.last_hidden_state
                 k = min(boundary_frames, hidden.shape[1] // 3)
@@ -305,85 +326,165 @@ def _train_quality_classifier_worker(
                 h_end = hidden[:, -k:, :].mean(dim=1)
                 fused = torch.cat([h_start, h_global, h_end], dim=-1)
                 logits = classifier(fused)
+
                 loss = criterion(logits, targets)
-                val_loss += float(loss.item())
-                n_val_batches += 1
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(list(backbone_params) + list(head_params), 1.0)
+                optimizer.step()
 
-                probs = torch.sigmoid(logits)
-                all_preds.append((probs >= 0.5).float().cpu().numpy())
-                all_targets.append(targets.cpu().numpy())
+                loss_val = float(loss.item())
+                train_loss += loss_val
+                n_train_batches += 1
+                global_step += 1
 
-        avg_val_loss = val_loss / max(1, n_val_batches)
-        preds_arr = np.concatenate(all_preds, axis=0) if all_preds else np.zeros((0, 3))
-        targets_arr = np.concatenate(all_targets, axis=0) if all_targets else np.zeros((0, 3))
+                # Log step loss for live trajectory
+                if global_step % 2 == 0 or len(train_loader) <= 10:
+                    step_history.append({
+                        "step": global_step,
+                        "epoch": epoch,
+                        "loss": round(loss_val, 4),
+                    })
+                    if len(step_history) > 300:
+                        step_history.pop(0)
 
-        defect_metrics: dict[str, dict[str, float]] = {}
-        for idx, col in enumerate(["noise", "multi_speaker", "chopped"]):
-            tp = int(np.sum((preds_arr[:, idx] == 1) & (targets_arr[:, idx] == 1)))
-            fp = int(np.sum((preds_arr[:, idx] == 1) & (targets_arr[:, idx] == 0)))
-            fn = int(np.sum((preds_arr[:, idx] == 0) & (targets_arr[:, idx] == 1)))
-            prec = tp / max(1, tp + fp)
-            rec = tp / max(1, tp + fn)
-            f1 = 2 * prec * rec / max(1e-6, prec + rec)
-            defect_metrics[col] = {"precision": round(prec, 4), "recall": round(rec, 4), "f1": round(f1, 4)}
+                if wandb_run:
+                    wandb_run.log({"train/step_loss": loss_val, "step": global_step})
 
-        pred_accept = np.all(preds_arr == 0, axis=1) if len(preds_arr) else np.array([])
-        true_accept = np.all(targets_arr == 0, axis=1) if len(targets_arr) else np.array([])
-        accept_acc = float(np.mean(pred_accept == true_accept)) if len(pred_accept) else 0.0
+            avg_train_loss = train_loss / max(1, n_train_batches)
 
-        mean_f1 = (defect_metrics["noise"]["f1"] + defect_metrics["multi_speaker"]["f1"] + defect_metrics["chopped"]["f1"]) / 3.0
-        val_score = (mean_f1 + accept_acc) / 2.0
+            backbone.eval()
+            classifier.eval()
+            val_loss = 0.0
+            n_val_batches = 0
+            all_preds: list[np.ndarray] = []
+            all_targets: list[np.ndarray] = []
 
-        epoch_record = {
-            "epoch": epoch,
-            "train_loss": round(avg_train_loss, 4),
-            "val_loss": round(avg_val_loss, 4),
-            "clean_accept_acc": round(accept_acc, 4),
-            "noise_f1": defect_metrics["noise"]["f1"],
-            "multi_f1": defect_metrics["multi_speaker"]["f1"],
-            "chopped_f1": defect_metrics["chopped"]["f1"],
-            "mean_f1": round(mean_f1, 4),
-        }
-        history.append(epoch_record)
+            with torch.no_grad():
+                for batch in val_loader:
+                    wavs = batch["waveform"].to(device)
+                    targets = batch["targets"].to(device)
+                    outputs = backbone(wavs)
+                    hidden = outputs.last_hidden_state
+                    k = min(boundary_frames, hidden.shape[1] // 3)
+                    h_start = hidden[:, :k, :].mean(dim=1)
+                    h_global = hidden.mean(dim=1)
+                    h_end = hidden[:, -k:, :].mean(dim=1)
+                    fused = torch.cat([h_start, h_global, h_end], dim=-1)
+                    logits = classifier(fused)
+                    loss = criterion(logits, targets)
+                    val_loss += float(loss.item())
+                    n_val_batches += 1
 
-        if val_score > best_val_score or epoch == 1:
-            best_val_score = val_score
-            best_epoch = epoch
-            torch.save(classifier.state_dict(), output_model_dir / "best_head.pt")
-            if finetune_mode != "frozen":
-                torch.save(backbone.state_dict(), output_model_dir / "best_backbone.pt")
-            (output_model_dir / "metrics.json").write_text(json.dumps(epoch_record, indent=2) + "\n")
-            config_payload = {
-                "backbone": backbone_id,
-                "finetune_mode": finetune_mode,
-                "lr_backbone": lr_backbone,
-                "lr_head": lr_head,
-                "epochs": epochs,
-                "batch_size": batch_size,
-                "boundary_frames": boundary_frames,
-                "best_epoch": best_epoch,
-                "best_score": round(best_val_score, 4),
+                    probs = torch.sigmoid(logits)
+                    all_preds.append((probs >= 0.5).float().cpu().numpy())
+                    all_targets.append(targets.cpu().numpy())
+
+            avg_val_loss = val_loss / max(1, n_val_batches)
+            preds_arr = np.concatenate(all_preds, axis=0) if all_preds else np.zeros((0, 3))
+            targets_arr = np.concatenate(all_targets, axis=0) if all_targets else np.zeros((0, 3))
+
+            defect_metrics: dict[str, dict[str, float]] = {}
+            for idx, col in enumerate(["noise", "multi_speaker", "chopped"]):
+                tp = int(np.sum((preds_arr[:, idx] == 1) & (targets_arr[:, idx] == 1)))
+                fp = int(np.sum((preds_arr[:, idx] == 1) & (targets_arr[:, idx] == 0)))
+                fn = int(np.sum((preds_arr[:, idx] == 0) & (targets_arr[:, idx] == 1)))
+                prec = tp / max(1, tp + fp)
+                rec = tp / max(1, tp + fn)
+                f1 = 2 * prec * rec / max(1e-6, prec + rec)
+                defect_metrics[col] = {"precision": round(prec, 4), "recall": round(rec, 4), "f1": round(f1, 4)}
+
+            pred_accept = np.all(preds_arr == 0, axis=1) if len(preds_arr) else np.array([])
+            true_accept = np.all(targets_arr == 0, axis=1) if len(targets_arr) else np.array([])
+            accept_acc = float(np.mean(pred_accept == true_accept)) if len(pred_accept) else 0.0
+
+            mean_f1 = (defect_metrics["noise"]["f1"] + defect_metrics["multi_speaker"]["f1"] + defect_metrics["chopped"]["f1"]) / 3.0
+            val_score = (mean_f1 + accept_acc) / 2.0
+
+            epoch_record = {
+                "epoch": epoch,
+                "train_loss": round(avg_train_loss, 4),
+                "val_loss": round(avg_val_loss, 4),
+                "clean_accept_acc": round(accept_acc, 4),
+                "noise_f1": defect_metrics["noise"]["f1"],
+                "multi_f1": defect_metrics["multi_speaker"]["f1"],
+                "chopped_f1": defect_metrics["chopped"]["f1"],
+                "mean_f1": round(mean_f1, 4),
             }
-            (output_model_dir / "config.json").write_text(json.dumps(config_payload, indent=2) + "\n")
+            history.append(epoch_record)
 
-        pct = epoch / epochs
-        msg = f"Epoch {epoch:02d}/{epochs:02d} — Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} | Accept Acc: {accept_acc:.1%} | Mean F1: {mean_f1:.2f}"
-        progress_callback(pct, msg, {
-            "epoch": epoch,
-            "total_epochs": epochs,
-            "train_loss": round(avg_train_loss, 4),
-            "val_loss": round(avg_val_loss, 4),
-            "clean_accept_acc": round(accept_acc, 4),
-            "metrics": defect_metrics,
-            "history": history,
-            "best_epoch": best_epoch,
-        })
+            # Log epoch metrics to WandB
+            if wandb_run:
+                wandb_run.log({
+                    "epoch": epoch,
+                    "train/loss": avg_train_loss,
+                    "val/loss": avg_val_loss,
+                    "val/clean_accept_accuracy": accept_acc,
+                    "val/noise_f1": defect_metrics["noise"]["f1"],
+                    "val/multi_speaker_f1": defect_metrics["multi_speaker"]["f1"],
+                    "val/chopped_f1": defect_metrics["chopped"]["f1"],
+                    "val/mean_defect_f1": mean_f1,
+                    "val/composite_score": val_score,
+                    "val/noise_precision": defect_metrics["noise"]["precision"],
+                    "val/noise_recall": defect_metrics["noise"]["recall"],
+                    "val/multi_speaker_precision": defect_metrics["multi_speaker"]["precision"],
+                    "val/multi_speaker_recall": defect_metrics["multi_speaker"]["recall"],
+                    "val/chopped_precision": defect_metrics["chopped"]["precision"],
+                    "val/chopped_recall": defect_metrics["chopped"]["recall"],
+                })
+
+            if val_score > best_val_score or epoch == 1:
+                best_val_score = val_score
+                best_epoch = epoch
+                torch.save(classifier.state_dict(), output_model_dir / "best_head.pt")
+                if finetune_mode != "frozen":
+                    torch.save(backbone.state_dict(), output_model_dir / "best_backbone.pt")
+                (output_model_dir / "metrics.json").write_text(json.dumps(epoch_record, indent=2) + "\n")
+                config_payload = {
+                    "backbone": backbone_id,
+                    "finetune_mode": finetune_mode,
+                    "lr_backbone": lr_backbone,
+                    "lr_head": lr_head,
+                    "epochs": epochs,
+                    "batch_size": batch_size,
+                    "boundary_frames": boundary_frames,
+                    "best_epoch": best_epoch,
+                    "best_score": round(best_val_score, 4),
+                    "wandb_url": wandb_url,
+                }
+                (output_model_dir / "config.json").write_text(json.dumps(config_payload, indent=2) + "\n")
+
+            pct = epoch / epochs
+            msg = f"Epoch {epoch:02d}/{epochs:02d} — Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} | Accept Acc: {accept_acc:.1%} | Mean F1: {mean_f1:.2f}"
+            progress_callback(pct, msg, {
+                "epoch": epoch,
+                "total_epochs": epochs,
+                "train_loss": round(avg_train_loss, 4),
+                "val_loss": round(avg_val_loss, 4),
+                "clean_accept_acc": round(accept_acc, 4),
+                "metrics": defect_metrics,
+                "history": history,
+                "step_history": list(step_history),
+                "best_epoch": best_epoch,
+                "wandb_url": wandb_url,
+            })
+
+        if wandb_run:
+            wandb_run.summary["best_epoch"] = best_epoch
+            wandb_run.summary["best_score"] = round(best_val_score, 4)
+            wandb_run.summary["best_clean_accept_acc"] = round(accept_acc, 4)
+            wandb_run.finish()
+
+    except Exception:
+        if wandb_run:
+            wandb_run.finish(exit_code=1)
+        raise
 
     return {
         "output_dir": str(output_model_dir.resolve()),
         "best_epoch": best_epoch,
         "best_score": round(best_val_score, 4),
         "history": history,
+        "wandb_url": wandb_url,
     }
 
 
@@ -984,7 +1085,12 @@ class LabelerRouteHandler:
         device_req = data.get("device", "auto")
         device_str = _resolve_device(device_req)
 
+        # WandB options
+        use_wandb = bool(data.get("use_wandb", False))
+        wandb_project = str(data.get("wandb_project", "")).strip() or os.environ.get("WANDB_PROJECT", "tts-quality-classifier")
+        wandb_entity = str(data.get("wandb_entity", "")).strip() or os.environ.get("WANDB_ENTITY", "") or None
         run_id = f"run_{int(time.time())}"
+        wandb_run_name = str(data.get("wandb_run_name", "")).strip() or f"{dataset_name}_{backbone.split('/')[-1]}_{run_id}"
         output_model_dir = MODELS_DIR / f"{dataset_name}_{run_id}"
 
         task_id = self.task_manager.create_task(
@@ -1001,6 +1107,9 @@ class LabelerRouteHandler:
                 "device": device_str,
                 "queue_device": device_str,
                 "output_dir": str(output_model_dir),
+                "use_wandb": use_wandb,
+                "wandb_project": wandb_project,
+                "wandb_run_name": wandb_run_name,
             },
         )
 
@@ -1032,13 +1141,17 @@ class LabelerRouteHandler:
                         "clean_accept_acc": meta.get("clean_accept_acc"),
                         "metrics": meta.get("metrics"),
                         "history": meta.get("history", []),
+                        "step_history": meta.get("step_history", []),
                         "best_epoch": meta.get("best_epoch", 0),
+                        "wandb_url": meta.get("wandb_url"),
                         "logs": list(logs_buffer),
                     },
                 )
 
             def execute() -> dict[str, Any]:
                 log_msg(f"Starting training on {device_str} with {backbone} (mode: {finetune_mode})")
+                if use_wandb:
+                    log_msg(f"Weights & Biases tracking requested (project: {wandb_project})")
                 return _train_quality_classifier_worker(
                     dataset_dir=dataset_dir,
                     output_model_dir=output_model_dir,
@@ -1051,6 +1164,10 @@ class LabelerRouteHandler:
                     device_str=device_str,
                     progress_callback=progress_cb,
                     cancel_check=cancelled_event.is_set,
+                    use_wandb=use_wandb,
+                    wandb_project=wandb_project,
+                    wandb_entity=wandb_entity,
+                    wandb_run_name=wandb_run_name,
                 )
 
             try:
@@ -1063,6 +1180,9 @@ class LabelerRouteHandler:
                     )
                     return
                 log_msg(f"Training successfully completed! Best checkpoint: {output_model_dir}")
+                w_url = res_payload.get("wandb_url")
+                if w_url:
+                    log_msg(f"Weights & Biases run logged to: {w_url}")
                 self.task_manager.update_task(
                     task_id,
                     status="completed",
@@ -1070,7 +1190,7 @@ class LabelerRouteHandler:
                     progress_known=True,
                     message="Training Complete! Best model saved.",
                     result=res_payload,
-                    data={"logs": list(logs_buffer), **self.task_manager.get_task(task_id).get("data", {})},
+                    data={"logs": list(logs_buffer), "wandb_url": w_url, **self.task_manager.get_task(task_id).get("data", {})},
                 )
             except (asyncio.CancelledError, InterruptedError):
                 self.task_manager.update_task(
@@ -1133,6 +1253,18 @@ class LabelerRouteHandler:
                 })
         items.sort(key=lambda x: x.get("created_at", 0), reverse=True)
         return web.json_response({"models": items})
+
+    async def handle_get_wandb_status(self, request: web.Request) -> web.Response:
+        """Report server WandB environment availability and project configuration."""
+        del request
+        api_key = os.environ.get("WANDB_API_KEY", "").strip()
+        return web.json_response({
+            "wandb_installed": True,
+            "has_api_key": bool(api_key),
+            "api_key_masked": f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) >= 8 else ("configured" if api_key else ""),
+            "default_project": os.environ.get("WANDB_PROJECT", "tts-quality-classifier"),
+            "default_entity": os.environ.get("WANDB_ENTITY", ""),
+        })
 
 
 def _write_training_script_template(dest_root: Path) -> None:
@@ -1438,4 +1570,5 @@ def register_labeler_routes(
     app.router.add_get("/api/labeler/train/status/{task_id}", handler.handle_get_train_status)
     app.router.add_post("/api/labeler/train/cancel/{task_id}", handler.handle_cancel_train)
     app.router.add_get("/api/labeler/models", handler.handle_list_models)
+    app.router.add_get("/api/labeler/wandb/status", handler.handle_get_wandb_status)
     logger.info("Mounted dedicated Sample Labeler routes at /api/labeler/*")

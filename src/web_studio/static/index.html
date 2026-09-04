@@ -2207,21 +2207,50 @@
               </div>
             </div>
 
+            <!-- Weights & Biases (W&B) Tracking Config -->
+            <div class="lbl-wandb-config-box mb-3">
+              <div class="flex-row items-center justify-between flex-wrap gap-2">
+                <div class="flex-row items-center gap-2">
+                  <span class="lbl-wandb-flame">🔥</span>
+                  <label class="flex-row items-center gap-2 cursor-pointer select-none font-bold text-xs" for="lbl-train-use-wandb">
+                    <input type="checkbox" id="lbl-train-use-wandb" checked>
+                    <span>Track with Weights &amp; Biases (W&amp;B)</span>
+                  </label>
+                  <span class="badge badge-sm" id="lbl-wandb-env-status">Detecting W&amp;B...</span>
+                </div>
+                <span class="text-xs text-secondary" id="lbl-wandb-env-hint">Reads <code>WANDB_API_KEY</code> from <code>.env</code> on server</span>
+              </div>
+              <div class="lbl-wandb-fields mt-2" id="lbl-wandb-fields">
+                <div class="form-group mb-0">
+                  <label class="form-label text-xs" for="lbl-train-wandb-project">W&amp;B Project</label>
+                  <input type="text" id="lbl-train-wandb-project" class="text-input text-sm" value="tts-quality-classifier" placeholder="tts-quality-classifier">
+                </div>
+                <div class="form-group mb-0">
+                  <label class="form-label text-xs" for="lbl-train-wandb-run-name">Run Name</label>
+                  <input type="text" id="lbl-train-wandb-run-name" class="text-input text-sm" placeholder="Auto-generated if empty">
+                </div>
+              </div>
+            </div>
+
             <!-- Action Buttons -->
-            <div class="flex-row items-center gap-2 mb-3">
+            <div class="flex-row items-center gap-2 mb-3 flex-wrap">
               <button type="button" class="btn btn-primary btn-sm" id="btn-lbl-start-train">
                 🚀 Start Fine-Tuning
               </button>
               <button type="button" class="btn btn-danger btn-sm" id="btn-lbl-stop-train" style="display: none;">
                 ⏹ Stop / Cancel
               </button>
+              <a id="lbl-wandb-run-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-warning" style="display: none; align-items: center; gap: 6px;">
+                <span>🔥 Open in Weights &amp; Biases</span>
+                <span>↗</span>
+              </a>
               <span class="text-xs text-muted" id="lbl-train-elapsed-time"></span>
             </div>
 
             <!-- Training Monitor & Live Telemetry -->
             <div id="lbl-train-telemetry" class="lbl-train-telemetry-box" style="display: none;">
               <!-- Progress Bar -->
-              <div class="lbl-progress-wrap mb-2">
+              <div class="lbl-progress-wrap mb-3">
                 <div class="lbl-progress-track">
                   <div class="lbl-progress-fill" id="lbl-train-progress-bar" style="width: 0%;"></div>
                 </div>
@@ -2229,6 +2258,30 @@
                   <span id="lbl-train-step-text" class="text-secondary">Initializing model...</span>
                   <span id="lbl-train-pct-text" class="font-mono font-bold">0%</span>
                 </div>
+              </div>
+
+              <!-- WandB-Style Interactive Charts Dashboard -->
+              <div class="lbl-charts-section mb-3">
+                <div class="lbl-charts-header flex-row items-center justify-between mb-2">
+                  <div class="flex-row items-center gap-2">
+                    <span class="lbl-chart-brand font-bold text-xs">📈 W&amp;B-Style Live Telemetry</span>
+                    <span class="text-xs text-muted font-mono" id="lbl-chart-hover-info">Hover chart to inspect epoch metrics</span>
+                  </div>
+                  <div class="lbl-chart-tabs flex-row items-center gap-1">
+                    <button type="button" class="lbl-chart-tab-btn active" data-chart="loss">Loss Curves</button>
+                    <button type="button" class="lbl-chart-tab-btn" data-chart="metrics">Defect &amp; Accept F1</button>
+                    <button type="button" class="lbl-chart-tab-btn" data-chart="steps">Batch Steps</button>
+                  </div>
+                </div>
+
+                <!-- Interactive Chart Canvas Viewport -->
+                <div class="lbl-chart-viewport" id="lbl-chart-viewport">
+                  <canvas id="lbl-canvas-charts" class="lbl-canvas" width="800" height="240"></canvas>
+                  <div id="lbl-chart-tooltip" class="lbl-chart-tooltip" style="display: none;"></div>
+                </div>
+
+                <!-- Interactive Legend Badges -->
+                <div class="lbl-chart-legends mt-2" id="lbl-chart-legends"></div>
               </div>
 
               <!-- Metrics Scorecards Grid -->

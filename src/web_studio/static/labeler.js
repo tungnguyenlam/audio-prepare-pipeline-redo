@@ -35,6 +35,7 @@
     trainStartTime: null,
     trainElapsedTimer: null,
     trainerExpanded: true,
+    chartRenderer: null,
   };
 
   // DOM Cache
@@ -79,6 +80,15 @@
       btnStopTrain: document.getElementById('btn-lbl-stop-train'),
       trainElapsedTime: document.getElementById('lbl-train-elapsed-time'),
 
+      // Weights & Biases Controls
+      chkUseWandb: document.getElementById('lbl-train-use-wandb'),
+      wandbEnvStatus: document.getElementById('lbl-wandb-env-status'),
+      wandbEnvHint: document.getElementById('lbl-wandb-env-hint'),
+      wandbFields: document.getElementById('lbl-wandb-fields'),
+      trainWandbProject: document.getElementById('lbl-train-wandb-project'),
+      trainWandbRunName: document.getElementById('lbl-train-wandb-run-name'),
+      wandbRunLink: document.getElementById('lbl-wandb-run-link'),
+
       // Live Telemetry & Metrics
       trainTelemetry: document.getElementById('lbl-train-telemetry'),
       trainProgressBar: document.getElementById('lbl-train-progress-bar'),
@@ -94,6 +104,14 @@
       historyTbody: document.getElementById('lbl-history-tbody'),
       trainTerminal: document.getElementById('lbl-train-terminal'),
       btnClearLogs: document.getElementById('btn-lbl-clear-logs'),
+
+      // Interactive Charts Viewport
+      chartCanvas: document.getElementById('lbl-canvas-charts'),
+      chartTooltip: document.getElementById('lbl-chart-tooltip'),
+      chartLegends: document.getElementById('lbl-chart-legends'),
+      chartHoverInfo: document.getElementById('lbl-chart-hover-info'),
+      chartViewport: document.getElementById('lbl-chart-viewport'),
+      chartTabs: document.querySelectorAll('.lbl-chart-tab-btn'),
 
       // Models Modal
       btnOpenModels: document.getElementById('btn-lbl-open-models'),
@@ -134,8 +152,12 @@
   window.LabelerTab = {
     onTabActivated: async function () {
       if (!dom.tabPane) initDom();
+      if (!state.chartRenderer && dom.chartCanvas) {
+        state.chartRenderer = new WandbChartRenderer(dom.chartCanvas, dom.chartTooltip, dom.chartHoverInfo, dom.chartLegends);
+      }
       await loadResultsList();
       await loadDatasetsForTraining();
+      await checkWandbStatus();
       bindGlobalKeyboard();
     },
     onTabDeactivated: function () {
@@ -879,8 +901,344 @@
   }
 
   // =========================================================================
-  // Trainer & Live Telemetry Monitor Logic
+  // Weights & Biases (W&B) Chart Renderer & Live Telemetry
   // =========================================================================
+
+  async function checkWandbStatus() {
+    if (!dom.wandbEnvStatus) return;
+    try {
+      const res = await fetch('/api/labeler/wandb/status');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.has_api_key) {
+        dom.wandbEnvStatus.textContent = `🟢 Key Active (${data.api_key_masked})`;
+        dom.wandbEnvStatus.className = 'badge badge-sm badge-success';
+        if (dom.chkUseWandb) dom.chkUseWandb.checked = true;
+      } else {
+        dom.wandbEnvStatus.textContent = '🟡 No Key in .env';
+        dom.wandbEnvStatus.className = 'badge badge-sm badge-warning';
+        if (dom.wandbEnvHint) {
+          dom.wandbEnvHint.innerHTML = 'Add <code>WANDB_API_KEY</code> to <code>.env</code> on server for cloud logging';
+        }
+      }
+      if (data.default_project && dom.trainWandbProject) {
+        dom.trainWandbProject.value = data.default_project;
+      }
+    } catch (err) {
+      console.warn('Failed checking WandB status:', err);
+    }
+  }
+
+  class WandbChartRenderer {
+    constructor(canvas, tooltipEl, hoverInfoEl, legendsEl) {
+      this.canvas = canvas;
+      this.ctx = canvas ? canvas.getContext('2d') : null;
+      this.tooltip = tooltipEl;
+      this.hoverInfo = hoverInfoEl;
+      this.legendsEl = legendsEl;
+      this.currentMode = 'loss'; // 'loss', 'metrics', or 'steps'
+      this.history = [];
+      this.stepHistory = [];
+      this.hiddenSeries = new Set();
+      this.hoverIndex = null;
+      this.dpr = window.devicePixelRatio || 1;
+
+      if (this.canvas) {
+        this.bindEvents();
+        this.renderLegends();
+      }
+    }
+
+    setMode(mode) {
+      this.currentMode = mode;
+      this.renderLegends();
+      this.draw();
+    }
+
+    updateData(history, stepHistory) {
+      this.history = history || [];
+      this.stepHistory = stepHistory || [];
+      this.draw();
+    }
+
+    bindEvents() {
+      this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+      this.canvas.addEventListener('mouseleave', () => this.handleMouseLeave());
+      window.addEventListener('resize', () => this.draw());
+    }
+
+    getSeriesConfig() {
+      if (this.currentMode === 'loss') {
+        return [
+          { key: 'train_loss', label: 'train/loss', color: '#06b6d4' },
+          { key: 'val_loss', label: 'val/loss', color: '#f59e0b' },
+        ];
+      } else if (this.currentMode === 'metrics') {
+        return [
+          { key: 'clean_accept_acc', label: 'val/clean_accept_accuracy', color: '#10b981' },
+          { key: 'noise_f1', label: 'val/noise_f1', color: '#f97316' },
+          { key: 'multi_f1', label: 'val/multi_speaker_f1', color: '#a855f7' },
+          { key: 'chopped_f1', label: 'val/chopped_f1', color: '#f43f5e' },
+        ];
+      } else {
+        return [
+          { key: 'loss', label: 'train/step_loss', color: '#3b82f6' },
+        ];
+      }
+    }
+
+    renderLegends() {
+      if (!this.legendsEl) return;
+      const seriesList = this.getSeriesConfig();
+      let html = '';
+      seriesList.forEach(s => {
+        const isMuted = this.hiddenSeries.has(s.key);
+        html += `
+          <div class="lbl-legend-chip ${isMuted ? 'muted' : ''}" data-key="${s.key}">
+            <span class="lbl-legend-dot" style="background: ${s.color};"></span>
+            <span>${s.label}</span>
+          </div>
+        `;
+      });
+      this.legendsEl.innerHTML = html;
+      this.legendsEl.querySelectorAll('.lbl-legend-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+          const key = chip.dataset.key;
+          if (this.hiddenSeries.has(key)) {
+            this.hiddenSeries.delete(key);
+            chip.classList.remove('muted');
+          } else {
+            this.hiddenSeries.add(key);
+            chip.classList.add('muted');
+          }
+          this.draw();
+        });
+      });
+    }
+
+    draw() {
+      if (!this.canvas || !this.ctx) return;
+      const rect = this.canvas.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+
+      // Handle HiDPI
+      this.canvas.width = Math.floor(width * this.dpr);
+      this.canvas.height = Math.floor(height * this.dpr);
+      this.ctx.resetTransform();
+      this.ctx.scale(this.dpr, this.dpr);
+
+      const ctx = this.ctx;
+      ctx.clearRect(0, 0, width, height);
+
+      const data = this.currentMode === 'steps' ? this.stepHistory : this.history;
+      if (!data || data.length === 0) {
+        ctx.fillStyle = '#475569';
+        ctx.font = '12px var(--font-mono, monospace)';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Telemetry live curves will appear as training runs...', width / 2, height / 2);
+        return;
+      }
+
+      const padding = { top: 20, right: 30, bottom: 30, left: 45 };
+      const plotW = width - padding.left - padding.right;
+      const plotH = height - padding.top - padding.bottom;
+
+      const seriesList = this.getSeriesConfig().filter(s => !this.hiddenSeries.has(s.key));
+
+      // Calculate Min & Max Y
+      let minY = Infinity;
+      let maxY = -Infinity;
+
+      data.forEach(item => {
+        seriesList.forEach(s => {
+          const val = item[s.key];
+          if (val != null && !isNaN(val)) {
+            if (val < minY) minY = val;
+            if (val > maxY) maxY = val;
+          }
+        });
+      });
+
+      if (!isFinite(minY) || !isFinite(maxY)) {
+        minY = 0;
+        maxY = 1;
+      }
+      if (minY === maxY) {
+        minY = Math.max(0, minY - 0.5);
+        maxY = maxY + 0.5;
+      }
+      const yRange = maxY - minY;
+      minY = Math.max(0, minY - yRange * 0.05);
+      maxY = maxY + yRange * 0.05;
+
+      // Draw Grid Lines & Y Ticks
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+      ctx.lineWidth = 1;
+      ctx.fillStyle = '#64748b';
+      ctx.font = '10px var(--font-mono, monospace)';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+
+      const yTicks = 4;
+      for (let i = 0; i <= yTicks; i++) {
+        const yFrac = i / yTicks;
+        const yVal = minY + (1 - yFrac) * (maxY - minY);
+        const yPos = padding.top + yFrac * plotH;
+
+        ctx.beginPath();
+        ctx.moveTo(padding.left, yPos);
+        ctx.lineTo(width - padding.right, yPos);
+        ctx.stroke();
+
+        ctx.fillText(yVal < 1 ? yVal.toFixed(3) : yVal.toFixed(2), padding.left - 8, yPos);
+      }
+
+      // Draw X Ticks
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      const nPoints = data.length;
+      const xStep = nPoints > 1 ? plotW / (nPoints - 1) : plotW / 2;
+
+      const xTickInterval = Math.max(1, Math.floor(nPoints / 6));
+      for (let i = 0; i < nPoints; i += xTickInterval) {
+        const xPos = nPoints > 1 ? padding.left + i * xStep : padding.left + plotW / 2;
+        const label = this.currentMode === 'steps' ? `#${data[i].step}` : `Ep ${data[i].epoch}`;
+        ctx.fillText(label, xPos, height - padding.bottom + 8);
+      }
+
+      // Plot Series Lines
+      seriesList.forEach(series => {
+        ctx.strokeStyle = series.color;
+        ctx.lineWidth = 2;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+
+        let hasMoved = false;
+        data.forEach((item, idx) => {
+          const val = item[series.key];
+          if (val == null || isNaN(val)) return;
+          const x = nPoints > 1 ? padding.left + idx * xStep : padding.left + plotW / 2;
+          const y = padding.top + (1 - (val - minY) / (maxY - minY)) * plotH;
+
+          if (!hasMoved) {
+            ctx.moveTo(x, y);
+            hasMoved = true;
+          } else {
+            ctx.lineTo(x, y);
+          }
+        });
+        ctx.stroke();
+
+        // Draw point dots
+        ctx.fillStyle = series.color;
+        data.forEach((item, idx) => {
+          const val = item[series.key];
+          if (val == null || isNaN(val)) return;
+          const x = nPoints > 1 ? padding.left + idx * xStep : padding.left + plotW / 2;
+          const y = padding.top + (1 - (val - minY) / (maxY - minY)) * plotH;
+
+          ctx.beginPath();
+          ctx.arc(x, y, 3, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      });
+
+      // Hover Crosshair & Highlights
+      if (this.hoverIndex != null && this.hoverIndex >= 0 && this.hoverIndex < nPoints) {
+        const hoveredItem = data[this.hoverIndex];
+        const hX = nPoints > 1 ? padding.left + this.hoverIndex * xStep : padding.left + plotW / 2;
+
+        // Vertical Guide Line
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(hX, padding.top);
+        ctx.lineTo(hX, height - padding.bottom);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Highlight Active Series Dots
+        seriesList.forEach(series => {
+          const val = hoveredItem[series.key];
+          if (val == null || isNaN(val)) return;
+          const hY = padding.top + (1 - (val - minY) / (maxY - minY)) * plotH;
+
+          ctx.beginPath();
+          ctx.arc(hX, hY, 5, 0, Math.PI * 2);
+          ctx.fillStyle = series.color;
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        });
+
+        // Update Tooltip
+        this.renderTooltip(hoveredItem, hX, padding);
+      }
+    }
+
+    handleMouseMove(e) {
+      const data = this.currentMode === 'steps' ? this.stepHistory : this.history;
+      if (!data || data.length === 0) return;
+      const rect = this.canvas.getBoundingClientRect();
+      const padding = { top: 20, right: 30, bottom: 30, left: 45 };
+      const plotW = rect.width - padding.left - padding.right;
+      const mouseX = e.clientX - rect.left;
+
+      if (mouseX < padding.left || mouseX > rect.width - padding.right) {
+        this.handleMouseLeave();
+        return;
+      }
+
+      const frac = (mouseX - padding.left) / plotW;
+      const idx = Math.min(data.length - 1, Math.max(0, Math.round(frac * (data.length - 1))));
+      this.hoverIndex = idx;
+      this.draw();
+    }
+
+    handleMouseLeave() {
+      this.hoverIndex = null;
+      if (this.tooltip) this.tooltip.style.display = 'none';
+      if (this.hoverInfo) this.hoverInfo.textContent = 'Hover chart to inspect epoch metrics';
+      this.draw();
+    }
+
+    renderTooltip(item, hX, padding) {
+      if (!this.tooltip) return;
+      const seriesList = this.getSeriesConfig().filter(s => !this.hiddenSeries.has(s.key));
+      const title = this.currentMode === 'steps' ? `Step #${item.step} (Epoch ${item.epoch || '?'})` : `Epoch ${item.epoch}`;
+
+      let rows = `<div class="lbl-chart-tooltip-header">${title}</div>`;
+      seriesList.forEach(s => {
+        const val = item[s.key];
+        const displayVal = val != null ? (typeof val === 'number' ? (val < 1 ? val.toFixed(4) : val.toFixed(3)) : val) : '—';
+        rows += `
+          <div class="lbl-chart-tooltip-row">
+            <span class="metric-label"><span class="lbl-legend-dot" style="background:${s.color};"></span>${s.label}</span>
+            <span class="metric-val" style="color:${s.color};">${displayVal}</span>
+          </div>
+        `;
+      });
+
+      this.tooltip.innerHTML = rows;
+      this.tooltip.style.display = 'block';
+
+      const rect = this.canvas.getBoundingClientRect();
+      let left = hX + 12;
+      if (left + 190 > rect.width) {
+        left = hX - 200;
+      }
+      this.tooltip.style.left = `${Math.max(10, left)}px`;
+      this.tooltip.style.top = `25px`;
+
+      if (this.hoverInfo) {
+        this.hoverInfo.textContent = `${title}: ` + seriesList.map(s => `${s.label.split('/').pop()}=${item[s.key] != null ? Number(item[s.key]).toFixed(3) : '—'}`).join(' · ');
+      }
+    }
+  }
 
   async function loadDatasetsForTraining() {
     if (!dom.trainDataset) return;
@@ -924,6 +1282,10 @@
       return;
     }
 
+    const useWandb = dom.chkUseWandb ? dom.chkUseWandb.checked : false;
+    const wandbProject = dom.trainWandbProject ? dom.trainWandbProject.value.trim() : 'tts-quality-classifier';
+    const wandbRunName = dom.trainWandbRunName ? dom.trainWandbRunName.value.trim() : '';
+
     const payload = {
       dataset_name: datasetVal,
       result_id: state.activeResultId,
@@ -934,12 +1296,17 @@
       batch_size: parseInt(dom.trainBatchSize.value, 10) || 8,
       lr_backbone: parseFloat(dom.trainLrBackbone.value) || 1e-5,
       lr_head: parseFloat(dom.trainLrHead.value) || 5e-4,
+      use_wandb: useWandb,
+      wandb_project: wandbProject,
+      wandb_run_name: wandbRunName,
       labels_override: state.labels,
     };
 
     dom.btnStartTrain.disabled = true;
     dom.btnStopTrain.style.display = 'inline-block';
     dom.btnStopTrain.disabled = false;
+    if (dom.wandbRunLink) dom.wandbRunLink.style.display = 'none';
+
     dom.trainStatusBadge.textContent = 'Launching...';
     dom.trainStatusBadge.className = 'badge badge-warning';
     dom.trainTelemetry.style.display = 'block';
@@ -948,7 +1315,7 @@
     dom.trainPctText.textContent = '0%';
     dom.trainStepText.textContent = 'Initializing model backbone & feature extractor...';
 
-    // Reset scorecards
+    // Reset scorecards & charts
     dom.valTrainLoss.textContent = '—';
     dom.valValLoss.textContent = '—';
     dom.valAcceptAcc.textContent = '—';
@@ -957,6 +1324,10 @@
     dom.valChoppedF1.textContent = '—';
     dom.bestEpochText.textContent = 'Best: —';
     dom.historyTbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted text-xs py-2">Training started...</td></tr>';
+
+    if (state.chartRenderer) {
+      state.chartRenderer.updateData([], []);
+    }
 
     state.trainStartTime = Date.now();
     if (state.trainElapsedTimer) clearInterval(state.trainElapsedTimer);
@@ -1035,6 +1406,17 @@
       }
       if (d.best_epoch) {
         dom.bestEpochText.textContent = `Best: Ep ${d.best_epoch}`;
+      }
+
+      // Update interactive canvas charts
+      if (state.chartRenderer) {
+        state.chartRenderer.updateData(d.history || [], d.step_history || []);
+      }
+
+      // Update WandB link if available
+      if (d.wandb_url && dom.wandbRunLink) {
+        dom.wandbRunLink.href = d.wandb_url;
+        dom.wandbRunLink.style.display = 'inline-flex';
       }
 
       // Update history table
@@ -1241,6 +1623,25 @@
     });
     dom.modelsModal?.addEventListener('click', (e) => {
       if (e.target === dom.modelsModal) closeModelsModal();
+    });
+
+    // WandB and Charts events
+    dom.chkUseWandb?.addEventListener('change', (e) => {
+      if (dom.wandbFields) {
+        dom.wandbFields.style.opacity = e.target.checked ? '1' : '0.4';
+        dom.wandbFields.style.pointerEvents = e.target.checked ? 'auto' : 'none';
+      }
+    });
+
+    dom.chartTabs?.forEach(btn => {
+      btn.addEventListener('click', () => {
+        dom.chartTabs.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const mode = btn.dataset.chart;
+        if (state.chartRenderer) {
+          state.chartRenderer.setMode(mode);
+        }
+      });
     });
 
     // Filters

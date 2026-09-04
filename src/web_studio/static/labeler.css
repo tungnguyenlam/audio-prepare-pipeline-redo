@@ -660,3 +660,184 @@
   font-family: var(--font-mono);
 }
 
+/* ==========================================================================
+   Weights & Biases (W&B) Tracking & Interactive Charts
+   ========================================================================== */
+
+.lbl-wandb-config-box {
+  background: rgba(245, 158, 11, 0.04);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+}
+
+.lbl-wandb-flame {
+  font-size: 1.1rem;
+}
+
+.lbl-wandb-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.btn-outline-warning {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  color: #fbbf24;
+  font-weight: 600;
+  transition: all var(--transition-fast);
+}
+
+.btn-outline-warning:hover {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: #fbbf24;
+  color: #ffffff;
+}
+
+/* W&B Interactive Charts Section */
+.lbl-charts-section {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+}
+
+.lbl-charts-header {
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 8px;
+}
+
+.lbl-chart-brand {
+  color: #f59e0b;
+  letter-spacing: 0.03em;
+}
+
+.lbl-chart-tabs {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.lbl-chart-tab-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.lbl-chart-tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.lbl-chart-tab-btn.active {
+  background: var(--bg-surface-elevated);
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.lbl-chart-viewport {
+  position: relative;
+  width: 100%;
+  height: 240px;
+  background: #060910;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-top: 8px;
+  cursor: crosshair;
+}
+
+.lbl-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.lbl-chart-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(13, 17, 23, 0.95);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  z-index: 30;
+  white-space: nowrap;
+}
+
+.lbl-chart-tooltip-header {
+  font-weight: 700;
+  color: #e2e8f0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 4px;
+  margin-bottom: 6px;
+}
+
+.lbl-chart-tooltip-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 2px;
+}
+
+.lbl-chart-tooltip-row .metric-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #94a3b8;
+}
+
+.lbl-chart-tooltip-row .metric-val {
+  font-weight: 700;
+}
+
+.lbl-chart-legends {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lbl-legend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  user-select: none;
+  transition: all var(--transition-fast);
+}
+
+.lbl-legend-chip:hover {
+  border-color: var(--border-muted);
+}
+
+.lbl-legend-chip.muted {
+  opacity: 0.35;
+  text-decoration: line-through;
+}
+
+.lbl-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+

@@ -98,10 +98,12 @@ Designed for single-track interactive inspection, A/B audio comparison, manual c
 - `POST /api/labeler/export-dataset`: Extracts all labeled audio turns into physically independent 16-bit WAV files under `.data/labeled_datasets/<name>/`, partitions into train/val/test splits (source-grouped to prevent data leakage, stratified, or random), and generates `manifest.json`, `dataset.jsonl`, `train.csv`, `val.csv`, `test.csv`, and `train_classifier.py`.
 - `GET /api/labeler/datasets`: Lists exported datasets with sample distribution statistics.
 - `GET /api/labeler/datasets/{name}/download`: Packages and streams dataset folder as a ZIP archive.
-- `POST /api/labeler/train`: Enqueues an end-to-end multi-label quality defect classifier training job. Supports differential learning rates (`lr_backbone=1e-5`, `lr_head=5e-4`), boundary-aware tri-scale pooling $[H_{\text{onset}}, H_{\text{global}}, H_{\text{offset}}]$, multi-label `BCEWithLogitsLoss`, and fine-tuning modes (`full`, `top_layers`, `frozen`).
-- `GET /api/labeler/train/status/{task_id}`: Polls live epoch progress, loss, clean speech accept accuracy, defect F1s (`has_noise`, `has_multi_speaker`, `is_chopped`), history table, and live console logs.
-- `POST /api/labeler/train/cancel/{task_id}`: Cooperatively aborts an active training run.
+- `POST /api/labeler/train`: Enqueues an end-to-end multi-label quality defect classifier training job. Supports differential learning rates (`lr_backbone=1e-5`, `lr_head=5e-4`), boundary-aware tri-scale pooling $[H_{\text{onset}}, H_{\text{global}}, H_{\text{offset}}]$, multi-label `BCEWithLogitsLoss`, fine-tuning modes (`full`, `top_layers`, `frozen`), and native Weights & Biases cloud telemetry.
+- `GET /api/labeler/train/status/{task_id}`: Polls live epoch progress, loss, clean speech accept accuracy, defect F1s (`has_noise`, `has_multi_speaker`, `is_chopped`), batch step loss trajectory, live `wandb_url`, history table, and console logs.
+- `POST /api/labeler/train/cancel/{task_id}`: Cooperatively aborts an active training run and finishes any active WandB run.
 - `GET /api/labeler/models`: Catalogs trained classifier checkpoints in `.data/diarization/models/` with best validation metrics and weights paths.
+- `GET /api/labeler/wandb/status`: Detects `WANDB_API_KEY` from `.env` on server and returns project/entity defaults.
+- **W&B Live Telemetry & Interactive Charts:** Renders hardware-accelerated HTML5 Canvas curves for Loss Trajectory (`train/loss` vs `val/loss`), Defect & Accept F1s (`clean_accept_accuracy`, `noise_f1`, `multi_speaker_f1`, `chopped_f1`), and Batch Step Loss. Features hover crosshair cursors, floating tooltip inspection, legend metric toggles, and direct `Open in Weights & Biases ↗` cloud dashboard linking.
 
 #### Experiment Tab (Zero Contamination)
 - Section 5a exposes one **Direct-audio model** selector containing Local Gemma
