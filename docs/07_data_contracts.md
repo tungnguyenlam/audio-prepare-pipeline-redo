@@ -353,7 +353,45 @@ total.
 
 ---
 
-## 9. Persistence & Synchronization Conventions
+## 9. Quality Classifier Checkpoint & Metrics Schema
+
+**Defined in:** [`src/web_studio/labeler_handler.py`](../src/web_studio/labeler_handler.py). Stored in `.data/diarization/models/<dataset_name>_<run_id>/`:
+- **Model Weights (`best_head.pt`, `best_backbone.pt`):**
+  - `best_head.pt`: PyTorch state dict of the boundary-aware MLP projection head and LayerNorm layers.
+  - `best_backbone.pt`: PyTorch state dict of fine-tuned backbone transformer layers (saved during `full` or `top_layers` training).
+- **Configuration (`config.json`):**
+  ```json
+  {
+    "backbone_id": "microsoft/wavlm-base",
+    "boundary_frames": 15,
+    "hidden_dim": 256,
+    "num_classes": 3,
+    "dropout": 0.25,
+    "finetune_mode": "full",
+    "input_dim": 2304,
+    "lr_backbone": 1e-05,
+    "lr_head": 0.0005,
+    "epochs": 15,
+    "batch_size": 8,
+    "pooling": "tri_scale_boundary_pooling"
+  }
+  ```
+- **Validation Metrics (`metrics.json`):**
+  ```json
+  {
+    "best_epoch": 12,
+    "best_loss": 0.1824,
+    "clean_accept": { "accuracy": 0.942 },
+    "has_noise": { "precision": 0.912, "recall": 0.885, "f1": 0.898 },
+    "has_multi_speaker": { "precision": 0.941, "recall": 0.903, "f1": 0.922 },
+    "is_chopped": { "precision": 0.875, "recall": 0.840, "f1": 0.857 },
+    "history": [ ... ]
+  }
+  ```
+
+---
+
+## 10. Persistence & Synchronization Conventions
 
 1. **Repository-Relative Paths:** Persisted JSON files store repository-relative paths (e.g. `.data/pipeline/ingest/video.wav`) so data folders can be synced across machines (`tungnl5@VF-TUNGNL5-L` and `vsf@vsf-242`) without broken paths.
 2. **Atomic Writes:** All schema saves write to `<path>.tmp` first, flushing to disk before an atomic POSIX rename.

@@ -29,6 +29,12 @@
     saveTimer: null,
     audioPlayer: new Audio(),
     playingTurnIndex: null,
+    // Trainer state
+    activeTrainTaskId: null,
+    trainPollTimer: null,
+    trainStartTime: null,
+    trainElapsedTimer: null,
+    trainerExpanded: true,
   };
 
   // DOM Cache
@@ -52,6 +58,48 @@
       statNoise: document.getElementById('lbl-stat-noise'),
       statMulti: document.getElementById('lbl-stat-multi'),
       statChopped: document.getElementById('lbl-stat-chopped'),
+
+      // Trainer Card & Controls
+      btnToggleTrainer: document.getElementById('btn-lbl-toggle-trainer'),
+      trainerCard: document.getElementById('lbl-trainer-card'),
+      trainerHeader: document.getElementById('lbl-trainer-header'),
+      trainerBody: document.getElementById('lbl-trainer-body'),
+      btnTrainerCollapse: document.getElementById('btn-lbl-trainer-collapse'),
+      trainStatusBadge: document.getElementById('lbl-train-status-badge'),
+      trainDataset: document.getElementById('lbl-train-dataset'),
+      btnRefreshDatasets: document.getElementById('btn-lbl-refresh-datasets'),
+      trainBackbone: document.getElementById('lbl-train-backbone'),
+      trainMode: document.getElementById('lbl-train-mode'),
+      trainDevice: document.getElementById('lbl-train-device'),
+      trainEpochs: document.getElementById('lbl-train-epochs'),
+      trainBatchSize: document.getElementById('lbl-train-batch-size'),
+      trainLrBackbone: document.getElementById('lbl-train-lr-backbone'),
+      trainLrHead: document.getElementById('lbl-train-lr-head'),
+      btnStartTrain: document.getElementById('btn-lbl-start-train'),
+      btnStopTrain: document.getElementById('btn-lbl-stop-train'),
+      trainElapsedTime: document.getElementById('lbl-train-elapsed-time'),
+
+      // Live Telemetry & Metrics
+      trainTelemetry: document.getElementById('lbl-train-telemetry'),
+      trainProgressBar: document.getElementById('lbl-train-progress-bar'),
+      trainStepText: document.getElementById('lbl-train-step-text'),
+      trainPctText: document.getElementById('lbl-train-pct-text'),
+      valTrainLoss: document.getElementById('lbl-val-train-loss'),
+      valValLoss: document.getElementById('lbl-val-val-loss'),
+      valAcceptAcc: document.getElementById('lbl-val-accept-acc'),
+      valNoiseF1: document.getElementById('lbl-val-noise-f1'),
+      valMultiF1: document.getElementById('lbl-val-multi-f1'),
+      valChoppedF1: document.getElementById('lbl-val-chopped-f1'),
+      bestEpochText: document.getElementById('lbl-best-epoch-text'),
+      historyTbody: document.getElementById('lbl-history-tbody'),
+      trainTerminal: document.getElementById('lbl-train-terminal'),
+      btnClearLogs: document.getElementById('btn-lbl-clear-logs'),
+
+      // Models Modal
+      btnOpenModels: document.getElementById('btn-lbl-open-models'),
+      modelsModal: document.getElementById('lbl-models-modal'),
+      btnModelsClose: document.getElementById('btn-lbl-models-close'),
+      modelsListContainer: document.getElementById('lbl-models-list-container'),
       
       // Filters
       speakerSelect: document.getElementById('lbl-speaker-filter'),
@@ -87,6 +135,7 @@
     onTabActivated: async function () {
       if (!dom.tabPane) initDom();
       await loadResultsList();
+      await loadDatasetsForTraining();
       bindGlobalKeyboard();
     },
     onTabDeactivated: function () {
@@ -781,6 +830,12 @@
           </div>
         </div>
       `;
+
+      // Update trainer dropdown and select the newly exported dataset
+      await loadDatasetsForTraining();
+      if (dom.trainDataset) {
+        dom.trainDataset.value = data.dataset_name;
+      }
     } catch (err) {
       console.error('Export failed:', err);
       dom.exportProgress.textContent = `Export failed: ${err.message}`;
@@ -823,6 +878,301 @@
     return SPEAKER_COLORS[idx % SPEAKER_COLORS.length];
   }
 
+  // =========================================================================
+  // Trainer & Live Telemetry Monitor Logic
+  // =========================================================================
+
+  async function loadDatasetsForTraining() {
+    if (!dom.trainDataset) return;
+    try {
+      const res = await fetch('/api/labeler/datasets');
+      if (!res.ok) return;
+      const data = await res.json();
+      const currentVal = dom.trainDataset.value;
+      dom.trainDataset.innerHTML = '<option value="__current__">Current Labeled Session (Auto-export split)</option>';
+      (data.datasets || []).forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.dataset_name;
+        opt.textContent = `${d.dataset_name} (${d.total_samples} samples)`;
+        dom.trainDataset.appendChild(opt);
+      });
+      if (currentVal && Array.from(dom.trainDataset.options).some(o => o.value === currentVal)) {
+        dom.trainDataset.value = currentVal;
+      }
+    } catch (err) {
+      console.warn('Failed to load datasets for trainer:', err);
+    }
+  }
+
+  function toggleTrainer(forceOpen) {
+    if (!dom.trainerBody) return;
+    if (typeof forceOpen === 'boolean') {
+      state.trainerExpanded = forceOpen;
+    } else {
+      state.trainerExpanded = !state.trainerExpanded;
+    }
+    dom.trainerBody.style.display = state.trainerExpanded ? 'block' : 'none';
+    if (dom.btnTrainerCollapse) {
+      dom.btnTrainerCollapse.textContent = state.trainerExpanded ? '▲' : '▼';
+    }
+  }
+
+  async function startTraining() {
+    const datasetVal = dom.trainDataset.value;
+    if (datasetVal === '__current__' && !state.activeResultId) {
+      alert('Please load a DiarizationResult first or select an exported dataset.');
+      return;
+    }
+
+    const payload = {
+      dataset_name: datasetVal,
+      result_id: state.activeResultId,
+      backbone: dom.trainBackbone.value,
+      finetune_mode: dom.trainMode.value,
+      device: dom.trainDevice.value,
+      epochs: parseInt(dom.trainEpochs.value, 10) || 15,
+      batch_size: parseInt(dom.trainBatchSize.value, 10) || 8,
+      lr_backbone: parseFloat(dom.trainLrBackbone.value) || 1e-5,
+      lr_head: parseFloat(dom.trainLrHead.value) || 5e-4,
+      labels_override: state.labels,
+    };
+
+    dom.btnStartTrain.disabled = true;
+    dom.btnStopTrain.style.display = 'inline-block';
+    dom.btnStopTrain.disabled = false;
+    dom.trainStatusBadge.textContent = 'Launching...';
+    dom.trainStatusBadge.className = 'badge badge-warning';
+    dom.trainTelemetry.style.display = 'block';
+    dom.trainTerminal.textContent = '[00:00:00] Submitting training job to compute worker...';
+    dom.trainProgressBar.style.width = '0%';
+    dom.trainPctText.textContent = '0%';
+    dom.trainStepText.textContent = 'Initializing model backbone & feature extractor...';
+
+    // Reset scorecards
+    dom.valTrainLoss.textContent = '—';
+    dom.valValLoss.textContent = '—';
+    dom.valAcceptAcc.textContent = '—';
+    dom.valNoiseF1.textContent = '—';
+    dom.valMultiF1.textContent = '—';
+    dom.valChoppedF1.textContent = '—';
+    dom.bestEpochText.textContent = 'Best: —';
+    dom.historyTbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted text-xs py-2">Training started...</td></tr>';
+
+    state.trainStartTime = Date.now();
+    if (state.trainElapsedTimer) clearInterval(state.trainElapsedTimer);
+    state.trainElapsedTimer = setInterval(() => {
+      if (!state.trainStartTime) return;
+      const sec = Math.floor((Date.now() - state.trainStartTime) / 1000);
+      dom.trainElapsedTime.textContent = `Elapsed: ${Math.floor(sec / 60)}m ${sec % 60}s`;
+    }, 1000);
+
+    try {
+      const res = await fetch('/api/labeler/train', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+
+      state.activeTrainTaskId = data.task_id;
+      dom.trainStatusBadge.textContent = 'Running';
+      dom.trainStatusBadge.className = 'badge badge-accent';
+
+      if (state.trainPollTimer) clearInterval(state.trainPollTimer);
+      state.trainPollTimer = setInterval(() => pollTrainingStatus(state.activeTrainTaskId), 1200);
+      pollTrainingStatus(state.activeTrainTaskId);
+    } catch (err) {
+      console.error('Failed to launch training:', err);
+      alert(`Training failed to start: ${err.message}`);
+      resetTrainingUiState();
+    }
+  }
+
+  async function pollTrainingStatus(taskId) {
+    if (!taskId) return;
+    try {
+      const res = await fetch(`/api/labeler/train/status/${encodeURIComponent(taskId)}`);
+      if (!res.ok) return;
+      const resp = await res.json();
+      const task = resp.task;
+      if (!task) return;
+
+      // Update progress
+      const pct = Math.round((task.progress || 0) * 100);
+      dom.trainProgressBar.style.width = `${pct}%`;
+      dom.trainPctText.textContent = `${pct}%`;
+      dom.trainStepText.textContent = task.message || 'Training...';
+
+      // Update status badge
+      if (task.status === 'running') {
+        const ep = task.data?.epoch || 0;
+        const tot = task.params?.epochs || 15;
+        dom.trainStatusBadge.textContent = `Epoch ${ep}/${tot}`;
+        dom.trainStatusBadge.className = 'badge badge-accent';
+      } else if (task.status === 'completed') {
+        dom.trainStatusBadge.textContent = 'Completed';
+        dom.trainStatusBadge.className = 'badge badge-success';
+      } else if (task.status === 'failed') {
+        dom.trainStatusBadge.textContent = 'Failed';
+        dom.trainStatusBadge.className = 'badge badge-destructive';
+      } else if (task.status === 'cancelled') {
+        dom.trainStatusBadge.textContent = 'Cancelled';
+        dom.trainStatusBadge.className = 'badge badge-muted';
+      }
+
+      // Update metrics & history if present
+      const d = task.data || {};
+      if (d.train_loss != null) dom.valTrainLoss.textContent = Number(d.train_loss).toFixed(4);
+      if (d.val_loss != null) dom.valValLoss.textContent = Number(d.val_loss).toFixed(4);
+      if (d.clean_accept_acc != null) {
+        dom.valAcceptAcc.textContent = `${(Number(d.clean_accept_acc) * 100).toFixed(1)}%`;
+      }
+      if (d.metrics) {
+        if (d.metrics.has_noise) dom.valNoiseF1.textContent = Number(d.metrics.has_noise.f1).toFixed(3);
+        if (d.metrics.has_multi_speaker) dom.valMultiF1.textContent = Number(d.metrics.has_multi_speaker.f1).toFixed(3);
+        if (d.metrics.is_chopped) dom.valChoppedF1.textContent = Number(d.metrics.is_chopped.f1).toFixed(3);
+      }
+      if (d.best_epoch) {
+        dom.bestEpochText.textContent = `Best: Ep ${d.best_epoch}`;
+      }
+
+      // Update history table
+      if (d.history && d.history.length > 0) {
+        let rowsHtml = '';
+        d.history.forEach(h => {
+          const isBest = h.epoch === d.best_epoch;
+          rowsHtml += `
+            <tr class="${isBest ? 'best-epoch-row' : ''}">
+              <td>${h.epoch}${isBest ? ' ⭐' : ''}</td>
+              <td>${h.train_loss.toFixed(4)}</td>
+              <td>${h.val_loss.toFixed(4)}</td>
+              <td class="text-success">${(h.clean_accept_acc * 100).toFixed(1)}%</td>
+              <td>${h.noise_f1.toFixed(3)}</td>
+              <td>${h.multi_f1.toFixed(3)}</td>
+              <td>${h.chopped_f1.toFixed(3)}</td>
+            </tr>
+          `;
+        });
+        dom.historyTbody.innerHTML = rowsHtml;
+      }
+
+      // Update terminal logs
+      if (d.logs && d.logs.length > 0) {
+        dom.trainTerminal.textContent = d.logs.join('\n');
+        dom.trainTerminal.scrollTop = dom.trainTerminal.scrollHeight;
+      }
+
+      // Termination check
+      if (['completed', 'failed', 'cancelled'].includes(task.status)) {
+        if (state.trainPollTimer) clearInterval(state.trainPollTimer);
+        state.trainPollTimer = null;
+        if (state.trainElapsedTimer) clearInterval(state.trainElapsedTimer);
+        state.trainElapsedTimer = null;
+        dom.btnStartTrain.disabled = false;
+        dom.btnStopTrain.style.display = 'none';
+
+        if (task.status === 'completed') {
+          dom.trainStepText.textContent = '✓ Best model saved with tri-scale boundary pooling head!';
+        } else if (task.status === 'failed') {
+          dom.trainStepText.textContent = `❌ ${task.error || 'Training failed'}`;
+        }
+      }
+    } catch (err) {
+      console.warn('Error polling train status:', err);
+    }
+  }
+
+  async function cancelTraining() {
+    if (!state.activeTrainTaskId) return;
+    try {
+      dom.btnStopTrain.disabled = true;
+      dom.trainStatusBadge.textContent = 'Cancelling...';
+      await fetch(`/api/labeler/train/cancel/${encodeURIComponent(state.activeTrainTaskId)}`, {
+        method: 'POST',
+      });
+    } catch (err) {
+      console.error('Cancel request failed:', err);
+    }
+  }
+
+  function resetTrainingUiState() {
+    if (state.trainPollTimer) clearInterval(state.trainPollTimer);
+    if (state.trainElapsedTimer) clearInterval(state.trainElapsedTimer);
+    state.activeTrainTaskId = null;
+    state.trainPollTimer = null;
+    state.trainElapsedTimer = null;
+    dom.btnStartTrain.disabled = false;
+    dom.btnStopTrain.style.display = 'none';
+    dom.btnStopTrain.disabled = false;
+    dom.trainStatusBadge.textContent = 'Idle';
+    dom.trainStatusBadge.className = 'badge badge-accent';
+  }
+
+  // Trained Models Checkpoints Modal
+  async function openModelsModal() {
+    dom.modelsModal.classList.add('open');
+    dom.modelsListContainer.innerHTML = '<p class="text-xs text-muted">Scanning saved checkpoints...</p>';
+    try {
+      const res = await fetch('/api/labeler/models');
+      if (!res.ok) throw new Error(res.statusText);
+      const data = await res.json();
+      const models = data.models || [];
+      if (models.length === 0) {
+        dom.modelsListContainer.innerHTML = `
+          <div class="empty-placeholder p-4 text-center">
+            <p class="text-xs text-muted">No trained checkpoints found yet. Start training a model above!</p>
+          </div>
+        `;
+        return;
+      }
+
+      let html = '';
+      models.forEach(m => {
+        const cfg = m.config || {};
+        const met = m.metrics || {};
+        const bestEp = met.best_epoch || 1;
+        const cleanAcc = met.clean_accept ? (met.clean_accept.accuracy * 100).toFixed(1) + '%' : 'N/A';
+        const noiseF1 = met.has_noise ? met.has_noise.f1.toFixed(3) : 'N/A';
+        const multiF1 = met.has_multi_speaker ? met.has_multi_speaker.f1.toFixed(3) : 'N/A';
+        const chopF1 = met.is_chopped ? met.is_chopped.f1.toFixed(3) : 'N/A';
+        const dateStr = m.created_at ? new Date(m.created_at * 1000).toLocaleString() : '';
+
+        html += `
+          <div class="lbl-model-card">
+            <div class="lbl-model-header">
+              <div>
+                <span class="lbl-model-name">${m.model_name}</span>
+                <span class="text-xs text-muted ml-2">${dateStr}</span>
+              </div>
+              <span class="badge badge-sm badge-success">Best Ep: ${bestEp}</span>
+            </div>
+            <div class="text-xs text-secondary">
+              Backbone: <code>${cfg.backbone_id || 'wavlm'}</code> · Mode: <code>${cfg.finetune_mode || 'full'}</code> · Pooling: <code>onset+global+offset (tri-scale)</code>
+            </div>
+            <div class="lbl-model-metrics-row mt-1">
+              <span class="lbl-metric-chip" title="Clean Speech Accept Accuracy">🎯 Clean Acc: <strong>${cleanAcc}</strong></span>
+              <span class="lbl-metric-chip" title="Noise Defect F1">🔊 Noise F1: <strong>${noiseF1}</strong></span>
+              <span class="lbl-metric-chip" title="Multi-Speaker Defect F1">👥 Multi F1: <strong>${multiF1}</strong></span>
+              <span class="lbl-metric-chip" title="Chopped Syllable Defect F1">✂️ Chop F1: <strong>${chopF1}</strong></span>
+            </div>
+            <div class="flex-row items-center justify-between text-xs text-muted mt-2 pt-2 border-t border-subtle">
+              <code class="text-xs" style="max-width: 80%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${m.path}</code>
+              <button type="button" class="btn btn-ghost btn-xs" onclick="navigator.clipboard.writeText('${m.path}')" title="Copy path to clipboard">Copy Path</button>
+            </div>
+          </div>
+        `;
+      });
+      dom.modelsListContainer.innerHTML = html;
+    } catch (err) {
+      dom.modelsListContainer.innerHTML = `<p class="text-xs text-danger">Failed to load models: ${err.message}</p>`;
+    }
+  }
+
+  function closeModelsModal() {
+    dom.modelsModal.classList.remove('open');
+  }
+
   // Setup Listeners once DOM loads
   document.addEventListener('DOMContentLoaded', () => {
     initDom();
@@ -857,6 +1207,40 @@
 
     dom.btnShortcutsClose?.addEventListener('click', () => {
       closeShortcutsModal();
+    });
+
+    // Trainer & Models events
+    dom.btnToggleTrainer?.addEventListener('click', () => {
+      toggleTrainer();
+    });
+    dom.trainerHeader?.addEventListener('click', (e) => {
+      if (e.target.closest('button')) return;
+      toggleTrainer();
+    });
+    dom.btnTrainerCollapse?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleTrainer();
+    });
+    dom.btnRefreshDatasets?.addEventListener('click', () => {
+      loadDatasetsForTraining();
+    });
+    dom.btnStartTrain?.addEventListener('click', () => {
+      startTraining();
+    });
+    dom.btnStopTrain?.addEventListener('click', () => {
+      cancelTraining();
+    });
+    dom.btnClearLogs?.addEventListener('click', () => {
+      dom.trainTerminal.textContent = '';
+    });
+    dom.btnOpenModels?.addEventListener('click', () => {
+      openModelsModal();
+    });
+    dom.btnModelsClose?.addEventListener('click', () => {
+      closeModelsModal();
+    });
+    dom.modelsModal?.addEventListener('click', (e) => {
+      if (e.target === dom.modelsModal) closeModelsModal();
     });
 
     // Filters

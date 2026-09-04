@@ -420,3 +420,243 @@
   font-size: 2.8rem;
   margin-bottom: 12px;
 }
+
+/* ==========================================================================
+   Trainer & Live Telemetry Monitor
+   ========================================================================== */
+
+.lbl-trainer-card {
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  background: linear-gradient(180deg, rgba(139, 92, 246, 0.03) 0%, var(--bg-surface) 100%);
+  transition: border-color var(--transition-fast);
+}
+
+.lbl-trainer-card:hover {
+  border-color: rgba(139, 92, 246, 0.5);
+}
+
+.lbl-trainer-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.15);
+  color: var(--accent-purple, #a78bfa);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.lbl-trainer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.lbl-hyperparams-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+}
+
+.lbl-train-telemetry-box {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-top: 12px;
+}
+
+.lbl-progress-wrap {
+  width: 100%;
+}
+
+.lbl-progress-track {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.lbl-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #6366f1 0%, #a855f7 50%, #10b981 100%);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.lbl-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+}
+
+.lbl-metric-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
+.lbl-metric-card.highlight-green {
+  background: rgba(16, 185, 129, 0.06);
+  border-color: rgba(16, 185, 129, 0.25);
+}
+
+.lbl-metric-title {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.lbl-metric-val {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.lbl-monitor-split {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .lbl-monitor-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.lbl-history-panel,
+.lbl-logs-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.lbl-table-scroll {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+}
+
+.lbl-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+}
+
+.lbl-history-table th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-surface-elevated);
+  padding: 6px 8px;
+  text-align: right;
+  border-bottom: 1px solid var(--border-muted);
+  color: var(--text-secondary);
+  font-weight: 600;
+  z-index: 1;
+}
+
+.lbl-history-table th:first-child {
+  text-align: center;
+}
+
+.lbl-history-table td {
+  padding: 5px 8px;
+  text-align: right;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.lbl-history-table td:first-child {
+  text-align: center;
+  font-weight: 600;
+}
+
+.lbl-history-table tr.best-epoch-row {
+  background: rgba(16, 185, 129, 0.12);
+  font-weight: 600;
+}
+
+.lbl-log-terminal {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 10px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  background: #090d16;
+  color: #a5b4fc;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Models Checkpoints List */
+.lbl-models-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.lbl-model-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  transition: border-color var(--transition-fast);
+}
+
+.lbl-model-card:hover {
+  border-color: var(--border-muted);
+}
+
+.lbl-model-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lbl-model-name {
+  font-weight: 700;
+  font-size: 0.85rem;
+  font-family: var(--font-mono);
+}
+
+.lbl-model-metrics-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lbl-metric-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+}
+

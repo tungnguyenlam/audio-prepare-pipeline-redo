@@ -90,7 +90,7 @@ Designed for single-track interactive inspection, A/B audio comparison, manual c
 - `POST /api/diarization/annotations`: Creates or revision-updates manual ground-truth reference annotations.
 - `POST /api/diarization/evaluate`: Runs Hungarian-matched DER/JER evaluation comparing hypotheses against reference.
 
-#### Sample Quality Labeler
+#### Sample Quality Labeler & Classifier Workbench
 - `GET /api/labeler/results`: Lists durable DiarizationResults with labeling progress counts.
 - `GET /api/labeler/session/{result_id}`: Loads complete DiarizationResult data with current draft labels.
 - `POST /api/labeler/session/{result_id}/labels`: Autosaves/updates in-progress labeling draft to `.data/diarization/labels/<result_id>.json`.
@@ -98,6 +98,10 @@ Designed for single-track interactive inspection, A/B audio comparison, manual c
 - `POST /api/labeler/export-dataset`: Extracts all labeled audio turns into physically independent 16-bit WAV files under `.data/labeled_datasets/<name>/`, partitions into train/val/test splits (source-grouped to prevent data leakage, stratified, or random), and generates `manifest.json`, `dataset.jsonl`, `train.csv`, `val.csv`, `test.csv`, and `train_classifier.py`.
 - `GET /api/labeler/datasets`: Lists exported datasets with sample distribution statistics.
 - `GET /api/labeler/datasets/{name}/download`: Packages and streams dataset folder as a ZIP archive.
+- `POST /api/labeler/train`: Enqueues an end-to-end multi-label quality defect classifier training job. Supports differential learning rates (`lr_backbone=1e-5`, `lr_head=5e-4`), boundary-aware tri-scale pooling $[H_{\text{onset}}, H_{\text{global}}, H_{\text{offset}}]$, multi-label `BCEWithLogitsLoss`, and fine-tuning modes (`full`, `top_layers`, `frozen`).
+- `GET /api/labeler/train/status/{task_id}`: Polls live epoch progress, loss, clean speech accept accuracy, defect F1s (`has_noise`, `has_multi_speaker`, `is_chopped`), history table, and live console logs.
+- `POST /api/labeler/train/cancel/{task_id}`: Cooperatively aborts an active training run.
+- `GET /api/labeler/models`: Catalogs trained classifier checkpoints in `.data/diarization/models/` with best validation metrics and weights paths.
 
 #### Experiment Tab (Zero Contamination)
 - Section 5a exposes one **Direct-audio model** selector containing Local Gemma

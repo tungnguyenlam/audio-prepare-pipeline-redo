@@ -26,6 +26,8 @@ import zipfile
 from aiohttp import web
 import soundfile as sf
 import numpy as np
+import torch
+import torch.nn as nn
 
 from src.data_paths import DATA_DIR, REPO_ROOT, portable_data_path, resolve_data_path
 from src.diarization.schemas import DiarizationResult, SpeakerTurn
@@ -38,11 +40,13 @@ DIARIZATION_RESULTS_DIR = DATA_DIR / "diarization" / "results"
 DIARIZATION_PREVIEW_DIR = DATA_DIR / "diarization" / "preview"
 LABELS_DIR = DATA_DIR / "diarization" / "labels"
 LABELED_DATASETS_DIR = DATA_DIR / "labeled_datasets"
+MODELS_DIR = DATA_DIR / "models" / "quality_classifier"
 
 DIARIZATION_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 DIARIZATION_PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
 LABELS_DIR.mkdir(parents=True, exist_ok=True)
 LABELED_DATASETS_DIR.mkdir(parents=True, exist_ok=True)
+MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 VALID_LABELS = {
     "accept": "Accept",
@@ -97,6 +101,290 @@ def _save_draft_labels(result_id: str, data: dict[str, Any]) -> None:
     }
     temp_file.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     temp_file.replace(draft_file)
+
+
+def _resolve_device(req_device: str | None) -> str:
+    """Select requested accelerator device or fallback to best available."""
+    if req_device and req_device != "auto":
+        return req_device
+    if torch.cuda.is_available():
+        best_idx = max(
+            range(torch.cuda.device_count()),
+            key=lambda i: torch.cuda.get_device_properties(i).total_memory,
+        )
+        return f"cuda:{best_idx}"
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
+class _InProcessDataset(torch.utils.data.Dataset):
+    """Audio dataset for in-process background training."""
+
+    def __init__(self, df: Any, dataset_dir: Path, target_sr: int = 16000, max_duration_s: float = 12.0):
+        self.df = df
+        self.dataset_dir = dataset_dir
+        self.target_sr = target_sr
+        self.max_frames = int(max_duration_s * target_sr)
+
+    def __len__(self) -> int:
+        return len(self.df)
+
+    def __getitem__(self, idx: int) -> dict[str, Any]:
+        row = self.df.iloc[idx]
+        wav_path = self.dataset_dir / str(row["audio_path"])
+        waveform, sr = sf.read(str(wav_path))
+        if waveform.ndim > 1:
+            waveform = waveform.mean(axis=1)
+        if sr != self.target_sr:
+            import librosa
+            waveform = librosa.resample(waveform, orig_sr=sr, target_sr=self.target_sr)
+
+        if len(waveform) > self.max_frames:
+            waveform = waveform[:self.max_frames]
+        else:
+            pad_len = self.max_frames - len(waveform)
+            waveform = np.pad(waveform, (0, pad_len))
+
+        targets = torch.tensor([
+            float(row.get("has_noise", 0)),
+            float(row.get("has_multi_speaker", 0)),
+            float(row.get("is_chopped", 0)),
+        ], dtype=torch.float32)
+
+        return {
+            "waveform": torch.tensor(waveform, dtype=torch.float32),
+            "targets": targets,
+            "sample_id": str(row.get("sample_id", f"sample_{idx}")),
+        }
+
+
+def _train_quality_classifier_worker(
+    dataset_dir: Path,
+    output_model_dir: Path,
+    backbone_id: str,
+    finetune_mode: str,
+    lr_backbone: float,
+    lr_head: float,
+    epochs: int,
+    batch_size: int,
+    device_str: str,
+    progress_callback: Any,
+    cancel_check: Any,
+) -> dict[str, Any]:
+    """Execute end-to-end training loop with boundary-aware multi-scale pooling."""
+    import pandas as pd
+    from transformers import AutoModel
+
+    device = torch.device(device_str)
+    output_model_dir.mkdir(parents=True, exist_ok=True)
+
+    train_csv = dataset_dir / "train.csv"
+    val_csv = dataset_dir / "val.csv"
+    if not train_csv.is_file():
+        raise FileNotFoundError(f"Missing train.csv in {dataset_dir}")
+
+    train_df = pd.read_csv(train_csv)
+    if val_csv.is_file() and val_csv.stat().st_size > 50:
+        val_df = pd.read_csv(val_csv)
+    else:
+        n = len(train_df)
+        if n >= 4:
+            n_tr = int(round(n * 0.8))
+            val_df = train_df.iloc[n_tr:].reset_index(drop=True)
+            train_df = train_df.iloc[:n_tr].reset_index(drop=True)
+        else:
+            val_df = train_df.copy()
+
+    train_ds = _InProcessDataset(train_df, dataset_dir)
+    val_ds = _InProcessDataset(val_df, dataset_dir)
+    train_loader = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=False)
+    val_loader = torch.utils.data.DataLoader(val_ds, batch_size=batch_size, shuffle=False)
+
+    progress_callback(0.05, f"Loading backbone model: {backbone_id}...", {})
+
+    backbone = AutoModel.from_pretrained(backbone_id)
+    emb_dim = backbone.config.hidden_size
+
+    if finetune_mode == "frozen":
+        for p in backbone.parameters():
+            p.requires_grad = False
+    elif finetune_mode == "top_layers":
+        for p in backbone.parameters():
+            p.requires_grad = False
+        encoder = getattr(backbone, "encoder", None)
+        if encoder and hasattr(encoder, "layers"):
+            for layer in encoder.layers[-2:]:
+                for p in layer.parameters():
+                    p.requires_grad = True
+    else:
+        for p in backbone.parameters():
+            p.requires_grad = True
+
+    backbone = backbone.to(device)
+
+    boundary_frames = 15
+    input_dim = emb_dim * 3
+    classifier = nn.Sequential(
+        nn.LayerNorm(input_dim),
+        nn.Linear(input_dim, 256),
+        nn.GELU(),
+        nn.Dropout(0.25),
+        nn.Linear(256, 128),
+        nn.GELU(),
+        nn.Dropout(0.25),
+        nn.Linear(128, 3),
+    ).to(device)
+
+    backbone_params = [p for p in backbone.parameters() if p.requires_grad]
+    head_params = [p for p in classifier.parameters() if p.requires_grad]
+
+    param_groups = []
+    if backbone_params:
+        param_groups.append({"params": backbone_params, "lr": lr_backbone, "weight_decay": 1e-2})
+    param_groups.append({"params": head_params, "lr": lr_head, "weight_decay": 1e-4})
+
+    optimizer = torch.optim.AdamW(param_groups)
+    criterion = nn.BCEWithLogitsLoss()
+
+    history: list[dict[str, Any]] = []
+    best_val_score = -1.0
+    best_epoch = 0
+
+    for epoch in range(1, epochs + 1):
+        if cancel_check():
+            raise InterruptedError("Training cancelled by user.")
+
+        backbone.train(finetune_mode != "frozen")
+        classifier.train()
+        train_loss = 0.0
+        n_train_batches = 0
+
+        for batch in train_loader:
+            if cancel_check():
+                raise InterruptedError("Training cancelled by user.")
+            wavs = batch["waveform"].to(device)
+            targets = batch["targets"].to(device)
+
+            optimizer.zero_grad()
+            outputs = backbone(wavs)
+            hidden = outputs.last_hidden_state
+            k = min(boundary_frames, hidden.shape[1] // 3)
+            h_start = hidden[:, :k, :].mean(dim=1)
+            h_global = hidden.mean(dim=1)
+            h_end = hidden[:, -k:, :].mean(dim=1)
+            fused = torch.cat([h_start, h_global, h_end], dim=-1)
+            logits = classifier(fused)
+
+            loss = criterion(logits, targets)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(list(backbone_params) + list(head_params), 1.0)
+            optimizer.step()
+
+            train_loss += float(loss.item())
+            n_train_batches += 1
+
+        avg_train_loss = train_loss / max(1, n_train_batches)
+
+        backbone.eval()
+        classifier.eval()
+        val_loss = 0.0
+        n_val_batches = 0
+        all_preds: list[np.ndarray] = []
+        all_targets: list[np.ndarray] = []
+
+        with torch.no_grad():
+            for batch in val_loader:
+                wavs = batch["waveform"].to(device)
+                targets = batch["targets"].to(device)
+                outputs = backbone(wavs)
+                hidden = outputs.last_hidden_state
+                k = min(boundary_frames, hidden.shape[1] // 3)
+                h_start = hidden[:, :k, :].mean(dim=1)
+                h_global = hidden.mean(dim=1)
+                h_end = hidden[:, -k:, :].mean(dim=1)
+                fused = torch.cat([h_start, h_global, h_end], dim=-1)
+                logits = classifier(fused)
+                loss = criterion(logits, targets)
+                val_loss += float(loss.item())
+                n_val_batches += 1
+
+                probs = torch.sigmoid(logits)
+                all_preds.append((probs >= 0.5).float().cpu().numpy())
+                all_targets.append(targets.cpu().numpy())
+
+        avg_val_loss = val_loss / max(1, n_val_batches)
+        preds_arr = np.concatenate(all_preds, axis=0) if all_preds else np.zeros((0, 3))
+        targets_arr = np.concatenate(all_targets, axis=0) if all_targets else np.zeros((0, 3))
+
+        defect_metrics: dict[str, dict[str, float]] = {}
+        for idx, col in enumerate(["noise", "multi_speaker", "chopped"]):
+            tp = int(np.sum((preds_arr[:, idx] == 1) & (targets_arr[:, idx] == 1)))
+            fp = int(np.sum((preds_arr[:, idx] == 1) & (targets_arr[:, idx] == 0)))
+            fn = int(np.sum((preds_arr[:, idx] == 0) & (targets_arr[:, idx] == 1)))
+            prec = tp / max(1, tp + fp)
+            rec = tp / max(1, tp + fn)
+            f1 = 2 * prec * rec / max(1e-6, prec + rec)
+            defect_metrics[col] = {"precision": round(prec, 4), "recall": round(rec, 4), "f1": round(f1, 4)}
+
+        pred_accept = np.all(preds_arr == 0, axis=1) if len(preds_arr) else np.array([])
+        true_accept = np.all(targets_arr == 0, axis=1) if len(targets_arr) else np.array([])
+        accept_acc = float(np.mean(pred_accept == true_accept)) if len(pred_accept) else 0.0
+
+        mean_f1 = (defect_metrics["noise"]["f1"] + defect_metrics["multi_speaker"]["f1"] + defect_metrics["chopped"]["f1"]) / 3.0
+        val_score = (mean_f1 + accept_acc) / 2.0
+
+        epoch_record = {
+            "epoch": epoch,
+            "train_loss": round(avg_train_loss, 4),
+            "val_loss": round(avg_val_loss, 4),
+            "clean_accept_acc": round(accept_acc, 4),
+            "noise_f1": defect_metrics["noise"]["f1"],
+            "multi_f1": defect_metrics["multi_speaker"]["f1"],
+            "chopped_f1": defect_metrics["chopped"]["f1"],
+            "mean_f1": round(mean_f1, 4),
+        }
+        history.append(epoch_record)
+
+        if val_score > best_val_score or epoch == 1:
+            best_val_score = val_score
+            best_epoch = epoch
+            torch.save(classifier.state_dict(), output_model_dir / "best_head.pt")
+            if finetune_mode != "frozen":
+                torch.save(backbone.state_dict(), output_model_dir / "best_backbone.pt")
+            (output_model_dir / "metrics.json").write_text(json.dumps(epoch_record, indent=2) + "\n")
+            config_payload = {
+                "backbone": backbone_id,
+                "finetune_mode": finetune_mode,
+                "lr_backbone": lr_backbone,
+                "lr_head": lr_head,
+                "epochs": epochs,
+                "batch_size": batch_size,
+                "boundary_frames": boundary_frames,
+                "best_epoch": best_epoch,
+                "best_score": round(best_val_score, 4),
+            }
+            (output_model_dir / "config.json").write_text(json.dumps(config_payload, indent=2) + "\n")
+
+        pct = epoch / epochs
+        msg = f"Epoch {epoch:02d}/{epochs:02d} — Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} | Accept Acc: {accept_acc:.1%} | Mean F1: {mean_f1:.2f}"
+        progress_callback(pct, msg, {
+            "epoch": epoch,
+            "total_epochs": epochs,
+            "train_loss": round(avg_train_loss, 4),
+            "val_loss": round(avg_val_loss, 4),
+            "clean_accept_acc": round(accept_acc, 4),
+            "metrics": defect_metrics,
+            "history": history,
+            "best_epoch": best_epoch,
+        })
+
+    return {
+        "output_dir": str(output_model_dir.resolve()),
+        "best_epoch": best_epoch,
+        "best_score": round(best_val_score, 4),
+        "history": history,
+    }
 
 
 class LabelerRouteHandler:
@@ -646,6 +934,206 @@ class LabelerRouteHandler:
             },
         )
 
+    async def handle_train_classifier(self, request: web.Request) -> web.Response:
+        """Enqueue and launch an end-to-end quality classifier training job."""
+        try:
+            data = await request.json()
+        except Exception:
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+
+        raw_dataset_name = data.get("dataset_name", "").strip() or "__current__"
+        dataset_name = _sanitize_name(raw_dataset_name) if raw_dataset_name != "__current__" else "__current__"
+        result_id = data.get("result_id")
+
+        dataset_dir = LABELED_DATASETS_DIR / dataset_name
+        if dataset_name == "__current__" or not dataset_dir.is_dir():
+            # Check if we can auto-export from current session
+            if not result_id:
+                return web.json_response({
+                    "error": f"Dataset '{dataset_name}' not found on disk. Please export the dataset first or select a valid session."
+                }, status=400)
+            
+            # Auto-export current result
+            auto_dataset_name = f"auto_{_sanitize_name(result_id)}_{int(time.time())}"
+            export_payload = {
+                "result_id": result_id,
+                "dataset_name": auto_dataset_name,
+                "split_strategy": "grouped_by_source",
+                "split_ratios": {"train": 0.8, "val": 0.2, "test": 0.0},
+                "labels_override": data.get("labels_override"),
+            }
+            # Execute export inline
+            mock_req = request.clone(method="POST")
+            mock_req._read_bytes = json.dumps(export_payload).encode("utf-8")
+            export_resp = await self.handle_export_dataset(mock_req)
+            if export_resp.status >= 400:
+                return export_resp
+            dataset_name = auto_dataset_name
+            dataset_dir = LABELED_DATASETS_DIR / dataset_name
+
+        train_csv = dataset_dir / "train.csv"
+        if not train_csv.is_file():
+            return web.json_response({"error": f"Missing train.csv in {dataset_dir}"}, status=400)
+
+        backbone = str(data.get("backbone", "microsoft/wavlm-base")).strip()
+        finetune_mode = str(data.get("finetune_mode", "full")).strip()
+        lr_backbone = float(data.get("lr_backbone", 1e-5))
+        lr_head = float(data.get("lr_head", 5e-4))
+        epochs = max(1, min(100, int(data.get("epochs", 15))))
+        batch_size = max(1, min(64, int(data.get("batch_size", 8))))
+        device_req = data.get("device", "auto")
+        device_str = _resolve_device(device_req)
+
+        run_id = f"run_{int(time.time())}"
+        output_model_dir = MODELS_DIR / f"{dataset_name}_{run_id}"
+
+        task_id = self.task_manager.create_task(
+            "quality_classifier_train",
+            {
+                "title": f"Train Classifier: {dataset_name} ({backbone.split('/')[-1]})",
+                "dataset_name": dataset_name,
+                "backbone": backbone,
+                "finetune_mode": finetune_mode,
+                "epochs": epochs,
+                "batch_size": batch_size,
+                "lr_backbone": lr_backbone,
+                "lr_head": lr_head,
+                "device": device_str,
+                "queue_device": device_str,
+                "output_dir": str(output_model_dir),
+            },
+        )
+
+        loop = asyncio.get_running_loop()
+        cancelled_event = threading.Event()
+        self.task_manager.set_cancel_callback(task_id, cancelled_event.set)
+        logs_buffer: list[str] = []
+
+        def log_msg(msg: str) -> None:
+            ts = time.strftime("%H:%M:%S")
+            line = f"[{ts}] {msg}"
+            logs_buffer.append(line)
+            if len(logs_buffer) > 200:
+                logs_buffer.pop(0)
+
+        async def run_training_task() -> None:
+            def progress_cb(progress: float, message: str, meta: dict[str, Any]) -> None:
+                log_msg(message)
+                self.task_manager.update_task(
+                    task_id,
+                    progress=round(progress, 3),
+                    progress_known=True,
+                    message=message,
+                    data={
+                        "epoch": meta.get("epoch", 0),
+                        "total_epochs": epochs,
+                        "train_loss": meta.get("train_loss"),
+                        "val_loss": meta.get("val_loss"),
+                        "clean_accept_acc": meta.get("clean_accept_acc"),
+                        "metrics": meta.get("metrics"),
+                        "history": meta.get("history", []),
+                        "best_epoch": meta.get("best_epoch", 0),
+                        "logs": list(logs_buffer),
+                    },
+                )
+
+            def execute() -> dict[str, Any]:
+                log_msg(f"Starting training on {device_str} with {backbone} (mode: {finetune_mode})")
+                return _train_quality_classifier_worker(
+                    dataset_dir=dataset_dir,
+                    output_model_dir=output_model_dir,
+                    backbone_id=backbone,
+                    finetune_mode=finetune_mode,
+                    lr_backbone=lr_backbone,
+                    lr_head=lr_head,
+                    epochs=epochs,
+                    batch_size=batch_size,
+                    device_str=device_str,
+                    progress_callback=progress_cb,
+                    cancel_check=cancelled_event.is_set,
+                )
+
+            try:
+                res_payload = await loop.run_in_executor(None, execute)
+                if cancelled_event.is_set():
+                    self.task_manager.update_task(
+                        task_id,
+                        status="cancelled",
+                        message="Training cancelled by user.",
+                    )
+                    return
+                log_msg(f"Training successfully completed! Best checkpoint: {output_model_dir}")
+                self.task_manager.update_task(
+                    task_id,
+                    status="completed",
+                    progress=1.0,
+                    progress_known=True,
+                    message="Training Complete! Best model saved.",
+                    result=res_payload,
+                    data={"logs": list(logs_buffer), **self.task_manager.get_task(task_id).get("data", {})},
+                )
+            except (asyncio.CancelledError, InterruptedError):
+                self.task_manager.update_task(
+                    task_id,
+                    status="cancelled",
+                    message="Training cancelled by user.",
+                )
+            except Exception as exc:
+                logger.exception("Quality classifier training failed")
+                log_msg(f"ERROR: {exc}")
+                self.task_manager.update_task(
+                    task_id,
+                    status="failed",
+                    error=str(exc),
+                    message=f"Training failed: {exc}",
+                    data={"logs": list(logs_buffer)},
+                )
+            finally:
+                self.task_manager.set_cancel_callback(task_id, None)
+
+        self.task_manager.enqueue(task_id, run_training_task)
+        return web.json_response(
+            {"task_id": task_id, "task": self.task_manager.get_task(task_id)},
+            status=202,
+        )
+
+    async def handle_get_train_status(self, request: web.Request) -> web.Response:
+        """Poll the current live status and training metrics for a training task."""
+        task_id = request.match_info["task_id"]
+        task = self.task_manager.get_task(task_id)
+        if not task:
+            return web.json_response({"error": f"Task not found: {task_id}"}, status=404)
+        return web.json_response({"task": task})
+
+    async def handle_cancel_train(self, request: web.Request) -> web.Response:
+        """Cancel an active or queued training task."""
+        task_id = request.match_info["task_id"]
+        success = self.task_manager.cancel_task(task_id)
+        return web.json_response({"task_id": task_id, "cancelled": success})
+
+    async def handle_list_models(self, request: web.Request) -> web.Response:
+        """List trained quality classifier checkpoints."""
+        del request
+        items = []
+        for p in MODELS_DIR.iterdir():
+            if not p.is_dir():
+                continue
+            config_file = p / "config.json"
+            metrics_file = p / "metrics.json"
+            best_head = p / "best_head.pt"
+            if best_head.is_file():
+                cfg = json.loads(config_file.read_text(encoding="utf-8")) if config_file.is_file() else {}
+                met = json.loads(metrics_file.read_text(encoding="utf-8")) if metrics_file.is_file() else {}
+                items.append({
+                    "model_name": p.name,
+                    "path": str(p.resolve()),
+                    "created_at": p.stat().st_mtime,
+                    "config": cfg,
+                    "metrics": met,
+                })
+        items.sort(key=lambda x: x.get("created_at", 0), reverse=True)
+        return web.json_response({"models": items})
+
 
 def _write_training_script_template(dest_root: Path) -> None:
     """Write an executable train_classifier.py template to the exported dataset folder."""
@@ -946,4 +1434,8 @@ def register_labeler_routes(
     app.router.add_post("/api/labeler/export-dataset", handler.handle_export_dataset)
     app.router.add_get("/api/labeler/datasets", handler.handle_list_datasets)
     app.router.add_get("/api/labeler/datasets/{name}/download", handler.handle_download_dataset_zip)
+    app.router.add_post("/api/labeler/train", handler.handle_train_classifier)
+    app.router.add_get("/api/labeler/train/status/{task_id}", handler.handle_get_train_status)
+    app.router.add_post("/api/labeler/train/cancel/{task_id}", handler.handle_cancel_train)
+    app.router.add_get("/api/labeler/models", handler.handle_list_models)
     logger.info("Mounted dedicated Sample Labeler routes at /api/labeler/*")
