@@ -238,9 +238,22 @@ class VibeVoicePurityResult:
 A `TypedDict` (not a dataclass) returned by `Gemma4OverlapVerifier.verify()` and `GeminiOverlapVerifier.verify()`:
 ```python
 class OverlapVerificationResult(TypedDict):
-    overlap: bool
+    overlap: bool                       # simultaneous-overlap compatibility flag
+    speaker_purity: str                 # pure/impure/uncertain
+    word_completeness: str              # complete/incomplete/uncertain
+    boundary_issue: str                 # none/clipped_start/clipped_end/clipped_both/uncertain
+    failure_codes: list[str]
+    decision: str                       # pass/reject/uncertain, derived by code
     reason: str
+    usage: dict | None                  # Gemini token metadata; None for local Gemma
+    cost: dict | None                   # estimated paid-Standard USD or None
 ```
+
+Only `pure` plus `complete` passes. Either failed dimension rejects and every
+other combination is uncertain. Failure codes are `overlapping_speech`,
+`secondary_speaker`, `clipped_word_start`, `clipped_word_end`,
+`unintelligible_boundary`, and `insufficient_evidence`. The verifier listens to
+audio directly and never requests or returns a transcript.
 
 ---
 
@@ -264,7 +277,7 @@ Defined in [`src/diarization/zero_contamination.py`](../src/diarization/zero_con
       "rejection_reason": "Pure single-speaker guaranteed",
       "transcript": "chào các bạn",
       "min_similarity": 0.882,
-      "gemma_decision": { "overlap": false, "reason": "Single speaker clear speech" },
+      "gemma_decision": { "speaker_purity": "pure", "word_completeness": "complete", "boundary_issue": "none", "failure_codes": [], "decision": "pass", "reason": "One speaker with intact word boundaries" },
       "vibevoice_decision": null
     }
   ],
@@ -284,9 +297,17 @@ Defined in [`src/diarization/zero_contamination.py`](../src/diarization/zero_con
     "contamination_risk_rating": "NEGLIGIBLE (<0.1% estimated 2-speaker leakage)"
   },
   "stage_log": [ ... ],
-  "config": { ... }
+  "config": { ... },
+  "foundation_audits": [
+    { "start_s": 1.6, "end_s": 5.05, "passed": true, "reason": "Passed foundation audit", "direct_audio": { ... } }
+  ]
 }
 ```
+
+`foundation_audits` includes accepted and rejected Stage 5 candidates so the UI
+can explain every failure. `funnel_stats.direct_audio_usage` contains summed
+Gemini tokens and `funnel_stats.direct_audio_cost` contains the estimated run
+total.
 
 ---
 

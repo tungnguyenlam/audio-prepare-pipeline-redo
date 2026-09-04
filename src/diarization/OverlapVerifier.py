@@ -1,4 +1,4 @@
-"""Direct-audio overlap verification with local Gemma or Gemini."""
+"""Direct-audio speaker-purity and word-boundary verification."""
 
 from __future__ import annotations
 
@@ -15,31 +15,102 @@ from urllib.request import Request, urlopen
 
 from src.utils.AudioClass import Audio
 
-OVERLAP_PROMPT = (
-    "Does this audio contain overlapping speech from two or more speakers "
-    "at the same time?"
-)
-DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS = 128
+OVERLAP_PROMPT = """Listen to the supplied audio directly. Do not transcribe it.
+Judge two independent requirements for a clean speech-training sample:
+1. Speaker purity: exactly one human speaker is audible for the entire clip.
+   Reject simultaneous overlap, a sequential second speaker, whispers, distant
+   speech, and intelligible TV/radio/background speech. Music and non-speech
+   noise alone do not count as another speaker.
+2. Word completeness: audible speech begins and ends on complete acoustic word
+   boundaries. Reject a clipped initial or final phoneme/syllable. Do not reject
+   a grammatical sentence fragment when every audible word is acoustically
+   complete. Do not infer or report missing words from language context.
+Return only the requested structured result and never include a transcript."""
+DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS = 256
 DEFAULT_UNSLOTH_HOST = "localhost"
 DEFAULT_UNSLOTH_PORT = 8888
 DEFAULT_UNSLOTH_ENDPOINT = (
     f"http://{DEFAULT_UNSLOTH_HOST}:{DEFAULT_UNSLOTH_PORT}/v1/chat/completions"
 )
 DEFAULT_GEMMA4_MODEL_ID = "unsloth/gemma-4-12b-it-GGUF"
-DEFAULT_GEMINI_MODEL_ID = "gemini-3.1-pro-preview"
+DEFAULT_GEMINI_MODEL_ID = "gemini-3.8-flash"
 DEFAULT_GEMINI_FLASH_LITE_MODEL_ID = "gemini-3.1-flash-lite"
 UNSLOTH_PROBE_TIMEOUT_S = 5.0
+
+GEMINI_AUDIO_MODELS: tuple[dict[str, Any], ...] = (
+    {"id": "gemini-3.8-flash", "label": "Gemini 3.8 Flash", "recommended": True},
+    {"id": "gemini-3.7-flash", "label": "Gemini 3.7 Flash"},
+    {"id": "gemini-3.6-flash", "label": "Gemini 3.6 Flash"},
+    {"id": "gemini-3.5-flash", "label": "Gemini 3.5 Flash"},
+    {"id": "gemini-3.5-flash-lite", "label": "Gemini 3.5 Flash-Lite"},
+    {"id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro Preview"},
+    {"id": "gemini-3.1-flash-lite", "label": "Gemini 3.1 Flash-Lite"},
+)
+
+# Paid Standard list prices in USD per million tokens. These are deliberately
+# versioned in result records because Google prices and introductory offers can
+# change independently of this repository.
+GEMINI_PRICE_CARD_AS_OF = "2026-09-04"
+_GEMINI_STANDARD_PRICES: dict[str, dict[str, float]] = {
+    "gemini-3.8-flash": {"input": 0.75, "output": 3.75},
+    "gemini-3.7-flash": {"input": 0.75, "output": 3.75},
+    "gemini-3.6-flash": {"input": 0.75, "output": 3.75},
+    "gemini-3.5-flash": {"input": 1.50, "output": 9.00},
+    "gemini-3.5-flash-lite": {"input": 0.30, "output": 2.50},
+    "gemini-3.1-pro-preview": {"input": 2.00, "output": 12.00},
+    "gemini-3.1-flash-lite": {
+        "input": 0.25,
+        "audio_input": 0.50,
+        "output": 1.50,
+    },
+}
+
+_FAILURE_CODES = {
+    "overlapping_speech",
+    "secondary_speaker",
+    "clipped_word_start",
+    "clipped_word_end",
+    "unintelligible_boundary",
+    "insufficient_evidence",
+}
 
 _OVERLAP_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "overlap": {"type": "boolean"},
+        "speaker_purity": {
+            "type": "string",
+            "enum": ["pure", "impure", "uncertain"],
+        },
+        "word_completeness": {
+            "type": "string",
+            "enum": ["complete", "incomplete", "uncertain"],
+        },
+        "boundary_issue": {
+            "type": "string",
+            "enum": [
+                "none",
+                "clipped_start",
+                "clipped_end",
+                "clipped_both",
+                "uncertain",
+            ],
+        },
+        "failure_codes": {
+            "type": "array",
+            "items": {"type": "string", "enum": sorted(_FAILURE_CODES)},
+        },
         "reason": {
             "type": "string",
-            "description": "A short explanation for the overlap decision.",
+            "description": "A short acoustic explanation; never a transcript.",
         },
     },
-    "required": ["overlap", "reason"],
+    "required": [
+        "speaker_purity",
+        "word_completeness",
+        "boundary_issue",
+        "failure_codes",
+        "reason",
+    ],
     "additionalProperties": False,
 }
 _AUDIO_MIME_TYPES = {
@@ -55,10 +126,17 @@ _AUDIO_MIME_TYPES = {
 
 
 class OverlapVerificationResult(TypedDict):
-    """Normalized answer returned by every overlap verifier."""
+    """Normalized quality decision returned by every direct-audio verifier."""
 
     overlap: bool
+    speaker_purity: str
+    word_completeness: str
+    boundary_issue: str
+    failure_codes: list[str]
+    decision: str
     reason: str
+    usage: dict[str, Any] | None
+    cost: dict[str, Any] | None
 
 
 class OverlapVerifierError(RuntimeError):
@@ -83,7 +161,7 @@ class BaseOverlapVerifier(ABC):
 
     @abstractmethod
     def verify(self, audio: Audio) -> OverlapVerificationResult:
-        """Return whether an audio segment contains simultaneous speakers."""
+        """Return speaker-purity and word-boundary quality for one segment."""
 
 
 class Gemma4OverlapVerifier(BaseOverlapVerifier):
@@ -208,7 +286,7 @@ class Gemma4OverlapVerifier(BaseOverlapVerifier):
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
-                    "name": "overlap_verification",
+                    "name": "audio_quality_verification",
                     "strict": True,
                     "schema": _OVERLAP_SCHEMA,
                 },
@@ -266,7 +344,7 @@ class GeminiOverlapVerifier(BaseOverlapVerifier):
 
         Args:
             model: Gemini model ID. Defaults to ``GEMINI_MODEL`` or Gemini
-                3.1 Pro Preview.
+                3.8 Flash.
             api_key: Gemini API key. Defaults to ``GEMINI_API_KEY``.
             timeout_s: HTTP request timeout in seconds.
             prompt: Instruction sent with every candidate audio segment.
@@ -279,17 +357,39 @@ class GeminiOverlapVerifier(BaseOverlapVerifier):
         self.max_output_tokens = _validate_max_output_tokens(max_output_tokens)
 
     def check_ready(self, *, timeout_s: float | None = None) -> dict[str, Any]:
-        """Return whether Gemini can be called. ``timeout_s`` is unused."""
-        del timeout_s
+        """Validate the API key and selected model with Gemini's model API."""
         if not self.api_key:
             return {
                 "ready": False,
                 "message": "Gemini API key is not configured; set GEMINI_API_KEY.",
                 "models": [],
             }
+        probe_timeout = (
+            UNSLOTH_PROBE_TIMEOUT_S if timeout_s is None else _validate_timeout(timeout_s)
+        )
+        endpoint = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{quote(self.model, safe='')}"
+        )
+        try:
+            payload = _get_json(
+                endpoint,
+                headers={"x-goog-api-key": self.api_key},
+                timeout_s=probe_timeout,
+                backend="Gemini",
+            )
+        except OverlapVerifierError as exc:
+            return {"ready": False, "message": str(exc), "models": []}
+        methods = payload.get("supportedGenerationMethods", [])
+        if isinstance(methods, list) and methods and "generateContent" not in methods:
+            return {
+                "ready": False,
+                "message": f"{self.model} does not advertise generateContent support.",
+                "models": [self.model],
+            }
         return {
             "ready": True,
-            "message": f"Gemini API key is configured for {self.model}.",
+            "message": f"Gemini API key and model {self.model} are ready.",
             "models": [self.model],
         }
 
@@ -351,7 +451,13 @@ class GeminiOverlapVerifier(BaseOverlapVerifier):
             raise OverlapVerifierError(
                 "Gemini returned no candidate message content"
             ) from exc
-        return _normalize_result(content, backend="Gemini")
+        result = _normalize_result(content, backend="Gemini")
+        usage = _normalize_gemini_usage(
+            response.get("usageMetadata"), audio_duration_s=audio.duration_s
+        )
+        result["usage"] = usage
+        result["cost"] = _estimate_gemini_cost(self.model, usage)
+        return result
 
 
 def create_overlap_verifier(
@@ -378,7 +484,7 @@ def create_overlap_verifier(
 
     if backend in {"gemma", "gemma4", "gemma-4", "unsloth"}:
         return Gemma4OverlapVerifier(**settings)
-    if backend in {"gemini", "gemini-3.1", "gemini-3.1-pro"}:
+    if backend in {"gemini", "gemini-api", "google-gemini", "gemini-3.1", "gemini-3.1-pro"}:
         if "endpoint" in settings:
             raise ValueError("Gemini overlap verifier does not accept endpoint")
         return GeminiOverlapVerifier(**settings)
@@ -485,7 +591,7 @@ def _send_json_request(
 
 
 def _normalize_result(content: Any, *, backend: str) -> OverlapVerificationResult:
-    """Validate a structured model answer and normalize its two fields."""
+    """Validate a structured answer and derive the final quality decision."""
     if isinstance(content, list):
         content = "".join(
             str(part.get("text", "")) for part in content if isinstance(part, dict)
@@ -499,20 +605,140 @@ def _normalize_result(content: Any, *, backend: str) -> OverlapVerificationResul
             content = json.loads(stripped)
         except json.JSONDecodeError as exc:
             raise OverlapVerifierError(
-                f"{backend} returned an invalid overlap result: {content!r}"
+                f"{backend} returned an invalid audio-quality result: {content!r}"
             ) from exc
 
     if not isinstance(content, dict):
-        raise OverlapVerifierError(f"{backend} returned a non-object overlap result")
-    overlap = content.get("overlap")
+        raise OverlapVerifierError(f"{backend} returned a non-object audio-quality result")
+    speaker_purity = content.get("speaker_purity")
+    word_completeness = content.get("word_completeness")
+    boundary_issue = content.get("boundary_issue")
+    failure_codes = content.get("failure_codes")
     reason = content.get("reason")
-    if not isinstance(overlap, bool):
-        raise OverlapVerifierError(f"{backend} result field 'overlap' is not a bool")
+    if speaker_purity not in {"pure", "impure", "uncertain"}:
+        raise OverlapVerifierError(f"{backend} result has invalid 'speaker_purity'")
+    if word_completeness not in {"complete", "incomplete", "uncertain"}:
+        raise OverlapVerifierError(f"{backend} result has invalid 'word_completeness'")
+    if boundary_issue not in {
+        "none", "clipped_start", "clipped_end", "clipped_both", "uncertain"
+    }:
+        raise OverlapVerifierError(f"{backend} result has invalid 'boundary_issue'")
+    if not isinstance(failure_codes, list) or any(
+        not isinstance(code, str) or code not in _FAILURE_CODES
+        for code in failure_codes
+    ):
+        raise OverlapVerifierError(f"{backend} result has invalid 'failure_codes'")
     if not isinstance(reason, str) or not reason.strip():
         raise OverlapVerifierError(
             f"{backend} result field 'reason' is not a non-empty string"
         )
-    return {"overlap": overlap, "reason": reason.strip()}
+    speaker_codes = {"overlapping_speech", "secondary_speaker"}
+    clipped_codes = {"clipped_word_start", "clipped_word_end"}
+    if speaker_purity == "pure" and speaker_codes.intersection(failure_codes):
+        raise OverlapVerifierError(
+            f"{backend} result contradicts its speaker-purity decision"
+        )
+    if speaker_purity == "impure" and not speaker_codes.intersection(failure_codes):
+        raise OverlapVerifierError(
+            f"{backend} impure result lacks a speaker failure code"
+        )
+    if word_completeness == "complete" and (
+        boundary_issue != "none" or clipped_codes.intersection(failure_codes)
+    ):
+        raise OverlapVerifierError(
+            f"{backend} result contradicts its word-completeness decision"
+        )
+    if word_completeness == "incomplete" and not (
+        clipped_codes.intersection(failure_codes)
+        or "unintelligible_boundary" in failure_codes
+    ):
+        raise OverlapVerifierError(
+            f"{backend} incomplete result lacks a boundary failure code"
+        )
+    if speaker_purity == "pure" and word_completeness == "complete":
+        decision = "pass"
+    elif speaker_purity == "impure" or word_completeness == "incomplete":
+        decision = "reject"
+    else:
+        decision = "uncertain"
+    overlap = "overlapping_speech" in failure_codes
+    return {
+        "overlap": overlap,
+        "speaker_purity": speaker_purity,
+        "word_completeness": word_completeness,
+        "boundary_issue": boundary_issue,
+        "failure_codes": list(dict.fromkeys(failure_codes)),
+        "decision": decision,
+        "reason": reason.strip(),
+        "usage": None,
+        "cost": None,
+    }
+
+
+def _normalize_gemini_usage(
+    value: Any,
+    *,
+    audio_duration_s: float | None = None,
+) -> dict[str, Any]:
+    """Normalize Gemini token metadata, retaining modality-level input counts."""
+    metadata = value if isinstance(value, dict) else {}
+    modalities: dict[str, int] = {}
+    for detail in metadata.get("promptTokensDetails", []):
+        if not isinstance(detail, dict):
+            continue
+        modality = str(detail.get("modality", "unknown")).lower()
+        count = detail.get("tokenCount", 0)
+        if isinstance(count, int) and not isinstance(count, bool):
+            modalities[modality] = modalities.get(modality, 0) + count
+    prompt_tokens = int(metadata.get("promptTokenCount", 0) or 0)
+    audio_tokens = modalities.get("audio", 0)
+    text_tokens = modalities.get("text", 0)
+    audio_tokens_estimated = False
+    if not audio_tokens and audio_duration_s and prompt_tokens:
+        audio_tokens = min(prompt_tokens, round(float(audio_duration_s) * 32))
+        text_tokens = max(text_tokens, prompt_tokens - audio_tokens)
+        audio_tokens_estimated = True
+    return {
+        "prompt_tokens": prompt_tokens,
+        "audio_input_tokens": audio_tokens,
+        "audio_input_tokens_estimated": audio_tokens_estimated,
+        "text_input_tokens": text_tokens,
+        "output_tokens": int(metadata.get("candidatesTokenCount", 0) or 0),
+        "thinking_tokens": int(metadata.get("thoughtsTokenCount", 0) or 0),
+        "total_tokens": int(metadata.get("totalTokenCount", 0) or 0),
+        "service_tier": metadata.get("serviceTier"),
+    }
+
+
+def _estimate_gemini_cost(model: str, usage: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Estimate one request at Google's versioned paid Standard list price."""
+    rates = _GEMINI_STANDARD_PRICES.get(model)
+    if rates is None:
+        return None
+    prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
+    audio_tokens = int(usage.get("audio_input_tokens", 0) or 0)
+    text_tokens = int(usage.get("text_input_tokens", 0) or 0)
+    if "audio_input" in rates and audio_tokens + text_tokens > 0:
+        other_tokens = max(0, prompt_tokens - audio_tokens - text_tokens)
+        input_usd = (
+            audio_tokens * rates["audio_input"]
+            + (text_tokens + other_tokens) * rates["input"]
+        ) / 1_000_000
+    else:
+        input_usd = prompt_tokens * rates["input"] / 1_000_000
+    billed_output_tokens = int(usage.get("output_tokens", 0) or 0) + int(
+        usage.get("thinking_tokens", 0) or 0
+    )
+    output_usd = billed_output_tokens * rates["output"] / 1_000_000
+    return {
+        "input_usd": round(input_usd, 9),
+        "output_usd": round(output_usd, 9),
+        "total_usd": round(input_usd + output_usd, 9),
+        "currency": "USD",
+        "pricing_tier": "paid_standard",
+        "rate_card_as_of": GEMINI_PRICE_CARD_AS_OF,
+        "estimated": True,
+    }
 
 
 def _validate_timeout(timeout_s: float) -> float:

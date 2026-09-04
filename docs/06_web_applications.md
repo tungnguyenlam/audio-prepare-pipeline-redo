@@ -90,10 +90,14 @@ Designed for single-track interactive inspection, A/B audio comparison, manual c
 - `POST /api/diarization/evaluate`: Runs Hungarian-matched DER/JER evaluation comparing hypotheses against reference.
 
 #### Experiment Tab (Zero Contamination)
+- Section 5a exposes one **Direct-audio model** selector containing Local Gemma
+  and every supported Google Gemini audio model. Choosing Gemini automatically
+  routes through the server-side API key; choosing Local Gemma reveals the
+  OpenAI-compatible endpoint and checkpoint controls.
 - `GET /api/experiment/status`: Probes available diarization backends and compute accelerators.
 - `POST /api/experiment/run`: Enqueues an asynchronous `experiment_zero_contamination` job. Streams stage-by-stage SSE progress.
-- `POST /api/experiment/gemma/probe`: Probes Unsloth/Gemma 4 endpoint readiness.
-- `POST /api/experiment/gemma/test`: Auditions live Gemma 4 overlap classification on the selected track.
+- `POST /api/experiment/direct-audio/probe`: Reports local Gemma or server-side Gemini API readiness.
+- `POST /api/experiment/direct-audio/test`: Auditions the selected verifier and returns purity, word completeness, failure evidence, and optional Gemini usage/cost. Legacy `/gemma/probe` and `/gemma/test` aliases remain mounted.
 
 ---
 

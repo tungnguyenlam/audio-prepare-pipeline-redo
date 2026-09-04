@@ -157,8 +157,8 @@ const state = {
       model: '',
       endpoint: '',
       timeout: 120,
-      maxOutputTokens: 128,
-      prompt: 'Does this audio contain overlapping speech from two or more speakers at the same time?',
+      maxOutputTokens: 256,
+      prompt: '',
       failurePolicy: 'fail_closed',
       minSecondarySpeech: 0.25,
       batchSize: 1,
@@ -4057,6 +4057,7 @@ function readDiarizationExtractionSettings(sourceInput) {
   const stopOtherInput = sourceInput && sourceInput.id && sourceInput.id.includes('stop-other')
     ? sourceInput
     : (el.diarExtractStopOther || el.purityExtractStopOther);
+  const addExtra = Boolean(addExtraInput?.checked);
   const stopOtherChecked = Boolean(stopOtherInput?.checked);
   state.diarization.extractionSettings = {
     add_extra: addExtra,
@@ -5110,10 +5111,10 @@ function diarizationDurationHistogram(turns, requestedBinWidth = 'auto') {
   let binCount = Math.max(1, Math.ceil((rawSpan / binWidth) - 1e-9));
 
   let wasClamped = false;
-  const maxAllowedBins = 200;
+  const maxAllowedBins = 300;
   if (binCount > maxAllowedBins) {
     wasClamped = true;
-    binWidth = Math.ceil((rawSpan / 80) * 10) / 10;
+    binWidth = Math.max(0.01, Math.ceil((rawSpan / maxAllowedBins) * 100) / 100);
     if (firstBinStart > 0) {
       firstBinStart = Math.floor((minDuration / binWidth) + 1e-9) * binWidth;
       firstBinStart = Math.max(0, Math.round(firstBinStart * 1e6) / 1e6);
@@ -8326,7 +8327,7 @@ function syncPurityPromptUi() {
   const prompt = (el.purityOverlapPrompt?.value ?? state.purity.overlap.prompt ?? '').trim();
   const defaultPrompt = (
     state.purity.serverConfig?.overlap_prompt
-    || 'Does this audio contain overlapping speech from two or more speakers at the same time?'
+    || 'Listen directly to the audio without transcribing. Judge whether exactly one human speaker is audible and whether the initial and final spoken words are acoustically complete. Reject overlap, any second speaker, and clipped initial or final phonemes or syllables.'
   ).trim();
   if (el.purityOverlapPromptLabel) el.purityOverlapPromptLabel.textContent = `${backendName} prompt`;
   if (el.purityOverlapPromptStatus) {
@@ -8351,7 +8352,7 @@ async function loadSpeakerPurityConfig() {
       timeout: config.overlap_timeout_s || 120,
       maxOutputTokens: backend === 'vibevoice'
         ? (vibevoiceDefaults.max_new_tokens || 2048)
-        : (config.overlap_max_output_tokens || 128),
+        : (config.overlap_max_output_tokens || 256),
       prompt: config.overlap_prompt || state.purity.overlap.prompt,
       failurePolicy: 'fail_closed',
       minSecondarySpeech: vibevoiceDefaults.min_secondary_speech_s ?? 0.25,
@@ -8367,7 +8368,7 @@ async function loadSpeakerPurityConfig() {
       state.purity.overlap.failurePolicy = 'fail_open';
     }
     state.purity.overlap.enabled = true;
-    if (state.purity.overlap.backend === 'vibevoice' && state.purity.overlap.maxOutputTokens === 128) {
+    if (state.purity.overlap.backend === 'vibevoice' && state.purity.overlap.maxOutputTokens === 256) {
       state.purity.overlap.maxOutputTokens = vibevoiceDefaults.max_new_tokens || 2048;
     }
     applyPurityControls();
@@ -8390,8 +8391,8 @@ function restorePurityOverlapDefaults() {
     timeout: config.overlap_timeout_s || 120,
     maxOutputTokens: backend === 'vibevoice'
       ? (vibevoiceDefaults.max_new_tokens || 2048)
-      : (config.overlap_max_output_tokens || 128),
-    prompt: config.overlap_prompt || 'Does this audio contain overlapping speech from two or more speakers at the same time?',
+      : (config.overlap_max_output_tokens || 256),
+    prompt: config.overlap_prompt || '',
     failurePolicy: 'fail_closed',
     minSecondarySpeech: vibevoiceDefaults.min_secondary_speech_s ?? 0.25,
     batchSize: vibevoiceDefaults.batch_size ?? 1,
@@ -8420,12 +8421,12 @@ function initPurityTab() {
     }
     if (e.target.value === 'vibevoice') {
       state.purity.overlap.model = resolveVibevoiceModelId(defaults.model);
-      if (previousBackend !== 'vibevoice' && state.purity.overlap.maxOutputTokens === 128) {
+      if (previousBackend !== 'vibevoice' && state.purity.overlap.maxOutputTokens === 256) {
         state.purity.overlap.maxOutputTokens = defaults.max_new_tokens || 2048;
       }
       state.purity.overlap.minSecondarySpeech = defaults.min_secondary_speech_s ?? 0.25;
     } else if (previousBackend === 'vibevoice' && state.purity.overlap.maxOutputTokens === 2048) {
-      state.purity.overlap.maxOutputTokens = state.purity.serverConfig?.overlap_max_output_tokens || 128;
+      state.purity.overlap.maxOutputTokens = state.purity.serverConfig?.overlap_max_output_tokens || 256;
     }
     applyPurityControls();
     savePurityPreferences();
@@ -8451,7 +8452,7 @@ function initPurityTab() {
     savePurityPreferences();
   });
   el.purityOverlapMaxTokens?.addEventListener('change', e => {
-    state.purity.overlap.maxOutputTokens = Math.max(1, parseInt(e.target.value, 10) || 128);
+    state.purity.overlap.maxOutputTokens = Math.max(1, parseInt(e.target.value, 10) || 256);
     e.target.value = state.purity.overlap.maxOutputTokens;
     savePurityPreferences();
   });
@@ -9106,6 +9107,13 @@ function renderPurityResults() {
       }
     } else if (direct?.error) {
       directOverlapHtml = `<span class="badge badge-xs badge-warning">Request error</span><small class="purity-direct-reason" title="${escapeHtml(direct.error)}">${escapeHtml(direct.error)}</small>`;
+    } else if (direct?.decision) {
+      const passedQuality = direct.decision === 'pass';
+      const label = passedQuality
+        ? 'Pure + complete'
+        : `${direct.speaker_purity || 'unknown speaker'} / ${direct.word_completeness || 'unknown boundary'}`;
+      const detail = `${(direct.failure_codes || []).join(', ')}${direct.reason ? ` — ${direct.reason}` : ''}`;
+      directOverlapHtml = `<span class="badge badge-xs ${passedQuality ? 'badge-success' : 'badge-danger'}">${escapeHtml(label)}</span><small class="purity-direct-reason" title="${escapeHtml(detail)}">${escapeHtml(detail)}</small>`;
     } else if (direct?.overlap === true) {
       directOverlapHtml = `<span class="badge badge-xs badge-danger">Overlap detected</span><small class="purity-direct-reason" title="${escapeHtml(direct.reason || '')}">${escapeHtml(direct.reason || '')}</small>`;
     } else if (direct?.overlap === false) {
@@ -9228,7 +9236,7 @@ function downloadPurityReportCSV() {
     showToast('No purity results to download', 'error');
     return;
   }
-  const headers = ['index', 'audio_id', 'profile_name', 'speaker_id', 'start_s', 'end_s', 'duration_s', 'decision', 'reason', 'diarization_overlap_duration_s', 'diarization_overlap_ratio', 'direct_overlap', 'direct_overlap_reason', 'direct_overlap_error', 'vibevoice_num_speakers', 'vibevoice_secondary_speech_s', 'error'];
+  const headers = ['index', 'audio_id', 'profile_name', 'speaker_id', 'start_s', 'end_s', 'duration_s', 'decision', 'reason', 'diarization_overlap_duration_s', 'diarization_overlap_ratio', 'direct_speaker_purity', 'direct_word_completeness', 'direct_boundary_issue', 'direct_failure_codes', 'direct_reason', 'direct_cost_usd', 'direct_error', 'vibevoice_num_speakers', 'vibevoice_secondary_speech_s', 'error'];
   const rows = results.map((r, i) => [
     i + 1,
     r.audio_id,
@@ -9241,8 +9249,12 @@ function downloadPurityReportCSV() {
     r.reason || '',
     r.overlap_duration_s.toFixed(3),
     r.overlap_ratio.toFixed(4),
-    r.direct_overlap?.overlap ?? '',
+    r.direct_overlap?.speaker_purity ?? '',
+    r.direct_overlap?.word_completeness ?? '',
+    r.direct_overlap?.boundary_issue ?? '',
+    r.direct_overlap?.failure_codes?.join('|') ?? '',
     r.direct_overlap?.reason ? `"${r.direct_overlap.reason.replace(/"/g, '""')}"` : '',
+    r.direct_overlap?.cost?.total_usd ?? '',
     r.direct_overlap?.error ? `"${r.direct_overlap.error.replace(/"/g, '""')}"` : '',
     r.vibevoice?.num_speakers ?? '',
     r.vibevoice?.secondary_speech_s != null ? Number(r.vibevoice.secondary_speech_s).toFixed(3) : '',

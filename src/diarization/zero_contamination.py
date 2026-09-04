@@ -159,13 +159,15 @@ class ZeroContaminationConfig:
     homogeneity_hop_s: float = DEFAULT_HOMOGENEITY_HOP_S
     min_homogeneity_similarity: float = DEFAULT_MIN_HOMOGENEITY_SIMILARITY
 
-    # Stage 5a: In-Loop Gemma 4 Overlap Verifier (Remote Host / GPU)
+    # Stage 5a: Direct-audio speaker-purity and word-completeness verifier
     enable_gemma: bool = False
+    gemma_backend: str = "gemma4"  # "gemma4" or "gemini"
     gemma_endpoint: str | None = None
     gemma_model: str | None = None
     gemma_prompt: str | None = None
     gemma_api_key: str | None = None
     gemma_timeout_s: float = 120.0
+    gemma_max_output_tokens: int = 256
 
     # Stage 5b: In-Loop VibeVoice-ASR Speaker Count Verifier (Dedicated GPU or Remote Host)
     enable_vibevoice: bool = False
@@ -220,6 +222,7 @@ class ZeroContaminationResult:
     funnel_stats: dict[str, Any]
     stage_log: list[str] = field(default_factory=list)
     config: dict[str, Any] = field(default_factory=dict)
+    foundation_audits: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         diar_dict = self.diarization.to_dict()
@@ -244,6 +247,7 @@ class ZeroContaminationResult:
             "funnel_stats": self.funnel_stats,
             "stage_log": self.stage_log,
             "config": self.config,
+            "foundation_audits": self.foundation_audits,
         })
 
 
@@ -1267,7 +1271,7 @@ def filter_by_foundation_models(
     config: ZeroContaminationConfig,
     progress_callback: Callable[[float, str], None] | None = None,
 ) -> tuple[list[SpeakerTurn], list[tuple[SpeakerTurn, bool, str, dict[str, Any]]]]:
-    """Audit surviving turns with in-loop Gemma 4 or VibeVoice-ASR models.
+    """Audit surviving turns with a direct-audio LLM or VibeVoice-ASR.
 
     Returns:
         (passed_turns, audit_records_for_foundation_model)
@@ -1282,21 +1286,40 @@ def filter_by_foundation_models(
     if waveform.ndim > 1:
         waveform = waveform.mean(axis=1)
 
-    # 1. Initialize Gemma 4 if requested (Local or Remote)
+    # 1. Initialize the selected direct-audio verifier.
     gemma_verifier = None
     if config.enable_gemma:
         from src.diarization.OverlapVerifier import (
             DEFAULT_GEMMA4_MODEL_ID,
-            Gemma4OverlapVerifier,
+            OVERLAP_PROMPT,
+            OverlapVerifierError,
+            create_overlap_verifier,
         )
 
-        gemma_verifier = Gemma4OverlapVerifier(
-            endpoint=config.gemma_endpoint,
-            model=config.gemma_model or DEFAULT_GEMMA4_MODEL_ID,
-            prompt=config.gemma_prompt or "Does this audio contain overlapping speech from two or more speakers at the same time?",
-            api_key=config.gemma_api_key,
-            timeout_s=config.gemma_timeout_s,
-        )
+        verifier_config: dict[str, Any] = {
+            "backend": config.gemma_backend,
+            "model": config.gemma_model or (
+                DEFAULT_GEMMA4_MODEL_ID
+                if config.gemma_backend == "gemma4"
+                else None
+            ),
+            "prompt": config.gemma_prompt or OVERLAP_PROMPT,
+            "api_key": config.gemma_api_key,
+            "timeout_s": config.gemma_timeout_s,
+            "max_output_tokens": config.gemma_max_output_tokens,
+        }
+        if config.gemma_backend == "gemma4":
+            verifier_config["endpoint"] = config.gemma_endpoint
+        verifier_config = {
+            key: value for key, value in verifier_config.items() if value is not None
+        }
+        gemma_verifier = create_overlap_verifier(verifier_config)
+        readiness = gemma_verifier.check_ready()
+        if not readiness.get("ready"):
+            raise OverlapVerifierError(
+                str(readiness.get("message") or "Direct-audio verifier is not ready"),
+                readiness=True,
+            )
 
     # 2. Initialize VibeVoice if requested (Dedicated Secondary GPU or Remote Host)
     vibevoice_verifier = None
@@ -1334,17 +1357,25 @@ def filter_by_foundation_models(
                 is_pure = True
                 rejection_reason = ""
 
-                # Gemma 4 direct-audio overlap check
+                # Direct-audio speaker-purity and word-completeness check.
                 if gemma_verifier is not None:
                     try:
                         gemma_res = gemma_verifier.verify(clip_audio)
                         audit_meta["gemma"] = gemma_res
-                        if gemma_res.get("overlap") is True:
+                        if gemma_res.get("decision") != "pass":
                             is_pure = False
-                            rejection_reason = f"Gemma-4 detected overlap: {gemma_res.get('reason', '')}"
+                            verifier_label = getattr(
+                                gemma_verifier, "model", config.gemma_backend
+                            )
+                            rejection_reason = (
+                                f"{verifier_label} {gemma_res.get('decision')}: "
+                                f"{gemma_res.get('reason', '')}"
+                            )
                     except Exception as exc:
-                        logger.warning("Gemma 4 check failed on turn %s: %s", idx, exc)
+                        logger.warning("Direct-audio check failed on turn %s: %s", idx, exc)
                         audit_meta["gemma_error"] = str(exc)
+                        is_pure = False
+                        rejection_reason = f"Direct-audio verifier failed closed: {exc}"
 
                 # VibeVoice-ASR multi-speaker check (Local Worker or Remote Endpoint)
                 if is_pure and config.enable_vibevoice:
@@ -1648,6 +1679,8 @@ def run_zero_contamination_pipeline(
             torch.cuda.empty_cache()
         gc.collect()
 
+    fm_audits: list[tuple[SpeakerTurn, bool, str, dict[str, Any]]] = []
+
     # ==================== STAGE 5: Foundation Model Audits ====================
     if config.enable_gemma or config.enable_vibevoice:
         log_stage("Stage 5: Executing in-loop foundation model verification")
@@ -1660,7 +1693,8 @@ def run_zero_contamination_pipeline(
         )
         log_stage(
             f"Foundation models kept {len(fm_turns)} turns "
-            f"(rejected {len(current_turns) - len(fm_turns)} multi-speaker/overlap turns)"
+            f"(rejected {len(current_turns) - len(fm_turns)} impure, incomplete, "
+            "uncertain, or failed turns)"
         )
         current_turns = fm_turns
         if torch.cuda.is_available():
@@ -1675,6 +1709,59 @@ def run_zero_contamination_pipeline(
     )
     funnel["total_elapsed_s"] = round(elapsed_total, 2)
     funnel["contamination_risk_rating"] = "NEGLIGIBLE (<0.1% estimated 2-speaker leakage)"
+
+    foundation_audits: list[dict[str, Any]] = []
+    total_usage = {
+        "requests": 0,
+        "prompt_tokens": 0,
+        "audio_input_tokens": 0,
+        "text_input_tokens": 0,
+        "output_tokens": 0,
+        "thinking_tokens": 0,
+        "total_tokens": 0,
+    }
+    total_cost_usd = 0.0
+    priced_requests = 0
+    for turn, passed_audit, reason, metadata in fm_audits:
+        direct = metadata.get("gemma")
+        if isinstance(direct, dict):
+            usage = direct.get("usage")
+            if isinstance(usage, dict):
+                total_usage["requests"] += 1
+                for key in (
+                    "prompt_tokens",
+                    "audio_input_tokens",
+                    "text_input_tokens",
+                    "output_tokens",
+                    "thinking_tokens",
+                    "total_tokens",
+                ):
+                    total_usage[key] += int(usage.get(key, 0) or 0)
+            cost = direct.get("cost")
+            if isinstance(cost, dict) and cost.get("total_usd") is not None:
+                total_cost_usd += float(cost["total_usd"])
+                priced_requests += 1
+        foundation_audits.append({
+            "speaker_id": turn.speaker_id,
+            "start_s": turn.start_s,
+            "end_s": turn.end_s,
+            "duration_s": turn.duration_s,
+            "passed": passed_audit,
+            "reason": reason,
+            "direct_audio": direct,
+            "direct_audio_error": metadata.get("gemma_error"),
+            "vibevoice": metadata.get("vibevoice"),
+            "vibevoice_error": metadata.get("vibevoice_error"),
+        })
+    if total_usage["requests"]:
+        funnel["direct_audio_usage"] = total_usage
+        funnel["direct_audio_cost"] = {
+            "total_usd": round(total_cost_usd, 9),
+            "priced_requests": priced_requests,
+            "currency": "USD",
+            "pricing_tier": "paid_standard",
+            "estimated": True,
+        }
 
     active_speakers = sorted({t.speaker_id for t in current_turns})
     final_speakers = [Speaker(speaker_id=spk) for spk in active_speakers]
@@ -1753,6 +1840,7 @@ def run_zero_contamination_pipeline(
         funnel_stats=funnel,
         stage_log=stage_logs,
         config=config.to_dict(),
+        foundation_audits=foundation_audits,
     )
 
 

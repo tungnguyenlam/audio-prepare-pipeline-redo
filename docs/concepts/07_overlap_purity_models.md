@@ -60,21 +60,24 @@ flowchart TD
 ## 3. Gemma 4 / Gemini: the listening LLM judges
 
 These send **raw audio + a text prompt** to a multimodal LLM (no transcript
-middle-step) and demand structured JSON: `{"overlap": bool, "reason": str}`.
+middle-step) and demand structured JSON with separate `speaker_purity` and
+`word_completeness` judgments, a boundary classification, failure codes, and a
+short acoustic reason.
 
 ```mermaid
 sequenceDiagram
     participant P as Pipeline
     participant G as Gemma 4 / Gemini endpoint
     P->>G: audio bytes + "Flag ANY second voice, however faint..."
-    G->>P: {"overlap": true, "reason": "faint child voice at 1.2-1.6s"}
+    G->>P: {"speaker_purity": "impure", "word_completeness": "complete", "failure_codes": ["secondary_speaker"], ...}
 ```
 
 - **Gemma4OverlapVerifier:** OpenAI-compatible endpoint (default
   `http://localhost:8888/v1/chat/completions`, model
   `unsloth/gemma-4-12b-it-GGUF`).
-- **GeminiOverlapVerifier:** Google Gemini 3.1 Pro / Flash-Lite with schema
-  constrained JSON.
+- **GeminiOverlapVerifier:** Current Google Gemini 3 Flash, Flash-Lite, and 3.1
+  Pro models with schema-constrained JSON, usage metadata, and estimated
+  paid-Standard USD cost.
 - **Prompt = sensitivity knob.** Strict (*"reject any faint secondary speaker,
   whisper, TV bleed"*) maximizes paranoia; lenient (*"only clear simultaneous
   foreground talk"*) tolerates room ambiance. Empirical, non-deterministic —

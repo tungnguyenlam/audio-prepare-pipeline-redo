@@ -80,7 +80,9 @@ flowchart TD
   - `evaluate_diarization(reference_turns, hypothesis_turns, duration_s, ...) -> dict`: Exact Hungarian-matched DER/JER calculator.
 - Identity & Purity Verification:
   - `SpeakerVerifier`: Enrolls global profiles (`.data/speaker_profiles/`) and computes cosine similarity.
-  - `OverlapVerifier`: Multimodal LLM direct-audio verification (Gemma 4 & Gemini).
+  - `OverlapVerifier`: Multimodal direct-audio speaker-purity and word-boundary
+    verification (local Gemma 4 or Google Gemini), returning structured failure
+    evidence plus optional Gemini token usage and estimated cost.
   - `VibeVoicePurityVerifier`: Microsoft VibeVoice-ASR single vs multi-speaker classifier.
 
 ### 4. Zero-Contamination Diarization

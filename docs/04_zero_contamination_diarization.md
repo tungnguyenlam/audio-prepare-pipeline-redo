@@ -116,7 +116,7 @@ Apply the gates in this order according to the available compute budget:
 | 2 | Stage 4: `enable_homogeneity` | Enabled | Adds WeSpeaker embedding inference over many overlapping sub-windows. Inconsistent-timbre turns are rejected, normally producing fewer samples. |
 | 3 | Stage 4: `homogeneity_hop_s` | Lower from `0.25s` toward `0.10s` | Creates more overlapping embedding forward passes. Brief speaker intrusions are less likely to fall between probes, at higher runtime and with potentially more rejected turns. |
 | 4 | Stage 4: `min_homogeneity_similarity` | Raise cautiously from `0.75` toward `0.78–0.82` | Does not add forward passes, but rejects more turns. Higher values may falsely reject expressive, laughing, whispered, or emotional target speech. |
-| 5 | Stage 5a: `enable_gemma` | Enabled when the endpoint is available | Adds one multimodal request per surviving candidate. Detected overlap is rejected, increasing latency/compute and normally reducing extracted samples. |
+| 5 | Stage 5a: `enable_gemma` | Enabled when the selected backend is ready | Adds one direct-audio request per candidate. A second speaker, overlap, clipped boundary, uncertain result, or verifier failure rejects the sample. Gemini adds metered API cost. |
 | 6 | Stage 5b: `enable_vibevoice` | Enabled | Adds autoregressive ASR to each surviving candidate. This is a heavy verification pass and may reject additional samples containing secondary-speaker tokens. |
 | 7 | Stage 5b: `max_secondary_speech_s` | `0.0s` for strict purity | Does not change inference compute; it makes the completed VibeVoice check maximally strict and therefore minimizes yield. |
 
@@ -181,7 +181,18 @@ When `enable_homogeneity=True`, slides short sub-windows (`homogeneity_window_s=
 ### Stage 5: In-Loop Foundation Model Verification
 Candidate turns passing acoustic gates are verified by multimodal foundation models:
 - **Microsoft VibeVoice-ASR:** Detects secondary speech duration across full clip context. Drops turns if secondary speech exceeds `max_secondary_speech_s` (default `0.0s`).
-- **Gemma 4 Direct Audio:** Sends candidate audio directly to Gemma 4 via OpenAI-compatible endpoint. Drops turns if simultaneous speakers are audible.
+- **Direct-Audio Quality Verifier:** Sends candidate audio directly to local
+  Gemma 4 or Google Gemini. It rejects a second speaker (simultaneous or
+  sequential), clipped initial/final speech (“lẹm chữ”), uncertainty, and
+  request/schema failures. It does not transcribe.
+
+Gemini cost records use response `usageMetadata` and the paid Standard USD
+rate card dated 2026-09-04. The configured per-million-token input/output rates
+are: Gemini 3.8/3.7/3.6 Flash `$0.75/$3.75` (the 2026 introductory rate),
+Gemini 3.5 Flash `$1.50/$9.00`, Gemini 3.5 Flash-Lite `$0.30/$2.50`, Gemini
+3.1 Pro Preview `$2.00/$12.00`, and Gemini 3.1 Flash-Lite `$0.25 text or $0.50
+audio/$1.50`. Thinking tokens use the output rate. Records are estimates, not
+Google invoices, and include the rate-card date for auditability.
 
 ---
 
@@ -274,13 +285,15 @@ class ZeroContaminationConfig:
     homogeneity_hop_s: float = 0.25
     min_homogeneity_similarity: float = 0.75
 
-    # Stage 5a: Gemma Overlap Verifier (OFF by default)
+    # Stage 5a: Direct-Audio Quality Verifier (OFF by default)
     enable_gemma: bool = False
+    gemma_backend: str = "gemma4"            # "gemma4" or "gemini"
     gemma_endpoint: str | None = None        # else UNSLOTH_ENDPOINT / localhost:8888
     gemma_model: str | None = None           # else UNSLOTH_MODEL / unsloth/gemma-4-12b-it-GGUF
     gemma_prompt: str | None = None
     gemma_api_key: str | None = None
     gemma_timeout_s: float = 120.0
+    gemma_max_output_tokens: int = 256
 
     # Stage 5b: VibeVoice Speaker-Count Verifier (OFF by default)
     enable_vibevoice: bool = False
@@ -376,7 +389,8 @@ preset because it can move the protected boundary inward.
 
 | Parameter | Type & Range | Default | Increasing (+) Value | Decreasing (-) Value | The Core Trade-off |
 |---|---|---|---|---|---|
-| **`enable_gemma`** | `bool` `{True, False}` | `False` | Passes candidate audio directly into Gemma 4 / Gemini via multimodal direct-audio endpoint for semantic overlap audit. | Bypasses LLM evaluation. Eliminates network dependency and LLM latency. | **Multimodal Human-Level Cross-Talk Detection vs. External Latency.** Catches overlapping background voices and subtle TV bleed. |
+| **`enable_gemma`** | `bool` `{True, False}` | `False` | Runs local Gemma or Gemini on audio for speaker purity and complete word boundaries. | Bypasses LLM evaluation and its latency/cost. | **Acoustic Quality vs. Latency, API Cost, and Yield.** |
+| **`gemma_backend`** | `str` `{"gemma4", "gemini"}` | `"gemma4"` | Selects local OpenAI-compatible Gemma or Google Gemini with server-side `GEMINI_API_KEY`. | — | **Local compute vs. metered API.** |
 | **`gemma_timeout_s`** | `float` `[5.0, 600.0s]` | `120.0s` | Allows remote LLM ample time to generate tokens and recover from high server load. | Fails quickly on unresponsive endpoints, preventing pipeline queue stalls. | **Request Resilience vs. Pipeline Latency.** |
 | **`enable_vibevoice`** | `bool` `{True, False}` | `False` | Uses Microsoft VibeVoice-ASR token stream to measure total duration of any secondary non-dominant speaker in the audio. | Bypasses VibeVoice verification. | **Token-Level Speaker Count Verification vs. Dedicated VRAM / Endpoint Requirement.** |
 | **`max_secondary_speech_s`** | `float` `[0.0, 10.0s]` | `0.0s` | Tolerates brief background vocal sounds, far-field murmur, or brief confirmations up to the threshold duration. | Absolute zero-tolerance policy. Rejects the candidate if VibeVoice detects a single secondary speaker token. | **Dataset Cleanliness vs. Monologue Yield.** Keep at `0.0s` for ultra-pure single-speaker TTS datasets. |

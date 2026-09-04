@@ -6,7 +6,10 @@
 (function () {
   'use strict';
 
-  const DEFAULT_GEMMA_PROMPT = 'Does this audio contain overlapping speech from two or more speakers at the same time?';
+  const DEFAULT_GEMMA_PROMPT = `Listen to the supplied audio directly. Do not transcribe it.
+Judge speaker purity: exactly one human speaker must be audible throughout; reject overlap, sequential second speakers, whispers, distant speech, and intelligible background speech.
+Judge word completeness (lẹm chữ): speech must begin and end on complete acoustic word boundaries; reject a clipped initial or final phoneme or syllable. Do not reject a grammatical fragment when its audible words are intact.
+Return only the requested structured result and never include a transcript.`;
 
   const ExperimentTab = {
     currentAudioId: null,
@@ -113,11 +116,15 @@
         homoHopValue: document.getElementById('exp-homo-hop-val'),
         homoFields: document.getElementById('exp-homo-fields'),
 
-        // Stage 5a: Gemma 4 Remote
+        // Stage 5a: Direct-audio quality verifier
         enableGemma: document.getElementById('exp-enable-gemma'),
         gemmaFields: document.getElementById('exp-gemma-fields'),
+        gemmaBackend: document.getElementById('exp-gemma-backend'),
+        gemmaModelGroup: document.getElementById('exp-gemma-model-group'),
+        gemmaEndpointControls: document.getElementById('exp-gemma-endpoint-controls'),
         gemmaEndpoint: document.getElementById('exp-gemma-endpoint'),
         gemmaModel: document.getElementById('exp-gemma-model'),
+        gemmaMaxTokens: document.getElementById('exp-gemma-max-tokens'),
         gemmaTimeout: document.getElementById('exp-gemma-timeout'),
         gemmaTimeoutSlider: document.getElementById('exp-gemma-timeout-slider'),
         gemmaTimeoutValue: document.getElementById('exp-gemma-timeout-val'),
@@ -149,6 +156,9 @@
         // Results
         resultsCard: document.getElementById('exp-results-card'),
         funnelContainer: document.getElementById('exp-funnel-stages'),
+        directAudioAuditCard: document.getElementById('exp-direct-audio-audit-card'),
+        directAudioAuditBody: document.getElementById('exp-direct-audio-audit-body'),
+        directAudioTotalCost: document.getElementById('exp-direct-audio-total-cost'),
         turnsBody: document.getElementById('exp-turns-body'),
         tableCard: document.getElementById('exp-table-card'),
         btnExportRttm: document.getElementById('btn-exp-export-rttm'),
@@ -301,6 +311,11 @@
       });
       this.el.enableGemma?.addEventListener('change', e => {
         if (self.el.gemmaFields) self.el.gemmaFields.style.display = e.target.checked ? 'block' : 'none';
+        if (e.target.checked) self.syncDirectAudioProvider();
+      });
+      this.el.gemmaBackend?.addEventListener('change', () => {
+        self.syncDirectAudioProvider();
+        self.probeGemma();
       });
       this.el.enableVibeVoice?.addEventListener('change', e => {
         if (self.el.vibevoiceFields) self.el.vibevoiceFields.style.display = e.target.checked ? 'block' : 'none';
@@ -612,6 +627,9 @@
       // Stage 5a
       this.setParamValue(this.el.gemmaTimeoutSlider, this.el.gemmaTimeout, 120);
       if (this.el.gemmaPrompt) this.el.gemmaPrompt.value = DEFAULT_GEMMA_PROMPT;
+      if (this.el.gemmaBackend) this.el.gemmaBackend.value = 'gemma4';
+      if (this.el.gemmaMaxTokens) this.el.gemmaMaxTokens.value = '256';
+      this.syncDirectAudioProvider();
       // Stage 5b
       if (this.el.enableVibeVoice) { this.el.enableVibeVoice.checked = false; this.el.vibevoiceFields.style.display = 'none'; }
       if (this.el.vibevoiceModel) this.el.vibevoiceModel.value = 'Dubedo/VibeVoice-ASR-HF-INT8';
@@ -620,20 +638,38 @@
       if (window.showToast) window.showToast('Experiment parameters reset to recommended defaults', 'info');
     },
 
+    syncDirectAudioProvider() {
+      const isGemini = this.selectedDirectAudioBackend() === 'gemini';
+      if (this.el.gemmaModelGroup) this.el.gemmaModelGroup.style.display = isGemini ? 'none' : '';
+      if (this.el.gemmaEndpointControls) this.el.gemmaEndpointControls.style.display = isGemini ? 'none' : 'block';
+    },
+
+    selectedDirectAudioBackend() {
+      return this.el.gemmaBackend?.value?.startsWith('gemini:') ? 'gemini' : 'gemma4';
+    },
+
+    selectedDirectAudioModel() {
+      const selection = this.el.gemmaBackend?.value || 'gemma4';
+      return selection.startsWith('gemini:')
+        ? selection.slice('gemini:'.length)
+        : (this.el.gemmaModel?.value || 'unsloth/gemma-4-12b-it-GGUF');
+    },
+
     async probeGemma() {
       if (!this.el.gemmaBadge) return;
       this.el.gemmaBadge.className = 'badge badge-sm badge-ghost';
       this.el.gemmaBadge.textContent = 'Pinging…';
 
       const endpoint = this.el.gemmaEndpoint?.value || 'http://localhost:8888/v1/chat/completions';
-      const model = this.el.gemmaModel?.value || 'unsloth/gemma-4-12b-it-GGUF';
+      const backend = this.selectedDirectAudioBackend();
+      const model = this.selectedDirectAudioModel();
 
       const t0 = performance.now();
       try {
-        const res = await fetch('/api/experiment/gemma/probe', {
+        const res = await fetch('/api/experiment/direct-audio/probe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ endpoint, model }),
+          body: JSON.stringify({ backend, endpoint, model }),
         });
         const elapsed = Math.round(performance.now() - t0);
         const data = await res.json();
@@ -659,7 +695,7 @@
       }
       if (this.el.gemmaTestOut) {
         this.el.gemmaTestOut.style.display = 'block';
-        this.el.gemmaTestOut.textContent = 'Sending candidate slice to remote Gemma 4 server…';
+        this.el.gemmaTestOut.textContent = 'Sending candidate slice to the direct-audio verifier…';
       }
 
       let start_s = 0.0;
@@ -670,28 +706,33 @@
       }
 
       try {
-        const res = await fetch('/api/experiment/gemma/test', {
+        const res = await fetch('/api/experiment/direct-audio/test', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             audio_id: audioId,
             start_s,
             end_s,
+            backend: this.selectedDirectAudioBackend(),
             endpoint: this.el.gemmaEndpoint?.value,
-            model: this.el.gemmaModel?.value,
+            model: this.selectedDirectAudioModel(),
             prompt: this.el.gemmaPrompt?.value,
+            max_output_tokens: parseInt(this.el.gemmaMaxTokens?.value || '256', 10),
           }),
         });
         const data = await res.json();
         if (this.el.gemmaTestOut) {
           if (res.ok) {
             const out = data.result;
-            const overlapText = out.overlap ? '⚠️ OVERLAP DETECTED (Multiple Voices)' : '✓ PURE SINGLE SPEAKER';
-            this.el.gemmaTestOut.textContent = `Result: ${overlapText}\n` +
+            const decisionText = out.decision === 'pass' ? '✓ PASS' : `⚠️ ${String(out.decision || 'uncertain').toUpperCase()}`;
+            const costText = out.cost?.total_usd !== undefined ? ` • Estimated cost: $${out.cost.total_usd.toFixed(6)}` : '';
+            this.el.gemmaTestOut.textContent = `Result: ${decisionText}\n` +
+              `Speaker purity: ${out.speaker_purity} • Word completeness: ${out.word_completeness} • Boundary: ${out.boundary_issue}\n` +
+              `Failure codes: ${(out.failure_codes || []).join(', ') || 'none'}\n` +
               `Reason: ${out.reason}\n` +
-              `Duration: ${out.tested_duration_s}s • Latency: ${out.latency_s}s`;
+              `Duration: ${out.tested_duration_s}s • Latency: ${out.latency_s}s${costText}`;
           } else {
-            this.el.gemmaTestOut.textContent = `Gemma Test Error: ${data.error || 'Server error'}`;
+            this.el.gemmaTestOut.textContent = `Verifier Test Error: ${data.error || 'Server error'}`;
           }
         }
       } catch (err) {
@@ -742,10 +783,12 @@
         homogeneity_hop_s: parseFloat(this.el.homoHopNum?.value || this.el.homoHop?.value || '0.25'),
         // Stage 5a
         enable_gemma: Boolean(this.el.enableGemma?.checked),
+        gemma_backend: this.selectedDirectAudioBackend(),
         gemma_endpoint: this.el.gemmaEndpoint?.value,
-        gemma_model: this.el.gemmaModel?.value,
+        gemma_model: this.selectedDirectAudioModel(),
         gemma_prompt: this.el.gemmaPrompt?.value,
         gemma_timeout_s: parseFloat(this.el.gemmaTimeout?.value || this.el.gemmaTimeoutSlider?.value || '120'),
+        gemma_max_output_tokens: parseInt(this.el.gemmaMaxTokens?.value || '256', 10),
         // Stage 5b
         enable_vibevoice: Boolean(this.el.enableVibeVoice?.checked),
         vibevoice_model_id: this.el.vibevoiceModel?.value || 'Dubedo/VibeVoice-ASR-HF-INT8',
@@ -852,6 +895,7 @@
       if (this.el.tableCard) this.el.tableCard.style.display = 'block';
 
       this.renderFunnel(result.funnel_stats);
+      this.renderDirectAudioAudits(result.foundation_audits || [], result.funnel_stats || {});
       this.renderTurnsTable(result.diarization?.turns || []);
     },
 
@@ -898,10 +942,11 @@
       }
 
       if (funnel.foundation_speech_duration_s !== undefined) {
+        const cost = funnel.direct_audio_cost?.total_usd;
         stages.push({
           name: '5. Foundation Gate',
           val: `${(funnel.foundation_speech_duration_s).toFixed(1)}s`,
-          sub: `${funnel.foundation_turns_count} audited turns`,
+          sub: `${funnel.foundation_turns_count} retained${cost !== undefined ? ` • est. $${cost.toFixed(6)}` : ''}`,
         });
       }
 
@@ -923,6 +968,47 @@
       `
         )
         .join('');
+    },
+
+    escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    },
+
+    renderDirectAudioAudits(audits, funnel) {
+      const rows = audits.filter(a => a.direct_audio || a.direct_audio_error);
+      if (!this.el.directAudioAuditCard || !this.el.directAudioAuditBody) return;
+      this.el.directAudioAuditCard.style.display = rows.length ? 'block' : 'none';
+      if (!rows.length) return;
+      const total = funnel.direct_audio_cost?.total_usd;
+      if (this.el.directAudioTotalCost) {
+        this.el.directAudioTotalCost.textContent = total !== undefined
+          ? `Estimated total: $${total.toFixed(6)}`
+          : 'Local compute — no API cost';
+      }
+      this.el.directAudioAuditBody.innerHTML = rows.map(row => {
+        const result = row.direct_audio || {};
+        const decision = row.direct_audio_error ? 'error' : (result.decision || (row.passed ? 'pass' : 'reject'));
+        const badge = decision === 'pass' ? 'badge-success' : (decision === 'reject' ? 'badge-danger' : 'badge-warning');
+        const codes = (result.failure_codes || []).join(', ');
+        const detail = row.direct_audio_error || result.reason || row.reason || '';
+        const reason = codes ? `${codes}: ${detail}` : detail;
+        const tokens = result.usage?.total_tokens;
+        const sampleCost = result.cost?.total_usd;
+        return `<tr>
+          <td><code>${Number(row.start_s).toFixed(2)}–${Number(row.end_s).toFixed(2)}s</code></td>
+          <td><span class="badge badge-sm ${badge}">${this.escapeHtml(decision)}</span></td>
+          <td>${this.escapeHtml(result.speaker_purity || '—')}</td>
+          <td>${this.escapeHtml(result.word_completeness || '—')}<br><small>${this.escapeHtml(result.boundary_issue || '')}</small></td>
+          <td><small>${this.escapeHtml(reason)}</small></td>
+          <td>${tokens !== undefined ? Number(tokens).toLocaleString() : '—'}</td>
+          <td>${sampleCost !== undefined ? `$${Number(sampleCost).toFixed(6)}` : '—'}</td>
+        </tr>`;
+      }).join('');
     },
 
     renderTurnsTable(turns) {

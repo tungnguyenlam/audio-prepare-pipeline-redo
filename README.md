@@ -87,8 +87,11 @@ chat-completions endpoint; `UNSLOTH_API_KEY` is optional only when that
 endpoint does not require authentication. `UNSLOTH_HOST` defaults to
 `localhost` and `UNSLOTH_PORT` defaults to `8888`; set `UNSLOTH_ENDPOINT`
 when the server needs an otherwise custom full URL. The Gemini verifier
-reads `GEMINI_API_KEY` from `.env` and uses `gemini-3.1-pro-preview` by
-default. Select `gemini-flash-lite` to use the audio-capable
+reads `GEMINI_API_KEY` from `.env` and uses `gemini-3.8-flash` by default.
+The Experiment tab also offers Gemini 3.7/3.6/3.5 Flash, Gemini 3.5
+Flash-Lite, Gemini 3.1 Pro Preview, and Gemini 3.1 Flash-Lite. These models
+receive audio directly; the verifier does not run transcription. Select
+`gemini-flash-lite` to use the audio-capable
 `gemini-3.1-flash-lite` verifier. Set `GEMINI_MODEL` to override the model for
 the generic `gemini` backend. VibeVoice-ASR counts
 distinct speakers on each whole candidate (no prompt, no embeddings); it
@@ -102,11 +105,15 @@ AWQ, BitNet, and standalone `microsoft/VibeVoice-ASR` quants are unsupported.
 SonicStudio's **Speaker Purity** tab uses these values as non-secret defaults
 for the direct-audio **verifier**. Speaker embeddings are an identity
 **filter** only: they do not decide purity. When the verifier is enabled,
-Gemma, Gemini Pro, Gemini Flash-Lite, or VibeVoice listens to every remaining
+Gemma, Gemini, or VibeVoice listens to every remaining
 candidate on both `POST /api/diarization/results/verify` and
 `POST /api/purity/verify`. Backend, model, endpoint, timeout, token budget,
 failure policy, and prompt can all be overridden per run (VibeVoice ignores
 prompt, API key, and timeout).
+The LLM separately judges speaker purity and acoustically complete word
+boundaries (including Vietnamese “lẹm chữ”), with stable failure codes and a
+human-readable reason. Gemini results include per-sample token usage and an
+estimated paid-Standard cost, plus the run total; estimates are not invoices.
 Hugging Face caches default to `.data/huggingface`. Set `HF_HOME` in `.env`
 only when a different writable cache location is needed.
 

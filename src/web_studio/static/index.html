@@ -1750,7 +1750,7 @@
                 <div class="purity-overlap-header">
                   <div>
                     <strong>Direct-audio verifier</strong>
-                    <small class="purity-overlap-lead">Gemma 4 via Unsloth, Gemini 3.1 Pro, Gemini 3.1 Flash-Lite, or VibeVoice-ASR listens to every whole candidate. Unsloth must be up before a run starts.</small>
+                    <small class="purity-overlap-lead">Gemma 4, Google Gemini direct audio, or VibeVoice-ASR listens to every whole candidate for speaker purity and complete word boundaries.</small>
                   </div>
                   <span class="badge badge-sm badge-ghost" id="purity-overlap-status-badge">Checking…</span>
                 </div>
@@ -1790,7 +1790,7 @@
                     </div>
                     <div class="form-group mb-0" id="purity-overlap-max-tokens-field">
                       <label class="form-label" for="purity-overlap-max-tokens" id="purity-overlap-max-tokens-label">Max output tokens</label>
-                      <input id="purity-overlap-max-tokens" class="text-input" type="number" min="1" max="4096" step="1" value="128">
+                      <input id="purity-overlap-max-tokens" class="text-input" type="number" min="1" max="4096" step="1" value="256">
                     </div>
                     <div class="form-group mb-0 hidden" id="purity-vibevoice-batch-field">
                       <label class="form-label" for="purity-vibevoice-batch-size">Inference batch size</label>
@@ -1836,7 +1836,7 @@
                       <button type="button" class="btn btn-ghost btn-xs" id="btn-reset-purity-overlap">Restore server defaults</button>
                     </div>
                     <textarea id="purity-overlap-prompt" class="text-input purity-prompt-input" rows="5" spellcheck="true" aria-describedby="purity-overlap-prompt-help" placeholder="Enter the instruction sent with every candidate audio clip…"></textarea>
-                    <p class="text-xs text-muted" id="purity-overlap-prompt-help"><strong>Editable:</strong> this exact instruction is sent with every candidate audio clip. The response remains fixed to <code>{ overlap: boolean, reason: string }</code>.</p>
+                    <p class="text-xs text-muted" id="purity-overlap-prompt-help"><strong>Editable:</strong> this instruction accompanies the audio. The fixed schema separately reports speaker purity, word completeness, boundary issues, failure codes, and a reason; no transcript is requested.</p>
                   </div>
                 </div>
               </div>
@@ -2508,49 +2508,67 @@
                 </div>
               </div>
 
-              <!-- Stage 5a: Gemma 4 Direct Audio -->
+              <!-- Stage 5a: Direct Audio Quality Verifier -->
               <div class="exp-stage-box purity-overlap-panel exp-purity-compute-panel">
                 <div class="purity-overlap-header">
                   <div>
                     <div style="display: flex; align-items: center; gap: 8px;">
                       <span class="exp-stage-num remote">5a</span>
-                      <strong>Gemma 4 Direct-Audio Overlap Verifier</strong>
-                      <span class="exp-purity-badge">COMPUTE → SPEAKER PURITY</span>
+                      <strong>Direct-Audio Purity &amp; Word-Completeness Verifier</strong>
+                      <span class="exp-purity-badge">PURITY + LẸM CHỮ</span>
                     </div>
                     <small class="purity-overlap-lead">
-                      Adds one multimodal inference request per candidate. Detected overlap is rejected, increasing compute and normally reducing extracted samples.
+                      Local Gemma or Google Gemini listens directly to every candidate. A second speaker, overlap, or a clipped boundary rejects the sample; no transcription pass is used.
                     </small>
                   </div>
-                  <label class="toggle-switch-wrap exp-purity-toggle" title="Gemma 4 Multimodal Direct-Audio Verification [Default: Disabled]&#10;• Enabled: Adds an LLM inference call for every candidate and rejects detected overlap, costing more compute and normally extracting fewer samples.&#10;• Disabled: Bypasses LLM inference, runs faster, and retains candidates not rejected by earlier gates.">
+                  <label class="toggle-switch-wrap exp-purity-toggle" title="Direct-Audio Quality Verification [Default: Disabled]&#10;• Enabled: Adds one local Gemma or Gemini API request per candidate and rejects speaker impurity, clipped word boundaries, uncertainty, and request errors.&#10;• Disabled: Bypasses LLM inference, runs faster, and retains candidates not rejected by earlier gates.">
                     <input type="checkbox" id="exp-enable-gemma">
                     <span>Enable</span>
                   </label>
                 </div>
 
                 <div id="exp-gemma-fields" style="display: none; margin-top: 14px;">
-                  <!-- Endpoint URL with Probe & Status -->
                   <div class="form-group mb-2">
+                    <label class="form-label" for="exp-gemma-backend">Direct-audio model:</label>
+                    <select id="exp-gemma-backend" class="select-input font-mono">
+                      <optgroup label="Local / OpenAI-compatible">
+                        <option value="gemma4" selected>Local Gemma 4</option>
+                      </optgroup>
+                      <optgroup label="Google Gemini API">
+                        <option value="gemini:gemini-3.8-flash">Gemini 3.8 Flash — Recommended</option>
+                        <option value="gemini:gemini-3.7-flash">Gemini 3.7 Flash</option>
+                        <option value="gemini:gemini-3.6-flash">Gemini 3.6 Flash</option>
+                        <option value="gemini:gemini-3.5-flash">Gemini 3.5 Flash</option>
+                        <option value="gemini:gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite</option>
+                        <option value="gemini:gemini-3.1-pro-preview">Gemini 3.1 Pro Preview</option>
+                        <option value="gemini:gemini-3.1-flash-lite">Gemini 3.1 Flash-Lite</option>
+                      </optgroup>
+                    </select>
+                    <span class="text-xs text-muted">Choose the exact verifier model here. Gemini uses GEMINI_API_KEY from the repository-root .env; the key is never sent to the browser.</span>
+                  </div>
+                  <!-- Endpoint URL with Probe & Status -->
+                  <div class="form-group mb-2" id="exp-gemma-endpoint-group">
                     <div class="label-with-tool">
-                      <label class="form-label" for="exp-gemma-endpoint">Remote Server Endpoint URL</label>
+                      <label class="form-label" for="exp-gemma-endpoint">Verifier readiness</label>
                       <span class="badge badge-sm badge-ghost" id="exp-gemma-badge">Checking…</span>
                     </div>
-                    <div style="display: flex; gap: 8px;">
+                    <div id="exp-gemma-endpoint-controls">
                       <input type="url" id="exp-gemma-endpoint" class="text-input font-mono" value="http://localhost:8888/v1/chat/completions" placeholder="http://<remote-ip>:8888/v1/chat/completions" style="flex: 1;" title="OpenAI-compatible multimodal chat completions endpoint URL.">
-                      <button type="button" class="btn btn-secondary btn-sm" id="btn-exp-gemma-probe" title="Check connection and latency to the remote Gemma 4 endpoint.">Ping Endpoint</button>
+                      <span class="text-xs text-muted" style="margin-top: 4px; display: block;">
+                        Compatible with Unsloth Studio, vLLM, or any OpenAI-compatible multimodal audio server.
+                      </span>
                     </div>
-                    <span class="text-xs text-muted" style="margin-top: 4px; display: block;">
-                      Compatible with Unsloth Studio, vLLM, or any OpenAI-compatible multimodal audio server.
-                    </span>
+                    <button type="button" class="btn btn-secondary btn-sm" id="btn-exp-gemma-probe" title="Check whether the selected direct-audio model is ready." style="margin-top: 8px;">Check Selected Model</button>
                   </div>
 
                   <div class="form-row">
-                    <div class="form-group col-half mb-2 exp-purity-compute-param">
+                    <div class="form-group col-half mb-2 exp-purity-compute-param" id="exp-gemma-model-group">
                       <label class="form-label" for="exp-gemma-model">Model Repo / Checkpoint:</label>
                       <input type="text" id="exp-gemma-model" class="text-input font-mono" value="unsloth/gemma-4-12b-it-GGUF" title="Target model identifier registered on the remote endpoint.">
                     </div>
                     <div class="form-group col-half mb-2">
                       <div class="exp-param-header">
-                        <label class="form-label" for="exp-gemma-timeout" title="Gemma 4 Request Timeout [5 – 600s, Default: 120s]&#10;• Increase (+): Gives remote server ample time to transcribe and evaluate audio during high server load.&#10;• Decrease (-): Fails quickly on unresponsive endpoints to prevent task queue stalls.">Timeout (seconds):</label>
+                        <label class="form-label" for="exp-gemma-timeout" title="Direct-audio request timeout [5 – 600s, Default: 120s].">Timeout (seconds):</label>
                         <div class="exp-param-ctrl">
                           <div class="exp-num-input-wrap" title="Timeout in seconds (5 – 600s, Default: 120s)">
                             <input type="number" id="exp-gemma-timeout" class="exp-num-input" min="5" max="600" step="1" value="120" title="Request timeout in seconds. Increase (+) if remote server is busy; decrease (-) for faster failure handling.">
@@ -2569,13 +2587,22 @@
                       <label class="form-label" for="exp-gemma-prompt">Direct-Audio Prompt:</label>
                       <button type="button" class="btn btn-ghost btn-xs" id="btn-exp-gemma-prompt-reset" title="Reset to default prompt">Reset Prompt</button>
                     </div>
-                    <textarea id="exp-gemma-prompt" class="text-input purity-prompt-input" rows="3" title="System instruction passed alongside audio stream to the multimodal LLM.">Does this audio contain overlapping speech from two or more speakers at the same time?</textarea>
+                    <textarea id="exp-gemma-prompt" class="text-input purity-prompt-input" rows="8" title="Instruction passed alongside the audio to the multimodal LLM. No transcript is requested.">Listen to the supplied audio directly. Do not transcribe it.
+Judge speaker purity: exactly one human speaker must be audible throughout; reject overlap, sequential second speakers, whispers, distant speech, and intelligible background speech.
+Judge word completeness (lẹm chữ): speech must begin and end on complete acoustic word boundaries; reject a clipped initial or final phoneme or syllable. Do not reject a grammatical fragment when its audible words are intact.
+Return only the requested structured result and never include a transcript.</textarea>
+                  </div>
+
+                  <div class="form-group mb-2">
+                    <label class="form-label" for="exp-gemma-max-tokens">Max structured-output tokens:</label>
+                    <input type="number" id="exp-gemma-max-tokens" class="text-input" min="64" max="4096" step="1" value="256">
+                    <span class="text-xs text-muted">Gemini results record per-sample token usage and estimated paid-Standard USD cost; the result funnel shows the run total.</span>
                   </div>
 
                   <!-- Audition Live on Selection Button -->
                   <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
                     <button type="button" class="btn btn-secondary btn-sm" id="btn-exp-gemma-test" title="Auditions candidate slice to verify remote server before running.">
-                      ⚡ Test Gemma Live on Current Selection
+                      ⚡ Test Verifier on Current Selection
                     </button>
                     <span class="text-xs text-muted">Auditions candidate slice to verify remote server before running.</span>
                   </div>
@@ -2690,6 +2717,22 @@
             <span class="badge badge-success">Guaranteed Pure</span>
           </div>
           <div class="exp-funnel-stages" id="exp-funnel-stages"></div>
+        </div>
+
+        <div class="card" id="exp-direct-audio-audit-card" style="display: none; margin-top: 16px;">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">Direct-Audio Quality Audit</h3>
+              <p class="card-subtitle">Per-sample speaker purity, word-boundary completeness, failure reason, token usage, and estimated Gemini cost.</p>
+            </div>
+            <span class="badge badge-sm badge-ghost" id="exp-direct-audio-total-cost">Total: $0.000000</span>
+          </div>
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead><tr><th>Range</th><th>Decision</th><th>Speaker</th><th>Words</th><th>Failure / reason</th><th>Tokens</th><th>Sample cost</th></tr></thead>
+              <tbody id="exp-direct-audio-audit-body"></tbody>
+            </table>
+          </div>
         </div>
 
         <!-- Surviving Guaranteed Pure Turns Inspector -->

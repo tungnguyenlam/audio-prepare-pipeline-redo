@@ -1282,18 +1282,20 @@ def _apply_direct_overlap_decision(
     *,
     backend: str,
     model: str,
-    overlap: bool | None,
-    reason: str | None,
+    result: dict[str, Any] | None,
     error: str | None,
     failure_policy: str,
 ) -> None:
-    """Record a direct-audio answer onto a purity-report row."""
+    """Record a direct-audio quality answer onto a purity-report row."""
+    overlap = result.get("overlap") if result else None
+    reason = result.get("reason") if result else None
     item["direct_overlap"] = {
         "backend": backend,
         "model": model,
         "overlap": overlap,
         "reason": reason,
         "error": error,
+        **(result or {}),
     }
     if error:
         item["error"] = error
@@ -1302,9 +1304,11 @@ def _apply_direct_overlap_decision(
             item["reason"] = "direct_overlap_verification_failed"
             item["passed"] = False
         return
-    if overlap:
-        item["decision"] = "reject"
-        item["reason"] = "direct_overlap_detected"
+    if result and result.get("decision") != "pass":
+        item["decision"] = str(result.get("decision") or "uncertain")
+        item["reason"] = (
+            (result.get("failure_codes") or ["direct_audio_quality_failed"])[0]
+        )
         item["passed"] = False
 
 
@@ -5040,8 +5044,7 @@ async def handle_verify_diarization_batch(request: web.Request) -> web.Response:
                                     item,
                                     backend=str(overlap_backend),
                                     model=overlap_model,
-                                    overlap=direct_result["overlap"],
-                                    reason=direct_result["reason"],
+                                    result=direct_result,
                                     error=None,
                                     failure_policy=overlap_failure_policy,
                                 )
@@ -5070,8 +5073,7 @@ async def handle_verify_diarization_batch(request: web.Request) -> web.Response:
                                     item,
                                     backend=str(overlap_backend),
                                     model=overlap_model,
-                                    overlap=None,
-                                    reason=None,
+                                    result=None,
                                     error=error_text,
                                     failure_policy=overlap_failure_policy,
                                 )
@@ -5448,8 +5450,7 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
                                 item,
                                 backend=backend,
                                 model=model,
-                                overlap=direct_result["overlap"],
-                                reason=direct_result["reason"],
+                                result=direct_result,
                                 error=None,
                                 failure_policy=overlap_failure_policy,
                             )
@@ -5478,8 +5479,7 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
                                 item,
                                 backend=backend,
                                 model=model,
-                                overlap=None,
-                                reason=None,
+                                result=None,
                                 error=error_text,
                                 failure_policy=overlap_failure_policy,
                             )

@@ -1,7 +1,7 @@
 """Dedicated REST route handlers and task executor for the Experiment tab.
 
 Coordinates the zero-contamination high-precision diarization pipeline,
-Gemma 4 probe/test API, and hardware telemetry.
+direct-audio verifier probe/test API, and hardware telemetry.
 """
 
 from __future__ import annotations
@@ -19,9 +19,12 @@ import torch
 
 from src.diarization.OverlapVerifier import (
     DEFAULT_GEMMA4_MODEL_ID,
+    DEFAULT_GEMINI_MODEL_ID,
     DEFAULT_UNSLOTH_ENDPOINT,
-    Gemma4OverlapVerifier,
+    GEMINI_AUDIO_MODELS,
+    OVERLAP_PROMPT,
     OverlapVerifierError,
+    create_overlap_verifier,
 )
 from src.diarization.zero_contamination import (
     DEFAULT_COLLAR_EROSION_S,
@@ -88,6 +91,7 @@ class ExperimentRouteHandler:
             "whisper_timestamped": True,
             "vibevoice": True,
             "gemma4": True,
+            "gemini": True,
         }
         defaults = {
             "primary_backend": "sortformer",
@@ -123,8 +127,13 @@ class ExperimentRouteHandler:
             "min_homogeneity_similarity": DEFAULT_MIN_HOMOGENEITY_SIMILARITY,
             # Foundation Models
             "enable_gemma": False,
+            "gemma_backend": "gemma4",
             "gemma_endpoint": DEFAULT_UNSLOTH_ENDPOINT,
             "gemma_model": DEFAULT_GEMMA4_MODEL_ID,
+            "gemini_model": DEFAULT_GEMINI_MODEL_ID,
+            "gemini_models": list(GEMINI_AUDIO_MODELS),
+            "gemma_prompt": OVERLAP_PROMPT,
+            "gemma_max_output_tokens": 256,
             "enable_vibevoice": False,
             "vibevoice_model_id": "Dubedo/VibeVoice-ASR-HF-INT8",
             "vibevoice_device": "same",
@@ -139,20 +148,26 @@ class ExperimentRouteHandler:
         })
 
     async def handle_gemma_probe(self, request: web.Request) -> web.Response:
-        """Ping local Gemma 4 / Unsloth endpoint and report readiness."""
+        """Report readiness for the selected direct-audio verifier."""
         try:
             body = await request.json() if request.can_read_body else {}
         except Exception:
             body = {}
-        endpoint = body.get("endpoint") or DEFAULT_UNSLOTH_ENDPOINT
-        model = body.get("model") or DEFAULT_GEMMA4_MODEL_ID
-
-        verifier = Gemma4OverlapVerifier(endpoint=endpoint, model=model)
+        backend = str(body.get("backend") or "gemma4")
+        model = body.get("model") or (
+            DEFAULT_GEMINI_MODEL_ID if backend == "gemini" else DEFAULT_GEMMA4_MODEL_ID
+        )
+        config: dict[str, Any] = {"backend": backend, "model": model}
+        if backend == "gemma4":
+            config["endpoint"] = body.get("endpoint") or DEFAULT_UNSLOTH_ENDPOINT
+        verifier = create_overlap_verifier(config)
         status = verifier.check_ready(timeout_s=4.0)
+        status["backend"] = backend
+        status["model"] = model
         return web.json_response(status)
 
     async def handle_gemma_test(self, request: web.Request) -> web.Response:
-        """Run Gemma 4 on the active audio file or selected range to test live response."""
+        """Run the selected direct-audio verifier on a file or selected range."""
         try:
             body = await request.json()
         except Exception as exc:
@@ -166,17 +181,23 @@ class ExperimentRouteHandler:
         if not audio or not Path(audio.path).is_file():
             return web.json_response({"error": "Audio track not found"}, status=404)
 
-        endpoint = body.get("endpoint") or DEFAULT_UNSLOTH_ENDPOINT
-        model = body.get("model") or DEFAULT_GEMMA4_MODEL_ID
+        backend = str(body.get("backend") or "gemma4")
+        model = body.get("model") or (
+            DEFAULT_GEMINI_MODEL_ID if backend == "gemini" else DEFAULT_GEMMA4_MODEL_ID
+        )
         prompt = body.get("prompt") or None
         start_s = float(body.get("start_s", 0.0))
         end_s = float(body.get("end_s", 0.0))
 
-        verifier = Gemma4OverlapVerifier(
-            endpoint=endpoint,
-            model=model,
-            prompt=prompt or "Does this audio contain overlapping speech from two or more speakers at the same time?",
-        )
+        config: dict[str, Any] = {
+            "backend": backend,
+            "model": model,
+            "prompt": prompt or OVERLAP_PROMPT,
+            "max_output_tokens": int(body.get("max_output_tokens", 256)),
+        }
+        if backend == "gemma4":
+            config["endpoint"] = body.get("endpoint") or DEFAULT_UNSLOTH_ENDPOINT
+        verifier = create_overlap_verifier(config)
 
         loop = asyncio.get_running_loop()
 
@@ -202,7 +223,14 @@ class ExperimentRouteHandler:
                 elapsed = time.time() - t_start
                 return {
                     "overlap": res.get("overlap"),
+                    "decision": res.get("decision"),
+                    "speaker_purity": res.get("speaker_purity"),
+                    "word_completeness": res.get("word_completeness"),
+                    "boundary_issue": res.get("boundary_issue"),
+                    "failure_codes": res.get("failure_codes"),
                     "reason": res.get("reason"),
+                    "usage": res.get("usage"),
+                    "cost": res.get("cost"),
                     "latency_s": round(elapsed, 2),
                     "tested_duration_s": round(test_audio.duration_s, 2),
                 }
@@ -213,7 +241,7 @@ class ExperimentRouteHandler:
         except OverlapVerifierError as exc:
             return web.json_response({"error": str(exc), "readiness": exc.readiness}, status=502)
         except Exception as exc:
-            logger.exception("Gemma 4 test invocation failed")
+            logger.exception("Direct-audio test invocation failed")
             return web.json_response({"error": str(exc)}, status=500)
 
     async def handle_run_experiment(self, request: web.Request) -> web.Response:
@@ -300,11 +328,15 @@ class ExperimentRouteHandler:
             min_homogeneity_similarity=float(body.get("min_homogeneity_similarity", DEFAULT_MIN_HOMOGENEITY_SIMILARITY)),
             # Stage 5: Foundation Models
             enable_gemma=bool(body.get("enable_gemma", False)),
+            gemma_backend=str(body.get("gemma_backend") or "gemma4"),
             gemma_endpoint=body.get("gemma_endpoint") or DEFAULT_UNSLOTH_ENDPOINT,
-            gemma_model=body.get("gemma_model") or DEFAULT_GEMMA4_MODEL_ID,
+            gemma_model=body.get("gemma_model") or None,
             gemma_prompt=body.get("gemma_prompt") or None,
-            gemma_api_key=body.get("gemma_api_key") or None,
+            # Credentials stay server-side and resolve from GEMINI_API_KEY or
+            # UNSLOTH_API_KEY in the repository-root .env.
+            gemma_api_key=None,
             gemma_timeout_s=float(body.get("gemma_timeout_s", 120.0)),
+            gemma_max_output_tokens=int(body.get("gemma_max_output_tokens", 256)),
             enable_vibevoice=bool(body.get("enable_vibevoice", False)),
             vibevoice_model_id=body.get("vibevoice_model_id", "Dubedo/VibeVoice-ASR-HF-INT8"),
             vibevoice_device=vibevoice_device,
@@ -325,7 +357,9 @@ class ExperimentRouteHandler:
         if config.enable_homogeneity:
             models_list.append(f"WeSpeaker ({homo_device})")
         if config.enable_gemma:
-            models_list.append("Gemma-4")
+            models_list.append(
+                f"{config.gemma_model or config.gemma_backend} direct audio"
+            )
         if config.enable_vibevoice:
             models_list.append(f"VibeVoice ({vibevoice_device})")
         model_display = " + ".join(models_list)
@@ -410,6 +444,8 @@ def register_experiment_routes(
     handler = ExperimentRouteHandler(task_manager, registry)
     app.router.add_get("/api/experiment/status", handler.handle_status)
     app.router.add_post("/api/experiment/run", handler.handle_run_experiment)
+    app.router.add_post("/api/experiment/direct-audio/probe", handler.handle_gemma_probe)
+    app.router.add_post("/api/experiment/direct-audio/test", handler.handle_gemma_test)
     app.router.add_post("/api/experiment/gemma/probe", handler.handle_gemma_probe)
     app.router.add_post("/api/experiment/gemma/test", handler.handle_gemma_test)
     logger.info("Mounted dedicated Experiment tab routes at /api/experiment/*")
