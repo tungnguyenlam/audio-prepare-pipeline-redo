@@ -366,9 +366,8 @@ Validation rules:
       this.el.enableHomo?.addEventListener('change', e => {
         if (self.el.homoFields) self.el.homoFields.style.display = e.target.checked ? 'block' : 'none';
       });
-      this.el.enableGemma?.addEventListener('change', e => {
-        if (self.el.gemmaFields) self.el.gemmaFields.style.display = e.target.checked ? 'block' : 'none';
-        if (e.target.checked) self.syncDirectAudioProvider();
+      this.el.enableGemma?.addEventListener('change', () => {
+        self.syncDirectAudioProvider();
       });
       this.el.gemmaBackend?.addEventListener('change', () => {
         self.syncDirectAudioProvider();
@@ -676,7 +675,7 @@ Validation rules:
       // Stage 3a: Option A - Context-Aware Handoff Guard
       if (this.el.enableContextCollar) { this.el.enableContextCollar.checked = true; this.el.contextCollarFields.style.display = 'block'; }
       this.setParamValue(this.el.handoffRisk, this.el.handoffRiskNum, 0.80);
-      this.setParamValue(this.el.silenceTail, this.el.silenceTailNum, 0.15);
+      this.setParamValue(this.el.silenceTail, this.el.silenceTailNum, 0.027);
       // Stage 3b: Option B - Syllable & Word Forced Alignment Lock
       if (this.el.enableSyllableAlign) { this.el.enableSyllableAlign.checked = false; this.el.syllableAlignFields.style.display = 'none'; }
       if (this.el.alignerEngine) {
@@ -701,7 +700,7 @@ Validation rules:
       // Stage 5a: Direct-audio verifier
       this.setParamValue(this.el.gemmaTimeoutSlider, this.el.gemmaTimeout, 120);
       if (this.el.gemmaPrompt) this.el.gemmaPrompt.value = DEFAULT_GEMMA_PROMPT;
-      if (this.el.enableGemma) { this.el.enableGemma.checked = false; this.el.gemmaFields.style.display = 'none'; }
+      if (this.el.enableGemma) this.el.enableGemma.checked = false;
       if (this.el.gemmaBackend) this.el.gemmaBackend.value = 'gemini:gemini-3.8-flash';
       if (this.el.gemmaMaxTokens) this.el.gemmaMaxTokens.value = '1024';
       this.syncDirectAudioProvider();
@@ -875,7 +874,7 @@ Validation rules:
         // Stage 3a: Option A - Context-Aware Handoff Guard
         enable_context_collar: collarGateEnabled && Boolean(this.el.enableContextCollar?.checked),
         handoff_risk_distance_s: parseFloat(this.el.handoffRiskNum?.value || this.el.handoffRisk?.value || '0.80'),
-        silence_tail_buffer_s: parseFloat(this.el.silenceTailNum?.value || this.el.silenceTail?.value || '0.15'),
+        silence_tail_buffer_s: parseFloat(this.el.silenceTailNum?.value || this.el.silenceTail?.value || '0.027'),
         // Stage 3b: Option B - Syllable & Word Forced Alignment Lock
         enable_syllable_alignment: collarGateEnabled && Boolean(this.el.enableSyllableAlign?.checked),
         aligner_engine: this.el.alignerEngine?.value || 'whisper_timestamped',

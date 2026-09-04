@@ -172,7 +172,7 @@ When `enable_consensus=True`, an orthogonal secondary diarization engine (e.g. D
 Aims for clean turn transitions without truncating recognized words:
 1. **Context-Aware Collar Guard (`enable_context_collar`):**
    - If another speaker speaks within `handoff_risk_distance_s` (default 0.80s), an inward safety collar is shaved.
-   - If the turn transitions into natural silence, inward shaving is suspended and a gentle `silence_tail_buffer_s` (default +0.15s) is granted to preserve delicate syllable codas and trailing phonemes.
+   - If the turn transitions into natural silence, inward shaving is suspended and a `silence_tail_buffer_s` (default +0.027s) is granted to preserve delicate syllable codas and trailing phonemes.
 2. **Forced Alignment Syllable Lock (`enable_syllable_alignment`):**
    - Utilizes `whisper_timestamped` with fine-tuned checkpoints such as `vinai/PhoWhisper-small` (or PyTorch MMS-FA / remote Whisper endpoints).
    - Snaps candidate boundaries outward to word/syllable bounds, preventing slicing through active syllables.
@@ -235,7 +235,7 @@ The pipeline exposes standalone helper functions for custom composition:
 compute_consensus_turns(primary_turns, secondary_turns, audio_duration_s) -> tuple[list[SpeakerTurn], dict[str, str]]
 
 # Stage 3a: Context-aware collar guard
-apply_context_aware_collar(turns, collar_s=0.35, handoff_risk_s=0.80, silence_tail_s=0.15, ...) -> tuple[list[SpeakerTurn], list[dict]]
+apply_context_aware_collar(turns, collar_s=0.35, handoff_risk_s=0.80, silence_tail_s=0.027, ...) -> tuple[list[SpeakerTurn], list[dict]]
 
 # Stage 3b: Syllable forced alignment
 align_and_lock_syllable_boundaries(audio, turns, aligner_engine="whisper_timestamped", aligner_model="vinai/PhoWhisper-small", ...) -> tuple[list[SpeakerTurn], list[dict]]
@@ -279,7 +279,7 @@ class ZeroContaminationConfig:
     # Stage 3a: Option A - Context-Aware Collar Guard
     enable_context_collar: bool = True
     handoff_risk_distance_s: float = 0.80
-    silence_tail_buffer_s: float = 0.15
+    silence_tail_buffer_s: float = 0.027
 
     # Stage 3b: Option B - Syllable Forced Alignment Lock (OFF by default)
     enable_syllable_alignment: bool = False
@@ -365,7 +365,7 @@ consumed by `_run_backend`, so changing it currently does not affect output.
 |---|---|---|---|---|---|
 | **`enable_context_collar`** | `bool` `{True, False}` | `True` | Dynamically distinguishes dangerous speaker handoffs from safe transitions into natural monologue silence. | Reverts to blunt, uniform collar shaving, slicing off trailing word codas even when silence follows the turn. | **Syllable Coda Rescue vs. Uniform Shaving.** Drastically improves TTS naturalness by preserving trailing phonemes during monologues. |
 | **`handoff_risk_distance_s`** | `float` `[0.05, 5.0s]` | `0.80s` | Extends the lookahead distance for competitor speakers. Turns farther away from competitors will still trigger defensive inward shaving. | Only triggers defensive collar shaving if the competing speaker starts immediately after the current turn ($< \text{distance}$). | **Handoff Safety Horizon vs. Monologue Detection.** Higher values treat moderate pauses between speakers as risky transitions. |
-| **`silence_tail_buffer_s`** | `float` `[0.0, 2.0s]` | `0.15s` (150ms) | Appends a generous acoustic decay cushion (+150ms) into natural trailing silence, preserving delicate room tone and fading vowels. | Clamps boundaries tightly to the raw offset timestamp. Prevents capturing room tone or breathing. | **Trailing Coda & Reverb Naturalness vs. Clip Tightness.** Crucial for Vietnamese tonal decay and unvoiced codas ($-p, -t, -k$). |
+| **`silence_tail_buffer_s`** | `float` `[0.0, 2.0s]` | `0.027s` (27ms) | Appends a short acoustic decay cushion (+27ms) into natural trailing silence, preserving delicate room tone and fading vowels. | Clamps boundaries tightly to the raw offset timestamp. Prevents capturing room tone or breathing. | **Trailing Coda & Reverb Naturalness vs. Clip Tightness.** Crucial for Vietnamese tonal decay and unvoiced codas ($-p, -t, -k$). |
 
 #### Stage 3b: Option B — Syllable & Word Forced Alignment Lock
 

@@ -41,7 +41,7 @@ flowchart LR
 flowchart TD
     EDGE["Turn edge"] --> NEAR{"Other speaker within handoff_risk_distance (0.80 s)?"}
     NEAR -->|yes| SHAVE["Shave inward: handoff likely, bleed risk"]
-    NEAR -->|no, silence| EXTEND["Grant silence_tail_buffer (+0.15 s): rescue codas/reverb"]
+    NEAR -->|no, silence| EXTEND["Grant silence_tail_buffer (+0.027 s): rescue codas/reverb"]
 ```
 
 **Worked example.** Turn ends 5.40; next speaker starts 5.70 (0.30 < 0.80) →

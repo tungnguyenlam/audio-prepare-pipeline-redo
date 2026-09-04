@@ -2043,21 +2043,27 @@
       <!-- ==================== TAB: SAMPLE QUALITY LABELER ==================== -->
       <section id="tab-labeler" class="tab-pane">
         <!-- Master Workbench Card -->
-        <div class="card lbl-workbench-card">
+        <div class="card exp-workbench-card lbl-workbench-card">
           <div class="card-header">
             <div>
-              <div class="lbl-header-title-row">
+              <div class="exp-header-title-row lbl-header-title-row">
                 <span class="workflow-step">Data Quality Gate</span>
                 <h2 class="card-title">Sample Quality Labeler</h2>
                 <span class="badge badge-accent">TTS Curating Studio</span>
               </div>
               <p class="card-subtitle">
-                Load DiarizationResult segments, listen to each turn, and hand-label quality defects: <strong>Accept</strong>, <strong>Background Noise</strong>, <strong>&gt;1 Speaker</strong>, or <strong>Word Chopped Off</strong>. Export physically decoupled audio datasets with train/val/test splits.
+                Load DiarizationResult segments, audition each turn, and hand-label quality defects: <strong>Accept</strong>, <strong>Background Noise</strong>, <strong>&gt;1 Speaker</strong>, or <strong>Word Chopped Off</strong>. Export physically decoupled audio datasets with train/val/test splits.
               </p>
             </div>
             <div class="card-actions flex-wrap gap-2">
               <button type="button" class="btn btn-ghost btn-sm" id="btn-lbl-shortcuts" title="Keyboard Shortcuts Cheat Sheet">
                 <kbd>?</kbd> Shortcuts
+              </button>
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-lbl-open-models" title="View Trained Models and Checkpoints">
+                🏆 Models
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-lbl-toggle-trainer" title="Toggle AI Defect Classifier Trainer">
+                🧠 AI Trainer
               </button>
               <button type="button" class="btn btn-secondary btn-sm" id="btn-lbl-save-draft" title="Save draft labels to disk">
                 💾 Save Draft
@@ -2065,297 +2071,352 @@
               <button type="button" class="btn btn-primary btn-sm" id="btn-lbl-open-export" title="Export decoupled audio dataset and train/val/test splits">
                 📦 Export Dataset
               </button>
-              <button type="button" class="btn btn-accent btn-sm" id="btn-lbl-toggle-trainer" title="Open Defect Classifier Trainer & Monitor">
-                🧠 Train Classifier
-              </button>
-              <button type="button" class="btn btn-ghost btn-sm" id="btn-lbl-open-models" title="View Trained Models and Checkpoints">
-                🏆 Models
-              </button>
             </div>
           </div>
 
-          <!-- Session Setup Row -->
-          <div class="form-row mt-3" style="display: grid; grid-template-columns: minmax(280px, 1.5fr) auto; gap: 12px; align-items: end;">
-            <div class="form-group mb-0">
-              <label class="form-label" for="lbl-result-select">1. Select Diarization Result to Label</label>
-              <div class="flex-row items-center gap-2">
-                <select id="lbl-result-select" class="select-input" style="flex: 1;">
-                  <option value="">-- Select Diarization Result --</option>
-                </select>
-                <button type="button" class="btn btn-ghost btn-sm" id="btn-lbl-reload-results" title="Reload diarization results list">
-                  🔄
-                </button>
-              </div>
+          <!-- Quality Tag Legend (matching exp-tradeoff-legend) -->
+          <div class="exp-tradeoff-legend lbl-tradeoff-legend" aria-label="Quality defect criteria">
+            <div>
+              <span class="badge badge-sm badge-success font-mono">[1] ACCEPT</span>
+              <span>Clean single-speaker speech suitable for TTS synthesis.</span>
             </div>
-            <div class="form-group mb-0">
-              <span class="text-xs text-muted" id="lbl-save-indicator">Ready</span>
+            <div>
+              <span class="badge badge-sm badge-warning font-mono">[2] NOISE</span>
+              <span>Background music, ambient noise, hum, static, or sound effects.</span>
             </div>
-          </div>
-
-          <!-- Source Audio Info Bar -->
-          <div id="lbl-source-info-bar" class="mt-3"></div>
-
-          <!-- Stats Overview Row -->
-          <div class="lbl-stats-row">
-            <div class="lbl-stat-item">
-              <span>Total Turns:</span>
-              <span class="lbl-stat-val font-mono" id="lbl-stat-total">0</span>
+            <div>
+              <span class="badge badge-sm badge-purple font-mono">[3] &gt;1 SPK</span>
+              <span>Speaker overlap, cross-talk, or secondary vocal bleed.</span>
             </div>
-            <div class="lbl-stat-item">
-              <span>Labeled:</span>
-              <span class="lbl-stat-val font-mono" id="lbl-stat-labeled">0 (0%)</span>
-            </div>
-            <div class="lbl-stat-item">
-              <span>Accept:</span>
-              <span class="lbl-stat-val accept font-mono" id="lbl-stat-accept">0</span>
-            </div>
-            <div class="lbl-stat-item">
-              <span>Background Noise:</span>
-              <span class="lbl-stat-val noise font-mono" id="lbl-stat-noise">0</span>
-            </div>
-            <div class="lbl-stat-item">
-              <span>&gt;1 Speaker:</span>
-              <span class="lbl-stat-val multi font-mono" id="lbl-stat-multi">0</span>
-            </div>
-            <div class="lbl-stat-item">
-              <span>Word Chopped:</span>
-              <span class="lbl-stat-val chopped font-mono" id="lbl-stat-chopped">0</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Defect Classifier Trainer & Monitor Card -->
-        <div class="card lbl-trainer-card mb-3" id="lbl-trainer-card">
-          <div class="card-header flex-row items-center justify-between cursor-pointer" id="lbl-trainer-header">
-            <div class="flex-row items-center gap-2">
-              <span class="lbl-trainer-badge">AI Trainer</span>
-              <h3 class="card-title text-base mb-0">End-to-End Defect Classifier Trainer</h3>
-              <span class="badge badge-accent" id="lbl-train-status-badge">Idle</span>
-            </div>
-            <div class="flex-row items-center gap-2">
-              <span class="text-xs text-secondary" id="lbl-trainer-header-hint">Boundary-Aware Tri-Scale Pooling + WavLM</span>
-              <button type="button" class="btn btn-ghost btn-xs" id="btn-lbl-trainer-collapse">▼</button>
+            <div>
+              <span class="badge badge-sm badge-danger font-mono">[4] CHOPPED</span>
+              <span>Word truncated at boundary or incomplete syllable (không lẹm chữ).</span>
             </div>
           </div>
 
-          <div class="lbl-trainer-body" id="lbl-trainer-body">
-            <p class="text-xs text-secondary mb-3">
-              Train an audio backbone to automatically detect quality defects:
-              <strong>Background Noise / SFX</strong>, <strong>Overlap / &gt;1 Speaker</strong>, and <strong>Chopped Syllables</strong>.
-              Uses <em>tri-scale boundary pooling</em> $[H_{\text{onset}}, H_{\text{global}}, H_{\text{offset}}]$ so edge cuts are preserved, and multi-label BCE loss.
-            </p>
-
-            <!-- Configuration Form -->
-            <div class="lbl-trainer-grid mb-3">
-              <div class="form-group mb-0">
-                <label class="form-label" for="lbl-train-dataset">Target Dataset</label>
+          <!-- Top-Down Workbench Flow (matching exp-workbench-flow) -->
+          <div class="exp-workbench-flow">
+            <!-- Stage 1: Session & Audio Source Ingestion -->
+            <div class="exp-stage-box lbl-session-box">
+              <div class="exp-stage-header">
+                <div class="exp-stage-title-wrap">
+                  <span class="exp-stage-num">1</span>
+                  <strong>Session &amp; Diarization Ingestion</strong>
+                  <span class="exp-control-kind">Choose diarization output run to review and curate</span>
+                </div>
                 <div class="flex-row items-center gap-2">
-                  <select id="lbl-train-dataset" class="select-input select-sm" style="flex: 1;">
-                    <option value="__current__">Current Labeled Session (Auto-export split)</option>
+                  <span class="badge badge-sm badge-ghost font-mono" id="lbl-save-indicator">Ready</span>
+                  <button type="button" class="btn btn-ghost btn-xs" id="btn-lbl-reload-results" title="Reload diarization results list">
+                    🔄 Reload List
+                  </button>
+                </div>
+              </div>
+              <div class="form-row mb-0">
+                <div class="form-group mb-0 flex-1">
+                  <label class="form-label" for="lbl-result-select">Select Diarization Result to Label:</label>
+                  <select id="lbl-result-select" class="select-input font-mono">
+                    <option value="">-- Select Diarization Result --</option>
                   </select>
-                  <button type="button" class="btn btn-ghost btn-xs" id="btn-lbl-refresh-datasets" title="Refresh dataset list">🔄</button>
                 </div>
               </div>
-
-              <div class="form-group mb-0">
-                <label class="form-label" for="lbl-train-backbone">Pretrained Backbone</label>
-                <select id="lbl-train-backbone" class="select-input select-sm">
-                  <option value="microsoft/wavlm-base" selected>microsoft/wavlm-base (94M, Noise-Robust — Recommended)</option>
-                  <option value="facebook/hubert-base-ls960">facebook/hubert-base-ls960 (95M, HuBERT)</option>
-                  <option value="facebook/wav2vec2-base">facebook/wav2vec2-base (95M, Wav2Vec 2.0)</option>
-                  <option value="microsoft/wavlm-large">microsoft/wavlm-large (316M, High Capacity)</option>
-                </select>
-              </div>
-
-              <div class="form-group mb-0">
-                <label class="form-label" for="lbl-train-mode">Fine-Tuning Strategy</label>
-                <select id="lbl-train-mode" class="select-input select-sm">
-                  <option value="full" selected>End-to-End Full (Differential LR — Recommended)</option>
-                  <option value="top_layers">Top 2 Encoder Layers + MLP Head</option>
-                  <option value="frozen">Frozen Backbone (MLP Head Only — Fast)</option>
-                </select>
-              </div>
-
-              <div class="form-group mb-0">
-                <label class="form-label" for="lbl-train-device">Compute Device</label>
-                <select id="lbl-train-device" class="select-input select-sm">
-                  <option value="auto" selected>Auto (Highest Free VRAM)</option>
-                  <option value="cuda:0">cuda:0</option>
-                  <option value="cuda:1">cuda:1</option>
-                  <option value="cpu">CPU</option>
-                </select>
-              </div>
+              <!-- Source Audio Info Preview Pill -->
+              <div id="lbl-source-info-bar"></div>
             </div>
 
-            <!-- Hyperparameters Row -->
-            <div class="lbl-hyperparams-grid mb-3">
-              <div class="form-group mb-0">
-                <label class="form-label" for="lbl-train-epochs">Epochs</label>
-                <input type="number" id="lbl-train-epochs" class="text-input text-sm" value="15" min="1" max="100">
-              </div>
-              <div class="form-group mb-0">
-                <label class="form-label" for="lbl-train-batch-size">Batch Size</label>
-                <input type="number" id="lbl-train-batch-size" class="text-input text-sm" value="8" min="1" max="64">
-              </div>
-              <div class="form-group mb-0">
-                <label class="form-label" for="lbl-train-lr-backbone">Backbone LR</label>
-                <input type="text" id="lbl-train-lr-backbone" class="text-input text-sm" value="1e-5">
-              </div>
-              <div class="form-group mb-0">
-                <label class="form-label" for="lbl-train-lr-head">Head LR</label>
-                <input type="text" id="lbl-train-lr-head" class="text-input text-sm" value="5e-4">
-              </div>
-            </div>
-
-            <!-- Weights & Biases (W&B) Tracking Config -->
-            <div class="lbl-wandb-config-box mb-3">
-              <div class="flex-row items-center justify-between flex-wrap gap-2">
+            <!-- Stage 2: AI Defect Classifier Trainer & Live Telemetry (Collapsible) -->
+            <div class="exp-stage-box exp-purity-compute-panel lbl-trainer-box" id="lbl-trainer-card">
+              <div class="exp-stage-header cursor-pointer" id="lbl-trainer-header">
+                <div class="exp-stage-title-wrap">
+                  <span class="exp-stage-num remote">AI</span>
+                  <strong>End-to-End Defect Classifier Trainer</strong>
+                  <span class="badge badge-accent" id="lbl-train-status-badge">Idle</span>
+                </div>
                 <div class="flex-row items-center gap-2">
-                  <span class="lbl-wandb-flame">🔥</span>
-                  <label class="flex-row items-center gap-2 cursor-pointer select-none font-bold text-xs" for="lbl-train-use-wandb">
-                    <input type="checkbox" id="lbl-train-use-wandb" checked>
-                    <span>Track with Weights &amp; Biases (W&amp;B)</span>
-                  </label>
-                  <span class="badge badge-sm" id="lbl-wandb-env-status">Detecting W&amp;B...</span>
-                </div>
-                <span class="text-xs text-secondary" id="lbl-wandb-env-hint">Reads <code>WANDB_API_KEY</code> from <code>.env</code> on server</span>
-              </div>
-              <div class="lbl-wandb-fields mt-2" id="lbl-wandb-fields">
-                <div class="form-group mb-0">
-                  <label class="form-label text-xs" for="lbl-train-wandb-project">W&amp;B Project</label>
-                  <input type="text" id="lbl-train-wandb-project" class="text-input text-sm" value="tts-quality-classifier" placeholder="tts-quality-classifier">
-                </div>
-                <div class="form-group mb-0">
-                  <label class="form-label text-xs" for="lbl-train-wandb-run-name">Run Name</label>
-                  <input type="text" id="lbl-train-wandb-run-name" class="text-input text-sm" placeholder="Auto-generated if empty">
-                </div>
-              </div>
-            </div>
-
-            <!-- Action Buttons -->
-            <div class="flex-row items-center gap-2 mb-3 flex-wrap">
-              <button type="button" class="btn btn-primary btn-sm" id="btn-lbl-start-train">
-                🚀 Start Fine-Tuning
-              </button>
-              <button type="button" class="btn btn-danger btn-sm" id="btn-lbl-stop-train" style="display: none;">
-                ⏹ Stop / Cancel
-              </button>
-              <a id="lbl-wandb-run-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-warning" style="display: none; align-items: center; gap: 6px;">
-                <span>🔥 Open in Weights &amp; Biases</span>
-                <span>↗</span>
-              </a>
-              <span class="text-xs text-muted" id="lbl-train-elapsed-time"></span>
-            </div>
-
-            <!-- Training Monitor & Live Telemetry -->
-            <div id="lbl-train-telemetry" class="lbl-train-telemetry-box" style="display: none;">
-              <!-- Progress Bar -->
-              <div class="lbl-progress-wrap mb-3">
-                <div class="lbl-progress-track">
-                  <div class="lbl-progress-fill" id="lbl-train-progress-bar" style="width: 0%;"></div>
-                </div>
-                <div class="flex-row items-center justify-between text-xs mt-1">
-                  <span id="lbl-train-step-text" class="text-secondary">Initializing model...</span>
-                  <span id="lbl-train-pct-text" class="font-mono font-bold">0%</span>
+                  <span class="text-xs text-secondary" id="lbl-trainer-header-hint">Boundary-Aware Tri-Scale Pooling + WavLM</span>
+                  <button type="button" class="btn btn-ghost btn-xs" id="btn-lbl-trainer-collapse">▼</button>
                 </div>
               </div>
 
-              <!-- WandB-Style Interactive Charts Dashboard -->
-              <div class="lbl-charts-section mb-3">
-                <div class="lbl-charts-header flex-row items-center justify-between mb-2">
-                  <div class="flex-row items-center gap-2">
-                    <span class="lbl-chart-brand font-bold text-xs">📈 W&amp;B-Style Live Telemetry</span>
-                    <span class="text-xs text-muted font-mono" id="lbl-chart-hover-info">Hover chart to inspect epoch metrics</span>
+              <div class="lbl-trainer-body" id="lbl-trainer-body" style="display: none;">
+                <div class="exp-word-completeness-callout mb-3">
+                  <div class="exp-word-completeness-heading">
+                    <span class="exp-compute-badge">NEURAL CLASSIFIER</span>
+                    <strong>Tri-Scale Boundary Feature Extraction $[H_{\text{onset}}, H_{\text{global}}, H_{\text{offset}}]$</strong>
                   </div>
-                  <div class="lbl-chart-tabs flex-row items-center gap-1">
-                    <button type="button" class="lbl-chart-tab-btn active" data-chart="loss">Loss Curves</button>
-                    <button type="button" class="lbl-chart-tab-btn" data-chart="metrics">Defect &amp; Accept F1</button>
-                    <button type="button" class="lbl-chart-tab-btn" data-chart="steps">Batch Steps</button>
+                  <p>
+                    Train an audio backbone to automatically classify quality defects:
+                    <strong>Background Noise / SFX</strong>, <strong>Overlap / &gt;1 Speaker</strong>, and <strong>Chopped Syllables</strong>.
+                    Uses multi-label BCE loss and boundary pooling so edge cuts are preserved.
+                  </p>
+                </div>
+
+                <!-- Configuration Form -->
+                <div class="lbl-trainer-grid mb-3">
+                  <div class="form-group mb-0">
+                    <label class="form-label" for="lbl-train-dataset">Target Dataset</label>
+                    <div class="flex-row items-center gap-2">
+                      <select id="lbl-train-dataset" class="select-input select-sm font-mono" style="flex: 1;">
+                        <option value="__current__">Current Labeled Session (Auto-export split)</option>
+                      </select>
+                      <button type="button" class="btn btn-ghost btn-xs" id="btn-lbl-refresh-datasets" title="Refresh dataset list">🔄</button>
+                    </div>
                   </div>
-                </div>
 
-                <!-- Interactive Chart Canvas Viewport -->
-                <div class="lbl-chart-viewport" id="lbl-chart-viewport">
-                  <canvas id="lbl-canvas-charts" class="lbl-canvas" width="800" height="240"></canvas>
-                  <div id="lbl-chart-tooltip" class="lbl-chart-tooltip" style="display: none;"></div>
-                </div>
-
-                <!-- Interactive Legend Badges -->
-                <div class="lbl-chart-legends mt-2" id="lbl-chart-legends"></div>
-              </div>
-
-              <!-- Metrics Scorecards Grid -->
-              <div class="lbl-metrics-grid mb-3">
-                <div class="lbl-metric-card">
-                  <span class="lbl-metric-title">Train Loss</span>
-                  <span class="lbl-metric-val font-mono" id="lbl-val-train-loss">—</span>
-                </div>
-                <div class="lbl-metric-card">
-                  <span class="lbl-metric-title">Val Loss</span>
-                  <span class="lbl-metric-val font-mono" id="lbl-val-val-loss">—</span>
-                </div>
-                <div class="lbl-metric-card highlight-green">
-                  <span class="lbl-metric-title">Clean Speech Acc</span>
-                  <span class="lbl-metric-val font-mono text-success" id="lbl-val-accept-acc">—</span>
-                </div>
-                <div class="lbl-metric-card">
-                  <span class="lbl-metric-title">Noise F1</span>
-                  <span class="lbl-metric-val font-mono text-warning" id="lbl-val-noise-f1">—</span>
-                </div>
-                <div class="lbl-metric-card">
-                  <span class="lbl-metric-title">&gt;1 Spk F1</span>
-                  <span class="lbl-metric-val font-mono text-accent" id="lbl-val-multi-f1">—</span>
-                </div>
-                <div class="lbl-metric-card">
-                  <span class="lbl-metric-title">Chopped F1</span>
-                  <span class="lbl-metric-val font-mono text-danger" id="lbl-val-chopped-f1">—</span>
-                </div>
-              </div>
-
-              <!-- History Table & Live Log Split -->
-              <div class="lbl-monitor-split">
-                <!-- Epoch Table -->
-                <div class="lbl-history-panel">
-                  <div class="flex-row items-center justify-between mb-1">
-                    <span class="text-xs font-bold uppercase tracking-wider text-muted">Epoch History</span>
-                    <span class="text-xs text-muted" id="lbl-best-epoch-text">Best: —</span>
+                  <div class="form-group mb-0">
+                    <label class="form-label" for="lbl-train-backbone">Pretrained Backbone</label>
+                    <select id="lbl-train-backbone" class="select-input select-sm font-mono">
+                      <option value="microsoft/wavlm-base" selected>microsoft/wavlm-base (94M, Recommended)</option>
+                      <option value="facebook/hubert-base-ls960">facebook/hubert-base-ls960 (95M, HuBERT)</option>
+                      <option value="facebook/wav2vec2-base">facebook/wav2vec2-base (95M, Wav2Vec 2.0)</option>
+                      <option value="microsoft/wavlm-large">microsoft/wavlm-large (316M, High Capacity)</option>
+                    </select>
                   </div>
-                  <div class="lbl-table-scroll">
-                    <table class="lbl-history-table">
-                      <thead>
-                        <tr>
-                          <th>Ep</th>
-                          <th>Train Loss</th>
-                          <th>Val Loss</th>
-                          <th>Accept Acc</th>
-                          <th>Noise F1</th>
-                          <th>Multi F1</th>
-                          <th>Chop F1</th>
-                        </tr>
-                      </thead>
-                      <tbody id="lbl-history-tbody">
-                        <tr><td colspan="7" class="text-center text-muted text-xs py-2">No epochs completed yet</td></tr>
-                      </tbody>
-                    </table>
+
+                  <div class="form-group mb-0">
+                    <label class="form-label" for="lbl-train-mode">Fine-Tuning Strategy</label>
+                    <select id="lbl-train-mode" class="select-input select-sm">
+                      <option value="full" selected>End-to-End Full (Differential LR — Recommended)</option>
+                      <option value="top_layers">Top 2 Encoder Layers + MLP Head</option>
+                      <option value="frozen">Frozen Backbone (MLP Head Only — Fast)</option>
+                    </select>
+                  </div>
+
+                  <div class="form-group mb-0">
+                    <label class="form-label" for="lbl-train-device">Compute Device</label>
+                    <select id="lbl-train-device" class="select-input select-sm">
+                      <option value="auto" selected>Auto (Highest Free VRAM)</option>
+                      <option value="cuda:0">cuda:0</option>
+                      <option value="cuda:1">cuda:1</option>
+                      <option value="cpu">CPU</option>
+                    </select>
                   </div>
                 </div>
 
-                <!-- Live Logs -->
-                <div class="lbl-logs-panel">
-                  <div class="flex-row items-center justify-between mb-1">
-                    <span class="text-xs font-bold uppercase tracking-wider text-muted">Live Output Logs</span>
-                    <button type="button" class="btn btn-ghost btn-xs" id="btn-lbl-clear-logs" title="Clear console logs">Clear</button>
+                <!-- Hyperparameters Row -->
+                <div class="lbl-hyperparams-grid mb-3">
+                  <div class="form-group mb-0">
+                    <label class="form-label" for="lbl-train-epochs">Epochs</label>
+                    <input type="number" id="lbl-train-epochs" class="text-input text-sm font-mono" value="15" min="1" max="100">
                   </div>
-                  <pre class="lbl-log-terminal" id="lbl-train-terminal">Waiting for training to start...</pre>
+                  <div class="form-group mb-0">
+                    <label class="form-label" for="lbl-train-batch-size">Batch Size</label>
+                    <input type="number" id="lbl-train-batch-size" class="text-input text-sm font-mono" value="8" min="1" max="64">
+                  </div>
+                  <div class="form-group mb-0">
+                    <label class="form-label" for="lbl-train-lr-backbone">Backbone LR</label>
+                    <input type="text" id="lbl-train-lr-backbone" class="text-input text-sm font-mono" value="1e-5">
+                  </div>
+                  <div class="form-group mb-0">
+                    <label class="form-label" for="lbl-train-lr-head">Head LR</label>
+                    <input type="text" id="lbl-train-lr-head" class="text-input text-sm font-mono" value="5e-4">
+                  </div>
+                </div>
+
+                <!-- Weights & Biases (W&B) Tracking Config -->
+                <div class="lbl-wandb-config-box mb-3">
+                  <div class="flex-row items-center justify-between flex-wrap gap-2">
+                    <div class="flex-row items-center gap-2">
+                      <span class="lbl-wandb-flame">🔥</span>
+                      <label class="flex-row items-center gap-2 cursor-pointer select-none font-bold text-xs" for="lbl-train-use-wandb">
+                        <input type="checkbox" id="lbl-train-use-wandb" checked>
+                        <span>Track with Weights &amp; Biases (W&amp;B)</span>
+                      </label>
+                      <span class="badge badge-sm" id="lbl-wandb-env-status">Detecting W&amp;B...</span>
+                    </div>
+                    <span class="text-xs text-secondary" id="lbl-wandb-env-hint">Reads <code>WANDB_API_KEY</code> from <code>.env</code> on server</span>
+                  </div>
+                  <div class="lbl-wandb-fields mt-2" id="lbl-wandb-fields">
+                    <div class="form-group mb-0">
+                      <label class="form-label text-xs" for="lbl-train-wandb-project">W&amp;B Project</label>
+                      <input type="text" id="lbl-train-wandb-project" class="text-input text-sm font-mono" value="tts-quality-classifier" placeholder="tts-quality-classifier">
+                    </div>
+                    <div class="form-group mb-0">
+                      <label class="form-label text-xs" for="lbl-train-wandb-run-name">Run Name</label>
+                      <input type="text" id="lbl-train-wandb-run-name" class="text-input text-sm font-mono" placeholder="Auto-generated if empty">
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex-row items-center gap-2 mb-3 flex-wrap">
+                  <button type="button" class="btn btn-primary btn-sm" id="btn-lbl-start-train">
+                    🚀 Start Fine-Tuning
+                  </button>
+                  <button type="button" class="btn btn-danger btn-sm" id="btn-lbl-stop-train" style="display: none;">
+                    ⏹ Stop / Cancel
+                  </button>
+                  <a id="lbl-wandb-run-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-warning" style="display: none; align-items: center; gap: 6px;">
+                    <span>🔥 Open in Weights &amp; Biases</span>
+                    <span>↗</span>
+                  </a>
+                  <span class="text-xs text-muted font-mono" id="lbl-train-elapsed-time"></span>
+                </div>
+
+                <!-- Training Monitor & Live Telemetry -->
+                <div id="lbl-train-telemetry" class="lbl-train-telemetry-box" style="display: none;">
+                  <!-- Progress Bar -->
+                  <div class="lbl-progress-wrap mb-3">
+                    <div class="progress-bar-container">
+                      <div class="progress-bar-fill" id="lbl-train-progress-bar" style="width: 0%;"></div>
+                    </div>
+                    <div class="flex-row items-center justify-between text-xs mt-1">
+                      <span id="lbl-train-step-text" class="text-secondary">Initializing model...</span>
+                      <span id="lbl-train-pct-text" class="font-mono font-bold">0%</span>
+                    </div>
+                  </div>
+
+                  <!-- WandB-Style Interactive Charts Dashboard -->
+                  <div class="lbl-charts-section mb-3">
+                    <div class="lbl-charts-header flex-row items-center justify-between mb-2">
+                      <div class="flex-row items-center gap-2">
+                        <span class="lbl-chart-brand font-bold text-xs">📈 W&amp;B-Style Live Telemetry</span>
+                        <span class="text-xs text-muted font-mono" id="lbl-chart-hover-info">Hover chart to inspect epoch metrics</span>
+                      </div>
+                      <div class="lbl-chart-tabs flex-row items-center gap-1">
+                        <button type="button" class="lbl-chart-tab-btn active" data-chart="loss">Loss Curves</button>
+                        <button type="button" class="lbl-chart-tab-btn" data-chart="metrics">Defect &amp; Accept F1</button>
+                        <button type="button" class="lbl-chart-tab-btn" data-chart="steps">Batch Steps</button>
+                      </div>
+                    </div>
+
+                    <!-- Interactive Chart Canvas Viewport -->
+                    <div class="lbl-chart-viewport" id="lbl-chart-viewport">
+                      <canvas id="lbl-canvas-charts" class="lbl-canvas" width="800" height="240"></canvas>
+                      <div id="lbl-chart-tooltip" class="lbl-chart-tooltip" style="display: none;"></div>
+                    </div>
+
+                    <!-- Interactive Legend Badges -->
+                    <div class="lbl-chart-legends mt-2" id="lbl-chart-legends"></div>
+                  </div>
+
+                  <!-- Metrics Scorecards Grid -->
+                  <div class="lbl-metrics-grid mb-3">
+                    <div class="lbl-metric-card">
+                      <span class="lbl-metric-title">Train Loss</span>
+                      <span class="lbl-metric-val font-mono" id="lbl-val-train-loss">—</span>
+                    </div>
+                    <div class="lbl-metric-card">
+                      <span class="lbl-metric-title">Val Loss</span>
+                      <span class="lbl-metric-val font-mono" id="lbl-val-val-loss">—</span>
+                    </div>
+                    <div class="lbl-metric-card highlight-green">
+                      <span class="lbl-metric-title">Clean Speech Acc</span>
+                      <span class="lbl-metric-val font-mono text-success" id="lbl-val-accept-acc">—</span>
+                    </div>
+                    <div class="lbl-metric-card">
+                      <span class="lbl-metric-title">Noise F1</span>
+                      <span class="lbl-metric-val font-mono text-warning" id="lbl-val-noise-f1">—</span>
+                    </div>
+                    <div class="lbl-metric-card">
+                      <span class="lbl-metric-title">&gt;1 Spk F1</span>
+                      <span class="lbl-metric-val font-mono text-purple" id="lbl-val-multi-f1">—</span>
+                    </div>
+                    <div class="lbl-metric-card">
+                      <span class="lbl-metric-title">Chopped F1</span>
+                      <span class="lbl-metric-val font-mono text-danger" id="lbl-val-chopped-f1">—</span>
+                    </div>
+                  </div>
+
+                  <!-- History Table & Live Log Split -->
+                  <div class="lbl-monitor-split">
+                    <!-- Epoch Table -->
+                    <div class="lbl-history-panel">
+                      <div class="flex-row items-center justify-between mb-1">
+                        <span class="text-xs font-bold uppercase tracking-wider text-muted">Epoch History</span>
+                        <span class="text-xs text-muted font-mono" id="lbl-best-epoch-text">Best: —</span>
+                      </div>
+                      <div class="lbl-table-scroll">
+                        <table class="lbl-history-table">
+                          <thead>
+                            <tr>
+                              <th>Ep</th>
+                              <th>Train Loss</th>
+                              <th>Val Loss</th>
+                              <th>Accept Acc</th>
+                              <th>Noise F1</th>
+                              <th>Multi F1</th>
+                              <th>Chop F1</th>
+                            </tr>
+                          </thead>
+                          <tbody id="lbl-history-tbody">
+                            <tr><td colspan="7" class="text-center text-muted text-xs py-2">No epochs completed yet</td></tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <!-- Live Logs -->
+                    <div class="lbl-logs-panel">
+                      <div class="flex-row items-center justify-between mb-1">
+                        <span class="text-xs font-bold uppercase tracking-wider text-muted">Live Output Logs</span>
+                        <button type="button" class="btn btn-ghost btn-xs" id="btn-lbl-clear-logs" title="Clear console logs">Clear</button>
+                      </div>
+                      <pre class="lbl-log-terminal" id="lbl-train-terminal">Waiting for training to start...</pre>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Sticky Filter Toolbar -->
-        <div class="lbl-toolbar-card">
-          <div class="lbl-toolbar-row">
+        <!-- Quality Stats & Dataset Overview Card (matching exp-results-card & exp-funnel-stages) -->
+        <div class="card exp-action-card-styled lbl-overview-card" id="lbl-overview-card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">Dataset Quality &amp; Annotation Overview</h3>
+              <p class="card-subtitle">Real-time breakdown of accepted speech, detected defects, and split readiness.</p>
+            </div>
+            <span class="badge badge-sm badge-success">Live Quality Gate</span>
+          </div>
+          <div class="exp-funnel-stages lbl-stats-grid">
+            <div class="exp-funnel-stage">
+              <div class="exp-funnel-name">Total Turns</div>
+              <div class="exp-funnel-val font-mono" id="lbl-stat-total">0</div>
+              <div class="exp-funnel-sub">Session Segments</div>
+            </div>
+            <div class="exp-funnel-stage">
+              <div class="exp-funnel-name">Labeled Progress</div>
+              <div class="exp-funnel-val font-mono text-accent" id="lbl-stat-labeled">0 (0%)</div>
+              <div class="exp-funnel-sub">Annotated Samples</div>
+            </div>
+            <div class="exp-funnel-stage final">
+              <div class="exp-funnel-name">Accept (Clean)</div>
+              <div class="exp-funnel-val font-mono text-success" id="lbl-stat-accept">0</div>
+              <div class="exp-funnel-sub">Pure Single-Speaker</div>
+            </div>
+            <div class="exp-funnel-stage">
+              <div class="exp-funnel-name">Background Noise</div>
+              <div class="exp-funnel-val font-mono text-warning" id="lbl-stat-noise">0</div>
+              <div class="exp-funnel-sub">Music / Hum / SFX</div>
+            </div>
+            <div class="exp-funnel-stage">
+              <div class="exp-funnel-name">&gt;1 Speaker</div>
+              <div class="exp-funnel-val font-mono text-purple" id="lbl-stat-multi">0</div>
+              <div class="exp-funnel-sub">Overlap &amp; Crosstalk</div>
+            </div>
+            <div class="exp-funnel-stage">
+              <div class="exp-funnel-name">Word Chopped</div>
+              <div class="exp-funnel-val font-mono text-danger" id="lbl-stat-chopped">0</div>
+              <div class="exp-funnel-sub">Clipped Syllables</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Speech Turns Annotation Stream Card (matching exp-table-card) -->
+        <div class="card lbl-turns-card" id="lbl-turns-card">
+          <div class="card-header">
+            <div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <h3 class="card-title" style="margin-bottom: 0;">Speech Turns Annotation Stream</h3>
+                <span class="badge badge-sm badge-success" id="lbl-turns-badge">Interactive Workstation</span>
+              </div>
+              <p class="card-subtitle" style="margin-top: 4px;">Audition each turn, assign quality tags with keys <kbd>1</kbd>–<kbd>4</kbd>, and auto-advance at high speed.</p>
+            </div>
+          </div>
+
+          <!-- Toolbar (matching exp-turns-toolbar) -->
+          <div class="exp-turns-toolbar lbl-turns-toolbar">
             <!-- Filter Pills -->
             <div class="lbl-toolbar-filters">
               <button type="button" class="lbl-filter-btn active" data-filter="all">
@@ -2364,49 +2425,49 @@
               <button type="button" class="lbl-filter-btn" data-filter="unlabeled">
                 Unlabeled <span class="badge-count">0</span>
               </button>
-              <button type="button" class="lbl-filter-btn" data-filter="accept">
+              <button type="button" class="lbl-filter-btn filter-accept" data-filter="accept">
                 Accept <span class="badge-count">0</span>
               </button>
-              <button type="button" class="lbl-filter-btn" data-filter="noise">
+              <button type="button" class="lbl-filter-btn filter-noise" data-filter="noise">
                 Noise <span class="badge-count">0</span>
               </button>
-              <button type="button" class="lbl-filter-btn" data-filter="multi_speaker">
-                &gt;1 Speaker <span class="badge-count">0</span>
+              <button type="button" class="lbl-filter-btn filter-multi" data-filter="multi_speaker">
+                &gt;1 Spk <span class="badge-count">0</span>
               </button>
-              <button type="button" class="lbl-filter-btn" data-filter="chopped">
+              <button type="button" class="lbl-filter-btn filter-chopped" data-filter="chopped">
                 Chopped <span class="badge-count">0</span>
               </button>
             </div>
 
             <!-- Secondary Controls -->
-            <div class="flex-row items-center gap-3 flex-wrap">
-              <select id="lbl-speaker-filter" class="select-input select-sm" style="max-width: 140px;">
+            <div class="lbl-toolbar-right">
+              <select id="lbl-speaker-filter" class="select-input select-input-sm" style="width: 130px;">
                 <option value="all">All Speakers</option>
               </select>
-              <input type="text" id="lbl-search-input" class="text-input text-sm" placeholder="Search turn # or speaker..." style="max-width: 180px;">
-              <label class="flex-row items-center gap-1 text-xs text-secondary cursor-pointer select-none">
+              <input type="text" id="lbl-search-input" class="text-input text-input-sm font-mono" placeholder="Search turn # or speaker..." style="width: 170px;">
+              <label class="toggle-switch-wrap text-xs cursor-pointer select-none" title="Auto-play turn audio when focused">
                 <input type="checkbox" id="lbl-chk-autoplay" checked>
-                <span>Auto-play next</span>
+                <span>Auto-play</span>
               </label>
-              <label class="flex-row items-center gap-1 text-xs text-secondary cursor-pointer select-none">
+              <label class="toggle-switch-wrap text-xs cursor-pointer select-none" title="Auto-advance to next turn after tagging">
                 <input type="checkbox" id="lbl-chk-autoadvance" checked>
                 <span>Auto-advance</span>
               </label>
             </div>
           </div>
-        </div>
 
-        <!-- Empty State (When no result selected) -->
-        <div id="lbl-empty-state" class="card empty-placeholder lbl-empty-state">
-          <span class="lbl-empty-icon">🏷️</span>
-          <h3 class="empty-title">Select a Diarization Result to begin labeling</h3>
-          <p class="empty-desc">
-            Choose a saved DiarizationResult from the dropdown above to load its turns, preview audio clips, and rapidly assign quality tags with keys <code>1</code>, <code>2</code>, <code>3</code>, <code>4</code>.
-          </p>
-        </div>
+          <!-- Empty State (When no result selected) -->
+          <div id="lbl-empty-state" class="empty-placeholder lbl-empty-state">
+            <span class="lbl-empty-icon">🏷️</span>
+            <h3 class="empty-title">Select a Diarization Result to begin labeling</h3>
+            <p class="empty-desc">
+              Choose a saved DiarizationResult from Stage 1 above to load candidate turns, audition audio clips, and rapidly assign quality tags with keys <code>1</code>, <code>2</code>, <code>3</code>, <code>4</code>.
+            </p>
+          </div>
 
-        <!-- Turns List Container -->
-        <div id="lbl-turns-list" class="lbl-turns-container"></div>
+          <!-- Turns List Container -->
+          <div id="lbl-turns-list" class="lbl-turns-container"></div>
+        </div>
 
         <!-- Shortcuts Cheat Sheet Modal -->
         <div id="lbl-shortcuts-modal" class="lbl-modal-backdrop">
@@ -2422,23 +2483,27 @@
               <tbody>
                 <tr>
                   <td><kbd>1</kbd></td>
-                  <td><strong>Accept</strong> — Mark turn as clean single-speaker speech suitable for TTS.</td>
+                  <td><strong>Accept</strong> — Mark turn as clean single-speaker speech suitable for TTS (auto-advances if enabled).</td>
                 </tr>
                 <tr>
                   <td><kbd>2</kbd></td>
-                  <td><strong>Contain background noise</strong> — Background music, hum, static, environmental noise.</td>
+                  <td><strong>Background Noise</strong> — Toggle defect tag: music, hum, static, or ambient noise.</td>
                 </tr>
                 <tr>
                   <td><kbd>3</kbd></td>
-                  <td><strong>Contain more than 1 speaker</strong> — Overlap, crosstalk, secondary speaker bleed.</td>
+                  <td><strong>&gt;1 Speaker</strong> — Toggle defect tag: overlap, crosstalk, secondary vocal bleed.</td>
                 </tr>
                 <tr>
                   <td><kbd>4</kbd></td>
-                  <td><strong>Word being chopped off</strong> — Abrupt start or cut-off ending; truncated syllables.</td>
+                  <td><strong>Word Chopped Off</strong> — Toggle defect tag: cut-off ending or start, truncated syllables.</td>
                 </tr>
                 <tr>
-                  <td><kbd>Shift</kbd> + <kbd>2-4</kbd></td>
-                  <td><strong>Multi-label toggle</strong> — Check multiple defect tags simultaneously.</td>
+                  <td><kbd>2</kbd>, <kbd>3</kbd>, <kbd>4</kbd></td>
+                  <td><strong>Multi-Label</strong> — Press any combination of defect keys or click buttons to assign multiple defects simultaneously!</td>
+                </tr>
+                <tr>
+                  <td><kbd>Enter</kbd></td>
+                  <td><strong>Confirm &amp; Next</strong> — Advance to next sample turn after tagging.</td>
                 </tr>
                 <tr>
                   <td><kbd>0</kbd> or <kbd>Backspace</kbd></td>
@@ -2483,7 +2548,7 @@
 
             <div class="form-group mb-3">
               <label class="form-label" for="lbl-export-name">Dataset Name</label>
-              <input type="text" id="lbl-export-name" class="text-input" placeholder="tts_quality_dataset_v1">
+              <input type="text" id="lbl-export-name" class="text-input font-mono" placeholder="tts_quality_dataset_v1">
             </div>
 
             <div class="form-group mb-3">
@@ -2501,15 +2566,15 @@
             <div class="form-row mb-3" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
               <div class="form-group mb-0">
                 <label class="form-label">Train %</label>
-                <input type="number" id="lbl-export-train-pct" class="text-input" value="80" min="10" max="95">
+                <input type="number" id="lbl-export-train-pct" class="text-input font-mono" value="80" min="10" max="95">
               </div>
               <div class="form-group mb-0">
                 <label class="form-label">Val %</label>
-                <input type="number" id="lbl-export-val-pct" class="text-input" value="10" min="0" max="50">
+                <input type="number" id="lbl-export-val-pct" class="text-input font-mono" value="10" min="0" max="50">
               </div>
               <div class="form-group mb-0">
                 <label class="form-label">Test %</label>
-                <input type="number" id="lbl-export-test-pct" class="text-input" value="10" min="0" max="50">
+                <input type="number" id="lbl-export-test-pct" class="text-input font-mono" value="10" min="0" max="50">
               </div>
             </div>
 
@@ -3062,7 +3127,9 @@
                 </div>
               </div>
 
-              <!-- Stage 5a: Direct Audio Quality Verifier -->
+              <!-- Stage 5a: Direct Audio Quality Verifier. Keep its workbench
+                   visible while disabled so configuration and readiness checks
+                   remain available before opting into per-candidate inference. -->
               <div class="exp-stage-box purity-overlap-panel exp-purity-compute-panel">
                 <div class="purity-overlap-header">
                   <div>
@@ -3081,7 +3148,7 @@
                   </label>
                 </div>
 
-                <div id="exp-gemma-fields" style="display: none; margin-top: 14px;">
+                <div id="exp-gemma-fields" style="margin-top: 14px;">
                   <!-- Model Selection with Integrated Readiness Probe & Badge -->
                   <div class="form-group mb-2">
                     <div class="label-with-tool">

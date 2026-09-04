@@ -91,6 +91,14 @@ Designed for single-track interactive inspection, A/B audio comparison, manual c
 - `POST /api/diarization/evaluate`: Runs Hungarian-matched DER/JER evaluation comparing hypotheses against reference.
 
 #### Sample Quality Labeler & Classifier Workbench
+The **Sample Labeler** tab provides a clean multi-stage curation environment modeled after the Experiment tab's structured workflow:
+- **Quality Criteria Legend:** Direct guidance on hand-labeling categories (`[1] Accept`, `[2] Noise`, `[3] >1 Speaker`, `[4] Chopped / lẹm chữ`).
+- **Stage 1 (Session & Ingestion):** Diarization run loader with audio stream readiness preview chip.
+- **Stage 2 (AI Classifier Trainer & Monitor):** Collapsible stage box featuring boundary-aware tri-scale pooling, multi-label BCE fine-tuning, and real-time W&B telemetry with interactive canvas curves.
+- **Dataset Quality Overview:** Real-time attrition-style metric scorecards (`Total Turns`, `Labeled Progress`, `Accept`, `Noise`, `>1 Speaker`, `Word Chopped`).
+- **Speech Turns Annotation Stream:** High-density, keyboard-driven workstation (`1`–`4`, `Space`, `J`/`K`) with streamlined turn cards, audio scrubbers, and speaker chips.
+
+API endpoints:
 - `GET /api/labeler/results`: Lists durable DiarizationResults with labeling progress counts.
 - `GET /api/labeler/session/{result_id}`: Loads complete DiarizationResult data with current draft labels.
 - `POST /api/labeler/session/{result_id}/labels`: Autosaves/updates in-progress labeling draft to `.data/diarization/labels/<result_id>.json`.
@@ -109,7 +117,10 @@ Designed for single-track interactive inspection, A/B audio comparison, manual c
 - Section 5a exposes one **Direct-audio model** selector containing Local Gemma
   and every supported Google Gemini audio model. Choosing Gemini automatically
   routes through the server-side API key; choosing Local Gemma reveals the
-  OpenAI-compatible endpoint and checkpoint controls.
+  OpenAI-compatible endpoint and checkpoint controls. Its configuration,
+  readiness probe, prompt editor, and live-selection verifier stay visible while
+  the gate is disabled; the **Enable** toggle controls only whether the full
+  experiment runs per-candidate verification.
 - `GET /api/experiment/status`: Probes available diarization backends and compute accelerators.
 - `POST /api/experiment/run`: Enqueues an asynchronous `experiment_zero_contamination` job. Streams stage-by-stage SSE progress.
 - `POST /api/experiment/direct-audio/probe`: Reports local Gemma or server-side Gemini API readiness.

@@ -34,7 +34,7 @@
     trainPollTimer: null,
     trainStartTime: null,
     trainElapsedTimer: null,
-    trainerExpanded: true,
+    trainerExpanded: false,
     chartRenderer: null,
   };
 
@@ -230,10 +230,15 @@
       // Update source info bar
       const src = data.source_audio || {};
       dom.sourceInfoBar.innerHTML = `
-        <div class="flex-row items-center gap-3 flex-wrap">
-          <span class="badge badge-sm font-mono">${data.audio_id}</span>
-          <span class="text-xs text-secondary">${data.turn_count} turns · ${formatDuration(src.duration_s || 0)} · ${src.sample_rate || 44100} Hz</span>
-          ${data.source_available ? '<span class="badge badge-sm badge-success">Audio Ready</span>' : '<span class="badge badge-sm badge-destructive">Audio Missing on Disk</span>'}
+        <div class="lbl-source-preview-pill">
+          <div class="lbl-source-preview-left">
+            <span class="lbl-source-icon">🎵</span>
+            <span class="badge badge-sm font-mono badge-accent">${data.audio_id}</span>
+            <span class="text-xs text-secondary font-mono">${data.turn_count} turns · ${formatDuration(src.duration_s || 0)} · ${src.sample_rate || 44100} Hz</span>
+          </div>
+          <div class="lbl-source-preview-right">
+            ${data.source_available ? '<span class="badge badge-sm badge-success">✓ Source Audio Stream Ready</span>' : '<span class="badge badge-sm badge-danger">⚠️ Audio Missing on Disk</span>'}
+          </div>
         </div>
       `;
 
@@ -363,7 +368,9 @@
     const primary = entry ? (typeof entry === 'string' ? entry : entry.label) : null;
     const tags = entry && entry.tags ? entry.tags : (primary ? [primary] : []);
 
-    if (primary) {
+    if (tags.length > 1) {
+      card.classList.add('labeled-multilabel');
+    } else if (primary) {
       card.classList.add(`labeled-${primary}`);
     }
     if (turn.index === state.activeTurnIndex) {
@@ -373,46 +380,50 @@
     const speakerColor = getSpeakerColor(turn.speaker_id);
 
     card.innerHTML = `
-      <div class="lbl-turn-header">
-        <div class="lbl-turn-meta">
-          <span class="lbl-turn-idx">#${turn.index + 1}</span>
-          <span class="badge badge-sm font-mono" style="background: ${speakerColor}; color: #fff;">${turn.speaker_id}</span>
-          <span class="lbl-turn-time">${formatTime(turn.start_s)} → ${formatTime(turn.end_s)}</span>
-          <span class="lbl-turn-dur">${turn.duration_s.toFixed(2)}s</span>
-          ${turn.overlaps_other_speaker ? '<span class="badge badge-sm badge-destructive" title="Diarizer marked overlap">Overlap</span>' : ''}
+      <div class="lbl-turn-top-row">
+        <div class="lbl-turn-identity">
+          <span class="lbl-turn-idx font-mono">#${turn.index + 1}</span>
+          <button type="button" class="lbl-play-btn" data-turn="${turn.index}" title="Play / Pause (Space)">
+            <svg class="icon-play" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          </button>
+          <span class="exp-speaker-chip font-mono" style="background: color-mix(in srgb, ${speakerColor} 14%, var(--bg-surface)); color: ${speakerColor}; border: 1px solid color-mix(in srgb, ${speakerColor} 30%, transparent);">${turn.speaker_id}</span>
+          <span class="lbl-turn-time font-mono">${formatTime(turn.start_s)} → ${formatTime(turn.end_s)}</span>
+          <span class="badge badge-sm badge-ghost font-mono">${turn.duration_s.toFixed(2)}s</span>
+          ${turn.overlaps_other_speaker ? '<span class="badge badge-sm badge-danger">Overlap</span>' : ''}
         </div>
-        <div class="lbl-card-actions">
-          <button type="button" class="lbl-clear-btn" title="Clear label (0)" data-turn="${turn.index}">✕ Clear</button>
+        <div class="lbl-turn-quick-status">
+          <button type="button" class="lbl-clear-btn" title="Clear label (0 / Backspace)" data-turn="${turn.index}">✕ Clear</button>
         </div>
       </div>
 
-      <div class="lbl-turn-audio">
-        <button type="button" class="lbl-play-btn" data-turn="${turn.index}" title="Play/Pause (Space)">
-          <svg class="icon-play" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-        </button>
-        <div class="lbl-progress-track" data-turn="${turn.index}">
-          <div class="lbl-progress-fill" id="lbl-progress-${turn.index}"></div>
+      <div class="lbl-turn-action-row">
+        <div class="lbl-turn-audio-track">
+          <div class="lbl-progress-track" data-turn="${turn.index}">
+            <div class="lbl-progress-fill" id="lbl-progress-${turn.index}"></div>
+          </div>
+          <span class="lbl-time-display font-mono" id="lbl-time-${turn.index}">0:00 / ${formatTime(turn.duration_s)}</span>
         </div>
-        <span class="lbl-time-display" id="lbl-time-${turn.index}">0:00 / ${formatTime(turn.duration_s)}</span>
-      </div>
 
-      <div class="lbl-actions-row">
         <div class="lbl-buttons-group">
-          <button type="button" class="lbl-tag-btn accept ${tags.includes('accept') ? 'selected' : ''}" data-turn="${turn.index}" data-label="accept">
+          <button type="button" class="lbl-tag-btn accept ${tags.includes('accept') ? 'selected' : ''}" data-turn="${turn.index}" data-label="accept" title="Accept: clean single-speaker [Key: 1]">
+            <span class="tag-icon">✓</span>
             <span>Accept</span>
-            <span class="key-hint">1</span>
+            <kbd class="key-hint">1</kbd>
           </button>
-          <button type="button" class="lbl-tag-btn noise ${tags.includes('noise') ? 'selected' : ''}" data-turn="${turn.index}" data-label="noise">
-            <span>Background Noise</span>
-            <span class="key-hint">2</span>
+          <button type="button" class="lbl-tag-btn noise ${tags.includes('noise') ? 'selected' : ''}" data-turn="${turn.index}" data-label="noise" title="Contain background noise [Key: 2]">
+            <span class="tag-icon">⚡</span>
+            <span>Noise</span>
+            <kbd class="key-hint">2</kbd>
           </button>
-          <button type="button" class="lbl-tag-btn multi_speaker ${tags.includes('multi_speaker') ? 'selected' : ''}" data-turn="${turn.index}" data-label="multi_speaker">
-            <span>&gt;1 Speaker</span>
-            <span class="key-hint">3</span>
+          <button type="button" class="lbl-tag-btn multi_speaker ${tags.includes('multi_speaker') ? 'selected' : ''}" data-turn="${turn.index}" data-label="multi_speaker" title="Contain >1 speaker [Key: 3]">
+            <span class="tag-icon">👥</span>
+            <span>&gt;1 Spk</span>
+            <kbd class="key-hint">3</kbd>
           </button>
-          <button type="button" class="lbl-tag-btn chopped ${tags.includes('chopped') ? 'selected' : ''}" data-turn="${turn.index}" data-label="chopped">
-            <span>Word Chopped</span>
-            <span class="key-hint">4</span>
+          <button type="button" class="lbl-tag-btn chopped ${tags.includes('chopped') ? 'selected' : ''}" data-turn="${turn.index}" data-label="chopped" title="Word chopped off [Key: 4]">
+            <span class="tag-icon">✂️</span>
+            <span>Chopped</span>
+            <kbd class="key-hint">4</kbd>
           </button>
         </div>
       </div>
@@ -487,51 +498,61 @@
     }
   }
 
-  function assignLabel(turnIndex, labelKey, toggle = false) {
+  function assignLabel(turnIndex, labelKey, forceAdvance = false) {
     if (!state.resultData) return;
     const key = String(turnIndex);
     const existing = state.labels[key] || {};
     let currentTags = existing.tags ? [...existing.tags] : (existing.label ? [existing.label] : []);
+    let shouldAdvance = false;
 
     if (labelKey === null) {
-      // Clear
+      // Clear all labels
       delete state.labels[key];
     } else if (labelKey === 'accept') {
-      // Accept is mutually exclusive with defects
-      state.labels[key] = {
-        label: 'accept',
-        tags: ['accept'],
-        notes: existing.notes || '',
-        updated_at: Date.now(),
-      };
-    } else {
-      // Defect label (noise, multi_speaker, chopped)
-      if (toggle) {
-        // Toggle tag
-        currentTags = currentTags.filter(t => t !== 'accept');
-        if (currentTags.includes(labelKey)) {
-          currentTags = currentTags.filter(t => t !== labelKey);
-        } else {
-          currentTags.push(labelKey);
-        }
-        if (currentTags.length === 0) {
-          delete state.labels[key];
-        } else {
-          state.labels[key] = {
-            label: currentTags[0],
-            tags: currentTags,
-            notes: existing.notes || '',
-            updated_at: Date.now(),
-          };
-        }
+      // Accept is a clean verdict: toggles on/off
+      if (currentTags.length === 1 && currentTags[0] === 'accept') {
+        // Toggle off
+        delete state.labels[key];
       } else {
-        // Direct select single defect
+        // Accept clears all defects and marks clean
         state.labels[key] = {
-          label: labelKey,
-          tags: [labelKey],
+          label: 'accept',
+          tags: ['accept'],
           notes: existing.notes || '',
           updated_at: Date.now(),
         };
+        // Auto-advance on Accept if enabled
+        if (dom.chkAutoAdvance && dom.chkAutoAdvance.checked) {
+          shouldAdvance = true;
+        }
+      }
+    } else {
+      // Defect label: 'noise', 'multi_speaker', 'chopped'
+      // Multi-label by default! Toggles tag and combines with other defects
+      currentTags = currentTags.filter(t => t !== 'accept');
+
+      if (currentTags.includes(labelKey)) {
+        // Toggle off this specific defect
+        currentTags = currentTags.filter(t => t !== labelKey);
+      } else {
+        // Add this defect
+        currentTags.push(labelKey);
+      }
+
+      if (currentTags.length === 0) {
+        delete state.labels[key];
+      } else {
+        state.labels[key] = {
+          label: currentTags[0],
+          tags: currentTags,
+          notes: existing.notes || '',
+          updated_at: Date.now(),
+        };
+      }
+
+      // If user explicitly requested advance (e.g. via Shift-click)
+      if (forceAdvance && dom.chkAutoAdvance && dom.chkAutoAdvance.checked) {
+        shouldAdvance = true;
       }
     }
 
@@ -542,12 +563,12 @@
     updateCardUi(turnIndex);
     updateStats();
 
-    // Auto-advance and auto-play
-    if (labelKey !== null && dom.chkAutoAdvance.checked) {
+    // Auto-advance if applicable
+    if (shouldAdvance) {
       const nextIdx = getNextVisibleTurnIndex(turnIndex);
       if (nextIdx !== null) {
         setActiveTurn(nextIdx, true);
-        if (dom.chkAutoPlay.checked) {
+        if (dom.chkAutoPlay && dom.chkAutoPlay.checked) {
           playTurn(nextIdx);
         }
       }
@@ -559,7 +580,7 @@
     if (!card) return;
 
     // Reset labeled-* classes
-    card.classList.remove('labeled-accept', 'labeled-noise', 'labeled-multi_speaker', 'labeled-chopped');
+    card.classList.remove('labeled-accept', 'labeled-noise', 'labeled-multi_speaker', 'labeled-chopped', 'labeled-multilabel');
     card.querySelectorAll('.lbl-tag-btn').forEach(b => b.classList.remove('selected'));
 
     const entry = state.labels[String(turnIndex)];
@@ -568,9 +589,12 @@
     const primary = typeof entry === 'string' ? entry : entry.label;
     const tags = entry.tags || (primary ? [primary] : []);
 
-    if (primary) {
+    if (tags.length > 1) {
+      card.classList.add('labeled-multilabel');
+    } else if (primary) {
       card.classList.add(`labeled-${primary}`);
     }
+
     tags.forEach(tag => {
       const btn = card.querySelector(`.lbl-tag-btn.${tag}`);
       if (btn) btn.classList.add('selected');
@@ -741,6 +765,14 @@
       case ' ':
         e.preventDefault();
         togglePlayTurn(cur);
+        break;
+      case 'Enter':
+        e.preventDefault();
+        const nextOnEnter = getNextVisibleTurnIndex(cur);
+        if (nextOnEnter !== null) {
+          setActiveTurn(nextOnEnter, true);
+          if (dom.chkAutoPlay && dom.chkAutoPlay.checked) playTurn(nextOnEnter);
+        }
         break;
       case 'j':
       case 'ArrowDown':
