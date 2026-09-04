@@ -98,6 +98,12 @@ Return only the requested structured result and never include a transcript.`;
         energyWindow: document.getElementById('exp-energy-window'),
         energyWindowNum: document.getElementById('exp-energy-window-num'),
         energyWindowValue: document.getElementById('exp-energy-window-val'),
+        energyFrame: document.getElementById('exp-energy-frame'),
+        energyFrameNum: document.getElementById('exp-energy-frame-num'),
+        energyFrameValue: document.getElementById('exp-energy-frame-val'),
+        energyHop: document.getElementById('exp-energy-hop'),
+        energyHopNum: document.getElementById('exp-energy-hop-num'),
+        energyHopValue: document.getElementById('exp-energy-hop-val'),
         energyFloor: document.getElementById('exp-energy-floor'),
         energyFloorNum: document.getElementById('exp-energy-floor-num'),
         energyFloorValue: document.getElementById('exp-energy-floor-val'),
@@ -245,6 +251,20 @@ Return only the requested structured result and never include a transcript.`;
         unit: 's',
         isMs: true,
         decimals: 3,
+      });
+      this.bindDualControl({
+        slider: this.el.energyFrame,
+        numInput: this.el.energyFrameNum,
+        badge: this.el.energyFrameValue,
+        unit: ' ms',
+        decimals: 1,
+      });
+      this.bindDualControl({
+        slider: this.el.energyHop,
+        numInput: this.el.energyHopNum,
+        badge: this.el.energyHopValue,
+        unit: ' ms',
+        decimals: 1,
       });
       this.bindDualControl({
         slider: this.el.energyFloor,
@@ -624,8 +644,10 @@ Return only the requested structured result and never include a transcript.`;
       if (this.el.alignerLang) this.el.alignerLang.value = 'vi';
       if (this.el.alignerDevice) this.el.alignerDevice.value = 'same';
       // Stage 3c: Option C - Micro-Acoustic Energy & RMS Valley Snapping
-      if (this.el.enableEnergySnapping) { this.el.enableEnergySnapping.checked = false; this.el.energySnappingFields.style.display = 'none'; }
-      this.setParamValue(this.el.energyWindow, this.el.energyWindowNum, 0.15);
+      if (this.el.enableEnergySnapping) { this.el.enableEnergySnapping.checked = true; this.el.energySnappingFields.style.display = 'block'; }
+      this.setParamValue(this.el.energyWindow, this.el.energyWindowNum, 0.010);
+      this.setParamValue(this.el.energyFrame, this.el.energyFrameNum, 2.0);
+      this.setParamValue(this.el.energyHop, this.el.energyHopNum, 0.5);
       this.setParamValue(this.el.energyFloor, this.el.energyFloorNum, -30);
       // Stage 4: Dense WeSpeaker Homogeneity
       if (this.el.enableHomo) { this.el.enableHomo.checked = true; this.el.homoFields.style.display = 'block'; }
@@ -710,7 +732,13 @@ Return only the requested structured result and never include a transcript.`;
 
       let start_s = 0.0;
       let end_s = 0.0;
-      if (window.state && window.state.selection && window.state.selection.active) {
+      if (
+        window.state &&
+        window.state.selection &&
+        window.state.selection.active &&
+        window.state.activeAudio &&
+        window.state.activeAudio.id === audioId
+      ) {
         start_s = window.state.selection.start;
         end_s = window.state.selection.end;
       }
@@ -728,6 +756,7 @@ Return only the requested structured result and never include a transcript.`;
             model: this.selectedDirectAudioModel(),
             prompt: this.el.gemmaPrompt?.value,
             max_output_tokens: parseInt(this.el.gemmaMaxTokens?.value || '256', 10),
+            timeout: parseFloat(this.el.gemmaTimeout?.value || '120'),
           }),
         });
         const data = await res.json();
@@ -754,6 +783,7 @@ Return only the requested structured result and never include a transcript.`;
 
     buildPayload() {
       const audioId = this.el.audioSelect?.value || (window.state && window.state.activeAudio && window.state.activeAudio.id);
+      const collarGateEnabled = Boolean(this.el.enableCollar?.checked);
       return {
         audio_id: audioId,
         device: this.el.deviceSelect?.value || 'auto',
@@ -766,25 +796,27 @@ Return only the requested structured result and never include a transcript.`;
         secondary_backend: this.el.secondaryBackend?.value || 'diarizen',
         secondary_device: this.el.secondaryDevice?.value || 'same',
         // Stage 3 Base
-        enable_collar_erosion: Boolean(this.el.enableCollar?.checked),
+        enable_collar_erosion: collarGateEnabled,
         boundary_collar_s: parseFloat(this.el.boundaryCollarNum?.value || this.el.boundaryCollar?.value || '0.20'),
         min_turn_duration_s: parseFloat(this.el.minDurationNum?.value || this.el.minDuration?.value || '0.60'),
         transition_exclusion_s: parseFloat(this.el.transitionExclusionNum?.value || this.el.transitionExclusion?.value || '0.50'),
         // Stage 3a: Option A - Context-Aware Handoff Guard
-        enable_context_collar: Boolean(this.el.enableContextCollar?.checked),
+        enable_context_collar: collarGateEnabled && Boolean(this.el.enableContextCollar?.checked),
         handoff_risk_distance_s: parseFloat(this.el.handoffRiskNum?.value || this.el.handoffRisk?.value || '0.85'),
         silence_tail_buffer_s: parseFloat(this.el.silenceTailNum?.value || this.el.silenceTail?.value || '0.25'),
         // Stage 3b: Option B - Syllable & Word Forced Alignment Lock
-        enable_syllable_alignment: Boolean(this.el.enableSyllableAlign?.checked),
+        enable_syllable_alignment: collarGateEnabled && Boolean(this.el.enableSyllableAlign?.checked),
         aligner_engine: this.el.alignerEngine?.value || 'whisper_timestamped',
         aligner_model: this.el.alignerModel?.value || 'vinai/PhoWhisper-large',
         aligner_language: this.el.alignerLang?.value || 'vi',
         aligner_device: this.el.alignerDevice?.value || 'same',
         aligner_endpoint: this.el.alignerEndpoint?.value || '',
         // Stage 3c: Option C - Micro-Acoustic Energy & RMS Valley Snapping
-        enable_energy_snapping: Boolean(this.el.enableEnergySnapping?.checked),
-        energy_search_window_s: parseFloat(this.el.energyWindowNum?.value || this.el.energyWindow?.value || '0.15'),
+        enable_energy_snapping: collarGateEnabled && Boolean(this.el.enableEnergySnapping?.checked),
+        energy_search_window_s: parseFloat(this.el.energyWindowNum?.value || this.el.energyWindow?.value || '0.010'),
         energy_valley_floor_db: parseFloat(this.el.energyFloorNum?.value || this.el.energyFloor?.value || '-30'),
+        energy_frame_len_ms: parseFloat(this.el.energyFrameNum?.value || this.el.energyFrame?.value || '2.0'),
+        energy_hop_len_ms: parseFloat(this.el.energyHopNum?.value || this.el.energyHop?.value || '0.5'),
         // Stage 4: Dense WeSpeaker Homogeneity
         enable_homogeneity: Boolean(this.el.enableHomo?.checked),
         homogeneity_device: this.el.homoDevice?.value || 'same',
@@ -898,7 +930,7 @@ Return only the requested structured result and never include a transcript.`;
     finishExperiment(result) {
       this.resetActionButtons();
       this.lastResult = result;
-      this.lastAudioId = this.el.audioSelect?.value || result.session_audio_id || result.audio_id || this.lastAudioId;
+      this.lastAudioId = result.session_audio_id || result.audio_id || this.el.audioSelect?.value || this.lastAudioId;
       if (window.showToast) window.showToast('Zero-contamination pipeline completed successfully!', 'success');
 
       if (this.el.resultsCard) this.el.resultsCard.style.display = 'block';
@@ -961,9 +993,9 @@ Return only the requested structured result and never include a transcript.`;
       }
 
       stages.push({
-        name: 'Guaranteed Pure',
+        name: 'Clean Candidates',
         val: `${(funnel.final_pure_speech_duration_s || 0).toFixed(1)}s`,
-        sub: `100% Single-Speaker (${funnel.final_pure_turns_count || 0} turns)`,
+        sub: `Passed Active Gates (${funnel.final_pure_turns_count || 0} turns)`,
         final: true,
       });
 
@@ -1149,7 +1181,7 @@ Return only the requested structured result and never include a transcript.`;
             <td><strong>${dur}s</strong></td>
             <td>${deltaBadge}</td>
             <td><span class="badge badge-sm badge-ghost">${this.escapeHtml(policyLabel)}</span></td>
-            <td><span class="badge badge-sm badge-success">Pure Single Speaker</span></td>
+            <td><span class="badge badge-sm badge-success">Clean Turn</span></td>
           </tr>
         `;
         })

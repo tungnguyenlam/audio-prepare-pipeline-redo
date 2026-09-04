@@ -10,6 +10,7 @@ import asyncio
 import logging
 from pathlib import Path
 import tempfile
+import threading
 import time
 from typing import Any
 
@@ -29,6 +30,8 @@ from src.diarization.OverlapVerifier import (
 from src.diarization.zero_contamination import (
     DEFAULT_COLLAR_EROSION_S,
     DEFAULT_COMPETITOR_ONSET,
+    DEFAULT_ENERGY_FRAME_LEN_MS,
+    DEFAULT_ENERGY_HOP_LEN_MS,
     DEFAULT_ENERGY_SEARCH_WINDOW_S,
     DEFAULT_ENERGY_VALLEY_FLOOR_DB,
     DEFAULT_HANDOFF_RISK_DISTANCE_S,
@@ -116,9 +119,11 @@ class ExperimentRouteHandler:
             "aligner_language": "vi",
             "aligner_device": "same",
             "aligner_endpoint": "",
-            "enable_energy_snapping": False,
+            "enable_energy_snapping": True,
             "energy_search_window_s": DEFAULT_ENERGY_SEARCH_WINDOW_S,
             "energy_valley_floor_db": DEFAULT_ENERGY_VALLEY_FLOOR_DB,
+            "energy_frame_len_ms": DEFAULT_ENERGY_FRAME_LEN_MS,
+            "energy_hop_len_ms": DEFAULT_ENERGY_HOP_LEN_MS,
             # Homogeneity
             "enable_homogeneity": True,
             "homogeneity_device": "same",
@@ -194,6 +199,7 @@ class ExperimentRouteHandler:
             "model": model,
             "prompt": prompt or OVERLAP_PROMPT,
             "max_output_tokens": int(body.get("max_output_tokens", 256)),
+            "timeout_s": float(body.get("timeout") or body.get("timeout_s") or 120.0),
         }
         if backend == "gemma4":
             config["endpoint"] = body.get("endpoint") or DEFAULT_UNSLOTH_ENDPOINT
@@ -274,7 +280,7 @@ class ExperimentRouteHandler:
         aligner_device = (
             self._resolve_device(align_dev_req)
             if align_dev_req and align_dev_req != "same"
-            else "cpu"
+            else primary_device
         )
 
         homo_dev_req = body.get("homogeneity_device")
@@ -311,9 +317,11 @@ class ExperimentRouteHandler:
             enable_context_collar=bool(body.get("enable_context_collar", True)),
             handoff_risk_distance_s=float(body.get("handoff_risk_distance_s", DEFAULT_HANDOFF_RISK_DISTANCE_S)),
             silence_tail_buffer_s=float(body.get("silence_tail_buffer_s", DEFAULT_SILENCE_TAIL_BUFFER_S)),
-            enable_energy_snapping=bool(body.get("enable_energy_snapping", False)),
+            enable_energy_snapping=bool(body.get("enable_energy_snapping", True)),
             energy_search_window_s=float(body.get("energy_search_window_s", DEFAULT_ENERGY_SEARCH_WINDOW_S)),
             energy_valley_floor_db=float(body.get("energy_valley_floor_db", DEFAULT_ENERGY_VALLEY_FLOOR_DB)),
+            energy_frame_len_ms=float(body.get("energy_frame_len_ms", DEFAULT_ENERGY_FRAME_LEN_MS)),
+            energy_hop_len_ms=float(body.get("energy_hop_len_ms", DEFAULT_ENERGY_HOP_LEN_MS)),
             enable_syllable_alignment=bool(body.get("enable_syllable_alignment", False)),
             aligner_engine=body.get("aligner_engine", "whisper_timestamped"),
             aligner_model=body.get("aligner_model", "vinai/PhoWhisper-small"),
@@ -379,16 +387,11 @@ class ExperimentRouteHandler:
             },
         )
 
-        async def run_pipeline_task():
-            self.task_manager.update_task(
-                task_id,
-                status="running",
-                progress=0.02,
-                progress_known=True,
-                message=f"Starting Zero-Contamination Experiment on {device}...",
-            )
-            loop = asyncio.get_running_loop()
+        loop = asyncio.get_running_loop()
+        cancelled_event = threading.Event()
+        self.task_manager.set_cancel_callback(task_id, cancelled_event.set)
 
+        async def run_pipeline_task() -> None:
             def progress_callback(progress: float, message: str) -> None:
                 self.task_manager.update_task(
                     task_id,
@@ -399,8 +402,13 @@ class ExperimentRouteHandler:
 
             def execute() -> dict[str, Any]:
                 exp_res = run_zero_contamination_pipeline(
-                    audio, config, progress_callback=progress_callback
+                    audio,
+                    config,
+                    progress_callback=progress_callback,
+                    cancel_check=cancelled_event.is_set,
                 )
+                if cancelled_event.is_set():
+                    raise InterruptedError("Experiment cancelled by user.")
                 # Save DiarizationResult for durability
                 saved_path = exp_res.diarization.save(DIARIZATION_RESULTS_DIR)
                 res_dict = exp_res.to_dict()
@@ -411,6 +419,13 @@ class ExperimentRouteHandler:
 
             try:
                 result_payload = await loop.run_in_executor(None, execute)
+                if cancelled_event.is_set():
+                    self.task_manager.update_task(
+                        task_id,
+                        status="cancelled",
+                        message="Experiment cancelled.",
+                    )
+                    return
                 self.task_manager.update_task(
                     task_id,
                     status="completed",
@@ -418,6 +433,12 @@ class ExperimentRouteHandler:
                     progress_known=True,
                     message="Zero-Contamination Experiment Complete!",
                     result=result_payload,
+                )
+            except (asyncio.CancelledError, InterruptedError):
+                self.task_manager.update_task(
+                    task_id,
+                    status="cancelled",
+                    message="Experiment cancelled by user.",
                 )
             except Exception as exc:
                 logger.exception("Experiment execution failed")
@@ -427,6 +448,8 @@ class ExperimentRouteHandler:
                     error=str(exc),
                     message=f"Experiment failed: {exc}",
                 )
+            finally:
+                self.task_manager.set_cancel_callback(task_id, None)
 
         self.task_manager.enqueue(task_id, run_pipeline_task)
         return web.json_response(

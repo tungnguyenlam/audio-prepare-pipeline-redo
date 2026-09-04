@@ -300,6 +300,9 @@ Defined in [`src/diarization/zero_contamination.py`](../src/diarization/zero_con
   "config": { ... },
   "foundation_audits": [
     { "start_s": 1.6, "end_s": 5.05, "passed": true, "reason": "Passed foundation audit", "direct_audio": { ... } }
+  ],
+  "boundary_audits": [
+    { "raw_start_s": 1.25, "raw_end_s": 5.40, "start_s": 1.60, "end_s": 5.05, "policy": "whisper_lock_PhoWhisper-large", "tail_rescued": true }
   ]
 }
 ```

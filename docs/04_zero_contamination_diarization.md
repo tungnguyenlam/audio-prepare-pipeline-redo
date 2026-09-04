@@ -289,10 +289,12 @@ class ZeroContaminationConfig:
     aligner_endpoint: str | None = None      # required for remote_whisper
     aligner_device: str | None = "same"      # "same" avoids multi-GPU allocation by default
 
-    # Stage 3c: Option C - Acoustic Energy Valley Snapping (OFF by default; runs after alignment)
-    enable_energy_snapping: bool = False
-    energy_search_window_s: float = 0.15
+    # Stage 3c: Option C - Acoustic Energy Valley Snapping (ON by default; micro-window)
+    enable_energy_snapping: bool = True
+    energy_search_window_s: float = 0.010
     energy_valley_floor_db: float = -30.0  # Currently not enforced.
+    energy_frame_len_ms: float = 2.0
+    energy_hop_len_ms: float = 0.5
 
     # Stage 4: Dense WeSpeaker Homogeneity (ON by default)
     enable_homogeneity: bool = True
@@ -383,13 +385,16 @@ word-locked.
 
 #### Stage 3c: Option C — Micro-Acoustic Energy & RMS Valley Snapping
 
-This step runs after forced alignment. Keep it disabled when strict word-completeness
-is prioritized, as snapping can move protected word-locked boundaries inward.
+This step runs after forced alignment to eliminate slicing clicks and waveform pops without
+destroying aligned words. With a tight micro-window ($\pm 10\text{ ms}$) and short RMS frames ($2.0\text{ ms}$),
+it seeks local glottal closure minima and zero crossings without jumping across phonetic boundaries.
 
 | Parameter | Type & Range | Default | Increasing (+) Value | Decreasing (-) Value | The Core Trade-off |
 |---|---|---|---|---|---|
-| **`enable_energy_snapping`** | `bool` `{True, False}` | `False` | Moves boundaries to nearby local energy minima and zero crossings, mainly to reduce slicing clicks. | Keeps the preceding word-lock timestamps unchanged. | **Click Reduction vs. Word-Lock Preservation.** |
-| **`energy_search_window_s`** | `float` `[0.01, 1.0s]` | `0.15s` (±150ms) | Expands the bidirectional search radius and therefore permits greater boundary movement. | Restricts drift near the aligned boundary. | **Silence Valley Depth vs. Boundary Drift.** |
+| **`enable_energy_snapping`** | `bool` `{True, False}` | `True` | Moves boundaries to nearby local energy minima and zero crossings, eliminating cut clicks. | Cuts strictly at collar/alignment boundaries without micro-waveform alignment. | **Click Elimination vs. Pure Geometric Timestamps.** |
+| **`energy_search_window_s`** | `float` `[0.002, 0.10s]` | `0.010s` (±10ms) | Expands the search radius to locate deeper vocal tract closure troughs. | Restricts search to immediate boundary vicinity to prevent boundary drift. | **Silence Valley Depth vs. Boundary Drift.** $\pm 10\text{ ms}$ safely stays within sub-phonemic glottal closures. |
+| **`energy_frame_len_ms`** | `float` `[0.5, 10.0 ms]` | `2.0 ms` | Smoother RMS energy envelope averaging over multiple pitch periods. | Fine-grained micro-acoustic resolution detecting momentary vocal tract closure minima. | **Energy Envelope Smoothness vs. Temporal Resolution.** |
+| **`energy_hop_len_ms`** | `float` `[0.1, 5.0 ms]` | `0.5 ms` | Faster search stride with fewer frame RMS calculations. | Dense sub-millisecond stride locating exact troughs prior to zero-crossing search. | **Search Latency vs. Valley Precision.** |
 | **`energy_valley_floor_db`** | `float` `[-80.0, -10.0 dB]` | `-30.0 dB` | Intended RMS acceptance threshold. | Intended stricter silence requirement. | **Currently not enforced; changing this value does not affect output.** |
 
 #### Stage 4: Dense Sliding WeSpeaker Homogeneity Filter
@@ -502,6 +507,8 @@ config = ZeroContaminationConfig(
 | `diarization` | `DiarizationResult` | Canonical schema 2.0 diarization containing verified single-speaker turns. Directly compatible with Turns Inspector, stem extraction, and RTTM export. |
 | `audit_records` | `list[TurnAuditRecord]` | Detailed step-by-step audit records for every turn, tracking original timestamps, trimmed timestamps, survival/rejection reason, rescued codas, transcripts, WeSpeaker similarity scores, and foundation model decisions. |
 | `funnel_stats` | `dict` | Step-by-step attrition metrics (turn counts and retained duration) across Primary, Consensus, Collar Erosion, Homogeneity, and Foundation Model stages. |
+| `foundation_audits` | `list[dict]` | Per-turn foundation model audit logs (Gemma 4 / VibeVoice decisions, token usage, and cost). |
+| `boundary_audits` | `list[dict]` | Boundary refinement metadata for each turn across context collar, syllable alignment, and energy snapping. |
 | `stage_log` | `list[str]` | Monotonic log with timestamps for each completed processing phase. |
 | `config` | `dict` | Serialized configuration used during execution. |
 

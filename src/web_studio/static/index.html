@@ -2397,25 +2397,53 @@
                         <span class="exp-boundary-warning">Not a word-completeness model</span>
                         <small class="purity-overlap-lead">Runs after Option B. It reduces cut clicks, but its bidirectional search can move a word-locked boundary inward.</small>
                       </div>
-                      <label class="toggle-switch-wrap" title="Micro-Acoustic Energy Snapping [Default: Disabled]&#10;• Enabled: Walks boundaries to the nearest vocal cord closure zero-crossing / RMS silence trough, eliminating cutting clicks and waveform pops.&#10;• Disabled: Cuts at collar timestamps without micro-waveform alignment.">
-                        <input type="checkbox" id="exp-enable-energy-snapping">
+                      <label class="toggle-switch-wrap" title="Micro-Acoustic Energy Snapping [Default: Enabled]&#10;• Enabled: Walks boundaries to the nearest vocal cord closure zero-crossing / RMS silence trough, eliminating cutting clicks and waveform pops.&#10;• Disabled: Cuts at collar timestamps without micro-waveform alignment.">
+                        <input type="checkbox" id="exp-enable-energy-snapping" checked>
                         <span>Enable</span>
                       </label>
                     </div>
-                    <div id="exp-energy-snapping-fields" style="display: none;">
+                    <div id="exp-energy-snapping-fields">
                       <div class="form-row">
                         <div class="form-group col-half mb-0">
                           <div class="exp-param-header">
-                            <label class="form-label" for="exp-energy-window" title="Search Window Radius [0.005 – 1.00s, Default: ±0.15s]&#10;• Increase (+): Wider search radius to locate deeper vocal tract closure troughs.&#10;• Decrease (-): Restricts search to immediate boundary vicinity to prevent boundary drift.&#10;• Trade-off: Silence Valley Depth vs. Boundary Drift.">Search Window</label>
+                            <label class="form-label" for="exp-energy-window" title="Search Window Radius [0.002 – 0.050s, Default: ±0.010s (±10ms)]&#10;• Increase (+): Wider search radius to locate deeper vocal tract closure troughs.&#10;• Decrease (-): Restricts search to immediate boundary vicinity to prevent boundary drift.&#10;• Micro-Acoustic: ±10ms reliably avoids cutting phonemes while finding zero-crossings.">Search Window</label>
                             <div class="exp-param-ctrl">
-                              <div class="exp-num-input-wrap" title="Search Window [0.005 – 1.00s, Default: ±0.15s]&#10;• Increase (+): Higher chance of finding true vocal cord closure.&#10;• Decrease (-): Restricts movement near detected boundary.">
-                                <input type="number" id="exp-energy-window-num" class="exp-num-input" min="0.005" max="1.00" step="0.005" value="0.15" title="Energy Search Window [0.005 – 1.00s, Default: ±0.15s]. Search radius around boundary to locate silence zero-crossing.">
+                              <div class="exp-num-input-wrap" title="Search Window [0.002 – 0.100s, Default: ±0.010s]&#10;• Increase (+): Higher chance of finding true vocal cord closure.&#10;• Decrease (-): Restricts movement near detected boundary.">
+                                <input type="number" id="exp-energy-window-num" class="exp-num-input" min="0.002" max="0.100" step="0.001" value="0.010" title="Energy Search Window [0.002 – 0.100s, Default: ±0.010s]. Search radius around boundary to locate silence zero-crossing.">
                                 <span class="exp-num-unit">s</span>
                               </div>
-                              <span class="badge badge-sm badge-accent" id="exp-energy-window-val">±150ms</span>
+                              <span class="badge badge-sm badge-accent" id="exp-energy-window-val">±10ms</span>
                             </div>
                           </div>
-                          <input type="range" id="exp-energy-window" class="slider-input exp-slider" min="0.01" max="0.50" step="0.005" value="0.15" title="Search Window [0.01 – 0.50s, Default: ±0.15s]. Drag right (+) for deeper valley search; drag left (-) to restrict boundary drift.">
+                          <input type="range" id="exp-energy-window" class="slider-input exp-slider" min="0.002" max="0.050" step="0.001" value="0.010" title="Search Window [0.002 – 0.050s, Default: ±0.010s]. Drag right (+) for deeper valley search; drag left (-) to restrict boundary drift.">
+                        </div>
+                        <div class="form-group col-half mb-0">
+                          <div class="exp-param-header">
+                            <label class="form-label" for="exp-energy-frame" title="RMS Frame Length [0.5 – 10.0 ms, Default: 2.0 ms]&#10;• Short (1–2 ms): Micro-acoustic resolution detecting glottal closure minima.&#10;• Long (5–10 ms): Averaged envelope energy.">RMS Frame Length</label>
+                            <div class="exp-param-ctrl">
+                              <div class="exp-num-input-wrap" title="Frame Length [0.5 – 10.0 ms, Default: 2.0 ms]">
+                                <input type="number" id="exp-energy-frame-num" class="exp-num-input" min="0.5" max="10.0" step="0.1" value="2.0" title="RMS Frame Length [0.5 – 10.0 ms, Default: 2.0 ms]">
+                                <span class="exp-num-unit">ms</span>
+                              </div>
+                              <span class="badge badge-sm badge-accent" id="exp-energy-frame-val">2.0 ms</span>
+                            </div>
+                          </div>
+                          <input type="range" id="exp-energy-frame" class="slider-input exp-slider" min="0.5" max="10.0" step="0.1" value="2.0" title="RMS Frame Length [0.5 – 10.0 ms, Default: 2.0 ms]">
+                        </div>
+                      </div>
+                      <div class="form-row mt-2">
+                        <div class="form-group col-half mb-0">
+                          <div class="exp-param-header">
+                            <label class="form-label" for="exp-energy-hop" title="RMS Hop Step [0.1 – 5.0 ms, Default: 0.5 ms]&#10;• Step stride between consecutive RMS frames.">RMS Hop Step</label>
+                            <div class="exp-param-ctrl">
+                              <div class="exp-num-input-wrap" title="Hop Step [0.1 – 5.0 ms, Default: 0.5 ms]">
+                                <input type="number" id="exp-energy-hop-num" class="exp-num-input" min="0.1" max="5.0" step="0.1" value="0.5" title="RMS Hop Step [0.1 – 5.0 ms, Default: 0.5 ms]">
+                                <span class="exp-num-unit">ms</span>
+                              </div>
+                              <span class="badge badge-sm badge-accent" id="exp-energy-hop-val">0.5 ms</span>
+                            </div>
+                          </div>
+                          <input type="range" id="exp-energy-hop" class="slider-input exp-slider" min="0.1" max="5.0" step="0.1" value="0.5" title="RMS Hop Step [0.1 – 5.0 ms, Default: 0.5 ms]">
                         </div>
                         <div class="form-group col-half mb-0">
                           <div class="exp-param-header">
