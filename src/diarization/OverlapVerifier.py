@@ -30,8 +30,23 @@ Evaluate two strict acoustic criteria required for clean speech-synthesis traini
      * END: The final word must complete its full tonal contour and coda closure (-p, -t, -k, -m, -n, -ng) into natural silence. Reject if the audio cuts off abruptly while vocal fold vibration, tonal contour, or consonant release is still actively in flight ('clipped_word_end').
    - Grammatical fragments are completely acceptable provided every audible word is acoustically complete. Do not infer missing words from grammatical context.
 
-Return only the requested structured JSON matching the schema, with a concise acoustic explanation in 'reason'."""
-DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS = 256
+Respond ONLY with a valid JSON object matching this exact schema:
+{
+  "speaker_purity": "pure" | "impure" | "uncertain",
+  "word_completeness": "complete" | "incomplete" | "uncertain",
+  "boundary_issue": "none" | "clipped_start" | "clipped_end" | "clipped_both" | "uncertain",
+  "failure_codes": [
+    "overlapping_speech" | "secondary_speaker" | "tail_speaker_intrusion" | "clipped_word_start" | "clipped_word_end" | "unintelligible_boundary" | "insufficient_evidence"
+  ],
+  "reason": "<concise acoustic explanation; never transcribe the speech>"
+}
+
+Validation rules:
+- If speaker_purity is "impure", failure_codes MUST include at least one of: "overlapping_speech", "secondary_speaker", "tail_speaker_intrusion". If "pure", do NOT include these codes.
+- If word_completeness is "incomplete", boundary_issue must NOT be "none", and failure_codes MUST include at least one of: "clipped_word_start", "clipped_word_end", "unintelligible_boundary".
+- If word_completeness is "complete", boundary_issue MUST be "none" and no clipped codes may be included.
+- Return raw JSON only. Do not add markdown backticks (```json), commentary, or text outside the JSON object."""
+DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS = 1024
 DEFAULT_UNSLOTH_HOST = "localhost"
 DEFAULT_UNSLOTH_PORT = 8888
 DEFAULT_UNSLOTH_ENDPOINT = (
@@ -118,6 +133,9 @@ _OVERLAP_SCHEMA: dict[str, Any] = {
         "reason",
     ],
     "additionalProperties": False,
+}
+_GEMINI_OVERLAP_SCHEMA: dict[str, Any] = {
+    key: value for key, value in _OVERLAP_SCHEMA.items() if key != "additionalProperties"
 }
 _AUDIO_MIME_TYPES = {
     ".aac": "audio/aac",
@@ -331,7 +349,15 @@ class Gemma4OverlapVerifier(BaseOverlapVerifier):
                 )
                 + ". The model may still be loading or the request was dropped."
             )
-        return _normalize_result(content, backend="Unsloth")
+        try:
+            return _normalize_result(content, backend="Unsloth")
+        except OverlapVerifierError as exc:
+            if finish_reason in {"length", "max_tokens"}:
+                raise OverlapVerifierError(
+                    f"Unsloth response was truncated due to max_output_tokens={self.max_output_tokens} "
+                    f"(finish_reason={finish_reason!r}): {exc}"
+                ) from exc
+            raise
 
 
 class GeminiOverlapVerifier(BaseOverlapVerifier):
@@ -429,6 +455,7 @@ class GeminiOverlapVerifier(BaseOverlapVerifier):
             ],
             "generationConfig": {
                 "responseMimeType": "application/json",
+                "responseSchema": _GEMINI_OVERLAP_SCHEMA,
                 "responseJsonSchema": _OVERLAP_SCHEMA,
                 "maxOutputTokens": self.max_output_tokens,
             },
@@ -441,7 +468,19 @@ class GeminiOverlapVerifier(BaseOverlapVerifier):
             backend="Gemini",
         )
         try:
-            parts = response["candidates"][0]["content"]["parts"]
+            candidates = response.get("candidates") or []
+            if not candidates:
+                feedback = response.get("promptFeedback", {})
+                block_reason = feedback.get("blockReason")
+                if block_reason:
+                    raise OverlapVerifierError(
+                        f"Gemini blocked the candidate audio: {block_reason}"
+                    )
+                raise OverlapVerifierError("Gemini returned no candidates in response")
+
+            candidate = candidates[0]
+            finish_reason = candidate.get("finishReason")
+            parts = candidate.get("content", {}).get("parts", [])
             content = "".join(
                 str(part["text"])
                 for part in parts
@@ -449,11 +488,38 @@ class GeminiOverlapVerifier(BaseOverlapVerifier):
                 and "text" in part
                 and not part.get("thought", False)
             )
+        except OverlapVerifierError:
+            raise
         except (KeyError, IndexError, TypeError) as exc:
             raise OverlapVerifierError(
                 "Gemini returned no candidate message content"
             ) from exc
-        result = _normalize_result(content, backend="Gemini")
+
+        if not content.strip():
+            if finish_reason == "MAX_TOKENS":
+                raise OverlapVerifierError(
+                    f"Gemini output exceeded max_output_tokens={self.max_output_tokens} "
+                    f"(finishReason='MAX_TOKENS'). Increase max_output_tokens."
+                )
+            if finish_reason == "SAFETY":
+                raise OverlapVerifierError(
+                    "Gemini candidate was blocked by safety settings (finishReason='SAFETY')"
+                )
+            if finish_reason:
+                raise OverlapVerifierError(
+                    f"Gemini returned no candidate message content (finishReason={finish_reason!r})"
+                )
+            raise OverlapVerifierError("Gemini returned no candidate message content")
+
+        try:
+            result = _normalize_result(content, backend="Gemini")
+        except OverlapVerifierError as exc:
+            if finish_reason == "MAX_TOKENS":
+                raise OverlapVerifierError(
+                    f"Gemini response was truncated due to max_output_tokens={self.max_output_tokens} "
+                    f"(finishReason='MAX_TOKENS'): {exc}"
+                ) from exc
+            raise
         usage = _normalize_gemini_usage(
             response.get("usageMetadata"), audio_duration_s=audio.duration_s
         )
@@ -600,23 +666,54 @@ def _normalize_result(content: Any, *, backend: str) -> OverlapVerificationResul
         )
     if isinstance(content, str):
         stripped = content.strip()
-        if stripped.startswith("```"):
-            stripped = stripped.removeprefix("```json").removeprefix("```")
-            stripped = stripped.removesuffix("```").strip()
+        parsed: Any = None
+        # 1. Direct JSON parse
         try:
-            content = json.loads(stripped)
-        except json.JSONDecodeError as exc:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            pass
+
+        # 2. Extract from markdown code fence ```json ... ``` or ``` ... ```
+        if parsed is None and "```" in stripped:
+            first_fence = stripped.find("```")
+            after_fence = stripped[first_fence + 3 :]
+            if after_fence.lower().startswith("json"):
+                after_fence = after_fence[4:]
+            end_fence = after_fence.find("```")
+            fence_block = (
+                after_fence[:end_fence].strip()
+                if end_fence != -1
+                else after_fence.strip()
+            )
+            try:
+                parsed = json.loads(fence_block)
+            except json.JSONDecodeError:
+                pass
+
+        # 3. Extract outermost JSON object { ... }
+        if parsed is None:
+            first_brace = stripped.find("{")
+            last_brace = stripped.rfind("}")
+            if first_brace != -1 and last_brace > first_brace:
+                brace_block = stripped[first_brace : last_brace + 1]
+                try:
+                    parsed = json.loads(brace_block)
+                except json.JSONDecodeError:
+                    pass
+
+        if parsed is None:
             raise OverlapVerifierError(
                 f"{backend} returned an invalid audio-quality result: {content!r}"
-            ) from exc
+            )
+        content = parsed
 
     if not isinstance(content, dict):
         raise OverlapVerifierError(f"{backend} returned a non-object audio-quality result")
-    speaker_purity = content.get("speaker_purity")
-    word_completeness = content.get("word_completeness")
-    boundary_issue = content.get("boundary_issue")
-    failure_codes = content.get("failure_codes")
-    reason = content.get("reason")
+    speaker_purity = str(content.get("speaker_purity") or "").strip().lower()
+    word_completeness = str(content.get("word_completeness") or "").strip().lower()
+    boundary_issue = str(content.get("boundary_issue") or "").strip().lower()
+    raw_failure_codes = content.get("failure_codes")
+    reason = str(content.get("reason") or "").strip()
     if speaker_purity not in {"pure", "impure", "uncertain"}:
         raise OverlapVerifierError(f"{backend} result has invalid 'speaker_purity'")
     if word_completeness not in {"complete", "incomplete", "uncertain"}:
@@ -625,12 +722,17 @@ def _normalize_result(content: Any, *, backend: str) -> OverlapVerificationResul
         "none", "clipped_start", "clipped_end", "clipped_both", "uncertain"
     }:
         raise OverlapVerifierError(f"{backend} result has invalid 'boundary_issue'")
-    if not isinstance(failure_codes, list) or any(
-        not isinstance(code, str) or code not in _FAILURE_CODES
-        for code in failure_codes
-    ):
+    if not isinstance(raw_failure_codes, list):
         raise OverlapVerifierError(f"{backend} result has invalid 'failure_codes'")
-    if not isinstance(reason, str) or not reason.strip():
+
+    failure_codes: list[str] = []
+    for code in raw_failure_codes:
+        normalized_code = str(code).strip().lower() if isinstance(code, str) else ""
+        if normalized_code not in _FAILURE_CODES:
+            raise OverlapVerifierError(f"{backend} result has invalid failure code: {code!r}")
+        failure_codes.append(normalized_code)
+
+    if not reason:
         raise OverlapVerifierError(
             f"{backend} result field 'reason' is not a non-empty string"
         )
@@ -675,7 +777,7 @@ def _normalize_result(content: Any, *, backend: str) -> OverlapVerificationResul
         "boundary_issue": boundary_issue,
         "failure_codes": list(dict.fromkeys(failure_codes)),
         "decision": decision,
-        "reason": reason.strip(),
+        "reason": reason,
         "usage": None,
         "cost": None,
     }

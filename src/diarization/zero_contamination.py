@@ -171,7 +171,7 @@ class ZeroContaminationConfig:
     gemma_prompt: str | None = None
     gemma_api_key: str | None = None
     gemma_timeout_s: float = 120.0
-    gemma_max_output_tokens: int = 256
+    gemma_max_output_tokens: int = 1024
 
     # Stage 5b: In-Loop VibeVoice-ASR Speaker Count Verifier (Dedicated GPU or Remote Host)
     enable_vibevoice: bool = False

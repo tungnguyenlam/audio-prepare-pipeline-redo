@@ -21,6 +21,7 @@ import torch
 from src.diarization.OverlapVerifier import (
     DEFAULT_GEMMA4_MODEL_ID,
     DEFAULT_GEMINI_MODEL_ID,
+    DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS,
     DEFAULT_UNSLOTH_ENDPOINT,
     GEMINI_AUDIO_MODELS,
     OVERLAP_PROMPT,
@@ -138,7 +139,7 @@ class ExperimentRouteHandler:
             "gemini_model": DEFAULT_GEMINI_MODEL_ID,
             "gemini_models": list(GEMINI_AUDIO_MODELS),
             "gemma_prompt": OVERLAP_PROMPT,
-            "gemma_max_output_tokens": 256,
+            "gemma_max_output_tokens": DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS,
             "enable_vibevoice": False,
             "vibevoice_model_id": "Dubedo/VibeVoice-ASR-HF-INT8",
             "vibevoice_device": "same",
@@ -198,7 +199,7 @@ class ExperimentRouteHandler:
             "backend": backend,
             "model": model,
             "prompt": prompt or OVERLAP_PROMPT,
-            "max_output_tokens": int(body.get("max_output_tokens", 256)),
+            "max_output_tokens": int(body.get("max_output_tokens", DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS)),
             "timeout_s": float(body.get("timeout") or body.get("timeout_s") or 120.0),
         }
         if backend == "gemma4":
@@ -344,7 +345,7 @@ class ExperimentRouteHandler:
             # UNSLOTH_API_KEY in the repository-root .env.
             gemma_api_key=None,
             gemma_timeout_s=float(body.get("gemma_timeout_s", 120.0)),
-            gemma_max_output_tokens=int(body.get("gemma_max_output_tokens", 256)),
+            gemma_max_output_tokens=int(body.get("gemma_max_output_tokens", DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS)),
             enable_vibevoice=bool(body.get("enable_vibevoice", False)),
             vibevoice_model_id=body.get("vibevoice_model_id", "Dubedo/VibeVoice-ASR-HF-INT8"),
             vibevoice_device=vibevoice_device,

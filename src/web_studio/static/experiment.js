@@ -7,9 +7,36 @@
   'use strict';
 
   const DEFAULT_GEMMA_PROMPT = `Listen to the supplied audio directly. Do not transcribe it.
-Judge speaker purity: exactly one human speaker must be audible throughout; reject overlap, sequential second speakers, whispers, distant speech, and intelligible background speech.
-Judge word completeness (lẹm chữ): speech must begin and end on complete acoustic word boundaries; reject a clipped initial or final phoneme or syllable. Do not reject a grammatical fragment when its audible words are intact.
-Return only the requested structured result and never include a transcript.`;
+Evaluate two strict acoustic criteria required for clean speech-synthesis training:
+
+1. SPEAKER PURITY & TAIL INTRUSION:
+   - Exactly one human speaker must be audible across the entire audio clip.
+   - Reject simultaneous overlap, secondary background voices, or whispers.
+   - CRITICAL TAIL INTRUSION CHECK: Scrutinize the final 500 milliseconds of the audio segment with extreme sensitivity. Reject if a secondary speaker begins speaking, whispers, murmurs, laughs, or utters a trailing backchannel (e.g. 'dạ', 'vâng', 'ừ', 'uh-huh', 'yeah') right as or immediately after the main speaker finishes. Even a momentary foreign vocal sound at the end must be rejected (use failure code 'tail_speaker_intrusion' or 'secondary_speaker').
+   - Non-speech noise, ambient room reverb, or background music alone does not count as a second speaker.
+
+2. ACOUSTIC WORD COMPLETENESS (NO CLIPPED BOUNDARIES / KHÔNG LẸM CHỮ):
+   - Speech must start and end on complete, natural acoustic word boundaries:
+     * START: The initial word must have its full phonetic attack/consonant onset. Reject if the audio cuts in abruptly mid-vowel or mid-syllable without its natural phonetic onset ('clipped_word_start').
+     * END: The final word must complete its full tonal contour and coda closure (-p, -t, -k, -m, -n, -ng) into natural silence. Reject if the audio cuts off abruptly while vocal fold vibration, tonal contour, or consonant release is still actively in flight ('clipped_word_end').
+   - Grammatical fragments are completely acceptable provided every audible word is acoustically complete. Do not infer missing words from grammatical context.
+
+Respond ONLY with a valid JSON object matching this exact schema:
+{
+  "speaker_purity": "pure" | "impure" | "uncertain",
+  "word_completeness": "complete" | "incomplete" | "uncertain",
+  "boundary_issue": "none" | "clipped_start" | "clipped_end" | "clipped_both" | "uncertain",
+  "failure_codes": [
+    "overlapping_speech" | "secondary_speaker" | "tail_speaker_intrusion" | "clipped_word_start" | "clipped_word_end" | "unintelligible_boundary" | "insufficient_evidence"
+  ],
+  "reason": "<concise acoustic explanation; never transcribe the speech>"
+}
+
+Validation rules:
+- If speaker_purity is "impure", failure_codes MUST include at least one of: "overlapping_speech", "secondary_speaker", "tail_speaker_intrusion". If "pure", do NOT include these codes.
+- If word_completeness is "incomplete", boundary_issue must NOT be "none", and failure_codes MUST include at least one of: "clipped_word_start", "clipped_word_end", "unintelligible_boundary".
+- If word_completeness is "complete", boundary_issue MUST be "none" and no clipped codes may be included.
+- Return raw JSON only. Do not add markdown backticks (\`\`\`json), commentary, or text outside the JSON object.`;
 
   const ExperimentTab = {
     currentAudioId: null,
@@ -518,6 +545,17 @@ Return only the requested structured result and never include a transcript.`;
           if (data.defaults.aligner_language && this.el.alignerLang) {
             this.el.alignerLang.value = data.defaults.aligner_language;
           }
+          if (this.el.gemmaPrompt) {
+            const promptVal = (this.el.gemmaPrompt.value || '').trim();
+            if (!promptVal || promptVal.includes('Return only the requested structured result and never include a transcript')) {
+              this.el.gemmaPrompt.value = data.defaults.gemma_prompt || DEFAULT_GEMMA_PROMPT;
+            }
+          }
+          if (this.el.gemmaMaxTokens && data.defaults.gemma_max_output_tokens) {
+            if (!this.el.gemmaMaxTokens.value || this.el.gemmaMaxTokens.value === '256') {
+              this.el.gemmaMaxTokens.value = String(data.defaults.gemma_max_output_tokens);
+            }
+          }
         }
       } catch (err) {
         console.warn('Could not load experiment status defaults:', err);
@@ -665,7 +703,7 @@ Return only the requested structured result and never include a transcript.`;
       if (this.el.gemmaPrompt) this.el.gemmaPrompt.value = DEFAULT_GEMMA_PROMPT;
       if (this.el.enableGemma) { this.el.enableGemma.checked = true; this.el.gemmaFields.style.display = 'block'; }
       if (this.el.gemmaBackend) this.el.gemmaBackend.value = 'gemini:gemini-3.8-flash';
-      if (this.el.gemmaMaxTokens) this.el.gemmaMaxTokens.value = '256';
+      if (this.el.gemmaMaxTokens) this.el.gemmaMaxTokens.value = '1024';
       this.syncDirectAudioProvider();
       // Stage 5b: VibeVoice-ASR
       if (this.el.enableVibeVoice) { this.el.enableVibeVoice.checked = false; this.el.vibevoiceFields.style.display = 'none'; }
@@ -789,7 +827,7 @@ Return only the requested structured result and never include a transcript.`;
             endpoint: this.el.gemmaEndpoint?.value,
             model: this.selectedDirectAudioModel(),
             prompt: this.el.gemmaPrompt?.value,
-            max_output_tokens: parseInt(this.el.gemmaMaxTokens?.value || '256', 10),
+            max_output_tokens: parseInt(this.el.gemmaMaxTokens?.value || '1024', 10),
             timeout: parseFloat(this.el.gemmaTimeout?.value || '120'),
           }),
         });
@@ -864,7 +902,7 @@ Return only the requested structured result and never include a transcript.`;
         gemma_model: this.selectedDirectAudioModel(),
         gemma_prompt: this.el.gemmaPrompt?.value,
         gemma_timeout_s: parseFloat(this.el.gemmaTimeout?.value || this.el.gemmaTimeoutSlider?.value || '120'),
-        gemma_max_output_tokens: parseInt(this.el.gemmaMaxTokens?.value || '256', 10),
+        gemma_max_output_tokens: parseInt(this.el.gemmaMaxTokens?.value || '1024', 10),
         // Stage 5b
         enable_vibevoice: Boolean(this.el.enableVibeVoice?.checked),
         vibevoice_model_id: this.el.vibevoiceModel?.value || 'Dubedo/VibeVoice-ASR-HF-INT8',
