@@ -230,6 +230,13 @@ Interactive callers live under `src/notebooks/`. Open them from that
 directory so `os.getcwd()` ends with `notebooks`, and select the project
 `.venv` kernel (`ipykernel` is installed by `uv sync`).
 
+`zero_contamination_workflow.ipynb` is the model-server walkthrough for a
+single YouTube URL. It crawls to a file-backed `Audio`, extracts the vocals
+with Mel-RoFormer, exposes every SonicStudio Experiment gate in its own cell,
+persists the canonical `DiarizationResult` under `.data/`, and finishes with
+an interactive turn viewer for speaker filtering, boundary comparison,
+waveform inspection, and in-notebook playback.
+
 ### 6. ViYT-Diar diarization benchmark (offline)
 
 Offline evaluation of diarization systems on
