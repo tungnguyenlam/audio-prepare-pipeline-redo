@@ -251,9 +251,9 @@ class OverlapVerificationResult(TypedDict):
 
 Only `pure` plus `complete` passes. Either failed dimension rejects and every
 other combination is uncertain. Failure codes are `overlapping_speech`,
-`secondary_speaker`, `clipped_word_start`, `clipped_word_end`,
-`unintelligible_boundary`, and `insufficient_evidence`. The verifier listens to
-audio directly and never requests or returns a transcript.
+`secondary_speaker`, `tail_speaker_intrusion`, `clipped_word_start`,
+`clipped_word_end`, `unintelligible_boundary`, and `insufficient_evidence`. The
+verifier listens to audio directly and never requests or returns a transcript.
 
 ---
 

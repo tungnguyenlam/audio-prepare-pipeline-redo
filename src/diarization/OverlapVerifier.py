@@ -16,16 +16,21 @@ from urllib.request import Request, urlopen
 from src.utils.AudioClass import Audio
 
 OVERLAP_PROMPT = """Listen to the supplied audio directly. Do not transcribe it.
-Judge two independent requirements for a clean speech-training sample:
-1. Speaker purity: exactly one human speaker is audible for the entire clip.
-   Reject simultaneous overlap, a sequential second speaker, whispers, distant
-   speech, and intelligible TV/radio/background speech. Music and non-speech
-   noise alone do not count as another speaker.
-2. Word completeness: audible speech begins and ends on complete acoustic word
-   boundaries. Reject a clipped initial or final phoneme/syllable. Do not reject
-   a grammatical sentence fragment when every audible word is acoustically
-   complete. Do not infer or report missing words from language context.
-Return only the requested structured result and never include a transcript."""
+Evaluate two strict acoustic criteria required for clean speech-synthesis training:
+
+1. SPEAKER PURITY & TAIL INTRUSION:
+   - Exactly one human speaker must be audible across the entire audio clip.
+   - Reject simultaneous overlap, secondary background voices, or whispers.
+   - CRITICAL TAIL INTRUSION CHECK: Scrutinize the final 500 milliseconds of the audio segment with extreme sensitivity. Reject if a secondary speaker begins speaking, whispers, murmurs, laughs, or utters a trailing backchannel (e.g. 'dạ', 'vâng', 'ừ', 'uh-huh', 'yeah') right as or immediately after the main speaker finishes. Even a momentary foreign vocal sound at the end must be rejected (use failure code 'tail_speaker_intrusion' or 'secondary_speaker').
+   - Non-speech noise, ambient room reverb, or background music alone does not count as a second speaker.
+
+2. ACOUSTIC WORD COMPLETENESS (NO CLIPPED BOUNDARIES / KHÔNG LẸM CHỮ):
+   - Speech must start and end on complete, natural acoustic word boundaries:
+     * START: The initial word must have its full phonetic attack/consonant onset. Reject if the audio cuts in abruptly mid-vowel or mid-syllable without its natural phonetic onset ('clipped_word_start').
+     * END: The final word must complete its full tonal contour and coda closure (-p, -t, -k, -m, -n, -ng) into natural silence. Reject if the audio cuts off abruptly while vocal fold vibration, tonal contour, or consonant release is still actively in flight ('clipped_word_end').
+   - Grammatical fragments are completely acceptable provided every audible word is acoustically complete. Do not infer missing words from grammatical context.
+
+Return only the requested structured JSON matching the schema, with a concise acoustic explanation in 'reason'."""
 DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS = 256
 DEFAULT_UNSLOTH_HOST = "localhost"
 DEFAULT_UNSLOTH_PORT = 8888
@@ -68,6 +73,7 @@ _GEMINI_STANDARD_PRICES: dict[str, dict[str, float]] = {
 _FAILURE_CODES = {
     "overlapping_speech",
     "secondary_speaker",
+    "tail_speaker_intrusion",
     "clipped_word_start",
     "clipped_word_end",
     "unintelligible_boundary",
@@ -632,7 +638,11 @@ def _normalize_result(content: Any, *, backend: str) -> OverlapVerificationResul
         raise OverlapVerifierError(
             f"{backend} result field 'reason' is not a non-empty string"
         )
-    speaker_codes = {"overlapping_speech", "secondary_speaker"}
+    speaker_codes = {
+        "overlapping_speech",
+        "secondary_speaker",
+        "tail_speaker_intrusion",
+    }
     clipped_codes = {"clipped_word_start", "clipped_word_end"}
     if speaker_purity == "pure" and speaker_codes.intersection(failure_codes):
         raise OverlapVerifierError(

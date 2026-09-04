@@ -39,7 +39,7 @@ In contrast, **zero-contamination diarization** is designed specifically for **c
 ### Experiment-tab recipe: prioritize complete Vietnamese words (không bị lẹm chữ)
 
 The control that directly spends additional compute to protect complete words is
-**Stage 3 → Option C: Syllable & Word Forced Alignment Lock**. Gemma 4,
+**Stage 3 → Option B: Syllable & Word Forced Alignment Lock**. Gemma 4,
 VibeVoice, and WeSpeaker validate speaker purity; they do not repair clipped word
 boundaries.
 
@@ -58,14 +58,14 @@ Use this as the starting configuration in the Experiment tab:
 | Stage 2 | Dual-Engine Consensus | Enabled; secondary `DiariZen` | Spends additional compute to reject boundaries on which two different diarizers disagree. |
 | Stage 3 | Base Collar Inward Shave | `0.20s` | Reduces deterministic inward trimming from the `0.35s` default. Increase it again if speaker bleed appears. |
 | Stage 3, Option A | Context-Aware Handoff Guard | Enabled | Shaves near another speaker but extends into silence when a handoff is not nearby. |
-| Stage 3, Option A | Handoff Risk Distance | `0.80s` | Retains the normal speaker-transition safety horizon. |
+| Stage 3, Option A | Handoff Risk Distance | `0.85s` | Retains the normal speaker-transition safety horizon. |
 | Stage 3, Option A | Silence Tail Release | `0.25s` | Adds more trailing room for Vietnamese tones and codas when silence follows. |
-| Stage 3, Option C | Forced Alignment Lock | Enabled | Moves a boundary outward when it falls inside a recognized word. |
-| Stage 3, Option C | Engine | `whisper_timestamped` | Produces word timestamps used by the boundary lock. |
-| Stage 3, Option C | Model | `vinai/PhoWhisper-large` | Compute-heavy Vietnamese checkpoint; use `vinai/PhoWhisper-small` if memory or latency is limiting. |
-| Stage 3, Option C | Language | `vi` | Prevents unnecessary language auto-detection. |
-| Stage 3, Option C | Device | Dedicated CUDA device when available; otherwise CPU | GPU reduces alignment time; CPU avoids competing with the diarizers for VRAM. |
-| Stage 3, Option B | Energy/RMS Valley Snapping | **Disabled** | It runs after word locking and may move a protected boundary inward again. It is primarily a click-removal tool. |
+| Stage 3, Option B | Forced Alignment Lock | Enabled | Moves a boundary outward when it falls inside a recognized word. |
+| Stage 3, Option B | Engine | `whisper_timestamped` | Produces word timestamps used by the boundary lock. |
+| Stage 3, Option B | Model | `vinai/PhoWhisper-large` | High-precision Vietnamese checkpoint; use `vinai/PhoWhisper-small` if memory or latency is limiting. |
+| Stage 3, Option B | Language | `vi` | Prevents unnecessary language auto-detection. |
+| Stage 3, Option B | Device | `"same"` (or dedicated GPU / CPU) | Sequential execution with automatic memory clearing on single-GPU servers. |
+| Stage 3, Option C | Energy/RMS Valley Snapping | **Disabled** | It runs after word locking and may move a protected boundary inward again. It is primarily a click-removal tool. |
 
 The equivalent core configuration is:
 
@@ -76,17 +76,27 @@ config = ZeroContaminationConfig(
     target_offset=0.50,
     enable_consensus=True,
     secondary_backend="diarizen",
+    secondary_device="same",
     enable_collar_erosion=True,
     boundary_collar_s=0.20,
+    min_turn_duration_s=0.60,
     enable_context_collar=True,
-    handoff_risk_distance_s=0.80,
+    handoff_risk_distance_s=0.85,
     silence_tail_buffer_s=0.25,
     enable_syllable_alignment=True,
     aligner_engine="whisper_timestamped",
     aligner_model="vinai/PhoWhisper-large",
     aligner_language="vi",
-    aligner_device="cuda:1",  # Use an available device, or "cpu".
+    aligner_device="same",
     enable_energy_snapping=False,
+    enable_homogeneity=True,
+    homogeneity_device="same",
+    homogeneity_window_s=0.80,
+    homogeneity_hop_s=0.10,
+    min_homogeneity_similarity=0.74,
+    enable_gemma=True,
+    gemma_backend="gemini",
+    gemma_model="gemini-3.8-flash",
 )
 ```
 
@@ -183,8 +193,14 @@ Candidate turns passing acoustic gates are verified by multimodal foundation mod
 - **Microsoft VibeVoice-ASR:** Detects secondary speech duration across full clip context. Drops turns if secondary speech exceeds `max_secondary_speech_s` (default `0.0s`).
 - **Direct-Audio Quality Verifier:** Sends candidate audio directly to local
   Gemma 4 or Google Gemini. It rejects a second speaker (simultaneous or
-  sequential), clipped initial/final speech (“lẹm chữ”), uncertainty, and
-  request/schema failures. It does not transcribe.
+  sequential), clipped initial/final speech (“lẹm chữ”), tail intrusions, uncertainty,
+  and request/schema failures. It does not transcribe.
+
+  #### Prompt Steering & Structured Output Extraction:
+  - **Structured JSON Schema Extraction:** The verifier does not rely on regex or loose text generation. For Gemini, it enforces `generationConfig.responseFormat` with strict JSON Schema (`_OVERLAP_SCHEMA`). For Gemma 4 (Unsloth), it enforces `response_format: {"type": "json_schema", "strict": True}`. Both constrain model token sampling to guaranteed valid JSON matching `_OVERLAP_SCHEMA`.
+  - **Targeted Tail Intrusion Guard:** A major failure mode in dialogue harvesting is a secondary speaker cutting in, whispering, laughing, or offering a backchannel ("vâng", "dạ", "ừ", "yeah", "uh-huh") during the final 200–500ms of a turn. The prompt explicitly directs the model to scrutinize the final 500ms with heightened sensitivity, triggering rejection code `tail_speaker_intrusion` or `secondary_speaker` upon detecting any foreign vocalization.
+  - **Acoustic Word Completeness (Anti-Lẹm Chữ):** The prompt distinguishes acoustic completeness from grammatical completeness. Grammatically incomplete excerpts are preserved, but turns cutting in abruptly mid-vowel/consonant (`clipped_word_start`) or cutting off sharply during vocal fold vibration or tonal coda release (`clipped_word_end`) are rejected.
+  - **Supported Failure Codes:** `overlapping_speech`, `secondary_speaker`, `tail_speaker_intrusion`, `clipped_word_start`, `clipped_word_end`, `unintelligible_boundary`, `insufficient_evidence`. Only turns with `speaker_purity="pure"` and `word_completeness="complete"` receive `decision="pass"`.
 
 Gemini cost records use response `usageMetadata` and the paid Standard USD
 rate card dated 2026-09-04. The configured per-million-token input/output rates
@@ -244,52 +260,52 @@ class ZeroContaminationConfig:
     # Stage 1: Primary Diarizer
     primary_backend: str = "sortformer"      # "sortformer", "diarizen", "pyannote"
     primary_device: str | None = None        # "cuda:0", "cpu", None (= general device)
-    target_onset: float = 0.80
-    target_offset: float = 0.65
+    target_onset: float = 0.70
+    target_offset: float = 0.50
     competitor_onset: float = 0.20
 
     # Stage 2: Dual-Engine Consensus
     enable_consensus: bool = True
     secondary_backend: str = "diarizen"      # "diarizen", "sortformer", "pyannote"
-    secondary_device: str | None = None      # "same", "cuda:1", "cpu"
+    secondary_device: str | None = "same"    # "same", "cuda:1", "cpu"
 
     # Stage 3: Boundary & Syllable Integrity Gate
     enable_collar_erosion: bool = True
-    boundary_collar_s: float = 0.35
-    min_turn_duration_s: float = 0.80
+    boundary_collar_s: float = 0.20
+    min_turn_duration_s: float = 0.60
     transition_exclusion_s: float = 0.50
     allow_gap_merge: bool = False
 
-    # Stage 3a: Context-Aware Collar
+    # Stage 3a: Option A - Context-Aware Collar Guard
     enable_context_collar: bool = True
-    handoff_risk_distance_s: float = 0.80
-    silence_tail_buffer_s: float = 0.15
+    handoff_risk_distance_s: float = 0.85
+    silence_tail_buffer_s: float = 0.25
 
-    # Stage 3c: Energy Valley Snapping (OFF by default; runs after alignment)
+    # Stage 3b: Option B - Syllable Forced Alignment Lock (ON by default)
+    enable_syllable_alignment: bool = True
+    aligner_engine: str = "whisper_timestamped" # "whisper_timestamped", "mms_fa", "remote_whisper"
+    aligner_model: str = "vinai/PhoWhisper-large"
+    aligner_language: str = "vi"
+    aligner_endpoint: str | None = None      # required for remote_whisper
+    aligner_device: str | None = "same"      # "same" avoids multi-GPU allocation by default
+
+    # Stage 3c: Option C - Acoustic Energy Valley Snapping (OFF by default; runs after alignment)
     enable_energy_snapping: bool = False
     energy_search_window_s: float = 0.15
     energy_valley_floor_db: float = -30.0  # Currently not enforced.
 
-    # Stage 3b: Syllable Forced Alignment Lock (OFF by default)
-    enable_syllable_alignment: bool = False
-    aligner_engine: str = "whisper_timestamped" # "whisper_timestamped", "mms_fa", "remote_whisper"
-    aligner_model: str = "vinai/PhoWhisper-small"
-    aligner_language: str = "vi"
-    aligner_endpoint: str | None = None      # required for remote_whisper
-    aligner_device: str | None = "cpu"       # CPU recommended to avoid VRAM exhaustion
+    # Stage 4: Dense WeSpeaker Homogeneity (ON by default)
+    enable_homogeneity: bool = True
+    homogeneity_device: str | None = "same"  # "same", "cuda:0", "cpu"
+    homogeneity_window_s: float = 0.80
+    homogeneity_hop_s: float = 0.10
+    min_homogeneity_similarity: float = 0.74
 
-    # Stage 4: WeSpeaker Homogeneity (OFF by default)
-    enable_homogeneity: bool = False
-    homogeneity_device: str | None = None    # "same", "cuda:0", "cpu"
-    homogeneity_window_s: float = 1.00
-    homogeneity_hop_s: float = 0.25
-    min_homogeneity_similarity: float = 0.75
-
-    # Stage 5a: Direct-Audio Quality Verifier (OFF by default)
-    enable_gemma: bool = False
-    gemma_backend: str = "gemma4"            # "gemma4" or "gemini"
+    # Stage 5a: Direct-Audio Quality Verifier (ON by default)
+    enable_gemma: bool = True
+    gemma_backend: str = "gemini"            # "gemini" or "gemma4"
     gemma_endpoint: str | None = None        # else UNSLOTH_ENDPOINT / localhost:8888
-    gemma_model: str | None = None           # else UNSLOTH_MODEL / unsloth/gemma-4-12b-it-GGUF
+    gemma_model: str | None = "gemini-3.8-flash" # else UNSLOTH_MODEL / unsloth/gemma-4-12b-it-GGUF
     gemma_prompt: str | None = None
     gemma_api_key: str | None = None
     gemma_timeout_s: float = 120.0
@@ -341,34 +357,34 @@ consumed by `_run_backend`, so changing it currently does not affect output.
 | **`transition_exclusion_s`** | `float` `[0.0, 5.0s]` | `0.50s` | If the gap between two different speakers is less than this threshold, applies additional collar shaving: $\frac{\text{exclusion} - \text{gap}}{2}$. | Only penalizes speaker handoffs that occur nearly instantaneously. Tolerates tight back-and-forth exchanges. | **Speaker Switch Isolation vs. Rapid Dialogue Retention.** Higher values aggressively erode turns surrounding fast speaker transitions. |
 | **`allow_gap_merge`** | `bool` `{True, False}` | `False` | Merges consecutive turns of the same speaker across silent pauses into longer paragraph chunks. | Treats every utterance as an isolated turn bounded by silence. Prevents inter-sentence silence or breath from being baked into clips. | **Long-Form Paragraph Continuity vs. Granular Audio-Sentence Isolation.** Always keep `False` for single-sentence TTS voice dataset creation. |
 
-#### Stage 3a: Context-Aware Collar Guard
+#### Stage 3a: Option A — Context-Aware Collar Guard
 
 | Parameter | Type & Range | Default | Increasing (+) Value | Decreasing (-) Value | The Core Trade-off |
 |---|---|---|---|---|---|
 | **`enable_context_collar`** | `bool` `{True, False}` | `True` | Dynamically distinguishes dangerous speaker handoffs from safe transitions into natural monologue silence. | Reverts to blunt, uniform collar shaving, slicing off trailing word codas even when silence follows the turn. | **Syllable Coda Rescue vs. Uniform Shaving.** Drastically improves TTS naturalness by preserving trailing phonemes during monologues. |
-| **`handoff_risk_distance_s`** | `float` `[0.05, 5.0s]` | `0.80s` | Extends the lookahead distance for competitor speakers. Turns farther away from competitors will still trigger defensive inward shaving. | Only triggers defensive collar shaving if the competing speaker starts immediately after the current turn ($< \text{distance}$). | **Handoff Safety Horizon vs. Monologue Detection.** Higher values treat moderate pauses between speakers as risky transitions. |
-| **`silence_tail_buffer_s`** | `float` `[0.0, 2.0s]` | `0.15s` (150ms) | Appends a generous acoustic decay cushion (+150ms) into natural trailing silence, preserving delicate room tone and fading vowels. | Clamps boundaries tightly to the raw offset timestamp. Prevents capturing room tone or breathing. | **Trailing Coda & Reverb Naturalness vs. Clip Tightness.** Crucial for Vietnamese tonal decay and unvoiced codas ($-p, -t, -k$). |
+| **`handoff_risk_distance_s`** | `float` `[0.05, 5.0s]` | `0.85s` | Extends the lookahead distance for competitor speakers. Turns farther away from competitors will still trigger defensive inward shaving. | Only triggers defensive collar shaving if the competing speaker starts immediately after the current turn ($< \text{distance}$). | **Handoff Safety Horizon vs. Monologue Detection.** Higher values treat moderate pauses between speakers as risky transitions. |
+| **`silence_tail_buffer_s`** | `float` `[0.0, 2.0s]` | `0.25s` (250ms) | Appends a generous acoustic decay cushion (+250ms) into natural trailing silence, preserving delicate room tone and fading vowels. | Clamps boundaries tightly to the raw offset timestamp. Prevents capturing room tone or breathing. | **Trailing Coda & Reverb Naturalness vs. Clip Tightness.** Crucial for Vietnamese tonal decay and unvoiced codas ($-p, -t, -k$). |
 
-#### Stage 3b: Forced Alignment Syllable Lock
+#### Stage 3b: Option B — Syllable & Word Forced Alignment Lock
 
 This is the compute-heavy step to enable when complete Vietnamese words are the
 priority. It runs before energy snapping.
 
 | Parameter | Type & Range | Default | Increasing / Selected Value | Decreasing / Selected Value | The Core Trade-off |
 |---|---|---|---|---|---|
-| **`enable_syllable_alignment`** | `bool` `{True, False}` | `False` | Transcribes audio and snaps diarization boundaries outward to recognized word bounds. | Leaves boundaries at acoustic/collar locations and avoids ASR compute. | **Recognized-Word Completeness vs. Heavy Compute Footprint.** |
+| **`enable_syllable_alignment`** | `bool` `{True, False}` | `True` | Transcribes audio and snaps diarization boundaries outward to recognized word bounds. | Leaves boundaries at acoustic/collar locations and avoids ASR compute. | **Recognized-Word Completeness vs. Heavy Compute Footprint.** |
 | **`aligner_engine`** | `str` `{"whisper_timestamped", "mms_fa", "remote_whisper"}` | `"whisper_timestamped"` | Selects timestamped Whisper, MMS CTC emissions, or a remote ASR endpoint. | N/A | **Alignment architecture and deployment choice.** |
-| **`aligner_model`** | `str` (HF Hub ID / path) | `"vinai/PhoWhisper-small"` | For Vietnamese, use `vinai/PhoWhisper-large` to spend more compute for potentially better recognition and timestamps. | Use `vinai/PhoWhisper-small` when memory or latency is limiting. | **Alignment Precision vs. Inference Latency.** |
-| **`aligner_device`** | `str` `{"cpu", "cuda:0", ...}` | `"cpu"` | A dedicated GPU accelerates transcription without sharing the primary diarizer's VRAM. | CPU avoids GPU OOM but takes longer. | **Alignment Speed vs. GPU VRAM Safety.** |
+| **`aligner_model`** | `str` (HF Hub ID / path) | `"vinai/PhoWhisper-large"` | For Vietnamese, use `vinai/PhoWhisper-large` to spend more compute for high recognition accuracy and timestamps. | Use `vinai/PhoWhisper-small` when memory or latency is limiting. | **Alignment Precision vs. Inference Latency.** |
+| **`aligner_device`** | `str` `{"same", "cpu", "cuda:0", ...}` | `"same"` | `"same"` shares primary device sequentially with automatic memory cleanup; a dedicated GPU runs in parallel. | CPU avoids GPU OOM but takes longer. | **Alignment Speed vs. GPU Allocation Complexity.** |
 
 Forced alignment is fail-open: a loading or inference failure retains the incoming
 turn boundaries. Verify the stage log or audit before treating the result as
 word-locked.
 
-#### Stage 3c: Micro-Acoustic Energy Valley Snapping
+#### Stage 3c: Option C — Micro-Acoustic Energy & RMS Valley Snapping
 
-This step runs after forced alignment. Disable it for the strict word-completeness
-preset because it can move the protected boundary inward.
+This step runs after forced alignment. Keep it disabled when strict word-completeness
+is prioritized, as snapping can move protected word-locked boundaries inward.
 
 | Parameter | Type & Range | Default | Increasing (+) Value | Decreasing (-) Value | The Core Trade-off |
 |---|---|---|---|---|---|
@@ -380,17 +396,17 @@ preset because it can move the protected boundary inward.
 
 | Parameter | Type & Range | Default | Increasing (+) Value | Decreasing (-) Value | The Core Trade-off |
 |---|---|---|---|---|---|
-| **`enable_homogeneity`** | `bool` `{True, False}` | `False` | Extracts dense ResNet-34 embeddings across sliding sub-windows to verify that speaker timbre remains uniform throughout the turn. | Skips sliding-window speaker verification. Faster processing; relies entirely on upstream diarizers. | **Internal Purity Guarantee vs. Computational Cost.** Catches unsegmented conversational handoffs that slipped past Stage 1 & 2. |
-| **`homogeneity_window_s`** | `float` `[0.25, 5.0s]` | `1.00s` | Longer sub-windows yield richer acoustic context and more stable embedding vectors. | Shorter sub-windows provide higher temporal resolution, detecting brief (0.5s) secondary speaker voice insertions. | **Embedding Vector Stability vs. Short Intrusion Detection.** Sub-windows $<0.6s$ suffer from high cosine noise and false rejections. |
-| **`homogeneity_hop_s`** | `float` `[0.05, 2.0s]` | `0.25s` (250ms) | Faster processing with fewer forward passes. May step over momentary speaker handoffs. | Dense temporal sampling (e.g. 100ms hop). Catches instantaneous foreign vocal blips at linearly higher runtime. | **Temporal Probe Density vs. Forward Pass Latency.** A 0.25s hop provides an optimal balance for conversational speech. |
-| **`min_homogeneity_similarity`** | `float` `[-1.0, 1.0]` | `0.75` | Demands near-identical vocal timbre throughout the turn. Rejects turns with pitch changes, emotional shifts, shouting, or whispering. | Accommodates natural expressive variance, laughing, and emotional inflection within the target speaker's monologue. | **Vocal Monotony Strictness vs. Expressive Yield.** Setting $>0.82$ discards highly expressive or dramatic speech. |
+| **`enable_homogeneity`** | `bool` `{True, False}` | `True` | Extracts dense ResNet-34 embeddings across sliding sub-windows to verify that speaker timbre remains uniform throughout the turn. | Skips sliding-window speaker verification. Faster processing; relies entirely on upstream diarizers. | **Internal Purity Guarantee vs. Computational Cost.** Catches unsegmented conversational handoffs that slipped past Stage 1 & 2. |
+| **`homogeneity_window_s`** | `float` `[0.25, 5.0s]` | `0.80s` | Longer sub-windows yield richer acoustic context and more stable embedding vectors. | Shorter sub-windows provide higher temporal resolution, detecting brief secondary speaker voice insertions. | **Embedding Vector Stability vs. Short Intrusion Detection.** Sub-windows $<0.6s$ suffer from high cosine noise and false rejections. |
+| **`homogeneity_hop_s`** | `float` `[0.05, 2.0s]` | `0.10s` (100ms) | Faster processing with fewer forward passes. May step over momentary speaker handoffs. | Dense temporal sampling (100ms hop). Catches instantaneous foreign vocal blips at linearly higher runtime. | **Temporal Probe Density vs. Forward Pass Latency.** A 100ms hop provides high sensitivity to brief intrusion transients. |
+| **`min_homogeneity_similarity`** | `float` `[-1.0, 1.0]` | `0.74` | Demands near-identical vocal timbre throughout the turn. Rejects turns with pitch changes, emotional shifts, shouting, or whispering. | Accommodates natural expressive variance, laughing, and emotional inflection within the target speaker's monologue. | **Vocal Monotony Strictness vs. Expressive Yield.** Setting $>0.82$ discards highly expressive or dramatic speech. |
 
 #### Stage 5: In-Loop Foundation Model Verification
 
 | Parameter | Type & Range | Default | Increasing (+) Value | Decreasing (-) Value | The Core Trade-off |
 |---|---|---|---|---|---|
-| **`enable_gemma`** | `bool` `{True, False}` | `False` | Runs local Gemma or Gemini on audio for speaker purity and complete word boundaries. | Bypasses LLM evaluation and its latency/cost. | **Acoustic Quality vs. Latency, API Cost, and Yield.** |
-| **`gemma_backend`** | `str` `{"gemma4", "gemini"}` | `"gemma4"` | Selects local OpenAI-compatible Gemma or Google Gemini with server-side `GEMINI_API_KEY`. | — | **Local compute vs. metered API.** |
+| **`enable_gemma`** | `bool` `{True, False}` | `True` | Runs Gemini or local Gemma on direct audio for speaker purity, tail intrusion detection, and complete word boundaries. | Bypasses LLM evaluation and its latency/cost. | **Acoustic Quality vs. Latency, API Cost, and Yield.** |
+| **`gemma_backend`** | `str` `{"gemini", "gemma4"}` | `"gemini"` | Selects Google Gemini with server-side `GEMINI_API_KEY` or local OpenAI-compatible Gemma. | — | **Metered API vs. Local compute.** |
 | **`gemma_timeout_s`** | `float` `[5.0, 600.0s]` | `120.0s` | Allows remote LLM ample time to generate tokens and recover from high server load. | Fails quickly on unresponsive endpoints, preventing pipeline queue stalls. | **Request Resilience vs. Pipeline Latency.** |
 | **`enable_vibevoice`** | `bool` `{True, False}` | `False` | Uses Microsoft VibeVoice-ASR token stream to measure total duration of any secondary non-dominant speaker in the audio. | Bypasses VibeVoice verification. | **Token-Level Speaker Count Verification vs. Dedicated VRAM / Endpoint Requirement.** |
 | **`max_secondary_speech_s`** | `float` `[0.0, 10.0s]` | `0.0s` | Tolerates brief background vocal sounds, far-field murmur, or brief confirmations up to the threshold duration. | Absolute zero-tolerance policy. Rejects the candidate if VibeVoice detects a single secondary speaker token. | **Dataset Cleanliness vs. Monologue Yield.** Keep at `0.0s` for ultra-pure single-speaker TTS datasets. |

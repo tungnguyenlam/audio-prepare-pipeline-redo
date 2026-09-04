@@ -40,19 +40,19 @@ from src.utils.AudioClass import Audio
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_COLLAR_EROSION_S = 0.35
-DEFAULT_MIN_TURN_DURATION_S = 0.80
+DEFAULT_COLLAR_EROSION_S = 0.20
+DEFAULT_MIN_TURN_DURATION_S = 0.60
 DEFAULT_TRANSITION_EXCLUSION_S = 0.50
-DEFAULT_TARGET_ONSET = 0.80
-DEFAULT_TARGET_OFFSET = 0.65
+DEFAULT_TARGET_ONSET = 0.70
+DEFAULT_TARGET_OFFSET = 0.50
 DEFAULT_COMPETITOR_ONSET = 0.20
-DEFAULT_HOMOGENEITY_WINDOW_S = 1.00
-DEFAULT_HOMOGENEITY_HOP_S = 0.25
-DEFAULT_MIN_HOMOGENEITY_SIMILARITY = 0.75
+DEFAULT_HOMOGENEITY_WINDOW_S = 0.80
+DEFAULT_HOMOGENEITY_HOP_S = 0.10
+DEFAULT_MIN_HOMOGENEITY_SIMILARITY = 0.74
 
 
-DEFAULT_HANDOFF_RISK_DISTANCE_S = 0.80
-DEFAULT_SILENCE_TAIL_BUFFER_S = 0.15
+DEFAULT_HANDOFF_RISK_DISTANCE_S = 0.85
+DEFAULT_SILENCE_TAIL_BUFFER_S = 0.25
 DEFAULT_ENERGY_SEARCH_WINDOW_S = 0.15
 DEFAULT_ENERGY_VALLEY_FLOOR_DB = -30.0
 
@@ -125,7 +125,7 @@ class ZeroContaminationConfig:
     # Stage 2: Dual-Engine Consensus
     enable_consensus: bool = True
     secondary_backend: str = "diarizen"  # "diarizen", "pyannote", "sortformer"
-    secondary_device: str | None = None  # e.g. "same", "cuda:1", "cpu"
+    secondary_device: str | None = "same"  # e.g. "same", "cuda:0", "cuda:1", "cpu"
 
     # Stage 3: Boundary & Syllable Integrity Gate
     enable_collar_erosion: bool = True
@@ -139,31 +139,31 @@ class ZeroContaminationConfig:
     handoff_risk_distance_s: float = DEFAULT_HANDOFF_RISK_DISTANCE_S
     silence_tail_buffer_s: float = DEFAULT_SILENCE_TAIL_BUFFER_S
 
-    # Stage 3b: Option B - Micro-Acoustic Energy & RMS Silence Valley Snapping
+    # Stage 3b: Option B - Syllable / Word Forced Alignment Lock (High-Compute)
+    enable_syllable_alignment: bool = True
+    aligner_engine: str = "whisper_timestamped"  # "whisper_timestamped", "mms_fa", "remote_whisper"
+    aligner_model: str = "vinai/PhoWhisper-large"  # Vietnamese fine-tuned model or standard Whisper
+    aligner_language: str = "vi"  # Target language (e.g. "vi" for Vietnamese)
+    aligner_endpoint: str | None = None
+    aligner_device: str | None = "same"  # Same as primary device (auto-recovers to CPU on OOM)
+
+    # Stage 3c: Option C - Micro-Acoustic Energy & RMS Silence Valley Snapping
     enable_energy_snapping: bool = False
     energy_search_window_s: float = DEFAULT_ENERGY_SEARCH_WINDOW_S
     energy_valley_floor_db: float = DEFAULT_ENERGY_VALLEY_FLOOR_DB
 
-    # Stage 3c: Option C - Syllable / Word Forced Alignment Lock (High-Compute)
-    enable_syllable_alignment: bool = False
-    aligner_engine: str = "whisper_timestamped"  # "whisper_timestamped", "mms_fa", "remote_whisper"
-    aligner_model: str = "vinai/PhoWhisper-small"  # Vietnamese fine-tuned model or standard Whisper
-    aligner_language: str = "vi"  # Target language (e.g. "vi" for Vietnamese)
-    aligner_endpoint: str | None = None
-    aligner_device: str | None = "cpu"  # CPU recommended to prevent GPU VRAM exhaustion
-
     # Stage 4: Dense Sliding-Window Embedding Homogeneity
-    enable_homogeneity: bool = False
-    homogeneity_device: str | None = None  # e.g. "same", "cuda:0", "cpu"
+    enable_homogeneity: bool = True
+    homogeneity_device: str | None = "same"  # e.g. "same", "cuda:0", "cpu"
     homogeneity_window_s: float = DEFAULT_HOMOGENEITY_WINDOW_S
     homogeneity_hop_s: float = DEFAULT_HOMOGENEITY_HOP_S
     min_homogeneity_similarity: float = DEFAULT_MIN_HOMOGENEITY_SIMILARITY
 
     # Stage 5a: Direct-audio speaker-purity and word-completeness verifier
-    enable_gemma: bool = False
-    gemma_backend: str = "gemma4"  # "gemma4" or "gemini"
+    enable_gemma: bool = True
+    gemma_backend: str = "gemini"  # "gemini" or "gemma4"
     gemma_endpoint: str | None = None
-    gemma_model: str | None = None
+    gemma_model: str | None = "gemini-3.8-flash"
     gemma_prompt: str | None = None
     gemma_api_key: str | None = None
     gemma_timeout_s: float = 120.0
@@ -1600,7 +1600,7 @@ def run_zero_contamination_pipeline(
         current_turns = eroded_turns
         boundary_audits = []
 
-    # 3b. Option C: Syllable / Word Forced Alignment Lock (High-Compute)
+    # 3b. Option B: Syllable / Word Forced Alignment Lock (High-Compute)
     if config.enable_syllable_alignment:
         aligner_dev = config.aligner_device if (config.aligner_device and config.aligner_device != "same") else config.device
         if progress_callback:
@@ -1622,7 +1622,7 @@ def run_zero_contamination_pipeline(
             torch.cuda.empty_cache()
         gc.collect()
 
-    # 3c. Option B: Micro-Acoustic Energy & RMS Silence Valley Snapping
+    # 3c. Option C: Micro-Acoustic Energy & RMS Silence Valley Snapping
     if config.enable_energy_snapping:
         if progress_callback:
             progress_callback(0.62, "Snapping boundaries to micro-energy RMS valleys...")

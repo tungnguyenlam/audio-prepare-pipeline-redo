@@ -81,17 +81,7 @@ Return only the requested structured result and never include a transcript.`;
         silenceTailNum: document.getElementById('exp-silence-tail-num'),
         silenceTailValue: document.getElementById('exp-silence-tail-val'),
 
-        // Stage 3c: Option B - Micro-Acoustic Energy & RMS Valley Snapping
-        enableEnergySnapping: document.getElementById('exp-enable-energy-snapping'),
-        energySnappingFields: document.getElementById('exp-energy-snapping-fields'),
-        energyWindow: document.getElementById('exp-energy-window'),
-        energyWindowNum: document.getElementById('exp-energy-window-num'),
-        energyWindowValue: document.getElementById('exp-energy-window-val'),
-        energyFloor: document.getElementById('exp-energy-floor'),
-        energyFloorNum: document.getElementById('exp-energy-floor-num'),
-        energyFloorValue: document.getElementById('exp-energy-floor-val'),
-
-        // Stage 3b: Option C - Syllable & Word Forced Alignment Lock
+        // Stage 3b: Option B - Syllable & Word Forced Alignment Lock
         enableSyllableAlign: document.getElementById('exp-enable-syllable-align'),
         syllableAlignFields: document.getElementById('exp-syllable-align-fields'),
         alignerEngine: document.getElementById('exp-aligner-engine'),
@@ -101,6 +91,16 @@ Return only the requested structured result and never include a transcript.`;
         whisperOptions: document.getElementById('exp-whisper-options'),
         alignerEndpoint: document.getElementById('exp-aligner-endpoint'),
         alignerEndpointWrap: document.getElementById('exp-aligner-endpoint-wrap'),
+
+        // Stage 3c: Option C - Micro-Acoustic Energy & RMS Valley Snapping
+        enableEnergySnapping: document.getElementById('exp-enable-energy-snapping'),
+        energySnappingFields: document.getElementById('exp-energy-snapping-fields'),
+        energyWindow: document.getElementById('exp-energy-window'),
+        energyWindowNum: document.getElementById('exp-energy-window-num'),
+        energyWindowValue: document.getElementById('exp-energy-window-val'),
+        energyFloor: document.getElementById('exp-energy-floor'),
+        energyFloorNum: document.getElementById('exp-energy-floor-num'),
+        energyFloorValue: document.getElementById('exp-energy-floor-val'),
 
         // Stage 4: Dense WeSpeaker Homogeneity
         enableHomo: document.getElementById('exp-enable-homo'),
@@ -160,6 +160,11 @@ Return only the requested structured result and never include a transcript.`;
         directAudioAuditBody: document.getElementById('exp-direct-audio-audit-body'),
         directAudioTotalCost: document.getElementById('exp-direct-audio-total-cost'),
         turnsBody: document.getElementById('exp-turns-body'),
+        turnsCountPill: document.getElementById('exp-turns-count-pill'),
+        turnsDurationPill: document.getElementById('exp-turns-duration-pill'),
+        turnsAvgPill: document.getElementById('exp-turns-avg-pill'),
+        turnsSearch: document.getElementById('exp-turns-search'),
+        turnsSpeakerFilter: document.getElementById('exp-turns-speaker-filter'),
         tableCard: document.getElementById('exp-table-card'),
         btnExportRttm: document.getElementById('btn-exp-export-rttm'),
         btnExportManifest: document.getElementById('btn-exp-export-manifest'),
@@ -351,6 +356,10 @@ Return only the requested structured result and never include a transcript.`;
         console.warn('Audio preview element error:', e);
         if (window.showToast) window.showToast('Could not play audio preview', 'error');
       });
+
+      // Surviving turns toolbar filter & search
+      this.el.turnsSearch?.addEventListener('input', () => self.filterAndRenderTurns());
+      this.el.turnsSpeakerFilter?.addEventListener('change', () => self.filterAndRenderTurns());
 
       // Export
       this.el.btnExportRttm?.addEventListener('click', () => self.exportRttm());
@@ -591,46 +600,47 @@ Return only the requested structured result and never include a transcript.`;
 
     resetToDefaults() {
       if (this.el.primaryBackend) this.el.primaryBackend.value = 'sortformer';
-      this.setParamValue(this.el.targetOnset, this.el.targetOnsetNum, 0.80);
-      this.setParamValue(this.el.targetOffset, this.el.targetOffsetNum, 0.65);
+      this.setParamValue(this.el.targetOnset, this.el.targetOnsetNum, 0.70);
+      this.setParamValue(this.el.targetOffset, this.el.targetOffsetNum, 0.50);
       this.setParamValue(this.el.competitorOnset, this.el.competitorOnsetNum, 0.20);
       if (this.el.enableConsensus) { this.el.enableConsensus.checked = true; this.el.consensusFields.style.display = 'block'; }
       if (this.el.secondaryBackend) this.el.secondaryBackend.value = 'diarizen';
       if (this.el.secondaryDevice) this.el.secondaryDevice.value = 'same';
       if (this.el.enableCollar) { this.el.enableCollar.checked = true; this.el.collarFields.style.display = 'block'; }
-      this.setParamValue(this.el.boundaryCollar, this.el.boundaryCollarNum, 0.35);
-      this.setParamValue(this.el.minDuration, this.el.minDurationNum, 0.80);
+      this.setParamValue(this.el.boundaryCollar, this.el.boundaryCollarNum, 0.20);
+      this.setParamValue(this.el.minDuration, this.el.minDurationNum, 0.60);
       this.setParamValue(this.el.transitionExclusion, this.el.transitionExclusionNum, 0.50);
-      // Option A
+      // Stage 3a: Option A - Context-Aware Handoff Guard
       if (this.el.enableContextCollar) { this.el.enableContextCollar.checked = true; this.el.contextCollarFields.style.display = 'block'; }
-      this.setParamValue(this.el.handoffRisk, this.el.handoffRiskNum, 0.80);
-      this.setParamValue(this.el.silenceTail, this.el.silenceTailNum, 0.15);
-      // Option B
-      if (this.el.enableEnergySnapping) { this.el.enableEnergySnapping.checked = false; this.el.energySnappingFields.style.display = 'none'; }
-      this.setParamValue(this.el.energyWindow, this.el.energyWindowNum, 0.15);
-      this.setParamValue(this.el.energyFloor, this.el.energyFloorNum, -30);
-      // Option C
-      if (this.el.enableSyllableAlign) { this.el.enableSyllableAlign.checked = false; this.el.syllableAlignFields.style.display = 'none'; }
+      this.setParamValue(this.el.handoffRisk, this.el.handoffRiskNum, 0.85);
+      this.setParamValue(this.el.silenceTail, this.el.silenceTailNum, 0.25);
+      // Stage 3b: Option B - Syllable & Word Forced Alignment Lock
+      if (this.el.enableSyllableAlign) { this.el.enableSyllableAlign.checked = true; this.el.syllableAlignFields.style.display = 'block'; }
       if (this.el.alignerEngine) {
         this.el.alignerEngine.value = 'whisper_timestamped';
         this.el.alignerEngine.dispatchEvent(new Event('change'));
       }
-      if (this.el.alignerModel) this.el.alignerModel.value = 'vinai/PhoWhisper-small';
+      if (this.el.alignerModel) this.el.alignerModel.value = 'vinai/PhoWhisper-large';
       if (this.el.alignerLang) this.el.alignerLang.value = 'vi';
-      if (this.el.alignerDevice) this.el.alignerDevice.value = 'cpu';
-      // Stage 4
-      if (this.el.enableHomo) { this.el.enableHomo.checked = false; this.el.homoFields.style.display = 'none'; }
+      if (this.el.alignerDevice) this.el.alignerDevice.value = 'same';
+      // Stage 3c: Option C - Micro-Acoustic Energy & RMS Valley Snapping
+      if (this.el.enableEnergySnapping) { this.el.enableEnergySnapping.checked = false; this.el.energySnappingFields.style.display = 'none'; }
+      this.setParamValue(this.el.energyWindow, this.el.energyWindowNum, 0.15);
+      this.setParamValue(this.el.energyFloor, this.el.energyFloorNum, -30);
+      // Stage 4: Dense WeSpeaker Homogeneity
+      if (this.el.enableHomo) { this.el.enableHomo.checked = true; this.el.homoFields.style.display = 'block'; }
       if (this.el.homoDevice) this.el.homoDevice.value = 'same';
-      this.setParamValue(this.el.homoSim, this.el.homoSimNum, 0.75);
-      this.setParamValue(this.el.homoWin, this.el.homoWinNum, 1.00);
-      this.setParamValue(this.el.homoHop, this.el.homoHopNum, 0.25);
-      // Stage 5a
+      this.setParamValue(this.el.homoSim, this.el.homoSimNum, 0.74);
+      this.setParamValue(this.el.homoWin, this.el.homoWinNum, 0.80);
+      this.setParamValue(this.el.homoHop, this.el.homoHopNum, 0.10);
+      // Stage 5a: Direct-audio verifier
       this.setParamValue(this.el.gemmaTimeoutSlider, this.el.gemmaTimeout, 120);
       if (this.el.gemmaPrompt) this.el.gemmaPrompt.value = DEFAULT_GEMMA_PROMPT;
-      if (this.el.gemmaBackend) this.el.gemmaBackend.value = 'gemma4';
+      if (this.el.enableGemma) { this.el.enableGemma.checked = true; this.el.gemmaFields.style.display = 'block'; }
+      if (this.el.gemmaBackend) this.el.gemmaBackend.value = 'gemini:gemini-3.8-flash';
       if (this.el.gemmaMaxTokens) this.el.gemmaMaxTokens.value = '256';
       this.syncDirectAudioProvider();
-      // Stage 5b
+      // Stage 5b: VibeVoice-ASR
       if (this.el.enableVibeVoice) { this.el.enableVibeVoice.checked = false; this.el.vibevoiceFields.style.display = 'none'; }
       if (this.el.vibevoiceModel) this.el.vibevoiceModel.value = 'Dubedo/VibeVoice-ASR-HF-INT8';
       if (this.el.vibevoiceDevice) this.el.vibevoiceDevice.value = 'same';
@@ -749,39 +759,39 @@ Return only the requested structured result and never include a transcript.`;
         device: this.el.deviceSelect?.value || 'auto',
         primary_device: this.el.deviceSelect?.value || 'auto',
         primary_backend: this.el.primaryBackend?.value || 'sortformer',
-        target_onset: parseFloat(this.el.targetOnsetNum?.value || this.el.targetOnset?.value || '0.80'),
-        target_offset: parseFloat(this.el.targetOffsetNum?.value || this.el.targetOffset?.value || '0.65'),
+        target_onset: parseFloat(this.el.targetOnsetNum?.value || this.el.targetOnset?.value || '0.70'),
+        target_offset: parseFloat(this.el.targetOffsetNum?.value || this.el.targetOffset?.value || '0.50'),
         competitor_onset: parseFloat(this.el.competitorOnsetNum?.value || this.el.competitorOnset?.value || '0.20'),
         enable_consensus: Boolean(this.el.enableConsensus?.checked),
         secondary_backend: this.el.secondaryBackend?.value || 'diarizen',
         secondary_device: this.el.secondaryDevice?.value || 'same',
         // Stage 3 Base
         enable_collar_erosion: Boolean(this.el.enableCollar?.checked),
-        boundary_collar_s: parseFloat(this.el.boundaryCollarNum?.value || this.el.boundaryCollar?.value || '0.35'),
-        min_turn_duration_s: parseFloat(this.el.minDurationNum?.value || this.el.minDuration?.value || '0.80'),
+        boundary_collar_s: parseFloat(this.el.boundaryCollarNum?.value || this.el.boundaryCollar?.value || '0.20'),
+        min_turn_duration_s: parseFloat(this.el.minDurationNum?.value || this.el.minDuration?.value || '0.60'),
         transition_exclusion_s: parseFloat(this.el.transitionExclusionNum?.value || this.el.transitionExclusion?.value || '0.50'),
-        // Stage 3a: Option A
+        // Stage 3a: Option A - Context-Aware Handoff Guard
         enable_context_collar: Boolean(this.el.enableContextCollar?.checked),
-        handoff_risk_distance_s: parseFloat(this.el.handoffRiskNum?.value || this.el.handoffRisk?.value || '0.80'),
-        silence_tail_buffer_s: parseFloat(this.el.silenceTailNum?.value || this.el.silenceTail?.value || '0.15'),
-        // Stage 3c: Option B
+        handoff_risk_distance_s: parseFloat(this.el.handoffRiskNum?.value || this.el.handoffRisk?.value || '0.85'),
+        silence_tail_buffer_s: parseFloat(this.el.silenceTailNum?.value || this.el.silenceTail?.value || '0.25'),
+        // Stage 3b: Option B - Syllable & Word Forced Alignment Lock
+        enable_syllable_alignment: Boolean(this.el.enableSyllableAlign?.checked),
+        aligner_engine: this.el.alignerEngine?.value || 'whisper_timestamped',
+        aligner_model: this.el.alignerModel?.value || 'vinai/PhoWhisper-large',
+        aligner_language: this.el.alignerLang?.value || 'vi',
+        aligner_device: this.el.alignerDevice?.value || 'same',
+        aligner_endpoint: this.el.alignerEndpoint?.value || '',
+        // Stage 3c: Option C - Micro-Acoustic Energy & RMS Valley Snapping
         enable_energy_snapping: Boolean(this.el.enableEnergySnapping?.checked),
         energy_search_window_s: parseFloat(this.el.energyWindowNum?.value || this.el.energyWindow?.value || '0.15'),
         energy_valley_floor_db: parseFloat(this.el.energyFloorNum?.value || this.el.energyFloor?.value || '-30'),
-        // Stage 3b: Option C
-        enable_syllable_alignment: Boolean(this.el.enableSyllableAlign?.checked),
-        aligner_engine: this.el.alignerEngine?.value || 'whisper_timestamped',
-        aligner_model: this.el.alignerModel?.value || 'vinai/PhoWhisper-small',
-        aligner_language: this.el.alignerLang?.value || 'vi',
-        aligner_device: this.el.alignerDevice?.value || 'cpu',
-        aligner_endpoint: this.el.alignerEndpoint?.value || '',
-        // Stage 4
+        // Stage 4: Dense WeSpeaker Homogeneity
         enable_homogeneity: Boolean(this.el.enableHomo?.checked),
         homogeneity_device: this.el.homoDevice?.value || 'same',
-        min_homogeneity_similarity: parseFloat(this.el.homoSimNum?.value || this.el.homoSim?.value || '0.75'),
-        homogeneity_window_s: parseFloat(this.el.homoWinNum?.value || this.el.homoWin?.value || '1.00'),
-        homogeneity_hop_s: parseFloat(this.el.homoHopNum?.value || this.el.homoHop?.value || '0.25'),
-        // Stage 5a
+        min_homogeneity_similarity: parseFloat(this.el.homoSimNum?.value || this.el.homoSim?.value || '0.74'),
+        homogeneity_window_s: parseFloat(this.el.homoWinNum?.value || this.el.homoWin?.value || '0.80'),
+        homogeneity_hop_s: parseFloat(this.el.homoHopNum?.value || this.el.homoHop?.value || '0.10'),
+        // Stage 5a: Direct-Audio Quality Verifier
         enable_gemma: Boolean(this.el.enableGemma?.checked),
         gemma_backend: this.selectedDirectAudioBackend(),
         gemma_endpoint: this.el.gemmaEndpoint?.value,
@@ -1012,11 +1022,72 @@ Return only the requested structured result and never include a transcript.`;
     },
 
     renderTurnsTable(turns) {
+      this.allTurns = turns || [];
+      this.updateSpeakerFilterOptions();
+      this.filterAndRenderTurns();
+    },
+
+    updateSpeakerFilterOptions() {
+      if (!this.el.turnsSpeakerFilter) return;
+      const currentVal = this.el.turnsSpeakerFilter.value || 'all';
+      const speakers = Array.from(new Set((this.allTurns || []).map(t => t.speaker_id).filter(Boolean))).sort();
+
+      this.el.turnsSpeakerFilter.innerHTML = '<option value="all">All Speakers</option>';
+      speakers.forEach(spk => {
+        const opt = document.createElement('option');
+        opt.value = spk;
+        opt.textContent = spk;
+        this.el.turnsSpeakerFilter.appendChild(opt);
+      });
+
+      if (speakers.includes(currentVal)) {
+        this.el.turnsSpeakerFilter.value = currentVal;
+      } else {
+        this.el.turnsSpeakerFilter.value = 'all';
+      }
+    },
+
+    filterAndRenderTurns() {
       if (!this.el.turnsBody) return;
-      if (!turns || turns.length === 0) {
+      const all = this.allTurns || [];
+
+      const query = (this.el.turnsSearch?.value || '').trim().toLowerCase();
+      const speaker = this.el.turnsSpeakerFilter?.value || 'all';
+
+      const filtered = all.filter(t => {
+        if (speaker !== 'all' && t.speaker_id !== speaker) return false;
+        if (query) {
+          const text = (t.transcript || '').toLowerCase();
+          const spk = (t.speaker_id || '').toLowerCase();
+          const policy = (t.boundary_policy || '').toLowerCase();
+          if (!text.includes(query) && !spk.includes(query) && !policy.includes(query)) {
+            return false;
+          }
+        }
+        return true;
+      });
+
+      // Update Summary Pills
+      const count = filtered.length;
+      const totalDur = filtered.reduce((acc, t) => acc + (t.end_s - t.start_s), 0);
+      const avgDur = count > 0 ? (totalDur / count) : 0;
+
+      if (this.el.turnsCountPill) {
+        this.el.turnsCountPill.textContent = `${count} Pure Turn${count === 1 ? '' : 's'}`;
+      }
+      if (this.el.turnsDurationPill) {
+        this.el.turnsDurationPill.textContent = `${totalDur.toFixed(1)}s Total Speech`;
+      }
+      if (this.el.turnsAvgPill) {
+        this.el.turnsAvgPill.textContent = `Avg: ${avgDur.toFixed(1)}s`;
+      }
+
+      if (filtered.length === 0) {
         this.el.turnsBody.innerHTML = `
-          <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2.5rem 1rem;">
-            No turns survived the zero-contamination constraints. Consider slightly relaxing boundary collar erosion or target onset threshold.
+          <tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 2.5rem 1rem;">
+            ${all.length === 0
+              ? 'No turns survived the zero-contamination constraints. Consider slightly relaxing boundary collar erosion or target onset threshold.'
+              : 'No turns match the active speaker or transcript search query.'}
           </td></tr>`;
         return;
       }
@@ -1031,7 +1102,7 @@ Return only the requested structured result and never include a transcript.`;
       };
 
       const self = this;
-      this.el.turnsBody.innerHTML = turns
+      this.el.turnsBody.innerHTML = filtered
         .map((t, idx) => {
           const dur = (t.end_s - t.start_s).toFixed(2);
           const rawStart = t.raw_start_s !== undefined ? t.raw_start_s : t.start_s;
@@ -1053,11 +1124,12 @@ Return only the requested structured result and never include a transcript.`;
           }
 
           const transcriptHtml = t.transcript
-            ? `<div class="text-xs text-muted" style="margin-top: 3px; font-style: italic; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${t.transcript.replace(/"/g, '&quot;')}">“${t.transcript}”</div>`
+            ? `<div class="text-xs text-muted" style="margin-top: 3px; font-style: italic; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${this.escapeHtml(t.transcript)}">“${this.escapeHtml(t.transcript)}”</div>`
             : '';
 
           return `
           <tr data-index="${idx}">
+            <td class="exp-turn-index">#${idx + 1}</td>
             <td>
               <div style="display: flex; gap: 4px; align-items: center;">
                 <button type="button" class="btn btn-ghost btn-xs exp-table-play-blunt" data-start="${rawStart}" data-end="${rawEnd}" title="Play with blunt collar erosion (before syllable rescue)">
@@ -1069,14 +1141,14 @@ Return only the requested structured result and never include a transcript.`;
               </div>
             </td>
             <td>
-              <span class="exp-speaker-chip">${t.speaker_id}</span>
+              <span class="exp-speaker-chip">${this.escapeHtml(t.speaker_id)}</span>
               ${transcriptHtml}
             </td>
             <td><code>${t.start_s.toFixed(2)}s</code></td>
             <td><code>${t.end_s.toFixed(2)}s</code></td>
             <td><strong>${dur}s</strong></td>
             <td>${deltaBadge}</td>
-            <td><span class="badge badge-sm badge-ghost">${policyLabel}</span></td>
+            <td><span class="badge badge-sm badge-ghost">${this.escapeHtml(policyLabel)}</span></td>
             <td><span class="badge badge-sm badge-success">Pure Single Speaker</span></td>
           </tr>
         `;
@@ -1113,8 +1185,13 @@ Return only the requested structured result and never include a transcript.`;
       }
 
       this.activePlayingBtn = btn;
+      const row = btn.closest('tr');
+      if (row) {
+        this.activePlayingRow = row;
+        row.classList.add('active-playing');
+      }
       btn.dataset.prevHtml = btn.innerHTML;
-      btn.classList.add('btn-danger');
+      btn.classList.add('btn-danger', 'is-playing');
       btn.textContent = '⏹ Stop';
 
       const generation = ++this.turnPreviewGeneration;
@@ -1159,8 +1236,12 @@ Return only the requested structured result and never include a transcript.`;
         URL.revokeObjectURL(this.currentBlobUrl);
         this.currentBlobUrl = null;
       }
+      if (this.activePlayingRow) {
+        this.activePlayingRow.classList.remove('active-playing');
+        this.activePlayingRow = null;
+      }
       if (this.activePlayingBtn) {
-        this.activePlayingBtn.classList.remove('btn-danger');
+        this.activePlayingBtn.classList.remove('btn-danger', 'is-playing');
         if (this.activePlayingBtn.dataset.prevHtml) {
           this.activePlayingBtn.innerHTML = this.activePlayingBtn.dataset.prevHtml;
         }
