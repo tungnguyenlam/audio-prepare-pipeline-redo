@@ -337,6 +337,16 @@ flowchart TD
     S4 --> S5["Stage 5: Foundation Models (max_secondary: 0.0s)"]
 ```
 
+> **Quick answer for “không bị lẹm chữ”:** enable **Stage 3 → Option C:
+> Syllable & Word Forced Alignment Lock**, select `whisper_timestamped`, set
+> language to `vi`, and use `vinai/PhoWhisper-large` when compute permits. Start
+> with `target_onset=0.70`, `target_offset=0.50`,
+> `boundary_collar_s=0.20`, `enable_context_collar=True`, and
+> `silence_tail_buffer_s=0.25`. Keep `enable_energy_snapping=False`, because
+> energy snapping executes after word locking and can move the protected boundary
+> inward. See the complete UI-by-UI recipe in
+> [04. Zero-Contamination Diarization](04_zero_contamination_diarization.md#experiment-tab-recipe-prioritize-complete-vietnamese-words-không-bị-lẹm-chữ).
+
 ---
 
 ### 5.1 Stage 1: Asymmetric Detection & Competitor Tripwires
@@ -347,8 +357,12 @@ Runs the primary diarizer with asymmetric probability thresholds, decoupling spe
 |---|---|---|---|---|---|---|---|
 | **`target_onset`** | `float` `[0.01, 0.99]` | `0.80` | Minimum neural activation probability required to acknowledge target speech onset. | Requires decisive model confidence to initiate a turn. Eliminates false alarms from inhalation, coughing, and room reverberation. | Initiates turns on faint acoustic evidence. Captures soft word onsets and quiet speech, but risks false alarms on ambient noise. | Target Speech Precision vs. Speech Recall | **Guaranteed** frame thresholding; **Empirical** speech recall. |
 | **`target_offset`** | `float` `[0.01, target_onset]` | `0.65` | Probability threshold below which target speech is closed (hysteresis: `offset <= onset`). | Terminates the turn immediately as vocal energy subsides. Minimizes tail bleed into subsequent speaker turns. | Holds the turn open across trailing vocal pauses. Preserves delicate trailing phonemes and unvoiced syllable codas. | Turn Termination Precision vs. Coda Completeness | **Guaranteed** hysteresis loop; **Empirical** coda survival. |
-| **`competitor_onset`** | `float` `[0.01, 0.99]` | `0.20` | Sensitive tripwire threshold for secondary speakers. If any competing speaker reaches this activation, the turn is vetoed. | Tolerates moderate secondary speaker activations. Improves speech yield in multi-speaker rooms or noisy backgrounds. | Extreme hair-trigger sensitivity. Drops the turn if any other speaker shows even a 10% activation spike. | Cross-Talk Rejection Strictness vs. Candidate Yield | **Guaranteed** frame veto; **Empirical** yield in multi-speaker audio. |
+| **`competitor_onset`** | `float` `[0.01, 0.99]` | `0.20` | Intended secondary-speaker activation veto. | Intended to tolerate more secondary activation. | Intended to provide a more sensitive veto. | Cross-Talk Rejection Strictness vs. Candidate Yield | **Currently configuration-only:** `_run_backend` does not consume this value, so it has no output effect. |
 | **`primary_backend`** | `str` `{"sortformer", "diarizen", "pyannote"}` | `"sortformer"` | Architecture selection for primary diarization. | N/A | N/A | NeMo Sortformer (streaming 4-speaker with enrollment) vs. BUT-FIT DiariZen (WavLM Large SOTA overlap) vs. Pyannote 3.1. | **Guaranteed** backend delegation. |
+
+Runtime scope: `target_onset` and `target_offset` currently affect Sortformer
+only. `competitor_onset` is serialized by the Experiment UI but is not consumed
+by `_run_backend`; changing it currently has no effect on the result.
 
 ---
 
@@ -385,24 +399,37 @@ Processes audio through an orthogonal secondary diarizer and evaluates mutual ag
 
 ---
 
-### 5.5 Stage 3b: Micro-Acoustic Energy Valley Snapping
+### 5.5 Stage 3b: Forced Alignment Syllable Lock
 
-| Parameter | Type & Range | Default | Mechanism | Increasing (+) Effect | Decreasing (-) Effect | Trade-off | Certainty |
-|---|---|---|---|---|---|---|---|
-| **`enable_energy_snapping`** | `bool` `{True, False}` | `False` | Walks boundaries to the nearest vocal cord closure zero-crossing / RMS energy trough. | Snaps cut points to natural silence valleys in the waveform, eliminating boundary clicks. | Leaves boundaries at mathematical collar timestamps without waveform alignment. | Click-Free Audio Slicing vs. Minor CPU Compute | **Guaranteed** local minimum search. |
-| **`energy_search_window_s`** | `float` `[0.01, 1.0s]` | `0.15s` (±150ms) | Temporal search radius around each boundary. | Higher probability of finding a deep acoustic trough, but risks shifting boundary too far from the detected turn. | Restricts search to immediate boundary vicinity. Prevents boundary drift. | Silence Valley Depth vs. Boundary Drift | **Guaranteed** search bounds. |
-| **`energy_valley_floor_db`** | `float` `[-80.0, -10.0 dB]` | `-30.0 dB` | RMS energy threshold required to accept a snapping point. | Accepts higher-energy troughs as valid snapping points (more permissive on noisy audio). | Demands deep acoustic silence ($<-40\text{ dB}$) before accepting a snapping point. | Snapping Permissiveness vs. Valley Silence Depth | **Guaranteed** threshold comparison. |
-
----
-
-### 5.6 Stage 3c: Forced Alignment Syllable Lock
+This is the **primary compute-for-completeness step**. In runtime order it runs
+after the context-aware collar and before energy snapping.
 
 | Parameter | Type & Range | Default | Mechanism | Increasing / Selected Value | Decreasing / Selected Value | Trade-off | Certainty |
 |---|---|---|---|---|---|---|---|
-| **`enable_syllable_alignment`** | `bool` `{True, False}` | `False` | Transcribes audio and snaps diarization boundaries outward to phoneme/word token bounds. | Guarantees boundaries never slice through an active vocal syllable. May pull in surrounding room tone to achieve token alignment. | Bypasses ASR transcription. Runs significantly faster with lower memory usage. | Syllable Completeness vs. Inference Latency & Compute | **Guaranteed** token boundary clamping; **Empirical** ASR accuracy. |
-| **`aligner_engine`** | `str` `{"whisper_timestamped", "mms_fa", "remote_whisper"}` | `"whisper_timestamped"` | ASR forced alignment backend. | `whisper_timestamped` uses DTW on cross-attention matrices; `mms_fa` uses PyTorch CTC forced alignment; `remote_whisper` offloads to HTTP service. | N/A | Alignment Fidelity vs. Resource Footprint | **Guaranteed** engine routing. |
-| **`aligner_model`** | `str` | `"vinai/PhoWhisper-small"` | Checkpoint name or HF hub ID. | Larger models offer higher transcription accuracy on noisy audio. | Smaller models (`tiny`, `small`) execute faster with lower memory consumption. | Alignment Accuracy vs. Inference Latency | **Empirical** ASR accuracy. |
-| **`aligner_device`** | `str` | `"cpu"` | Compute device for forced alignment. | Running on GPU speeds up transcription passes. | Running on CPU keeps 100% of GPU VRAM free for primary and secondary diarizers, preventing CUDA OOM. | Processing Speed vs. GPU VRAM Safety | **Guaranteed** device placement. |
+| **`enable_syllable_alignment`** | `bool` `{True, False}` | `False` | Transcribes audio and snaps diarization boundaries outward to phoneme/word token bounds. | Prevents a boundary from remaining inside a word recognized by the aligner. May pull in surrounding room tone. | Bypasses ASR transcription. Runs significantly faster with lower memory usage. | Syllable Completeness vs. Inference Latency & Compute | **Guaranteed** clamping for recognized token spans; **Empirical** ASR coverage and accuracy. |
+| **`aligner_engine`** | `str` `{"whisper_timestamped", "mms_fa", "remote_whisper"}` | `"whisper_timestamped"` | ASR forced alignment backend. | `whisper_timestamped` uses word timestamps; `mms_fa` uses PyTorch CTC emissions; `remote_whisper` offloads to HTTP. | N/A | Alignment Fidelity vs. Resource Footprint | **Guaranteed** engine routing. |
+| **`aligner_model`** | `str` | `"vinai/PhoWhisper-small"` | Checkpoint name or HF hub ID. | For Vietnamese, `vinai/PhoWhisper-large` spends more compute for potentially better recognition and timestamps on difficult audio. | `vinai/PhoWhisper-small` is the lower-memory fallback. | Alignment Accuracy vs. Inference Latency | **Empirical** ASR accuracy. |
+| **`aligner_device`** | `str` | `"cpu"` | Compute device for forced alignment. | A dedicated GPU speeds up transcription without sharing the diarizer's VRAM. | CPU avoids GPU OOM but is slower. | Processing Speed vs. GPU VRAM Safety | **Guaranteed** device placement. |
+
+---
+
+### 5.6 Stage 3c: Micro-Acoustic Energy Valley Snapping
+
+Energy snapping is a waveform cut-quality step, not the main word-completeness
+step. It executes **after forced alignment** and searches in both directions. For
+the explicit word-completeness preset, leave it disabled; otherwise it can move a
+word-locked start or end inward by as much as the configured search window.
+
+| Parameter | Type & Range | Default | Mechanism | Increasing (+) Effect | Decreasing (-) Effect | Trade-off | Certainty |
+|---|---|---|---|---|---|---|---|
+| **`enable_energy_snapping`** | `bool` `{True, False}` | `False` | Walks boundaries to the nearest vocal cord closure zero-crossing / RMS energy trough. | Snaps cut points to local waveform valleys, primarily to reduce clicks. | Preserves the preceding word-lock timestamps. | Click-Free Audio Slicing vs. Word-Lock Preservation | **Guaranteed** local minimum search; **not guaranteed** to preserve outward alignment. |
+| **`energy_search_window_s`** | `float` `[0.01, 1.0s]` | `0.15s` (±150ms) | Temporal search radius around each boundary. | Higher probability of finding a deep acoustic trough, but permits greater inward or outward boundary movement. | Restricts movement near the recognized boundary. | Silence Valley Depth vs. Boundary Drift | **Guaranteed** search bounds. |
+| **`energy_valley_floor_db`** | `float` `[-80.0, -10.0 dB]` | `-30.0 dB` | Configured RMS acceptance threshold. | More permissive intended threshold on noisy audio. | Stricter intended silence requirement. | Snapping Permissiveness vs. Valley Silence Depth | **Currently not enforced by the snapping implementation; changing this value does not affect output.** |
+
+Forced alignment is fail-open. If model loading or inference fails, the pipeline
+logs the error and keeps the incoming candidate turns. Check the stage log or
+boundary audit for an alignment error before claiming that an output was
+word-locked.
 
 ---
 
@@ -441,4 +468,3 @@ Processes audio through an orthogonal secondary diarizer and evaluates mutual ag
 | **`peak_ceiling_dbfs`** | `float` `[-20.0, 0.0 dBFS]` | `-1.0 dBFS` | Maximum allowable digital peak amplitude in the mixed output. If mixed peak exceeds ceiling, uniform attenuation gain is applied equally to speech, music, and mixture. | Allows higher master volume and dynamic range; leaves less headroom for inter-sample peaks or lossy codecs (MP3/AAC). | Lowers master output volume; guarantees extensive headroom against DAC reconstruction clipping and inter-sample peaks. | Master Output Loudness vs. Digital Headroom Safety | **Guaranteed** peak-limiting attenuation. |
 | **`sample_rate`** | `int` `[8000, 96000 Hz]` | `44100 Hz` | Target sampling rate for references and mixture. Inputs are resampled via `librosa`. | Higher audio bandwidth (up to Nyquist limit $\frac{\text{SR}}{2}$); larger WAV file sizes on disk. | Smaller file footprint; limits frequency bandwidth to Nyquist frequency. | Audio Bandwidth Fidelity vs. Disk Storage & Ingestion Memory | **Guaranteed** resampling rate. |
 | **`channels`** | `int` `{1, 2}` | `2` (Stereo) | Output channel layout. Mono input is duplicated across channels when `channels=2`; stereo input is folded via mean when `channels=1`. | Emits stereo mixtures preserving spatial panning. | Emits mono mixtures; halves memory consumption and file size. | Spatial Panning Representation vs. Processing Memory Footprint | **Guaranteed** channel layout normalization. |
-

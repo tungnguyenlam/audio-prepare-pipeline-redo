@@ -78,7 +78,7 @@
         silenceTailNum: document.getElementById('exp-silence-tail-num'),
         silenceTailValue: document.getElementById('exp-silence-tail-val'),
 
-        // Stage 3b: Option B - Micro-Acoustic Energy & RMS Valley Snapping
+        // Stage 3c: Option B - Micro-Acoustic Energy & RMS Valley Snapping
         enableEnergySnapping: document.getElementById('exp-enable-energy-snapping'),
         energySnappingFields: document.getElementById('exp-energy-snapping-fields'),
         energyWindow: document.getElementById('exp-energy-window'),
@@ -88,7 +88,7 @@
         energyFloorNum: document.getElementById('exp-energy-floor-num'),
         energyFloorValue: document.getElementById('exp-energy-floor-val'),
 
-        // Stage 3c: Option C - Syllable & Word Forced Alignment Lock
+        // Stage 3b: Option C - Syllable & Word Forced Alignment Lock
         enableSyllableAlign: document.getElementById('exp-enable-syllable-align'),
         syllableAlignFields: document.getElementById('exp-syllable-align-fields'),
         alignerEngine: document.getElementById('exp-aligner-engine'),
@@ -723,11 +723,11 @@
         enable_context_collar: Boolean(this.el.enableContextCollar?.checked),
         handoff_risk_distance_s: parseFloat(this.el.handoffRiskNum?.value || this.el.handoffRisk?.value || '0.80'),
         silence_tail_buffer_s: parseFloat(this.el.silenceTailNum?.value || this.el.silenceTail?.value || '0.15'),
-        // Stage 3b: Option B
+        // Stage 3c: Option B
         enable_energy_snapping: Boolean(this.el.enableEnergySnapping?.checked),
         energy_search_window_s: parseFloat(this.el.energyWindowNum?.value || this.el.energyWindow?.value || '0.15'),
         energy_valley_floor_db: parseFloat(this.el.energyFloorNum?.value || this.el.energyFloor?.value || '-30'),
-        // Stage 3c: Option C
+        // Stage 3b: Option C
         enable_syllable_alignment: Boolean(this.el.enableSyllableAlign?.checked),
         aligner_engine: this.el.alignerEngine?.value || 'whisper_timestamped',
         aligner_model: this.el.alignerModel?.value || 'vinai/PhoWhisper-small',

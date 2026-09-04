@@ -36,6 +36,70 @@ In contrast, **zero-contamination diarization** is designed specifically for **c
 - **Multi-speaker contamination is fatal:** Even 50 ms of a secondary speaker's voice in a training clip can contaminate acoustic tokenizers and voice cloning models.
 - **Chopped syllable boundaries are unacceptable:** Truncating Vietnamese tonal contours or syllable codas ($-p, -t, -k, -m, -n, -ng$) ruins speech synthesis naturalness.
 
+### Experiment-tab recipe: prioritize complete Vietnamese words (không bị lẹm chữ)
+
+The control that directly spends additional compute to protect complete words is
+**Stage 3 → Option C: Syllable & Word Forced Alignment Lock**. Gemma 4,
+VibeVoice, and WeSpeaker validate speaker purity; they do not repair clipped word
+boundaries.
+
+The Experiment UI highlights this panel with a **COMPUTE → WORD COMPLETENESS**
+callout and bolds its engine, model, device, and language controls. Stage 1 is
+separately labeled as boundary tuning because changing its thresholds does not
+add inference compute.
+
+Use this as the starting configuration in the Experiment tab:
+
+| UI step | Control | Recommended value | Why |
+|---|---|---|---|
+| Input | Primary Diarizer | `Sortformer` | The Experiment pipeline applies `target_onset` and `target_offset` to this backend. |
+| Stage 1 | Target Speaker Onset | `0.70` | Opens the turn on softer evidence than the `0.80` default, helping retain initial consonants. |
+| Stage 1 | Target Speaker Offset | `0.50` | Holds the turn open longer than the `0.65` default, helping retain final codas and fading syllables. |
+| Stage 2 | Dual-Engine Consensus | Enabled; secondary `DiariZen` | Spends additional compute to reject boundaries on which two different diarizers disagree. |
+| Stage 3 | Base Collar Inward Shave | `0.20s` | Reduces deterministic inward trimming from the `0.35s` default. Increase it again if speaker bleed appears. |
+| Stage 3, Option A | Context-Aware Handoff Guard | Enabled | Shaves near another speaker but extends into silence when a handoff is not nearby. |
+| Stage 3, Option A | Handoff Risk Distance | `0.80s` | Retains the normal speaker-transition safety horizon. |
+| Stage 3, Option A | Silence Tail Release | `0.25s` | Adds more trailing room for Vietnamese tones and codas when silence follows. |
+| Stage 3, Option C | Forced Alignment Lock | Enabled | Moves a boundary outward when it falls inside a recognized word. |
+| Stage 3, Option C | Engine | `whisper_timestamped` | Produces word timestamps used by the boundary lock. |
+| Stage 3, Option C | Model | `vinai/PhoWhisper-large` | Compute-heavy Vietnamese checkpoint; use `vinai/PhoWhisper-small` if memory or latency is limiting. |
+| Stage 3, Option C | Language | `vi` | Prevents unnecessary language auto-detection. |
+| Stage 3, Option C | Device | Dedicated CUDA device when available; otherwise CPU | GPU reduces alignment time; CPU avoids competing with the diarizers for VRAM. |
+| Stage 3, Option B | Energy/RMS Valley Snapping | **Disabled** | It runs after word locking and may move a protected boundary inward again. It is primarily a click-removal tool. |
+
+The equivalent core configuration is:
+
+```python
+config = ZeroContaminationConfig(
+    primary_backend="sortformer",
+    target_onset=0.70,
+    target_offset=0.50,
+    enable_consensus=True,
+    secondary_backend="diarizen",
+    enable_collar_erosion=True,
+    boundary_collar_s=0.20,
+    enable_context_collar=True,
+    handoff_risk_distance_s=0.80,
+    silence_tail_buffer_s=0.25,
+    enable_syllable_alignment=True,
+    aligner_engine="whisper_timestamped",
+    aligner_model="vinai/PhoWhisper-large",
+    aligner_language="vi",
+    aligner_device="cuda:1",  # Use an available device, or "cpu".
+    enable_energy_snapping=False,
+)
+```
+
+This preset prioritizes word completeness, but it cannot make complete-word and
+zero-other-speaker guarantees simultaneously at an overlapping or immediate
+speaker handoff. Inspect those boundaries and prefer rejecting the entire turn
+when purity is more important than yield.
+
+Forced alignment is also **fail-open**: if its model cannot load or inference
+fails, the pipeline logs the error and retains the incoming candidate boundaries.
+Confirm the task's stage log and boundary audit before treating an output as
+word-locked.
+
 ---
 
 ## 2. The 5-Stage Attrition Funnel
@@ -52,7 +116,7 @@ When `enable_consensus=True`, an orthogonal secondary diarization engine (e.g. D
 - Eliminates single-model hallucinations and boundary drift.
 
 ### Stage 3: Boundary & Syllable Integrity Gate
-Guarantees clean turn transitions without truncating words:
+Aims for clean turn transitions without truncating recognized words:
 1. **Context-Aware Collar Guard (`enable_context_collar`):**
    - If another speaker speaks within `handoff_risk_distance_s` (default 0.80s), an inward safety collar is shaved.
    - If the turn transitions into natural silence, inward shaving is suspended and a gentle `silence_tail_buffer_s` (default +0.15s) is granted to preserve delicate syllable codas and trailing phonemes.
@@ -63,7 +127,8 @@ Guarantees clean turn transitions without truncating words:
    - Transparently recovers from CUDA OOM errors by clearing VRAM cache and retrying on CPU.
 3. **Micro-Acoustic Energy Valley Snapping (`enable_energy_snapping`):**
    - Analyzes waveform energy in a `±energy_search_window_s` (default ±150ms) window with 2ms hop.
-   - Snaps the boundary timestamp to the nearest vocal cord closure valley (zero-crossing/energy trough) below `energy_valley_floor_db` (default -30 dB).
+   - Snaps the boundary timestamp to a nearby local energy minimum and then to a zero crossing. The current implementation does not enforce `energy_valley_floor_db`; changing that value currently has no effect.
+   - Runs **after** forced alignment. Leave it disabled when word completeness is the overriding goal because its bidirectional search can move a word-locked boundary inward.
 
 ### Stage 4: Dense Sliding WeSpeaker Homogeneity Filter
 When `enable_homogeneity=True`, slides short sub-windows (`homogeneity_window_s=1.0s`, `hop_s=0.25s`) across each candidate turn using `pyannote/wespeaker-voxceleb-resnet34-LM`.
@@ -146,12 +211,12 @@ class ZeroContaminationConfig:
     handoff_risk_distance_s: float = 0.80
     silence_tail_buffer_s: float = 0.15
 
-    # Stage 3b: Energy Valley Snapping (OFF by default)
+    # Stage 3c: Energy Valley Snapping (OFF by default; runs after alignment)
     enable_energy_snapping: bool = False
     energy_search_window_s: float = 0.15
-    energy_valley_floor_db: float = -30.0
+    energy_valley_floor_db: float = -30.0  # Currently not enforced.
 
-    # Stage 3c: Syllable Forced Alignment Lock (OFF by default)
+    # Stage 3b: Syllable Forced Alignment Lock (OFF by default)
     enable_syllable_alignment: bool = False
     aligner_engine: str = "whisper_timestamped" # "whisper_timestamped", "mms_fa", "remote_whisper"
     aligner_model: str = "vinai/PhoWhisper-small"
@@ -196,8 +261,12 @@ The following tables break down every parameter controlling the pipeline attriti
 |---|---|---|---|---|---|
 | **`target_onset`** | `float` `[0.01, 0.99]` | `0.80` | Demands higher neural probability before opening a turn. Suppresses false activations from breath, coughing, or room acoustic reflections. | Opens turns on softer evidence. Captures quiet sentence attacks and whispering, but risks triggering on room noise or faint crosstalk. | **Target Onset Purity vs. Speech Recall.** High values ensure every retained turn starts with decisive target speech. |
 | **`target_offset`** | `float` `[0.01, target_onset]` | `0.65` | Closes the turn immediately as speech energy drops. Prevents tail bleed into subsequent speaker turns. | Keeps the turn open through intra-sentence pauses and fading acoustic tails. Rescues delicate trailing phonemes and nasals. | **Turn Boundary Cleanliness vs. Coda Completeness.** If set too high, syllable codas ($-p, -t, -k, -m, -n, -ng$) get clipped. |
-| **`competitor_onset`** | `float` `[0.01, 0.99]` | `0.20` | More forgiving of secondary activations. Diarizer ignores faint competing speaker probabilities unless they reach higher confidence. | Hair-trigger sensitivity. Vetoes the candidate turn if any competing speaker shows even a faint probability blip (e.g. `0.10`). | **Multi-Speaker Rejection Strictness vs. Yield.** Extremely low values guarantee zero foreign speaker leakage at the cost of discarding turns in lively rooms. |
+| **`competitor_onset`** | `float` `[0.01, 0.99]` | `0.20` | Intended to tolerate more secondary activation. | Intended to provide a more sensitive competitor veto. | **Currently configuration-only:** `_run_backend` does not consume this value, so it has no output effect. |
 | **`primary_backend`** | `str` `{"sortformer", "diarizen", "pyannote"}` | `"sortformer"` | N/A | N/A | **Architecture Selection.** `sortformer` provides streaming 4-speaker capability with pre-inference enrollment; `diarizen` provides SOTA overlap resolution via WavLM Large; `pyannote` offers standard community baseline. |
+
+Current runtime limitation: `target_onset` and `target_offset` are forwarded only
+to Sortformer. `competitor_onset` is exposed in the config and UI but is not yet
+consumed by `_run_backend`, so changing it currently does not affect output.
 
 #### Stage 2: Dual-Engine Mutual Consensus
 
@@ -224,22 +293,32 @@ The following tables break down every parameter controlling the pipeline attriti
 | **`handoff_risk_distance_s`** | `float` `[0.05, 5.0s]` | `0.80s` | Extends the lookahead distance for competitor speakers. Turns farther away from competitors will still trigger defensive inward shaving. | Only triggers defensive collar shaving if the competing speaker starts immediately after the current turn ($< \text{distance}$). | **Handoff Safety Horizon vs. Monologue Detection.** Higher values treat moderate pauses between speakers as risky transitions. |
 | **`silence_tail_buffer_s`** | `float` `[0.0, 2.0s]` | `0.15s` (150ms) | Appends a generous acoustic decay cushion (+150ms) into natural trailing silence, preserving delicate room tone and fading vowels. | Clamps boundaries tightly to the raw offset timestamp. Prevents capturing room tone or breathing. | **Trailing Coda & Reverb Naturalness vs. Clip Tightness.** Crucial for Vietnamese tonal decay and unvoiced codas ($-p, -t, -k$). |
 
-#### Stage 3b: Micro-Acoustic Energy Valley Snapping
+#### Stage 3b: Forced Alignment Syllable Lock
 
-| Parameter | Type & Range | Default | Increasing (+) Value | Decreasing (-) Value | The Core Trade-off |
-|---|---|---|---|---|---|
-| **`enable_energy_snapping`** | `bool` `{True, False}` | `False` | Walks boundaries to the nearest vocal cord closure zero-crossing / RMS energy trough in the waveform. | Keeps mathematical collar timestamps without waveform-level micro-alignment. | **Zero-Discontinuity Audio Slicing vs. Minor CPU Compute.** Eliminates audible clicks and pops when slicing audio files. |
-| **`energy_search_window_s`** | `float` `[0.01, 1.0s]` | `0.15s` (±150ms) | Expands the temporal search radius to find a deeper silence valley. Higher chance of finding true vocal cord closure. | Restricts search to immediate vicinity of the boundary. Prevents boundary drift from shifting the turn start/end too far. | **Silence Valley Depth vs. Boundary Drift.** A window $>0.25s$ risks snapping to an unrelated pause inside the sentence. |
-| **`energy_valley_floor_db`** | `float` `[-80.0, -10.0 dB]` | `-30.0 dB` | Accepts higher-energy troughs as valid snapping points (more permissive). | Demands near-complete acoustic silence ($<-40\text{ dB}$) before accepting a snapping point. | **Snapping Permissiveness vs. Valley Silence Purity.** In noisy recordings, high noise floors require $-25\text{ dB}$ to find valleys. |
-
-#### Stage 3c: Forced Alignment Syllable Lock
+This is the compute-heavy step to enable when complete Vietnamese words are the
+priority. It runs before energy snapping.
 
 | Parameter | Type & Range | Default | Increasing / Selected Value | Decreasing / Selected Value | The Core Trade-off |
 |---|---|---|---|---|---|
-| **`enable_syllable_alignment`** | `bool` `{True, False}` | `False` | Transcribes audio and snaps diarization boundaries outward to phoneme/word token bounds via CTC / cross-attention timestamps. | Leaves boundaries at acoustic/collar locations. Runs significantly faster without ASR inference. | **Guaranteed Syllable Completeness vs. Heavy Compute Footprint.** Ensures boundaries never slice through an active vocal syllable. |
-| **`aligner_engine`** | `str` `{"whisper_timestamped", "mms_fa", "remote_whisper"}` | `"whisper_timestamped"` | N/A | N/A | **Aligner Architecture.** `whisper_timestamped` uses Dynamic Time Warping (DTW) on Whisper cross-attention matrices; `mms_fa` uses PyTorch CTC forced alignment; `remote_whisper` offloads to an external HTTP service. |
-| **`aligner_model`** | `str` (HF Hub ID / path) | `"vinai/PhoWhisper-small"` | Checkpoints with higher parameter counts (e.g. `PhoWhisper-large`, `whisper-large-v3`) offer better ASR accuracy on noisy audio. | Smaller models (`tiny`, `base`, `small`) run faster with minimal memory consumption. | **Alignment Precision on Accented Speech vs. Inference Latency.** `vinai/PhoWhisper-small` is optimized for Vietnamese tonality. |
-| **`aligner_device`** | `str` `{"cpu", "cuda:0", ...}` | `"cpu"` | Offloading to GPU accelerates transcription. | Running on CPU keeps 100% of GPU VRAM free for the primary and secondary diarizers. | **Alignment Speed vs. GPU VRAM Safety.** CPU is strongly recommended on single-GPU setups to prevent CUDA OOM. |
+| **`enable_syllable_alignment`** | `bool` `{True, False}` | `False` | Transcribes audio and snaps diarization boundaries outward to recognized word bounds. | Leaves boundaries at acoustic/collar locations and avoids ASR compute. | **Recognized-Word Completeness vs. Heavy Compute Footprint.** |
+| **`aligner_engine`** | `str` `{"whisper_timestamped", "mms_fa", "remote_whisper"}` | `"whisper_timestamped"` | Selects timestamped Whisper, MMS CTC emissions, or a remote ASR endpoint. | N/A | **Alignment architecture and deployment choice.** |
+| **`aligner_model`** | `str` (HF Hub ID / path) | `"vinai/PhoWhisper-small"` | For Vietnamese, use `vinai/PhoWhisper-large` to spend more compute for potentially better recognition and timestamps. | Use `vinai/PhoWhisper-small` when memory or latency is limiting. | **Alignment Precision vs. Inference Latency.** |
+| **`aligner_device`** | `str` `{"cpu", "cuda:0", ...}` | `"cpu"` | A dedicated GPU accelerates transcription without sharing the primary diarizer's VRAM. | CPU avoids GPU OOM but takes longer. | **Alignment Speed vs. GPU VRAM Safety.** |
+
+Forced alignment is fail-open: a loading or inference failure retains the incoming
+turn boundaries. Verify the stage log or audit before treating the result as
+word-locked.
+
+#### Stage 3c: Micro-Acoustic Energy Valley Snapping
+
+This step runs after forced alignment. Disable it for the strict word-completeness
+preset because it can move the protected boundary inward.
+
+| Parameter | Type & Range | Default | Increasing (+) Value | Decreasing (-) Value | The Core Trade-off |
+|---|---|---|---|---|---|
+| **`enable_energy_snapping`** | `bool` `{True, False}` | `False` | Moves boundaries to nearby local energy minima and zero crossings, mainly to reduce slicing clicks. | Keeps the preceding word-lock timestamps unchanged. | **Click Reduction vs. Word-Lock Preservation.** |
+| **`energy_search_window_s`** | `float` `[0.01, 1.0s]` | `0.15s` (±150ms) | Expands the bidirectional search radius and therefore permits greater boundary movement. | Restricts drift near the aligned boundary. | **Silence Valley Depth vs. Boundary Drift.** |
+| **`energy_valley_floor_db`** | `float` `[-80.0, -10.0 dB]` | `-30.0 dB` | Intended RMS acceptance threshold. | Intended stricter silence requirement. | **Currently not enforced; changing this value does not affect output.** |
 
 #### Stage 4: Dense Sliding WeSpeaker Homogeneity Filter
 

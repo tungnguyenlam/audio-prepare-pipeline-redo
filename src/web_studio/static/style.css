@@ -3855,7 +3855,6 @@ button {
 .diar-duration-histogram-plot svg {
   display: block;
   width: 100%;
-  min-width: 600px;
   height: auto;
 }
 
@@ -3875,14 +3874,39 @@ button {
   stroke-dasharray: 3 4;
 }
 
+.diar-histogram-bin {
+  cursor: pointer;
+}
+
 .diar-histogram-bar {
   fill: var(--accent-cyan);
-  opacity: 0.72;
-  transition: opacity var(--transition-fast);
+  opacity: 0.78;
+  transition: opacity var(--transition-fast), fill var(--transition-fast), filter var(--transition-fast);
 }
 
 .diar-histogram-bin:hover .diar-histogram-bar {
   opacity: 1;
+  filter: brightness(1.2);
+}
+
+.diar-histogram-bin.is-dimmed .diar-histogram-bar {
+  opacity: 0.18;
+}
+
+.diar-histogram-bin.is-dimmed:hover .diar-histogram-bar {
+  opacity: 0.45;
+  filter: brightness(1.1);
+}
+
+.diar-histogram-bin.is-selected .diar-histogram-bar {
+  fill: var(--accent-primary);
+  opacity: 1;
+  stroke: var(--accent-primary-hover);
+  stroke-width: 1.5px;
+}
+
+.diar-histogram-bin.is-selected:hover .diar-histogram-bar {
+  filter: brightness(1.15);
 }
 
 .diar-histogram-hit-area {
@@ -3893,6 +3917,7 @@ button {
 .diar-histogram-axis-tick,
 .diar-histogram-range,
 .diar-histogram-count,
+.diar-histogram-count-inside,
 .diar-histogram-axis-title {
   fill: var(--text-muted);
   font-family: var(--font-mono);
@@ -3907,6 +3932,14 @@ button {
   fill: var(--text-secondary);
   font-size: 9px;
   font-weight: 700;
+  pointer-events: none;
+}
+
+.diar-histogram-count-inside {
+  fill: #ffffff;
+  font-size: 9px;
+  font-weight: 700;
+  pointer-events: none;
 }
 
 .diar-histogram-axis-title {
@@ -3915,11 +3948,16 @@ button {
 }
 
 .diar-duration-histogram-empty {
-  display: grid;
-  min-height: 72px;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 76px;
+  padding: 12px;
   color: var(--text-muted);
   font-size: 0.76rem;
+  text-align: center;
 }
 
 @media (max-width: 700px) {
@@ -3940,10 +3978,6 @@ button {
   .diar-duration-histogram-controls {
     width: 100%;
     justify-content: space-between;
-  }
-
-  .diar-duration-histogram-plot svg {
-    min-width: 560px;
   }
 }
 

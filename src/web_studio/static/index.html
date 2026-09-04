@@ -1264,9 +1264,10 @@
                 <div class="diar-duration-histogram-header">
                   <div>
                     <h4 id="diar-duration-histogram-title">Segment Length Distribution</h4>
-                    <p>Duration of the turns currently visible in the timeline and table. Fixed widths are applied exactly.</p>
+                    <p id="diar-duration-histogram-desc">Distribution of segment durations. Click any bar to filter turns by duration range.</p>
                   </div>
                   <div class="diar-duration-histogram-controls">
+                    <button type="button" id="diar-histogram-reset-filter" class="btn btn-xs btn-ghost hidden" title="Clear duration filter applied from histogram">✕ Clear Range</button>
                     <div class="diar-histogram-bin-picker">
                       <label class="diar-histogram-bin-label" for="diar-histogram-bin-select">Bin Width</label>
                       <select id="diar-histogram-bin-select" class="diar-histogram-bin-select select-input" aria-label="Segment length histogram bin width" title="Change histogram bin width">
@@ -2103,6 +2104,7 @@
                   <div class="exp-stage-title-wrap">
                     <span class="exp-stage-num">1</span>
                     <strong>Asymmetric Sensitivity &amp; Competitor Tripwire</strong>
+                    <span class="exp-control-kind">Boundary tuning · no extra compute</span>
                   </div>
                 </div>
                 <div class="form-group mb-2">
@@ -2135,17 +2137,17 @@
                 </div>
                 <div class="form-group mb-0">
                   <div class="exp-param-header">
-                    <label class="form-label" for="exp-competitor-onset" title="Competitor Speaker Tripwire Veto [0.01 – 1.00, Default: 0.20]&#10;• Increase (+): More permissive; ignores faint secondary activations. Higher yield in multi-speaker rooms.&#10;• Decrease (-): Hair-trigger tripwire; immediately vetoes turn if any rival voice reaches threshold.&#10;• Trade-off: Cross-Talk Rejection Strictness vs. Candidate Yield.">Competitor Speaker Tripwire Veto</label>
+                    <label class="form-label" for="exp-competitor-onset" title="Currently inactive: this value is saved in configuration but is not consumed by the diarization backend.">Competitor Speaker Tripwire Veto <span class="exp-inactive-badge">Currently inactive</span></label>
                     <div class="exp-param-ctrl">
                       <div class="exp-num-input-wrap" title="Competitor Tripwire Veto [0.01 – 1.00, Default: 0.20]&#10;• Increase (+): Tolerates minor secondary activations.&#10;• Decrease (-): Hair-trigger veto; drops candidate on faint rival speech.">
-                        <input type="number" id="exp-competitor-onset-num" class="exp-num-input" min="0.01" max="1.00" step="0.005" value="0.20" title="Competitor Tripwire [0.01 – 1.00, Default: 0.20]. Decrease (-) for zero-contamination TTS; increase (+) for higher yield.">
+                        <input type="number" id="exp-competitor-onset-num" class="exp-num-input" min="0.01" max="1.00" step="0.005" value="0.20" disabled aria-disabled="true" title="Currently inactive: changing this value does not affect output.">
                         <span class="exp-num-unit">prob</span>
                       </div>
                       <span class="badge badge-sm badge-accent" id="exp-competitor-onset-val">20%</span>
                     </div>
                   </div>
-                  <input type="range" id="exp-competitor-onset" class="slider-input exp-slider" min="0.01" max="0.60" step="0.005" value="0.20" title="Competitor Tripwire [0.01 – 0.60, Default: 0.20]. Drag left (-) for strict zero bleed; drag right (+) for higher dialogue yield.">
-                  <span class="text-xs text-muted">Paranoid tripwire: vetoes frames if any other voice reaches threshold.</span>
+                  <input type="range" id="exp-competitor-onset" class="slider-input exp-slider" min="0.01" max="0.60" step="0.005" value="0.20" disabled aria-disabled="true" title="Currently inactive: changing this value does not affect output.">
+                  <span class="text-xs text-muted">Configuration placeholder only; the current backend path does not consume this threshold.</span>
                 </div>
               </div>
 
@@ -2200,6 +2202,18 @@
                   </label>
                 </div>
                 <div id="exp-collar-fields">
+                  <div class="exp-word-completeness-callout" role="note" aria-label="Word completeness recommendation">
+                    <div class="exp-word-completeness-heading">
+                      <span class="exp-compute-badge">COMPUTE → WORD COMPLETENESS</span>
+                      <strong>Không bị lẹm chữ: enable Option C below</strong>
+                    </div>
+                    <p>
+                      Use <strong>Whisper-Timestamped + PhoWhisper Large + Vietnamese</strong> to spend more compute on complete recognized-word boundaries.
+                      Stage 1 thresholds and collar/tail values also affect clipping, but do not add model compute.
+                      Consensus, WeSpeaker, Gemma, and VibeVoice spend compute on speaker purity, not word repair.
+                      Keep Option B energy snapping off when word completeness is the priority because it runs after word lock and can move a protected boundary inward.
+                    </p>
+                  </div>
                   <div class="form-row">
                     <div class="form-group col-half mb-2">
                       <div class="exp-param-header">
@@ -2289,11 +2303,12 @@
                   </div>
 
                   <!-- Option B: Micro-Acoustic Energy RMS Valley Snapping -->
-                  <div class="purity-overlap-panel" style="margin-top: 8px; padding: 10px 12px;">
+                  <div class="purity-overlap-panel exp-energy-panel" style="margin-top: 8px; padding: 10px 12px;">
                     <div class="purity-overlap-header" style="margin-bottom: 6px;">
                       <div>
                         <strong>Option B: Micro-Acoustic Energy &amp; RMS Valley Snapping</strong>
-                        <small class="purity-overlap-lead">Scans ±150ms waveform at 2ms hop; pins boundary to vocal tract closure minimum.</small>
+                        <span class="exp-boundary-warning">Not a word-completeness model</span>
+                        <small class="purity-overlap-lead">Runs after Option C. It reduces cut clicks, but its bidirectional search can move a word-locked boundary inward.</small>
                       </div>
                       <label class="toggle-switch-wrap" title="Micro-Acoustic Energy Snapping [Default: Disabled]&#10;• Enabled: Walks boundaries to the nearest vocal cord closure zero-crossing / RMS silence trough, eliminating cutting clicks and waveform pops.&#10;• Disabled: Cuts at collar timestamps without micro-waveform alignment.">
                         <input type="checkbox" id="exp-enable-energy-snapping">
@@ -2317,36 +2332,43 @@
                         </div>
                         <div class="form-group col-half mb-0">
                           <div class="exp-param-header">
-                            <label class="form-label" for="exp-energy-floor" title="Silence Valley Floor [-100 to 0 dB, Default: -30 dB]&#10;• Increase (+ e.g. -25 dB): More permissive; accepts higher-energy troughs as valid snapping points on noisy audio.&#10;• Decrease (- e.g. -45 dB): Demands near-complete acoustic silence before accepting snapping point.&#10;• Trade-off: Snapping Permissiveness vs. Valley Silence Purity.">Silence Floor</label>
+                            <label class="form-label" for="exp-energy-floor" title="Currently inactive: the snapping implementation finds a local minimum but does not apply this threshold.">Silence Floor <span class="exp-inactive-badge">Currently inactive</span></label>
                             <div class="exp-param-ctrl">
                               <div class="exp-num-input-wrap" title="Silence Valley Floor [-100 to 0 dB, Default: -30 dB]&#10;• Increase (+): Allows snapping in audio with higher background noise floor.&#10;• Decrease (-): Requires near-complete silence before snapping.">
-                                <input type="number" id="exp-energy-floor-num" class="exp-num-input" min="-100" max="0" step="0.5" value="-30" title="Energy Floor [-100 to 0 dB, Default: -30 dB]. Maximum RMS energy level accepted as a valid silence valley.">
+                              <input type="number" id="exp-energy-floor-num" class="exp-num-input" min="-100" max="0" step="0.5" value="-30" disabled aria-disabled="true" title="Currently inactive: changing this value does not affect output.">
                                 <span class="exp-num-unit">dB</span>
                               </div>
                               <span class="badge badge-sm badge-ghost" id="exp-energy-floor-val">-30 dB</span>
                             </div>
                           </div>
-                          <input type="range" id="exp-energy-floor" class="slider-input exp-slider" min="-70" max="-10" step="0.5" value="-30" title="Silence Floor [-70 to -10 dB, Default: -30 dB]. Drag right (+) for noisy backgrounds; drag left (-) for strict acoustic silence.">
+                          <input type="range" id="exp-energy-floor" class="slider-input exp-slider" min="-70" max="-10" step="0.5" value="-30" disabled aria-disabled="true" title="Currently inactive: changing this value does not affect output.">
                         </div>
                       </div>
                     </div>
                   </div>
 
                   <!-- Option C: Syllable & Word Forced Alignment Lock -->
-                  <div class="purity-overlap-panel" style="margin-top: 8px; padding: 10px 12px;">
+                  <div class="purity-overlap-panel exp-completeness-panel" style="margin-top: 8px; padding: 10px 12px;">
                     <div class="purity-overlap-header" style="margin-bottom: 6px;">
                       <div>
-                        <strong>Option C: Syllable &amp; Word Forced Alignment Lock</strong>
-                        <small class="purity-overlap-lead">Strictly forbids slicing through a word or syllable coda. Supports Whisper-Timestamped &amp; Vietnamese fine-tuned models.</small>
+                        <div class="exp-completeness-title-row">
+                          <strong>Option C: Syllable &amp; Word Forced Alignment Lock</strong>
+                          <span class="exp-compute-badge">PRIMARY COMPUTE TRADE-OFF</span>
+                        </div>
+                        <small class="purity-overlap-lead"><strong>This is the setting for “không bị lẹm chữ.”</strong> It spends ASR compute to move cuts out of recognized words and syllable codas.</small>
                       </div>
-                      <label class="toggle-switch-wrap">
+                      <label class="toggle-switch-wrap exp-completeness-toggle" title="Enable the compute-heavy word-boundary alignment pass.">
                         <input type="checkbox" id="exp-enable-syllable-align">
-                        <span>Enable</span>
+                        <span>Enable word lock</span>
                       </label>
                     </div>
                     <div id="exp-syllable-align-fields" style="display: none;">
+                      <div class="exp-completeness-recipe">
+                        Recommended for Vietnamese completeness: <strong>Whisper-Timestamped</strong> · <strong>PhoWhisper Large</strong> · <strong>vi</strong> · dedicated CUDA when available.
+                        Alignment is fail-open, so check the task stage log for errors before treating output as word-locked.
+                      </div>
                       <div class="form-row">
-                        <div class="form-group col-half mb-2">
+                        <div class="form-group col-half mb-2 exp-compute-param">
                           <label class="form-label" for="exp-aligner-engine">Aligner Model Engine:</label>
                           <select id="exp-aligner-engine" class="select-input">
                             <option value="whisper_timestamped" selected>Whisper-Timestamped (Vietnamese SOTA &amp; Multilingual)</option>
@@ -2354,7 +2376,7 @@
                             <option value="remote_whisper">Remote Whisper / ASR Endpoint</option>
                           </select>
                         </div>
-                        <div class="form-group col-half mb-2">
+                        <div class="form-group col-half mb-2 exp-compute-param">
                           <label class="form-label" for="exp-aligner-device">Aligner Device:</label>
                           <select id="exp-aligner-device" class="select-input">
                             <option value="cpu" selected>CPU (Recommended - Prevents GPU OOM)</option>
@@ -2366,21 +2388,21 @@
                         </div>
                       </div>
                       <div id="exp-whisper-options" class="form-row" style="margin-bottom: 0;">
-                        <div class="form-group col-half mb-0">
-                          <label class="form-label" for="exp-aligner-model">Whisper Model / Checkpoint:</label>
+                        <div class="form-group col-half mb-0 exp-compute-param">
+                          <label class="form-label" for="exp-aligner-model">Whisper Model / Checkpoint — more compute can improve timestamps:</label>
                           <input list="exp-whisper-model-list" id="exp-aligner-model" class="text-input font-mono" value="vinai/PhoWhisper-small" placeholder="Model ID or local path (e.g. vinai/PhoWhisper-small)">
                           <datalist id="exp-whisper-model-list">
-                            <option value="vinai/PhoWhisper-small">PhoWhisper Small (Vietnamese SOTA)</option>
+                            <option value="vinai/PhoWhisper-large">PhoWhisper Large (recommended completeness / highest compute)</option>
+                            <option value="vinai/PhoWhisper-small">PhoWhisper Small (default / lower compute)</option>
                             <option value="vinai/PhoWhisper-base">PhoWhisper Base (Vietnamese)</option>
-                            <option value="vinai/PhoWhisper-large">PhoWhisper Large (Vietnamese)</option>
                             <option value="Viet-Speech/whisper-large-v3-vietnamese">Viet-Speech Whisper Large V3</option>
                             <option value="openai/whisper-small">OpenAI Whisper Small</option>
                             <option value="openai/whisper-base">OpenAI Whisper Base</option>
                             <option value="openai/whisper-large-v3-turbo">OpenAI Whisper Large V3 Turbo</option>
                           </datalist>
-                          <span class="text-xs text-muted" style="margin-top: 3px; display: block;">Vietnamese fine-tuned model or any custom HuggingFace repo / local .pt file.</span>
+                          <span class="text-xs exp-compute-help" style="margin-top: 3px; display: block;"><strong>Completeness choice:</strong> <code>vinai/PhoWhisper-large</code>; fall back to Small if VRAM or latency is limiting.</span>
                         </div>
-                        <div class="form-group col-half mb-0">
+                        <div class="form-group col-half mb-0 exp-compute-param">
                           <label class="form-label" for="exp-aligner-lang">Audio Language:</label>
                           <select id="exp-aligner-lang" class="select-input">
                             <option value="vi" selected>Vietnamese (vi)</option>

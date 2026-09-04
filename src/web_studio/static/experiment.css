@@ -57,6 +57,14 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.exp-control-kind {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .exp-stage-num {
@@ -93,6 +101,111 @@
   height: 16px;
   accent-color: var(--accent-primary);
   cursor: pointer;
+}
+
+/* Word-completeness guidance */
+.exp-word-completeness-callout {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 48%, var(--border-subtle));
+  border-left: 4px solid var(--accent-primary);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-primary) 9%, var(--bg-surface));
+}
+
+.exp-word-completeness-heading,
+.exp-completeness-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.exp-word-completeness-callout p {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.exp-compute-badge,
+.exp-boundary-warning {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border-radius: var(--radius-pill);
+  padding: 2px 7px;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.045em;
+}
+
+.exp-compute-badge {
+  background: color-mix(in srgb, var(--accent-primary) 16%, var(--bg-surface));
+  color: var(--accent-primary);
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 38%, var(--border-subtle));
+}
+
+.exp-boundary-warning {
+  margin-left: 6px;
+  background: color-mix(in srgb, var(--accent-amber) 12%, var(--bg-surface));
+  color: var(--accent-amber);
+  border: 1px solid color-mix(in srgb, var(--accent-amber) 34%, var(--border-subtle));
+}
+
+.exp-inactive-badge {
+  display: inline-flex;
+  margin-left: 4px;
+  border-radius: var(--radius-pill);
+  padding: 1px 6px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-muted);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  vertical-align: middle;
+}
+
+.exp-completeness-panel {
+  border: 2px solid color-mix(in srgb, var(--accent-primary) 55%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent-primary) 6%, var(--bg-surface-elevated));
+}
+
+.exp-completeness-toggle {
+  color: var(--accent-primary);
+  font-weight: 800;
+}
+
+.exp-completeness-recipe {
+  margin: 8px 0 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-primary) 8%, var(--bg-input));
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.exp-compute-param > .form-label {
+  color: var(--text-primary);
+  font-weight: 800;
+}
+
+.exp-compute-param > .select-input,
+.exp-compute-param > .text-input {
+  border-color: color-mix(in srgb, var(--accent-primary) 42%, var(--border-muted));
+  font-weight: 700;
+}
+
+.exp-compute-help {
+  color: var(--accent-primary);
+}
+
+.exp-energy-panel {
+  border-color: color-mix(in srgb, var(--accent-amber) 28%, var(--border-subtle));
 }
 
 /* Action Card */
