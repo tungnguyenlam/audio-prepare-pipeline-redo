@@ -26,7 +26,7 @@ flowchart TD
 
 ## 1. The `BaseSeparator` Interface
 
-**Defined in:** [`src/separation/BaseSeparator.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/separation/BaseSeparator.py)
+**Defined in:** [`src/separation/BaseSeparator.py`](../src/separation/BaseSeparator.py)
 
 Every source separator subclasses `BaseSeparator` and implements the single public entrypoint:
 
@@ -71,7 +71,7 @@ Default no-op teardown method. Backends override `close()` to clean up:
 
 ### `HTDemucs`
 
-**Defined in:** [`src/separation/HTDemucs.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/separation/HTDemucs.py)
+**Defined in:** [`src/separation/HTDemucs.py`](../src/separation/HTDemucs.py)
 
 Wraps the Facebook Demucs CLI:
 - Exposes `progress_callback(message: str)` receiving live progress lines from Demucs.
@@ -84,8 +84,8 @@ Wraps the Facebook Demucs CLI:
 ### `BSRoFormer` & `MelRoFormer`
 
 **Defined in:**
-- [`src/separation/BSRoFormer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/separation/BSRoFormer.py)
-- [`src/separation/MelRoFormer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/separation/MelRoFormer.py)
+- [`src/separation/BSRoFormer.py`](../src/separation/BSRoFormer.py)
+- [`src/separation/MelRoFormer.py`](../src/separation/MelRoFormer.py)
 
 Neural stem separators implementing the `ManagedModel` contract:
 - Pre-trained checkpoints are loaded on demand via `model.load()` or context manager `with model:`.
@@ -96,7 +96,7 @@ Neural stem separators implementing the `ManagedModel` contract:
 
 ### `MVSepMDX23`
 
-**Defined in:** [`src/separation/MVSepMDX23.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/separation/MVSepMDX23.py)
+**Defined in:** [`src/separation/MVSepMDX23.py`](../src/separation/MVSepMDX23.py)
 
 High-performance MDX23 vocal separator runner:
 - **Defaults:** Configured with a resource-conscious single Kim ONNX model (`single_onnx=True`, `use_kim_model_1=False` selects Kim checkpoint 2) and `0.25` overlap for high speed and low VRAM footprint.
@@ -110,7 +110,7 @@ High-performance MDX23 vocal separator runner:
 
 ## 3. Managed Model Lifecycle API (`ManagedModel`)
 
-**Defined in:** [`src/base/model.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/base/model.py)
+**Defined in:** [`src/base/model.py`](../src/base/model.py)
 
 Heavy neural models inherit `ManagedModel` to guarantee explicit, predictable memory management. Used by `BSRoFormer`, `MelRoFormer`, `PyannoteDiarizer`, `SortformerDiarizer`, `DiariZenDiarizer`, `ThreeDSpeakerDiarizer`, `ClusteringDiarizer`, `SpeakerVerifier`, and `VibeVoicePurityVerifier`.
 

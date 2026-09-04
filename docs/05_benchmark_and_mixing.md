@@ -4,7 +4,7 @@
 
 ---
 
-This module covers the **Separation Benchmark Mixing API** ([`src/benchmark/separation/mixer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/benchmark/separation/mixer.py)) and reference benchmark datasets.
+This module covers the **Separation Benchmark Mixing API** ([`src/benchmark/separation/mixer.py`](../src/benchmark/separation/mixer.py)) and reference benchmark datasets.
 
 ```mermaid
 flowchart LR
@@ -23,7 +23,7 @@ flowchart LR
 
 ## 1. The `AudioMixer` API
 
-**Defined in:** [`src/benchmark/separation/mixer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/benchmark/separation/mixer.py)
+**Defined in:** [`src/benchmark/separation/mixer.py`](../src/benchmark/separation/mixer.py)
 
 `AudioMixer` combines isolated speech stems with musical accompaniment under controlled, repeatable Signal-to-Music Ratio (SMR / SNR dB) levels to evaluate source separators. Constructor: `AudioMixer(sample_rate=44100, channels=2, peak_ceiling_dbfs=-1.0)`.
 
@@ -74,7 +74,7 @@ def mix(
 
 ## 2. Benchmark Dataclasses
 
-**Defined in:** [`src/benchmark/separation/schemas.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/benchmark/separation/schemas.py)
+**Defined in:** [`src/benchmark/separation/schemas.py`](../src/benchmark/separation/schemas.py)
 
 ### `MixingParameters`
 ```python

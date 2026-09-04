@@ -4,7 +4,7 @@
 
 ---
 
-This module documents the **Zero-Contamination Diarization Pipeline** ([`src/diarization/zero_contamination.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/zero_contamination.py)).
+This module documents the **Zero-Contamination Diarization Pipeline** ([`src/diarization/zero_contamination.py`](../src/diarization/zero_contamination.py)).
 
 ```mermaid
 flowchart TD

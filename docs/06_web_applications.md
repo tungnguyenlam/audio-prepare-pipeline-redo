@@ -30,7 +30,7 @@ flowchart TD
 
 ## 1. Unified Web Server Architecture
 
-**Defined in:** [`src/web_backend/server.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/web_backend/server.py)
+**Defined in:** [`src/web_backend/server.py`](../src/web_backend/server.py)
 
 A single asynchronous `aiohttp` web server serves both user interfaces and route domains on port `8765`.
 

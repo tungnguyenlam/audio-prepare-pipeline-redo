@@ -20,7 +20,7 @@ flowchart LR
 
 ## 1. The `Audio` Dataclass
 
-**Defined in:** [`src/utils/AudioClass.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/utils/AudioClass.py)
+**Defined in:** [`src/utils/AudioClass.py`](../src/utils/AudioClass.py)
 
 `Audio` is a file-backed identity container. In-memory waveforms are never passed across public pipeline interfaces. Identity is anchored to a concrete path on disk accompanied by metadata and step history.
 
@@ -141,7 +141,7 @@ Computes and plots a log-mel spectrogram using Librosa and Matplotlib. Automatic
 
 ## 3. Audio Ingestion API (`YtCrawler`)
 
-**Defined in:** [`src/yt_crawler/YtCrawlerClass.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/yt_crawler/YtCrawlerClass.py)
+**Defined in:** [`src/yt_crawler/YtCrawlerClass.py`](../src/yt_crawler/YtCrawlerClass.py)
 
 `YtCrawler` manages downloading audio from YouTube URLs using `yt-dlp` and normalizing the resulting file with `ffmpeg`.
 
@@ -196,7 +196,7 @@ Constructs the exact `yt-dlp` CLI command tokens without executing. Configures s
 
 ## 4. Audio Segment Cutting (`AudioCutter`)
 
-**Defined in:** [`src/utils/AudioCutter.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/utils/AudioCutter.py)
+**Defined in:** [`src/utils/AudioCutter.py`](../src/utils/AudioCutter.py)
 
 `AudioCutter` extracts contiguous temporal slices from an `Audio` instance, writing a new derived file and returning an `Audio` object with updated metadata and duration.
 
@@ -218,7 +218,7 @@ clip = cutter.cut(audio, start, end, unit="seconds", output_path=None)
 
 ## 5. Shared Audio Utility Functions
 
-**Defined in:** [`src/utils/audio_utils.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/utils/audio_utils.py)
+**Defined in:** [`src/utils/audio_utils.py`](../src/utils/audio_utils.py)
 
 Low-level audio utility routines supporting the pipeline:
 

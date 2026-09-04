@@ -956,16 +956,16 @@
 
               <div class="form-row">
                 <div class="form-item flex-1">
-                  <label class="form-label" for="diar-min-spk">Min Speakers (Optional)</label>
-                  <input type="number" id="diar-min-spk" class="form-input" min="1" max="32" placeholder="Auto">
+                  <label class="form-label" for="diar-min-spk" title="Minimum expected speakers [Range: 1 - 32, Default: None/Auto]&#10;• Increase (+): Prevents under-segmentation; forces at least N clusters.&#10;• Decrease (-): Allows discovering fewer dominant speakers.&#10;• Warning: Setting too high when fewer speakers exist forces false over-splitting.">Min Speakers (Optional)</label>
+                  <input type="number" id="diar-min-spk" class="form-input" min="1" max="32" placeholder="Auto" title="Minimum expected speakers [Range: 1 - 32, Default: None/Auto]&#10;• Increase (+): Prevents under-segmentation; forces at least N clusters.&#10;• Decrease (-): Allows discovering fewer dominant speakers.&#10;• Warning: Setting too high when fewer speakers exist forces false over-splitting.">
                 </div>
                 <div class="form-item flex-1">
-                  <label class="form-label" for="diar-max-spk">Max Speakers (Optional)</label>
-                  <input type="number" id="diar-max-spk" class="form-input" min="1" max="32" placeholder="Auto">
+                  <label class="form-label" for="diar-max-spk" title="Maximum expected speakers [Range: 1 - 32, Default: None/Auto]&#10;• Increase (+): Permits detecting more conversationalists or incidental speakers.&#10;• Decrease (-): Prevents over-clustering and fragmentation of the same voice into multiple IDs.&#10;• Trade-off: If lower than actual speaker count, distinct voices will be merged into one.">Max Speakers (Optional)</label>
+                  <input type="number" id="diar-max-spk" class="form-input" min="1" max="32" placeholder="Auto" title="Maximum expected speakers [Range: 1 - 32, Default: None/Auto]&#10;• Increase (+): Permits detecting more conversationalists or incidental speakers.&#10;• Decrease (-): Prevents over-clustering and fragmentation of the same voice into multiple IDs.&#10;• Trade-off: If lower than actual speaker count, distinct voices will be merged into one.">
                 </div>
                 <div class="form-item flex-1">
-                  <label class="form-label" for="diar-num-spk">Exact Speakers (Optional)</label>
-                  <input type="number" id="diar-num-spk" class="form-input" min="1" max="32" placeholder="Auto">
+                  <label class="form-label" for="diar-num-spk" title="Exact known speaker count [Range: 1 - 32, Default: None/Auto]&#10;• Constrains clustering to exactly N speakers, overriding min/max limits.&#10;• Recommended when speaker count is known with certainty (e.g. 1 for monologue, 2 for dialogue).">Exact Speakers (Optional)</label>
+                  <input type="number" id="diar-num-spk" class="form-input" min="1" max="32" placeholder="Auto" title="Exact known speaker count [Range: 1 - 32, Default: None/Auto]&#10;• Constrains clustering to exactly N speakers, overriding min/max limits.&#10;• Recommended when speaker count is known with certainty (e.g. 1 for monologue, 2 for dialogue).">
                 </div>
                 <div class="form-item flex-1">
                   <label class="form-label" for="diar-device">Compute Device</label>
@@ -976,7 +976,7 @@
                 </div>
                 <div class="form-item flex-1">
                   <label class="form-label" for="diar-batch-size">Inference Batch Size</label>
-                  <input type="number" id="diar-batch-size" class="form-input" min="1" max="256" step="1" value="1" title="Lower this value to reduce inference VRAM usage. Model weights still require their full load-time memory.">
+                  <input type="number" id="diar-batch-size" class="form-input" min="1" max="256" step="1" value="1" title="Inference Batch Size [Range: 1 - 256, Default: 1]&#10;• Increase (+): Higher throughput on GPUs with abundant VRAM.&#10;• Decrease (-): Reduces peak inference VRAM consumption.&#10;• Note: Base model weights still require their full load-time memory.">
                 </div>
               </div>
 
@@ -984,35 +984,35 @@
                 <label class="form-label">3. Sortformer Boundary Detection</label>
                 <div class="form-row">
                   <div class="form-item flex-1">
-                    <label class="form-label" for="diar-sortformer-onset">Boundary Onset</label>
-                    <input type="number" id="diar-sortformer-onset" class="form-input" min="0" max="1" step="0.01" value="0.74" title="Must be greater than or equal to Boundary Offset">
+                    <label class="form-label" for="diar-sortformer-onset" title="Sortformer Turn Onset Threshold [Range: 0.0 - 1.0, Default: 0.74]&#10;• Increase (+): Stricter speech detection; avoids picking up low-confidence background babble, but risks missing quiet turn starts.&#10;• Decrease (-): More sensitive; catches quiet whispered starts, but increases false speech triggers.&#10;• Rule: Must be >= Boundary Offset.">Boundary Onset</label>
+                    <input type="number" id="diar-sortformer-onset" class="form-input" min="0" max="1" step="0.01" value="0.74" title="Sortformer Turn Onset Threshold [Range: 0.0 - 1.0, Default: 0.74]&#10;• Increase (+): Stricter speech detection; avoids picking up low-confidence background babble, but risks missing quiet turn starts.&#10;• Decrease (-): More sensitive; catches quiet whispered starts, but increases false speech triggers.&#10;• Rule: Must be >= Boundary Offset.">
                   </div>
                   <div class="form-item flex-1">
-                    <label class="form-label" for="diar-sortformer-offset">Boundary Offset</label>
-                    <input type="number" id="diar-sortformer-offset" class="form-input" min="0" max="1" step="0.01" value="0.64" title="End a speaker turn below this probability. Keep this less than or equal to Boundary Onset.">
+                    <label class="form-label" for="diar-sortformer-offset" title="Sortformer Turn Offset Threshold [Range: 0.0 - 1.0, Default: 0.64]&#10;• Increase (+): Ends turns sooner when speech confidence dips, cutting off trailing reverberation; may split words across brief pauses.&#10;• Decrease (-): Keeps turns active through pauses and trailing speech; risks holding turns through silence.&#10;• Rule: Must be <= Boundary Onset.">Boundary Offset</label>
+                    <input type="number" id="diar-sortformer-offset" class="form-input" min="0" max="1" step="0.01" value="0.64" title="Sortformer Turn Offset Threshold [Range: 0.0 - 1.0, Default: 0.64]&#10;• Increase (+): Ends turns sooner when speech confidence dips, cutting off trailing reverberation; may split words across brief pauses.&#10;• Decrease (-): Keeps turns active through pauses and trailing speech; risks holding turns through silence.&#10;• Rule: Must be <= Boundary Onset.">
                   </div>
                   <div class="form-item flex-1">
-                    <label class="form-label" for="diar-sortformer-pad-onset">Detected Pre-pad (s)</label>
-                    <input type="number" id="diar-sortformer-pad-onset" class="form-input" min="0" max="2" step="0.01" value="0.12" title="Extend detected Sortformer turns earlier. Canonical later extraction can add more pre-roll.">
+                    <label class="form-label" for="diar-sortformer-pad-onset" title="Sortformer Detected Pre-pad (s) [Range: 0.0 - 2.0s, Default: 0.12s]&#10;• Increase (+): Extends start boundaries earlier; captures initial plosive consonants and inhalations.&#10;• Decrease (-): Yields tighter starts.&#10;• Note: Downstream export cuts can add further pre-roll.">Detected Pre-pad (s)</label>
+                    <input type="number" id="diar-sortformer-pad-onset" class="form-input" min="0" max="2" step="0.01" value="0.12" title="Sortformer Detected Pre-pad (s) [Range: 0.0 - 2.0s, Default: 0.12s]&#10;• Increase (+): Extends start boundaries earlier; captures initial plosive consonants and inhalations.&#10;• Decrease (-): Yields tighter starts.&#10;• Note: Downstream export cuts can add further pre-roll.">
                   </div>
                   <div class="form-item flex-1">
-                    <label class="form-label" for="diar-sortformer-pad-offset">Detected Post-pad (s)</label>
-                    <input type="number" id="diar-sortformer-pad-offset" class="form-input" min="0" max="2" step="0.01" value="0.20" title="Extend detected Sortformer turns later to preserve sentence-ending syllables.">
+                    <label class="form-label" for="diar-sortformer-pad-offset" title="Sortformer Detected Post-pad (s) [Range: 0.0 - 2.0s, Default: 0.20s]&#10;• Increase (+): Extends end boundaries later; prevents clipping quiet word endings and fading syllables.&#10;• Decrease (-): Yields tighter turn cutoffs.&#10;• Note: Downstream export cuts can add further post-roll.">Detected Post-pad (s)</label>
+                    <input type="number" id="diar-sortformer-pad-offset" class="form-input" min="0" max="2" step="0.01" value="0.20" title="Sortformer Detected Post-pad (s) [Range: 0.0 - 2.0s, Default: 0.20s]&#10;• Increase (+): Extends end boundaries later; prevents clipping quiet word endings and fading syllables.&#10;• Decrease (-): Yields tighter turn cutoffs.&#10;• Note: Downstream export cuts can add further post-roll.">
                   </div>
                 </div>
               </div>
 
               <div class="form-row" id="diar-3d-chunk-group" style="display: none;">
                 <div class="form-item flex-1">
-                  <label class="form-label" for="diar-chunk-duration">Embedding Window (s)</label>
-                  <input type="number" id="diar-chunk-duration" class="form-input" min="0.25" max="5" step="0.25" value="1.5">
+                  <label class="form-label" for="diar-chunk-duration" title="3D-Speaker Sliding Window Length (s) [Range: 0.25 - 5.0s, Default: 1.5s]&#10;• Increase (+): More stable embedding vectors with higher speaker discrimination accuracy; lowers time resolution for rapid turn switches.&#10;• Decrease (-): Higher temporal resolution for fast exchanges, but shorter windows yield noisier embeddings.">Embedding Window (s)</label>
+                  <input type="number" id="diar-chunk-duration" class="form-input" min="0.25" max="5" step="0.25" value="1.5" title="3D-Speaker Sliding Window Length (s) [Range: 0.25 - 5.0s, Default: 1.5s]&#10;• Increase (+): More stable embedding vectors with higher speaker discrimination accuracy; lowers time resolution for rapid turn switches.&#10;• Decrease (-): Higher temporal resolution for fast exchanges, but shorter windows yield noisier embeddings.">
                 </div>
                 <div class="form-item flex-1">
-                  <label class="form-label" for="diar-chunk-step">Embedding Hop (s)</label>
-                  <input type="number" id="diar-chunk-step" class="form-input" min="0.1" max="5" step="0.25" value="0.75">
+                  <label class="form-label" for="diar-chunk-step" title="3D-Speaker Sliding Window Hop (s) [Range: 0.1 - 5.0s, Default: 0.75s]&#10;• Increase (+): Faster processing, fewer forward passes; coarser boundary precision.&#10;• Decrease (-): Finer temporal granularity at boundaries; increases embedding computation time.">Embedding Hop (s)</label>
+                  <input type="number" id="diar-chunk-step" class="form-input" min="0.1" max="5" step="0.25" value="0.75" title="3D-Speaker Sliding Window Hop (s) [Range: 0.1 - 5.0s, Default: 0.75s]&#10;• Increase (+): Faster processing, fewer forward passes; coarser boundary precision.&#10;• Decrease (-): Finer temporal granularity at boundaries; increases embedding computation time.">
                 </div>
                 <div class="form-item flex-1 flex-col justify-center">
-                  <label class="checkbox-label flex-row items-center gap-2" style="margin-top: 1.6rem;" title="Refine overlapping speech using Pyannote segmentation model (requires HF token)">
+                  <label class="checkbox-label flex-row items-center gap-2" style="margin-top: 1.6rem;" title="Pyannote Overlap Refinement [Default: unchecked]&#10;• Enabled: Runs Pyannote segmentation model to detect and refine overlapping speech regions between speaker turns (requires HF token).&#10;• Disabled: Standard single-speaker assignment per time chunk.">
                     <input type="checkbox" id="diar-3d-overlap">
                     <span class="text-sm">Pyannote Overlap Refine</span>
                   </label>
@@ -1021,12 +1021,12 @@
 
               <div class="form-row" id="diar-clustering-group" style="display: none;">
                 <div class="form-item flex-1">
-                  <label class="form-label" for="diar-vad-onset">VAD Onset Threshold</label>
-                  <input type="number" id="diar-vad-onset" class="form-input" min="0.05" max="0.95" step="0.05" value="0.5">
+                  <label class="form-label" for="diar-vad-onset" title="Clustering MarbleNet VAD Onset [Range: 0.05 - 0.95, Default: 0.50]&#10;• Increase (+): Requires stronger speech evidence before starting a speech segment; suppresses false positives from background noise.&#10;• Decrease (-): Triggers speech on softer voice activity, but risks detecting breath or room noise.">VAD Onset Threshold</label>
+                  <input type="number" id="diar-vad-onset" class="form-input" min="0.05" max="0.95" step="0.05" value="0.5" title="Clustering MarbleNet VAD Onset [Range: 0.05 - 0.95, Default: 0.50]&#10;• Increase (+): Requires stronger speech evidence before starting a speech segment; suppresses false positives from background noise.&#10;• Decrease (-): Triggers speech on softer voice activity, but risks detecting breath or room noise.">
                 </div>
                 <div class="form-item flex-1">
-                  <label class="form-label" for="diar-vad-offset">VAD Offset Threshold</label>
-                  <input type="number" id="diar-vad-offset" class="form-input" min="0.05" max="0.95" step="0.05" value="0.3">
+                  <label class="form-label" for="diar-vad-offset" title="Clustering MarbleNet VAD Offset [Range: 0.05 - 0.95, Default: 0.30]&#10;• Increase (+): Closes speech segments more aggressively during micro-pauses.&#10;• Decrease (-): Bridges short silences to avoid over-fragmenting sentences.">VAD Offset Threshold</label>
+                  <input type="number" id="diar-vad-offset" class="form-input" min="0.05" max="0.95" step="0.05" value="0.3" title="Clustering MarbleNet VAD Offset [Range: 0.05 - 0.95, Default: 0.30]&#10;• Increase (+): Closes speech segments more aggressively during micro-pauses.&#10;• Decrease (-): Bridges short silences to avoid over-fragmenting sentences.">
                 </div>
                 <div class="form-item flex-2">
                   <p class="form-hint" style="margin-top: 1.75rem;">Multi-scale TitaNet embeddings: [1.9s, 1.2s, 0.5s] with shifts [0.95s, 0.6s, 0.25s].</p>
@@ -1084,12 +1084,12 @@
 
               <div class="form-row">
                 <div class="form-item flex-1">
-                  <label class="form-label" for="ts-pipe-threshold">Similarity Threshold</label>
-                  <input type="number" id="ts-pipe-threshold" class="form-input" min="0" max="1" step="0.01" value="0.60">
+                  <label class="form-label" for="ts-pipe-threshold" title="Target Speaker Cosine Similarity Threshold [Range: 0.0 - 1.0, Default: 0.60]&#10;• Increase (+): Stricter voice verification; rejects impostors and ambiguous turns, but may reject genuine emotional/expressive speech.&#10;• Decrease (-): More permissive; captures more target speech, but risks accepting similar-sounding secondary voices.">Similarity Threshold</label>
+                  <input type="number" id="ts-pipe-threshold" class="form-input" min="0" max="1" step="0.01" value="0.60" title="Target Speaker Cosine Similarity Threshold [Range: 0.0 - 1.0, Default: 0.60]&#10;• Increase (+): Stricter voice verification; rejects impostors and ambiguous turns, but may reject genuine emotional/expressive speech.&#10;• Decrease (-): More permissive; captures more target speech, but risks accepting similar-sounding secondary voices.">
                 </div>
                 <div class="form-item flex-1">
-                  <label class="form-label" for="ts-pipe-min-dur">Min Segment Duration (s)</label>
-                  <input type="number" id="ts-pipe-min-dur" class="form-input" min="0" max="60" step="0.5" value="1.5">
+                  <label class="form-label" for="ts-pipe-min-dur" title="Minimum Segment Duration (s) [Range: 0.0 - 60.0s, Default: 1.5s]&#10;• Increase (+): Discards brief utterances (e.g. 'yeah', 'uh-huh') to retain only substantial training turns.&#10;• Decrease (-): Keeps short conversational interjections and responses.">Min Segment Duration (s)</label>
+                  <input type="number" id="ts-pipe-min-dur" class="form-input" min="0" max="60" step="0.5" value="1.5" title="Minimum Segment Duration (s) [Range: 0.0 - 60.0s, Default: 1.5s]&#10;• Increase (+): Discards brief utterances (e.g. 'yeah', 'uh-huh') to retain only substantial training turns.&#10;• Decrease (-): Keeps short conversational interjections and responses.">
                 </div>
                 <div class="form-item flex-1">
                   <label class="form-label" for="ts-pipe-device">Compute Device</label>
@@ -1101,18 +1101,18 @@
               </div>
 
               <div class="form-row">
-                <label class="checkbox-pill"><input type="checkbox" id="ts-pipe-exclude-overlap" checked> Exclude overlapping-speaker segments</label>
-                <label class="checkbox-pill"><input type="checkbox" id="ts-pipe-export-cuts"> Export kept segments as wav cuts</label>
+                <label class="checkbox-pill" title="Exclude Overlapping Speech [Default: checked]&#10;• Checked: Discards segments where two or more speakers talk simultaneously, preserving single-speaker purity for TTS.&#10;• Unchecked: Retains overlapping segments if target speaker similarity meets the threshold."><input type="checkbox" id="ts-pipe-exclude-overlap" checked> Exclude overlapping-speaker segments</label>
+                <label class="checkbox-pill" title="Export Kept Segments as WAV Cuts [Default: unchecked]&#10;• Checked: Automatically cuts and exports individual audio clips for every verified segment into dataset storage.&#10;• Unchecked: Updates metadata tags and timestamps without writing isolated audio files."><input type="checkbox" id="ts-pipe-export-cuts"> Export kept segments as wav cuts</label>
               </div>
 
               <div class="form-row">
                 <div class="form-item flex-1">
-                  <label class="form-label" for="ts-pipe-pre-roll">Export Pre-roll (s)</label>
-                  <input type="number" id="ts-pipe-pre-roll" class="form-input" min="0" max="2" step="0.01" value="0.12" title="Applied only to exported wav cuts; scored timestamps remain canonical. Overlapping padded cuts are merged.">
+                  <label class="form-label" for="ts-pipe-pre-roll" title="Export Pre-roll Margin [Range: 0.0 - 2.0s, Default: 0.12s]&#10;• Increase (+): Prepends acoustic headroom before speech starts, preventing truncated initial consonants.&#10;• Decrease (-): Keeps file boundaries tightly cropped to detected onset.&#10;• Note: Applied only to exported wav cuts; scored timestamps remain canonical.">Export Pre-roll (s)</label>
+                  <input type="number" id="ts-pipe-pre-roll" class="form-input" min="0" max="2" step="0.01" value="0.12" title="Export Pre-roll Margin [Range: 0.0 - 2.0s, Default: 0.12s]&#10;• Increase (+): Prepends acoustic headroom before speech starts, preventing truncated initial consonants.&#10;• Decrease (-): Keeps file boundaries tightly cropped to detected onset.&#10;• Note: Applied only to exported wav cuts; scored timestamps remain canonical.">
                 </div>
                 <div class="form-item flex-1">
-                  <label class="form-label" for="ts-pipe-post-roll">Export Post-roll (s)</label>
-                  <input type="number" id="ts-pipe-post-roll" class="form-input" min="0" max="2" step="0.01" value="0.20" title="Extends exported cuts to preserve sentence-ending syllables. Overlapping padded cuts are merged.">
+                  <label class="form-label" for="ts-pipe-post-roll" title="Export Post-roll Margin [Range: 0.0 - 2.0s, Default: 0.20s]&#10;• Increase (+): Appends room decay and trailing release after speech stops, preserving final word syllables.&#10;• Decrease (-): Produces tighter endings.&#10;• Note: Applied only to exported wav cuts; scored timestamps remain canonical.">Export Post-roll (s)</label>
+                  <input type="number" id="ts-pipe-post-roll" class="form-input" min="0" max="2" step="0.01" value="0.20" title="Export Post-roll Margin [Range: 0.0 - 2.0s, Default: 0.20s]&#10;• Increase (+): Appends room decay and trailing release after speech stops, preserving final word syllables.&#10;• Decrease (-): Produces tighter endings.&#10;• Note: Applied only to exported wav cuts; scored timestamps remain canonical.">
                 </div>
               </div>
 

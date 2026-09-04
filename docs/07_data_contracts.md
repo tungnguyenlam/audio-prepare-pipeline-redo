@@ -63,7 +63,7 @@ classDiagram
 
 ## 1. `Audio` Contract
 
-**Defined in:** [`src/utils/AudioClass.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/utils/AudioClass.py)
+**Defined in:** [`src/utils/AudioClass.py`](../src/utils/AudioClass.py)
 
 `Audio` is a file-backed identity dataclass.
 
@@ -108,7 +108,7 @@ Whenever an `Audio` object is saved, an adjacent JSON sidecar is written:
 
 ## 2. Diarization Schemas (Schema 2.0)
 
-**Defined in:** [`src/diarization/schemas.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/schemas.py)
+**Defined in:** [`src/diarization/schemas.py`](../src/diarization/schemas.py)
 
 `DiarizationResult` is the universal, backend-independent representation of speaker segmentation.
 
@@ -176,7 +176,7 @@ Stored under `.data/diarization/annotations/<id>.json`:
 
 ## 4. Speaker Profile Schema (`SpeakerProfile`)
 
-**Defined in:** [`src/diarization/SpeakerVerifier.py`](../../src/diarization/SpeakerVerifier.py) (not `schemas.py`). Profiles live under `.data/speaker_profiles/<sanitized_name>/` with reference clips at `clips/clip_<NN>.<ext>`.
+**Defined in:** [`src/diarization/SpeakerVerifier.py`](../src/diarization/SpeakerVerifier.py) (not `schemas.py`). Profiles live under `.data/speaker_profiles/<sanitized_name>/` with reference clips at `clips/clip_<NN>.<ext>`.
 
 `profile.json` manifest (written by `enroll`, `schema_version="2.0"`):
 ```json
@@ -246,7 +246,7 @@ class OverlapVerificationResult(TypedDict):
 
 ## 6. Zero-Contamination Schemas (`ZeroContaminationResult`)
 
-Defined in [`src/diarization/zero_contamination.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/zero_contamination.py):
+Defined in [`src/diarization/zero_contamination.py`](../src/diarization/zero_contamination.py):
 
 ```json
 {
@@ -292,7 +292,7 @@ Defined in [`src/diarization/zero_contamination.py`](file:///home/nguyenlt/Docum
 
 ## 7. Pipeline `AudioItem` Schema
 
-**Defined in:** [`src/web_pipeline/dataset_manager.py`](../../src/web_pipeline/dataset_manager.py). Stored in `.data/pipeline/dataset_registry.json` (`REGISTRY_FILE`; sibling `datasets.json`, `exports/`, `imports/`, `stems/`):
+**Defined in:** [`src/web_pipeline/dataset_manager.py`](../src/web_pipeline/dataset_manager.py). Stored in `.data/pipeline/dataset_registry.json` (`REGISTRY_FILE`; sibling `datasets.json`, `exports/`, `imports/`, `stems/`):
 - Identity: `id`, `source_id`, `title`, `path` (repo-relative), `dataset` (default `"Default"`), `duration`, `sample_rate`, `channels`, `native_sample_rate`, `format`, `source_url`, channel fields.
 - `custom_tags`: User-editable tags; `system_tags`: machine-managed namespaced tags (`type:`, `stage:`, `speaker:`, `profile:`, `verification:`; legacy `tags` migrated on load). `tags` property returns both combined.
 - `stems`: Mapping of model → `{stem_name: path}`.

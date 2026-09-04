@@ -31,7 +31,7 @@ flowchart TD
 
 ## 1. Core Diarizer Interface (`BaseDiarizer`)
 
-**Defined in:** [`src/diarization/BaseDiarizer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/BaseDiarizer.py)
+**Defined in:** [`src/diarization/BaseDiarizer.py`](../src/diarization/BaseDiarizer.py)
 
 Every diarization backend implements the single abstract method:
 
@@ -65,8 +65,8 @@ To prevent severe library version collisions (e.g. NVIDIA NeMo pinning specific 
 ### `SortformerDiarizer` & `SortformerWorkerDiarizer`
 
 **Defined in:**
-- [`src/diarization/SortformerDiarizer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/SortformerDiarizer.py)
-- [`src/diarization/SortformerWorkerDiarizer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/SortformerWorkerDiarizer.py)
+- [`src/diarization/SortformerDiarizer.py`](../src/diarization/SortformerDiarizer.py)
+- [`src/diarization/SortformerWorkerDiarizer.py`](../src/diarization/SortformerWorkerDiarizer.py)
 
 NVIDIA NeMo Sortformer model:
 - **Input Normalization:** Automatically resamples and downmixes input audio to mono 16 kHz WAV (raises if normalization does not yield mono).
@@ -80,8 +80,8 @@ NVIDIA NeMo Sortformer model:
 ### `DiariZenDiarizer` & `DiariZenWorkerDiarizer`
 
 **Defined in:**
-- [`src/diarization/DiariZenDiarizer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/DiariZenDiarizer.py)
-- [`src/diarization/DiariZenWorkerDiarizer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/DiariZenWorkerDiarizer.py)
+- [`src/diarization/DiariZenDiarizer.py`](../src/diarization/DiariZenDiarizer.py)
+- [`src/diarization/DiariZenWorkerDiarizer.py`](../src/diarization/DiariZenWorkerDiarizer.py)
 
 DiariZen overlap-aware diarization system:
 - Utilizes WavLM Large representation with WeSpeaker embeddings and VBx clustering.
@@ -93,7 +93,7 @@ DiariZen overlap-aware diarization system:
 
 ### `PyannoteDiarizer`
 
-**Defined in:** [`src/diarization/PyannoteDiarizer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/PyannoteDiarizer.py)
+**Defined in:** [`src/diarization/PyannoteDiarizer.py`](../src/diarization/PyannoteDiarizer.py)
 
 Hugging Face Pyannote Audio pipeline (`pyannote/speaker-diarization-community-1`):
 - Decodes with `soundfile` (`float32`, `always_2d=True`); raises `ValueError` on empty audio; requires `load()` first.
@@ -105,8 +105,8 @@ Hugging Face Pyannote Audio pipeline (`pyannote/speaker-diarization-community-1`
 ### `ThreeDSpeakerDiarizer` & `ThreeDSpeakerWorkerDiarizer`
 
 **Defined in:**
-- [`src/diarization/ThreeDSpeakerDiarizer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/ThreeDSpeakerDiarizer.py)
-- [`src/diarization/ThreeDSpeakerWorkerDiarizer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/ThreeDSpeakerWorkerDiarizer.py)
+- [`src/diarization/ThreeDSpeakerDiarizer.py`](../src/diarization/ThreeDSpeakerDiarizer.py)
+- [`src/diarization/ThreeDSpeakerWorkerDiarizer.py`](../src/diarization/ThreeDSpeakerWorkerDiarizer.py)
 
 ModelScope 3D-Speaker pipeline:
 - Shallow-clones the 3D-Speaker repo into `.data/3d-speaker` on initial load.
@@ -118,8 +118,8 @@ ModelScope 3D-Speaker pipeline:
 ### `ClusteringDiarizer` & `ClusteringWorkerDiarizer`
 
 **Defined in:**
-- [`src/diarization/ClusteringDiarizer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/ClusteringDiarizer.py)
-- [`src/diarization/ClusteringWorkerDiarizer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/ClusteringWorkerDiarizer.py)
+- [`src/diarization/ClusteringDiarizer.py`](../src/diarization/ClusteringDiarizer.py)
+- [`src/diarization/ClusteringWorkerDiarizer.py`](../src/diarization/ClusteringWorkerDiarizer.py)
 
 Cascaded NeMo clustering pipeline:
 - Combines `vad_multilingual_marblenet` for voice activity with `titanet_large` speaker embeddings.
@@ -136,7 +136,7 @@ Cascaded NeMo clustering pipeline:
 
 ## 3. Turn Cleanup & Padding Utilities
 
-**Defined in:** [`src/diarization/turn_cleanup.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/turn_cleanup.py)
+**Defined in:** [`src/diarization/turn_cleanup.py`](../src/diarization/turn_cleanup.py)
 
 ### `clean_speaker_turns(...) -> list[SpeakerTurn]`
 
@@ -165,7 +165,7 @@ Expands turn intervals by `pre_roll_s` and `post_roll_s` (e.g. for audio extract
 
 ## 4. Diarization Evaluation (`evaluate_diarization`)
 
-**Defined in:** [`src/diarization/evaluation.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/evaluation.py)
+**Defined in:** [`src/diarization/evaluation.py`](../src/diarization/evaluation.py)
 
 ```python
 def evaluate_diarization(
@@ -189,7 +189,7 @@ Calculates exact interval-based Diarization Error Rate (DER) and Jaccard Error R
 
 ## 5. Speaker Profile Enrollment & Verification (`SpeakerVerifier`)
 
-**Defined in:** [`src/diarization/SpeakerVerifier.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/SpeakerVerifier.py)
+**Defined in:** [`src/diarization/SpeakerVerifier.py`](../src/diarization/SpeakerVerifier.py)
 
 Manages persistent speaker identity profiles and embedding verification:
 - **Enrollment:** `enroll(name, clips, *, overwrite=False, channel_id=None, channel_name=None, channel_url=None)` copies clips to `.data/speaker_profiles/<name>/clips/clip_<NN>.<ext>` with a `profile.json` manifest (`schema_version="2.0"`, keys: `name`, `created_at`, `updated_at`, `clips`, channel provenance). Reference clips are the ground truth; embeddings are computed on demand. Raises `SpeakerVerifierError` when clips are empty or the profile exists without `overwrite=True`.
@@ -205,8 +205,8 @@ Manages persistent speaker identity profiles and embedding verification:
 ## 6. Direct-Audio & LLM Purity Verifiers
 
 **Defined in:**
-- [`src/diarization/OverlapVerifier.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/OverlapVerifier.py)
-- [`src/diarization/VibeVoicePurityVerifier.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/VibeVoicePurityVerifier.py)
+- [`src/diarization/OverlapVerifier.py`](../src/diarization/OverlapVerifier.py)
+- [`src/diarization/VibeVoicePurityVerifier.py`](../src/diarization/VibeVoicePurityVerifier.py)
 
 In addition to acoustic embeddings, the pipeline provides direct-audio foundation model verifiers to ensure candidates contain zero overlapping speech:
 

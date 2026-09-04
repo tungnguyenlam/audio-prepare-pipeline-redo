@@ -30,7 +30,7 @@ For each parameter, this guide details:
 
 ### 1.1 `MVSepMDX23` (Kim ONNX & MDX23 Ensemble)
 
-**Defined in:** [`src/separation/MVSepMDX23.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/separation/MVSepMDX23.py)
+**Defined in:** [`src/separation/MVSepMDX23.py`](../src/separation/MVSepMDX23.py)
 
 #### `single_onnx` (`bool`, default: `True`)
 - **What it is:** Selects whether to execute only a single fast Kim ONNX vocal model or the full multi-model MDX23 ensemble (MDX23 + both Kim checkpoints).
@@ -79,8 +79,8 @@ For each parameter, this guide details:
 ### 1.2 `BSRoFormer` & `MelRoFormer`
 
 **Defined in:**
-- [`src/separation/BSRoFormer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/separation/BSRoFormer.py)
-- [`src/separation/MelRoFormer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/separation/MelRoFormer.py)
+- [`src/separation/BSRoFormer.py`](../src/separation/BSRoFormer.py)
+- [`src/separation/MelRoFormer.py`](../src/separation/MelRoFormer.py)
 
 #### `model` (Checkpoint selector)
 - **What it is:** Pretrained weights architecture:
@@ -98,7 +98,7 @@ For each parameter, this guide details:
 
 ### 1.3 `HTDemucs` (Facebook Hybrid Transformer Demucs)
 
-**Defined in:** [`src/separation/HTDemucs.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/separation/HTDemucs.py)
+**Defined in:** [`src/separation/HTDemucs.py`](../src/separation/HTDemucs.py)
 
 #### `two_stems` (`"vocals"`, `"drums"`, `"bass"`, `"other"`, default: `"vocals"`)
 - **What it is:** Target stem extracted from the 4-source Demucs architecture. When isolating a single stem, the residual is computed by subtracting the predicted stem from the mixture.
@@ -116,7 +116,7 @@ For each parameter, this guide details:
 
 ### 2.1 `SortformerDiarizer` (NVIDIA NeMo)
 
-**Defined in:** [`src/diarization/SortformerDiarizer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/SortformerDiarizer.py)
+**Defined in:** [`src/diarization/SortformerDiarizer.py`](../src/diarization/SortformerDiarizer.py)
 
 Sortformer outputs an 80ms multi-speaker activity probability matrix for up to 4 simultaneous speakers. Post-processing parameters govern how probabilities become discrete turns.
 
@@ -138,8 +138,8 @@ Sortformer outputs an 80ms multi-speaker activity probability matrix for up to 4
 ### 2.2 `DiariZenDiarizer` & `PyannoteDiarizer`
 
 **Defined in:**
-- [`src/diarization/DiariZenDiarizer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/DiariZenDiarizer.py)
-- [`src/diarization/PyannoteDiarizer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/PyannoteDiarizer.py)
+- [`src/diarization/DiariZenDiarizer.py`](../src/diarization/DiariZenDiarizer.py)
+- [`src/diarization/PyannoteDiarizer.py`](../src/diarization/PyannoteDiarizer.py)
 
 #### `num_speakers` (`int | None`, default: `None`)
 - **What it is:** Oracle constraint fixing the exact number of clusters in VBx / Spectral clustering.
@@ -159,7 +159,7 @@ Sortformer outputs an 80ms multi-speaker activity probability matrix for up to 4
 
 ### 2.3 `ThreeDSpeakerDiarizer` (ModelScope FSMN + CAM++)
 
-**Defined in:** [`src/diarization/ThreeDSpeakerDiarizer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/ThreeDSpeakerDiarizer.py)
+**Defined in:** [`src/diarization/ThreeDSpeakerDiarizer.py`](../src/diarization/ThreeDSpeakerDiarizer.py)
 
 #### `include_overlap` (`bool`, default: `False`)
 - **What it is:** Enables Pyannote `segmentation-3.0` neural overlap refinement on top of CAM++ spectral clustering.
@@ -182,7 +182,7 @@ Sortformer outputs an 80ms multi-speaker activity probability matrix for up to 4
 
 ### 2.4 `ClusteringDiarizer` (NVIDIA NeMo MarbleNet VAD + TitaNet Large)
 
-**Defined in:** [`src/diarization/ClusteringDiarizer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/ClusteringDiarizer.py)
+**Defined in:** [`src/diarization/ClusteringDiarizer.py`](../src/diarization/ClusteringDiarizer.py)
 
 Operates as a cascaded diarization pipeline: MarbleNet detects speech activity segments, TitaNet extracts speaker embeddings across those segments, and spectral clustering partitions embeddings into speaker clusters.
 
@@ -201,7 +201,7 @@ Operates as a cascaded diarization pipeline: MarbleNet detects speech activity s
 
 ### 2.5 Diarization Evaluation Parameters (`evaluate_diarization`)
 
-**Defined in:** [`src/diarization/evaluation.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/evaluation.py)
+**Defined in:** [`src/diarization/evaluation.py`](../src/diarization/evaluation.py)
 
 | Parameter | Type & Range | Default | Increasing (+) Effect | Decreasing (-) Effect | The Trade-off | Certainty |
 |---|---|---|---|---|---|---|
@@ -214,7 +214,7 @@ Operates as a cascaded diarization pipeline: MarbleNet detects speech activity s
 
 ### 3.1 `clean_speaker_turns`
 
-**Defined in:** [`src/diarization/turn_cleanup.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/turn_cleanup.py)
+**Defined in:** [`src/diarization/turn_cleanup.py`](../src/diarization/turn_cleanup.py)
 
 This function operates on raw diarization turns to produce a refined, high-precision view:
 
@@ -239,7 +239,7 @@ clean_speaker_turns(
 
 ### 3.2 `pad_and_merge_intervals`
 
-**Defined in:** [`src/diarization/turn_cleanup.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/turn_cleanup.py)
+**Defined in:** [`src/diarization/turn_cleanup.py`](../src/diarization/turn_cleanup.py)
 
 Controls audio expansion during WAV cutting and stem export:
 - **`pre_roll_s` & `post_roll_s` (`float`, function defaults: `0.0` / `0.0`):** Expands window boundaries outward into surrounding room tone/silence. Captures natural acoustic decay and reverbs. The Studio stem-export path (`extraction_settings`) defaults them to `0.12s` / `0.20s` (Sortformer pad values) but applies them only when `add_extra=True` (otherwise forced to `0.0`).
@@ -253,7 +253,7 @@ Controls audio expansion during WAV cutting and stem export:
 
 ### 4.1 `SpeakerVerifier` (`wespeaker-voxceleb-resnet34-LM`)
 
-**Defined in:** [`src/diarization/SpeakerVerifier.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/SpeakerVerifier.py)
+**Defined in:** [`src/diarization/SpeakerVerifier.py`](../src/diarization/SpeakerVerifier.py)
 
 #### `threshold` / `similarity_threshold` (`float`, range `-1.0 to 1.0`, typical: `0.70–0.80`)
 - **What it is:** Cosine similarity threshold between a candidate turn's embedding vector and the enrolled speaker's profile centroid:
@@ -289,7 +289,7 @@ Controls audio expansion during WAV cutting and stem export:
 
 ### 4.2 `VibeVoicePurityVerifier` (`microsoft/VibeVoice-ASR-HF`)
 
-**Defined in:** [`src/diarization/VibeVoicePurityVerifier.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/VibeVoicePurityVerifier.py)
+**Defined in:** [`src/diarization/VibeVoicePurityVerifier.py`](../src/diarization/VibeVoicePurityVerifier.py)
 
 #### `min_secondary_speech_s` (`float`, seconds, default: `0.25s`)
 - **What it is:** Duration threshold for secondary non-dominant speakers detected by VibeVoice's autoregressive speaker tokens:
@@ -305,7 +305,7 @@ Controls audio expansion during WAV cutting and stem export:
 
 ### 4.3 `OverlapVerifier` (Gemma 4 & Gemini)
 
-**Defined in:** [`src/diarization/OverlapVerifier.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/OverlapVerifier.py)
+**Defined in:** [`src/diarization/OverlapVerifier.py`](../src/diarization/OverlapVerifier.py)
 
 #### `prompt` (`str`)
 - **What it is:** Multimodal instruction passed to the LLM alongside the raw audio stream.
@@ -325,7 +325,7 @@ Controls audio expansion during WAV cutting and stem export:
 
 # 5. Zero-Contamination Pipeline Parameters
 
-**Defined in:** [`src/diarization/zero_contamination.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/zero_contamination.py)
+**Defined in:** [`src/diarization/zero_contamination.py`](../src/diarization/zero_contamination.py)
 
 The Zero-Contamination Pipeline ([`04_zero_contamination_diarization.md`](04_zero_contamination_diarization.md)) integrates these mechanisms into a 5-stage attrition funnel designed specifically for **clean TTS voice dataset harvesting**:
 
@@ -430,7 +430,7 @@ Processes audio through an orthogonal secondary diarizer and evaluates mutual ag
 
 # 6. Benchmark Mixer Parameters
 
-**Defined in:** [`src/benchmark/separation/mixer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/benchmark/separation/mixer.py)
+**Defined in:** [`src/benchmark/separation/mixer.py`](../src/benchmark/separation/mixer.py)
 
 `AudioMixer` creates calibrated speech+music mixtures for evaluating source separation algorithms. Constructor: `AudioMixer(sample_rate=44100, channels=2, peak_ceiling_dbfs=-1.0)`. Mixing method: `AudioMixer.mix(speech, music, *, target_smr_db, seed, output_dir)`.
 
