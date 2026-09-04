@@ -100,6 +100,48 @@ fails, the pipeline logs the error and retains the incoming candidate boundaries
 Confirm the task's stage log and boundary audit before treating an output as
 word-locked.
 
+### Experiment-tab recipe: trade compute and yield for speaker purity
+
+The Experiment UI marks genuine additional inference passes with
+**COMPUTE → SPEAKER PURITY**. Enabling these gates does not create more clean
+audio: each gate can only retain or reject candidates from the preceding stage.
+The intended trade is therefore **more compute, higher expected speaker purity,
+less retained audio, and normally fewer usable extracted samples**.
+
+Apply the gates in this order according to the available compute budget:
+
+| Priority | UI step and parameter | Purity setting | Compute and extraction trade-off |
+|---|---|---|---|
+| 1 | Stage 2: `enable_consensus` | Enabled; use Sortformer + DiariZen | Runs a complete second diarization pass. Mutual intersection removes disputed audio, so retained duration cannot increase and usable sample yield normally falls. |
+| 2 | Stage 4: `enable_homogeneity` | Enabled | Adds WeSpeaker embedding inference over many overlapping sub-windows. Inconsistent-timbre turns are rejected, normally producing fewer samples. |
+| 3 | Stage 4: `homogeneity_hop_s` | Lower from `0.25s` toward `0.10s` | Creates more overlapping embedding forward passes. Brief speaker intrusions are less likely to fall between probes, at higher runtime and with potentially more rejected turns. |
+| 4 | Stage 4: `min_homogeneity_similarity` | Raise cautiously from `0.75` toward `0.78–0.82` | Does not add forward passes, but rejects more turns. Higher values may falsely reject expressive, laughing, whispered, or emotional target speech. |
+| 5 | Stage 5a: `enable_gemma` | Enabled when the endpoint is available | Adds one multimodal request per surviving candidate. Detected overlap is rejected, increasing latency/compute and normally reducing extracted samples. |
+| 6 | Stage 5b: `enable_vibevoice` | Enabled | Adds autoregressive ASR to each surviving candidate. This is a heavy verification pass and may reject additional samples containing secondary-speaker tokens. |
+| 7 | Stage 5b: `max_secondary_speech_s` | `0.0s` for strict purity | Does not change inference compute; it makes the completed VibeVoice check maximally strict and therefore minimizes yield. |
+
+A high-compute speaker-purity configuration is:
+
+```python
+config = ZeroContaminationConfig(
+    primary_backend="sortformer",
+    enable_consensus=True,
+    secondary_backend="diarizen",
+    enable_homogeneity=True,
+    homogeneity_window_s=1.0,
+    homogeneity_hop_s=0.10,
+    min_homogeneity_similarity=0.78,
+    enable_gemma=True,
+    enable_vibevoice=True,
+    max_secondary_speech_s=0.0,
+)
+```
+
+This is an attrition funnel, not a purity proof. Model mistakes remain possible,
+and Stage 5 verifier exceptions are recorded without automatically rejecting the
+candidate. Review the stage log, audit records, and verifier metadata whenever a
+strict dataset claim matters.
+
 ---
 
 ## 2. The 5-Stage Attrition Funnel
@@ -107,7 +149,8 @@ word-locked.
 ### Stage 1: Asymmetric Detection & Competitor Tripwires
 Runs the primary diarizer (e.g. `Sortformer`, `DiariZen`, or `Pyannote 3.1`) with asymmetric thresholds:
 - **`target_onset` (default `0.80`):** Requires high model confidence before acknowledging target speech onset.
-- **`competitor_onset` (default `0.20`):** Extremely sensitive tripwire threshold. If any competing speaker is detected above 20% activation, the candidate segment is immediately vetoed.
+- **`target_offset` (default `0.65`):** Keeps Sortformer's turn open below the onset threshold to reduce boundary fragmentation.
+- **`competitor_onset` (default `0.20`):** Reserved configuration field. The current backend path does not consume it, so changing it has no output effect.
 
 ### Stage 2: Dual-Engine Mutual Consensus
 When `enable_consensus=True`, an orthogonal secondary diarization engine (e.g. DiariZen or Pyannote) processes the audio concurrently on `secondary_device` (e.g. `cuda:1`).
@@ -352,7 +395,7 @@ config = ZeroContaminationConfig(
     primary_backend="sortformer",
     target_onset=0.82,
     target_offset=0.62,
-    competitor_onset=0.15,               # Extremely sensitive competitor tripwire
+    competitor_onset=0.15,               # Reserved; currently has no runtime effect
     enable_consensus=True,               # Dual-engine Hungarian agreement required
     secondary_backend="diarizen",
     secondary_device="cuda:1",           # Run secondary engine concurrently on GPU 1

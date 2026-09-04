@@ -2044,7 +2044,7 @@
               <div class="exp-header-title-row">
                 <span class="workflow-step">Extreme Precision Gate</span>
                 <h2 class="card-title">Zero-Contamination Diarization Workbench</h2>
-                <span class="badge badge-success">Zero 2-Speaker Guarantee</span>
+                <span class="badge badge-success">Zero 2-Speaker Goal</span>
               </div>
               <p class="card-subtitle">
                 Sacrifice compute for extreme precision: designed specifically for TTS training data harvesting where missed speech carries zero penalty, but any secondary-speaker bleed or overlap is strictly unacceptable.
@@ -2055,6 +2055,17 @@
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                 <span>Reset</span>
               </button>
+            </div>
+          </div>
+
+          <div class="exp-tradeoff-legend" aria-label="Experiment compute trade-offs">
+            <div>
+              <span class="exp-compute-badge">COMPUTE → WORD COMPLETENESS</span>
+              <span>Stage 3 Option C spends ASR compute to repair recognized-word boundaries.</span>
+            </div>
+            <div>
+              <span class="exp-purity-badge">COMPUTE → SPEAKER PURITY</span>
+              <span>Stages 2, 4, and 5 add verification passes. Expect more compute and fewer extracted samples as ambiguous turns are rejected.</span>
             </div>
           </div>
 
@@ -2152,20 +2163,24 @@
               </div>
 
               <!-- Stage 2: Dual-Engine Consensus -->
-              <div class="exp-stage-box">
+              <div class="exp-stage-box exp-purity-compute-panel">
                 <div class="exp-stage-header">
                   <div class="exp-stage-title-wrap">
                     <span class="exp-stage-num">2</span>
                     <strong>Dual-Engine Mutual Consensus (∩)</strong>
+                    <span class="exp-purity-badge">COMPUTE → SPEAKER PURITY</span>
                   </div>
-                  <label class="toggle-switch-wrap" title="Dual-Engine Consensus [Default: Enabled]&#10;• Enabled: Keeps speech if and only if both primary and secondary diarizers unanimously agree via Hungarian matching and neither detects overlap. Eliminates single-model hallucinations.&#10;• Disabled: Relies on primary backend only. Saves compute time and VRAM.">
+                  <label class="toggle-switch-wrap exp-purity-toggle" title="Dual-Engine Consensus [Default: Enabled]&#10;• Enabled: Runs a second diarizer, increasing compute, and keeps only mutually agreed speech, normally extracting fewer samples with higher speaker purity.&#10;• Disabled: Relies on the primary backend only, reducing compute and retaining more disputed speech.">
                     <input type="checkbox" id="exp-enable-consensus" checked>
                     <span>Enable</span>
                   </label>
                 </div>
                 <div id="exp-consensus-fields">
+                  <div class="exp-purity-summary">
+                    <strong>Trade-off:</strong> a complete second diarization pass costs substantially more compute. Intersection removes disputed audio, so retained duration cannot increase and usable extracted-sample yield normally decreases.
+                  </div>
                   <div class="form-row mb-0">
-                    <div class="form-group col-half mb-0">
+                    <div class="form-group col-half mb-0 exp-purity-compute-param">
                       <label class="form-label" for="exp-secondary-backend" title="Secondary Diarization Engine. Pairing Sortformer (transformer) with DiariZen (WavLM Large) yields complementary acoustic perspectives.">Secondary Orthogonal Model:</label>
                       <select id="exp-secondary-backend" class="select-input" title="Secondary Diarization Engine. DiariZen provides WavLM Large + VBx clustering for robust secondary cross-checking.">
                         <option value="diarizen" selected>DiariZen (WavLM Large + VBx)</option>
@@ -2173,7 +2188,7 @@
                         <option value="sortformer">Sortformer</option>
                       </select>
                     </div>
-                    <div class="form-group col-half mb-0">
+                    <div class="form-group col-half mb-0 exp-purity-compute-param">
                       <label class="form-label" for="exp-secondary-device" title="Compute Device for Secondary Diarizer. Using 'Dedicated cuda:1' runs secondary model concurrently on GPU 1 without VRAM competition.">Secondary Device:</label>
                       <select id="exp-secondary-device" class="select-input" title="Select GPU device for secondary engine (e.g. cuda:1 for dual-GPU concurrency).">
                         <option value="same" selected>Same as Primary</option>
@@ -2422,20 +2437,24 @@
               </div>
 
               <!-- Stage 4: Dense WeSpeaker Homogeneity -->
-              <div class="exp-stage-box">
+              <div class="exp-stage-box exp-purity-compute-panel">
                 <div class="exp-stage-header">
                   <div class="exp-stage-title-wrap">
                     <span class="exp-stage-num">4</span>
                     <strong>Dense Sliding WeSpeaker Homogeneity</strong>
+                    <span class="exp-purity-badge">COMPUTE → SPEAKER PURITY</span>
                   </div>
-                  <label class="toggle-switch-wrap" title="Dense WeSpeaker Homogeneity [Default: Disabled]&#10;• Enabled: Extracts dense ResNet-34 embeddings across sliding sub-windows to verify that vocal timbre remains strictly uniform throughout each turn. Rejects unsegmented foreign speaker handoffs.&#10;• Disabled: Relies on upstream diarizers; runs faster.">
+                  <label class="toggle-switch-wrap exp-purity-toggle" title="Dense WeSpeaker Homogeneity [Default: Disabled]&#10;• Enabled: Adds embedding inference across many overlapping windows, increasing compute, and rejects turns containing inconsistent speaker timbre, normally extracting fewer samples.&#10;• Disabled: Relies on upstream diarizers, runs faster, and retains more candidates.">
                     <input type="checkbox" id="exp-enable-homo">
                     <span>Enable</span>
                   </label>
                 </div>
                 <div id="exp-homo-fields" style="display: none;">
+                  <div class="exp-purity-summary">
+                    <strong>Trade-off:</strong> enable this filter for another speaker-purity pass. Lower the hop for denser, more expensive probing; raise the cosine floor for stricter rejection. Both choices can reduce extracted samples.
+                  </div>
                   <div class="form-row mb-2">
-                    <div class="form-group col-half mb-0">
+                    <div class="form-group col-half mb-0 exp-purity-compute-param">
                       <label class="form-label" for="exp-homo-device" title="Compute Device for WeSpeaker Homogeneity extraction. 'Dedicated cuda:0' or 'Dedicated cuda:1'.">Homogeneity Device:</label>
                       <select id="exp-homo-device" class="select-input" title="Select GPU or CPU for WeSpeaker feature extraction.">
                         <option value="same" selected>Same as Primary</option>
@@ -2444,9 +2463,9 @@
                         <option value="cpu">CPU</option>
                       </select>
                     </div>
-                    <div class="form-group col-half mb-0">
+                    <div class="form-group col-half mb-0 exp-purity-threshold-param">
                       <div class="exp-param-header">
-                        <label class="form-label" for="exp-homo-sim" title="Min Cosine Floor [0.00 – 1.00, Default: 0.75]&#10;• Increase (+): Demands near-identical vocal timbre throughout turn. Rejects turns with slight inflection or pitch shifts.&#10;• Decrease (-): Accommodates natural expressive variance, laughing, and emotional inflection.&#10;• Trade-off: Vocal Monotony Strictness vs. Expressive Yield.">Min Cosine Floor</label>
+                        <label class="form-label" for="exp-homo-sim" title="Min Cosine Floor [0.00 – 1.00, Default: 0.75]&#10;• Increase (+): Stricter speaker-purity rejection; fewer samples are extracted, but expressive target speech can be falsely rejected. Compute per evaluated window is unchanged.&#10;• Decrease (-): Retains more expressive speech with greater risk of missed speaker changes.">Min Cosine Floor <span class="exp-yield-badge">PURITY ↑ · YIELD ↓</span></label>
                         <div class="exp-param-ctrl">
                           <div class="exp-num-input-wrap" title="Min Cosine Floor [0.00 – 1.00, Default: 0.75]&#10;• Increase (+): Higher purity; rejects unsegmented handoffs.&#10;• Decrease (-): Tolerates emotional inflection and vocal dynamics.">
                             <input type="number" id="exp-homo-sim-num" class="exp-num-input" min="0.00" max="1.00" step="0.005" value="0.75" title="Min Cosine Floor [0.00 – 1.00, Default: 0.75]. Minimum sub-window similarity to turn centroid.">
@@ -2459,7 +2478,7 @@
                     </div>
                   </div>
                   <div class="form-row">
-                    <div class="form-group col-half mb-0">
+                    <div class="form-group col-half mb-0 exp-purity-compute-param">
                       <div class="exp-param-header">
                         <label class="form-label" for="exp-homo-win" title="Homogeneity Sliding Window [0.10 – 10.00s, Default: 1.00s]&#10;• Increase (+): Longer windows yield richer acoustic context and more stable embedding vectors.&#10;• Decrease (-): Shorter windows provide higher temporal resolution, detecting brief (0.5s) secondary voice intrusions.&#10;• Trade-off: Embedding Stability vs. Short Intrusion Detection.">Sliding Window</label>
                         <div class="exp-param-ctrl">
@@ -2472,9 +2491,9 @@
                       </div>
                       <input type="range" id="exp-homo-win" class="slider-input exp-slider" min="0.25" max="3.00" step="0.05" value="1.00" title="Sliding Window [0.25 – 3.00s, Default: 1.00s]. Drag right (+) for smoother embeddings; drag left (-) to detect momentary interruptions.">
                     </div>
-                    <div class="form-group col-half mb-0">
+                    <div class="form-group col-half mb-0 exp-purity-compute-param">
                       <div class="exp-param-header">
-                        <label class="form-label" for="exp-homo-hop" title="Sliding Hop Step [0.02 – 5.00s, Default: 0.25s]&#10;• Increase (+): Faster processing; fewer forward passes.&#10;• Decrease (-): Denser temporal probing (e.g. 100ms hop). Catches instantaneous foreign vocal blips at linearly higher runtime.&#10;• Trade-off: Temporal Probe Density vs. Forward Pass Latency.">Sliding Hop Step</label>
+                        <label class="form-label" for="exp-homo-hop" title="Sliding Hop Step [0.02 – 5.00s, Default: 0.25s]&#10;• Increase (+): Fewer forward passes and lower compute; may miss brief secondary voices and retain more samples.&#10;• Decrease (-): More overlapping forward passes and higher compute; can catch more brief intrusions and therefore extract fewer samples.">Sliding Hop Step <span class="exp-purity-badge">LOWER = MORE COMPUTE</span></label>
                         <div class="exp-param-ctrl">
                           <div class="exp-num-input-wrap" title="Sliding Hop Step [0.02 – 5.00s, Default: 0.25s]&#10;• Increase (+): Faster processing.&#10;• Decrease (-): Denser probing; catches momentary blips.">
                             <input type="number" id="exp-homo-hop-num" class="exp-num-input" min="0.02" max="5.00" step="0.01" value="0.25" title="Sliding Hop Step [0.02 – 5.00s, Default: 0.25s]. Step size between consecutive sliding sub-windows.">
@@ -2490,19 +2509,19 @@
               </div>
 
               <!-- Stage 5a: Gemma 4 Direct Audio -->
-              <div class="exp-stage-box purity-overlap-panel">
+              <div class="exp-stage-box purity-overlap-panel exp-purity-compute-panel">
                 <div class="purity-overlap-header">
                   <div>
                     <div style="display: flex; align-items: center; gap: 8px;">
                       <span class="exp-stage-num remote">5a</span>
                       <strong>Gemma 4 Direct-Audio Overlap Verifier</strong>
-                      <span class="badge badge-sm badge-accent">Remote Host / GPU</span>
+                      <span class="exp-purity-badge">COMPUTE → SPEAKER PURITY</span>
                     </div>
                     <small class="purity-overlap-lead">
-                      Host Gemma 4 on a dedicated model server (vsf-242), secondary GPU (cuda:1), or local Unsloth instance to avoid VRAM collisions.
+                      Adds one multimodal inference request per candidate. Detected overlap is rejected, increasing compute and normally reducing extracted samples.
                     </small>
                   </div>
-                  <label class="toggle-switch-wrap" title="Gemma 4 Multimodal Direct-Audio Verification [Default: Disabled]&#10;• Enabled: Sends candidate audio directly into Gemma 4 / Gemini multimodal audio encoder to audit for cross-talk, secondary voices, and background murmur.&#10;• Disabled: Bypasses LLM inference.">
+                  <label class="toggle-switch-wrap exp-purity-toggle" title="Gemma 4 Multimodal Direct-Audio Verification [Default: Disabled]&#10;• Enabled: Adds an LLM inference call for every candidate and rejects detected overlap, costing more compute and normally extracting fewer samples.&#10;• Disabled: Bypasses LLM inference, runs faster, and retains candidates not rejected by earlier gates.">
                     <input type="checkbox" id="exp-enable-gemma">
                     <span>Enable</span>
                   </label>
@@ -2525,7 +2544,7 @@
                   </div>
 
                   <div class="form-row">
-                    <div class="form-group col-half mb-2">
+                    <div class="form-group col-half mb-2 exp-purity-compute-param">
                       <label class="form-label" for="exp-gemma-model">Model Repo / Checkpoint:</label>
                       <input type="text" id="exp-gemma-model" class="text-input font-mono" value="unsloth/gemma-4-12b-it-GGUF" title="Target model identifier registered on the remote endpoint.">
                     </div>
@@ -2565,19 +2584,19 @@
               </div>
 
               <!-- Stage 5b: VibeVoice-ASR Gate -->
-              <div class="exp-stage-box purity-overlap-panel">
+              <div class="exp-stage-box purity-overlap-panel exp-purity-compute-panel">
                 <div class="purity-overlap-header">
                   <div>
                     <div style="display: flex; align-items: center; gap: 8px;">
                       <span class="exp-stage-num remote">5b</span>
                       <strong>VibeVoice-ASR Speaker Gate</strong>
-                      <span class="badge badge-sm badge-info">Independent GPU / Remote</span>
+                      <span class="exp-purity-badge">COMPUTE → SPEAKER PURITY</span>
                     </div>
                     <small class="purity-overlap-lead">
-                      Autoregressive speaker tokens. Drops turn immediately if secondary speech duration &gt; 0.0s.
+                      Adds autoregressive ASR to every candidate. Secondary-speaker detections reject turns, increasing compute and normally reducing extracted samples.
                     </small>
                   </div>
-                  <label class="toggle-switch-wrap" title="VibeVoice-ASR Speaker Gate [Default: Disabled]&#10;• Enabled: Autoregressive speaker tokens classify dominant vs secondary speech duration across full clip context. Drops turn if secondary duration exceeds tolerance.&#10;• Disabled: Bypasses VibeVoice verification.">
+                  <label class="toggle-switch-wrap exp-purity-toggle" title="VibeVoice-ASR Speaker Gate [Default: Disabled]&#10;• Enabled: Adds autoregressive ASR inference for every candidate and rejects secondary speech above tolerance, costing more compute and normally extracting fewer samples.&#10;• Disabled: Bypasses VibeVoice inference, runs faster, and retains candidates not rejected upstream.">
                     <input type="checkbox" id="exp-enable-vibevoice">
                     <span>Enable</span>
                   </label>
@@ -2585,7 +2604,7 @@
 
                 <div id="exp-vibevoice-fields" style="display: none; margin-top: 14px;">
                   <div class="form-row">
-                    <div class="form-group col-half mb-2">
+                    <div class="form-group col-half mb-2 exp-purity-compute-param">
                       <label class="form-label" for="exp-vibevoice-model" title="Quantization level. INT8 (~10-11 GB VRAM) is recommended for best balance of precision and VRAM footprint.">VibeVoice Checkpoint:</label>
                       <select id="exp-vibevoice-model" class="select-input" title="Quantization checkpoint for VibeVoice-ASR.">
                         <option value="Dubedo/VibeVoice-ASR-HF-INT8" selected>INT8 (~10–11 GB VRAM - Recommended)</option>
@@ -2593,7 +2612,7 @@
                         <option value="Dubedo/VibeVoice-ASR-HF-NF4">NF4 4-bit (~7–8 GB VRAM)</option>
                       </select>
                     </div>
-                    <div class="form-group col-half mb-2">
+                    <div class="form-group col-half mb-2 exp-purity-compute-param">
                       <label class="form-label" for="exp-vibevoice-device" title="GPU device assigned to VibeVoice. Dedicated cuda:1 is recommended when Sortformer is on cuda:0.">Execution GPU / Device:</label>
                       <select id="exp-vibevoice-device" class="select-input" title="Compute device for VibeVoice inference.">
                         <option value="same">Same as Pipeline</option>
@@ -2606,7 +2625,7 @@
 
                   <div class="form-group mb-2">
                     <div class="exp-param-header">
-                      <label class="form-label" for="exp-vibevoice-max-sec" title="Max Secondary Speech Tolerance [0.00 – 5.00s, Default: 0.00s]&#10;• Increase (+ e.g. 0.3s): Tolerates brief background vocal sounds, far-field murmurs, or brief confirmations.&#10;• Decrease (- / 0.00s): Strict zero tolerance; rejects candidate if VibeVoice detects a single secondary speaker token.&#10;• Trade-off: Dataset Cleanliness vs. Monologue Yield.">Max Secondary Speech Tolerance</label>
+                      <label class="form-label" for="exp-vibevoice-max-sec" title="Max Secondary Speech Tolerance [0.00 – 5.00s, Default: 0.00s]&#10;• Increase (+): Retains more samples but permits brief secondary speech.&#10;• Decrease (- / 0.00s): Rejects more candidates for higher speaker purity; fewer samples are extracted. This threshold does not change inference compute.">Max Secondary Speech Tolerance <span class="exp-yield-badge">LOWER = PURITY ↑ · YIELD ↓</span></label>
                       <div class="exp-param-ctrl">
                         <div class="exp-num-input-wrap" title="Max Secondary Speech Tolerance [0.00 – 5.00s, Default: 0.00s]&#10;• Increase (+): Tolerates faint background murmur.&#10;• Decrease (-): Zero tolerance; drops turn on any secondary speech token.">
                           <input type="number" id="exp-vibevoice-max-sec-num" class="exp-num-input" min="0.00" max="5.00" step="0.05" value="0.00" title="Max Secondary Speech [0.00 – 5.00s, Default: 0.00s]. Increase (+) to tolerate minor background voices; set 0.0s for pure single-speaker data.">

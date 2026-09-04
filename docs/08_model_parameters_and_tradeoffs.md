@@ -331,7 +331,7 @@ The Zero-Contamination Pipeline ([`04_zero_contamination_diarization.md`](04_zer
 
 ```mermaid
 flowchart TD
-    S1["Stage 1: target_onset (0.80) & competitor_onset (0.20)"] --> S2["Stage 2: Hungarian Dual-Engine Consensus"]
+    S1["Stage 1: Sortformer onset (0.80) & offset (0.65)"] --> S2["Stage 2: Hungarian Dual-Engine Consensus"]
     S2 --> S3["Stage 3: Context Collar + Syllable Lock + Valley Snap"]
     S3 --> S4["Stage 4: WeSpeaker Homogeneity (min_sim: 0.75)"]
     S4 --> S5["Stage 5: Foundation Models (max_secondary: 0.0s)"]
@@ -346,6 +346,15 @@ flowchart TD
 > energy snapping executes after word locking and can move the protected boundary
 > inward. See the complete UI-by-UI recipe in
 > [04. Zero-Contamination Diarization](04_zero_contamination_diarization.md#experiment-tab-recipe-prioritize-complete-vietnamese-words-không-bị-lẹm-chữ).
+
+> **Quick answer for speaker purity:** the actual additional-compute gates are
+> Stage 2 `enable_consensus`, Stage 4 `enable_homogeneity` with a lower
+> `homogeneity_hop_s`, and Stage 5 `enable_gemma` / `enable_vibevoice`. Each
+> verifier removes or rejects disputed candidates, so expect more compute, less
+> retained audio, and normally fewer usable extracted samples. Thresholds such as a higher
+> `min_homogeneity_similarity` or lower `max_secondary_speech_s` reduce yield
+> further without increasing the number of inference passes. See the
+> [speaker-purity recipe](04_zero_contamination_diarization.md#experiment-tab-recipe-trade-compute-and-yield-for-speaker-purity).
 
 ---
 
@@ -372,7 +381,7 @@ Processes audio through an orthogonal secondary diarizer and evaluates mutual ag
 
 | Parameter | Type & Range | Default | Mechanism | When `True` / Higher | When `False` / Lower | Trade-off | Certainty |
 |---|---|---|---|---|---|---|---|
-| **`enable_consensus`** | `bool` `{True, False}` | `True` | Dual-engine Hungarian agreement filter. | Keeps candidate intervals **if and only if both engines unanimously agree** on speaker identity and neither detects concurrent speech. | Trusts the primary backend without secondary cross-checking. Saves GPU compute time and VRAM. | Mathematical Hallucination Elimination vs. Compute Latency | **Guaranteed** intersection constraint. |
+| **`enable_consensus`** | `bool` `{True, False}` | `True` | Dual-engine Hungarian agreement filter. | Runs a complete second diarization pass and retains only mutual intersections: more compute, higher expected purity, retained duration that cannot increase, and normally lower usable sample yield. | Trusts the primary backend without secondary cross-checking. Uses less compute and retains more disputed speech. | Speaker Purity & Lower Yield vs. Compute Latency | **Guaranteed** intersection constraint; **empirical** purity improvement. |
 | **`secondary_backend`** | `str` `{"diarizen", "sortformer", "pyannote"}` | `"diarizen"` | Orthogonal architecture pairing. | Provides complementary acoustic modeling (e.g. Sortformer transformer + DiariZen WavLM Large), catching single-model blind spots. | N/A | Model Diversity vs. Setup Complexity | **Guaranteed** backend delegation. |
 
 ---
@@ -437,10 +446,10 @@ word-locked.
 
 | Parameter | Type & Range | Default | Mechanism | Increasing (+) Effect | Decreasing (-) Effect | Trade-off | Certainty |
 |---|---|---|---|---|---|---|---|
-| **`enable_homogeneity`** | `bool` `{True, False}` | `False` | Dense sliding-window speaker embedding verification across candidate turns. | Evaluates sub-window embedding cosine similarity against global turn centroid. Rejects turns where similarity drops below threshold. | Skips sliding-window verification. Faster processing; relies exclusively on upstream diarizers. | Internal Purity Guarantee vs. Latency | **Guaranteed** sub-window scan; **Empirical** speaker shift detection. |
+| **`enable_homogeneity`** | `bool` `{True, False}` | `False` | Dense sliding-window speaker embedding verification across candidate turns. | Adds embedding inference over many windows and rejects inconsistent-timbre turns: more compute and normally fewer extracted samples. | Skips sliding-window verification. Runs faster and retains candidates not rejected by earlier stages. | Speaker Purity & Lower Yield vs. Latency | **Guaranteed** sub-window scan; **Empirical** speaker shift detection. |
 | **`homogeneity_window_s`** | `float` `[0.25, 5.0s]` | `1.00s` | Sliding sub-window duration for embedding extraction. | Longer windows provide richer acoustic context and more stable embedding vectors. | Shorter windows provide higher temporal resolution, detecting brief (0.5s) intrusions from secondary speakers. | Embedding Vector Stability vs. Short Intrusion Detection | **Guaranteed** window length; **Empirical** embedding noise. |
-| **`homogeneity_hop_s`** | `float` `[0.05, 2.0s]` | `0.25s` (250ms) | Temporal step size between consecutive sliding sub-windows. | Faster processing with fewer forward passes. May step over momentary speaker handoffs. | Dense temporal probing (e.g. 100ms hop). Catches instantaneous foreign vocal blips at linearly higher runtime. | Temporal Probe Density vs. Forward Pass Latency | **Guaranteed** step size. |
-| **`min_homogeneity_similarity`** | `float` `[-1.0, 1.0]` | `0.75` | Minimum cosine similarity between any sub-window and turn centroid. | Demands near-identical vocal timbre throughout the turn. Rejects turns with pitch changes, emotional shifts, shouting, or whispering. | Accommodates natural expressive variance, laughing, and emotional inflection within the target speaker's monologue. | Vocal Monotony Strictness vs. Expressive Yield | **Guaranteed** cosine floor; **Empirical** rejection of expressive speech. |
+| **`homogeneity_hop_s`** | `float` `[0.05, 2.0s]` | `0.25s` (250ms) | Temporal step size between consecutive sliding sub-windows. | Fewer forward passes and lower compute; may miss brief speaker handoffs and retain more samples. | Denser probing (for example `0.10s`) creates more forward passes, costs more compute, and can reject more candidates containing brief intrusions. | Temporal Probe Density, Compute & Yield | **Guaranteed** step size; **empirical** additional rejection. |
+| **`min_homogeneity_similarity`** | `float` `[-1.0, 1.0]` | `0.75` | Minimum cosine similarity between any sub-window and turn centroid. | Stricter rejection and fewer extracted samples without adding forward passes; may falsely reject expressive target speech. | Retains more expressive speech with greater risk of missed speaker changes. | Speaker Purity vs. Extracted Yield | **Guaranteed** cosine floor; **Empirical** speaker-purity classification. |
 
 ---
 
@@ -448,10 +457,10 @@ word-locked.
 
 | Parameter | Type & Range | Default | Mechanism | Increasing (+) Effect | Decreasing (-) Effect | Trade-off | Certainty |
 |---|---|---|---|---|---|---|---|
-| **`enable_gemma`** | `bool` `{True, False}` | `False` | Direct-audio multimodal overlap verification via Gemma 4 / Gemini API. | Passes audio directly into LLM audio encoders to detect simultaneous speakers and room crosstalk. | Bypasses LLM evaluation. Eliminates network latency and external service dependency. | Multimodal Cross-Talk Auditing vs. Inference Latency | **Empirical** LLM judgment. |
+| **`enable_gemma`** | `bool` `{True, False}` | `False` | Direct-audio multimodal overlap verification via Gemma 4 / Gemini API. | Adds one multimodal inference request per surviving candidate and rejects detected overlap: more compute/latency and normally fewer extracted samples. | Bypasses LLM evaluation, reducing compute and retaining candidates not rejected upstream. | Speaker Purity & Lower Yield vs. Inference Latency | **Empirical** LLM judgment. |
 | **`gemma_timeout_s`** | `float` `[5.0, 600.0s]` | `120.0s` | Maximum HTTP request wait time for LLM audio inference. | Allows remote LLM ample time to generate tokens during peak server loads. | Fails quickly on unresponsive endpoints, preventing pipeline queue stalls. | Request Resilience vs. Pipeline Latency | **Guaranteed** HTTP timeout. |
-| **`enable_vibevoice`** | `bool` `{True, False}` | `False` | Autoregressive speaker count verification using Microsoft VibeVoice-ASR. | Measures secondary non-dominant speaker token duration across full clip context. | Bypasses VibeVoice verification. | Token-Level Speaker Count Verification vs. Dedicated VRAM / Endpoint Requirement | **Guaranteed** token classification. |
-| **`max_secondary_speech_s`** | `float` `[0.0, 10.0s]` | `0.0s` | Maximum allowable secondary speaker speech duration before rejecting candidate. | Tolerates brief background vocal sounds, far-field murmur, or brief confirmations up to the threshold duration. | Absolute zero-tolerance policy. Rejects candidate if VibeVoice detects a single secondary speaker token. | Secondary Speaker Permissiveness vs. Zero-Leakage Guarantee | **Guaranteed** threshold comparison. |
+| **`enable_vibevoice`** | `bool` `{True, False}` | `False` | Autoregressive speaker count verification using Microsoft VibeVoice-ASR. | Adds heavy ASR inference per surviving candidate and rejects detected secondary speech: more compute and normally fewer extracted samples. | Bypasses VibeVoice verification, reducing compute and retaining candidates not rejected upstream. | Speaker Purity & Lower Yield vs. Dedicated VRAM / Endpoint Requirement | **Guaranteed** gate execution; **empirical** speaker classification. |
+| **`max_secondary_speech_s`** | `float` `[0.0, 10.0s]` | `0.0s` | Maximum allowable secondary speaker speech duration before rejecting candidate. | Tolerates brief secondary speech and retains more samples; inference compute is unchanged. | A lower value rejects more candidates for higher expected purity and lower yield; `0.0s` is strictest. | Secondary Speaker Permissiveness vs. Extracted Yield | **Guaranteed** threshold comparison; **empirical** upstream detection. |
 
 ---
 

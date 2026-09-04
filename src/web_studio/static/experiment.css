@@ -24,6 +24,26 @@
   border-top: 1px solid var(--border-subtle);
 }
 
+.exp-tradeoff-legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.exp-tradeoff-legend > div {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-elevated);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
 .exp-left-panel,
 .exp-right-panel {
   display: flex;
@@ -129,6 +149,8 @@
 }
 
 .exp-compute-badge,
+.exp-purity-badge,
+.exp-yield-badge,
 .exp-boundary-warning {
   display: inline-flex;
   align-items: center;
@@ -145,6 +167,18 @@
   background: color-mix(in srgb, var(--accent-primary) 16%, var(--bg-surface));
   color: var(--accent-primary);
   border: 1px solid color-mix(in srgb, var(--accent-primary) 38%, var(--border-subtle));
+}
+
+.exp-purity-badge {
+  background: color-mix(in srgb, var(--accent-cyan) 14%, var(--bg-surface));
+  color: var(--accent-cyan);
+  border: 1px solid color-mix(in srgb, var(--accent-cyan) 38%, var(--border-subtle));
+}
+
+.exp-yield-badge {
+  background: color-mix(in srgb, var(--accent-amber) 12%, var(--bg-surface));
+  color: var(--accent-amber);
+  border: 1px solid color-mix(in srgb, var(--accent-amber) 32%, var(--border-subtle));
 }
 
 .exp-boundary-warning {
@@ -172,6 +206,37 @@
 .exp-completeness-panel {
   border: 2px solid color-mix(in srgb, var(--accent-primary) 55%, var(--border-subtle));
   background: color-mix(in srgb, var(--accent-primary) 6%, var(--bg-surface-elevated));
+}
+
+.exp-purity-compute-panel {
+  border-color: color-mix(in srgb, var(--accent-cyan) 40%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent-cyan) 3%, var(--bg-surface-elevated));
+}
+
+.exp-purity-toggle {
+  color: var(--accent-cyan);
+  font-weight: 800;
+}
+
+.exp-purity-summary {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-cyan) 7%, var(--bg-input));
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.exp-purity-compute-param > .form-label,
+.exp-purity-threshold-param .form-label {
+  font-weight: 800;
+}
+
+.exp-purity-compute-param > .select-input,
+.exp-purity-compute-param > .text-input {
+  border-color: color-mix(in srgb, var(--accent-cyan) 40%, var(--border-muted));
+  font-weight: 700;
 }
 
 .exp-completeness-toggle {
@@ -206,6 +271,12 @@
 
 .exp-energy-panel {
   border-color: color-mix(in srgb, var(--accent-amber) 28%, var(--border-subtle));
+}
+
+@media (max-width: 760px) {
+  .exp-tradeoff-legend {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Action Card */
