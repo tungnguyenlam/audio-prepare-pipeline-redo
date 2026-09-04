@@ -663,45 +663,45 @@ Validation rules:
 
     resetToDefaults() {
       if (this.el.primaryBackend) this.el.primaryBackend.value = 'sortformer';
-      this.setParamValue(this.el.targetOnset, this.el.targetOnsetNum, 0.70);
-      this.setParamValue(this.el.targetOffset, this.el.targetOffsetNum, 0.50);
+      this.setParamValue(this.el.targetOnset, this.el.targetOnsetNum, 0.80);
+      this.setParamValue(this.el.targetOffset, this.el.targetOffsetNum, 0.65);
       this.setParamValue(this.el.competitorOnset, this.el.competitorOnsetNum, 0.20);
       if (this.el.enableConsensus) { this.el.enableConsensus.checked = true; this.el.consensusFields.style.display = 'block'; }
       if (this.el.secondaryBackend) this.el.secondaryBackend.value = 'diarizen';
       if (this.el.secondaryDevice) this.el.secondaryDevice.value = 'same';
       if (this.el.enableCollar) { this.el.enableCollar.checked = true; this.el.collarFields.style.display = 'block'; }
-      this.setParamValue(this.el.boundaryCollar, this.el.boundaryCollarNum, 0.20);
-      this.setParamValue(this.el.minDuration, this.el.minDurationNum, 0.60);
+      this.setParamValue(this.el.boundaryCollar, this.el.boundaryCollarNum, 0.35);
+      this.setParamValue(this.el.minDuration, this.el.minDurationNum, 0.80);
       this.setParamValue(this.el.transitionExclusion, this.el.transitionExclusionNum, 0.50);
       // Stage 3a: Option A - Context-Aware Handoff Guard
       if (this.el.enableContextCollar) { this.el.enableContextCollar.checked = true; this.el.contextCollarFields.style.display = 'block'; }
-      this.setParamValue(this.el.handoffRisk, this.el.handoffRiskNum, 0.85);
-      this.setParamValue(this.el.silenceTail, this.el.silenceTailNum, 0.25);
+      this.setParamValue(this.el.handoffRisk, this.el.handoffRiskNum, 0.80);
+      this.setParamValue(this.el.silenceTail, this.el.silenceTailNum, 0.15);
       // Stage 3b: Option B - Syllable & Word Forced Alignment Lock
-      if (this.el.enableSyllableAlign) { this.el.enableSyllableAlign.checked = true; this.el.syllableAlignFields.style.display = 'block'; }
+      if (this.el.enableSyllableAlign) { this.el.enableSyllableAlign.checked = false; this.el.syllableAlignFields.style.display = 'none'; }
       if (this.el.alignerEngine) {
         this.el.alignerEngine.value = 'whisper_timestamped';
         this.el.alignerEngine.dispatchEvent(new Event('change'));
       }
-      if (this.el.alignerModel) this.el.alignerModel.value = 'vinai/PhoWhisper-large';
+      if (this.el.alignerModel) this.el.alignerModel.value = 'vinai/PhoWhisper-small';
       if (this.el.alignerLang) this.el.alignerLang.value = 'vi';
-      if (this.el.alignerDevice) this.el.alignerDevice.value = 'same';
+      if (this.el.alignerDevice) this.el.alignerDevice.value = 'cpu';
       // Stage 3c: Option C - Micro-Acoustic Energy & RMS Valley Snapping
-      if (this.el.enableEnergySnapping) { this.el.enableEnergySnapping.checked = true; this.el.energySnappingFields.style.display = 'block'; }
-      this.setParamValue(this.el.energyWindow, this.el.energyWindowNum, 0.010);
+      if (this.el.enableEnergySnapping) { this.el.enableEnergySnapping.checked = false; this.el.energySnappingFields.style.display = 'none'; }
+      this.setParamValue(this.el.energyWindow, this.el.energyWindowNum, 0.15);
       this.setParamValue(this.el.energyFrame, this.el.energyFrameNum, 2.0);
       this.setParamValue(this.el.energyHop, this.el.energyHopNum, 0.5);
       this.setParamValue(this.el.energyFloor, this.el.energyFloorNum, -30);
       // Stage 4: Dense WeSpeaker Homogeneity
-      if (this.el.enableHomo) { this.el.enableHomo.checked = true; this.el.homoFields.style.display = 'block'; }
+      if (this.el.enableHomo) { this.el.enableHomo.checked = false; this.el.homoFields.style.display = 'none'; }
       if (this.el.homoDevice) this.el.homoDevice.value = 'same';
-      this.setParamValue(this.el.homoSim, this.el.homoSimNum, 0.74);
-      this.setParamValue(this.el.homoWin, this.el.homoWinNum, 0.80);
-      this.setParamValue(this.el.homoHop, this.el.homoHopNum, 0.10);
+      this.setParamValue(this.el.homoSim, this.el.homoSimNum, 0.75);
+      this.setParamValue(this.el.homoWin, this.el.homoWinNum, 1.00);
+      this.setParamValue(this.el.homoHop, this.el.homoHopNum, 0.25);
       // Stage 5a: Direct-audio verifier
       this.setParamValue(this.el.gemmaTimeoutSlider, this.el.gemmaTimeout, 120);
       if (this.el.gemmaPrompt) this.el.gemmaPrompt.value = DEFAULT_GEMMA_PROMPT;
-      if (this.el.enableGemma) { this.el.enableGemma.checked = true; this.el.gemmaFields.style.display = 'block'; }
+      if (this.el.enableGemma) { this.el.enableGemma.checked = false; this.el.gemmaFields.style.display = 'none'; }
       if (this.el.gemmaBackend) this.el.gemmaBackend.value = 'gemini:gemini-3.8-flash';
       if (this.el.gemmaMaxTokens) this.el.gemmaMaxTokens.value = '1024';
       this.syncDirectAudioProvider();
@@ -861,40 +861,40 @@ Validation rules:
         device: this.el.deviceSelect?.value || 'auto',
         primary_device: this.el.deviceSelect?.value || 'auto',
         primary_backend: this.el.primaryBackend?.value || 'sortformer',
-        target_onset: parseFloat(this.el.targetOnsetNum?.value || this.el.targetOnset?.value || '0.70'),
-        target_offset: parseFloat(this.el.targetOffsetNum?.value || this.el.targetOffset?.value || '0.50'),
+        target_onset: parseFloat(this.el.targetOnsetNum?.value || this.el.targetOnset?.value || '0.80'),
+        target_offset: parseFloat(this.el.targetOffsetNum?.value || this.el.targetOffset?.value || '0.65'),
         competitor_onset: parseFloat(this.el.competitorOnsetNum?.value || this.el.competitorOnset?.value || '0.20'),
         enable_consensus: Boolean(this.el.enableConsensus?.checked),
         secondary_backend: this.el.secondaryBackend?.value || 'diarizen',
         secondary_device: this.el.secondaryDevice?.value || 'same',
         // Stage 3 Base
         enable_collar_erosion: collarGateEnabled,
-        boundary_collar_s: parseFloat(this.el.boundaryCollarNum?.value || this.el.boundaryCollar?.value || '0.20'),
-        min_turn_duration_s: parseFloat(this.el.minDurationNum?.value || this.el.minDuration?.value || '0.60'),
+        boundary_collar_s: parseFloat(this.el.boundaryCollarNum?.value || this.el.boundaryCollar?.value || '0.35'),
+        min_turn_duration_s: parseFloat(this.el.minDurationNum?.value || this.el.minDuration?.value || '0.80'),
         transition_exclusion_s: parseFloat(this.el.transitionExclusionNum?.value || this.el.transitionExclusion?.value || '0.50'),
         // Stage 3a: Option A - Context-Aware Handoff Guard
         enable_context_collar: collarGateEnabled && Boolean(this.el.enableContextCollar?.checked),
-        handoff_risk_distance_s: parseFloat(this.el.handoffRiskNum?.value || this.el.handoffRisk?.value || '0.85'),
-        silence_tail_buffer_s: parseFloat(this.el.silenceTailNum?.value || this.el.silenceTail?.value || '0.25'),
+        handoff_risk_distance_s: parseFloat(this.el.handoffRiskNum?.value || this.el.handoffRisk?.value || '0.80'),
+        silence_tail_buffer_s: parseFloat(this.el.silenceTailNum?.value || this.el.silenceTail?.value || '0.15'),
         // Stage 3b: Option B - Syllable & Word Forced Alignment Lock
         enable_syllable_alignment: collarGateEnabled && Boolean(this.el.enableSyllableAlign?.checked),
         aligner_engine: this.el.alignerEngine?.value || 'whisper_timestamped',
-        aligner_model: this.el.alignerModel?.value || 'vinai/PhoWhisper-large',
+        aligner_model: this.el.alignerModel?.value || 'vinai/PhoWhisper-small',
         aligner_language: this.el.alignerLang?.value || 'vi',
-        aligner_device: this.el.alignerDevice?.value || 'same',
+        aligner_device: this.el.alignerDevice?.value || 'cpu',
         aligner_endpoint: this.el.alignerEndpoint?.value || '',
         // Stage 3c: Option C - Micro-Acoustic Energy & RMS Valley Snapping
         enable_energy_snapping: collarGateEnabled && Boolean(this.el.enableEnergySnapping?.checked),
-        energy_search_window_s: parseFloat(this.el.energyWindowNum?.value || this.el.energyWindow?.value || '0.010'),
+        energy_search_window_s: parseFloat(this.el.energyWindowNum?.value || this.el.energyWindow?.value || '0.15'),
         energy_valley_floor_db: parseFloat(this.el.energyFloorNum?.value || this.el.energyFloor?.value || '-30'),
         energy_frame_len_ms: parseFloat(this.el.energyFrameNum?.value || this.el.energyFrame?.value || '2.0'),
         energy_hop_len_ms: parseFloat(this.el.energyHopNum?.value || this.el.energyHop?.value || '0.5'),
         // Stage 4: Dense WeSpeaker Homogeneity
         enable_homogeneity: Boolean(this.el.enableHomo?.checked),
         homogeneity_device: this.el.homoDevice?.value || 'same',
-        min_homogeneity_similarity: parseFloat(this.el.homoSimNum?.value || this.el.homoSim?.value || '0.74'),
-        homogeneity_window_s: parseFloat(this.el.homoWinNum?.value || this.el.homoWin?.value || '0.80'),
-        homogeneity_hop_s: parseFloat(this.el.homoHopNum?.value || this.el.homoHop?.value || '0.10'),
+        min_homogeneity_similarity: parseFloat(this.el.homoSimNum?.value || this.el.homoSim?.value || '0.75'),
+        homogeneity_window_s: parseFloat(this.el.homoWinNum?.value || this.el.homoWin?.value || '1.00'),
+        homogeneity_hop_s: parseFloat(this.el.homoHopNum?.value || this.el.homoHop?.value || '0.25'),
         // Stage 5a: Direct-Audio Quality Verifier
         enable_gemma: Boolean(this.el.enableGemma?.checked),
         gemma_backend: this.selectedDirectAudioBackend(),

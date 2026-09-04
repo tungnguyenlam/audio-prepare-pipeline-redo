@@ -114,25 +114,25 @@ class ExperimentRouteHandler:
             "enable_context_collar": True,
             "handoff_risk_distance_s": DEFAULT_HANDOFF_RISK_DISTANCE_S,
             "silence_tail_buffer_s": DEFAULT_SILENCE_TAIL_BUFFER_S,
-            "enable_syllable_alignment": True,
+            "enable_syllable_alignment": False,
             "aligner_engine": "whisper_timestamped",
-            "aligner_model": "vinai/PhoWhisper-large",
+            "aligner_model": "vinai/PhoWhisper-small",
             "aligner_language": "vi",
-            "aligner_device": "same",
+            "aligner_device": "cpu",
             "aligner_endpoint": "",
-            "enable_energy_snapping": True,
+            "enable_energy_snapping": False,
             "energy_search_window_s": DEFAULT_ENERGY_SEARCH_WINDOW_S,
             "energy_valley_floor_db": DEFAULT_ENERGY_VALLEY_FLOOR_DB,
             "energy_frame_len_ms": DEFAULT_ENERGY_FRAME_LEN_MS,
             "energy_hop_len_ms": DEFAULT_ENERGY_HOP_LEN_MS,
             # Homogeneity
-            "enable_homogeneity": True,
+            "enable_homogeneity": False,
             "homogeneity_device": "same",
             "homogeneity_window_s": DEFAULT_HOMOGENEITY_WINDOW_S,
             "homogeneity_hop_s": DEFAULT_HOMOGENEITY_HOP_S,
             "min_homogeneity_similarity": DEFAULT_MIN_HOMOGENEITY_SIMILARITY,
             # Foundation Models
-            "enable_gemma": True,
+            "enable_gemma": False,
             "gemma_backend": "gemini",
             "gemma_endpoint": DEFAULT_UNSLOTH_ENDPOINT,
             "gemma_model": DEFAULT_GEMMA4_MODEL_ID,
@@ -281,7 +281,7 @@ class ExperimentRouteHandler:
         aligner_device = (
             self._resolve_device(align_dev_req)
             if align_dev_req and align_dev_req != "same"
-            else primary_device
+            else "cpu"
         )
 
         homo_dev_req = body.get("homogeneity_device")
@@ -318,7 +318,7 @@ class ExperimentRouteHandler:
             enable_context_collar=bool(body.get("enable_context_collar", True)),
             handoff_risk_distance_s=float(body.get("handoff_risk_distance_s", DEFAULT_HANDOFF_RISK_DISTANCE_S)),
             silence_tail_buffer_s=float(body.get("silence_tail_buffer_s", DEFAULT_SILENCE_TAIL_BUFFER_S)),
-            enable_energy_snapping=bool(body.get("enable_energy_snapping", True)),
+            enable_energy_snapping=bool(body.get("enable_energy_snapping", False)),
             energy_search_window_s=float(body.get("energy_search_window_s", DEFAULT_ENERGY_SEARCH_WINDOW_S)),
             energy_valley_floor_db=float(body.get("energy_valley_floor_db", DEFAULT_ENERGY_VALLEY_FLOOR_DB)),
             energy_frame_len_ms=float(body.get("energy_frame_len_ms", DEFAULT_ENERGY_FRAME_LEN_MS)),

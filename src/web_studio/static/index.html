@@ -2120,30 +2120,30 @@
                 </div>
                 <div class="form-group mb-2">
                   <div class="exp-param-header">
-                    <label class="form-label" for="exp-target-onset" title="Target Speaker Onset Threshold [0.01 – 1.00, Default: 0.70]&#10;• Increase (+): Demands higher neural probability before opening a turn. Eliminates breath, coughing, and room false alarms.&#10;• Decrease (-): Opens turns on softer evidence. Captures quiet sentence attacks, but risks ambient noise false alarms.&#10;• Trade-off: Onset Purity vs. Speech Recall.">Target Speaker Onset Threshold</label>
+                    <label class="form-label" for="exp-target-onset" title="Target Speaker Onset Threshold [0.01 – 1.00, Default: 0.80]&#10;• Increase (+): Demands higher neural probability before opening a turn. Eliminates breath, coughing, and room false alarms.&#10;• Decrease (-): Opens turns on softer evidence. Captures quiet sentence attacks, but risks ambient noise false alarms.&#10;• Trade-off: Onset Purity vs. Speech Recall.">Target Speaker Onset Threshold</label>
                     <div class="exp-param-ctrl">
-                      <div class="exp-num-input-wrap" title="Target Speaker Onset Threshold [0.01 – 1.00, Default: 0.70]&#10;• Increase (+): Higher confidence required to start turn; eliminates false alarms.&#10;• Decrease (-): Triggers on quieter speech; risks room noise triggers.">
-                        <input type="number" id="exp-target-onset-num" class="exp-num-input" min="0.01" max="1.00" step="0.005" value="0.70" title="Target Onset [0.01 – 1.00, Default: 0.70]. Increase (+) for stricter onset purity; decrease (-) to capture soft word starts.">
+                      <div class="exp-num-input-wrap" title="Target Speaker Onset Threshold [0.01 – 1.00, Default: 0.80]&#10;• Increase (+): Higher confidence required to start turn; eliminates false alarms.&#10;• Decrease (-): Triggers on quieter speech; risks room noise triggers.">
+                        <input type="number" id="exp-target-onset-num" class="exp-num-input" min="0.01" max="1.00" step="0.005" value="0.80" title="Target Onset [0.01 – 1.00, Default: 0.80]. Increase (+) for stricter onset purity; decrease (-) to capture soft word starts.">
                         <span class="exp-num-unit">prob</span>
                       </div>
-                      <span class="badge badge-sm badge-accent" id="exp-target-onset-val">70%</span>
+                      <span class="badge badge-sm badge-accent" id="exp-target-onset-val">80%</span>
                     </div>
                   </div>
-                  <input type="range" id="exp-target-onset" class="slider-input exp-slider" min="0.05" max="0.99" step="0.005" value="0.70" title="Target Onset [0.01 – 1.00, Default: 0.70]. Drag right (+) for stricter onset purity; drag left (-) to capture soft whispers.">
+                  <input type="range" id="exp-target-onset" class="slider-input exp-slider" min="0.05" max="0.99" step="0.005" value="0.80" title="Target Onset [0.01 – 1.00, Default: 0.80]. Drag right (+) for stricter onset purity; drag left (-) to capture soft whispers.">
                   <span class="text-xs text-muted">Strict confidence required before classifying primary speaker.</span>
                 </div>
                 <div class="form-group mb-2">
                   <div class="exp-param-header">
-                    <label class="form-label" for="exp-target-offset" title="Target Speaker Offset Threshold [0.01 – target_onset, Default: 0.50]&#10;• Increase (+): Closes the turn immediately as speech energy decays. Minimizes tail bleed into subsequent speakers.&#10;• Decrease (-): Keeps the turn open through intra-sentence pauses and trailing decay. Rescues delicate phonemes and syllable codas (-p, -t, -k).&#10;• Trade-off: Boundary Cleanliness vs. Coda Completeness.">Target Speaker Offset Threshold</label>
+                    <label class="form-label" for="exp-target-offset" title="Target Speaker Offset Threshold [0.01 – target_onset, Default: 0.65]&#10;• Increase (+): Closes the turn immediately as speech energy decays. Minimizes tail bleed into subsequent speakers.&#10;• Decrease (-): Keeps the turn open through intra-sentence pauses and trailing decay. Rescues delicate phonemes and syllable codas (-p, -t, -k).&#10;• Trade-off: Boundary Cleanliness vs. Coda Completeness.">Target Speaker Offset Threshold</label>
                     <div class="exp-param-ctrl">
-                      <div class="exp-num-input-wrap" title="Target Speaker Offset Threshold [0.01 – target_onset, Default: 0.50]&#10;• Increase (+): Cuts turn sooner; avoids bleeding into next speaker.&#10;• Decrease (-): Keeps turn open; preserves trailing syllable codas and nasals.">
-                        <input type="number" id="exp-target-offset-num" class="exp-num-input" min="0.01" max="1.00" step="0.005" value="0.50" title="Target Offset [0.01 – target_onset, Default: 0.50]. Increase (+) to cut turns sooner; decrease (-) to preserve ending syllables.">
+                      <div class="exp-num-input-wrap" title="Target Speaker Offset Threshold [0.01 – target_onset, Default: 0.65]&#10;• Increase (+): Cuts turn sooner; avoids bleeding into next speaker.&#10;• Decrease (-): Keeps turn open; preserves trailing syllable codas and nasals.">
+                        <input type="number" id="exp-target-offset-num" class="exp-num-input" min="0.01" max="1.00" step="0.005" value="0.65" title="Target Offset [0.01 – target_onset, Default: 0.65]. Increase (+) to cut turns sooner; decrease (-) to preserve ending syllables.">
                         <span class="exp-num-unit">prob</span>
                       </div>
-                      <span class="badge badge-sm badge-accent" id="exp-target-offset-val">50%</span>
+                      <span class="badge badge-sm badge-accent" id="exp-target-offset-val">65%</span>
                     </div>
                   </div>
-                  <input type="range" id="exp-target-offset" class="slider-input exp-slider" min="0.05" max="0.95" step="0.005" value="0.50" title="Target Offset [0.01 – target_onset, Default: 0.50]. Drag right (+) to terminate turns sooner; drag left (-) to rescue unvoiced codas.">
+                  <input type="range" id="exp-target-offset" class="slider-input exp-slider" min="0.05" max="0.95" step="0.005" value="0.65" title="Target Offset [0.01 – target_onset, Default: 0.65]. Drag right (+) to terminate turns sooner; drag left (-) to rescue unvoiced codas.">
                   <span class="text-xs text-muted">Hysteresis turn release threshold; lower than onset to prevent turn fragmentation.</span>
                 </div>
                 <div class="form-group mb-0">
@@ -2232,29 +2232,29 @@
                   <div class="form-row">
                     <div class="form-group col-half mb-2">
                       <div class="exp-param-header">
-                        <label class="form-label" for="exp-boundary-collar" title="Base Collar Inward Shave [0.00 – 5.00s, Default: 0.20s]&#10;• Increase (+): Shaves a thicker safety buffer inward, guaranteeing zero transition bleed even with sloppy boundaries.&#10;• Decrease (-): Shaves less audio; preserves shorter words and close boundaries, but increases bleed risk.&#10;• Trade-off: Transition Safety Margin vs. Turn Truncation.">Base Collar Inward Shave</label>
+                        <label class="form-label" for="exp-boundary-collar" title="Base Collar Inward Shave [0.00 – 5.00s, Default: 0.35s]&#10;• Increase (+): Shaves a thicker safety buffer inward, guaranteeing zero transition bleed even with sloppy boundaries.&#10;• Decrease (-): Shaves less audio; preserves shorter words and close boundaries, but increases bleed risk.&#10;• Trade-off: Transition Safety Margin vs. Turn Truncation.">Base Collar Inward Shave</label>
                         <div class="exp-param-ctrl">
-                          <div class="exp-num-input-wrap" title="Base Collar Shave [0.00 – 5.00s, Default: 0.20s]&#10;• Increase (+): Stronger immunity to speaker transition cross-talk.&#10;• Decrease (-): Preserves shorter turns; higher bleed risk.">
-                            <input type="number" id="exp-boundary-collar-num" class="exp-num-input" min="0.00" max="5.00" step="0.01" value="0.20" title="Base Collar Inward Shave [0.00 – 5.00s, Default: 0.20s]. Increase (+) for thicker safety margin; decrease (-) to retain shorter words.">
+                          <div class="exp-num-input-wrap" title="Base Collar Shave [0.00 – 5.00s, Default: 0.35s]&#10;• Increase (+): Stronger immunity to speaker transition cross-talk.&#10;• Decrease (-): Preserves shorter turns; higher bleed risk.">
+                            <input type="number" id="exp-boundary-collar-num" class="exp-num-input" min="0.00" max="5.00" step="0.01" value="0.35" title="Base Collar Inward Shave [0.00 – 5.00s, Default: 0.35s]. Increase (+) for thicker safety margin; decrease (-) to retain shorter words.">
                             <span class="exp-num-unit">s</span>
                           </div>
-                          <span class="badge badge-sm badge-accent" id="exp-boundary-collar-val">0.20s</span>
+                          <span class="badge badge-sm badge-accent" id="exp-boundary-collar-val">0.35s</span>
                         </div>
                       </div>
-                      <input type="range" id="exp-boundary-collar" class="slider-input exp-slider" min="0.00" max="1.20" step="0.01" value="0.20" title="Base Collar [0.00 – 1.20s, Default: 0.20s]. Drag right (+) for safer transition isolation; drag left (-) to preserve turn length.">
+                      <input type="range" id="exp-boundary-collar" class="slider-input exp-slider" min="0.00" max="1.20" step="0.01" value="0.35" title="Base Collar [0.00 – 1.20s, Default: 0.35s]. Drag right (+) for safer transition isolation; drag left (-) to preserve turn length.">
                     </div>
                     <div class="form-group col-half mb-2">
                       <div class="exp-param-header">
-                        <label class="form-label" for="exp-min-duration" title="Minimum Surviving Turn Duration [0.05 – 10.00s, Default: 0.60s]&#10;• Increase (+): Discards brief fragments, backchannel murmurs ('uh-huh'), coughs, and boundary flutter.&#10;• Decrease (-): Retains short monosyllabic responses ('yes', 'no'), but admits transient acoustic clicks.&#10;• Trade-off: Sentence Stability vs. Monosyllabic Dialogue Recall.">Min Surviving Turn</label>
+                        <label class="form-label" for="exp-min-duration" title="Minimum Surviving Turn Duration [0.05 – 10.00s, Default: 0.80s]&#10;• Increase (+): Discards brief fragments, backchannel murmurs ('uh-huh'), coughs, and boundary flutter.&#10;• Decrease (-): Retains short monosyllabic responses ('yes', 'no'), but admits transient acoustic clicks.&#10;• Trade-off: Sentence Stability vs. Monosyllabic Dialogue Recall.">Min Surviving Turn</label>
                         <div class="exp-param-ctrl">
-                          <div class="exp-num-input-wrap" title="Minimum Surviving Turn [0.05 – 10.00s, Default: 0.60s]&#10;• Increase (+): Retains only substantial sentence clauses.&#10;• Decrease (-): Preserves short monosyllabic replies.">
-                            <input type="number" id="exp-min-duration-num" class="exp-num-input" min="0.05" max="10.00" step="0.01" value="0.60" title="Min Surviving Turn [0.05 – 10.00s, Default: 0.60s]. Increase (+) to purge short filler fragments; decrease (-) to keep short turns.">
+                          <div class="exp-num-input-wrap" title="Minimum Surviving Turn [0.05 – 10.00s, Default: 0.80s]&#10;• Increase (+): Retains only substantial sentence clauses.&#10;• Decrease (-): Preserves short monosyllabic replies.">
+                            <input type="number" id="exp-min-duration-num" class="exp-num-input" min="0.05" max="10.00" step="0.01" value="0.80" title="Min Surviving Turn [0.05 – 10.00s, Default: 0.80s]. Increase (+) to purge short filler fragments; decrease (-) to keep short turns.">
                             <span class="exp-num-unit">s</span>
                           </div>
-                          <span class="badge badge-sm badge-ghost" id="exp-min-duration-val">0.60s</span>
+                          <span class="badge badge-sm badge-ghost" id="exp-min-duration-val">0.80s</span>
                         </div>
                       </div>
-                      <input type="range" id="exp-min-duration" class="slider-input exp-slider" min="0.10" max="3.00" step="0.02" value="0.60" title="Min Surviving Turn [0.10 – 3.00s, Default: 0.60s]. Drag right (+) for clean TTS sentences; drag left (-) for conversational replies.">
+                      <input type="range" id="exp-min-duration" class="slider-input exp-slider" min="0.10" max="3.00" step="0.02" value="0.80" title="Min Surviving Turn [0.10 – 3.00s, Default: 0.80s]. Drag right (+) for clean TTS sentences; drag left (-) for conversational replies.">
                     </div>
                   </div>
 
@@ -2289,29 +2289,29 @@
                       <div class="form-row">
                         <div class="form-group col-half mb-0">
                           <div class="exp-param-header">
-                            <label class="form-label" for="exp-handoff-risk" title="Handoff Risk Distance [0.05 – 5.00s, Default: 0.85s]&#10;• Increase (+): Expands lookahead distance; turns farther away from rivals will still trigger defensive inward shaving.&#10;• Decrease (-): Only triggers inward shaving if the rival speaks almost immediately (< distance).&#10;• Trade-off: Handoff Safety Horizon vs. Monologue Coda Retention.">Handoff Risk Distance</label>
+                            <label class="form-label" for="exp-handoff-risk" title="Handoff Risk Distance [0.05 – 5.00s, Default: 0.80s]&#10;• Increase (+): Expands lookahead distance; turns farther away from rivals will still trigger defensive inward shaving.&#10;• Decrease (-): Only triggers inward shaving if the rival speaks almost immediately (< distance).&#10;• Trade-off: Handoff Safety Horizon vs. Monologue Coda Retention.">Handoff Risk Distance</label>
                             <div class="exp-param-ctrl">
-                              <div class="exp-num-input-wrap" title="Handoff Risk Distance [0.05 – 5.00s, Default: 0.85s]&#10;• Increase (+): Treats moderate pauses between speakers as high-risk handoffs.&#10;• Decrease (-): Treats turns as risk-free monologue unless rival starts immediately.">
-                                <input type="number" id="exp-handoff-risk-num" class="exp-num-input" min="0.05" max="5.00" step="0.01" value="0.85" title="Handoff Risk Distance [0.05 – 5.00s, Default: 0.85s]. Increase (+) for conservative handoff safety; decrease (-) to preserve monologue boundaries.">
+                              <div class="exp-num-input-wrap" title="Handoff Risk Distance [0.05 – 5.00s, Default: 0.80s]&#10;• Increase (+): Treats moderate pauses between speakers as high-risk handoffs.&#10;• Decrease (-): Treats turns as risk-free monologue unless rival starts immediately.">
+                                <input type="number" id="exp-handoff-risk-num" class="exp-num-input" min="0.05" max="5.00" step="0.01" value="0.80" title="Handoff Risk Distance [0.05 – 5.00s, Default: 0.80s]. Increase (+) for conservative handoff safety; decrease (-) to preserve monologue boundaries.">
                                 <span class="exp-num-unit">s</span>
                               </div>
-                              <span class="badge badge-sm badge-accent" id="exp-handoff-risk-val">0.85s</span>
+                              <span class="badge badge-sm badge-accent" id="exp-handoff-risk-val">0.80s</span>
                             </div>
                           </div>
-                          <input type="range" id="exp-handoff-risk" class="slider-input exp-slider" min="0.05" max="2.50" step="0.02" value="0.85" title="Handoff Risk [0.05 – 2.50s, Default: 0.85s]. Distance to nearest rival speaker turn triggering defensive inward shaving.">
+                          <input type="range" id="exp-handoff-risk" class="slider-input exp-slider" min="0.05" max="2.50" step="0.02" value="0.80" title="Handoff Risk [0.05 – 2.50s, Default: 0.80s]. Distance to nearest rival speaker turn triggering defensive inward shaving.">
                         </div>
                         <div class="form-group col-half mb-0">
                           <div class="exp-param-header">
-                            <label class="form-label" for="exp-silence-tail" title="Silence Tail Release [0.00 – 2.00s, Default: +0.25s]&#10;• Increase (+): Appends a generous acoustic cushion (+250ms) into natural trailing silence, preserving room decay and delicate codas (-p, -t, -k).&#10;• Decrease (-): Cuts tightly at the detected offset timestamp.&#10;• Trade-off: Trailing Coda &amp; Reverb Naturalness vs. Clip Tightness.">Silence Tail Release</label>
+                            <label class="form-label" for="exp-silence-tail" title="Silence Tail Release [0.00 – 2.00s, Default: +0.15s]&#10;• Increase (+): Appends a generous acoustic cushion (+150ms) into natural trailing silence, preserving room decay and delicate codas (-p, -t, -k).&#10;• Decrease (-): Cuts tightly at the detected offset timestamp.&#10;• Trade-off: Trailing Coda &amp; Reverb Naturalness vs. Clip Tightness.">Silence Tail Release</label>
                             <div class="exp-param-ctrl">
-                              <div class="exp-num-input-wrap" title="Silence Tail Release [0.00 – 2.00s, Default: +0.25s]&#10;• Increase (+): Rescues trailing phonemes and natural reverb decay into silence.&#10;• Decrease (-): Cuts tightly at raw offset.">
-                                <input type="number" id="exp-silence-tail-num" class="exp-num-input" min="0.00" max="2.00" step="0.01" value="0.25" title="Silence Tail Release [0.00 – 2.00s, Default: +0.25s]. Increase (+) to preserve fading phonemes and room tone into silence.">
+                              <div class="exp-num-input-wrap" title="Silence Tail Release [0.00 – 2.00s, Default: +0.15s]&#10;• Increase (+): Rescues trailing phonemes and natural reverb decay into silence.&#10;• Decrease (-): Cuts tightly at raw offset.">
+                                <input type="number" id="exp-silence-tail-num" class="exp-num-input" min="0.00" max="2.00" step="0.01" value="0.15" title="Silence Tail Release [0.00 – 2.00s, Default: +0.15s]. Increase (+) to preserve fading phonemes and room tone into silence.">
                                 <span class="exp-num-unit">s</span>
                               </div>
-                              <span class="badge badge-sm badge-ghost" id="exp-silence-tail-val">+0.25s</span>
+                              <span class="badge badge-sm badge-ghost" id="exp-silence-tail-val">+0.15s</span>
                             </div>
                           </div>
-                          <input type="range" id="exp-silence-tail" class="slider-input exp-slider" min="0.00" max="0.60" step="0.01" value="0.25" title="Silence Tail [0.00 – 0.60s, Default: +0.25s]. Cushion extended into natural trailing silence to prevent truncated word endings.">
+                          <input type="range" id="exp-silence-tail" class="slider-input exp-slider" min="0.00" max="0.60" step="0.01" value="0.15" title="Silence Tail [0.00 – 0.60s, Default: +0.15s]. Cushion extended into natural trailing silence to prevent truncated word endings.">
                         </div>
                       </div>
                     </div>
@@ -2328,11 +2328,11 @@
                         <small class="purity-overlap-lead"><strong>This is the setting for “không bị lẹm chữ.”</strong> It spends ASR compute to move cuts out of recognized words and syllable codas.</small>
                       </div>
                       <label class="toggle-switch-wrap exp-completeness-toggle" title="Enable the compute-heavy word-boundary alignment pass.">
-                        <input type="checkbox" id="exp-enable-syllable-align" checked>
+                        <input type="checkbox" id="exp-enable-syllable-align">
                         <span>Enable word lock</span>
                       </label>
                     </div>
-                    <div id="exp-syllable-align-fields">
+                    <div id="exp-syllable-align-fields" style="display: none;">
                       <div class="exp-completeness-recipe">
                         Recommended for Vietnamese completeness: <strong>Whisper-Timestamped</strong> · <strong>PhoWhisper Large</strong> · <strong>vi</strong> · dedicated CUDA when available.
                         Alignment is fail-open, so check the task stage log for errors before treating output as word-locked.
@@ -2349,10 +2349,10 @@
                         <div class="form-group col-half mb-2 exp-compute-param">
                           <label class="form-label" for="exp-aligner-device">Aligner Device:</label>
                           <select id="exp-aligner-device" class="select-input">
-                            <option value="same" selected>Same as Primary</option>
+                            <option value="cpu" selected>CPU (Recommended - Prevents GPU OOM)</option>
+                            <option value="same">Same as Primary</option>
                             <option value="cuda:0">Dedicated cuda:0</option>
                             <option value="cuda:1">Dedicated cuda:1</option>
-                            <option value="cpu">CPU (Prevents GPU OOM)</option>
                             <option value="auto">Auto Detect</option>
                           </select>
                         </div>
@@ -2360,7 +2360,7 @@
                       <div id="exp-whisper-options" class="form-row" style="margin-bottom: 0;">
                         <div class="form-group col-half mb-0 exp-compute-param">
                           <label class="form-label" for="exp-aligner-model">Whisper Model / Checkpoint — more compute can improve timestamps:</label>
-                          <input list="exp-whisper-model-list" id="exp-aligner-model" class="text-input font-mono" value="vinai/PhoWhisper-large" placeholder="Model ID or local path (e.g. vinai/PhoWhisper-large)">
+                          <input list="exp-whisper-model-list" id="exp-aligner-model" class="text-input font-mono" value="vinai/PhoWhisper-small" placeholder="Model ID or local path (e.g. vinai/PhoWhisper-small)">
                           <datalist id="exp-whisper-model-list">
                             <option value="vinai/PhoWhisper-large">PhoWhisper Large (recommended completeness / highest compute)</option>
                             <option value="vinai/PhoWhisper-small">PhoWhisper Small (default / lower compute)</option>
@@ -2397,25 +2397,25 @@
                         <span class="exp-boundary-warning">Not a word-completeness model</span>
                         <small class="purity-overlap-lead">Runs after Option B. It reduces cut clicks, but its bidirectional search can move a word-locked boundary inward.</small>
                       </div>
-                      <label class="toggle-switch-wrap" title="Micro-Acoustic Energy Snapping [Default: Enabled]&#10;• Enabled: Walks boundaries to the nearest vocal cord closure zero-crossing / RMS silence trough, eliminating cutting clicks and waveform pops.&#10;• Disabled: Cuts at collar timestamps without micro-waveform alignment.">
-                        <input type="checkbox" id="exp-enable-energy-snapping" checked>
+                      <label class="toggle-switch-wrap" title="Micro-Acoustic Energy Snapping [Default: Disabled]&#10;• Enabled: Walks boundaries to the nearest vocal cord closure zero-crossing / RMS silence trough, eliminating cutting clicks and waveform pops.&#10;• Disabled: Cuts at collar timestamps without micro-waveform alignment.">
+                        <input type="checkbox" id="exp-enable-energy-snapping">
                         <span>Enable</span>
                       </label>
                     </div>
-                    <div id="exp-energy-snapping-fields">
+                    <div id="exp-energy-snapping-fields" style="display: none;">
                       <div class="form-row">
                         <div class="form-group col-half mb-0">
                           <div class="exp-param-header">
-                            <label class="form-label" for="exp-energy-window" title="Search Window Radius [0.002 – 0.050s, Default: ±0.010s (±10ms)]&#10;• Increase (+): Wider search radius to locate deeper vocal tract closure troughs.&#10;• Decrease (-): Restricts search to immediate boundary vicinity to prevent boundary drift.&#10;• Micro-Acoustic: ±10ms reliably avoids cutting phonemes while finding zero-crossings.">Search Window</label>
+                            <label class="form-label" for="exp-energy-window" title="Search Window Radius [0.005 – 1.00s, Default: ±0.15s]&#10;• Increase (+): Wider search radius to locate deeper vocal tract closure troughs.&#10;• Decrease (-): Restricts search to immediate boundary vicinity to prevent boundary drift.&#10;• Trade-off: Silence Valley Depth vs. Boundary Drift.">Search Window</label>
                             <div class="exp-param-ctrl">
-                              <div class="exp-num-input-wrap" title="Search Window [0.002 – 0.100s, Default: ±0.010s]&#10;• Increase (+): Higher chance of finding true vocal cord closure.&#10;• Decrease (-): Restricts movement near detected boundary.">
-                                <input type="number" id="exp-energy-window-num" class="exp-num-input" min="0.002" max="0.100" step="0.001" value="0.010" title="Energy Search Window [0.002 – 0.100s, Default: ±0.010s]. Search radius around boundary to locate silence zero-crossing.">
+                              <div class="exp-num-input-wrap" title="Search Window [0.005 – 1.00s, Default: ±0.15s]&#10;• Increase (+): Higher chance of finding true vocal cord closure.&#10;• Decrease (-): Restricts movement near detected boundary.">
+                                <input type="number" id="exp-energy-window-num" class="exp-num-input" min="0.005" max="1.00" step="0.005" value="0.15" title="Energy Search Window [0.005 – 1.00s, Default: ±0.15s]. Search radius around boundary to locate silence zero-crossing.">
                                 <span class="exp-num-unit">s</span>
                               </div>
-                              <span class="badge badge-sm badge-accent" id="exp-energy-window-val">±10ms</span>
+                              <span class="badge badge-sm badge-accent" id="exp-energy-window-val">±150ms</span>
                             </div>
                           </div>
-                          <input type="range" id="exp-energy-window" class="slider-input exp-slider" min="0.002" max="0.050" step="0.001" value="0.010" title="Search Window [0.002 – 0.050s, Default: ±0.010s]. Drag right (+) for deeper valley search; drag left (-) to restrict boundary drift.">
+                          <input type="range" id="exp-energy-window" class="slider-input exp-slider" min="0.01" max="0.50" step="0.005" value="0.15" title="Search Window [0.01 – 0.50s, Default: ±0.15s]. Drag right (+) for deeper valley search; drag left (-) to restrict boundary drift.">
                         </div>
                         <div class="form-group col-half mb-0">
                           <div class="exp-param-header">
@@ -2472,12 +2472,12 @@
                     <strong>Dense Sliding WeSpeaker Homogeneity</strong>
                     <span class="exp-purity-badge">COMPUTE → SPEAKER PURITY</span>
                   </div>
-                  <label class="toggle-switch-wrap exp-purity-toggle" title="Dense WeSpeaker Homogeneity [Default: Enabled]&#10;• Enabled: Adds embedding inference across many overlapping windows, increasing compute, and rejects turns containing inconsistent speaker timbre, normally extracting fewer samples.&#10;• Disabled: Relies on upstream diarizers, runs faster, and retains more candidates.">
-                    <input type="checkbox" id="exp-enable-homo" checked>
+                  <label class="toggle-switch-wrap exp-purity-toggle" title="Dense WeSpeaker Homogeneity [Default: Disabled]&#10;• Enabled: Adds embedding inference across many overlapping windows, increasing compute, and rejects turns containing inconsistent speaker timbre, normally extracting fewer samples.&#10;• Disabled: Relies on upstream diarizers, runs faster, and retains more candidates.">
+                    <input type="checkbox" id="exp-enable-homo">
                     <span>Enable</span>
                   </label>
                 </div>
-                <div id="exp-homo-fields">
+                <div id="exp-homo-fields" style="display: none;">
                   <div class="exp-purity-summary">
                     <strong>Trade-off:</strong> enable this filter for another speaker-purity pass. Lower the hop for denser, more expensive probing; raise the cosine floor for stricter rejection. Both choices can reduce extracted samples.
                   </div>
@@ -2493,44 +2493,44 @@
                     </div>
                     <div class="form-group col-half mb-0 exp-purity-threshold-param">
                       <div class="exp-param-header">
-                        <label class="form-label" for="exp-homo-sim" title="Min Cosine Floor [0.00 – 1.00, Default: 0.74]&#10;• Increase (+): Stricter speaker-purity rejection; fewer samples are extracted, but expressive target speech can be falsely rejected. Compute per evaluated window is unchanged.&#10;• Decrease (-): Retains more expressive speech with greater risk of missed speaker changes.">Min Cosine Floor <span class="exp-yield-badge">PURITY ↑ · YIELD ↓</span></label>
+                        <label class="form-label" for="exp-homo-sim" title="Min Cosine Floor [0.00 – 1.00, Default: 0.75]&#10;• Increase (+): Stricter speaker-purity rejection; fewer samples are extracted, but expressive target speech can be falsely rejected. Compute per evaluated window is unchanged.&#10;• Decrease (-): Retains more expressive speech with greater risk of missed speaker changes.">Min Cosine Floor <span class="exp-yield-badge">PURITY ↑ · YIELD ↓</span></label>
                         <div class="exp-param-ctrl">
-                          <div class="exp-num-input-wrap" title="Min Cosine Floor [0.00 – 1.00, Default: 0.74]&#10;• Increase (+): Higher purity; rejects unsegmented handoffs.&#10;• Decrease (-): Tolerates emotional inflection and vocal dynamics.">
-                            <input type="number" id="exp-homo-sim-num" class="exp-num-input" min="0.00" max="1.00" step="0.005" value="0.74" title="Min Cosine Floor [0.00 – 1.00, Default: 0.74]. Minimum sub-window similarity to turn centroid.">
+                          <div class="exp-num-input-wrap" title="Min Cosine Floor [0.00 – 1.00, Default: 0.75]&#10;• Increase (+): Higher purity; rejects unsegmented handoffs.&#10;• Decrease (-): Tolerates emotional inflection and vocal dynamics.">
+                            <input type="number" id="exp-homo-sim-num" class="exp-num-input" min="0.00" max="1.00" step="0.005" value="0.75" title="Min Cosine Floor [0.00 – 1.00, Default: 0.75]. Minimum sub-window similarity to turn centroid.">
                             <span class="exp-num-unit">cos</span>
                           </div>
-                          <span class="badge badge-sm badge-accent" id="exp-homo-sim-val">0.74</span>
+                          <span class="badge badge-sm badge-accent" id="exp-homo-sim-val">0.75</span>
                         </div>
                       </div>
-                      <input type="range" id="exp-homo-sim" class="slider-input exp-slider" min="0.30" max="0.99" step="0.005" value="0.74" title="Cosine Floor [0.30 – 0.99, Default: 0.74]. Drag right (+) for ultra-pure voice profile; drag left (-) to retain expressive speech.">
+                      <input type="range" id="exp-homo-sim" class="slider-input exp-slider" min="0.30" max="0.99" step="0.005" value="0.75" title="Cosine Floor [0.30 – 0.99, Default: 0.75]. Drag right (+) for ultra-pure voice profile; drag left (-) to retain expressive speech.">
                     </div>
                   </div>
                   <div class="form-row">
                     <div class="form-group col-half mb-0 exp-purity-compute-param">
                       <div class="exp-param-header">
-                        <label class="form-label" for="exp-homo-win" title="Homogeneity Sliding Window [0.10 – 10.00s, Default: 0.80s]&#10;• Increase (+): Longer windows yield richer acoustic context and more stable embedding vectors.&#10;• Decrease (-): Shorter windows provide higher temporal resolution, detecting brief (0.5s) secondary voice intrusions.&#10;• Trade-off: Embedding Stability vs. Short Intrusion Detection.">Sliding Window</label>
+                        <label class="form-label" for="exp-homo-win" title="Homogeneity Sliding Window [0.10 – 10.00s, Default: 1.00s]&#10;• Increase (+): Longer windows yield richer acoustic context and more stable embedding vectors.&#10;• Decrease (-): Shorter windows provide higher temporal resolution, detecting brief (0.5s) secondary voice intrusions.&#10;• Trade-off: Embedding Stability vs. Short Intrusion Detection.">Sliding Window</label>
                         <div class="exp-param-ctrl">
-                          <div class="exp-num-input-wrap" title="Sliding Window [0.10 – 10.00s, Default: 0.80s]&#10;• Increase (+): More stable embeddings.&#10;• Decrease (-): Higher sensitivity to brief voice blips.">
-                            <input type="number" id="exp-homo-win-num" class="exp-num-input" min="0.10" max="10.00" step="0.05" value="0.80" title="Sliding Window Length [0.10 – 10.00s, Default: 0.80s]. Temporal slice used for each embedding check.">
+                          <div class="exp-num-input-wrap" title="Sliding Window [0.10 – 10.00s, Default: 1.00s]&#10;• Increase (+): More stable embeddings.&#10;• Decrease (-): Higher sensitivity to brief voice blips.">
+                            <input type="number" id="exp-homo-win-num" class="exp-num-input" min="0.10" max="10.00" step="0.05" value="1.00" title="Sliding Window Length [0.10 – 10.00s, Default: 1.00s]. Temporal slice used for each embedding check.">
                             <span class="exp-num-unit">s</span>
                           </div>
-                          <span class="badge badge-sm badge-ghost" id="exp-homo-win-val">0.80s</span>
+                          <span class="badge badge-sm badge-ghost" id="exp-homo-win-val">1.00s</span>
                         </div>
                       </div>
-                      <input type="range" id="exp-homo-win" class="slider-input exp-slider" min="0.25" max="3.00" step="0.05" value="0.80" title="Sliding Window [0.25 – 3.00s, Default: 0.80s]. Drag right (+) for smoother embeddings; drag left (-) to detect momentary interruptions.">
+                      <input type="range" id="exp-homo-win" class="slider-input exp-slider" min="0.25" max="3.00" step="0.05" value="1.00" title="Sliding Window [0.25 – 3.00s, Default: 1.00s]. Drag right (+) for smoother embeddings; drag left (-) to detect momentary interruptions.">
                     </div>
                     <div class="form-group col-half mb-0 exp-purity-compute-param">
                       <div class="exp-param-header">
-                        <label class="form-label" for="exp-homo-hop" title="Sliding Hop Step [0.02 – 5.00s, Default: 0.10s]&#10;• Increase (+): Fewer forward passes and lower compute; may miss brief secondary voices and retain more samples.&#10;• Decrease (-): More overlapping forward passes and higher compute; can catch more brief intrusions and therefore extract fewer samples.">Sliding Hop Step <span class="exp-purity-badge">LOWER = MORE COMPUTE</span></label>
+                        <label class="form-label" for="exp-homo-hop" title="Sliding Hop Step [0.02 – 5.00s, Default: 0.25s]&#10;• Increase (+): Fewer forward passes and lower compute; may miss brief secondary voices and retain more samples.&#10;• Decrease (-): More overlapping forward passes and higher compute; can catch more brief intrusions and therefore extract fewer samples.">Sliding Hop Step <span class="exp-purity-badge">LOWER = MORE COMPUTE</span></label>
                         <div class="exp-param-ctrl">
-                          <div class="exp-num-input-wrap" title="Sliding Hop Step [0.02 – 5.00s, Default: 0.10s]&#10;• Increase (+): Faster processing.&#10;• Decrease (-): Denser probing; catches momentary blips.">
-                            <input type="number" id="exp-homo-hop-num" class="exp-num-input" min="0.02" max="5.00" step="0.01" value="0.10" title="Sliding Hop Step [0.02 – 5.00s, Default: 0.10s]. Step size between consecutive sliding sub-windows.">
+                          <div class="exp-num-input-wrap" title="Sliding Hop Step [0.02 – 5.00s, Default: 0.25s]&#10;• Increase (+): Faster processing.&#10;• Decrease (-): Denser probing; catches momentary blips.">
+                            <input type="number" id="exp-homo-hop-num" class="exp-num-input" min="0.02" max="5.00" step="0.01" value="0.25" title="Sliding Hop Step [0.02 – 5.00s, Default: 0.25s]. Step size between consecutive sliding sub-windows.">
                             <span class="exp-num-unit">s</span>
                           </div>
-                          <span class="badge badge-sm badge-ghost" id="exp-homo-hop-val">0.10s</span>
+                          <span class="badge badge-sm badge-ghost" id="exp-homo-hop-val">0.25s</span>
                         </div>
                       </div>
-                      <input type="range" id="exp-homo-hop" class="slider-input exp-slider" min="0.05" max="1.00" step="0.01" value="0.10" title="Sliding Hop [0.05 – 1.00s, Default: 0.10s]. Drag right (+) for speed; drag left (-) for dense micro-probing.">
+                      <input type="range" id="exp-homo-hop" class="slider-input exp-slider" min="0.05" max="1.00" step="0.01" value="0.25" title="Sliding Hop [0.05 – 1.00s, Default: 0.25s]. Drag right (+) for speed; drag left (-) for dense micro-probing.">
                     </div>
                   </div>
                 </div>
@@ -2549,13 +2549,13 @@
                       Local Gemma or Google Gemini listens directly to every candidate. A second speaker, overlap, or a clipped boundary rejects the sample; no transcription pass is used.
                     </small>
                   </div>
-                  <label class="toggle-switch-wrap exp-purity-toggle" title="Direct-Audio Quality Verification [Default: Enabled]&#10;• Enabled: Adds one local Gemma or Gemini API request per candidate and rejects speaker impurity, clipped word boundaries, uncertainty, and request errors.&#10;• Disabled: Bypasses LLM inference, runs faster, and retains candidates not rejected by earlier gates.">
-                    <input type="checkbox" id="exp-enable-gemma" checked>
+                  <label class="toggle-switch-wrap exp-purity-toggle" title="Direct-Audio Quality Verification [Default: Disabled]&#10;• Enabled: Adds one local Gemma or Gemini API request per candidate and rejects speaker impurity, clipped word boundaries, uncertainty, and request errors.&#10;• Disabled: Bypasses LLM inference, runs faster, and retains candidates not rejected by earlier gates.">
+                    <input type="checkbox" id="exp-enable-gemma">
                     <span>Enable</span>
                   </label>
                 </div>
 
-                <div id="exp-gemma-fields" style="margin-top: 14px;">
+                <div id="exp-gemma-fields" style="display: none; margin-top: 14px;">
                   <!-- Model Selection with Integrated Readiness Probe & Badge -->
                   <div class="form-group mb-2">
                     <div class="label-with-tool">
