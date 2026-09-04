@@ -6365,6 +6365,9 @@ def register_api_routes(app: web.Application) -> None:
     from src.web_studio.experiment_handler import register_experiment_routes
     register_experiment_routes(app, task_manager, registry)
 
+    from src.web_studio.labeler_handler import register_labeler_routes
+    register_labeler_routes(app, task_manager, registry)
+
 
 def register_lifecycle(app: web.Application) -> None:
     """Register SonicStudio background services on an application.

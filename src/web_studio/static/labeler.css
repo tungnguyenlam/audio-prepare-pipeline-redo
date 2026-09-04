@@ -1,0 +1,422 @@
+/* ==========================================================================
+   SonicStudio — Sample Quality Labeler CSS
+   Supports light-theme styling, quality tags, and rapid keyboard labeling.
+   ========================================================================== */
+
+.lbl-workbench-card {
+  margin-bottom: 20px;
+}
+
+.lbl-header-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.lbl-stats-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.lbl-stat-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.lbl-stat-val {
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-muted);
+}
+
+.lbl-stat-val.accept { background: rgba(16, 185, 129, 0.15); color: hsl(158, 70%, 30%); border-color: rgba(16, 185, 129, 0.35); }
+.lbl-stat-val.noise { background: rgba(245, 158, 11, 0.15); color: hsl(38, 92%, 35%); border-color: rgba(245, 158, 11, 0.35); }
+.lbl-stat-val.multi { background: rgba(168, 85, 247, 0.15); color: hsl(270, 75%, 45%); border-color: rgba(168, 85, 247, 0.35); }
+.lbl-stat-val.chopped { background: rgba(239, 68, 68, 0.15); color: hsl(348, 83%, 45%); border-color: rgba(239, 68, 68, 0.35); }
+
+/* Sticky controls bar */
+.lbl-toolbar-card {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(8px);
+}
+
+.lbl-toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.lbl-toolbar-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lbl-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-elevated);
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.lbl-filter-btn:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--border-muted);
+}
+
+.lbl-filter-btn.active {
+  background: var(--accent-primary);
+  color: #ffffff;
+  border-color: var(--accent-primary);
+}
+
+.lbl-filter-btn .badge-count {
+  font-size: 0.68rem;
+  padding: 1px 5px;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.lbl-filter-btn.active .badge-count {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+/* Sample turn card list */
+.lbl-turns-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lbl-turn-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+}
+
+.lbl-turn-card:hover {
+  border-color: var(--border-muted);
+  box-shadow: var(--shadow-card);
+}
+
+.lbl-turn-card.active {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2), var(--shadow-card);
+  background: hsl(215, 45%, 99%);
+}
+
+.lbl-turn-card.labeled-accept {
+  border-left: 4px solid hsl(158, 70%, 34%);
+}
+
+.lbl-turn-card.labeled-noise {
+  border-left: 4px solid hsl(38, 92%, 40%);
+}
+
+.lbl-turn-card.labeled-multi_speaker {
+  border-left: 4px solid hsl(270, 75%, 52%);
+}
+
+.lbl-turn-card.labeled-chopped {
+  border-left: 4px solid hsl(348, 83%, 50%);
+}
+
+.lbl-turn-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.lbl-turn-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lbl-turn-idx {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.lbl-turn-time {
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.lbl-turn-dur {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+}
+
+/* Audio Player inside Turn Card */
+.lbl-turn-audio {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+}
+
+.lbl-play-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-primary);
+  color: #ffffff;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform var(--transition-fast), background-color var(--transition-fast);
+}
+
+.lbl-play-btn:hover {
+  background: var(--accent-primary-hover);
+  transform: scale(1.05);
+}
+
+.lbl-play-btn.playing {
+  background: var(--accent-amber);
+}
+
+.lbl-progress-track {
+  position: relative;
+  flex: 1;
+  height: 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.lbl-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent-primary);
+  border-radius: var(--radius-pill);
+  transition: width 0.08s linear;
+}
+
+.lbl-time-display {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  min-width: 48px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* Label Buttons Row */
+.lbl-actions-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border-subtle);
+}
+
+.lbl-buttons-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lbl-tag-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-muted);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  user-select: none;
+}
+
+.lbl-tag-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.lbl-tag-btn .key-hint {
+  font-size: 0.68rem;
+  font-family: var(--font-mono);
+  opacity: 0.7;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+/* Tag Specific Selected Styles */
+.lbl-tag-btn.accept:hover,
+.lbl-tag-btn.accept.selected {
+  border-color: hsl(158, 70%, 34%);
+  background: hsl(158, 70%, 34%);
+  color: #ffffff;
+}
+.lbl-tag-btn.accept.selected .key-hint { background: rgba(255, 255, 255, 0.25); color: #fff; }
+
+.lbl-tag-btn.noise:hover,
+.lbl-tag-btn.noise.selected {
+  border-color: hsl(38, 92%, 40%);
+  background: hsl(38, 92%, 40%);
+  color: #ffffff;
+}
+.lbl-tag-btn.noise.selected .key-hint { background: rgba(255, 255, 255, 0.25); color: #fff; }
+
+.lbl-tag-btn.multi_speaker:hover,
+.lbl-tag-btn.multi_speaker.selected {
+  border-color: hsl(270, 75%, 52%);
+  background: hsl(270, 75%, 52%);
+  color: #ffffff;
+}
+.lbl-tag-btn.multi_speaker.selected .key-hint { background: rgba(255, 255, 255, 0.25); color: #fff; }
+
+.lbl-tag-btn.chopped:hover,
+.lbl-tag-btn.chopped.selected {
+  border-color: hsl(348, 83%, 50%);
+  background: hsl(348, 83%, 50%);
+  color: #ffffff;
+}
+.lbl-tag-btn.chopped.selected .key-hint { background: rgba(255, 255, 255, 0.25); color: #fff; }
+
+.lbl-clear-btn {
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+.lbl-clear-btn:hover {
+  color: var(--accent-rose);
+}
+
+/* Shortcuts Cheat Sheet Modal / Drawer */
+.lbl-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-modal-backdrop);
+  backdrop-filter: blur(4px);
+}
+
+.lbl-modal-backdrop.open {
+  display: flex;
+}
+
+.lbl-modal-dialog {
+  width: 90%;
+  max-width: 580px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-elevated);
+  padding: 24px;
+}
+
+.lbl-shortcut-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+
+.lbl-shortcut-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.8rem;
+}
+
+.lbl-shortcut-table kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-muted);
+  border-radius: 4px;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+}
+
+/* Empty State */
+.lbl-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.lbl-empty-icon {
+  font-size: 2.8rem;
+  margin-bottom: 12px;
+}

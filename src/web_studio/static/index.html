@@ -11,6 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="static/style.css">
   <link rel="stylesheet" href="static/experiment.css">
+  <link rel="stylesheet" href="static/labeler.css">
 </head>
 <body>
   <div id="app" class="app-layout">
@@ -66,6 +67,10 @@
           <button class="nav-tab" data-tab="tab-purity" id="btn-tab-purity">
             <span class="tab-icon">🛡️</span>
             <span class="nav-text">Speaker Purity</span>
+          </button>
+          <button class="nav-tab" data-tab="tab-labeler" id="btn-tab-labeler">
+            <span class="tab-icon">🏷️</span>
+            <span class="nav-text">Sample Labeler</span>
           </button>
           <button class="nav-tab" data-tab="tab-experiment" id="btn-tab-experiment">
             <span class="tab-icon">🔬</span>
@@ -2035,6 +2040,273 @@
         </div>
       </section>
 
+      <!-- ==================== TAB: SAMPLE QUALITY LABELER ==================== -->
+      <section id="tab-labeler" class="tab-pane">
+        <!-- Master Workbench Card -->
+        <div class="card lbl-workbench-card">
+          <div class="card-header">
+            <div>
+              <div class="lbl-header-title-row">
+                <span class="workflow-step">Data Quality Gate</span>
+                <h2 class="card-title">Sample Quality Labeler</h2>
+                <span class="badge badge-accent">TTS Curating Studio</span>
+              </div>
+              <p class="card-subtitle">
+                Load DiarizationResult segments, listen to each turn, and hand-label quality defects: <strong>Accept</strong>, <strong>Background Noise</strong>, <strong>&gt;1 Speaker</strong>, or <strong>Word Chopped Off</strong>. Export physically decoupled audio datasets with train/val/test splits.
+              </p>
+            </div>
+            <div class="card-actions flex-wrap gap-2">
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-lbl-shortcuts" title="Keyboard Shortcuts Cheat Sheet">
+                <kbd>?</kbd> Shortcuts
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-lbl-save-draft" title="Save draft labels to disk">
+                💾 Save Draft
+              </button>
+              <button type="button" class="btn btn-primary btn-sm" id="btn-lbl-open-export" title="Export decoupled audio dataset and train/val/test splits">
+                📦 Export Dataset
+              </button>
+            </div>
+          </div>
+
+          <!-- Session Setup Row -->
+          <div class="form-row mt-3" style="display: grid; grid-template-columns: minmax(280px, 1.5fr) auto; gap: 12px; align-items: end;">
+            <div class="form-group mb-0">
+              <label class="form-label" for="lbl-result-select">1. Select Diarization Result to Label</label>
+              <div class="flex-row items-center gap-2">
+                <select id="lbl-result-select" class="select-input" style="flex: 1;">
+                  <option value="">-- Select Diarization Result --</option>
+                </select>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-lbl-reload-results" title="Reload diarization results list">
+                  🔄
+                </button>
+              </div>
+            </div>
+            <div class="form-group mb-0">
+              <span class="text-xs text-muted" id="lbl-save-indicator">Ready</span>
+            </div>
+          </div>
+
+          <!-- Source Audio Info Bar -->
+          <div id="lbl-source-info-bar" class="mt-3"></div>
+
+          <!-- Stats Overview Row -->
+          <div class="lbl-stats-row">
+            <div class="lbl-stat-item">
+              <span>Total Turns:</span>
+              <span class="lbl-stat-val font-mono" id="lbl-stat-total">0</span>
+            </div>
+            <div class="lbl-stat-item">
+              <span>Labeled:</span>
+              <span class="lbl-stat-val font-mono" id="lbl-stat-labeled">0 (0%)</span>
+            </div>
+            <div class="lbl-stat-item">
+              <span>Accept:</span>
+              <span class="lbl-stat-val accept font-mono" id="lbl-stat-accept">0</span>
+            </div>
+            <div class="lbl-stat-item">
+              <span>Background Noise:</span>
+              <span class="lbl-stat-val noise font-mono" id="lbl-stat-noise">0</span>
+            </div>
+            <div class="lbl-stat-item">
+              <span>&gt;1 Speaker:</span>
+              <span class="lbl-stat-val multi font-mono" id="lbl-stat-multi">0</span>
+            </div>
+            <div class="lbl-stat-item">
+              <span>Word Chopped:</span>
+              <span class="lbl-stat-val chopped font-mono" id="lbl-stat-chopped">0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sticky Filter Toolbar -->
+        <div class="lbl-toolbar-card">
+          <div class="lbl-toolbar-row">
+            <!-- Filter Pills -->
+            <div class="lbl-toolbar-filters">
+              <button type="button" class="lbl-filter-btn active" data-filter="all">
+                All <span class="badge-count">0</span>
+              </button>
+              <button type="button" class="lbl-filter-btn" data-filter="unlabeled">
+                Unlabeled <span class="badge-count">0</span>
+              </button>
+              <button type="button" class="lbl-filter-btn" data-filter="accept">
+                Accept <span class="badge-count">0</span>
+              </button>
+              <button type="button" class="lbl-filter-btn" data-filter="noise">
+                Noise <span class="badge-count">0</span>
+              </button>
+              <button type="button" class="lbl-filter-btn" data-filter="multi_speaker">
+                &gt;1 Speaker <span class="badge-count">0</span>
+              </button>
+              <button type="button" class="lbl-filter-btn" data-filter="chopped">
+                Chopped <span class="badge-count">0</span>
+              </button>
+            </div>
+
+            <!-- Secondary Controls -->
+            <div class="flex-row items-center gap-3 flex-wrap">
+              <select id="lbl-speaker-filter" class="select-input select-sm" style="max-width: 140px;">
+                <option value="all">All Speakers</option>
+              </select>
+              <input type="text" id="lbl-search-input" class="text-input text-sm" placeholder="Search turn # or speaker..." style="max-width: 180px;">
+              <label class="flex-row items-center gap-1 text-xs text-secondary cursor-pointer select-none">
+                <input type="checkbox" id="lbl-chk-autoplay" checked>
+                <span>Auto-play next</span>
+              </label>
+              <label class="flex-row items-center gap-1 text-xs text-secondary cursor-pointer select-none">
+                <input type="checkbox" id="lbl-chk-autoadvance" checked>
+                <span>Auto-advance</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Empty State (When no result selected) -->
+        <div id="lbl-empty-state" class="card empty-placeholder lbl-empty-state">
+          <span class="lbl-empty-icon">🏷️</span>
+          <h3 class="empty-title">Select a Diarization Result to begin labeling</h3>
+          <p class="empty-desc">
+            Choose a saved DiarizationResult from the dropdown above to load its turns, preview audio clips, and rapidly assign quality tags with keys <code>1</code>, <code>2</code>, <code>3</code>, <code>4</code>.
+          </p>
+        </div>
+
+        <!-- Turns List Container -->
+        <div id="lbl-turns-list" class="lbl-turns-container"></div>
+
+        <!-- Shortcuts Cheat Sheet Modal -->
+        <div id="lbl-shortcuts-modal" class="lbl-modal-backdrop">
+          <div class="lbl-modal-dialog">
+            <div class="flex-row items-center justify-between mb-3">
+              <h3 class="font-bold text-base">⌨️ Keyboard Shortcuts for Rapid Labeling</h3>
+              <button type="button" class="btn btn-ghost btn-xs" id="btn-lbl-shortcuts-close">✕</button>
+            </div>
+            <p class="text-xs text-muted mb-3">
+              Use single key presses when this tab is active to audition and label speech turns at high speed:
+            </p>
+            <table class="lbl-shortcut-table">
+              <tbody>
+                <tr>
+                  <td><kbd>1</kbd></td>
+                  <td><strong>Accept</strong> — Mark turn as clean single-speaker speech suitable for TTS.</td>
+                </tr>
+                <tr>
+                  <td><kbd>2</kbd></td>
+                  <td><strong>Contain background noise</strong> — Background music, hum, static, environmental noise.</td>
+                </tr>
+                <tr>
+                  <td><kbd>3</kbd></td>
+                  <td><strong>Contain more than 1 speaker</strong> — Overlap, crosstalk, secondary speaker bleed.</td>
+                </tr>
+                <tr>
+                  <td><kbd>4</kbd></td>
+                  <td><strong>Word being chopped off</strong> — Abrupt start or cut-off ending; truncated syllables.</td>
+                </tr>
+                <tr>
+                  <td><kbd>Shift</kbd> + <kbd>2-4</kbd></td>
+                  <td><strong>Multi-label toggle</strong> — Check multiple defect tags simultaneously.</td>
+                </tr>
+                <tr>
+                  <td><kbd>0</kbd> or <kbd>Backspace</kbd></td>
+                  <td><strong>Clear Label</strong> — Reset turn to unlabeled.</td>
+                </tr>
+                <tr>
+                  <td><kbd>Space</kbd></td>
+                  <td><strong>Play / Pause</strong> — Play current turn audio.</td>
+                </tr>
+                <tr>
+                  <td><kbd>R</kbd></td>
+                  <td><strong>Replay</strong> — Replay active turn from start.</td>
+                </tr>
+                <tr>
+                  <td><kbd>J</kbd> or <kbd>↓</kbd></td>
+                  <td><strong>Next Turn</strong> — Move to next visible sample.</td>
+                </tr>
+                <tr>
+                  <td><kbd>K</kbd> or <kbd>↑</kbd></td>
+                  <td><strong>Previous Turn</strong> — Move to previous sample.</td>
+                </tr>
+                <tr>
+                  <td><kbd>?</kbd></td>
+                  <td><strong>Shortcuts</strong> — Open this cheat sheet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Export Dataset Modal -->
+        <div id="lbl-export-modal" class="lbl-modal-backdrop">
+          <div class="lbl-modal-dialog">
+            <div class="flex-row items-center justify-between mb-3">
+              <h3 class="font-bold text-base">📦 Export Decoupled Audio Dataset</h3>
+              <button type="button" class="btn btn-ghost btn-xs" id="btn-lbl-export-close">✕</button>
+            </div>
+            <p class="text-xs text-secondary mb-3">
+              Extracts each labeled segment as a standalone 16-bit PCM WAV file into <code>.data/labeled_datasets/&lt;name&gt;/</code>.
+              The resulting dataset is <strong>physically decoupled</strong>: safe from deletions of the original crawler or diarization files!
+            </p>
+
+            <div class="form-group mb-3">
+              <label class="form-label" for="lbl-export-name">Dataset Name</label>
+              <input type="text" id="lbl-export-name" class="text-input" placeholder="tts_quality_dataset_v1">
+            </div>
+
+            <div class="form-group mb-3">
+              <label class="form-label" for="lbl-export-strategy">Split Strategy</label>
+              <select id="lbl-export-strategy" class="select-input">
+                <option value="grouped_by_source" selected>Grouped by Source Audio (Recommended — Prevents Data Leakage)</option>
+                <option value="stratified">Stratified Random (Balanced Class Proportions)</option>
+                <option value="random">Simple Random</option>
+              </select>
+              <p class="text-xs text-muted mt-1">
+                "Grouped by Source Audio" ensures turns from the same recording are kept together, preventing acoustic/speaker identity leakage across train and test.
+              </p>
+            </div>
+
+            <div class="form-row mb-3" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+              <div class="form-group mb-0">
+                <label class="form-label">Train %</label>
+                <input type="number" id="lbl-export-train-pct" class="text-input" value="80" min="10" max="95">
+              </div>
+              <div class="form-group mb-0">
+                <label class="form-label">Val %</label>
+                <input type="number" id="lbl-export-val-pct" class="text-input" value="10" min="0" max="50">
+              </div>
+              <div class="form-group mb-0">
+                <label class="form-label">Test %</label>
+                <input type="number" id="lbl-export-test-pct" class="text-input" value="10" min="0" max="50">
+              </div>
+            </div>
+
+            <div class="form-row mb-3" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+              <div class="form-group mb-0">
+                <label class="form-label" for="lbl-export-sr">Target Sample Rate</label>
+                <select id="lbl-export-sr" class="select-input">
+                  <option value="" selected>Native (Source Sample Rate)</option>
+                  <option value="16000">16,000 Hz (Standard ML/WavLM)</option>
+                  <option value="24000">24,000 Hz (TTS Target)</option>
+                  <option value="44100">44,100 Hz (Studio Hi-Fi)</option>
+                </select>
+              </div>
+              <div class="form-group mb-0 flex-col justify-end">
+                <label class="flex-row items-center gap-2 text-xs text-secondary cursor-pointer select-none" style="margin-top: 24px;">
+                  <input type="checkbox" id="lbl-export-unlabeled">
+                  <span>Include Unlabeled samples</span>
+                </label>
+              </div>
+            </div>
+
+            <div id="lbl-export-progress" class="text-xs text-muted mb-3" style="display: none;"></div>
+            <div id="lbl-export-result-box" class="mb-3" style="display: none;"></div>
+
+            <div class="flex-row items-center justify-end gap-2 mt-4">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('lbl-export-modal').classList.remove('open')">Cancel</button>
+              <button type="button" class="btn btn-primary btn-sm" id="btn-lbl-confirm-export">Export Audio &amp; Splits</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- ==================== TAB: EXPERIMENT (ZERO-CONTAMINATION DIARIZATION) ==================== -->
       <section id="tab-experiment" class="tab-pane">
         <!-- Master Workbench Card -->
@@ -3458,5 +3730,6 @@ Validation rules:
 
   <script src="static/app.js" defer></script>
   <script src="static/experiment.js" defer></script>
+  <script src="static/labeler.js" defer></script>
 </body>
 </html>

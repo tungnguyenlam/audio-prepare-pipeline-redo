@@ -63,9 +63,10 @@ Designed for single-track interactive inspection, A/B audio comparison, manual c
 3. **Diarization:** Multi-engine diarization, interactive turn inspector, and speaker stem extraction.
 4. **Annotate & Evaluate:** Ground-truth manual reference annotation and DER/JER benchmark evaluation.
 5. **Speaker Purity:** Direct-audio multimodal verification (Gemma 4, Gemini, VibeVoice-ASR) of candidate turns.
-6. **Audition:** Multi-track A/B comparison player for comparing raw vs clean or different separator stems.
-7. **Library:** Global file explorer scanning `.data/`, `benchmarks/`, `temp/`, and `data/`.
-8. **Experiment (Zero Contamination):** Single-speaker TTS harvesting interface with attrition funnel visualization.
+6. **Sample Labeler:** Interactive quality inspection and hand-labeling of DiarizationResult turns (`Accept`, `Contain background noise`, `Contain more than 1 speaker`, `Word being chopped off`) with rapid keyboard shortcuts, draft persistence, and physically decoupled dataset export with train/val/test splits.
+7. **Experiment (Zero Contamination):** Single-speaker TTS harvesting interface with attrition funnel visualization.
+8. **Audition:** Multi-track A/B comparison player for comparing raw vs clean or different separator stems.
+9. **Library:** Global file explorer scanning `.data/`, `benchmarks/`, `temp/`, and `data/`.
 
 ### Key Studio Endpoints
 
@@ -88,6 +89,15 @@ Designed for single-track interactive inspection, A/B audio comparison, manual c
 - `POST /api/diarization/extract-speaker`: Cuts and extracts speaker-specific vocal stems with optional pre/post-roll.
 - `POST /api/diarization/annotations`: Creates or revision-updates manual ground-truth reference annotations.
 - `POST /api/diarization/evaluate`: Runs Hungarian-matched DER/JER evaluation comparing hypotheses against reference.
+
+#### Sample Quality Labeler
+- `GET /api/labeler/results`: Lists durable DiarizationResults with labeling progress counts.
+- `GET /api/labeler/session/{result_id}`: Loads complete DiarizationResult data with current draft labels.
+- `POST /api/labeler/session/{result_id}/labels`: Autosaves/updates in-progress labeling draft to `.data/diarization/labels/<result_id>.json`.
+- `GET /api/labeler/results/{result_id}/turns/{turn_index}/audio`: Cuts and streams audio for an individual turn.
+- `POST /api/labeler/export-dataset`: Extracts all labeled audio turns into physically independent 16-bit WAV files under `.data/labeled_datasets/<name>/`, partitions into train/val/test splits (source-grouped to prevent data leakage, stratified, or random), and generates `manifest.json`, `dataset.jsonl`, `train.csv`, `val.csv`, `test.csv`, and `train_classifier.py`.
+- `GET /api/labeler/datasets`: Lists exported datasets with sample distribution statistics.
+- `GET /api/labeler/datasets/{name}/download`: Packages and streams dataset folder as a ZIP archive.
 
 #### Experiment Tab (Zero Contamination)
 - Section 5a exposes one **Direct-audio model** selector containing Local Gemma

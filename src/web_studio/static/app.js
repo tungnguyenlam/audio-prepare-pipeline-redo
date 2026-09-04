@@ -12129,6 +12129,10 @@ function switchTab(tabId) {
         syncPurityDiarizationStatus();
       }
     }
+  } else if (tabId === 'tab-labeler') {
+    if (window.LabelerTab && typeof window.LabelerTab.onTabActivated === 'function') {
+      window.LabelerTab.onTabActivated();
+    }
   } else if (tabId === 'tab-experiment') {
     if (window.ExperimentTab && typeof window.ExperimentTab.onTabActivated === 'function') {
       window.ExperimentTab.onTabActivated();
@@ -12147,6 +12151,10 @@ function switchTab(tabId) {
 
   if (tabId !== 'tab-purity') {
     stopPuritySegmentPreview();
+  }
+
+  if (tabId !== 'tab-labeler' && window.LabelerTab && typeof window.LabelerTab.onTabDeactivated === 'function') {
+    window.LabelerTab.onTabDeactivated();
   }
 
   if (tabId !== 'tab-experiment' && window.ExperimentTab && typeof window.ExperimentTab.stopTurnPreview === 'function') {

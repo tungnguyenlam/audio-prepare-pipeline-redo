@@ -326,7 +326,34 @@ total.
 
 ---
 
-## 8. Persistence & Synchronization Conventions
+## 8. Decoupled Labeled Quality Dataset Schema
+
+**Defined in:** [`src/web_studio/labeler_handler.py`](../src/web_studio/labeler_handler.py). Stored in `.data/labeled_datasets/<dataset_name>/`:
+- **Audio Directory (`audio/`):** Contains standalone 16-bit PCM `.wav` cuts (`<source_id>_<speaker_id>_<start_ms>_<end_ms>.wav`) sliced directly from source recordings. The audio files are physically independent of any original crawler or diarization results.
+- **Manifest (`manifest.json`):**
+  ```json
+  {
+    "dataset_name": "tts_quality_v1",
+    "created_at": 1788512986.0,
+    "total_samples": 350,
+    "split_strategy": "grouped_by_source",
+    "split_ratios": { "train": 0.8, "val": 0.1, "test": 0.1 },
+    "classes": ["accept", "noise", "multi_speaker", "chopped"],
+    "split_summary": {
+      "train": { "total": 280, "accept": 180, "noise": 50, "multi_speaker": 30, "chopped": 20 },
+      "val": { "total": 35, "accept": 22, "noise": 6, "multi_speaker": 4, "chopped": 3 },
+      "test": { "total": 35, "accept": 22, "noise": 6, "multi_speaker": 4, "chopped": 3 }
+    },
+    "samples": [ ... ]
+  }
+  ```
+- **Tabular Splits (`train.csv`, `val.csv`, `test.csv`):** Standard CSV tables with binary indicator columns (`has_noise`, `has_multi_speaker`, `is_chopped`, `is_clean_accept`) and `audio_path`.
+- **JSON Lines (`dataset.jsonl`):** Line-by-line format ready for HuggingFace `datasets.load_dataset('json', ...)`.
+- **Training Template (`train_classifier.py`):** Self-contained PyTorch training script with multi-scale boundary-aware pooling, multi-label `BCEWithLogitsLoss`, and differential learning rates for end-to-end backbone fine-tuning or LoRA.
+
+---
+
+## 9. Persistence & Synchronization Conventions
 
 1. **Repository-Relative Paths:** Persisted JSON files store repository-relative paths (e.g. `.data/pipeline/ingest/video.wav`) so data folders can be synced across machines (`tungnl5@VF-TUNGNL5-L` and `vsf@vsf-242`) without broken paths.
 2. **Atomic Writes:** All schema saves write to `<path>.tmp` first, flushing to disk before an atomic POSIX rename.
