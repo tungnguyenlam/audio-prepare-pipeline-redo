@@ -194,7 +194,29 @@ Constructs the exact `yt-dlp` CLI command tokens without executing. Configures s
 
 ---
 
-## 4. Shared Audio Utility Functions
+## 4. Audio Segment Cutting (`AudioCutter`)
+
+**Defined in:** [`src/utils/AudioCutter.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/utils/AudioCutter.py)
+
+`AudioCutter` extracts contiguous temporal slices from an `Audio` instance, writing a new derived file and returning an `Audio` object with updated metadata and duration.
+
+```python
+cutter = AudioCutter(output_dir=".data/audio_cutter/out")
+clip = cutter.cut(audio, start, end, unit="seconds", output_path=None)
+```
+
+### Parameter Reference & Time Units
+
+| Parameter | Type & Range | Default | Description |
+|---|---|---|---|
+| **`start`** | `int \| float \| str` | *Required* | Inclusive slice start bound. Must satisfy $0 \le \text{start} < \text{end}$. |
+| **`end`** | `int \| float \| str` | *Required* | Exclusive slice end bound. Must satisfy $\text{start} < \text{end} \le \text{duration}$. |
+| **`unit`** | `Literal[...]` | `"seconds"` | Format interpretation for `start` and `end`. Supported units:<br>• `"seconds"`: Floating-point or integer seconds (e.g. `10.5`, `45.0`).<br>• `"minutes"`: Floating-point or integer minutes (e.g. `1.5` → 90s).<br>• `"hours"`: Floating-point or integer hours (e.g. `0.25` → 15m).<br>• `"percent"`: Percentage of total track duration `[0.0, 100.0]`.<br>• `"timestamp"`: Clock string (e.g. `"1:02"`, `"2:15:30"`) or packed integers parsed right-to-left (`1234` → `12:34`, `12345` → `1:23:45`, `1213421` → `121:34:21`). |
+| **`output_path`** | `str \| Path \| None` | `None` | Optional explicit destination path. When omitted, writes to `output_dir` with a sanitized source-derived name. |
+
+---
+
+## 5. Shared Audio Utility Functions
 
 **Defined in:** [`src/utils/audio_utils.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/utils/audio_utils.py)
 
@@ -208,7 +230,7 @@ Low-level audio utility routines supporting the pipeline:
 
 ---
 
-## 5. Storage Conventions & `.data/` Layout
+## 6. Storage Conventions & `.data/` Layout
 
 Runtime audio files default to the `.data/` directory anchored at repository root:
 

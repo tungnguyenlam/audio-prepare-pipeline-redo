@@ -60,6 +60,20 @@ For each parameter, this guide details:
 - **The Trade-off:** Smaller values guarantee protection against GPU VRAM / Host RAM exhaustion on 2+ hour recordings. However, sub-file splits introduce a theoretical risk of micro-level phase discontinuities at splice points.
 - **Certainty:** **Guaranteed** memory bound; **Empirical** audio boundary artifact risk.
 
+#### `large_gpu` (`bool`, default: `False`)
+- **What it is:** Toggles higher-memory batching flags inside the upstream MDX23 CLI.
+- **`True`:** Accelerates separation throughput by processing larger inference batches simultaneously. Recommended on GPUs with $\ge 16\text{ GB}$ VRAM.
+- **`False`:** Keeps conservative batch buffers to fit within standard $8\text{ GB}$ GPUs without triggering CUDA out-of-memory errors.
+- **The Trade-off:** Processing Throughput vs. Peak GPU VRAM Footprint.
+- **Certainty:** **Guaranteed** memory allocation behavior.
+
+#### `chunk_size` (`int | None`, default: `None`)
+- **What it is:** Temporal sample size per inference chunk passed to MDX23 ONNX sessions.
+- **Increasing (e.g. `485100`):** Larger chunk size reduces STFT window boundary seams and accelerates execution.
+- **Decreasing (e.g. `261144`):** Slices input into tighter frames, reducing peak ONNX workspace memory.
+- **The Trade-off:** Peak VRAM Ceiling vs. Window Boundary Stitching Frequency.
+- **Certainty:** **Guaranteed** execution memory bound.
+
 ---
 
 ### 1.2 `BSRoFormer` & `MelRoFormer`
@@ -79,6 +93,22 @@ For each parameter, this guide details:
 - **What it is:** Selects whether to emit the primary neural prediction (vocals $V$) or the residual accompaniment ($I = \text{Mix} - V$).
 - **The Trade-off:** The residual instrumental stem is computed by phase cancellation ($I = \text{Mix} - V$). Any vocal separation error (under-estimation or phase drift) results in "ghost" vocal artifacts in the instrumental stem.
 - **Certainty:** **Guaranteed** mathematical identity.
+
+---
+
+### 1.3 `HTDemucs` (Facebook Hybrid Transformer Demucs)
+
+**Defined in:** [`src/separation/HTDemucs.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/separation/HTDemucs.py)
+
+#### `two_stems` (`"vocals"`, `"drums"`, `"bass"`, `"other"`, default: `"vocals"`)
+- **What it is:** Target stem extracted from the 4-source Demucs architecture. When isolating a single stem, the residual is computed by subtracting the predicted stem from the mixture.
+- **The Trade-off:** Extracting `"vocals"` yields clean speech; extracting other stems isolates rhythm/accompaniment components.
+- **Certainty:** **Guaranteed**.
+
+#### `model` (default: `"htdemucs"`)
+- **What it is:** Checkpoint architecture (e.g. `htdemucs`, `htdemucs_ft`, `htdemucs_6s`). Fine-tuned variants (`_ft`) offer slightly higher SDR at the cost of 4× training-fold inference passes.
+- **The Trade-off:** Separation Signal-to-Distortion Ratio vs. Inference Compute Latency.
+- **Certainty:** **Empirical**.
 
 ---
 
@@ -147,6 +177,36 @@ Sortformer outputs an 80ms multi-speaker activity probability matrix for up to 4
 - **Decreasing `chunk_step_s` (e.g. `0.25s`):** Higher embedding density improves boundary precision at the expense of higher compute time.
 - **The Trade-off:** Embedding Stability vs. Temporal Resolution on Short Turns.
 - **Certainty:** **Guaranteed** window slicing; **Empirical** embedding quality.
+
+---
+
+### 2.4 `ClusteringDiarizer` (NVIDIA NeMo MarbleNet VAD + TitaNet Large)
+
+**Defined in:** [`src/diarization/ClusteringDiarizer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/ClusteringDiarizer.py)
+
+Operates as a cascaded diarization pipeline: MarbleNet detects speech activity segments, TitaNet extracts speaker embeddings across those segments, and spectral clustering partitions embeddings into speaker clusters.
+
+| Parameter | Type & Range | Default | Increasing (+) Effect | Decreasing (-) Effect | The Trade-off | Certainty |
+|---|---|---|---|---|---|---|
+| **`vad_onset`** | `float` `[0.0, 1.0]` | `0.50` | Demands higher acoustic speech probability to trigger voice activity. Suppresses breathing, HVAC rumble, and paper rustling. | Triggers voice activity on faint phonemes. Captures whispers and quiet sentence starts, but risks false alarms on ambient noise. | **Speech Activity Precision vs. Recall.** High values ensure clean speech segments at the cost of dropping faint utterances. | **Guaranteed** thresholding. |
+| **`vad_offset`** | `float` `[0.0, 1.0]` | `0.30` | Closes the voice activity window sooner as vocal energy declines. Prevents trailing room tone from entering embedding windows. | Holds the VAD window open across trailing consonant decays and faint nasal codas. | **VAD Boundary Cleanliness vs. Syllable Coda Retention.** | **Guaranteed** hysteresis. |
+| **`vad_pad_onset_s`** | `float` `[0.0, 2.0s]` | `0.20s` | Extends VAD boundaries earlier into preceding audio, ensuring pre-voicing consonants ($s-, f-, h-$) are fully captured. | Tighter cuts at detected onset point. Prevents capturing preceding noise. | **Consonant Onset Completeness vs. Preceding Bleed.** | **Guaranteed** padding. |
+| **`vad_pad_offset_s`** | `float` `[0.0, 2.0s]` | `0.20s` | Extends VAD boundaries later, capturing lingering vocal decay and room reverb tails. | Cuts immediately when speech subsides. Prevents capturing trailing background sound. | **Vocal Decay Capture vs. Trailing Contamination.** | **Guaranteed** padding. |
+| **`vad_min_duration_on_s`** | `float` `[0.0, 10.0s]` | `0.50s` | Filters out brief transient sounds (coughs, microphone clicks, short laughs). | Retains short conversational tokens ("oh", "ah", "hm"). Admits micro-acoustic transients. | **Spurious Noise Elimination vs. Brief Utterance Recall.** | **Guaranteed** filter. |
+| **`vad_min_duration_off_s`** | `float` `[0.0, 10.0s]` | `0.50s` | Bridges intra-sentence pauses into continuous speech regions, giving TitaNet longer audio segments for stable embeddings. | Keeps brief pauses separated, fragmenting speech into short word-level chunks. | **Segment Context for Embedding Extraction vs. Pause Granularity.** | **Guaranteed** bridging. |
+| **`max_num_speakers`** | `int` `[1, 32]` | `8` | Allows spectral clustering to discover up to $N$ speaker clusters. Prevents collapsing distinct background speakers into primary tracks. | Forces clustering to collapse speakers into a smaller palette. Prevents over-segmentation on vocal timbre shifts. | **Speaker Over-Clustering vs. Under-Clustering.** | **Guaranteed** spectral eigenvalue limit. |
+| **`num_speakers`** | `int \| None` | `None` | Exact oracle cluster count constraint. Eliminates speaker count estimation variance. | Lets the algorithm automatically estimate speaker count based on spectral eigenvalue gaps. | **Oracle Precision vs. General Unsupervised Robustness.** | **Guaranteed** cluster partition count. |
+
+---
+
+### 2.5 Diarization Evaluation Parameters (`evaluate_diarization`)
+
+**Defined in:** [`src/diarization/evaluation.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/evaluation.py)
+
+| Parameter | Type & Range | Default | Increasing (+) Effect | Decreasing (-) Effect | The Trade-off | Certainty |
+|---|---|---|---|---|---|---|
+| **`collar_s`** | `float` `[0.0, 1.0s]` | `0.0s` (strict DER) | Places an exclusion collar around each reference boundary $[t - \text{collar}, t + \text{collar}]$. Forgives human annotation jitter and VAD onset/offset discrepancies, lowering DER. | Penalizes even millisecond-level boundary misalignment against ground truth. Essential for evaluating boundary precision for TTS audio cutting. | **Annotator Forgiveness vs. Boundary Precision Strictness.** `collar_s=0.25s` is standard NIST protocol; `collar_s=0.0s` is strict TTS cutting protocol. | **Guaranteed** mathematical exclusion zone. |
+| **`skip_overlap`** | `bool` `{True, False}` | `False` | Excludes reference multi-speaker overlapping segments from evaluation. Reflects classic single-speaker DER. | Scores overlapping speech strictly, heavily penalizing models that fail to identify simultaneous cross-talk. | **Overlap Evaluation Forgiveness vs. Multi-Speaker Strictness.** | **Guaranteed** interval intersection exclusion. |
 
 ---
 
@@ -267,7 +327,7 @@ Controls audio expansion during WAV cutting and stem export:
 
 **Defined in:** [`src/diarization/zero_contamination.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/diarization/zero_contamination.py)
 
-The Zero-Contamination Pipeline ([`04_zero_contamination_diarization.md`](04_zero_contamination_diarization.md)) integrates these mechanisms into a 5-stage attrition funnel.
+The Zero-Contamination Pipeline ([`04_zero_contamination_diarization.md`](04_zero_contamination_diarization.md)) integrates these mechanisms into a 5-stage attrition funnel designed specifically for **clean TTS voice dataset harvesting**:
 
 ```mermaid
 flowchart TD
@@ -277,38 +337,94 @@ flowchart TD
     S4 --> S5["Stage 5: Foundation Models (max_secondary: 0.0s)"]
 ```
 
-### Stage 1: Asymmetric Detection & Tripwires
-- **`target_onset` (default `0.80`):** Requires strong confidence before asserting target speech.
-- **`competitor_onset` (default `0.20`):** Tripwire threshold. If any competing speaker reaches even 20% activation, the candidate is discarded.
-  - *Trade-off:* Eliminates borderline cross-talk at the cost of dropping speech in multi-speaker rooms.
-  - *Certainty:* **Guaranteed** frame veto.
+---
 
-### Stage 2: Dual-Engine Mutual Consensus
-- **`enable_consensus` (`bool`, default: `True`):** Keeps turns if and only if both primary and secondary diarizers unanimously agree on speaker boundaries via Hungarian matching.
-  - *Trade-off:* Discards ~20–35% of disputed audio duration, but mathematically eliminates single-model hallucination.
-  - *Certainty:* **Guaranteed** intersection constraint.
+### 5.1 Stage 1: Asymmetric Detection & Competitor Tripwires
 
-### Stage 3a: Context-Aware Collar Guard
-- **`handoff_risk_distance_s` (default `0.80s`):** Distance to the nearest other-speaker turn that triggers inward collar shaving.
-- **`silence_tail_buffer_s` (default `+0.15s`):** Extension granted when an utterance transitions into natural silence.
-  - *Trade-off:* Selectively protects Vietnamese codas ($-p, -t, -k, -m, -n, -ng$) in monologue silence while aggressively shaving borders near speaker handoffs.
-  - *Certainty:* **Guaranteed** conditional interval math.
+Runs the primary diarizer with asymmetric probability thresholds, decoupling speech onset confidence from competitor cross-talk sensitivity.
 
-### Stage 3b: Syllable Forced Alignment Lock
-- **`aligner_engine` (`"whisper_timestamped"`, `"mms_fa"`, `"remote_whisper"`):** Snaps candidate boundaries outward to word/syllable bounds. Disabled by default (`enable_syllable_alignment=False`); `remote_whisper` requires `aligner_endpoint`.
-  - *Trade-off:* Guarantees boundaries never slice through an active vocal syllable. May pull in up to 100ms of surrounding silence to achieve alignment.
-  - *Certainty:* **Guaranteed** word-boundary snapping.
+| Parameter | Type & Range | Default | Mechanism | Increasing (+) Effect | Decreasing (-) Effect | Trade-off | Certainty |
+|---|---|---|---|---|---|---|---|
+| **`target_onset`** | `float` `[0.01, 0.99]` | `0.80` | Minimum neural activation probability required to acknowledge target speech onset. | Requires decisive model confidence to initiate a turn. Eliminates false alarms from inhalation, coughing, and room reverberation. | Initiates turns on faint acoustic evidence. Captures soft word onsets and quiet speech, but risks false alarms on ambient noise. | Target Speech Precision vs. Speech Recall | **Guaranteed** frame thresholding; **Empirical** speech recall. |
+| **`target_offset`** | `float` `[0.01, target_onset]` | `0.65` | Probability threshold below which target speech is closed (hysteresis: `offset <= onset`). | Terminates the turn immediately as vocal energy subsides. Minimizes tail bleed into subsequent speaker turns. | Holds the turn open across trailing vocal pauses. Preserves delicate trailing phonemes and unvoiced syllable codas. | Turn Termination Precision vs. Coda Completeness | **Guaranteed** hysteresis loop; **Empirical** coda survival. |
+| **`competitor_onset`** | `float` `[0.01, 0.99]` | `0.20` | Sensitive tripwire threshold for secondary speakers. If any competing speaker reaches this activation, the turn is vetoed. | Tolerates moderate secondary speaker activations. Improves speech yield in multi-speaker rooms or noisy backgrounds. | Extreme hair-trigger sensitivity. Drops the turn if any other speaker shows even a 10% activation spike. | Cross-Talk Rejection Strictness vs. Candidate Yield | **Guaranteed** frame veto; **Empirical** yield in multi-speaker audio. |
+| **`primary_backend`** | `str` `{"sortformer", "diarizen", "pyannote"}` | `"sortformer"` | Architecture selection for primary diarization. | N/A | N/A | NeMo Sortformer (streaming 4-speaker with enrollment) vs. BUT-FIT DiariZen (WavLM Large SOTA overlap) vs. Pyannote 3.1. | **Guaranteed** backend delegation. |
 
-### Stage 3c: Acoustic Energy Valley Snapping
-- **`energy_search_window_s` (default `±0.15s`) & `energy_valley_floor_db` (default `-30 dB`):**
-  - Scans micro-waveform energy (2ms hop) and snaps the boundary to the nearest vocal closure zero-crossing.
-  - *Trade-off:* Eliminates audible clicks and waveform discontinuity pops when cutting WAV files.
-  - *Certainty:* **Guaranteed** local minimum search.
+---
 
-### Stage 4: WeSpeaker Homogeneity Filter
-- **`min_homogeneity_similarity` (default `0.75`):** Minimum cosine similarity between any 1.0s sub-window and the turn centroid.
-  - *Trade-off:* Catches unsegmented speaker transitions missed by prior stages. Rejects genuine turns with extreme emotional pitch swings.
-  - *Certainty:* **Guaranteed** cosine floor; **Empirical** speaker shift detection.
+### 5.2 Stage 2: Dual-Engine Mutual Consensus
+
+Processes audio through an orthogonal secondary diarizer and evaluates mutual agreement using the Hungarian maximum-weight bipartite matching algorithm.
+
+| Parameter | Type & Range | Default | Mechanism | When `True` / Higher | When `False` / Lower | Trade-off | Certainty |
+|---|---|---|---|---|---|---|---|
+| **`enable_consensus`** | `bool` `{True, False}` | `True` | Dual-engine Hungarian agreement filter. | Keeps candidate intervals **if and only if both engines unanimously agree** on speaker identity and neither detects concurrent speech. | Trusts the primary backend without secondary cross-checking. Saves GPU compute time and VRAM. | Mathematical Hallucination Elimination vs. Compute Latency | **Guaranteed** intersection constraint. |
+| **`secondary_backend`** | `str` `{"diarizen", "sortformer", "pyannote"}` | `"diarizen"` | Orthogonal architecture pairing. | Provides complementary acoustic modeling (e.g. Sortformer transformer + DiariZen WavLM Large), catching single-model blind spots. | N/A | Model Diversity vs. Setup Complexity | **Guaranteed** backend delegation. |
+
+---
+
+### 5.3 Stage 3: Boundary & Collar Erosion Gate
+
+| Parameter | Type & Range | Default | Mechanism | Increasing (+) Effect | Decreasing (-) Effect | Trade-off | Certainty |
+|---|---|---|---|---|---|---|---|
+| **`enable_collar_erosion`** | `bool` `{True, False}` | `True` | Master toggle for boundary shaving logic. | Activates collar erosion and context-aware boundary trimming. | Retains raw diarizer boundary timestamps without safety shaving. | Edge Bleed Protection vs. Turn Length Retention | **Guaranteed** conditional execution. |
+| **`boundary_collar_s`** | `float` `[0.0, 5.0s]` | `0.35s` (350ms) | Deterministic safety collar shaved inward from each turn boundary. | Shaves larger safety buffers inward, guaranteeing zero transition bleed even with sloppy diarizer boundaries. | Preserves shorter words and keeps boundaries closer to raw detections, but increases edge bleed risk. | Transition Bleed Immunity vs. Turn Truncation | **Guaranteed** duration erosion. |
+| **`min_turn_duration_s`** | `float` `[0.1, 30.0s]` | `0.80s` | Minimum duration required to retain a turn after collar shaving. Shorter turns are dropped. | Discards brief fragments, filler words ("uh", "um"), coughs, and boundary flutter. | Preserves short monosyllabic responses ("yes", "no", "hi"). Admits micro-acoustic transients. | Acoustic Sentence Stability vs. Monosyllabic Dialogue Yield | **Guaranteed** monotonic filtering. |
+| **`transition_exclusion_s`** | `float` `[0.0, 5.0s]` | `0.50s` | If the gap between two different speakers is less than this value, applies extra collar shaving: $\frac{\text{exclusion} - \text{gap}}{2}$. | Aggressively erodes boundaries around rapid conversational exchanges. | Only penalizes speaker handoffs that occur nearly instantaneously. | Speaker Switch Isolation vs. Rapid Dialogue Yield | **Guaranteed** mathematical erosion. |
+| **`allow_gap_merge`** | `bool` `{True, False}` | `False` | Merges consecutive turns of the same speaker across silent pauses. | Combines adjacent utterances into longer paragraph blocks. | Keeps utterances strictly isolated by pauses. Prevents undetected room noise between clauses from entering clips. | Long-Form Paragraph Flow vs. Isolated Sentence Cleanliness | **Guaranteed** gap bridging. |
+
+---
+
+### 5.4 Stage 3a: Context-Aware Collar Guard
+
+| Parameter | Type & Range | Default | Mechanism | Increasing (+) Effect | Decreasing (-) Effect | Trade-off | Certainty |
+|---|---|---|---|---|---|---|---|
+| **`enable_context_collar`** | `bool` `{True, False}` | `True` | Intelligent collar guard distinguishing speaker transitions from monologue silence. | Shaves inward only when an adjacent speaker is near; suspends shaving and extends into silence. | Reverts to uniform blunt collar shaving, chopping off trailing word codas even in monologue silence. | Syllable Coda Rescue vs. Uniform Shaving | **Guaranteed** conditional branch logic. |
+| **`handoff_risk_distance_s`** | `float` `[0.05, 5.0s]` | `0.80s` | Temporal distance to the nearest other-speaker turn that triggers defensive inward shaving. | Widens the danger zone. Treats even distant competitor turns as risky handoffs, shaving inward aggressively. | Triggers collar shaving only when the competing speaker starts immediately ($< \text{distance}$). | Handoff Safety Margin vs. Monologue Detection Recall | **Guaranteed** distance comparison. |
+| **`silence_tail_buffer_s`** | `float` `[0.0, 2.0s]` | `0.15s` (150ms) | Outward acoustic cushion appended to turn offsets that transition into natural silence. | Captures natural room reverberation decay, breathing, and trailing consonant codas. | Clamps boundaries tightly to the raw offset timestamp. | Coda & Reverb Naturalness vs. Clip Tightness | **Guaranteed** interval expansion. |
+
+---
+
+### 5.5 Stage 3b: Micro-Acoustic Energy Valley Snapping
+
+| Parameter | Type & Range | Default | Mechanism | Increasing (+) Effect | Decreasing (-) Effect | Trade-off | Certainty |
+|---|---|---|---|---|---|---|---|
+| **`enable_energy_snapping`** | `bool` `{True, False}` | `False` | Walks boundaries to the nearest vocal cord closure zero-crossing / RMS energy trough. | Snaps cut points to natural silence valleys in the waveform, eliminating boundary clicks. | Leaves boundaries at mathematical collar timestamps without waveform alignment. | Click-Free Audio Slicing vs. Minor CPU Compute | **Guaranteed** local minimum search. |
+| **`energy_search_window_s`** | `float` `[0.01, 1.0s]` | `0.15s` (±150ms) | Temporal search radius around each boundary. | Higher probability of finding a deep acoustic trough, but risks shifting boundary too far from the detected turn. | Restricts search to immediate boundary vicinity. Prevents boundary drift. | Silence Valley Depth vs. Boundary Drift | **Guaranteed** search bounds. |
+| **`energy_valley_floor_db`** | `float` `[-80.0, -10.0 dB]` | `-30.0 dB` | RMS energy threshold required to accept a snapping point. | Accepts higher-energy troughs as valid snapping points (more permissive on noisy audio). | Demands deep acoustic silence ($<-40\text{ dB}$) before accepting a snapping point. | Snapping Permissiveness vs. Valley Silence Depth | **Guaranteed** threshold comparison. |
+
+---
+
+### 5.6 Stage 3c: Forced Alignment Syllable Lock
+
+| Parameter | Type & Range | Default | Mechanism | Increasing / Selected Value | Decreasing / Selected Value | Trade-off | Certainty |
+|---|---|---|---|---|---|---|---|
+| **`enable_syllable_alignment`** | `bool` `{True, False}` | `False` | Transcribes audio and snaps diarization boundaries outward to phoneme/word token bounds. | Guarantees boundaries never slice through an active vocal syllable. May pull in surrounding room tone to achieve token alignment. | Bypasses ASR transcription. Runs significantly faster with lower memory usage. | Syllable Completeness vs. Inference Latency & Compute | **Guaranteed** token boundary clamping; **Empirical** ASR accuracy. |
+| **`aligner_engine`** | `str` `{"whisper_timestamped", "mms_fa", "remote_whisper"}` | `"whisper_timestamped"` | ASR forced alignment backend. | `whisper_timestamped` uses DTW on cross-attention matrices; `mms_fa` uses PyTorch CTC forced alignment; `remote_whisper` offloads to HTTP service. | N/A | Alignment Fidelity vs. Resource Footprint | **Guaranteed** engine routing. |
+| **`aligner_model`** | `str` | `"vinai/PhoWhisper-small"` | Checkpoint name or HF hub ID. | Larger models offer higher transcription accuracy on noisy audio. | Smaller models (`tiny`, `small`) execute faster with lower memory consumption. | Alignment Accuracy vs. Inference Latency | **Empirical** ASR accuracy. |
+| **`aligner_device`** | `str` | `"cpu"` | Compute device for forced alignment. | Running on GPU speeds up transcription passes. | Running on CPU keeps 100% of GPU VRAM free for primary and secondary diarizers, preventing CUDA OOM. | Processing Speed vs. GPU VRAM Safety | **Guaranteed** device placement. |
+
+---
+
+### 5.7 Stage 4: Dense WeSpeaker Homogeneity Filter
+
+| Parameter | Type & Range | Default | Mechanism | Increasing (+) Effect | Decreasing (-) Effect | Trade-off | Certainty |
+|---|---|---|---|---|---|---|---|
+| **`enable_homogeneity`** | `bool` `{True, False}` | `False` | Dense sliding-window speaker embedding verification across candidate turns. | Evaluates sub-window embedding cosine similarity against global turn centroid. Rejects turns where similarity drops below threshold. | Skips sliding-window verification. Faster processing; relies exclusively on upstream diarizers. | Internal Purity Guarantee vs. Latency | **Guaranteed** sub-window scan; **Empirical** speaker shift detection. |
+| **`homogeneity_window_s`** | `float` `[0.25, 5.0s]` | `1.00s` | Sliding sub-window duration for embedding extraction. | Longer windows provide richer acoustic context and more stable embedding vectors. | Shorter windows provide higher temporal resolution, detecting brief (0.5s) intrusions from secondary speakers. | Embedding Vector Stability vs. Short Intrusion Detection | **Guaranteed** window length; **Empirical** embedding noise. |
+| **`homogeneity_hop_s`** | `float` `[0.05, 2.0s]` | `0.25s` (250ms) | Temporal step size between consecutive sliding sub-windows. | Faster processing with fewer forward passes. May step over momentary speaker handoffs. | Dense temporal probing (e.g. 100ms hop). Catches instantaneous foreign vocal blips at linearly higher runtime. | Temporal Probe Density vs. Forward Pass Latency | **Guaranteed** step size. |
+| **`min_homogeneity_similarity`** | `float` `[-1.0, 1.0]` | `0.75` | Minimum cosine similarity between any sub-window and turn centroid. | Demands near-identical vocal timbre throughout the turn. Rejects turns with pitch changes, emotional shifts, shouting, or whispering. | Accommodates natural expressive variance, laughing, and emotional inflection within the target speaker's monologue. | Vocal Monotony Strictness vs. Expressive Yield | **Guaranteed** cosine floor; **Empirical** rejection of expressive speech. |
+
+---
+
+### 5.8 Stage 5: In-Loop Foundation Model Verification
+
+| Parameter | Type & Range | Default | Mechanism | Increasing (+) Effect | Decreasing (-) Effect | Trade-off | Certainty |
+|---|---|---|---|---|---|---|---|
+| **`enable_gemma`** | `bool` `{True, False}` | `False` | Direct-audio multimodal overlap verification via Gemma 4 / Gemini API. | Passes audio directly into LLM audio encoders to detect simultaneous speakers and room crosstalk. | Bypasses LLM evaluation. Eliminates network latency and external service dependency. | Multimodal Cross-Talk Auditing vs. Inference Latency | **Empirical** LLM judgment. |
+| **`gemma_timeout_s`** | `float` `[5.0, 600.0s]` | `120.0s` | Maximum HTTP request wait time for LLM audio inference. | Allows remote LLM ample time to generate tokens during peak server loads. | Fails quickly on unresponsive endpoints, preventing pipeline queue stalls. | Request Resilience vs. Pipeline Latency | **Guaranteed** HTTP timeout. |
+| **`enable_vibevoice`** | `bool` `{True, False}` | `False` | Autoregressive speaker count verification using Microsoft VibeVoice-ASR. | Measures secondary non-dominant speaker token duration across full clip context. | Bypasses VibeVoice verification. | Token-Level Speaker Count Verification vs. Dedicated VRAM / Endpoint Requirement | **Guaranteed** token classification. |
+| **`max_secondary_speech_s`** | `float` `[0.0, 10.0s]` | `0.0s` | Maximum allowable secondary speaker speech duration before rejecting candidate. | Tolerates brief background vocal sounds, far-field murmur, or brief confirmations up to the threshold duration. | Absolute zero-tolerance policy. Rejects candidate if VibeVoice detects a single secondary speaker token. | Secondary Speaker Permissiveness vs. Zero-Leakage Guarantee | **Guaranteed** threshold comparison. |
 
 ---
 
@@ -316,15 +432,13 @@ flowchart TD
 
 **Defined in:** [`src/benchmark/separation/mixer.py`](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/src/benchmark/separation/mixer.py)
 
-#### `target_smr_db` (`float`, dB)
-- **What it is:** Calibrated Speech-to-Music Ratio in decibels:
-  $$\text{SMR}_{\text{dB}} = 20 \log_{10}\left(\frac{\text{RMS}_{\text{speech}}}{\text{RMS}_{\text{music}}}\right)$$
-- **Increasing (e.g. `+10.0 dB`):** Speech is substantially louder than background music. Easy separation task.
-- **Decreasing (e.g. `-5.0 dB`):** Music overpowers speech. Extreme stress-test for separation models.
-- **The Trade-off:** Difficulty level of the separation benchmark.
-- **Certainty:** **Guaranteed** RMS linear scaling.
+`AudioMixer` creates calibrated speech+music mixtures for evaluating source separation algorithms. Constructor: `AudioMixer(sample_rate=44100, channels=2, peak_ceiling_dbfs=-1.0)`. Mixing method: `AudioMixer.mix(speech, music, *, target_smr_db, seed, output_dir)`.
 
-#### `seed` (`int`, required — no default)
-- **What it is:** Pseudorandom seed controlling the temporal crop offset of the background music file. Callers pass it explicitly (e.g. `seed=42`).
-- **The Trade-off:** Guarantees 100% bit-exact reproducibility across benchmark runs on different machines.
-- **Certainty:** **Guaranteed**.
+| Parameter | Type & Range | Default | Mechanism | Increasing (+) Effect | Decreasing (-) Effect | The Trade-off | Certainty |
+|---|---|---|---|---|---|---|---|
+| **`target_smr_db`** | `float` `[-30.0, +30.0 dB]` | *Required* | Calibrated Speech-to-Music Ratio: $\text{SMR}_{\text{dB}} = 20 \log_{10}\left(\frac{\text{RMS}_{\text{speech}}}{\text{RMS}_{\text{music}}}\right)$. Speech gain is fixed at $0.0\text{ dB}$; music gain is adjusted to achieve target SMR. | Speech dominates the mix; background music is substantially attenuated. Easier separation benchmark. | Music overpowers speech; extreme stress-test for separation models. Replicates club music or loud café ambiance. | Separation Benchmark Difficulty Level | **Guaranteed** RMS linear gain scaling. |
+| **`seed`** | `int` | *Required* | Seed for pseudorandom number generator (`np.random.default_rng(seed)`) controlling temporal crop offset of background music. | N/A | N/A | Bit-Exact Reproducibility across different machines and runs. | **Guaranteed** deterministic PRNG offset. |
+| **`peak_ceiling_dbfs`** | `float` `[-20.0, 0.0 dBFS]` | `-1.0 dBFS` | Maximum allowable digital peak amplitude in the mixed output. If mixed peak exceeds ceiling, uniform attenuation gain is applied equally to speech, music, and mixture. | Allows higher master volume and dynamic range; leaves less headroom for inter-sample peaks or lossy codecs (MP3/AAC). | Lowers master output volume; guarantees extensive headroom against DAC reconstruction clipping and inter-sample peaks. | Master Output Loudness vs. Digital Headroom Safety | **Guaranteed** peak-limiting attenuation. |
+| **`sample_rate`** | `int` `[8000, 96000 Hz]` | `44100 Hz` | Target sampling rate for references and mixture. Inputs are resampled via `librosa`. | Higher audio bandwidth (up to Nyquist limit $\frac{\text{SR}}{2}$); larger WAV file sizes on disk. | Smaller file footprint; limits frequency bandwidth to Nyquist frequency. | Audio Bandwidth Fidelity vs. Disk Storage & Ingestion Memory | **Guaranteed** resampling rate. |
+| **`channels`** | `int` `{1, 2}` | `2` (Stereo) | Output channel layout. Mono input is duplicated across channels when `channels=2`; stereo input is folded via mean when `channels=1`. | Emits stereo mixtures preserving spatial panning. | Emits mono mixtures; halves memory consumption and file size. | Spatial Panning Representation vs. Processing Memory Footprint | **Guaranteed** channel layout normalization. |
+

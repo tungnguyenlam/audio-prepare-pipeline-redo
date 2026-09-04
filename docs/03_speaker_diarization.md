@@ -124,6 +124,13 @@ ModelScope 3D-Speaker pipeline:
 Cascaded NeMo clustering pipeline:
 - Combines `vad_multilingual_marblenet` for voice activity with `titanet_large` speaker embeddings.
 - Formats dynamic single-file manifests and parses generated RTTM output.
+- **Key Parameters:**
+  - `vad_onset` (`0.50`, range `[0.0, 1.0]`): Probability to detect speech start. Increasing (+) filters room noise/breath; decreasing (-) captures faint speech/whispering.
+  - `vad_offset` (`0.30`, range `[0.0, 1.0]`): Probability to close speech segment. Increasing (+) closes turns faster; decreasing (-) keeps turns open through unvoiced codas.
+  - `vad_pad_onset_s` (`0.20s`) & `vad_pad_offset_s` (`0.20s`): Inward/outward boundary cushions preserving pre-voicing consonants and vocal reverb tails.
+  - `vad_min_duration_on_s` (`0.50s`): Shorter speech bursts are purged to eliminate transient clicks.
+  - `vad_min_duration_off_s` (`0.50s`): Shorter pauses between words are bridged into continuous segments for stable TitaNet embeddings.
+  - `max_num_speakers` (`8`, range `[1, 32]`): Constrains upper bound of spectral clustering eigenvalues.
 
 ---
 
@@ -174,7 +181,9 @@ def evaluate_diarization(
 Calculates exact interval-based Diarization Error Rate (DER) and Jaccard Error Rate (JER) without time bin discretization:
 - Maps hypothesis speakers to reference speakers using the **Hungarian bipartite matching algorithm** (`_maximum_weight_assignment`).
 - Reports DER, JER, missed speech duration/percentage, false alarm duration/percentage, speaker confusion duration/percentage, and per-speaker recall/coverage.
-- Excludes `collar_s` from reference boundaries; optionally ignores reference-overlap segments (`skip_overlap=True`).
+- **Evaluation Parameters:**
+  - `collar_s` (`float`, range `[0.0, 1.0s]`, default `0.0s`): Symmetrical exclusion collar $[t - \text{collar}, t + \text{collar}]$ around reference turn boundaries. Increasing (+) collar (e.g. NIST standard `0.25s`) forgives human annotator timing variance and onset/offset inaccuracies, significantly lowering reported DER. Decreasing (-) collar to `0.0s` evaluates strict boundary precision required for clean audio segment extraction.
+  - `skip_overlap` (`bool`, default `False`): When `True`, ignores reference intervals with concurrent multi-speaker speech. When `False`, penalizes systems for failing to detect cross-talk.
 
 ---
 
