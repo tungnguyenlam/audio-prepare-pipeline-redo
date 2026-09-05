@@ -60,6 +60,7 @@ from src.diarization.turn_cleanup import (
     DEFAULT_JITTER_MAX_DURATION_S,
     DEFAULT_MERGE_SAME_SPEAKER_GAP_S,
     DEFAULT_MIN_TURN_DURATION_S,
+    DiarizationFilter,
     clean_speaker_turns,
     pad_and_merge_intervals,
 )
@@ -110,6 +111,7 @@ __all__ = [
     "DEFAULT_MIN_SECONDARY_SPEECH_S",
     "DEFAULT_VIBEVOICE_BATCH_SIZE",
     "DEFAULT_VIBEVOICE_MODEL_ID",
+    "DiarizationFilter",
     "DiarizationModelInfo",
     "DiarizationResult",
     "DiariZenDiarizer",

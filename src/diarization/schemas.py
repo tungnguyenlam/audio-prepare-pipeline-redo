@@ -545,6 +545,126 @@ class DiarizationResult:
             grouped[turn.speaker_id].append(turn)
         return grouped
 
+    def with_turns(self, turns: Sequence[SpeakerTurn]) -> DiarizationResult:
+        """Return a new DiarizationResult with updated turns and matching speaker list."""
+        turns_list = [replace(turn) for turn in turns]
+        kept_speaker_ids = {turn.speaker_id for turn in turns_list}
+        speakers = [
+            replace(speaker)
+            for speaker in self.speakers
+            if speaker.speaker_id in kept_speaker_ids
+        ]
+        declared = {speaker.speaker_id for speaker in speakers}
+        for turn in turns_list:
+            if turn.speaker_id not in declared:
+                speakers.append(Speaker(speaker_id=turn.speaker_id))
+                declared.add(turn.speaker_id)
+        return DiarizationResult(
+            schema_version=self.schema_version,
+            audio_id=self.audio_id,
+            speakers=speakers,
+            turns=turns_list,
+            source_audio=self.source_audio,
+            model=self.model,
+            channel_id=self.channel_id,
+            channel_name=self.channel_name,
+            channel_url=self.channel_url,
+        )
+
+    def clean(
+        self,
+        *,
+        min_turn_duration_s: float = 0.5,
+        merge_same_speaker_gap_s: float = 1.0,
+        boundary_collar_s: float = 0.04,
+        jitter_max_duration_s: float = 3.0,
+    ) -> DiarizationResult:
+        """Return a cleaned copy of this diarization result.
+
+        Applies jitter correction, boundary collaring, same-speaker gap merging,
+        and drops short residual turns.
+        """
+        from src.diarization.turn_cleanup import clean_speaker_turns
+
+        cleaned_turns = clean_speaker_turns(
+            self.turns,
+            min_turn_duration_s=min_turn_duration_s,
+            merge_same_speaker_gap_s=merge_same_speaker_gap_s,
+            boundary_collar_s=boundary_collar_s,
+            jitter_max_duration_s=jitter_max_duration_s,
+        )
+        return self.with_turns(cleaned_turns)
+
+    def filter(
+        self,
+        *,
+        speakers: str | Sequence[str] | None = None,
+        exclude_speakers: str | Sequence[str] | None = None,
+        min_duration_s: float | None = None,
+        max_duration_s: float | None = None,
+        exclude_overlap: bool = False,
+        only_overlap: bool = False,
+        min_confidence: float | None = None,
+        start_s: float | None = None,
+        end_s: float | None = None,
+        predicate: Callable[[SpeakerTurn], bool] | None = None,
+        clean_turns: bool = False,
+        clean_first: bool = True,
+        min_turn_duration_s: float = 0.5,
+        merge_same_speaker_gap_s: float = 1.0,
+        boundary_collar_s: float = 0.04,
+        jitter_max_duration_s: float = 3.0,
+    ) -> DiarizationResult:
+        """Return a filtered copy of this diarization result.
+
+        Args:
+            speakers: Single speaker ID or collection of allowed speaker IDs.
+            exclude_speakers: Single speaker ID or collection of excluded speaker IDs.
+            min_duration_s: Minimum turn length in seconds.
+            max_duration_s: Maximum turn length in seconds.
+            exclude_overlap: If True, drop turns that overlap with another speaker.
+            only_overlap: If True, keep only turns that overlap with another speaker.
+            min_confidence: Minimum model confidence required.
+            start_s: Keep turns starting at or after this timestamp.
+            end_s: Keep turns ending at or before this timestamp.
+            predicate: Custom callable evaluated on each turn.
+            clean_turns: Whether to also run turn cleanup (gap merge, collar trim).
+            clean_first: If True and clean_turns is True, run cleanup before filtering.
+            min_turn_duration_s: Min duration used when clean_turns is True.
+            merge_same_speaker_gap_s: Gap threshold when clean_turns is True.
+            boundary_collar_s: Boundary collar trimmed when clean_turns is True.
+            jitter_max_duration_s: Jitter max duration when clean_turns is True.
+        """
+        from src.diarization.turn_cleanup import DiarizationFilter
+
+        filter_ = DiarizationFilter(
+            speakers=speakers,
+            exclude_speakers=exclude_speakers,
+            min_duration_s=min_duration_s,
+            max_duration_s=max_duration_s,
+            exclude_overlap=exclude_overlap,
+            only_overlap=only_overlap,
+            min_confidence=min_confidence,
+            start_s=start_s,
+            end_s=end_s,
+            predicate=predicate,
+            clean_turns=clean_turns,
+            clean_first=clean_first,
+            min_turn_duration_s=min_turn_duration_s,
+            merge_same_speaker_gap_s=merge_same_speaker_gap_s,
+            boundary_collar_s=boundary_collar_s,
+            jitter_max_duration_s=jitter_max_duration_s,
+        )
+        return filter_.apply(self)
+
+    def filter_with(self, filter_: DiarizationFilter) -> DiarizationResult:
+        """Apply a DiarizationFilter instance to this result."""
+        return filter_.apply(self)
+
+    def for_speaker(self, speaker_id: str) -> DiarizationResult:
+        """Return a copy of this result containing turns only for the specified speaker."""
+        return self.filter(speakers=speaker_id)
+
     def to_dict(self) -> dict[str, Any]:
         """Return the single canonical JSON-compatible representation."""
         source_audio = self.source_audio.metadata() if self.source_audio else None
