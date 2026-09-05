@@ -268,12 +268,15 @@ class DiarizationResultNotebookViewer:
             self._render_turn(int(change["new"]))
 
     def _clip(self, index: int, start_s: float, end_s: float, kind: str) -> Audio:
-        path = self.output_dir / f"turn_{index:06d}_{kind}.wav"
+        start_ms = int(round(start_s * 1000))
+        end_ms = int(round(end_s * 1000))
+        path = self.output_dir / f"turn_{index:06d}_{start_ms}_{end_ms}_{kind}.wav"
         if path.is_file():
             return Audio.from_file(path)
         return self.cutter.cut(self.audio, start_s, end_s, output_path=path)
 
     def _render_turn(self, index: int) -> None:
+        import matplotlib.pyplot as plt
         from IPython.display import Audio as IPythonAudio, HTML, clear_output, display
 
         turn = self.result.turns[index]
@@ -293,7 +296,10 @@ class DiarizationResultNotebookViewer:
         with self.detail:
             clear_output(wait=True)
             display(HTML(metadata))
-            plot_turn_waveform(self.result, turn, show=True)
+            figure = plot_turn_waveform(self.result, turn, show=False)
+            if figure is not None:
+                display(figure)
+                plt.close(figure)
             display(HTML("<b>Refined boundary</b>"))
             display(IPythonAudio(filename=str(refined.path)))
             if raw_start != turn.start_s or raw_end != turn.end_s:
