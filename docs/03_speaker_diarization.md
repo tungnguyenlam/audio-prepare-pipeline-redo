@@ -134,9 +134,54 @@ Cascaded NeMo clustering pipeline:
 
 ---
 
-## 3. Turn Cleanup & Padding Utilities
+## 3. Turn Filtering, Cleanup & Padding Utilities
 
-**Defined in:** [`src/diarization/turn_cleanup.py`](../src/diarization/turn_cleanup.py)
+**Defined in:** [`src/diarization/turn_cleanup.py`](../src/diarization/turn_cleanup.py) and [`src/diarization/schemas.py`](../src/diarization/schemas.py)
+
+### `DiarizationFilter`
+
+Provides fine-grained turn filtering matching SonicStudio's Diarization tab:
+
+```python
+from src.diarization import DiarizationFilter
+
+filter_pipeline = DiarizationFilter(
+    speakers=["SPEAKER_00"],          # Keep only specific speaker(s)
+    exclude_speakers=None,            # Exclude specific speaker(s)
+    min_duration_s=1.0,               # Drop turns shorter than threshold
+    max_duration_s=15.0,              # Drop turns longer than threshold
+    exclude_overlap=True,             # Drop turns overlapping another speaker
+    only_overlap=False,               # Keep only overlapping turns
+    min_confidence=0.8,               # Minimum turn confidence
+    start_s=0.0, end_s=60.0,          # Time boundary window
+    clean_turns=True,                 # Optionally run turn cleanup
+    boundary_collar_s=0.04,
+    merge_same_speaker_gap_s=1.0,
+)
+
+# Apply to DiarizationResult or turns list:
+filtered_result = filter_pipeline.apply(result)  # or filter_pipeline(result)
+filtered_turns = filter_pipeline.filter_turns(turns)
+```
+
+### Fluent Methods on `DiarizationResult`
+
+`DiarizationResult` provides chainable methods that return a new immutable `DiarizationResult` with updated turn and speaker lists:
+
+```python
+# Filter by duration, speaker, overlap:
+clean_single_speaker = (
+    result
+    .clean(boundary_collar_s=0.04, merge_same_speaker_gap_s=1.0)
+    .filter(speakers="SPEAKER_00", min_duration_s=1.0, exclude_overlap=True)
+)
+
+# Isolate one speaker directly:
+speaker_00_result = result.for_speaker("SPEAKER_00")
+
+# Apply pre-configured DiarizationFilter:
+filtered = result.filter_with(filter_pipeline)
+```
 
 ### `clean_speaker_turns(...) -> list[SpeakerTurn]`
 

@@ -130,6 +130,12 @@ Whenever an `Audio` object is saved, an adjacent JSON sidecar is written:
   - `total_speech_duration_s`: Sum of turn durations.
   - `duration_per_speaker_s`: Mapping of `speaker_id` to total duration.
   - `turns_by_speaker`: Mapping of `speaker_id` to list of turns.
+- **Transformations & Filtering (Non-mutating):**
+  - `with_turns(turns)`: Returns new `DiarizationResult` updating turns and pruning/restoring `Speaker` entries.
+  - `clean(...)`: Returns cleaned copy via `clean_speaker_turns()` (A-B-A jitter, collar trimming, gap merge).
+  - `filter(...)`: Filters turns by `speakers`, `exclude_speakers`, `min_duration_s`, `max_duration_s`, `exclude_overlap`, `only_overlap`, `min_confidence`, `start_s`/`end_s`, or `predicate`.
+  - `for_speaker(speaker_id)`: Quick single-speaker isolation returning new `DiarizationResult`.
+  - `filter_with(diar_filter)`: Applies pre-configured `DiarizationFilter`.
 - **Serialization & Persistence:**
   - `to_dict()`: Exports schema 2.0 dictionary.
   - `from_dict(d)`: Reconstructs object with backwards-tolerant parsing (clamps overshoot timestamps, restores missing speakers).

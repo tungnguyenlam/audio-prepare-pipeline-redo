@@ -75,7 +75,9 @@ flowchart TD
   - `PyannoteDiarizer`: Pyannote Audio community-1 pipeline.
   - `ThreeDSpeakerWorkerDiarizer`: ModelScope FSMN VAD + CAM++ embeddings + spectral clustering.
   - `ClusteringWorkerDiarizer`: NeMo MarbleNet VAD + TitaNet embeddings + spectral clustering.
-- Turn Cleanup & Evaluation:
+- Turn Cleanup, Filtering & Evaluation:
+  - `DiarizationFilter`: Configurable turn and result filtering criteria (speakers, min/max duration, overlap exclusion/isolation, confidence threshold, custom predicates, and optional turn cleanup).
+  - `DiarizationResult.filter(...) / .clean(...) / .for_speaker(id) / .filter_with(filter)`: Non-mutating derived result operations with updated speaker lists.
   - `clean_speaker_turns(turns, ...) -> list[SpeakerTurn]`: Non-mutating jitter correction and boundary trimming.
   - `evaluate_diarization(reference_turns, hypothesis_turns, duration_s, ...) -> dict`: Exact Hungarian-matched DER/JER calculator.
 - Identity & Purity Verification:
