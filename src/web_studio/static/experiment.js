@@ -163,7 +163,17 @@ Validation rules:
         homoHopValue: document.getElementById('exp-homo-hop-val'),
         homoFields: document.getElementById('exp-homo-fields'),
 
-        // Stage 5a: Direct-audio quality verifier
+        // Stage 5a: VibeVoice-ASR
+        enableVibeVoice: document.getElementById('exp-enable-vibevoice'),
+        vibevoiceModel: document.getElementById('exp-vibevoice-model'),
+        vibevoiceDevice: document.getElementById('exp-vibevoice-device'),
+        vibevoiceEndpoint: document.getElementById('exp-vibevoice-endpoint'),
+        vibevoiceFields: document.getElementById('exp-vibevoice-fields'),
+        vibevoiceMaxSec: document.getElementById('exp-vibevoice-max-sec'),
+        vibevoiceMaxSecNum: document.getElementById('exp-vibevoice-max-sec-num'),
+        vibevoiceMaxSecValue: document.getElementById('exp-vibevoice-max-sec-val'),
+
+        // Stage 5b: Direct-audio quality verifier
         enableGemma: document.getElementById('exp-enable-gemma'),
         gemmaFields: document.getElementById('exp-gemma-fields'),
         gemmaBackend: document.getElementById('exp-gemma-backend'),
@@ -185,16 +195,6 @@ Validation rules:
         btnGemmaTest: document.getElementById('btn-exp-gemma-test'),
         btnGemmaTestDesc: document.getElementById('btn-exp-gemma-test-desc'),
         gemmaTestOut: document.getElementById('exp-gemma-test-output'),
-
-        // Stage 5b: VibeVoice-ASR
-        enableVibeVoice: document.getElementById('exp-enable-vibevoice'),
-        vibevoiceModel: document.getElementById('exp-vibevoice-model'),
-        vibevoiceDevice: document.getElementById('exp-vibevoice-device'),
-        vibevoiceEndpoint: document.getElementById('exp-vibevoice-endpoint'),
-        vibevoiceFields: document.getElementById('exp-vibevoice-fields'),
-        vibevoiceMaxSec: document.getElementById('exp-vibevoice-max-sec'),
-        vibevoiceMaxSecNum: document.getElementById('exp-vibevoice-max-sec-num'),
-        vibevoiceMaxSecValue: document.getElementById('exp-vibevoice-max-sec-val'),
 
         // Action & Progress
         btnRun: document.getElementById('btn-run-experiment'),
@@ -739,18 +739,18 @@ Validation rules:
       this.setParamValue(this.el.homoSim, this.el.homoSimNum, 0.75);
       this.setParamValue(this.el.homoWin, this.el.homoWinNum, 1.00);
       this.setParamValue(this.el.homoHop, this.el.homoHopNum, 0.25);
-      // Stage 5a: Direct-audio verifier
+      // Stage 5a: VibeVoice-ASR
+      if (this.el.enableVibeVoice) { this.el.enableVibeVoice.checked = false; this.el.vibevoiceFields.style.display = 'none'; }
+      if (this.el.vibevoiceModel) this.el.vibevoiceModel.value = 'Dubedo/VibeVoice-ASR-HF-INT8';
+      if (this.el.vibevoiceDevice) this.el.vibevoiceDevice.value = 'same';
+      this.setParamValue(this.el.vibevoiceMaxSec, this.el.vibevoiceMaxSecNum, 0.00);
+      // Stage 5b: Direct-audio verifier
       this.setParamValue(this.el.gemmaTimeoutSlider, this.el.gemmaTimeout, 120);
       if (this.el.gemmaPrompt) this.el.gemmaPrompt.value = DEFAULT_GEMMA_PROMPT;
       if (this.el.enableGemma) this.el.enableGemma.checked = false;
       if (this.el.gemmaBackend) this.el.gemmaBackend.value = 'gemini:gemini-3.8-flash';
       if (this.el.gemmaMaxTokens) this.el.gemmaMaxTokens.value = '1024';
       this.syncDirectAudioProvider();
-      // Stage 5b: VibeVoice-ASR
-      if (this.el.enableVibeVoice) { this.el.enableVibeVoice.checked = false; this.el.vibevoiceFields.style.display = 'none'; }
-      if (this.el.vibevoiceModel) this.el.vibevoiceModel.value = 'Dubedo/VibeVoice-ASR-HF-INT8';
-      if (this.el.vibevoiceDevice) this.el.vibevoiceDevice.value = 'same';
-      this.setParamValue(this.el.vibevoiceMaxSec, this.el.vibevoiceMaxSecNum, 0.00);
       if (window.showToast) window.showToast('Experiment parameters reset to recommended defaults', 'info');
     },
 
@@ -941,7 +941,13 @@ Validation rules:
         min_homogeneity_similarity: parseFloat(this.el.homoSimNum?.value || this.el.homoSim?.value || '0.75'),
         homogeneity_window_s: parseFloat(this.el.homoWinNum?.value || this.el.homoWin?.value || '1.00'),
         homogeneity_hop_s: parseFloat(this.el.homoHopNum?.value || this.el.homoHop?.value || '0.25'),
-        // Stage 5a: Direct-Audio Quality Verifier
+        // Stage 5a: VibeVoice-ASR Gate
+        enable_vibevoice: Boolean(this.el.enableVibeVoice?.checked),
+        vibevoice_model_id: this.el.vibevoiceModel?.value || 'Dubedo/VibeVoice-ASR-HF-INT8',
+        vibevoice_device: this.el.vibevoiceDevice?.value || 'same',
+        vibevoice_endpoint: this.el.vibevoiceEndpoint?.value || '',
+        max_secondary_speech_s: parseFloat(this.el.vibevoiceMaxSecNum?.value || this.el.vibevoiceMaxSec?.value || '0.0'),
+        // Stage 5b: Direct-Audio Quality Verifier
         enable_gemma: Boolean(this.el.enableGemma?.checked),
         gemma_backend: this.selectedDirectAudioBackend(),
         gemma_endpoint: this.el.gemmaEndpoint?.value,
@@ -949,12 +955,6 @@ Validation rules:
         gemma_prompt: this.el.gemmaPrompt?.value,
         gemma_timeout_s: parseFloat(this.el.gemmaTimeout?.value || this.el.gemmaTimeoutSlider?.value || '120'),
         gemma_max_output_tokens: parseInt(this.el.gemmaMaxTokens?.value || '1024', 10),
-        // Stage 5b
-        enable_vibevoice: Boolean(this.el.enableVibeVoice?.checked),
-        vibevoice_model_id: this.el.vibevoiceModel?.value || 'Dubedo/VibeVoice-ASR-HF-INT8',
-        vibevoice_device: this.el.vibevoiceDevice?.value || 'same',
-        vibevoice_endpoint: this.el.vibevoiceEndpoint?.value || '',
-        max_secondary_speech_s: parseFloat(this.el.vibevoiceMaxSecNum?.value || this.el.vibevoiceMaxSec?.value || '0.0'),
       };
     },
 

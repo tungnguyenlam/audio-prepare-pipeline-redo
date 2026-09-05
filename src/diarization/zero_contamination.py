@@ -173,7 +173,14 @@ class ZeroContaminationConfig:
     homogeneity_hop_s: float = DEFAULT_HOMOGENEITY_HOP_S
     min_homogeneity_similarity: float = DEFAULT_MIN_HOMOGENEITY_SIMILARITY
 
-    # Stage 5a: Direct-audio speaker-purity and word-completeness verifier
+    # Stage 5a: In-Loop VibeVoice-ASR Speaker Count Verifier (Dedicated GPU or Remote Host)
+    enable_vibevoice: bool = False
+    vibevoice_model_id: str = "Dubedo/VibeVoice-ASR-HF-INT8"
+    vibevoice_device: str | None = None  # e.g. "cuda:1" to run on a dedicated secondary GPU, or "cpu"
+    vibevoice_endpoint: str | None = None  # optional remote HTTP endpoint if hosted on another server
+    max_secondary_speech_s: float = 0.0
+
+    # Stage 5b: Direct-audio speaker-purity and word-completeness verifier
     enable_gemma: bool = False
     gemma_backend: str = "gemini"  # "gemini" or "gemma4"
     gemma_endpoint: str | None = None
@@ -182,13 +189,6 @@ class ZeroContaminationConfig:
     gemma_api_key: str | None = None
     gemma_timeout_s: float = 120.0
     gemma_max_output_tokens: int = 1024
-
-    # Stage 5b: In-Loop VibeVoice-ASR Speaker Count Verifier (Dedicated GPU or Remote Host)
-    enable_vibevoice: bool = False
-    vibevoice_model_id: str = "Dubedo/VibeVoice-ASR-HF-INT8"
-    vibevoice_device: str | None = None  # e.g. "cuda:1" to run on a dedicated secondary GPU, or "cpu"
-    vibevoice_endpoint: str | None = None  # optional remote HTTP endpoint if hosted on another server
-    max_secondary_speech_s: float = 0.0
 
     # General compute settings
     device: str = "auto"

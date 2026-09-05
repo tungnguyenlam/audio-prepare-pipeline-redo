@@ -127,9 +127,9 @@ Apply the gates in this order according to the available compute budget:
 | 2 | Stage 4: `enable_homogeneity` | Enabled | Adds WeSpeaker embedding inference over many overlapping sub-windows. Inconsistent-timbre turns are rejected, normally producing fewer samples. |
 | 3 | Stage 4: `homogeneity_hop_s` | Lower from `0.25s` toward `0.10s` | Creates more overlapping embedding forward passes. Brief speaker intrusions are less likely to fall between probes, at higher runtime and with potentially more rejected turns. |
 | 4 | Stage 4: `min_homogeneity_similarity` | Raise cautiously from `0.75` toward `0.78–0.82` | Does not add forward passes, but rejects more turns. Higher values may falsely reject expressive, laughing, whispered, or emotional target speech. |
-| 5 | Stage 5a: `enable_gemma` | Enabled when the selected backend is ready | Adds one direct-audio request per candidate. A second speaker, overlap, clipped boundary, uncertain result, or verifier failure rejects the sample. Gemini adds metered API cost. |
-| 6 | Stage 5b: `enable_vibevoice` | Enabled | Adds autoregressive ASR to each surviving candidate. This is a heavy verification pass and may reject additional samples containing secondary-speaker tokens. |
-| 7 | Stage 5b: `max_secondary_speech_s` | `0.0s` for strict purity | Does not change inference compute; it makes the completed VibeVoice check maximally strict and therefore minimizes yield. |
+| 5 | Stage 5a: `enable_vibevoice` | Enabled | Adds autoregressive ASR to each surviving candidate. Runs first to reject secondary-speaker turns early before external LLMs. |
+| 6 | Stage 5a: `max_secondary_speech_s` | `0.0s` for strict purity | Does not change inference compute; it makes the completed VibeVoice check maximally strict and therefore minimizes yield. |
+| 7 | Stage 5b: `enable_gemma` | Enabled when the selected backend is ready | Adds one direct-audio request per candidate that passed VibeVoice. A second speaker, overlap, clipped boundary, uncertain result, or verifier failure rejects the sample. Gemini adds metered API cost. |
 
 A high-compute speaker-purity configuration is:
 
@@ -193,8 +193,8 @@ When `enable_homogeneity=True`, slides short sub-windows (`homogeneity_window_s=
 
 ### Stage 5: In-Loop Foundation Model Verification
 Candidate turns passing acoustic gates are verified by multimodal foundation models in order of compute cost:
-1. **Microsoft VibeVoice-ASR (Fast/Cheap Speaker Gate):** Detects secondary speech duration across full clip context. Drops turns if secondary speech exceeds `max_secondary_speech_s` (default `0.0s`). Turns failing VibeVoice are rejected immediately without calling external LLMs.
-2. **Direct-Audio Quality Verifier (Semantic & Completeness Auditor):** Sends surviving candidate audio directly to local Gemma 4 or Google Gemini. It rejects a second speaker (simultaneous or sequential), clipped initial/final speech (“lẹm chữ”), tail intrusions, uncertainty, and request/schema failures. It does not transcribe.
+1. **Stage 5a: Microsoft VibeVoice-ASR (Fast/Cheap Speaker Gate):** Detects secondary speech duration across full clip context. Drops turns if secondary speech exceeds `max_secondary_speech_s` (default `0.0s`). Turns failing VibeVoice are rejected immediately without calling external LLMs.
+2. **Stage 5b: Direct-Audio Quality Verifier (Semantic & Completeness Auditor):** Sends surviving candidate audio directly to local Gemma 4 or Google Gemini. It rejects a second speaker (simultaneous or sequential), clipped initial/final speech (“lẹm chữ”), tail intrusions, uncertainty, and request/schema failures. It does not transcribe.
 
   #### Prompt Steering & Structured Output Extraction:
   - **Structured JSON Schema Extraction:** The verifier does not rely on regex or loose text generation. For Gemini, it enforces `generationConfig.responseMimeType` plus `responseJsonSchema` (`_OVERLAP_SCHEMA`). For Gemma 4 (Unsloth), it enforces `response_format: {"type": "json_schema", "strict": True}`. Both constrain model token sampling to guaranteed valid JSON matching `_OVERLAP_SCHEMA`.
@@ -309,7 +309,14 @@ class ZeroContaminationConfig:
     homogeneity_hop_s: float = 0.25
     min_homogeneity_similarity: float = 0.75
 
-    # Stage 5a: Direct-Audio Quality Verifier (OFF by default)
+    # Stage 5a: VibeVoice Speaker-Count Verifier (OFF by default)
+    enable_vibevoice: bool = False
+    vibevoice_model_id: str = "Dubedo/VibeVoice-ASR-HF-INT8"
+    vibevoice_device: str | None = None      # e.g. "cuda:1"; "same" = general device
+    vibevoice_endpoint: str | None = None    # optional remote HTTP endpoint
+    max_secondary_speech_s: float = 0.0
+
+    # Stage 5b: Direct-Audio Quality Verifier (OFF by default)
     enable_gemma: bool = False
     gemma_backend: str = "gemini"            # "gemini" or "gemma4"
     gemma_endpoint: str | None = None        # else UNSLOTH_ENDPOINT / localhost:8888
@@ -318,13 +325,6 @@ class ZeroContaminationConfig:
     gemma_api_key: str | None = None
     gemma_timeout_s: float = 120.0
     gemma_max_output_tokens: int = 1024
-
-    # Stage 5b: VibeVoice Speaker-Count Verifier (OFF by default)
-    enable_vibevoice: bool = False
-    vibevoice_model_id: str = "Dubedo/VibeVoice-ASR-HF-INT8"
-    vibevoice_device: str | None = None      # e.g. "cuda:1"; "same" = general device
-    vibevoice_endpoint: str | None = None    # optional remote HTTP endpoint
-    max_secondary_speech_s: float = 0.0
 
     # General compute
     device: str = "auto"

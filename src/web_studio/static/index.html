@@ -3193,14 +3193,79 @@
                 </div>
               </div>
 
-              <!-- Stage 5a: Direct Audio Quality Verifier. Keep its workbench
+              <!-- Stage 5a: VibeVoice-ASR Gate -->
+              <div class="exp-stage-box purity-overlap-panel exp-purity-compute-panel">
+                <div class="purity-overlap-header">
+                  <div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <span class="exp-stage-num remote">5a</span>
+                      <strong>VibeVoice-ASR Speaker Gate</strong>
+                      <span class="exp-purity-badge">COMPUTE → SPEAKER PURITY</span>
+                    </div>
+                    <small class="purity-overlap-lead">
+                      Adds autoregressive ASR to every candidate. Secondary-speaker detections reject turns, increasing compute and normally reducing extracted samples.
+                    </small>
+                  </div>
+                  <label class="toggle-switch-wrap exp-purity-toggle" title="VibeVoice-ASR Speaker Gate [Default: Disabled]&#10;• Enabled: Adds autoregressive ASR inference for every candidate and rejects secondary speech above tolerance, costing more compute and normally extracting fewer samples.&#10;• Disabled: Bypasses VibeVoice inference, runs faster, and retains candidates not rejected upstream.">
+                    <input type="checkbox" id="exp-enable-vibevoice">
+                    <span>Enable</span>
+                  </label>
+                </div>
+
+                <div id="exp-vibevoice-fields" style="display: none; margin-top: 14px;">
+                  <div class="form-row">
+                    <div class="form-group col-half mb-2 exp-purity-compute-param">
+                      <label class="form-label" for="exp-vibevoice-model" title="Quantization level. INT8 (~10-11 GB VRAM) is recommended for best balance of precision and VRAM footprint.">VibeVoice Checkpoint:</label>
+                      <select id="exp-vibevoice-model" class="select-input" title="Quantization checkpoint for VibeVoice-ASR.">
+                        <option value="Dubedo/VibeVoice-ASR-HF-INT8" selected>INT8 (~10–11 GB VRAM - Recommended)</option>
+                        <option value="microsoft/VibeVoice-ASR-HF">Full BF16 (~17 GB VRAM)</option>
+                        <option value="Dubedo/VibeVoice-ASR-HF-NF4">NF4 4-bit (~7–8 GB VRAM)</option>
+                      </select>
+                    </div>
+                    <div class="form-group col-half mb-2 exp-purity-compute-param">
+                      <label class="form-label" for="exp-vibevoice-device" title="GPU device assigned to VibeVoice. Dedicated cuda:1 is recommended when Sortformer is on cuda:0.">Execution GPU / Device:</label>
+                      <select id="exp-vibevoice-device" class="select-input" title="Compute device for VibeVoice inference.">
+                        <option value="same">Same as Pipeline</option>
+                        <option value="cuda:1">Dedicated cuda:1 (Secondary GPU)</option>
+                        <option value="cuda:0">Dedicated cuda:0</option>
+                        <option value="cpu">CPU</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="form-group mb-2">
+                    <div class="exp-param-header">
+                      <label class="form-label" for="exp-vibevoice-max-sec" title="Max Secondary Speech Tolerance [0.00 – 5.00s, Default: 0.00s]&#10;• Increase (+): Retains more samples but permits brief secondary speech.&#10;• Decrease (- / 0.00s): Rejects more candidates for higher speaker purity; fewer samples are extracted. This threshold does not change inference compute.">Max Secondary Speech Tolerance <span class="exp-yield-badge">LOWER = PURITY ↑ · YIELD ↓</span></label>
+                      <div class="exp-param-ctrl">
+                        <div class="exp-num-input-wrap" title="Max Secondary Speech Tolerance [0.00 – 5.00s, Default: 0.00s]&#10;• Increase (+): Tolerates faint background murmur.&#10;• Decrease (-): Zero tolerance; drops turn on any secondary speech token.">
+                          <input type="number" id="exp-vibevoice-max-sec-num" class="exp-num-input" min="0.00" max="5.00" step="0.05" value="0.00" title="Max Secondary Speech [0.00 – 5.00s, Default: 0.00s]. Increase (+) to tolerate minor background voices; set 0.0s for pure single-speaker data.">
+                          <span class="exp-num-unit">s</span>
+                        </div>
+                        <span class="badge badge-sm badge-ghost" id="exp-vibevoice-max-sec-val">0.00s</span>
+                      </div>
+                    </div>
+                    <input type="range" id="exp-vibevoice-max-sec" class="slider-input exp-slider" min="0.00" max="2.00" step="0.05" value="0.00" title="Max Secondary Speech [0.00 – 2.00s, Default: 0.00s]. Drag left to 0.00s for zero-contamination TTS.">
+                    <span class="text-xs text-muted">Strictly 0.0s for zero-contamination; allows small tolerance if audio contains breath artifacts.</span>
+                  </div>
+
+                  <div class="form-group mb-0">
+                    <label class="form-label" for="exp-vibevoice-endpoint">Remote VibeVoice Endpoint (Optional):</label>
+                    <input type="url" id="exp-vibevoice-endpoint" class="text-input font-mono" placeholder="Leave empty for local worker, or enter http://<remote-ip>:8765/api/purity/verify" title="Optional remote HTTP endpoint URL if VibeVoice is hosted on another model server.">
+                    <span class="text-xs text-muted" style="margin-top: 4px; display: block;">
+                      If you host VibeVoice on another machine, provide its verification endpoint.
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Stage 5b: Direct Audio Quality Verifier. Keep its workbench
                    visible while disabled so configuration and readiness checks
                    remain available before opting into per-candidate inference. -->
               <div class="exp-stage-box purity-overlap-panel exp-purity-compute-panel">
                 <div class="purity-overlap-header">
                   <div>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                      <span class="exp-stage-num remote">5a</span>
+                      <span class="exp-stage-num remote">5b</span>
                       <strong>Direct-Audio Purity &amp; Word-Completeness Verifier</strong>
                       <span class="exp-purity-badge">PURITY + LẸM CHỮ</span>
                     </div>
@@ -3332,71 +3397,6 @@ Validation rules:
                     <span class="text-xs text-muted" id="btn-exp-gemma-test-desc">Auditions candidate slice to verify direct-audio verifier before running.</span>
                   </div>
                   <div id="exp-gemma-test-output" class="gemma-test-result" style="display: none; margin-top: 8px;"></div>
-                </div>
-              </div>
-
-              <!-- Stage 5b: VibeVoice-ASR Gate -->
-              <div class="exp-stage-box purity-overlap-panel exp-purity-compute-panel">
-                <div class="purity-overlap-header">
-                  <div>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                      <span class="exp-stage-num remote">5b</span>
-                      <strong>VibeVoice-ASR Speaker Gate</strong>
-                      <span class="exp-purity-badge">COMPUTE → SPEAKER PURITY</span>
-                    </div>
-                    <small class="purity-overlap-lead">
-                      Adds autoregressive ASR to every candidate. Secondary-speaker detections reject turns, increasing compute and normally reducing extracted samples.
-                    </small>
-                  </div>
-                  <label class="toggle-switch-wrap exp-purity-toggle" title="VibeVoice-ASR Speaker Gate [Default: Disabled]&#10;• Enabled: Adds autoregressive ASR inference for every candidate and rejects secondary speech above tolerance, costing more compute and normally extracting fewer samples.&#10;• Disabled: Bypasses VibeVoice inference, runs faster, and retains candidates not rejected upstream.">
-                    <input type="checkbox" id="exp-enable-vibevoice">
-                    <span>Enable</span>
-                  </label>
-                </div>
-
-                <div id="exp-vibevoice-fields" style="display: none; margin-top: 14px;">
-                  <div class="form-row">
-                    <div class="form-group col-half mb-2 exp-purity-compute-param">
-                      <label class="form-label" for="exp-vibevoice-model" title="Quantization level. INT8 (~10-11 GB VRAM) is recommended for best balance of precision and VRAM footprint.">VibeVoice Checkpoint:</label>
-                      <select id="exp-vibevoice-model" class="select-input" title="Quantization checkpoint for VibeVoice-ASR.">
-                        <option value="Dubedo/VibeVoice-ASR-HF-INT8" selected>INT8 (~10–11 GB VRAM - Recommended)</option>
-                        <option value="microsoft/VibeVoice-ASR-HF">Full BF16 (~17 GB VRAM)</option>
-                        <option value="Dubedo/VibeVoice-ASR-HF-NF4">NF4 4-bit (~7–8 GB VRAM)</option>
-                      </select>
-                    </div>
-                    <div class="form-group col-half mb-2 exp-purity-compute-param">
-                      <label class="form-label" for="exp-vibevoice-device" title="GPU device assigned to VibeVoice. Dedicated cuda:1 is recommended when Sortformer is on cuda:0.">Execution GPU / Device:</label>
-                      <select id="exp-vibevoice-device" class="select-input" title="Compute device for VibeVoice inference.">
-                        <option value="same">Same as Pipeline</option>
-                        <option value="cuda:1">Dedicated cuda:1 (Secondary GPU)</option>
-                        <option value="cuda:0">Dedicated cuda:0</option>
-                        <option value="cpu">CPU</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div class="form-group mb-2">
-                    <div class="exp-param-header">
-                      <label class="form-label" for="exp-vibevoice-max-sec" title="Max Secondary Speech Tolerance [0.00 – 5.00s, Default: 0.00s]&#10;• Increase (+): Retains more samples but permits brief secondary speech.&#10;• Decrease (- / 0.00s): Rejects more candidates for higher speaker purity; fewer samples are extracted. This threshold does not change inference compute.">Max Secondary Speech Tolerance <span class="exp-yield-badge">LOWER = PURITY ↑ · YIELD ↓</span></label>
-                      <div class="exp-param-ctrl">
-                        <div class="exp-num-input-wrap" title="Max Secondary Speech Tolerance [0.00 – 5.00s, Default: 0.00s]&#10;• Increase (+): Tolerates faint background murmur.&#10;• Decrease (-): Zero tolerance; drops turn on any secondary speech token.">
-                          <input type="number" id="exp-vibevoice-max-sec-num" class="exp-num-input" min="0.00" max="5.00" step="0.05" value="0.00" title="Max Secondary Speech [0.00 – 5.00s, Default: 0.00s]. Increase (+) to tolerate minor background voices; set 0.0s for pure single-speaker data.">
-                          <span class="exp-num-unit">s</span>
-                        </div>
-                        <span class="badge badge-sm badge-ghost" id="exp-vibevoice-max-sec-val">0.00s</span>
-                      </div>
-                    </div>
-                    <input type="range" id="exp-vibevoice-max-sec" class="slider-input exp-slider" min="0.00" max="2.00" step="0.05" value="0.00" title="Max Secondary Speech [0.00 – 2.00s, Default: 0.00s]. Drag left to 0.00s for zero-contamination TTS.">
-                    <span class="text-xs text-muted">Strictly 0.0s for zero-contamination; allows small tolerance if audio contains breath artifacts.</span>
-                  </div>
-
-                  <div class="form-group mb-0">
-                    <label class="form-label" for="exp-vibevoice-endpoint">Remote VibeVoice Endpoint (Optional):</label>
-                    <input type="url" id="exp-vibevoice-endpoint" class="text-input font-mono" placeholder="Leave empty for local worker, or enter http://<remote-ip>:8765/api/purity/verify" title="Optional remote HTTP endpoint URL if VibeVoice is hosted on another model server.">
-                    <span class="text-xs text-muted" style="margin-top: 4px; display: block;">
-                      If you host VibeVoice on another machine, provide its verification endpoint.
-                    </span>
-                  </div>
                 </div>
               </div>
 
