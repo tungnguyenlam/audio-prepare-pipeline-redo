@@ -28,6 +28,7 @@ import soundfile as sf
 import numpy as np
 import torch
 import torch.nn as nn
+from tqdm.auto import tqdm
 
 from src.data_paths import DATA_DIR, REPO_ROOT, portable_data_path, resolve_data_path
 from src.diarization.schemas import DiarizationResult, SpeakerTurn
@@ -298,7 +299,7 @@ def _train_quality_classifier_worker(
     global_step = 0
 
     try:
-        for epoch in range(1, epochs + 1):
+        for epoch in tqdm(range(1, epochs + 1), desc="Training epochs", unit="epoch"):
             if cancel_check():
                 if wandb_run:
                     wandb_run.finish(exit_code=1)
@@ -309,7 +310,7 @@ def _train_quality_classifier_worker(
             train_loss = 0.0
             n_train_batches = 0
 
-            for batch in train_loader:
+            for batch in tqdm(train_loader, desc=f"Epoch {epoch}/{epochs}", unit="batch", leave=False):
                 if cancel_check():
                     if wandb_run:
                         wandb_run.finish(exit_code=1)
@@ -890,7 +891,7 @@ class LabelerRouteHandler:
         exported_records = []
         errors = []
 
-        for s in samples_to_export:
+        for s in tqdm(samples_to_export, desc="Exporting dataset samples", unit="sample"):
             sample_id = s["sample_id"]
             wav_filename = f"{sample_id}.wav"
             out_wav = audio_dir / wav_filename

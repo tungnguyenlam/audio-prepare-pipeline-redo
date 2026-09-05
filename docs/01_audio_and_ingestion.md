@@ -203,6 +203,14 @@ Constructs the exact `yt-dlp` CLI command tokens without executing. Configures s
 ```python
 cutter = AudioCutter(output_dir=".data/audio_cutter/out")
 clip = cutter.cut(audio, start, end, unit="seconds", output_path=None)
+
+# Batch cutting with tqdm progress reporting
+clips = cutter.cut_batch(
+    audio,
+    [(0.0, 5.0), (10.0, 15.0), {"start": 20.0, "end": 25.0}],
+    unit="seconds",
+    show_progress=True,
+)
 ```
 
 ### Parameter Reference & Time Units
@@ -213,6 +221,8 @@ clip = cutter.cut(audio, start, end, unit="seconds", output_path=None)
 | **`end`** | `int \| float \| str` | *Required* | Exclusive slice end bound. Must satisfy $\text{start} < \text{end} \le \text{duration}$. |
 | **`unit`** | `Literal[...]` | `"seconds"` | Format interpretation for `start` and `end`. Supported units:<br>• `"seconds"`: Floating-point or integer seconds (e.g. `10.5`, `45.0`).<br>• `"minutes"`: Floating-point or integer minutes (e.g. `1.5` → 90s).<br>• `"hours"`: Floating-point or integer hours (e.g. `0.25` → 15m).<br>• `"percent"`: Percentage of total track duration `[0.0, 100.0]`.<br>• `"timestamp"`: Clock string (e.g. `"1:02"`, `"2:15:30"`) or packed integers parsed right-to-left (`1234` → `12:34`, `12345` → `1:23:45`, `1213421` → `121:34:21`). |
 | **`output_path`** | `str \| Path \| None` | `None` | Optional explicit destination path. When omitted, writes to `output_dir` with a sanitized source-derived name. |
+
+For multiple slices, `cutter.cut_batch(audio, bounds, unit="seconds", show_progress=True, desc="Cutting audio segments")` processes a sequence of `(start, end)` tuples or dicts with a `tqdm` progress bar.
 
 ---
 

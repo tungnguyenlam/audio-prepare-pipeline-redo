@@ -13,6 +13,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
+from tqdm.auto import tqdm
+
 from src.utils.AudioClass import Audio
 
 OVERLAP_PROMPT = """Listen to the supplied audio directly. Do not transcribe it.
@@ -216,14 +218,24 @@ class BaseOverlapVerifier(ABC):
         )
         effective_workers = _validate_concurrency(effective_workers)
         if effective_workers <= 1 or len(audios) <= 1:
-            return [self.verify(audio) for audio in audios]
+            return [
+                self.verify(audio)
+                for audio in tqdm(audios, desc="Verifying segments", unit="segment")
+            ]
 
         from concurrent.futures import ThreadPoolExecutor
 
         with ThreadPoolExecutor(
             max_workers=min(effective_workers, len(audios))
         ) as executor:
-            return list(executor.map(self.verify, audios))
+            return list(
+                tqdm(
+                    executor.map(self.verify, audios),
+                    total=len(audios),
+                    desc="Verifying segments",
+                    unit="segment",
+                )
+            )
 
 
 class Gemma4OverlapVerifier(BaseOverlapVerifier):

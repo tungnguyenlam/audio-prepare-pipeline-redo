@@ -27,6 +27,7 @@ from typing import Any, Callable, Sequence
 import numpy as np
 import soundfile as sf
 import torch
+from tqdm.auto import tqdm
 
 from src.base.model import ManagedModel
 from src.diarization.evaluation import _maximum_weight_assignment
@@ -1807,7 +1808,8 @@ def filter_by_embedding_homogeneity(
     audits: list[tuple[SpeakerTurn, bool, float | None, str]] = []
 
     with verifier:
-        for turn in turns:
+        turn_iter = tqdm(turns, desc="Embedding homogeneity", unit="turn") if len(turns) > 1 else turns
+        for turn in turn_iter:
             if cancel_check and cancel_check():
                 raise InterruptedError("Pipeline execution cancelled during homogeneity verification")
 
@@ -1972,8 +1974,13 @@ def filter_by_foundation_models(
         with tempfile.TemporaryDirectory(prefix="foundation-audit-") as tmpdir:
             total = len(turns)
             records: list[dict[str, Any]] = []
+            turn_iter = (
+                tqdm(turns, desc="Foundation audit (VibeVoice)", unit="turn")
+                if len(turns) > 1
+                else turns
+            )
 
-            for idx, turn in enumerate(turns):
+            for idx, turn in enumerate(turn_iter):
                 if cancel_check and cancel_check():
                     raise InterruptedError(
                         "Pipeline execution cancelled during foundation model verification"
@@ -2075,6 +2082,11 @@ def filter_by_foundation_models(
                 )
                 gemma_total = len(gemma_candidates)
                 gemma_done = 0
+                pbar = (
+                    tqdm(total=gemma_total, desc=f"Foundation audit ({verifier_label})", unit="turn")
+                    if gemma_total > 1
+                    else None
+                )
 
                 def verify_single_gemma(rec: dict[str, Any]) -> None:
                     nonlocal gemma_done
@@ -2099,6 +2111,8 @@ def filter_by_foundation_models(
                         rec["is_pure"] = False
                         rec["rejection_reason"] = f"Direct-audio verifier failed closed: {exc}"
                     gemma_done += 1
+                    if pbar is not None:
+                        pbar.update(1)
                     if progress_callback:
                         p = 0.84 + 0.14 * (gemma_done / max(1, gemma_total))
                         progress_callback(
@@ -2106,16 +2120,20 @@ def filter_by_foundation_models(
                             f"Foundation audit ({verifier_label}): turn {gemma_done}/{gemma_total}...",
                         )
 
-                if concurrency > 1 and len(gemma_candidates) > 1:
-                    from concurrent.futures import ThreadPoolExecutor
+                try:
+                    if concurrency > 1 and len(gemma_candidates) > 1:
+                        from concurrent.futures import ThreadPoolExecutor
 
-                    with ThreadPoolExecutor(
-                        max_workers=min(concurrency, len(gemma_candidates))
-                    ) as executor:
-                        list(executor.map(verify_single_gemma, gemma_candidates))
-                else:
-                    for rec in gemma_candidates:
-                        verify_single_gemma(rec)
+                        with ThreadPoolExecutor(
+                            max_workers=min(concurrency, len(gemma_candidates))
+                        ) as executor:
+                            list(executor.map(verify_single_gemma, gemma_candidates))
+                    else:
+                        for rec in gemma_candidates:
+                            verify_single_gemma(rec)
+                finally:
+                    if pbar is not None:
+                        pbar.close()
 
             for rec in records:
                 turn = rec["turn"]

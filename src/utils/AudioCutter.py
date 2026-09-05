@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal, Optional, Union
+from typing import Any, Literal, Optional, Sequence, Union
 
 import soundfile as sf
+from tqdm.auto import tqdm
 
 from src.data_paths import DATA_DIR
 from src.utils.AudioClass import Audio, _sanitize_filename_component
@@ -116,6 +117,53 @@ class AudioCutter:
             native_sample_rate=audio.native_sample_rate,
             history=(*audio.history, f"cut_{start_s:.2f}s-{end_s:.2f}s"),
         )
+
+    def cut_batch(
+        self,
+        audio: Audio,
+        bounds: Sequence[tuple[TimeValue, TimeValue] | dict[str, Any]],
+        *,
+        unit: TimeUnit = "seconds",
+        output_path: Optional[str | Path] = None,
+        show_progress: bool = True,
+        desc: str = "Cutting audio segments",
+    ) -> list[Audio]:
+        """Cut multiple segments from an ``Audio`` file with progress reporting.
+
+        Args:
+            audio: Source ``Audio`` instance (file-backed).
+            bounds: Sequence of ``(start, end)`` tuples, or dicts containing
+                ``start``/``start_s`` and ``end``/``end_s`` keys.
+            unit: How to interpret start/end values. One of ``seconds``,
+                ``minutes``, ``hours``, ``percent``, or ``timestamp``.
+            output_path: Optional destination directory for all cuts.
+            show_progress: Whether to display a tqdm progress bar.
+            desc: Progress bar label.
+
+        Returns:
+            List of derived ``Audio`` segments.
+        """
+        iterator = bounds
+        if show_progress and len(bounds) > 0:
+            iterator = tqdm(bounds, desc=desc, unit="segment")
+
+        segments: list[Audio] = []
+        for item in iterator:
+            if isinstance(item, dict):
+                start = item.get("start_s", item.get("start"))
+                end = item.get("end_s", item.get("end"))
+            else:
+                start, end = item[0], item[1]
+            segments.append(
+                self.cut(
+                    audio,
+                    start,
+                    end,
+                    unit=unit,
+                    output_path=output_path,
+                )
+            )
+        return segments
 
     def _resolve_bounds(
         self,

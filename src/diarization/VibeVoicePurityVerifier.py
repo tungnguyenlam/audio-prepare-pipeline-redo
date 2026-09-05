@@ -16,6 +16,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from tqdm.auto import tqdm
+
 from src.base.model import ManagedModel
 from src.diarization.schemas import (
     DiarizationModelInfo,
@@ -287,7 +289,9 @@ class VibeVoicePurityVerifier(ManagedModel):
                 raise FileNotFoundError(f"Audio file does not exist: {audio.path}")
 
         results: list[VibeVoicePurityResult] = []
-        for offset in range(0, len(audios), self.batch_size):
+        batch_offsets = list(range(0, len(audios), self.batch_size))
+        iterator = tqdm(batch_offsets, desc="VibeVoice verification", unit="batch") if len(batch_offsets) > 1 else batch_offsets
+        for offset in iterator:
             batch = audios[offset : offset + self.batch_size]
             try:
                 segments_by_audio = self._infer_batch(

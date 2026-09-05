@@ -17,6 +17,7 @@ import librosa
 import numpy as np
 import soundfile as sf
 import torch
+from tqdm.auto import tqdm
 
 from src.benchmark.separation.mixer import AudioMixer
 from src.data_paths import portable_data_path, portable_data_payload
@@ -199,7 +200,7 @@ async def process_batch_ingest_yt(job: PipelineJob, queue: JobQueueManager) -> N
     processed = 0
     failed = 0
 
-    for idx, entry in enumerate(resolved_entries, start=1):
+    for idx, entry in enumerate(tqdm(resolved_entries, desc="Ingesting URLs", unit="url"), start=1):
         if queue.is_cancelled(job.id):
             job.add_log("Batch ingestion cancelled by user", "warning")
             return
@@ -288,7 +289,7 @@ async def process_batch_ingest_files(job: PipelineJob, queue: JobQueueManager) -
     processed = 0
     failed = 0
 
-    for idx, fpath in enumerate(all_files, start=1):
+    for idx, fpath in enumerate(tqdm(all_files, desc="Ingesting files", unit="file"), start=1):
         if queue.is_cancelled(job.id):
             return
 
@@ -403,7 +404,7 @@ async def process_batch_separation(job: PipelineJob, queue: JobQueueManager) -> 
     failed = 0
 
     try:
-        for idx, it in enumerate(items, start=1):
+        for idx, it in enumerate(tqdm(items, desc=f"Separating ({model_name})", unit="item"), start=1):
             if queue.is_cancelled(job.id):
                 job.add_log("Separation batch cancelled by user", "warning")
                 break
@@ -612,7 +613,7 @@ async def process_batch_diarization(job: PipelineJob, queue: JobQueueManager) ->
     failed = 0
 
     try:
-        for idx, it in enumerate(items, start=1):
+        for idx, it in enumerate(tqdm(items, desc=f"Diarizing ({backend})", unit="item"), start=1):
             if queue.is_cancelled(job.id):
                 break
 
@@ -721,7 +722,7 @@ async def process_target_speaker_filter(job: PipelineJob, queue: JobQueueManager
     failed = 0
 
     try:
-        for idx, it in enumerate(items, start=1):
+        for idx, it in enumerate(tqdm(items, desc="Target speaker filtering", unit="item"), start=1):
             if queue.is_cancelled(job.id):
                 break
 
@@ -947,7 +948,7 @@ async def process_batch_benchmark(job: PipelineJob, queue: JobQueueManager) -> N
             continue
 
         try:
-            for b_task in benchmark_tasks:
+            for b_task in tqdm(benchmark_tasks, desc=f"Benchmark matrix ({model_name})", unit="mix"):
                 if queue.is_cancelled(job.id):
                     break
 

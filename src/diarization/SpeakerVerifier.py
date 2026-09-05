@@ -20,6 +20,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from tqdm.auto import tqdm
+
 from src.base.model import ManagedModel
 from src.diarization.schemas import (
     DIARIZATION_SCHEMA_VERSION,
@@ -473,7 +475,7 @@ class SpeakerVerifier(ManagedModel):
         import numpy as np
 
         segments: list[ScoredSegment] = []
-        for index, turn in enumerate(result.turns):
+        for index, turn in enumerate(tqdm(result.turns, desc="Scoring turns", unit="turn")):
             overlaps = any(
                 other.speaker_id != turn.speaker_id
                 and other.start_s < turn.end_s
@@ -648,7 +650,7 @@ class SpeakerVerifier(ManagedModel):
         if unknown_candidates:
             raise ValueError("candidates must be turns from DiarizationResult")
 
-        for turn in candidate_turns:
+        for turn in tqdm(candidate_turns, desc="Verifying candidate purity", unit="turn"):
             duration_s = turn.end_s - turn.start_s
             overlap_duration_s = self._other_speaker_overlap_duration(
                 result,
