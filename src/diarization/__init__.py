@@ -68,6 +68,7 @@ from src.diarization.zero_contamination import (
     compute_consensus_turns,
     erode_turn_boundaries,
     run_zero_contamination_pipeline,
+    smart_segment_speaker_turns,
 )
 
 from src.diarization.schemas import (
@@ -147,6 +148,7 @@ __all__ = [
     "compute_consensus_turns",
     "erode_turn_boundaries",
     "run_zero_contamination_pipeline",
+    "smart_segment_speaker_turns",
     "ZeroContaminationConfig",
     "ZeroContaminationResult",
 ]

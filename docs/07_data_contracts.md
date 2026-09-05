@@ -303,6 +303,9 @@ Defined in [`src/diarization/zero_contamination.py`](../src/diarization/zero_con
   ],
   "boundary_audits": [
     { "raw_start_s": 1.25, "raw_end_s": 5.40, "start_s": 1.60, "end_s": 5.05, "policy": "whisper_lock_PhoWhisper-large", "tail_rescued": true }
+  ],
+  "segment_audits": [
+    { "original_start_s": 1.25, "original_end_s": 25.40, "chunks_count": 3, "cut_points_s": [8.40, 16.95], "reason": "Split into 3 chunks (ASR punctuation/pause)" }
   ]
 }
 ```

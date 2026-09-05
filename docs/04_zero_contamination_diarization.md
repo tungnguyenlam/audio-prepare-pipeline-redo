@@ -66,6 +66,7 @@ Use this as the starting configuration in the Experiment tab:
 | Stage 3, Option B | Language | `vi` | Prevents unnecessary language auto-detection. |
 | Stage 3, Option B | Device | `"same"` (or dedicated GPU / CPU) | Sequential execution with automatic memory clearing on single-GPU servers. |
 | Stage 3, Option C | Energy/RMS Valley Snapping | **Disabled** | It runs after word locking and may move a protected boundary inward again. It is primarily a click-removal tool. |
+| Stage 3, Option D | Intelligent Turn Segmentation | **Optional / Enabled for TTS** | Splits long turns (>10s) at natural ASR punctuation/pauses and RMS valleys into optimal TTS training slices (3–10s). |
 
 The equivalent core configuration is:
 
@@ -171,17 +172,19 @@ When `enable_consensus=True`, an orthogonal secondary diarization engine (e.g. D
 ### Stage 3: Boundary & Syllable Integrity Gate
 Aims for clean turn transitions without truncating recognized words:
 1. **Context-Aware Collar Guard (`enable_context_collar`):**
+   - Retains a unified **Competitor Evidence Pool** (`primary_turns ∪ secondary_turns`), preventing consensus from erasing knowledge of nearby competitor speech.
    - If another speaker speaks within `handoff_risk_distance_s` (default 0.80s), an inward safety collar is shaved.
-   - If the turn transitions into natural silence, inward shaving is suspended and a `silence_tail_buffer_s` (default +0.027s) is granted to preserve delicate syllable codas and trailing phonemes.
-2. **Forced Alignment Syllable Lock (`enable_syllable_alignment`):**
+   - If the turn transitions into natural silence, inward shaving is suspended and a `silence_tail_buffer_s` (default +0.027s) is granted to preserve delicate syllable codas and trailing phonemes, strictly capped so it cannot encroach within 50ms of any competitor speech.
+2. **Micro-Acoustic Energy Valley Snapping (`enable_energy_snapping`):**
+   - Analyzes waveform energy in a `±energy_search_window_s` (default ±150ms) window with 2ms hop.
+   - Snaps the collar boundary timestamp to a nearby local energy minimum and then to a zero crossing. Clamped to consensus and competitor bounds.
+   - Runs **before** forced alignment as an acoustic candidate refinement.
+3. **Forced Alignment Syllable Lock (`enable_syllable_alignment`) [Final Boundary Authority]:**
    - Utilizes `whisper_timestamped` with fine-tuned checkpoints such as `vinai/PhoWhisper-small` (or PyTorch MMS-FA / remote Whisper endpoints).
    - Snaps candidate boundaries outward to word/syllable bounds, preventing slicing through active syllables.
+   - Acts as the final authority on turn boundaries: overrides previous acoustic cuts so words are never clipped in half ("không bị lẹm chữ").
    - Automatically pre-configures PyTorch Hub non-interactively to trust Silero VAD (`snakers4/silero-vad`), with graceful fallback to `vad=False` if network/download hurdles occur.
    - Transparently recovers from CUDA OOM errors by clearing VRAM cache and retrying on CPU.
-3. **Micro-Acoustic Energy Valley Snapping (`enable_energy_snapping`):**
-   - Analyzes waveform energy in a `±energy_search_window_s` (default ±150ms) window with 2ms hop.
-   - Snaps the boundary timestamp to a nearby local energy minimum and then to a zero crossing. The current implementation does not enforce `energy_valley_floor_db`; changing that value currently has no effect.
-   - Runs **after** forced alignment. Leave it disabled when word completeness is the overriding goal because its bidirectional search can move a word-locked boundary inward.
 
 ### Stage 4: Dense Sliding WeSpeaker Homogeneity Filter
 When `enable_homogeneity=True`, slides short sub-windows (`homogeneity_window_s=1.0s`, `hop_s=0.25s`) across each candidate turn using `pyannote/wespeaker-voxceleb-resnet34-LM`.
@@ -189,12 +192,9 @@ When `enable_homogeneity=True`, slides short sub-windows (`homogeneity_window_s=
 - Drops any turn where similarity dips below `min_homogeneity_similarity` (default `0.75`), catching subtle unsegmented speaker handoffs.
 
 ### Stage 5: In-Loop Foundation Model Verification
-Candidate turns passing acoustic gates are verified by multimodal foundation models:
-- **Microsoft VibeVoice-ASR:** Detects secondary speech duration across full clip context. Drops turns if secondary speech exceeds `max_secondary_speech_s` (default `0.0s`).
-- **Direct-Audio Quality Verifier:** Sends candidate audio directly to local
-  Gemma 4 or Google Gemini. It rejects a second speaker (simultaneous or
-  sequential), clipped initial/final speech (“lẹm chữ”), tail intrusions, uncertainty,
-  and request/schema failures. It does not transcribe.
+Candidate turns passing acoustic gates are verified by multimodal foundation models in order of compute cost:
+1. **Microsoft VibeVoice-ASR (Fast/Cheap Speaker Gate):** Detects secondary speech duration across full clip context. Drops turns if secondary speech exceeds `max_secondary_speech_s` (default `0.0s`). Turns failing VibeVoice are rejected immediately without calling external LLMs.
+2. **Direct-Audio Quality Verifier (Semantic & Completeness Auditor):** Sends surviving candidate audio directly to local Gemma 4 or Google Gemini. It rejects a second speaker (simultaneous or sequential), clipped initial/final speech (“lẹm chữ”), tail intrusions, uncertainty, and request/schema failures. It does not transcribe.
 
   #### Prompt Steering & Structured Output Extraction:
   - **Structured JSON Schema Extraction:** The verifier does not rely on regex or loose text generation. For Gemini, it enforces `generationConfig.responseMimeType` plus `responseJsonSchema` (`_OVERLAP_SCHEMA`). For Gemma 4 (Unsloth), it enforces `response_format: {"type": "json_schema", "strict": True}`. Both constrain model token sampling to guaranteed valid JSON matching `_OVERLAP_SCHEMA`.
@@ -296,6 +296,12 @@ class ZeroContaminationConfig:
     energy_frame_len_ms: float = 2.0
     energy_hop_len_ms: float = 0.5
 
+    # Stage 3d: Option D - Intelligent Turn Segmentation (OFF by default)
+    enable_smart_segmentation: bool = False
+    target_max_duration_s: float = 10.0
+    target_min_duration_s: float = 3.0
+    min_split_pause_s: float = 0.20
+
     # Stage 4: Dense WeSpeaker Homogeneity (OFF by default)
     enable_homogeneity: bool = False
     homogeneity_device: str | None = "same"  # "same", "cuda:0", "cpu"
@@ -396,6 +402,22 @@ destroying aligned words.
 | **`energy_hop_len_ms`** | `float` `[0.1, 5.0 ms]` | `0.5 ms` | Faster search stride with fewer frame RMS calculations. | Dense sub-millisecond stride locating exact troughs prior to zero-crossing search. | **Search Latency vs. Valley Precision.** |
 | **`energy_valley_floor_db`** | `float` `[-80.0, -10.0 dB]` | `-30.0 dB` | Intended RMS acceptance threshold. | Intended stricter silence requirement. | **Currently not enforced; changing this value does not affect output.** |
 
+#### Stage 3d: Option D — Intelligent Turn Segmentation (TTS Sentence Sizing)
+
+This step cuts overly long speaker monologues into TTS-optimal chunks (3–10s) before downstream homogeneity and foundation model verification.
+
+Why this is critical for TTS datasets:
+- **Downstream Audits:** If a 60-second monologue has a 0.5s cough or secondary blip at second 58, downstream Stage 4/5 will discard all 60 seconds. Sizing into 3–10s chunks ensures clean sentences are retained.
+- **Model Training:** Acoustic TTS tokenizers and diffusion vocoders require short, well-bounded utterances (typically 3–12s) to prevent GPU out-of-memory errors and attention alignment failure.
+- **Natural Boundary Selection:** When ASR word timestamps are available (via Stage 3b or internal Whisper/PhoWhisper pass), splits prioritize sentence boundaries (`.`, `!`, `?`), clause boundaries (`,`, `;`), and inter-word silence pauses $\ge$ `min_split_pause_s`. If ASR is unavailable, it gracefully falls back to micro-acoustic RMS silence valleys. All cut points snap to the nearest waveform zero-crossing to prevent click artifacts.
+
+| Parameter | Type & Range | Default | Increasing (+) Value | Decreasing (-) Value | The Core Trade-off |
+|---|---|---|---|---|---|
+| **`enable_smart_segmentation`** | `bool` `{True, False}` | `False` | Enables intelligent ASR pause- and punctuation-guided slicing of turns $> \text{target\_max\_duration\_s}$. | Keeps turns intact regardless of length. | **TTS Utterance Quality & Audit Yield vs. Complete Monologue Continuity.** |
+| **`target_max_duration_s`** | `float` `[3.0, 60.0s]` | `10.0s` | Permits longer sentences before splitting (e.g. 15s for conversational podcasts). | Enforces tighter sentence slicing (e.g. 5–8s for single-sentence TTS training). | **Sentence Context & Completeness vs. Audio Tokenizer VRAM Limits.** |
+| **`target_min_duration_s`** | `float` `[1.0, 10.0s]` | `3.0s` | Enforces longer minimum chunk lengths; prevents over-segmentation into tiny fragments. | Allows shorter 1–2s isolated words/phrases to be retained. | **Chunk Substance vs. Short Phrase Retention.** |
+| **`min_split_pause_s`** | `float` `[0.05, 1.0s]` | `0.20s` (200ms) | Requires wider natural pauses between words before choosing a split point. | Slices at subtle pauses (e.g. 100ms), increasing opportunities to split long run-on speech. | **Split Point Naturalness vs. Run-On Sentence Division.** |
+
 #### Stage 4: Dense Sliding WeSpeaker Homogeneity Filter
 
 | Parameter | Type & Range | Default | Increasing (+) Value | Decreasing (-) Value | The Core Trade-off |
@@ -443,6 +465,9 @@ config = ZeroContaminationConfig(
     enable_syllable_alignment=True,      # Syllable lock via PhoWhisper
     aligner_model="vinai/PhoWhisper-small",
     aligner_device="cpu",
+    enable_smart_segmentation=True,      # Slice long turns into 3–10s TTS training utterances
+    target_max_duration_s=10.0,
+    target_min_duration_s=3.0,
     enable_homogeneity=True,             # WeSpeaker sliding window check
     min_homogeneity_similarity=0.78,
     enable_vibevoice=True,
@@ -508,6 +533,7 @@ config = ZeroContaminationConfig(
 | `funnel_stats` | `dict` | Step-by-step attrition metrics (turn counts and retained duration) across Primary, Consensus, Collar Erosion, Homogeneity, and Foundation Model stages. |
 | `foundation_audits` | `list[dict]` | Per-turn foundation model audit logs (Gemma 4 / VibeVoice decisions, token usage, and cost). |
 | `boundary_audits` | `list[dict]` | Boundary refinement metadata for each turn across context collar, syllable alignment, and energy snapping. |
+| `segment_audits` | `list[dict]` | Sizing audit records detailing parent turn intervals, split cut points, and target TTS chunk count. |
 | `stage_log` | `list[str]` | Monotonic log with timestamps for each completed processing phase. |
 | `config` | `dict` | Serialized configuration used during execution. |
 

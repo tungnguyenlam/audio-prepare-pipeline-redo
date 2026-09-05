@@ -2118,6 +2118,12 @@
                     <option value="">-- Select Diarization Result --</option>
                   </select>
                 </div>
+                <div class="form-group mb-0 flex-1" id="lbl-audio-select-group" style="display: none;">
+                  <label class="form-label" for="lbl-audio-select">Audition Audio Stem / Track:</label>
+                  <select id="lbl-audio-select" class="select-input font-mono">
+                    <option value="">-- Default Source Audio --</option>
+                  </select>
+                </div>
               </div>
               <!-- Source Audio Info Preview Pill -->
               <div id="lbl-source-info-bar"></div>
@@ -2817,7 +2823,7 @@
                       Use <strong>Whisper-Timestamped + PhoWhisper Large + Vietnamese</strong> to spend more compute on complete recognized-word boundaries.
                       Stage 1 thresholds and collar/tail values also affect clipping, but do not add model compute.
                       Consensus, WeSpeaker, Gemma, and VibeVoice spend compute on speaker purity, not word repair.
-                      Keep Option C energy snapping off when word completeness is the priority because it runs after word lock and can move a protected boundary inward.
+                      Energy snapping runs before word lock to refine cut points to silent valleys, while Word Lock acts as the final boundary authority to prevent clipping recognized words.
                     </p>
                   </div>
                   <div class="form-row">
@@ -2914,9 +2920,9 @@
                       <div>
                         <div class="exp-completeness-title-row">
                           <strong>Option B: Syllable &amp; Word Forced Alignment Lock</strong>
-                          <span class="exp-compute-badge">PRIMARY COMPUTE TRADE-OFF</span>
+                          <span class="exp-compute-badge">FINAL BOUNDARY AUTHORITY</span>
                         </div>
-                        <small class="purity-overlap-lead"><strong>This is the setting for “không bị lẹm chữ.”</strong> It spends ASR compute to move cuts out of recognized words and syllable codas.</small>
+                        <small class="purity-overlap-lead"><strong>This is the setting for “không bị lẹm chữ.”</strong> It spends ASR compute to move cuts out of recognized words and syllable codas, locking the final boundaries.</small>
                       </div>
                       <label class="toggle-switch-wrap exp-completeness-toggle" title="Enable the compute-heavy word-boundary alignment pass.">
                         <input type="checkbox" id="exp-enable-syllable-align">
@@ -2985,8 +2991,8 @@
                     <div class="purity-overlap-header" style="margin-bottom: 6px;">
                       <div>
                         <strong>Option C: Micro-Acoustic Energy &amp; RMS Valley Snapping</strong>
-                        <span class="exp-boundary-warning">Not a word-completeness model</span>
-                        <small class="purity-overlap-lead">Runs after Option B. It reduces cut clicks, but its bidirectional search can move a word-locked boundary inward.</small>
+                        <span class="exp-boundary-warning">Acoustic Refinement</span>
+                        <small class="purity-overlap-lead">Refines cut points to local RMS valleys before Word Lock. Word Lock (Option B) acts as the final boundary authority to protect words.</small>
                       </div>
                       <label class="toggle-switch-wrap" title="Micro-Acoustic Energy Snapping [Default: Disabled]&#10;• Enabled: Walks boundaries to the nearest vocal cord closure zero-crossing / RMS silence trough, eliminating cutting clicks and waveform pops.&#10;• Disabled: Cuts at collar timestamps without micro-waveform alignment.">
                         <input type="checkbox" id="exp-enable-energy-snapping">
@@ -3048,6 +3054,66 @@
                             </div>
                           </div>
                           <input type="range" id="exp-energy-floor" class="slider-input exp-slider" min="-70" max="-10" step="0.5" value="-30" disabled aria-disabled="true" title="Currently inactive: changing this value does not affect output.">
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Option D: Intelligent TTS Turn Segmentation -->
+                  <div class="purity-overlap-panel exp-segmentation-panel" style="margin-top: 8px; padding: 10px 12px;">
+                    <div class="purity-overlap-header" style="margin-bottom: 6px;">
+                      <div>
+                        <strong>Option D: Intelligent Turn Segmentation (TTS Sentence Sizing)</strong>
+                        <span class="exp-compute-badge">PREVENTS RUN-ON TURNS</span>
+                        <small class="purity-overlap-lead">Wisely splits long monologue turns (&gt;10s) at ASR sentence boundaries, punctuation, and natural pauses into TTS-optimal chunks without cutting mid-word.</small>
+                      </div>
+                      <label class="toggle-switch-wrap" title="Smart Turn Segmentation [Default: Disabled]&#10;• Enabled: Uses Whisper ASR word boundaries, punctuation, and breathing pauses to split long continuous turns into sentence-sized training clips (e.g. 3–10s). Snaps cut points to silence zero-crossings.&#10;• Disabled: Emits undivided turns regardless of duration.">
+                        <input type="checkbox" id="exp-enable-smart-segmentation">
+                        <span>Enable</span>
+                      </label>
+                    </div>
+                    <div id="exp-smart-segmentation-fields" style="display: none;">
+                      <div class="form-row">
+                        <div class="form-group col-half mb-0">
+                          <div class="exp-param-header">
+                            <label class="form-label" for="exp-target-max-dur" title="Target Max Duration [3.0 – 30.0s, Default: 10.0s]&#10;• Turns longer than this duration will be wisely segmented at punctuation and silence pauses into sentence-level units.">Max Target Length (s)</label>
+                            <div class="exp-param-ctrl">
+                              <div class="exp-num-input-wrap" title="Target Max Duration">
+                                <input type="number" id="exp-target-max-dur-num" class="exp-num-input" min="3.0" max="30.0" step="0.5" value="10.0" title="Max Target Duration [3.0 – 30.0s, Default: 10.0s]">
+                                <span class="exp-num-unit">s</span>
+                              </div>
+                              <span class="badge badge-sm badge-accent" id="exp-target-max-dur-val">10.0s</span>
+                            </div>
+                          </div>
+                          <input type="range" id="exp-target-max-dur" class="slider-input exp-slider" min="3.0" max="30.0" step="0.5" value="10.0" title="Target Max Duration [3.0 – 30.0s, Default: 10.0s]">
+                        </div>
+                        <div class="form-group col-half mb-0">
+                          <div class="exp-param-header">
+                            <label class="form-label" for="exp-target-min-dur" title="Target Min Duration [1.0 – 10.0s, Default: 3.0s]&#10;• Minimum preferred duration for resulting sub-turns; prevents over-fragmentation into single words.">Min Target Length (s)</label>
+                            <div class="exp-param-ctrl">
+                              <div class="exp-num-input-wrap" title="Target Min Duration">
+                                <input type="number" id="exp-target-min-dur-num" class="exp-num-input" min="1.0" max="10.0" step="0.5" value="3.0" title="Min Target Duration [1.0 – 10.0s, Default: 3.0s]">
+                                <span class="exp-num-unit">s</span>
+                              </div>
+                              <span class="badge badge-sm badge-accent" id="exp-target-min-dur-val">3.0s</span>
+                            </div>
+                          </div>
+                          <input type="range" id="exp-target-min-dur" class="slider-input exp-slider" min="1.0" max="10.0" step="0.5" value="3.0" title="Target Min Duration [1.0 – 10.0s, Default: 3.0s]">
+                        </div>
+                      </div>
+                      <div class="form-row mt-2">
+                        <div class="form-group col-half mb-0">
+                          <div class="exp-param-header">
+                            <label class="form-label" for="exp-min-split-pause" title="Minimum Split Pause [0.05 – 1.00s, Default: 0.20s]&#10;• Silence duration between words required to consider a natural breath/pause split point.">Min Split Pause (s)</label>
+                            <div class="exp-param-ctrl">
+                              <div class="exp-num-input-wrap" title="Min Split Pause [0.05 – 1.00s, Default: 0.20s]">
+                                <input type="number" id="exp-min-split-pause-num" class="exp-num-input" min="0.05" max="1.00" step="0.05" value="0.20" title="Min Split Pause [0.05 – 1.00s, Default: 0.20s]">
+                                <span class="exp-num-unit">s</span>
+                              </div>
+                              <span class="badge badge-sm badge-accent" id="exp-min-split-pause-val">0.20s</span>
+                            </div>
+                          </div>
+                          <input type="range" id="exp-min-split-pause" class="slider-input exp-slider" min="0.05" max="1.00" step="0.05" value="0.20" title="Min Split Pause [0.05 – 1.00s, Default: 0.20s]">
                         </div>
                       </div>
                     </div>

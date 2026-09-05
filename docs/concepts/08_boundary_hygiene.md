@@ -35,19 +35,19 @@ flowchart LR
 
 ## 2. Context-aware collar: shave near people, extend into silence
 
-`apply_context_aware_collar` looks at *what surrounds* the edge:
+`apply_context_aware_collar` looks at *what surrounds* the edge using the unified **Competitor Evidence Pool** (`primary_turns ∪ secondary_turns`), ensuring that consensus filtering cannot hide a nearby rival speaker:
 
 ```mermaid
 flowchart TD
-    EDGE["Turn edge"] --> NEAR{"Other speaker within handoff_risk_distance (0.80 s)?"}
+    EDGE["Turn edge"] --> NEAR{"Other speaker in Competitor Evidence Pool within handoff_risk_distance (0.80 s)?"}
     NEAR -->|yes| SHAVE["Shave inward: handoff likely, bleed risk"]
-    NEAR -->|no, silence| EXTEND["Grant silence_tail_buffer (+0.027 s): rescue codas/reverb"]
+    NEAR -->|no, silence| EXTEND["Grant silence_tail_buffer (+0.027 s): rescue codas/reverb (capped before rival)"]
 ```
 
-**Worked example.** Turn ends 5.40; next speaker starts 5.70 (0.30 < 0.80) →
+**Worked example.** Turn ends 5.40; next speaker starts 5.70 (0.30 < 0.80) in either Primary or Secondary diarization →
 shave to ~5.05. Same turn ending into 3 s of silence → extend to 5.55, keeping
 the `-ng` resonance. Vietnamese codas survive exactly because of the second
-branch.
+branch, while competitor bleed is eliminated even if consensus dropped the following turn.
 
 ## 3. Pre/post-roll with blockers (cutting for export)
 
@@ -79,8 +79,7 @@ flowchart TD
 ```
 
 Cutting at a vibration peak leaves a discontinuity the ear hears as a click;
-cutting at zero is inaudible. Guaranteed local-minimum search; whether a click
-*was* audible is empirical.
+cutting at zero is inaudible. In the zero-contamination pipeline, energy snapping runs *before* Word Alignment Lock: it provides acoustic refinement near collars, while Word Alignment Lock acts as the final boundary authority to guarantee complete recognized words.
 
 ## 5. Jitter, merging, dropping (light cleanup)
 

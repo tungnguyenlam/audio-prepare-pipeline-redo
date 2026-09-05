@@ -579,6 +579,34 @@ class LabelerRouteHandler:
 
         draft = _load_draft_labels(result_id)
 
+        # Resolve matched studio registry audio item and check for clean separated stems
+        matched_audio_id = None
+        available_stems = []
+        if self.registry:
+            cand = self.registry.get_audio(result.audio_id)
+            if not cand and result.source_audio:
+                cand = self.registry.get_audio(result.source_audio.source_id)
+            if not cand and source_path:
+                cand_id = self.registry.find_id_by_path(source_path)
+                if cand_id:
+                    cand = self.registry.get_audio(cand_id)
+            if cand:
+                matched_audio_id = self.registry.find_id_by_path(cand.path)
+                # Look for child stems (e.g. vocals)
+                if matched_audio_id:
+                    for it_id, it in getattr(self.registry, "_items", {}).items():
+                        if it.get("parent_id") == matched_audio_id:
+                            m_info = it.get("model_info") or {}
+                            c_tags = it.get("custom_tags") or []
+                            is_vocals = m_info.get("stem") == "vocals" or "vocals" in c_tags
+                            available_stems.append({
+                                "id": it_id,
+                                "title": it["audio"].title or it["audio"].source_id or it_id,
+                                "stem": m_info.get("stem", "stem"),
+                                "is_vocals": is_vocals,
+                                "sample_rate": it["audio"].sample_rate,
+                            })
+
         source_info = None
         if result.source_audio:
             source_info = {
@@ -593,7 +621,9 @@ class LabelerRouteHandler:
 
         return web.json_response({
             "result_id": result.result_id,
-            "audio_id": result.audio_id,
+            "audio_id": matched_audio_id or result.audio_id,
+            "registry_audio_id": matched_audio_id,
+            "available_stems": available_stems,
             "schema_version": result.schema_version,
             "created_at": result.created_at,
             "speakers": [s.speaker_id for s in result.speakers],
@@ -630,6 +660,7 @@ class LabelerRouteHandler:
     async def handle_preview_turn_audio(self, request: web.Request) -> web.StreamResponse:
         """Cut and stream audio for one turn on-demand."""
         result_id = request.match_info["result_id"]
+        req_audio_id = request.query.get("audio_id")
         try:
             turn_index = int(request.match_info["turn_index"])
         except ValueError:
@@ -647,12 +678,22 @@ class LabelerRouteHandler:
         except Exception as exc:
             return web.Response(text=f"Failed loading turn: {exc}", status=400)
 
-        source_path = _source_audio_path(result)
-        if source_path is None or not source_path.is_file():
-            return web.Response(text="Source audio file is not available on disk", status=404)
+        # Select audio source: preferred from registry (e.g. vocal stem), falling back to source_audio
+        cut_source = None
+        if req_audio_id and self.registry:
+            cand = self.registry.get_audio(req_audio_id)
+            if cand and Path(cand.path).is_file():
+                cut_source = cand
+
+        if cut_source is None:
+            source_path = _source_audio_path(result)
+            if source_path is None or not source_path.is_file():
+                return web.Response(text="Source audio file is not available on disk", status=404)
+            cut_source = result.source_audio
 
         # Cache preview cut under DIARIZATION_PREVIEW_DIR
-        preview_dir = DIARIZATION_PREVIEW_DIR / _sanitize_name(result.result_id)
+        source_key = _sanitize_name(getattr(cut_source, "source_id", "source"))
+        preview_dir = DIARIZATION_PREVIEW_DIR / _sanitize_name(result.result_id) / source_key
         preview_dir.mkdir(parents=True, exist_ok=True)
         preview_file = preview_dir / f"turn_{turn_index:06d}.wav"
 
@@ -661,7 +702,7 @@ class LabelerRouteHandler:
             try:
                 await asyncio.to_thread(
                     cutter.cut,
-                    result.source_audio,
+                    cut_source,
                     turn.start_s,
                     turn.end_s,
                     output_path=preview_file,
@@ -670,7 +711,13 @@ class LabelerRouteHandler:
                 logger.exception("Failed cutting turn audio preview")
                 return web.Response(text=f"Could not extract audio turn: {exc}", status=500)
 
-        return web.FileResponse(preview_file)
+        headers = {
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "no-cache",
+            "Content-Disposition": f'inline; filename="{preview_file.name}"',
+            "Content-Type": "audio/wav",
+        }
+        return web.FileResponse(preview_file, headers=headers)
 
     async def handle_export_dataset(self, request: web.Request) -> web.Response:
         """Export physically independent audio samples and train/val/test splits."""

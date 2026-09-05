@@ -17,6 +17,7 @@
 
   const state = {
     activeResultId: null,
+    activeAudioId: null,
     resultData: null,
     labels: {}, // { [turnIndex]: { label, tags, notes } }
     activeTurnIndex: 0,
@@ -45,6 +46,8 @@
     dom = {
       tabPane: document.getElementById('tab-labeler'),
       resultSelect: document.getElementById('lbl-result-select'),
+      audioSelectGroup: document.getElementById('lbl-audio-select-group'),
+      audioSelect: document.getElementById('lbl-audio-select'),
       btnReloadResults: document.getElementById('btn-lbl-reload-results'),
       btnSaveDraft: document.getElementById('btn-lbl-save-draft'),
       saveIndicator: document.getElementById('lbl-save-indicator'),
@@ -227,6 +230,62 @@
         dom.speakerSelect.appendChild(opt);
       });
 
+      // Populate audition audio track / stem selector
+      let hasVocals = false;
+      if (dom.audioSelect && dom.audioSelectGroup) {
+        dom.audioSelect.innerHTML = '';
+        const stems = Array.isArray(data.available_stems) ? data.available_stems : [];
+        const globalList = (window.state && Array.isArray(window.state.audioList)) ? window.state.audioList : [];
+        const registeredId = data.registry_audio_id || data.audio_id;
+        let bestSelectionId = registeredId || '';
+
+        // Add primary / source audio option
+        const primaryOpt = document.createElement('option');
+        primaryOpt.value = registeredId || '';
+        const srcTitle = data.source_audio?.title || data.audio_id || 'Original Source';
+        primaryOpt.textContent = `[Source Audio] ${srcTitle}`;
+        dom.audioSelect.appendChild(primaryOpt);
+
+        // Add backend-resolved stems (e.g. from MelRoFormer / HTDemucs)
+        stems.forEach(stem => {
+          const opt = document.createElement('option');
+          opt.value = stem.id;
+          if (stem.is_vocals) {
+            opt.textContent = `🎙️ [Vocals Stem - Clear] ${stem.title}`;
+            if (!hasVocals) {
+              bestSelectionId = stem.id;
+              hasVocals = true;
+            }
+          } else {
+            opt.textContent = `[${(stem.stem || 'stem').toUpperCase()}] ${stem.title}`;
+          }
+          dom.audioSelect.appendChild(opt);
+        });
+
+        // Also check global Studio audioList for child vocal stems
+        globalList.forEach(item => {
+          if (item.parent_id === registeredId && !stems.some(s => s.id === item.id)) {
+            const isVoc = (item.custom_tags || []).includes('vocals') || item.model_info?.stem === 'vocals';
+            const opt = document.createElement('option');
+            opt.value = item.id;
+            if (isVoc) {
+              opt.textContent = `🎙️ [Vocals Stem - Clear] ${item.title || item.source_id}`;
+              if (!hasVocals) {
+                bestSelectionId = item.id;
+                hasVocals = true;
+              }
+            } else {
+              opt.textContent = `[Stem] ${item.title || item.source_id}`;
+            }
+            dom.audioSelect.appendChild(opt);
+          }
+        });
+
+        dom.audioSelect.value = bestSelectionId;
+        state.activeAudioId = bestSelectionId;
+        dom.audioSelectGroup.style.display = dom.audioSelect.options.length > 1 ? 'block' : 'none';
+      }
+
       // Update source info bar
       const src = data.source_audio || {};
       dom.sourceInfoBar.innerHTML = `
@@ -234,10 +293,11 @@
           <div class="lbl-source-preview-left">
             <span class="lbl-source-icon">🎵</span>
             <span class="badge badge-sm font-mono badge-accent">${data.audio_id}</span>
+            <span class="badge badge-sm ${hasVocals ? 'badge-success' : 'badge-outline'} font-mono">${hasVocals ? '🎙️ Vocals Stem (Clear)' : 'Source Audio'}</span>
             <span class="text-xs text-secondary font-mono">${data.turn_count} turns · ${formatDuration(src.duration_s || 0)} · ${src.sample_rate || 44100} Hz</span>
           </div>
           <div class="lbl-source-preview-right">
-            ${data.source_available ? '<span class="badge badge-sm badge-success">✓ Source Audio Stream Ready</span>' : '<span class="badge badge-sm badge-danger">⚠️ Audio Missing on Disk</span>'}
+            ${data.source_available ? '<span class="badge badge-sm badge-success">✓ Segment Stream Ready</span>' : '<span class="badge badge-sm badge-danger">⚠️ Audio Missing on Disk</span>'}
           </div>
         </div>
       `;
@@ -626,40 +686,93 @@
 
   // Audio Playback
   function togglePlayTurn(turnIndex) {
-    if (state.playingTurnIndex === turnIndex && !state.audioPlayer.paused) {
-      pauseAudio();
+    const isCurrentlyPlaying = (state.playingTurnIndex === turnIndex) && (
+      (window.SoundPreviewPlayer && window.SoundPreviewPlayer.isPlaying()) ||
+      (!state.audioPlayer.paused)
+    );
+    if (isCurrentlyPlaying) {
+      stopAudio();
     } else {
       playTurn(turnIndex);
     }
   }
 
-  function playTurn(turnIndex) {
+  async function playTurn(turnIndex) {
     if (!state.activeResultId) return;
     stopAudio();
 
-    const turn = state.resultData.turns[turnIndex];
+    const turn = state.resultData?.turns?.[turnIndex];
     if (!turn) return;
 
     setActiveTurn(turnIndex, false);
 
-    const url = `/api/labeler/results/${encodeURIComponent(state.activeResultId)}/turns/${turnIndex}/audio`;
-    state.playingTurnIndex = turnIndex;
-    state.audioPlayer.src = url;
-    state.audioPlayer.play().catch(err => {
-      console.warn('Playback interrupted or failed:', err);
-    });
-
     const card = document.getElementById(`lbl-card-${turnIndex}`);
-    if (card) {
-      const playBtn = card.querySelector('.lbl-play-btn');
-      if (playBtn) {
-        playBtn.classList.add('playing');
-        playBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>';
+    const playBtn = card ? card.querySelector('.lbl-play-btn') : null;
+    if (playBtn) {
+      playBtn.classList.add('playing');
+      playBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>';
+    }
+
+    state.playingTurnIndex = turnIndex;
+
+    const audioId = dom.audioSelect?.value || state.activeAudioId || state.resultData?.audio_id || null;
+
+    if (window.SoundPreviewPlayer) {
+      try {
+        const playOpts = {
+          start: turn.start_s,
+          end: turn.end_s,
+          onEnded: () => {
+            stopAudio();
+            if (state.autoPlayNext) {
+              const nextIdx = getNextVisibleTurnIndex(turnIndex);
+              if (nextIdx !== null) playTurn(nextIdx);
+            }
+          },
+          onError: (err) => {
+            console.warn('Turn playback error:', err);
+            stopAudio();
+            if (window.showToast) window.showToast('Unable to play turn audio segment', 'error');
+          },
+          onTimeUpdate: (cur, dur) => {
+            const ratio = dur > 0 ? (cur / dur) * 100 : 0;
+            const prog = document.getElementById(`lbl-progress-${turnIndex}`);
+            if (prog) prog.style.width = `${Math.min(100, Math.max(0, ratio))}%`;
+            const timeEl = document.getElementById(`lbl-time-${turnIndex}`);
+            if (timeEl) timeEl.textContent = `${formatTime(cur)} / ${formatTime(dur || turn.duration_s)}`;
+          }
+        };
+
+        if (audioId) {
+          playOpts.audioId = audioId;
+        } else {
+          playOpts.url = `/api/labeler/results/${encodeURIComponent(state.activeResultId)}/turns/${turnIndex}/audio`;
+        }
+
+        await window.SoundPreviewPlayer.play(playOpts);
+      } catch (err) {
+        console.warn('Playback interrupted or failed:', err);
+        stopAudio();
       }
+    } else {
+      const url = audioId
+        ? `/api/labeler/results/${encodeURIComponent(state.activeResultId)}/turns/${turnIndex}/audio?audio_id=${encodeURIComponent(audioId)}`
+        : `/api/labeler/results/${encodeURIComponent(state.activeResultId)}/turns/${turnIndex}/audio`;
+      state.audioPlayer.src = url;
+      state.audioPlayer.play().catch(err => {
+        console.warn('Playback interrupted or failed:', err);
+      });
     }
   }
 
   function pauseAudio() {
+    stopAudio();
+  }
+
+  function stopAudio() {
+    if (window.SoundPreviewPlayer) {
+      window.SoundPreviewPlayer.stop();
+    }
     state.audioPlayer.pause();
     if (state.playingTurnIndex !== null) {
       const card = document.getElementById(`lbl-card-${state.playingTurnIndex}`);
@@ -670,19 +783,13 @@
           playBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
         }
       }
-    }
-  }
-
-  function stopAudio() {
-    pauseAudio();
-    if (state.playingTurnIndex !== null) {
       const prog = document.getElementById(`lbl-progress-${state.playingTurnIndex}`);
       if (prog) prog.style.width = '0%';
     }
     state.playingTurnIndex = null;
   }
 
-  // Audio Player Event Listeners
+  // Audio Player Event Listeners (Fallback)
   state.audioPlayer.addEventListener('timeupdate', () => {
     if (state.playingTurnIndex === null) return;
     const dur = state.audioPlayer.duration || (state.resultData.turns[state.playingTurnIndex]?.duration_s) || 1;
@@ -698,6 +805,10 @@
 
   state.audioPlayer.addEventListener('ended', () => {
     stopAudio();
+    if (state.autoPlayNext && state.playingTurnIndex !== null) {
+      const nextIdx = getNextVisibleTurnIndex(state.playingTurnIndex);
+      if (nextIdx !== null) playTurn(nextIdx);
+    }
   });
 
   // Autosave Draft
@@ -1593,6 +1704,15 @@
 
     dom.resultSelect?.addEventListener('change', (e) => {
       loadSession(e.target.value);
+    });
+
+    dom.audioSelect?.addEventListener('change', (e) => {
+      state.activeAudioId = e.target.value;
+      stopAudio();
+      if (window.showToast) {
+        const text = e.target.options[e.target.selectedIndex]?.text || e.target.value;
+        window.showToast(`Auditioning via ${text}`, 'info');
+      }
     });
 
     dom.btnReloadResults?.addEventListener('click', () => {

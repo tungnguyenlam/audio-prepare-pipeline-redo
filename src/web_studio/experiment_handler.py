@@ -39,8 +39,11 @@ from src.diarization.zero_contamination import (
     DEFAULT_HOMOGENEITY_HOP_S,
     DEFAULT_HOMOGENEITY_WINDOW_S,
     DEFAULT_MIN_HOMOGENEITY_SIMILARITY,
+    DEFAULT_MIN_SPLIT_PAUSE_S,
     DEFAULT_MIN_TURN_DURATION_S,
     DEFAULT_SILENCE_TAIL_BUFFER_S,
+    DEFAULT_TARGET_MAX_DURATION_S,
+    DEFAULT_TARGET_MIN_DURATION_S,
     DEFAULT_TARGET_OFFSET,
     DEFAULT_TARGET_ONSET,
     DEFAULT_TRANSITION_EXCLUSION_S,
@@ -125,6 +128,11 @@ class ExperimentRouteHandler:
             "energy_valley_floor_db": DEFAULT_ENERGY_VALLEY_FLOOR_DB,
             "energy_frame_len_ms": DEFAULT_ENERGY_FRAME_LEN_MS,
             "energy_hop_len_ms": DEFAULT_ENERGY_HOP_LEN_MS,
+            # Smart Segmentation
+            "enable_smart_segmentation": False,
+            "target_max_duration_s": DEFAULT_TARGET_MAX_DURATION_S,
+            "target_min_duration_s": DEFAULT_TARGET_MIN_DURATION_S,
+            "min_split_pause_s": DEFAULT_MIN_SPLIT_PAUSE_S,
             # Homogeneity
             "enable_homogeneity": False,
             "homogeneity_device": "same",
@@ -329,6 +337,11 @@ class ExperimentRouteHandler:
             aligner_language=body.get("aligner_language", "vi"),
             aligner_endpoint=body.get("aligner_endpoint") or None,
             aligner_device=aligner_device,
+            # Stage 3d: Smart Segmentation
+            enable_smart_segmentation=bool(body.get("enable_smart_segmentation", False)),
+            target_max_duration_s=float(body.get("target_max_duration_s", DEFAULT_TARGET_MAX_DURATION_S)),
+            target_min_duration_s=float(body.get("target_min_duration_s", DEFAULT_TARGET_MIN_DURATION_S)),
+            min_split_pause_s=float(body.get("min_split_pause_s", DEFAULT_MIN_SPLIT_PAUSE_S)),
             # Stage 4: Homogeneity
             enable_homogeneity=bool(body.get("enable_homogeneity", False)),
             homogeneity_device=homo_device,
@@ -358,19 +371,19 @@ class ExperimentRouteHandler:
         models_list = [f"{config.primary_backend} ({primary_device})"]
         if config.enable_consensus:
             models_list.append(f"{config.secondary_backend} ∩ ({secondary_device})")
+        if config.enable_energy_snapping:
+            models_list.append("RMS-Snap")
         if config.enable_syllable_alignment:
             eng_lbl = "Whisper-VI" if "whisper" in config.aligner_engine.lower() else "MMS-FA"
             models_list.append(f"{eng_lbl} ({aligner_device})")
-        if config.enable_energy_snapping:
-            models_list.append("RMS-Snap")
         if config.enable_homogeneity:
             models_list.append(f"WeSpeaker ({homo_device})")
+        if config.enable_vibevoice:
+            models_list.append(f"VibeVoice ({vibevoice_device})")
         if config.enable_gemma:
             models_list.append(
                 f"{config.gemma_model or config.gemma_backend} direct audio"
             )
-        if config.enable_vibevoice:
-            models_list.append(f"VibeVoice ({vibevoice_device})")
         model_display = " + ".join(models_list)
 
         task_id = self.task_manager.create_task(

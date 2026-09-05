@@ -194,6 +194,119 @@ turnPreviewAudio.addEventListener('error', () => {
   stopTurnPreview();
 });
 
+// Shared cross-tab sound preview component (Diarization, Experiment, Labeler)
+window.SoundPreviewPlayer = {
+  audio: new Audio(),
+  currentBlobUrl: null,
+  activeKey: null,
+  generation: 0,
+  stopCallbacks: new Set(),
+
+  async play({ audioId, start, end, filename = null, url = null, onEnded, onError, onTimeUpdate }) {
+    this.stop();
+    if (el?.audio && !el.audio.paused) el.audio.pause();
+    if (typeof stopTurnPreview === 'function') stopTurnPreview();
+    if (typeof stopPuritySegmentPreview === 'function') stopPuritySegmentPreview();
+
+    const gen = ++this.generation;
+    const key = `${audioId || url}:${start}:${end}`;
+    this.activeKey = key;
+
+    let blobUrl = null;
+    try {
+      let fetchUrl = url;
+      if (!fetchUrl && audioId) {
+        const params = new URLSearchParams({
+          start: String(start),
+          end: String(end),
+          inline: '1',
+        });
+        if (filename) params.set('filename', filename);
+        fetchUrl = `/api/audio/${encodeURIComponent(audioId)}/segment?${params.toString()}`;
+      }
+      if (!fetchUrl) throw new Error('No audioId or url provided');
+
+      const res = await fetch(fetchUrl);
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try {
+          const errJson = await res.json();
+          if (errJson.error) msg = errJson.error;
+        } catch (_) {}
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      if (gen !== this.generation) return;
+      blobUrl = URL.createObjectURL(blob);
+
+      this.currentBlobUrl = blobUrl;
+      const vol = typeof state !== 'undefined' && state?.player?.volume != null ? state.player.volume : 1;
+      const rate = typeof state !== 'undefined' && state?.player?.playbackRate != null ? state.player.playbackRate : 1;
+      this.audio.volume = vol;
+      this.audio.playbackRate = rate;
+      this.audio.src = blobUrl;
+
+      this.audio.onended = () => {
+        if (gen === this.generation) {
+          this.stop();
+          if (onEnded) onEnded();
+        }
+      };
+      this.audio.onerror = (e) => {
+        if (gen === this.generation) {
+          this.stop();
+          if (onError) onError(e);
+        }
+      };
+      this.audio.ontimeupdate = () => {
+        if (gen === this.generation && onTimeUpdate) {
+          onTimeUpdate(this.audio.currentTime, this.audio.duration);
+        }
+      };
+
+      await this.audio.play();
+      return gen;
+    } catch (err) {
+      if (gen === this.generation) {
+        this.stop();
+        if (onError) onError(err);
+        throw err;
+      }
+    }
+  },
+
+  stop() {
+    this.generation++;
+    this.activeKey = null;
+    this.audio.pause();
+    this.audio.onended = null;
+    this.audio.onerror = null;
+    this.audio.ontimeupdate = null;
+    this.audio.removeAttribute('src');
+    if (this.currentBlobUrl) {
+      URL.revokeObjectURL(this.currentBlobUrl);
+      this.currentBlobUrl = null;
+    }
+    this.stopCallbacks.forEach(cb => {
+      try { cb(); } catch (_) {}
+    });
+    this.stopCallbacks.clear();
+  },
+
+  onStop(cb) {
+    if (typeof cb === 'function') this.stopCallbacks.add(cb);
+  },
+
+  isPlaying(key) {
+    if (key) return this.activeKey === key && !this.audio.paused;
+    return !this.audio.paused;
+  },
+
+  getCurrentKey() {
+    return this.activeKey;
+  }
+};
+
 const TIMELINE_MAX_ZOOM = 1000;
 const TIMELINE_ZOOM_SLIDER_MAX = 1000;
 

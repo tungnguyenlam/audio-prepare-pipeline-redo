@@ -58,6 +58,10 @@ DEFAULT_ENERGY_VALLEY_FLOOR_DB = -30.0
 DEFAULT_ENERGY_FRAME_LEN_MS = 2.0
 DEFAULT_ENERGY_HOP_LEN_MS = 0.5
 
+DEFAULT_TARGET_MAX_DURATION_S = 10.0
+DEFAULT_TARGET_MIN_DURATION_S = 3.0
+DEFAULT_MIN_SPLIT_PAUSE_S = 0.20
+
 
 def _ensure_torch_hub_trusted() -> None:
     """Ensure torch.hub trusts known repositories non-interactively (e.g. Silero VAD)."""
@@ -156,6 +160,12 @@ class ZeroContaminationConfig:
     energy_frame_len_ms: float = DEFAULT_ENERGY_FRAME_LEN_MS
     energy_hop_len_ms: float = DEFAULT_ENERGY_HOP_LEN_MS
 
+    # Stage 3d: Option D - Intelligent ASR & Pause-Guided Turn Segmentation (TTS Sentence Sizing)
+    enable_smart_segmentation: bool = False
+    target_max_duration_s: float = DEFAULT_TARGET_MAX_DURATION_S
+    target_min_duration_s: float = DEFAULT_TARGET_MIN_DURATION_S
+    min_split_pause_s: float = DEFAULT_MIN_SPLIT_PAUSE_S
+
     # Stage 4: Dense Sliding-Window Embedding Homogeneity
     enable_homogeneity: bool = False
     homogeneity_device: str | None = "same"  # e.g. "same", "cuda:0", "cpu"
@@ -228,6 +238,7 @@ class ZeroContaminationResult:
     config: dict[str, Any] = field(default_factory=dict)
     foundation_audits: list[dict[str, Any]] = field(default_factory=list)
     boundary_audits: list[dict[str, Any]] = field(default_factory=list)
+    segment_audits: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         diar_dict = self.diarization.to_dict()
@@ -254,6 +265,7 @@ class ZeroContaminationResult:
             "config": self.config,
             "foundation_audits": self.foundation_audits,
             "boundary_audits": self.boundary_audits,
+            "segment_audits": self.segment_audits,
         })
 
 
@@ -353,11 +365,63 @@ def compute_consensus_turns(
     return merged_turns, prim_to_sec
 
 
+def _extract_competitor_intervals_by_speaker(
+    primary_turns: Sequence[SpeakerTurn],
+    secondary_turns: Sequence[SpeakerTurn] | None = None,
+    spk_map: dict[str, str] | None = None,
+) -> dict[str, list[tuple[float, float]]]:
+    """Extract competitor speech intervals for each primary speaker.
+
+    For speaker S (in primary speaker namespace), any speech from other speakers
+    detected by Primary OR Secondary is preserved as a competitor interval.
+    This guarantees that consensus does not destroy competitor evidence near boundaries.
+    """
+    all_speakers = sorted({t.speaker_id for t in primary_turns})
+    sec_to_prim = {sec: prim for prim, sec in (spk_map or {}).items()}
+
+    intervals_by_spk: dict[str, list[tuple[float, float]]] = {}
+
+    for s in all_speakers:
+        raw_intervals: list[tuple[float, float]] = []
+
+        # 1. Primary competitor turns (speaker != s)
+        for pt in primary_turns:
+            if pt.speaker_id != s and pt.end_s > pt.start_s:
+                raw_intervals.append((pt.start_s, pt.end_s))
+
+        # 2. Secondary competitor turns (mapped speaker != s or unmapped)
+        if secondary_turns:
+            for st in secondary_turns:
+                if st.end_s <= st.start_s:
+                    continue
+                mapped = sec_to_prim.get(st.speaker_id)
+                if mapped != s:
+                    raw_intervals.append((st.start_s, st.end_s))
+
+        if not raw_intervals:
+            intervals_by_spk[s] = []
+            continue
+
+        raw_intervals.sort(key=lambda x: x[0])
+        merged: list[tuple[float, float]] = [raw_intervals[0]]
+        for cur_s, cur_e in raw_intervals[1:]:
+            prev_s, prev_e = merged[-1]
+            if cur_s <= prev_e:
+                merged[-1] = (prev_s, max(prev_e, cur_e))
+            else:
+                merged.append((cur_s, cur_e))
+
+        intervals_by_spk[s] = merged
+
+    return intervals_by_spk
+
+
 def erode_turn_boundaries(
     turns: Sequence[SpeakerTurn],
     collar_s: float = DEFAULT_COLLAR_EROSION_S,
     min_duration_s: float = DEFAULT_MIN_TURN_DURATION_S,
     transition_exclusion_s: float = DEFAULT_TRANSITION_EXCLUSION_S,
+    competitor_intervals_by_speaker: dict[str, list[tuple[float, float]]] | None = None,
 ) -> list[SpeakerTurn]:
     """Shave inward margins from turn boundaries and excavate speaker transitions.
 
@@ -367,6 +431,8 @@ def erode_turn_boundaries(
         min_duration_s: Minimum surviving duration required.
         transition_exclusion_s: When different speakers change with gap smaller
             than this threshold, extra safety padding is excavated.
+        competitor_intervals_by_speaker: Pre-extracted competitor intervals per speaker
+            preserving raw evidence from primary and secondary diarizers.
 
     Returns:
         Eroded, boundary-safe single-speaker turns.
@@ -380,25 +446,48 @@ def erode_turn_boundaries(
     for index, turn in enumerate(sorted_turns):
         start = turn.start_s + collar_s
         end = turn.end_s - collar_s
+        spk = turn.speaker_id
+        comp_intervals = (
+            competitor_intervals_by_speaker.get(spk, [])
+            if competitor_intervals_by_speaker is not None
+            else None
+        )
 
-        # Transition guard: check distance to preceding speaker
+        # Transition guard: check distance to preceding competitor
+        closest_prev_gap = float("inf")
+        if comp_intervals is not None:
+            for c_s, c_e in comp_intervals:
+                if c_s < turn.start_s < c_e:
+                    closest_prev_gap = min(closest_prev_gap, 0.0)
+                elif c_e <= turn.start_s:
+                    closest_prev_gap = min(closest_prev_gap, turn.start_s - c_e)
         if index > 0:
             prev_turn = sorted_turns[index - 1]
             if prev_turn.speaker_id != turn.speaker_id:
-                gap = turn.start_s - prev_turn.end_s
-                if gap < transition_exclusion_s:
-                    # Excavate extra transition buffer from the start
-                    extra = max(0.0, (transition_exclusion_s - gap) / 2.0)
-                    start += extra
+                gap = max(0.0, turn.start_s - prev_turn.end_s)
+                closest_prev_gap = min(closest_prev_gap, gap)
 
-        # Transition guard: check distance to following speaker
+        if closest_prev_gap < transition_exclusion_s:
+            extra = max(0.0, (transition_exclusion_s - closest_prev_gap) / 2.0)
+            start += extra
+
+        # Transition guard: check distance to following competitor
+        closest_next_gap = float("inf")
+        if comp_intervals is not None:
+            for c_s, c_e in comp_intervals:
+                if c_s < turn.end_s < c_e:
+                    closest_next_gap = min(closest_next_gap, 0.0)
+                elif c_s >= turn.end_s:
+                    closest_next_gap = min(closest_next_gap, c_s - turn.end_s)
         if index + 1 < len(sorted_turns):
             next_turn = sorted_turns[index + 1]
             if next_turn.speaker_id != turn.speaker_id:
-                gap = next_turn.start_s - turn.end_s
-                if gap < transition_exclusion_s:
-                    extra = max(0.0, (transition_exclusion_s - gap) / 2.0)
-                    end -= extra
+                gap = max(0.0, next_turn.start_s - turn.end_s)
+                closest_next_gap = min(closest_next_gap, gap)
+
+        if closest_next_gap < transition_exclusion_s:
+            extra = max(0.0, (transition_exclusion_s - closest_next_gap) / 2.0)
+            end -= extra
 
         if end - start >= min_duration_s:
             final_start = round(start, 4)
@@ -435,6 +524,7 @@ def apply_context_aware_collar(
     min_duration_s: float = DEFAULT_MIN_TURN_DURATION_S,
     transition_exclusion_s: float = DEFAULT_TRANSITION_EXCLUSION_S,
     audio_duration_s: float | None = None,
+    competitor_intervals_by_speaker: dict[str, list[tuple[float, float]]] | None = None,
 ) -> tuple[list[SpeakerTurn], list[dict[str, Any]]]:
     """Apply asymmetric context-aware collar erosion to preserve word and syllable endings.
 
@@ -442,6 +532,10 @@ def apply_context_aware_collar(
     eroded inward to eliminate speaker bleed. If the turn transitions into natural silence
     (or speech ceases with no rival speaker nearby), the trailing coda/tone is preserved
     and gently extended by silence_tail_s.
+
+    Crucially, competitor proximity is checked against competitor_intervals_by_speaker
+    (unifying primary ∪ secondary diarizer detections) to ensure consensus filtering
+    does not mask true competitor handoffs.
     """
     if not turns:
         return [], []
@@ -455,42 +549,84 @@ def apply_context_aware_collar(
         end = turn.end_s
         start_shaved = False
         end_shaved = False
+        spk = turn.speaker_id
+        comp_intervals = (
+            competitor_intervals_by_speaker.get(spk, [])
+            if competitor_intervals_by_speaker is not None
+            else None
+        )
 
         # Calculate standard blunt collar baseline for A/B auditioning
         blunt_start = turn.start_s + collar_s
         blunt_end = turn.end_s - collar_s
 
-        # 1. Start boundary check
+        # 1. Start boundary check: check distance to preceding competitor
+        closest_prev_gap = float("inf")
+        if comp_intervals is not None:
+            for c_s, c_e in comp_intervals:
+                if c_s < turn.start_s < c_e:
+                    closest_prev_gap = min(closest_prev_gap, 0.0)
+                elif c_e <= turn.start_s:
+                    closest_prev_gap = min(closest_prev_gap, turn.start_s - c_e)
         if index > 0:
             prev_turn = sorted_turns[index - 1]
             if prev_turn.speaker_id != turn.speaker_id:
-                gap = turn.start_s - prev_turn.end_s
-                if gap < transition_exclusion_s:
-                    extra = max(0.0, (transition_exclusion_s - gap) / 2.0)
-                    blunt_start += extra
-                if gap < handoff_risk_s:
-                    extra = max(0.0, (transition_exclusion_s - gap) / 2.0) if gap < transition_exclusion_s else 0.0
-                    start = turn.start_s + collar_s + extra
-                    start_shaved = True
+                gap = max(0.0, turn.start_s - prev_turn.end_s)
+                closest_prev_gap = min(closest_prev_gap, gap)
 
-        # 2. End boundary check (where premature word truncation happens)
-        if index + 1 < len(sorted_turns):
-            next_turn = sorted_turns[index + 1]
-            if next_turn.speaker_id != turn.speaker_id:
-                gap = next_turn.start_s - turn.end_s
-                if gap < transition_exclusion_s:
-                    extra = max(0.0, (transition_exclusion_s - gap) / 2.0)
-                    blunt_end -= extra
-                if gap < handoff_risk_s:
-                    extra = max(0.0, (transition_exclusion_s - gap) / 2.0) if gap < transition_exclusion_s else 0.0
-                    end = turn.end_s - (collar_s + extra)
-                    end_shaved = True
-                else:
-                    end = min(turn.end_s + silence_tail_s, next_turn.start_s - 0.05)
-            else:
-                end = min(turn.end_s + silence_tail_s, next_turn.start_s - 0.05)
+        if closest_prev_gap < transition_exclusion_s:
+            extra = max(0.0, (transition_exclusion_s - closest_prev_gap) / 2.0)
+            blunt_start += extra
+        if closest_prev_gap < handoff_risk_s:
+            extra = (
+                max(0.0, (transition_exclusion_s - closest_prev_gap) / 2.0)
+                if closest_prev_gap < transition_exclusion_s
+                else 0.0
+            )
+            start = turn.start_s + collar_s + extra
+            start_shaved = True
+
+        # 2. End boundary check: check distance to following competitor
+        closest_next_gap = float("inf")
+        closest_next_start = float("inf")
+        if comp_intervals is not None:
+            for c_s, c_e in comp_intervals:
+                if c_s < turn.end_s < c_e:
+                    closest_next_gap = min(closest_next_gap, 0.0)
+                    closest_next_start = min(closest_next_start, c_s)
+                elif c_s >= turn.end_s:
+                    gap = c_s - turn.end_s
+                    closest_next_gap = min(closest_next_gap, gap)
+                    closest_next_start = min(closest_next_start, c_s)
+        next_turn = sorted_turns[index + 1] if index + 1 < len(sorted_turns) else None
+        if next_turn is not None and next_turn.speaker_id != turn.speaker_id:
+            gap = max(0.0, next_turn.start_s - turn.end_s)
+            closest_next_gap = min(closest_next_gap, gap)
+            closest_next_start = min(closest_next_start, next_turn.start_s)
+
+        if closest_next_gap < transition_exclusion_s:
+            extra = max(0.0, (transition_exclusion_s - closest_next_gap) / 2.0)
+            blunt_end -= extra
+
+        if closest_next_gap < handoff_risk_s:
+            extra = (
+                max(0.0, (transition_exclusion_s - closest_next_gap) / 2.0)
+                if closest_next_gap < transition_exclusion_s
+                else 0.0
+            )
+            end = turn.end_s - (collar_s + extra)
+            end_shaved = True
         else:
-            max_limit = audio_duration_s if audio_duration_s else (turn.end_s + silence_tail_s + 1.0)
+            # Natural silence or monologue pause: safe to extend with silence_tail_s
+            max_limit = (
+                audio_duration_s
+                if audio_duration_s
+                else (turn.end_s + silence_tail_s + 1.0)
+            )
+            if next_turn is not None:
+                max_limit = min(max_limit, next_turn.start_s - 0.05)
+            if closest_next_start < float("inf"):
+                max_limit = min(max_limit, closest_next_start - 0.05)
             end = min(turn.end_s + silence_tail_s, max_limit)
 
         if blunt_end <= blunt_start + 0.05:
@@ -546,6 +682,50 @@ def apply_context_aware_collar(
     return refined, audits
 
 
+def _find_local_valley(
+    waveform: np.ndarray,
+    center_sample: int,
+    *,
+    search_samples: int,
+    frame_samples: int,
+    hop_samples: int,
+) -> int:
+    """Find local RMS energy valley and zero-crossing in waveform around center_sample."""
+    left = max(0, center_sample - search_samples)
+    right = min(len(waveform), center_sample + search_samples)
+    if right - left < frame_samples:
+        return center_sample
+
+    segment = waveform[left:right]
+    num_frames = (len(segment) - frame_samples) // hop_samples + 1
+    if num_frames <= 0:
+        return center_sample
+
+    energies = []
+    for f in range(num_frames):
+        f_start = f * hop_samples
+        frame = segment[f_start : f_start + frame_samples]
+        rms = float(np.sqrt(np.mean(frame**2) + 1e-12))
+        energies.append(rms)
+
+    energies = np.array(energies)
+    center_frame = (center_sample - left) / hop_samples
+    frame_indices = np.arange(len(energies))
+    dist_penalty = (frame_indices - center_frame) ** 2 * 0.05
+    cost = energies + (dist_penalty * np.median(energies) * 0.1)
+
+    best_frame = int(np.argmin(cost))
+    best_sample = left + best_frame * hop_samples + (frame_samples // 2)
+
+    # Zero-crossing alignment to prevent audio clicks
+    zc_window = waveform[max(0, best_sample - 20) : min(len(waveform), best_sample + 20)]
+    zc_indices = np.where(np.diff(np.signbit(zc_window)))[0]
+    if len(zc_indices) > 0:
+        best_sample = max(0, best_sample - 20) + zc_indices[0]
+
+    return best_sample
+
+
 def snap_boundaries_to_acoustic_valleys(
     audio: Audio,
     turns: Sequence[SpeakerTurn],
@@ -554,11 +734,13 @@ def snap_boundaries_to_acoustic_valleys(
     energy_floor_db: float = DEFAULT_ENERGY_VALLEY_FLOOR_DB,
     frame_len_ms: float = DEFAULT_ENERGY_FRAME_LEN_MS,
     hop_len_ms: float = DEFAULT_ENERGY_HOP_LEN_MS,
+    competitor_intervals_by_speaker: dict[str, list[tuple[float, float]]] | None = None,
 ) -> tuple[list[SpeakerTurn], list[dict[str, Any]]]:
     """Snap turn boundaries to local short-time energy (RMS) silence valleys.
 
     Prevents slicing through voiced phonemes, vowels, or coda consonants by walking
     the boundary to the nearest local silence minimum / zero-crossing in the micro-waveform.
+    Constrained so boundaries cannot drift into consensus-excluded or competitor speech.
     """
     if not turns:
         return [], []
@@ -575,39 +757,13 @@ def snap_boundaries_to_acoustic_valleys(
     audits: list[dict[str, Any]] = []
 
     def find_local_valley(center_sample: int) -> int:
-        left = max(0, center_sample - search_samples)
-        right = min(len(waveform), center_sample + search_samples)
-        if right - left < frame_samples:
-            return center_sample
-
-        segment = waveform[left:right]
-        num_frames = (len(segment) - frame_samples) // hop_samples + 1
-        if num_frames <= 0:
-            return center_sample
-
-        energies = []
-        for f in range(num_frames):
-            f_start = f * hop_samples
-            frame = segment[f_start : f_start + frame_samples]
-            rms = float(np.sqrt(np.mean(frame**2) + 1e-12))
-            energies.append(rms)
-
-        energies = np.array(energies)
-        center_frame = (center_sample - left) / hop_samples
-        frame_indices = np.arange(len(energies))
-        dist_penalty = (frame_indices - center_frame) ** 2 * 0.05
-        cost = energies + (dist_penalty * np.median(energies) * 0.1)
-
-        best_frame = int(np.argmin(cost))
-        best_sample = left + best_frame * hop_samples + (frame_samples // 2)
-
-        # Zero-crossing alignment to prevent audio clicks
-        zc_window = waveform[max(0, best_sample - 20) : min(len(waveform), best_sample + 20)]
-        zc_indices = np.where(np.diff(np.signbit(zc_window)))[0]
-        if len(zc_indices) > 0:
-            best_sample = max(0, best_sample - 20) + zc_indices[0]
-
-        return best_sample
+        return _find_local_valley(
+            waveform,
+            center_sample,
+            search_samples=search_samples,
+            frame_samples=frame_samples,
+            hop_samples=hop_samples,
+        )
 
     for turn in turns:
         start_samp = int(round(turn.start_s * sr))
@@ -618,6 +774,25 @@ def snap_boundaries_to_acoustic_valleys(
 
         new_start_s = round(new_start_samp / sr, 4)
         new_end_s = round(new_end_samp / sr, 4)
+
+        # Clamp against consensus bounds if present
+        if hasattr(turn, "_consensus_start_s"):
+            new_start_s = max(new_start_s, turn._consensus_start_s)
+        if hasattr(turn, "_consensus_end_s"):
+            new_end_s = min(new_end_s, turn._consensus_end_s)
+
+        # Clamp away from competitor intervals
+        if competitor_intervals_by_speaker:
+            comp_ivs = competitor_intervals_by_speaker.get(turn.speaker_id, [])
+            for c_s, c_e in comp_ivs:
+                if c_e <= turn.start_s + 1e-4:
+                    new_start_s = max(new_start_s, c_e)
+                if c_s >= turn.end_s - 1e-4:
+                    new_end_s = min(new_end_s, c_s - 0.05)
+
+        if new_start_s >= new_end_s:
+            new_start_s = turn.start_s
+            new_end_s = turn.end_s
 
         orig_start = getattr(turn, "_original_start_s", turn.start_s)
         orig_end = getattr(turn, "_original_end_s", turn.end_s)
@@ -644,6 +819,7 @@ def snap_boundaries_to_acoustic_valleys(
             refined_turn._boundary_policy = "acoustic_energy_valley"
             refined_turn._tail_rescued = tail_rescued
             refined_turn._transcript = getattr(turn, "_transcript", None)
+            refined_turn._words = getattr(turn, "_words", None)
             if hasattr(turn, "_consensus_start_s"):
                 refined_turn._consensus_start_s = turn._consensus_start_s
             if hasattr(turn, "_consensus_end_s"):
@@ -687,6 +863,7 @@ def _lock_turns_with_words(
     words: list[dict[str, Any]],
     policy: str = "whisper_word_lock",
     audio_duration_s: float | None = None,
+    competitor_intervals_by_speaker: dict[str, list[tuple[float, float]]] | None = None,
 ) -> tuple[list[SpeakerTurn], list[dict[str, Any]]]:
     """Snap speaker turn boundaries to complete words to prevent syllable clipping.
 
@@ -694,6 +871,7 @@ def _lock_turns_with_words(
     1. Does not overlap preceding or succeeding turns (or competitor speakers).
     2. Does not exceed audio duration [0.0, audio_duration_s].
     3. Does not expand outside consensus bounds into disputed speech.
+    4. Does not encroach into raw competitor intervals from primary or secondary diarizers.
     """
     if not turns:
         return [], []
@@ -721,6 +899,15 @@ def _lock_turns_with_words(
             min_s = max(min_s, t._consensus_start_s)
         if hasattr(t, "_consensus_end_s"):
             max_e = min(max_e, t._consensus_end_s)
+
+        # Never expand into competitor speech
+        if competitor_intervals_by_speaker:
+            comp_ivs = competitor_intervals_by_speaker.get(t.speaker_id, [])
+            for c_s, c_e in comp_ivs:
+                if c_e <= t.start_s + 1e-4:
+                    min_s = max(min_s, c_e)
+                if c_s >= t.end_s - 1e-4:
+                    max_e = min(max_e, c_s)
 
         safe_bounds[orig_idx] = (min_s, max_e)
 
@@ -766,10 +953,15 @@ def _lock_turns_with_words(
         new_end_s = round(new_end, 4)
 
         # Collect words for turn transcript
-        words_in_turn = [
-            str(w.get("text", "")).strip()
+        raw_words_in_turn = [
+            w
             for w in words
             if (float(w["start"]) >= new_start_s - 0.15 and float(w["end"]) <= new_end_s + 0.15)
+        ]
+        words_in_turn = [
+            str(w.get("text", "")).strip()
+            for w in raw_words_in_turn
+            if w.get("text")
         ]
         transcript = " ".join([wt for wt in words_in_turn if wt]) if words_in_turn else None
 
@@ -796,6 +988,7 @@ def _lock_turns_with_words(
         refined_turn._boundary_policy = applied_policy
         refined_turn._tail_rescued = tail_rescued
         refined_turn._transcript = transcript
+        refined_turn._words = raw_words_in_turn
         if hasattr(turn, "_consensus_start_s"):
             refined_turn._consensus_start_s = turn._consensus_start_s
         if hasattr(turn, "_consensus_end_s"):
@@ -819,18 +1012,35 @@ def _lock_turns_with_words(
     return aligned_turns, audits
 
 
-def _run_whisper_timestamped_alignment(
+def _extract_words_from_asr_result(res_obj: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extract flat list of word dictionaries from Whisper transcription output."""
+    extracted = []
+    for seg in res_obj.get("segments", []):
+        for w in seg.get("words", []):
+            text = w.get("text") or w.get("word") or ""
+            start_val = w.get("start")
+            end_val = w.get("end")
+            conf = w.get("confidence", 1.0)
+            if text and start_val is not None and end_val is not None:
+                extracted.append({
+                    "text": str(text).strip(),
+                    "start": float(start_val),
+                    "end": float(end_val),
+                    "confidence": float(conf),
+                })
+    return extracted
+
+
+def _transcribe_words_with_whisper(
     audio: Audio,
-    turns: Sequence[SpeakerTurn],
     *,
     model_name: str = "vinai/PhoWhisper-small",
     language: str = "vi",
     device: str = "cpu",
-) -> tuple[list[SpeakerTurn], list[dict[str, Any]]]:
-    """Align turns using whisper-timestamped with Vietnamese or multilingual models.
+) -> list[dict[str, Any]]:
+    """Transcribe audio using whisper-timestamped (or openai-whisper) and return word timestamps.
 
-    Supports CPU as a real inference device and automatically frees VRAM and falls
-    back to CPU if CUDA OutOfMemoryError is encountered.
+    Supports CPU inference and automatically frees VRAM with CPU fallback upon CUDA OOM.
     """
     import torch
 
@@ -860,23 +1070,6 @@ def _run_whisper_timestamped_alignment(
 
     model = None
     words: list[dict[str, Any]] = []
-
-    def _extract_words(res_obj: dict[str, Any]) -> list[dict[str, Any]]:
-        extracted = []
-        for seg in res_obj.get("segments", []):
-            for w in seg.get("words", []):
-                text = w.get("text") or w.get("word") or ""
-                start_val = w.get("start")
-                end_val = w.get("end")
-                conf = w.get("confidence", 1.0)
-                if text and start_val is not None and end_val is not None:
-                    extracted.append({
-                        "text": str(text).strip(),
-                        "start": float(start_val),
-                        "end": float(end_val),
-                        "confidence": float(conf),
-                    })
-        return extracted
 
     try:
         _ensure_torch_hub_trusted()
@@ -910,7 +1103,7 @@ def _run_whisper_timestamped_alignment(
             model = whisper_mod.load_model(model_name, device=device_str)
             res = model.transcribe(str(audio.path), language=language or "vi", word_timestamps=True)
 
-        words = _extract_words(res)
+        words = _extract_words_from_asr_result(res)
 
     except (torch.cuda.OutOfMemoryError, RuntimeError) as exc:
         if ("out of memory" in str(exc).lower() or isinstance(exc, torch.cuda.OutOfMemoryError)) and device_str != "cpu":
@@ -961,7 +1154,7 @@ def _run_whisper_timestamped_alignment(
                 res = cpu_model.transcribe(str(audio.path), language=language or "vi", word_timestamps=True)
                 del cpu_model
 
-            words = _extract_words(res)
+            words = _extract_words_from_asr_result(res)
         else:
             raise
 
@@ -974,11 +1167,31 @@ def _run_whisper_timestamped_alignment(
             torch.cuda.empty_cache()
         gc.collect()
 
+    return words
+
+
+def _run_whisper_timestamped_alignment(
+    audio: Audio,
+    turns: Sequence[SpeakerTurn],
+    *,
+    model_name: str = "vinai/PhoWhisper-small",
+    language: str = "vi",
+    device: str = "cpu",
+    competitor_intervals_by_speaker: dict[str, list[tuple[float, float]]] | None = None,
+) -> tuple[list[SpeakerTurn], list[dict[str, Any]]]:
+    """Align turns using whisper-timestamped with Vietnamese or multilingual models."""
+    words = _transcribe_words_with_whisper(
+        audio,
+        model_name=model_name,
+        language=language,
+        device=device,
+    )
     return _lock_turns_with_words(
         turns,
         words,
         policy=f"whisper_lock_{Path(model_name).name}",
         audio_duration_s=audio.duration_s,
+        competitor_intervals_by_speaker=competitor_intervals_by_speaker,
     )
 
 
@@ -988,6 +1201,7 @@ def _run_remote_whisper_alignment(
     *,
     endpoint: str,
     language: str = "vi",
+    competitor_intervals_by_speaker: dict[str, list[tuple[float, float]]] | None = None,
 ) -> tuple[list[SpeakerTurn], list[dict[str, Any]]]:
     """Query a remote OpenAI-compatible Whisper transcription server for word timestamps."""
     import json
@@ -1045,6 +1259,7 @@ def _run_remote_whisper_alignment(
         words,
         policy="remote_whisper_lock",
         audio_duration_s=audio.duration_s,
+        competitor_intervals_by_speaker=competitor_intervals_by_speaker,
     )
 
 
@@ -1053,6 +1268,7 @@ def _run_mms_fa_alignment(
     turns: Sequence[SpeakerTurn],
     *,
     device: str = "cpu",
+    competitor_intervals_by_speaker: dict[str, list[tuple[float, float]]] | None = None,
 ) -> tuple[list[SpeakerTurn], list[dict[str, Any]]]:
     """Run PyTorch MMS forced alignment with CPU support and CUDA OOM fallback."""
     import torch
@@ -1140,6 +1356,15 @@ def _run_mms_fa_alignment(
         if hasattr(t, "_consensus_end_s"):
             max_e = min(max_e, t._consensus_end_s)
 
+        # Never expand into competitor speech
+        if competitor_intervals_by_speaker:
+            comp_ivs = competitor_intervals_by_speaker.get(t.speaker_id, [])
+            for c_s, c_e in comp_ivs:
+                if c_e <= t.start_s + 1e-4:
+                    min_s = max(min_s, c_e)
+                if c_s >= t.end_s - 1e-4:
+                    max_e = min(max_e, c_s)
+
         safe_bounds[orig_idx] = (min_s, max_e)
 
     for i, turn in enumerate(turns):
@@ -1224,6 +1449,7 @@ def align_and_lock_syllable_boundaries(
     aligner_endpoint: str | None = None,
     aligner_device: str = "cpu",
     token: str | None = None,
+    competitor_intervals_by_speaker: dict[str, list[tuple[float, float]]] | None = None,
 ) -> tuple[list[SpeakerTurn], list[dict[str, Any]]]:
     """Lock boundaries to complete syllable/word timestamps using Whisper or MMS-FA.
 
@@ -1242,6 +1468,7 @@ def align_and_lock_syllable_boundaries(
                 model_name=aligner_model or "vinai/PhoWhisper-small",
                 language=aligner_language or "vi",
                 device=aligner_device or "cpu",
+                competitor_intervals_by_speaker=competitor_intervals_by_speaker,
             )
         elif eng in {"remote_whisper", "remote_asr"}:
             if not aligner_endpoint:
@@ -1251,12 +1478,14 @@ def align_and_lock_syllable_boundaries(
                 turns,
                 endpoint=aligner_endpoint,
                 language=aligner_language or "vi",
+                competitor_intervals_by_speaker=competitor_intervals_by_speaker,
             )
         elif eng in {"mms_fa", "mms"}:
             return _run_mms_fa_alignment(
                 audio,
                 turns,
                 device=aligner_device or "cpu",
+                competitor_intervals_by_speaker=competitor_intervals_by_speaker,
             )
         else:
             raise ValueError(f"Unsupported aligner engine: {aligner_engine}")
@@ -1280,6 +1509,267 @@ def align_and_lock_syllable_boundaries(
             for t in turns
         ]
         return list(turns), fallback_audits
+
+
+def _copy_turn_meta(src: SpeakerTurn, dst: SpeakerTurn, policy: str = "smart_segmentation") -> None:
+    """Copy provenance metadata attributes from src turn to dst turn."""
+    for attr in (
+        "_original_start_s",
+        "_original_end_s",
+        "_raw_start_s",
+        "_raw_end_s",
+        "_delta_start_ms",
+        "_delta_end_ms",
+        "_tail_rescued",
+        "_consensus_start_s",
+        "_consensus_end_s",
+    ):
+        if hasattr(src, attr):
+            setattr(dst, attr, getattr(src, attr))
+    dst._boundary_policy = policy
+
+
+def smart_segment_speaker_turns(
+    audio: Audio,
+    turns: Sequence[SpeakerTurn],
+    *,
+    max_duration_s: float = DEFAULT_TARGET_MAX_DURATION_S,
+    min_duration_s: float = DEFAULT_TARGET_MIN_DURATION_S,
+    min_pause_s: float = DEFAULT_MIN_SPLIT_PAUSE_S,
+    words: list[dict[str, Any]] | None = None,
+    frame_len_ms: float = DEFAULT_ENERGY_FRAME_LEN_MS,
+    hop_len_ms: float = DEFAULT_ENERGY_HOP_LEN_MS,
+    search_window_s: float = DEFAULT_ENERGY_SEARCH_WINDOW_S,
+) -> tuple[list[SpeakerTurn], list[dict[str, Any]]]:
+    """Segment long speaker turns into TTS-optimal sentence-length chunks.
+
+    Uses ASR word timestamps, terminal/clause punctuation, and natural breathing
+    pauses to avoid cutting mid-syllable or mid-word. Snaps the final cut point
+    to the nearest micro-acoustic energy valley and zero-crossing to prevent clicks.
+
+    Args:
+        audio: Target Audio instance.
+        turns: Candidate speaker turns to segment.
+        max_duration_s: Target maximum turn length in seconds (default 10.0s).
+        min_duration_s: Target minimum turn length in seconds (default 3.0s).
+        min_pause_s: Minimum silence gap between words to consider a split (default 0.20s).
+        words: Optional word timestamps from Whisper ASR.
+        frame_len_ms: RMS frame length for acoustic valley snapping.
+        hop_len_ms: RMS hop step for acoustic valley snapping.
+        search_window_s: Window radius for acoustic valley snapping.
+
+    Returns:
+        (segmented_turns, segmentation_audits)
+    """
+    if not turns:
+        return [], []
+
+    any_long = any(t.duration_s > max_duration_s for t in turns)
+    if not any_long:
+        return list(turns), []
+
+    waveform, sr = sf.read(str(audio.path), dtype="float32", always_2d=False)
+    if waveform.ndim > 1:
+        waveform = waveform.mean(axis=1)
+
+    frame_samples = max(1, int(round(frame_len_ms * sr / 1000.0)))
+    hop_samples = max(1, int(round(hop_len_ms * sr / 1000.0)))
+    search_samples = int(round(search_window_s * sr))
+
+    if words is None:
+        words = []
+        for t in turns:
+            if hasattr(t, "_words") and t._words:
+                words.extend(t._words)
+
+    TERMINAL_PUNCT = {".", "!", "?", "...", "…"}
+    CLAUSE_PUNCT = {",", ";", ":", "—", "-", "–"}
+
+    segmented_turns: list[SpeakerTurn] = []
+    audits: list[dict[str, Any]] = []
+
+    for turn in turns:
+        if turn.duration_s <= max_duration_s:
+            segmented_turns.append(turn)
+            continue
+
+        # Gather words inside this turn
+        t_words = [
+            w for w in (words or [])
+            if float(w["start"]) >= turn.start_s - 0.15 and float(w["end"]) <= turn.end_s + 0.15
+        ]
+        t_words.sort(key=lambda w: (float(w["start"]), float(w["end"])))
+
+        curr_start = turn.start_s
+        turn_end = turn.end_s
+
+        while (turn_end - curr_start) > max_duration_s:
+            remaining = turn_end - curr_start
+
+            # If remaining speech is within 2 * max_duration_s, balance the two halves
+            if remaining <= 2.0 * max_duration_s:
+                ideal_split = curr_start + (remaining / 2.0)
+                search_min = max(curr_start + min_duration_s, ideal_split - 2.0)
+                search_max = min(turn_end - min_duration_s, ideal_split + 2.0)
+                if search_max <= search_min:
+                    search_min = curr_start + min_duration_s
+                    search_max = curr_start + max_duration_s
+            else:
+                search_min = curr_start + min_duration_s
+                search_max = curr_start + max_duration_s
+
+            search_min = min(search_min, turn_end - 0.5)
+            search_max = min(search_max, turn_end)
+
+            best_cut: float | None = None
+            best_score = -1.0
+            split_method = "acoustic_rms_valley"
+
+            # Search word boundaries
+            if len(t_words) >= 2:
+                for idx_w in range(len(t_words) - 1):
+                    w1 = t_words[idx_w]
+                    w2 = t_words[idx_w + 1]
+                    w1_end = float(w1["end"])
+                    w2_start = float(w2["start"])
+
+                    cand_time = (w1_end + w2_start) / 2.0 if w2_start > w1_end else w1_end
+                    if search_min <= cand_time <= search_max:
+                        text1 = str(w1.get("text", "")).strip()
+                        pause = max(0.0, w2_start - w1_end)
+
+                        has_term = any(text1.endswith(p) for p in TERMINAL_PUNCT)
+                        has_clause = any(text1.endswith(p) for p in CLAUSE_PUNCT)
+
+                        if has_term and pause >= 0.12:
+                            score = 100.0 + min(pause, 1.0) * 10.0
+                            method = "terminal_punctuation_pause"
+                        elif has_term:
+                            score = 80.0 + min(pause, 1.0) * 10.0
+                            method = "terminal_punctuation"
+                        elif has_clause and pause >= 0.12:
+                            score = 60.0 + min(pause, 1.0) * 10.0
+                            method = "clause_punctuation_pause"
+                        elif has_clause:
+                            score = 40.0 + min(pause, 1.0) * 10.0
+                            method = "clause_punctuation"
+                        elif pause >= min_pause_s:
+                            score = 25.0 + min(pause, 1.0) * 10.0
+                            method = "inter_word_pause"
+                        else:
+                            midpoint = (search_min + search_max) / 2.0
+                            dist_norm = 1.0 - (abs(cand_time - midpoint) / max(0.1, (search_max - search_min) / 2.0))
+                            score = 10.0 + max(0.0, dist_norm) * 5.0
+                            method = "inter_word_gap"
+
+                        if score > best_score:
+                            best_score = score
+                            best_cut = cand_time
+                            split_method = method
+
+            # Fallback to acoustic energy valley if no ASR word candidate in window
+            if best_cut is None:
+                mid_samp = int(round(((search_min + search_max) / 2.0) * sr))
+                half_win_samp = max(frame_samples, int(round((search_max - search_min) / 2.0 * sr)))
+                valley_samp = _find_local_valley(
+                    waveform,
+                    mid_samp,
+                    search_samples=half_win_samp,
+                    frame_samples=frame_samples,
+                    hop_samples=hop_samples,
+                )
+                best_cut = valley_samp / sr
+                split_method = "acoustic_rms_valley"
+            else:
+                # Snap the chosen word gap to local acoustic zero-crossing
+                cut_samp = int(round(best_cut * sr))
+                snap_radius = min(search_samples, int(round(0.06 * sr)))
+                valley_samp = _find_local_valley(
+                    waveform,
+                    cut_samp,
+                    search_samples=snap_radius,
+                    frame_samples=frame_samples,
+                    hop_samples=hop_samples,
+                )
+                best_cut = valley_samp / sr
+
+            best_cut = round(float(best_cut), 4)
+            if best_cut <= curr_start + 0.5:
+                best_cut = round(curr_start + min_duration_s, 4)
+
+            # Create child turn
+            child = SpeakerTurn(
+                speaker_id=turn.speaker_id,
+                start_s=round(curr_start, 4),
+                end_s=best_cut,
+                confidence=turn.confidence,
+            )
+            _copy_turn_meta(turn, child, policy="smart_segmentation")
+            child_words = [
+                w for w in t_words
+                if float(w["start"]) >= child.start_s - 0.1 and float(w["end"]) <= child.end_s + 0.1
+            ]
+            child._words = child_words
+            child._transcript = " ".join([str(w.get("text", "")).strip() for w in child_words if w.get("text")]) or getattr(turn, "_transcript", None)
+
+            segmented_turns.append(child)
+            audits.append({
+                "action": "split",
+                "method": split_method,
+                "speaker_id": turn.speaker_id,
+                "parent_start_s": turn.start_s,
+                "parent_end_s": turn.end_s,
+                "child_start_s": child.start_s,
+                "child_end_s": child.end_s,
+                "child_duration_s": round(child.duration_s, 3),
+                "transcript": child._transcript,
+            })
+
+            curr_start = best_cut
+
+        # Trailing segment
+        if turn_end > curr_start:
+            tail_dur = turn_end - curr_start
+            if tail_dur >= min(1.0, min_duration_s):
+                child = SpeakerTurn(
+                    speaker_id=turn.speaker_id,
+                    start_s=round(curr_start, 4),
+                    end_s=round(turn_end, 4),
+                    confidence=turn.confidence,
+                )
+                _copy_turn_meta(turn, child, policy="smart_segmentation")
+                child_words = [
+                    w for w in t_words
+                    if float(w["start"]) >= child.start_s - 0.1 and float(w["end"]) <= child.end_s + 0.1
+                ]
+                child._words = child_words
+                child._transcript = " ".join([str(w.get("text", "")).strip() for w in child_words if w.get("text")]) or getattr(turn, "_transcript", None)
+                segmented_turns.append(child)
+                audits.append({
+                    "action": "split_tail",
+                    "method": "tail_remainder",
+                    "speaker_id": turn.speaker_id,
+                    "parent_start_s": turn.start_s,
+                    "parent_end_s": turn.end_s,
+                    "child_start_s": child.start_s,
+                    "child_end_s": child.end_s,
+                    "child_duration_s": round(child.duration_s, 3),
+                    "transcript": child._transcript,
+                })
+            elif segmented_turns:
+                # Merge tiny micro-tail (<1s) into preceding child turn
+                last_child = segmented_turns[-1]
+                updated_child = replace(last_child, end_s=round(turn_end, 4))
+                _copy_turn_meta(last_child, updated_child, policy="smart_segmentation")
+                updated_words = [
+                    w for w in t_words
+                    if float(w["start"]) >= updated_child.start_s - 0.1 and float(w["end"]) <= turn_end + 0.1
+                ]
+                updated_child._words = updated_words
+                updated_child._transcript = " ".join([str(w.get("text", "")).strip() for w in updated_words if w.get("text")]) or getattr(last_child, "_transcript", None)
+                segmented_turns[-1] = updated_child
+
+    return segmented_turns, audits
 
 
 def filter_by_embedding_homogeneity(
@@ -1484,28 +1974,8 @@ def filter_by_foundation_models(
                 is_pure = True
                 rejection_reason = ""
 
-                # Direct-audio speaker-purity and word-completeness check.
-                if gemma_verifier is not None:
-                    try:
-                        gemma_res = gemma_verifier.verify(clip_audio)
-                        audit_meta["gemma"] = gemma_res
-                        if gemma_res.get("decision") != "pass":
-                            is_pure = False
-                            verifier_label = getattr(
-                                gemma_verifier, "model", config.gemma_backend
-                            )
-                            rejection_reason = (
-                                f"{verifier_label} {gemma_res.get('decision')}: "
-                                f"{gemma_res.get('reason', '')}"
-                            )
-                    except Exception as exc:
-                        logger.warning("Direct-audio check failed on turn %s: %s", idx, exc)
-                        audit_meta["gemma_error"] = str(exc)
-                        is_pure = False
-                        rejection_reason = f"Direct-audio verifier failed closed: {exc}"
-
-                # VibeVoice-ASR multi-speaker check (Local Worker or Remote Endpoint)
-                if is_pure and config.enable_vibevoice:
+                # 1. Fast speaker gate: VibeVoice-ASR multi-speaker check (Local Worker or Remote Endpoint)
+                if config.enable_vibevoice:
                     if config.vibevoice_endpoint:
                         try:
                             import base64
@@ -1557,6 +2027,27 @@ def filter_by_foundation_models(
                             audit_meta["vibevoice_error"] = str(exc)
                             is_pure = False
                             rejection_reason = f"VibeVoice verifier failed closed: {exc}"
+
+                # 2. Semantic & completeness auditor: Direct-audio verifier (Gemini / Gemma-4)
+                # Only invoked if turn passed VibeVoice speaker purity check (saves API tokens and compute).
+                if is_pure and gemma_verifier is not None:
+                    try:
+                        gemma_res = gemma_verifier.verify(clip_audio)
+                        audit_meta["gemma"] = gemma_res
+                        if gemma_res.get("decision") != "pass":
+                            is_pure = False
+                            verifier_label = getattr(
+                                gemma_verifier, "model", config.gemma_backend
+                            )
+                            rejection_reason = (
+                                f"{verifier_label} {gemma_res.get('decision')}: "
+                                f"{gemma_res.get('reason', '')}"
+                            )
+                    except Exception as exc:
+                        logger.warning("Direct-audio check failed on turn %s: %s", idx, exc)
+                        audit_meta["gemma_error"] = str(exc)
+                        is_pure = False
+                        rejection_reason = f"Direct-audio verifier failed closed: {exc}"
 
                 if is_pure:
                     if "gemma" in audit_meta:
@@ -1651,6 +2142,8 @@ def run_zero_contamination_pipeline(
     }
 
     # ==================== STAGE 2: Dual-Engine Consensus ====================
+    secondary_turns: list[SpeakerTurn] = []
+    spk_map: dict[str, str] = {}
     if config.enable_consensus:
         if cancel_check and cancel_check():
             raise InterruptedError("Pipeline execution cancelled before Stage 2")
@@ -1672,6 +2165,8 @@ def run_zero_contamination_pipeline(
             torch.cuda.empty_cache()
         gc.collect()
 
+        secondary_turns = sorted(secondary_result.turns, key=lambda t: t.start_s)
+
         if progress_callback:
             progress_callback(0.45, "Computing Hungarian mutual consensus...")
         consensus_turns, spk_map = compute_consensus_turns(
@@ -1690,6 +2185,14 @@ def run_zero_contamination_pipeline(
             f"of ambiguous/disputed speech"
         )
         current_turns = consensus_turns
+
+    # Preserve raw competitor evidence across Primary and Secondary engines
+    # so consensus filtering cannot mask nearby speaker handoffs from Stage 3.
+    competitor_intervals_by_speaker = _extract_competitor_intervals_by_speaker(
+        initial_turns,
+        secondary_turns if config.enable_consensus else None,
+        spk_map if config.enable_consensus else None,
+    )
 
     # ==================== STAGE 3: Boundary & Syllable Integrity Gate ====================
     for t in current_turns:
@@ -1725,6 +2228,7 @@ def run_zero_contamination_pipeline(
                 min_duration_s=config.min_turn_duration_s,
                 transition_exclusion_s=config.transition_exclusion_s,
                 audio_duration_s=audio.duration_s,
+                competitor_intervals_by_speaker=competitor_intervals_by_speaker,
             )
             current_turns = ctx_turns
             boundary_audits = ctx_audits
@@ -1740,44 +2244,19 @@ def run_zero_contamination_pipeline(
                 collar_s=config.boundary_collar_s,
                 min_duration_s=config.min_turn_duration_s,
                 transition_exclusion_s=config.transition_exclusion_s,
+                competitor_intervals_by_speaker=competitor_intervals_by_speaker,
             )
             current_turns = eroded_turns
 
-        # 3b. Option B: Syllable / Word Forced Alignment Lock (High-Compute)
-        if config.enable_syllable_alignment:
+        # 3b. Option C: Micro-Acoustic Energy & RMS Silence Valley Snapping (Acoustic Refinement)
+        if config.enable_energy_snapping:
             if cancel_check and cancel_check():
                 raise InterruptedError("Pipeline execution cancelled before Stage 3b")
 
-            aligner_dev = config.aligner_device if (config.aligner_device and config.aligner_device != "same") else config.device
             if progress_callback:
-                progress_callback(0.58, f"Running syllable & word lock ({config.aligner_engine} on {aligner_dev})...")
-            log_stage(f"Stage 3b: Locking syllables with {config.aligner_engine} on {aligner_dev} (model={config.aligner_model}, lang={config.aligner_language})")
-            aligned_turns, align_audits = align_and_lock_syllable_boundaries(
-                audio,
-                current_turns,
-                aligner_engine=config.aligner_engine,
-                aligner_model=config.aligner_model,
-                aligner_language=config.aligner_language,
-                aligner_endpoint=config.aligner_endpoint,
-                aligner_device=aligner_dev,
-                token=config.token,
-            )
-            current_turns = aligned_turns
-            if align_audits:
-                boundary_audits = align_audits
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            gc.collect()
-
-        # 3c. Option C: Micro-Acoustic Energy & RMS Silence Valley Snapping
-        if config.enable_energy_snapping:
-            if cancel_check and cancel_check():
-                raise InterruptedError("Pipeline execution cancelled before Stage 3c")
-
-            if progress_callback:
-                progress_callback(0.62, "Snapping boundaries to micro-energy RMS valleys...")
+                progress_callback(0.56, "Snapping boundaries to micro-energy RMS valleys...")
             log_stage(
-                f"Stage 3c: Snapping boundaries to micro-energy valleys "
+                f"Stage 3b: Snapping boundaries to micro-energy valleys "
                 f"(±{config.energy_search_window_s*1000:.1f}ms window, "
                 f"frame={config.energy_frame_len_ms:.1f}ms, hop={config.energy_hop_len_ms:.1f}ms, "
                 f"floor={config.energy_valley_floor_db:.0f}dB)"
@@ -1789,10 +2268,38 @@ def run_zero_contamination_pipeline(
                 energy_floor_db=config.energy_valley_floor_db,
                 frame_len_ms=config.energy_frame_len_ms,
                 hop_len_ms=config.energy_hop_len_ms,
+                competitor_intervals_by_speaker=competitor_intervals_by_speaker,
             )
             current_turns = snapped_turns
             if snap_audits:
                 boundary_audits = snap_audits
+
+        # 3c. Option B: Syllable / Word Forced Alignment Lock (FINAL BOUNDARY AUTHORITY)
+        if config.enable_syllable_alignment:
+            if cancel_check and cancel_check():
+                raise InterruptedError("Pipeline execution cancelled before Stage 3c")
+
+            aligner_dev = config.aligner_device if (config.aligner_device and config.aligner_device != "same") else config.device
+            if progress_callback:
+                progress_callback(0.60, f"Running syllable & word lock ({config.aligner_engine} on {aligner_dev})...")
+            log_stage(f"Stage 3c: Locking syllables with {config.aligner_engine} on {aligner_dev} (model={config.aligner_model}, lang={config.aligner_language}) [final boundary authority]")
+            aligned_turns, align_audits = align_and_lock_syllable_boundaries(
+                audio,
+                current_turns,
+                aligner_engine=config.aligner_engine,
+                aligner_model=config.aligner_model,
+                aligner_language=config.aligner_language,
+                aligner_endpoint=config.aligner_endpoint,
+                aligner_device=aligner_dev,
+                token=config.token,
+                competitor_intervals_by_speaker=competitor_intervals_by_speaker,
+            )
+            current_turns = aligned_turns
+            if align_audits:
+                boundary_audits = align_audits
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
 
         funnel["eroded_turns_count"] = len(current_turns)
         funnel["eroded_speech_duration_s"] = round(
@@ -1807,6 +2314,61 @@ def run_zero_contamination_pipeline(
         funnel["eroded_turns_count"] = len(current_turns)
         funnel["eroded_speech_duration_s"] = round(
             sum(t.duration_s for t in current_turns), 2
+        )
+
+    # 3d. Option D: Intelligent ASR & Pause-Guided Turn Segmentation (TTS Sentence Sizing)
+    segment_audits: list[dict[str, Any]] = []
+    if config.enable_smart_segmentation:
+        if cancel_check and cancel_check():
+            raise InterruptedError("Pipeline execution cancelled before Stage 3d")
+
+        if progress_callback:
+            progress_callback(0.63, "Segmenting long turns into TTS-optimal sentences...")
+        log_stage(
+            f"Stage 3d: Running smart turn segmentation "
+            f"(target_max={config.target_max_duration_s:.1f}s, target_min={config.target_min_duration_s:.1f}s, "
+            f"min_pause={config.min_split_pause_s:.2f}s)"
+        )
+
+        all_words: list[dict[str, Any]] = []
+        for t in current_turns:
+            if hasattr(t, "_words") and t._words:
+                all_words.extend(t._words)
+
+        any_long = any(t.duration_s > config.target_max_duration_s for t in current_turns)
+        if not all_words and any_long:
+            try:
+                aligner_dev = config.aligner_device if (config.aligner_device and config.aligner_device != "same") else "cpu"
+                log_stage(f"Stage 3d: Transcribing with {config.aligner_engine} ({config.aligner_model}) on {aligner_dev} to guide sentence cuts...")
+                all_words = _transcribe_words_with_whisper(
+                    audio,
+                    model_name=config.aligner_model,
+                    language=config.aligner_language,
+                    device=aligner_dev,
+                )
+            except Exception as asr_exc:
+                logger.warning("ASR word extraction for segmentation failed (%s); falling back to acoustic energy valleys.", asr_exc)
+                all_words = []
+
+        segmented_turns, segment_audits = smart_segment_speaker_turns(
+            audio,
+            current_turns,
+            max_duration_s=config.target_max_duration_s,
+            min_duration_s=config.target_min_duration_s,
+            min_pause_s=config.min_split_pause_s,
+            words=all_words or None,
+            search_window_s=config.energy_search_window_s,
+            frame_len_ms=config.energy_frame_len_ms,
+            hop_len_ms=config.energy_hop_len_ms,
+        )
+        current_turns = segmented_turns
+        funnel["segmented_turns_count"] = len(current_turns)
+        funnel["segmented_speech_duration_s"] = round(
+            sum(t.duration_s for t in current_turns), 2
+        )
+        log_stage(
+            f"Smart segmentation produced {len(current_turns)} sentence-level turns "
+            f"({funnel['segmented_speech_duration_s']:.1f}s speech)"
         )
 
     # ==================== STAGE 4: Embedding Homogeneity ====================
@@ -1888,17 +2450,19 @@ def run_zero_contamination_pipeline(
         collar_parts = ["Collar"]
         if config.enable_context_collar:
             collar_parts.append("ContextHandoff")
-        if config.enable_syllable_alignment:
-            collar_parts.append(f"AlignLock:{config.aligner_engine}")
         if config.enable_energy_snapping:
             collar_parts.append("EnergySnap")
+        if config.enable_syllable_alignment:
+            collar_parts.append(f"AlignLock:{config.aligner_engine}")
         enabled_gates.append("+".join(collar_parts))
+    if config.enable_smart_segmentation:
+        enabled_gates.append(f"SmartSegmentation:{config.target_max_duration_s:.1f}s")
     if config.enable_homogeneity:
         enabled_gates.append("Homogeneity")
-    if config.enable_gemma:
-        enabled_gates.append(f"DirectAudio:{config.gemma_backend}")
     if config.enable_vibevoice:
         enabled_gates.append("VibeVoice")
+    if config.enable_gemma:
+        enabled_gates.append(f"DirectAudio:{config.gemma_backend}")
 
     funnel["contamination_risk_rating"] = f"Passed {len(enabled_gates)} active validation gates: {', '.join(enabled_gates)}"
     funnel["enabled_gates"] = enabled_gates
@@ -2035,6 +2599,7 @@ def run_zero_contamination_pipeline(
         config=config.to_dict(),
         foundation_audits=foundation_audits,
         boundary_audits=boundary_audits,
+        segment_audits=segment_audits,
     )
 
 

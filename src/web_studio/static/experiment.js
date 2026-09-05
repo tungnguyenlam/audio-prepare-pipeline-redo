@@ -136,6 +136,19 @@ Validation rules:
         energyFloorNum: document.getElementById('exp-energy-floor-num'),
         energyFloorValue: document.getElementById('exp-energy-floor-val'),
 
+        // Stage 3d: Option D - Intelligent Turn Segmentation
+        enableSmartSegmentation: document.getElementById('exp-enable-smart-segmentation'),
+        smartSegmentationFields: document.getElementById('exp-smart-segmentation-fields'),
+        targetMaxDur: document.getElementById('exp-target-max-dur'),
+        targetMaxDurNum: document.getElementById('exp-target-max-dur-num'),
+        targetMaxDurValue: document.getElementById('exp-target-max-dur-val'),
+        targetMinDur: document.getElementById('exp-target-min-dur'),
+        targetMinDurNum: document.getElementById('exp-target-min-dur-num'),
+        targetMinDurValue: document.getElementById('exp-target-min-dur-val'),
+        minSplitPause: document.getElementById('exp-min-split-pause'),
+        minSplitPauseNum: document.getElementById('exp-min-split-pause-num'),
+        minSplitPauseValue: document.getElementById('exp-min-split-pause-val'),
+
         // Stage 4: Dense WeSpeaker Homogeneity
         enableHomo: document.getElementById('exp-enable-homo'),
         homoDevice: document.getElementById('exp-homo-device'),
@@ -306,6 +319,27 @@ Validation rules:
         decimals: 1,
       });
       this.bindDualControl({
+        slider: this.el.targetMaxDur,
+        numInput: this.el.targetMaxDurNum,
+        badge: this.el.targetMaxDurValue,
+        unit: 's',
+        decimals: 1,
+      });
+      this.bindDualControl({
+        slider: this.el.targetMinDur,
+        numInput: this.el.targetMinDurNum,
+        badge: this.el.targetMinDurValue,
+        unit: 's',
+        decimals: 1,
+      });
+      this.bindDualControl({
+        slider: this.el.minSplitPause,
+        numInput: this.el.minSplitPauseNum,
+        badge: this.el.minSplitPauseValue,
+        unit: 's',
+        decimals: 2,
+      });
+      this.bindDualControl({
         slider: this.el.homoSim,
         numInput: this.el.homoSimNum,
         badge: this.el.homoSimValue,
@@ -353,6 +387,9 @@ Validation rules:
       });
       this.el.enableEnergySnapping?.addEventListener('change', e => {
         if (self.el.energySnappingFields) self.el.energySnappingFields.style.display = e.target.checked ? 'block' : 'none';
+      });
+      this.el.enableSmartSegmentation?.addEventListener('change', e => {
+        if (self.el.smartSegmentationFields) self.el.smartSegmentationFields.style.display = e.target.checked ? 'block' : 'none';
       });
       this.el.enableSyllableAlign?.addEventListener('change', e => {
         if (self.el.syllableAlignFields) self.el.syllableAlignFields.style.display = e.target.checked ? 'block' : 'none';
@@ -691,6 +728,11 @@ Validation rules:
       this.setParamValue(this.el.energyFrame, this.el.energyFrameNum, 2.0);
       this.setParamValue(this.el.energyHop, this.el.energyHopNum, 0.5);
       this.setParamValue(this.el.energyFloor, this.el.energyFloorNum, -30);
+      // Stage 3d: Option D - Intelligent Turn Segmentation
+      if (this.el.enableSmartSegmentation) { this.el.enableSmartSegmentation.checked = false; this.el.smartSegmentationFields.style.display = 'none'; }
+      this.setParamValue(this.el.targetMaxDur, this.el.targetMaxDurNum, 10.0);
+      this.setParamValue(this.el.targetMinDur, this.el.targetMinDurNum, 3.0);
+      this.setParamValue(this.el.minSplitPause, this.el.minSplitPauseNum, 0.20);
       // Stage 4: Dense WeSpeaker Homogeneity
       if (this.el.enableHomo) { this.el.enableHomo.checked = false; this.el.homoFields.style.display = 'none'; }
       if (this.el.homoDevice) this.el.homoDevice.value = 'same';
@@ -888,6 +930,11 @@ Validation rules:
         energy_valley_floor_db: parseFloat(this.el.energyFloorNum?.value || this.el.energyFloor?.value || '-30'),
         energy_frame_len_ms: parseFloat(this.el.energyFrameNum?.value || this.el.energyFrame?.value || '2.0'),
         energy_hop_len_ms: parseFloat(this.el.energyHopNum?.value || this.el.energyHop?.value || '0.5'),
+        // Stage 3d: Option D - Intelligent Turn Segmentation
+        enable_smart_segmentation: collarGateEnabled && Boolean(this.el.enableSmartSegmentation?.checked),
+        target_max_duration_s: parseFloat(this.el.targetMaxDurNum?.value || this.el.targetMaxDur?.value || '10.0'),
+        target_min_duration_s: parseFloat(this.el.targetMinDurNum?.value || this.el.targetMinDur?.value || '3.0'),
+        min_split_pause_s: parseFloat(this.el.minSplitPauseNum?.value || this.el.minSplitPause?.value || '0.20'),
         // Stage 4: Dense WeSpeaker Homogeneity
         enable_homogeneity: Boolean(this.el.enableHomo?.checked),
         homogeneity_device: this.el.homoDevice?.value || 'same',
@@ -1043,6 +1090,14 @@ Validation rules:
           name: 'Syllables Rescued',
           val: `${funnel.syllables_rescued_count} tails`,
           sub: `Avg +${funnel.avg_tail_preservation_ms || 0}ms preserved`,
+        });
+      }
+
+      if (funnel.segmented_speech_duration_s !== undefined) {
+        stages.push({
+          name: 'TTS Sizing (3d)',
+          val: `${(funnel.segmented_speech_duration_s).toFixed(1)}s`,
+          sub: `${funnel.segmented_turns_count} sized turns`,
         });
       }
 
