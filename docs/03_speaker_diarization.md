@@ -206,6 +206,28 @@ Generates a derived, cleaned view of turns without mutating canonical raw result
 
 Expands turn intervals by `pre_roll_s` and `post_roll_s` (e.g. for audio extraction), clamps them to audio bounds, and halts expansion at `blocker_intervals` (neighboring other-speaker turns) to prevent cross-speaker audio contamination.
 
+### Plotting & Interactive Notebook Viewer
+
+**Defined in:** [`src/diarization/viewer.py`](../src/diarization/viewer.py)
+
+`DiarizationResult` provides built-in matplotlib visualization and interactive Jupyter widgets:
+
+```python
+# 1. Static timeline Gantt chart (all speaker turns & overlap flags):
+result.plot(title="Dialogue Timeline", figsize=(12, 3))
+
+# 2. Waveform context around turn #0 with raw vs refined boundary highlights:
+result.plot_turn(0, context_padding_s=0.20)
+
+# 3. Full interactive Jupyter widget viewer:
+result.display()  # alias for result.notebook_display()
+```
+
+The interactive viewer (`DiarizationResultNotebookViewer`) includes:
+- **Speaker dropdown & Search filter:** Filter turns by speaker or search transcript / boundary policies.
+- **Waveform viewer:** Real-time audio waveform showing blunt vs refined turn boundaries.
+- **Audio player:** Per-turn audio auditioning with lazy WAV extraction under `.data/notebook/diarization_viewer/`.
+
 ---
 
 ## 4. Diarization Evaluation (`evaluate_diarization`)

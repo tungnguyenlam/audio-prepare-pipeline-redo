@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import os
+
+# Prevent inheriting Jupyter inline backend in headless worker
+os.environ["MPLBACKEND"] = "Agg"
+
 import json
 import logging
 from pathlib import Path

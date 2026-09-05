@@ -78,6 +78,7 @@ flowchart TD
 - Turn Cleanup, Filtering & Evaluation:
   - `DiarizationFilter`: Configurable turn and result filtering criteria (speakers, min/max duration, overlap exclusion/isolation, confidence threshold, custom predicates, and optional turn cleanup).
   - `DiarizationResult.filter(...) / .clean(...) / .for_speaker(id) / .filter_with(filter)`: Non-mutating derived result operations with updated speaker lists.
+  - `DiarizationResult.plot(...) / .plot_turn(...) / .display()`: Built-in matplotlib timeline plotting, turn waveform boundary inspection, and interactive Jupyter notebook viewer.
   - `clean_speaker_turns(turns, ...) -> list[SpeakerTurn]`: Non-mutating jitter correction and boundary trimming.
   - `evaluate_diarization(reference_turns, hypothesis_turns, duration_s, ...) -> dict`: Exact Hungarian-matched DER/JER calculator.
 - Identity & Purity Verification:

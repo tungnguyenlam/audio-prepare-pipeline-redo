@@ -64,6 +64,11 @@ from src.diarization.turn_cleanup import (
     clean_speaker_turns,
     pad_and_merge_intervals,
 )
+from src.diarization.viewer import (
+    DiarizationResultNotebookViewer,
+    plot_diarization_result,
+    plot_turn_waveform,
+)
 from src.diarization.evaluation import evaluate_diarization
 from src.diarization.zero_contamination import (
     ZeroContaminationConfig,
@@ -114,6 +119,7 @@ __all__ = [
     "DiarizationFilter",
     "DiarizationModelInfo",
     "DiarizationResult",
+    "DiarizationResultNotebookViewer",
     "DiariZenDiarizer",
     "DiariZenWorkerDiarizer",
     "GeminiOverlapVerifier",
@@ -151,6 +157,8 @@ __all__ = [
     "evaluate_diarization",
     "is_overlap_readiness_error",
     "pad_and_merge_intervals",
+    "plot_diarization_result",
+    "plot_turn_waveform",
     "compute_consensus_turns",
     "erode_turn_boundaries",
     "run_zero_contamination_pipeline",

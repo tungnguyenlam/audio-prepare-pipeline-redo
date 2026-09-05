@@ -90,6 +90,7 @@ class DiariZenWorkerDiarizer(BaseDiarizer, ManagedModel):
         if os.path.isdir("/opt/rocm/bin") and "/opt/rocm/bin" not in worker_environment["PATH"]:
             worker_environment["PATH"] = f"/opt/rocm/bin:{worker_environment['PATH']}"
         worker_environment["PYTHONNOUSERSITE"] = "1"
+        worker_environment["MPLBACKEND"] = "Agg"
         worker_environment.setdefault(
             "HF_HOME",
             os.environ.get("HF_HOME") or str(_REPO_ROOT / ".data" / "huggingface"),

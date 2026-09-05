@@ -665,6 +665,72 @@ class DiarizationResult:
         """Return a copy of this result containing turns only for the specified speaker."""
         return self.filter(speakers=speaker_id)
 
+    def plot(
+        self,
+        *,
+        title: str | None = None,
+        figsize: tuple[float, float] | None = None,
+        show: bool = True,
+    ) -> Any:
+        """Plot a timeline / Gantt chart of speaker turns using matplotlib.
+
+        Args:
+            title: Optional title. Defaults to audio ID and turn statistics.
+            figsize: Optional figure size (width, height).
+            show: If True, calls plt.show(), closes figure, and returns None.
+
+        Returns:
+            None if show is True, otherwise the matplotlib Figure.
+        """
+        from src.diarization.viewer import plot_diarization_result
+
+        return plot_diarization_result(self, title=title, figsize=figsize, show=show)
+
+    def plot_turn(
+        self,
+        turn_or_index: int | SpeakerTurn,
+        *,
+        context_padding_s: float = 0.20,
+        figsize: tuple[float, float] = (12, 2.4),
+        show: bool = True,
+    ) -> Any:
+        """Plot the audio waveform context around a specific turn with boundaries.
+
+        Args:
+            turn_or_index: Turn index in ``self.turns`` or a ``SpeakerTurn`` instance.
+            context_padding_s: Extra padding before and after turn boundaries.
+            figsize: Matplotlib figure dimensions.
+            show: If True, calls plt.show(), closes figure, and returns None.
+
+        Returns:
+            None if show is True, otherwise the matplotlib Figure.
+        """
+        from src.diarization.viewer import plot_turn_waveform
+
+        return plot_turn_waveform(
+            self,
+            turn_or_index,
+            context_padding_s=context_padding_s,
+            figsize=figsize,
+            show=show,
+        )
+
+    def notebook_display(
+        self,
+        output_dir: str | Path | None = None,
+    ) -> None:
+        """Display an interactive IPython/Jupyter viewer for this result.
+
+        Provides speaker filtering, search, boundary inspection, waveform context,
+        and audio clip playback.
+        """
+        from src.diarization.viewer import DiarizationResultNotebookViewer
+
+        viewer = DiarizationResultNotebookViewer(self, output_dir=output_dir)
+        viewer.display()
+
+    display = notebook_display
+
     def to_dict(self) -> dict[str, Any]:
         """Return the single canonical JSON-compatible representation."""
         source_audio = self.source_audio.metadata() if self.source_audio else None

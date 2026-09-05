@@ -136,6 +136,10 @@ Whenever an `Audio` object is saved, an adjacent JSON sidecar is written:
   - `filter(...)`: Filters turns by `speakers`, `exclude_speakers`, `min_duration_s`, `max_duration_s`, `exclude_overlap`, `only_overlap`, `min_confidence`, `start_s`/`end_s`, or `predicate`.
   - `for_speaker(speaker_id)`: Quick single-speaker isolation returning new `DiarizationResult`.
   - `filter_with(diar_filter)`: Applies pre-configured `DiarizationFilter`.
+- **Visualization & Notebook Inspection:**
+  - `plot(title=None, figsize=None, show=True)`: Matplotlib timeline Gantt chart with per-speaker color lanes and overlap highlights.
+  - `plot_turn(turn_or_index, context_padding_s=0.20, show=True)`: Audio waveform plot around turn boundaries with raw vs refined spans.
+  - `notebook_display(output_dir=None)` / `display()`: Interactive Jupyter widget viewer with speaker dropdown, search filter, and per-turn audio playback.
 - **Serialization & Persistence:**
   - `to_dict()`: Exports schema 2.0 dictionary.
   - `from_dict(d)`: Reconstructs object with backwards-tolerant parsing (clamps overshoot timestamps, restores missing speakers).
