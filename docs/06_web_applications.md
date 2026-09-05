@@ -96,7 +96,7 @@ The **Sample Labeler** tab provides a clean multi-stage curation environment mod
 - **Stage 1 (Session & Ingestion):** Diarization run loader with audio stream readiness preview chip.
 - **Stage 2 (AI Classifier Trainer & Monitor):** Collapsible stage box featuring boundary-aware tri-scale pooling, multi-label BCE fine-tuning, and real-time W&B telemetry with interactive canvas curves.
 - **Dataset Quality Overview:** Real-time attrition-style metric scorecards (`Total Turns`, `Labeled Progress`, `Accept`, `Noise`, `>1 Speaker`, `Word Chopped`).
-- **Speech Turns Annotation Stream:** High-density, keyboard-driven workstation (`1`–`4`, `Space`, `J`/`K`) with streamlined turn cards, audio scrubbers, and speaker chips.
+- **Speech Turns Annotation Stream:** High-density, keyboard-driven workstation (`1`–`4`, `Space`, `J`/`K`) with streamlined turn cards, audio scrubbers, speaker chips, and per-sample WAV downloads from the selected source or stem.
 
 API endpoints:
 - `GET /api/labeler/results`: Lists durable DiarizationResults with labeling progress counts.

@@ -452,6 +452,7 @@
           ${turn.overlaps_other_speaker ? '<span class="badge badge-sm badge-danger">Overlap</span>' : ''}
         </div>
         <div class="lbl-turn-quick-status">
+          <button type="button" class="lbl-download-btn" title="Download this sample WAV" data-turn="${turn.index}">⬇ Download</button>
           <button type="button" class="lbl-clear-btn" title="Clear label (0 / Backspace)" data-turn="${turn.index}">✕ Clear</button>
         </div>
       </div>
@@ -520,6 +521,15 @@
       playBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         togglePlayTurn(turn.index);
+      });
+    }
+
+    // Download button
+    const downloadBtn = card.querySelector('.lbl-download-btn');
+    if (downloadBtn) {
+      downloadBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        downloadTurnSample(turn, e.currentTarget);
       });
     }
 
@@ -767,6 +777,88 @@
 
   function pauseAudio() {
     stopAudio();
+  }
+
+  function sanitizeDownloadStem(value, fallback) {
+    const cleaned = String(value || '')
+      .replace(/[^\w.-]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    return cleaned.slice(0, 60) || fallback;
+  }
+
+  function turnDownloadFilename(turn) {
+    const audioId = dom.audioSelect?.value || state.activeAudioId;
+    const stem = (state.resultData?.available_stems || []).find(item => item.id === audioId);
+    const sourceTitle = stem?.title || state.resultData?.source_audio?.title || state.resultData?.audio_id;
+    const title = sanitizeDownloadStem(sourceTitle, 'audio');
+    const speaker = sanitizeDownloadStem(turn.speaker_id, 'speaker');
+    const number = String(turn.index + 1).padStart(3, '0');
+    return `${title}_turn${number}_${speaker}_${Number(turn.start_s).toFixed(2)}-${Number(turn.end_s).toFixed(2)}.wav`;
+  }
+
+  function filenameFromContentDisposition(header, fallback) {
+    if (!header) return fallback;
+    const encoded = /filename\*=(?:UTF-8'')?([^;]+)/i.exec(header);
+    if (encoded) {
+      try {
+        return decodeURIComponent(encoded[1].trim().replace(/^"+|"+$/g, ''));
+      } catch (_) { /* Use the regular filename or fallback below. */ }
+    }
+    const quoted = /filename="([^"]+)"/i.exec(header);
+    return quoted ? quoted[1] : fallback;
+  }
+
+  async function responseError(res) {
+    const contentType = res.headers.get('Content-Type') || '';
+    if (contentType.includes('application/json')) {
+      const payload = await res.json();
+      return payload.error || `Download failed (HTTP ${res.status})`;
+    }
+    return (await res.text()) || `Download failed (HTTP ${res.status})`;
+  }
+
+  async function downloadTurnSample(turn, button) {
+    const audioId = dom.audioSelect?.value || state.activeAudioId;
+    const filename = turnDownloadFilename(turn);
+    const originalLabel = button.innerHTML;
+    button.disabled = true;
+    button.textContent = 'Downloading...';
+
+    try {
+      let url;
+      if (audioId) {
+        const params = new URLSearchParams({
+          start: String(turn.start_s),
+          end: String(turn.end_s),
+          filename,
+        });
+        url = `/api/audio/${encodeURIComponent(audioId)}/segment?${params.toString()}`;
+      } else {
+        url = `/api/labeler/results/${encodeURIComponent(state.activeResultId)}/turns/${turn.index}/audio`;
+      }
+
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(await responseError(res));
+      const blob = await res.blob();
+      const savedAs = audioId
+        ? filenameFromContentDisposition(res.headers.get('Content-Disposition'), filename)
+        : filename;
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = savedAs;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+      if (window.showToast) window.showToast(`Downloaded ${savedAs}`, 'success');
+    } catch (err) {
+      if (window.showToast) window.showToast(err.message || 'Unable to download this sample', 'error');
+      console.error('Sample download failed:', err);
+    } finally {
+      button.disabled = false;
+      button.innerHTML = originalLabel;
+    }
   }
 
   function stopAudio() {
