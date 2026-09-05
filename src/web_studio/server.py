@@ -5007,39 +5007,42 @@ async def handle_verify_diarization_batch(request: web.Request) -> web.Response:
                             ),
                         )
                         continue
-                    for turn in candidates:
+                    concurrency = getattr(
+                        overlap_verifier,
+                        "concurrency",
+                        10 if "gemini" in str(overlap_backend).lower() else 1,
+                    )
+                    concurrency = max(1, int(concurrency))
+                    sem = asyncio.Semaphore(concurrency)
+                    start_completed = completed
+
+                    async def verify_one_candidate(turn, candidate_idx):
                         if _task_is_cancelled(task_id):
-                            return
+                            return None
                         item = _direct_audio_purity_item(
                             audio, result, turn, profile_name
                         )
                         item["result_id"] = result.result_id
                         item["source_title"] = audio.title
                         item["turn_index"] = result.turns.index(turn)
-                        output_path = (
-                            work_dir / f"candidate_{completed + 1:05d}.wav"
-                        )
+                        output_path = work_dir / f"candidate_{candidate_idx:05d}.wav"
 
-                        def verify_candidate(
-                            turn=turn, output_path=output_path, audio=audio
-                        ):
+                        def cut_and_verify():
                             segment = cutter.cut(
                                 audio,
                                 turn.start_s,
                                 turn.end_s,
                                 output_path=output_path,
                             )
-                            if use_vibevoice:
-                                return vibe_verifier.verify(segment)
                             return overlap_verifier.verify(segment)
 
-                        try:
-                            direct_result = await loop.run_in_executor(
-                                None, verify_candidate
-                            )
-                            if use_vibevoice:
-                                _apply_vibevoice_purity_item(item, direct_result)
-                            else:
+                        async with sem:
+                            if _task_is_cancelled(task_id):
+                                return None
+                            try:
+                                direct_result = await loop.run_in_executor(
+                                    None, cut_and_verify
+                                )
                                 _apply_direct_overlap_decision(
                                     item,
                                     backend=str(overlap_backend),
@@ -5048,27 +5051,13 @@ async def handle_verify_diarization_batch(request: web.Request) -> web.Response:
                                     error=None,
                                     failure_policy=overlap_failure_policy,
                                 )
-                        except Exception as exc:
-                            if is_overlap_readiness_error(exc):
-                                raise OverlapVerifierError(
-                                    str(exc),
-                                    readiness=True,
-                                ) from exc
-                            error_text = f"{type(exc).__name__}: {exc}"
-                            if use_vibevoice:
-                                item["decision"] = (
-                                    "error"
-                                    if overlap_failure_policy == "fail_closed"
-                                    else "pass"
-                                )
-                                item["reason"] = (
-                                    "vibevoice_verification_failed"
-                                    if overlap_failure_policy == "fail_closed"
-                                    else None
-                                )
-                                item["error"] = error_text
-                                item["passed"] = item["decision"] == "pass"
-                            else:
+                            except Exception as exc:
+                                if is_overlap_readiness_error(exc):
+                                    raise OverlapVerifierError(
+                                        str(exc),
+                                        readiness=True,
+                                    ) from exc
+                                error_text = f"{type(exc).__name__}: {exc}"
                                 _apply_direct_overlap_decision(
                                     item,
                                     backend=str(overlap_backend),
@@ -5077,17 +5066,29 @@ async def handle_verify_diarization_batch(request: web.Request) -> web.Response:
                                     error=error_text,
                                     failure_policy=overlap_failure_policy,
                                 )
-                        collected.append(item)
-                        completed += 1
-                        task_manager.update_task(
-                            task_id,
-                            progress=completed / total_candidates,
-                            progress_known=True,
-                            message=(
-                                f"Direct audio check {completed}/"
-                                f"{total_candidates} with {overlap_backend}"
-                            ),
-                        )
+                            nonlocal completed
+                            completed += 1
+                            task_manager.update_task(
+                                task_id,
+                                progress=completed / total_candidates,
+                                progress_known=True,
+                                message=(
+                                    f"Direct audio check {completed}/"
+                                    f"{total_candidates} with {overlap_backend}"
+                                ),
+                            )
+                            return item
+
+                    batch_tasks = [
+                        verify_one_candidate(turn, start_completed + idx + 1)
+                        for idx, turn in enumerate(candidates)
+                    ]
+                    batch_items = await asyncio.gather(*batch_tasks)
+                    if _task_is_cancelled(task_id):
+                        return
+                    for item in batch_items:
+                        if item is not None:
+                            collected.append(item)
             finally:
                 if vibe_verifier is not None:
                     await asyncio.to_thread(vibe_verifier.unload)
@@ -5420,79 +5421,86 @@ async def handle_verify_speaker_purity(request: web.Request) -> web.Response:
                             f"{len(speaker_turns)} with {backend}"
                         ),
                     )
-                for position, turn in enumerate(speaker_turns, start=1):
-                    if use_vibevoice:
-                        break
+                if not use_vibevoice:
+                    concurrency = getattr(
+                        verifier,
+                        "concurrency",
+                        10 if "gemini" in str(backend).lower() else 1,
+                    )
+                    concurrency = max(1, int(concurrency))
+                    sem = asyncio.Semaphore(concurrency)
+                    completed_count = 0
+
+                    async def verify_one_speaker_turn(position, turn):
+                        if _task_is_cancelled(task_id):
+                            return None
+                        item = _direct_audio_purity_item(
+                            audio, diarization, turn, profile_name
+                        )
+                        output_path = work_dir / f"candidate_{position:05d}.wav"
+
+                        def cut_and_verify():
+                            segment = cutter.cut(
+                                audio,
+                                turn.start_s,
+                                turn.end_s,
+                                output_path=output_path,
+                            )
+                            return verifier.verify(segment)
+
+                        async with sem:
+                            if _task_is_cancelled(task_id):
+                                return None
+                            try:
+                                direct_result = await loop.run_in_executor(
+                                    None, cut_and_verify
+                                )
+                                _apply_direct_overlap_decision(
+                                    item,
+                                    backend=backend,
+                                    model=model,
+                                    result=direct_result,
+                                    error=None,
+                                    failure_policy=overlap_failure_policy,
+                                )
+                            except Exception as e:
+                                if is_overlap_readiness_error(e):
+                                    raise OverlapVerifierError(
+                                        str(e),
+                                        readiness=True,
+                                    ) from e
+                                error_text = f"{type(e).__name__}: {e}"
+                                _apply_direct_overlap_decision(
+                                    item,
+                                    backend=backend,
+                                    model=model,
+                                    result=None,
+                                    error=error_text,
+                                    failure_policy=overlap_failure_policy,
+                                )
+                            nonlocal completed_count
+                            completed_count += 1
+                            task_manager.update_task(
+                                task_id,
+                                progress=completed_count / len(speaker_turns),
+                                progress_known=True,
+                                message=(
+                                    f"Direct audio check {completed_count}/{len(speaker_turns)} "
+                                    f"with {backend}"
+                                ),
+                            )
+                            return item
+
+                    tasks = [
+                        verify_one_speaker_turn(position, turn)
+                        for position, turn in enumerate(speaker_turns, start=1)
+                    ]
+                    items = await asyncio.gather(*tasks)
                     if _task_is_cancelled(task_id):
                         return
-                    item = _direct_audio_purity_item(
-                        audio, diarization, turn, profile_name
-                    )
-                    output_path = work_dir / f"candidate_{position:05d}.wav"
-
-                    def verify_candidate(turn=turn, output_path=output_path):
-                        segment = cutter.cut(
-                            audio,
-                            turn.start_s,
-                            turn.end_s,
-                            output_path=output_path,
-                        )
-                        return verifier.verify(segment)
-
-                    try:
-                        direct_result = await loop.run_in_executor(
-                            None, verify_candidate
-                        )
-                        if use_vibevoice:
-                            _apply_vibevoice_purity_item(item, direct_result)
-                        else:
-                            _apply_direct_overlap_decision(
-                                item,
-                                backend=backend,
-                                model=model,
-                                result=direct_result,
-                                error=None,
-                                failure_policy=overlap_failure_policy,
-                            )
-                    except Exception as e:
-                        if is_overlap_readiness_error(e):
-                            raise OverlapVerifierError(
-                                str(e),
-                                readiness=True,
-                            ) from e
-                        error_text = f"{type(e).__name__}: {e}"
-                        if use_vibevoice:
-                            item["error"] = error_text
-                            item["decision"] = (
-                                "error"
-                                if overlap_failure_policy == "fail_closed"
-                                else "pass"
-                            )
-                            item["reason"] = (
-                                "vibevoice_verification_failed"
-                                if overlap_failure_policy == "fail_closed"
-                                else None
-                            )
-                            item["passed"] = item["decision"] == "pass"
-                        else:
-                            _apply_direct_overlap_decision(
-                                item,
-                                backend=backend,
-                                model=model,
-                                result=None,
-                                error=error_text,
-                                failure_policy=overlap_failure_policy,
-                            )
-                    serialized_results.append(item)
-                    task_manager.update_task(
-                        task_id,
-                        progress=position / len(speaker_turns),
-                        progress_known=True,
-                        message=(
-                            f"Direct audio check {position}/{len(speaker_turns)} "
-                            f"with {backend}"
-                        ),
-                    )
+                    for item in items:
+                        if item is not None:
+                            serialized_results.append(item)
             finally:
                 if vibe_verifier is not None:
                     await asyncio.to_thread(vibe_verifier.unload)

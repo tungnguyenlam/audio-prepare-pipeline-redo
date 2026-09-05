@@ -55,6 +55,8 @@ DEFAULT_UNSLOTH_ENDPOINT = (
 DEFAULT_GEMMA4_MODEL_ID = "unsloth/gemma-4-12b-it-GGUF"
 DEFAULT_GEMINI_MODEL_ID = "gemini-3.8-flash"
 DEFAULT_GEMINI_FLASH_LITE_MODEL_ID = "gemini-3.1-flash-lite"
+DEFAULT_GEMINI_CONCURRENCY = 10
+DEFAULT_GEMMA4_CONCURRENCY = 1
 UNSLOTH_PROBE_TIMEOUT_S = 5.0
 
 GEMINI_AUDIO_MODELS: tuple[dict[str, Any], ...] = (
@@ -178,6 +180,8 @@ class OverlapVerifierError(RuntimeError):
 class BaseOverlapVerifier(ABC):
     """Backend-independent interface for direct-audio overlap verification."""
 
+    concurrency: int = 1
+
     def check_ready(self, *, timeout_s: float | None = None) -> dict[str, Any]:
         """Return whether this backend can accept candidate audio."""
         del timeout_s
@@ -186,6 +190,40 @@ class BaseOverlapVerifier(ABC):
     @abstractmethod
     def verify(self, audio: Audio) -> OverlapVerificationResult:
         """Return speaker-purity and word-boundary quality for one segment."""
+
+    def verify_batch(
+        self,
+        audios: list[Audio],
+        *,
+        max_workers: int | None = None,
+    ) -> list[OverlapVerificationResult]:
+        """Verify multiple candidate segments concurrently.
+
+        Args:
+            audios: Candidate segments to verify.
+            max_workers: Concurrency limit. Defaults to ``self.concurrency``
+                (e.g., 10 for Gemini, 1 for Gemma).
+
+        Returns:
+            List of verification results in the exact order of ``audios``.
+        """
+        if not audios:
+            return []
+        effective_workers = (
+            max_workers
+            if max_workers is not None
+            else getattr(self, "concurrency", 1)
+        )
+        effective_workers = _validate_concurrency(effective_workers)
+        if effective_workers <= 1 or len(audios) <= 1:
+            return [self.verify(audio) for audio in audios]
+
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(
+            max_workers=min(effective_workers, len(audios))
+        ) as executor:
+            return list(executor.map(self.verify, audios))
 
 
 class Gemma4OverlapVerifier(BaseOverlapVerifier):
@@ -200,6 +238,7 @@ class Gemma4OverlapVerifier(BaseOverlapVerifier):
         timeout_s: float = 120.0,
         prompt: str = OVERLAP_PROMPT,
         max_output_tokens: int = DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS,
+        concurrency: int = DEFAULT_GEMMA4_CONCURRENCY,
     ) -> None:
         """Initialize the Unsloth-backed verifier.
 
@@ -214,6 +253,9 @@ class Gemma4OverlapVerifier(BaseOverlapVerifier):
             timeout_s: HTTP request timeout in seconds.
             prompt: Instruction sent with every candidate audio segment.
             max_output_tokens: Maximum tokens allowed for the JSON decision.
+            concurrency: Number of parallel candidate queries allowed when
+                calling ``verify_batch()``. Defaults to ``GEMMA4_CONCURRENCY``,
+                ``UNSLOTH_CONCURRENCY``, or 1.
         """
         self.endpoint = (
             endpoint
@@ -225,6 +267,16 @@ class Gemma4OverlapVerifier(BaseOverlapVerifier):
         self.timeout_s = _validate_timeout(timeout_s)
         self.prompt = _validate_prompt(prompt)
         self.max_output_tokens = _validate_max_output_tokens(max_output_tokens)
+        raw_concurrency = (
+            os.getenv("GEMMA4_CONCURRENCY")
+            or os.getenv("UNSLOTH_CONCURRENCY")
+        )
+        if raw_concurrency is not None:
+            try:
+                concurrency = int(raw_concurrency)
+            except ValueError:
+                pass
+        self.concurrency = _validate_concurrency(concurrency)
 
     def check_ready(self, *, timeout_s: float | None = None) -> dict[str, Any]:
         """Probe Unsloth before sending candidate audio.
@@ -371,6 +423,7 @@ class GeminiOverlapVerifier(BaseOverlapVerifier):
         timeout_s: float = 120.0,
         prompt: str = OVERLAP_PROMPT,
         max_output_tokens: int = DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS,
+        concurrency: int = DEFAULT_GEMINI_CONCURRENCY,
     ) -> None:
         """Initialize the Gemini-backed verifier.
 
@@ -381,12 +434,22 @@ class GeminiOverlapVerifier(BaseOverlapVerifier):
             timeout_s: HTTP request timeout in seconds.
             prompt: Instruction sent with every candidate audio segment.
             max_output_tokens: Maximum tokens allowed for the JSON decision.
+            concurrency: Number of parallel candidate queries allowed when
+                calling ``verify_batch()`` or batch tasks. Defaults to
+                ``GEMINI_CONCURRENCY`` or 10.
         """
         self.model = model or os.getenv("GEMINI_MODEL") or DEFAULT_GEMINI_MODEL_ID
         self.api_key = api_key if api_key is not None else os.getenv("GEMINI_API_KEY")
         self.timeout_s = _validate_timeout(timeout_s)
         self.prompt = _validate_prompt(prompt)
         self.max_output_tokens = _validate_max_output_tokens(max_output_tokens)
+        env_concurrency = os.getenv("GEMINI_CONCURRENCY")
+        if env_concurrency is not None:
+            try:
+                concurrency = int(env_concurrency)
+            except ValueError:
+                pass
+        self.concurrency = _validate_concurrency(concurrency)
 
     def check_ready(self, *, timeout_s: float | None = None) -> dict[str, Any]:
         """Validate the API key and selected model with Gemini's model API."""
@@ -878,6 +941,15 @@ def _validate_max_output_tokens(max_output_tokens: int) -> int:
     if max_output_tokens <= 0:
         raise ValueError("max_output_tokens must be greater than zero")
     return max_output_tokens
+
+
+def _validate_concurrency(concurrency: int) -> int:
+    """Return a positive concurrency limit."""
+    if isinstance(concurrency, bool) or not isinstance(concurrency, int):
+        raise TypeError("concurrency must be an integer")
+    if concurrency <= 0:
+        raise ValueError("concurrency must be greater than zero")
+    return concurrency
 
 
 def _default_unsloth_endpoint() -> str:

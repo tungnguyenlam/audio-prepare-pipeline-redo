@@ -315,11 +315,18 @@ Controls audio expansion during WAV cutting and stem export:
 - **Certainty:** **Empirical**. LLM instruction adherence is non-deterministic.
 
 #### `failure_policy` (`"fail_closed"` vs. `"fail_open"`, default: `"fail_closed"`)
-- **What it is:** Studio batch-verification setting (`handle_verify_diarization_batch` overlap config) determining the candidate decision when the remote LLM endpoint times out or returns HTTP 5xx. It is **not** a `Gemma4OverlapVerifier`/`GeminiOverlapVerifier` constructor argument (those take `endpoint`, `model`, `api_key`, `timeout_s=120.0`, `prompt`, `max_output_tokens`).
+- **What it is:** Studio batch-verification setting (`handle_verify_diarization_batch` overlap config) determining the candidate decision when the remote LLM endpoint times out or returns HTTP 5xx. It is **not** a `Gemma4OverlapVerifier`/`GeminiOverlapVerifier` constructor argument (those take `endpoint`, `model`, `api_key`, `timeout_s=120.0`, `prompt`, `max_output_tokens`, `concurrency`).
 - **`fail_closed`:** Marks candidate as `error` (excluded from dataset).
 - **`fail_open`:** Keeps candidate as `pass` while logging the warning.
 - **The Trade-off:** Zero-Risk Data Integrity vs. Pipeline Robustness to Network Glitches.
 - **Certainty:** **Guaranteed** error handling contract.
+
+#### `concurrency` (`int`, default: `10` for Gemini, `1` for Gemma 4)
+- **What it is:** The number of parallel candidate queries executed simultaneously during batch verification (`verify_batch()` and Studio/Zero-Contamination batch runs). Configurable via `concurrency` or environment variables `GEMINI_CONCURRENCY` / `GEMMA4_CONCURRENCY`.
+- **Higher Concurrency (e.g. 10–20 for Gemini):** Delivers ~8–10× faster batch completion times by overlapping network roundtrips to the Google Gemini API.
+- **Lower Concurrency (e.g. 1–2 for local Gemma 4):** Prevents GPU VRAM exhaustion (OOM) or request starvation on local inference backends like Unsloth/vLLM.
+- **The Trade-off:** Batch Verification Throughput vs. API Rate Limits / Local GPU Memory.
+- **Certainty:** **Deterministic** bounded worker pool / semaphore.
 
 ---
 

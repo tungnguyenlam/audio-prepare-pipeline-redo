@@ -81,7 +81,7 @@ flowchart TD
 - Identity & Purity Verification:
   - `SpeakerVerifier`: Enrolls global profiles (`.data/speaker_profiles/`) and computes cosine similarity.
   - `OverlapVerifier`: Multimodal direct-audio speaker-purity and word-boundary
-    verification (local Gemma 4 or Google Gemini), returning structured failure
+    verification (local Gemma 4 or Google Gemini via `verify(audio)` or concurrent `verify_batch(audios)`), returning structured failure
     evidence plus optional Gemini token usage and estimated cost.
   - `VibeVoicePurityVerifier`: Microsoft VibeVoice-ASR single vs multi-speaker classifier.
 

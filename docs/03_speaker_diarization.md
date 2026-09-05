@@ -214,12 +214,14 @@ In addition to acoustic embeddings, the pipeline provides direct-audio foundatio
 Sends candidate audio directly to multimodal foundation models. Both verifiers
 return `OverlapVerificationResult`, containing separate speaker-purity and
 word-completeness decisions, boundary evidence, failure codes, a reason, and
-optional usage/cost metadata, via `verify(audio)`:
-- **`Gemma4OverlapVerifier`:** Queries an OpenAI-compatible Unsloth Studio endpoint. Endpoint resolves as explicit arg → `UNSLOTH_ENDPOINT` → `http://<UNSLOTH_HOST=localhost>:<UNSLOTH_PORT=8888>/v1/chat/completions`; model resolves as arg → `UNSLOTH_MODEL` → `unsloth/gemma-4-12b-it-GGUF`. `check_ready()` probes `/v1/models`; default prompt asks whether two or more speakers overlap at the same time.
+optional usage/cost metadata, via `verify(audio)` or concurrent `verify_batch(audios)`:
+- **`Gemma4OverlapVerifier`:** Queries an OpenAI-compatible Unsloth Studio endpoint. Endpoint resolves as explicit arg → `UNSLOTH_ENDPOINT` → `http://<UNSLOTH_HOST=localhost>:<UNSLOTH_PORT=8888>/v1/chat/completions`; model resolves as arg → `UNSLOTH_MODEL` → `unsloth/gemma-4-12b-it-GGUF`. `check_ready()` probes `/v1/models`; default prompt asks whether two or more speakers overlap at the same time. Concurrency defaults to 1 (configurable via `concurrency` or `GEMMA4_CONCURRENCY`).
 - **`GeminiOverlapVerifier`:** Sends audio directly to Google Gemini (default
   `gemini-3.8-flash` via `GEMINI_MODEL`) using structured JSON output. The
   Experiment selector includes current audio-understanding Gemini 3 Flash,
   Flash-Lite, and 3.1 Pro options. Requires server-side `GEMINI_API_KEY`.
+  Supports high-throughput concurrent candidate verification (defaults to 10
+  parallel queries via `concurrency` or `GEMINI_CONCURRENCY`).
 
 ### `VibeVoicePurityVerifier`
 Uses Microsoft VibeVoice-ASR (default checkpoint `microsoft/VibeVoice-ASR-HF`; verified quantized choices include INT8/NF4; the zero-contamination default is `Dubedo/VibeVoice-ASR-HF-INT8`):

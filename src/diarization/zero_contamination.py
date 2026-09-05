@@ -1953,14 +1953,19 @@ def filter_by_foundation_models(
     try:
         with tempfile.TemporaryDirectory(prefix="foundation-audit-") as tmpdir:
             total = len(turns)
+            records: list[dict[str, Any]] = []
+
             for idx, turn in enumerate(turns):
                 if cancel_check and cancel_check():
-                    raise InterruptedError("Pipeline execution cancelled during foundation model verification")
+                    raise InterruptedError(
+                        "Pipeline execution cancelled during foundation model verification"
+                    )
 
                 if progress_callback:
-                    p = 0.70 + 0.28 * (idx / max(1, total))
+                    p = 0.70 + 0.14 * (idx / max(1, total))
                     progress_callback(
-                        p, f"Foundation audit: turn {idx+1}/{total} ({turn.duration_s:.1f}s)..."
+                        p,
+                        f"Foundation audit (VibeVoice): turn {idx+1}/{total} ({turn.duration_s:.1f}s)...",
                     )
 
                 start_samp = max(0, int(round(turn.start_s * sr)))
@@ -2028,28 +2033,76 @@ def filter_by_foundation_models(
                             is_pure = False
                             rejection_reason = f"VibeVoice verifier failed closed: {exc}"
 
-                # 2. Semantic & completeness auditor: Direct-audio verifier (Gemini / Gemma-4)
-                # Only invoked if turn passed VibeVoice speaker purity check (saves API tokens and compute).
-                if is_pure and gemma_verifier is not None:
+                records.append({
+                    "idx": idx,
+                    "turn": turn,
+                    "clip_audio": clip_audio,
+                    "audit_meta": audit_meta,
+                    "is_pure": is_pure,
+                    "rejection_reason": rejection_reason,
+                })
+
+            # 2. Semantic & completeness auditor: Direct-audio verifier (Gemini / Gemma-4)
+            # Only invoked if turn passed VibeVoice speaker purity check (saves API tokens and compute).
+            if gemma_verifier is not None:
+                gemma_candidates = [r for r in records if r["is_pure"]]
+                concurrency = getattr(
+                    gemma_verifier,
+                    "concurrency",
+                    10 if "gemini" in config.gemma_backend.lower() else 1,
+                )
+                concurrency = max(1, int(concurrency))
+                verifier_label = getattr(
+                    gemma_verifier, "model", config.gemma_backend
+                )
+                gemma_total = len(gemma_candidates)
+                gemma_done = 0
+
+                def verify_single_gemma(rec: dict[str, Any]) -> None:
+                    nonlocal gemma_done
+                    if cancel_check and cancel_check():
+                        raise InterruptedError(
+                            "Pipeline execution cancelled during foundation model verification"
+                        )
                     try:
-                        gemma_res = gemma_verifier.verify(clip_audio)
-                        audit_meta["gemma"] = gemma_res
+                        gemma_res = gemma_verifier.verify(rec["clip_audio"])
+                        rec["audit_meta"]["gemma"] = gemma_res
                         if gemma_res.get("decision") != "pass":
-                            is_pure = False
-                            verifier_label = getattr(
-                                gemma_verifier, "model", config.gemma_backend
-                            )
-                            rejection_reason = (
+                            rec["is_pure"] = False
+                            rec["rejection_reason"] = (
                                 f"{verifier_label} {gemma_res.get('decision')}: "
                                 f"{gemma_res.get('reason', '')}"
                             )
                     except Exception as exc:
-                        logger.warning("Direct-audio check failed on turn %s: %s", idx, exc)
-                        audit_meta["gemma_error"] = str(exc)
-                        is_pure = False
-                        rejection_reason = f"Direct-audio verifier failed closed: {exc}"
+                        logger.warning(
+                            "Direct-audio check failed on turn %s: %s", rec["idx"], exc
+                        )
+                        rec["audit_meta"]["gemma_error"] = str(exc)
+                        rec["is_pure"] = False
+                        rec["rejection_reason"] = f"Direct-audio verifier failed closed: {exc}"
+                    gemma_done += 1
+                    if progress_callback:
+                        p = 0.84 + 0.14 * (gemma_done / max(1, gemma_total))
+                        progress_callback(
+                            p,
+                            f"Foundation audit ({verifier_label}): turn {gemma_done}/{gemma_total}...",
+                        )
 
-                if is_pure:
+                if concurrency > 1 and len(gemma_candidates) > 1:
+                    from concurrent.futures import ThreadPoolExecutor
+
+                    with ThreadPoolExecutor(
+                        max_workers=min(concurrency, len(gemma_candidates))
+                    ) as executor:
+                        list(executor.map(verify_single_gemma, gemma_candidates))
+                else:
+                    for rec in gemma_candidates:
+                        verify_single_gemma(rec)
+
+            for rec in records:
+                turn = rec["turn"]
+                audit_meta = rec["audit_meta"]
+                if rec["is_pure"]:
                     if "gemma" in audit_meta:
                         turn._gemma_decision = audit_meta["gemma"]
                     if "vibevoice" in audit_meta:
@@ -2057,7 +2110,7 @@ def filter_by_foundation_models(
                     passed.append(turn)
                     audits.append((turn, True, "Passed foundation audit", audit_meta))
                 else:
-                    audits.append((turn, False, rejection_reason, audit_meta))
+                    audits.append((turn, False, rec["rejection_reason"], audit_meta))
 
     finally:
         if vibevoice_verifier is not None:
