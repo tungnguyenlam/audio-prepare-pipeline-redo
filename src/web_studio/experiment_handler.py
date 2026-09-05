@@ -359,6 +359,11 @@ class ExperimentRouteHandler:
             gemma_api_key=None,
             gemma_timeout_s=float(body.get("gemma_timeout_s", 120.0)),
             gemma_max_output_tokens=int(body.get("gemma_max_output_tokens", DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS)),
+            gemma_concurrency=(
+                int(body["gemma_concurrency"])
+                if body.get("gemma_concurrency") not in (None, "")
+                else None
+            ),
             enable_vibevoice=bool(body.get("enable_vibevoice", False)),
             vibevoice_model_id=body.get("vibevoice_model_id", "Dubedo/VibeVoice-ASR-HF-INT8"),
             vibevoice_device=vibevoice_device,
@@ -381,8 +386,9 @@ class ExperimentRouteHandler:
         if config.enable_vibevoice:
             models_list.append(f"VibeVoice ({vibevoice_device})")
         if config.enable_gemma:
+            conc_suffix = f" [x{config.gemma_concurrency}]" if config.gemma_concurrency else ""
             models_list.append(
-                f"{config.gemma_model or config.gemma_backend} direct audio"
+                f"{config.gemma_model or config.gemma_backend}{conc_suffix} direct audio"
             )
         model_display = " + ".join(models_list)
 

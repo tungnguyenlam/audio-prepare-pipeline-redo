@@ -325,6 +325,7 @@ class ZeroContaminationConfig:
     gemma_api_key: str | None = None
     gemma_timeout_s: float = 120.0
     gemma_max_output_tokens: int = 1024
+    gemma_concurrency: int | None = None     # None uses backend default (Gemini: 10, Gemma 4: 1) or env
 
     # General compute
     device: str = "auto"
@@ -434,6 +435,7 @@ Why this is critical for TTS datasets:
 | **`enable_gemma`** | `bool` `{True, False}` | `False` | Runs Gemini or local Gemma on direct audio for speaker purity, tail intrusion detection, and complete word boundaries. | Bypasses LLM evaluation and its latency/cost. | **Acoustic Quality vs. Latency, API Cost, and Yield.** |
 | **`gemma_backend`** | `str` `{"gemini", "gemma4"}` | `"gemini"` | Selects Google Gemini with server-side `GEMINI_API_KEY` or local OpenAI-compatible Gemma. | — | **Metered API vs. Local compute.** |
 | **`gemma_timeout_s`** | `float` `[5.0, 600.0s]` | `120.0s` | Allows remote LLM ample time to generate tokens and recover from high server load. | Fails quickly on unresponsive endpoints, preventing pipeline queue stalls. | **Request Resilience vs. Pipeline Latency.** |
+| **`gemma_concurrency`** | `int` `[1, 32]` | `None` (`10` for Gemini, `1` for Gemma 4) | Overlaps network roundtrips for 8–10× faster batch auditing on remote Gemini API. | Reduces parallel load on local/remote endpoint, avoiding rate limits or memory exhaustion. | **Verification Speed vs. Endpoint Load & Rate Limits.** |
 | **`enable_vibevoice`** | `bool` `{True, False}` | `False` | Uses Microsoft VibeVoice-ASR token stream to measure total duration of any secondary non-dominant speaker in the audio. | Bypasses VibeVoice verification. | **Token-Level Speaker Count Verification vs. Dedicated VRAM / Endpoint Requirement.** |
 | **`max_secondary_speech_s`** | `float` `[0.0, 10.0s]` | `0.0s` | Tolerates brief background vocal sounds, far-field murmur, or brief confirmations up to the threshold duration. | Absolute zero-tolerance policy. Rejects the candidate if VibeVoice detects a single secondary speaker token. | **Dataset Cleanliness vs. Monologue Yield.** Keep at `0.0s` for ultra-pure single-speaker TTS datasets. |
 

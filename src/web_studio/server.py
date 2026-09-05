@@ -1212,6 +1212,11 @@ def _parse_overlap_verifier_request(
                 "max_output_tokens", DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS
             )
         ),
+        "concurrency": (
+            int(overlap_settings["concurrency"])
+            if overlap_settings.get("concurrency") not in (None, "")
+            else None
+        ),
     }
     if str(config["backend"]).strip().lower() in {
         "gemma",

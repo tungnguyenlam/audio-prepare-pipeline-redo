@@ -158,6 +158,7 @@ const state = {
       endpoint: '',
       timeout: 120,
       maxOutputTokens: 256,
+      concurrency: 10,
       prompt: '',
       failurePolicy: 'fail_closed',
       minSecondarySpeech: 0.25,
@@ -684,6 +685,8 @@ const el = {
   btnTogglePurityOverlapKey: document.getElementById('btn-toggle-purity-overlap-key'),
   purityOverlapTimeoutField: document.getElementById('purity-overlap-timeout-field'),
   purityOverlapTimeout: document.getElementById('purity-overlap-timeout'),
+  purityOverlapConcurrencyField: document.getElementById('purity-overlap-concurrency-field'),
+  purityOverlapConcurrency: document.getElementById('purity-overlap-concurrency'),
   purityOverlapMaxTokensLabel: document.getElementById('purity-overlap-max-tokens-label'),
   purityOverlapMaxTokens: document.getElementById('purity-overlap-max-tokens'),
   purityOverlapFailurePolicy: document.getElementById('purity-overlap-failure-policy'),
@@ -8310,6 +8313,7 @@ function purityOverlapVerifierPayload() {
     endpoint: overlap.backend === 'gemma4' ? overlap.endpoint : undefined,
     api_key: overlap.backend === 'vibevoice' ? undefined : (el.purityOverlapApiKey?.value || undefined),
     timeout_s: overlap.timeout,
+    concurrency: overlap.backend === 'vibevoice' ? undefined : overlap.concurrency,
     max_output_tokens: overlap.backend === 'vibevoice' ? undefined : overlap.maxOutputTokens,
     max_new_tokens: overlap.backend === 'vibevoice' ? overlap.maxOutputTokens : undefined,
     min_secondary_speech_s: overlap.backend === 'vibevoice' ? overlap.minSecondarySpeech : undefined,
@@ -8329,6 +8333,9 @@ function applyPurityControls() {
   }
   if (el.purityOverlapEndpoint) el.purityOverlapEndpoint.value = overlap.endpoint;
   if (el.purityOverlapTimeout) el.purityOverlapTimeout.value = overlap.timeout;
+  if (el.purityOverlapConcurrency) {
+    el.purityOverlapConcurrency.value = overlap.concurrency ?? (overlap.backend === 'gemini' ? 10 : 1);
+  }
   if (el.purityOverlapMaxTokens) el.purityOverlapMaxTokens.value = overlap.maxOutputTokens;
   if (el.purityOverlapFailurePolicy) el.purityOverlapFailurePolicy.value = overlap.failurePolicy;
   if (el.purityOverlapPrompt) el.purityOverlapPrompt.value = overlap.prompt;
@@ -8405,6 +8412,7 @@ function syncPurityOverlapUi() {
   if (el.purityOverlapKeyField) el.purityOverlapKeyField.classList.toggle('hidden', isVibevoice);
   if (el.purityOverlapPromptField) el.purityOverlapPromptField.classList.toggle('hidden', isVibevoice);
   if (el.purityOverlapTimeoutField) el.purityOverlapTimeoutField.classList.toggle('hidden', isVibevoice);
+  if (el.purityOverlapConcurrencyField) el.purityOverlapConcurrencyField.classList.toggle('hidden', isVibevoice);
   if (el.purityVibevoiceSecondaryField) el.purityVibevoiceSecondaryField.classList.toggle('hidden', !isVibevoice);
   if (el.purityVibevoiceBatchField) el.purityVibevoiceBatchField.classList.toggle('hidden', !isVibevoice);
   if (el.purityVibevoiceDeviceField) el.purityVibevoiceDeviceField.classList.toggle('hidden', !isVibevoice);
@@ -8463,6 +8471,7 @@ async function loadSpeakerPurityConfig() {
       model: defaults.model || '',
       endpoint: config.gemma4?.endpoint || '',
       timeout: config.overlap_timeout_s || 120,
+      concurrency: backend === 'gemini' ? 10 : 1,
       maxOutputTokens: backend === 'vibevoice'
         ? (vibevoiceDefaults.max_new_tokens || 2048)
         : (config.overlap_max_output_tokens || 256),
@@ -8502,6 +8511,7 @@ function restorePurityOverlapDefaults() {
     model: defaults.model || '',
     endpoint: config.gemma4?.endpoint || '',
     timeout: config.overlap_timeout_s || 120,
+    concurrency: backend === 'gemini' ? 10 : 1,
     maxOutputTokens: backend === 'vibevoice'
       ? (vibevoiceDefaults.max_new_tokens || 2048)
       : (config.overlap_max_output_tokens || 256),
@@ -8541,6 +8551,11 @@ function initPurityTab() {
     } else if (previousBackend === 'vibevoice' && state.purity.overlap.maxOutputTokens === 2048) {
       state.purity.overlap.maxOutputTokens = state.purity.serverConfig?.overlap_max_output_tokens || 256;
     }
+    if (e.target.value === 'gemini' && previousBackend !== 'gemini' && state.purity.overlap.concurrency === 1) {
+      state.purity.overlap.concurrency = 10;
+    } else if (e.target.value !== 'gemini' && previousBackend === 'gemini' && state.purity.overlap.concurrency === 10) {
+      state.purity.overlap.concurrency = 1;
+    }
     applyPurityControls();
     savePurityPreferences();
   });
@@ -8562,6 +8577,11 @@ function initPurityTab() {
   el.purityOverlapTimeout?.addEventListener('change', e => {
     state.purity.overlap.timeout = Math.max(1, parseFloat(e.target.value) || 120);
     e.target.value = state.purity.overlap.timeout;
+    savePurityPreferences();
+  });
+  el.purityOverlapConcurrency?.addEventListener('change', e => {
+    state.purity.overlap.concurrency = Math.max(1, parseInt(e.target.value, 10) || 1);
+    e.target.value = state.purity.overlap.concurrency;
     savePurityPreferences();
   });
   el.purityOverlapMaxTokens?.addEventListener('change', e => {

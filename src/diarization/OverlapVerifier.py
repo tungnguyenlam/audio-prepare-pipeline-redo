@@ -238,15 +238,13 @@ class Gemma4OverlapVerifier(BaseOverlapVerifier):
         timeout_s: float = 120.0,
         prompt: str = OVERLAP_PROMPT,
         max_output_tokens: int = DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS,
-        concurrency: int = DEFAULT_GEMMA4_CONCURRENCY,
+        concurrency: int | None = None,
     ) -> None:
-        """Initialize the Unsloth-backed verifier.
+        """Initialize the Unsloth-backed Gemma 4 verifier.
 
         Args:
-            endpoint: Full OpenAI-compatible chat-completions URL. Defaults to
-                ``UNSLOTH_ENDPOINT`` or a URL using ``UNSLOTH_HOST`` (default:
-                localhost) and ``UNSLOTH_PORT`` (default: 8888).
-            model: Loaded Unsloth model ID. Defaults to ``UNSLOTH_MODEL`` or
+            endpoint: Multimodal chat completions endpoint URL.
+            model: Model identifier registered on the endpoint. Defaults to
                 the Gemma 4 12B repository ID.
             api_key: Unsloth API key. Defaults to ``UNSLOTH_API_KEY``. It is
                 optional for local servers configured without authentication.
@@ -267,15 +265,18 @@ class Gemma4OverlapVerifier(BaseOverlapVerifier):
         self.timeout_s = _validate_timeout(timeout_s)
         self.prompt = _validate_prompt(prompt)
         self.max_output_tokens = _validate_max_output_tokens(max_output_tokens)
-        raw_concurrency = (
-            os.getenv("GEMMA4_CONCURRENCY")
-            or os.getenv("UNSLOTH_CONCURRENCY")
-        )
-        if raw_concurrency is not None:
-            try:
-                concurrency = int(raw_concurrency)
-            except ValueError:
-                pass
+        if concurrency is None:
+            raw_concurrency = (
+                os.getenv("GEMMA4_CONCURRENCY")
+                or os.getenv("UNSLOTH_CONCURRENCY")
+            )
+            if raw_concurrency is not None:
+                try:
+                    concurrency = int(raw_concurrency)
+                except ValueError:
+                    pass
+        if concurrency is None:
+            concurrency = DEFAULT_GEMMA4_CONCURRENCY
         self.concurrency = _validate_concurrency(concurrency)
 
     def check_ready(self, *, timeout_s: float | None = None) -> dict[str, Any]:
@@ -423,7 +424,7 @@ class GeminiOverlapVerifier(BaseOverlapVerifier):
         timeout_s: float = 120.0,
         prompt: str = OVERLAP_PROMPT,
         max_output_tokens: int = DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS,
-        concurrency: int = DEFAULT_GEMINI_CONCURRENCY,
+        concurrency: int | None = None,
     ) -> None:
         """Initialize the Gemini-backed verifier.
 
@@ -443,12 +444,15 @@ class GeminiOverlapVerifier(BaseOverlapVerifier):
         self.timeout_s = _validate_timeout(timeout_s)
         self.prompt = _validate_prompt(prompt)
         self.max_output_tokens = _validate_max_output_tokens(max_output_tokens)
-        env_concurrency = os.getenv("GEMINI_CONCURRENCY")
-        if env_concurrency is not None:
-            try:
-                concurrency = int(env_concurrency)
-            except ValueError:
-                pass
+        if concurrency is None:
+            env_concurrency = os.getenv("GEMINI_CONCURRENCY")
+            if env_concurrency is not None:
+                try:
+                    concurrency = int(env_concurrency)
+                except ValueError:
+                    pass
+        if concurrency is None:
+            concurrency = DEFAULT_GEMINI_CONCURRENCY
         self.concurrency = _validate_concurrency(concurrency)
 
     def check_ready(self, *, timeout_s: float | None = None) -> dict[str, Any]:

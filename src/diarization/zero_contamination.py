@@ -189,6 +189,7 @@ class ZeroContaminationConfig:
     gemma_api_key: str | None = None
     gemma_timeout_s: float = 120.0
     gemma_max_output_tokens: int = 1024
+    gemma_concurrency: int | None = None
 
     # General compute settings
     device: str = "auto"
@@ -1881,15 +1882,31 @@ def filter_by_embedding_homogeneity(
 def filter_by_foundation_models(
     audio: Audio,
     turns: Sequence[SpeakerTurn],
-    config: ZeroContaminationConfig,
+    config: ZeroContaminationConfig | None = None,
     progress_callback: Callable[[float, str], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
+    **kwargs: Any,
 ) -> tuple[list[SpeakerTurn], list[tuple[SpeakerTurn, bool, str, dict[str, Any]]]]:
     """Audit surviving turns with a direct-audio LLM or VibeVoice-ASR.
+
+    Args:
+        audio: Audio segment or mixture containing the turns.
+        turns: Speaker turns surviving upstream stages.
+        config: Optional ZeroContaminationConfig dataclass. If omitted,
+            keyword arguments (**kwargs) are used to instantiate settings.
+        progress_callback: Optional progress reporter (float 0..1, message).
+        cancel_check: Optional cooperative cancellation check returning bool.
+        **kwargs: Direct parameter overrides (e.g. enable_gemma=True,
+            gemma_concurrency=10, gemma_model="gemini-3.8-flash").
 
     Returns:
         (passed_turns, audit_records_for_foundation_model)
     """
+    if config is None:
+        config = ZeroContaminationConfig(**kwargs)
+    elif kwargs:
+        config = replace(config, **kwargs)
+
     if not turns or (not config.enable_gemma and not config.enable_vibevoice):
         return list(turns), []
 
@@ -1921,6 +1938,7 @@ def filter_by_foundation_models(
             "api_key": config.gemma_api_key,
             "timeout_s": config.gemma_timeout_s,
             "max_output_tokens": config.gemma_max_output_tokens,
+            "concurrency": config.gemma_concurrency,
         }
         if config.gemma_backend == "gemma4":
             verifier_config["endpoint"] = config.gemma_endpoint

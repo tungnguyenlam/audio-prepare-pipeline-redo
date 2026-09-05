@@ -1793,6 +1793,10 @@
                       <label class="form-label" for="purity-overlap-timeout">Request timeout (s)</label>
                       <input id="purity-overlap-timeout" class="text-input" type="number" min="1" max="900" step="1" value="120">
                     </div>
+                    <div class="form-group mb-0" id="purity-overlap-concurrency-field">
+                      <label class="form-label" for="purity-overlap-concurrency" id="purity-overlap-concurrency-label">Concurrent requests</label>
+                      <input id="purity-overlap-concurrency" class="text-input" type="number" min="1" max="32" step="1" value="10" title="Concurrent requests to LLM verifier (Gemini default: 10, Gemma-4 default: 1).">
+                    </div>
                     <div class="form-group mb-0" id="purity-overlap-max-tokens-field">
                       <label class="form-label" for="purity-overlap-max-tokens" id="purity-overlap-max-tokens-label">Max output tokens</label>
                       <input id="purity-overlap-max-tokens" class="text-input" type="number" min="1" max="4096" step="1" value="256">
@@ -3328,7 +3332,7 @@
                     </div>
                   </div>
 
-                  <!-- Inference Limits: Timeout and Max Tokens -->
+                  <!-- Inference Limits: Timeout, Concurrency, and Max Tokens -->
                   <div class="form-row mb-2">
                     <div class="form-group col-half mb-0">
                       <div class="exp-param-header">
@@ -3344,6 +3348,21 @@
                       <input type="range" id="exp-gemma-timeout-slider" class="slider-input exp-slider" min="10" max="300" step="5" value="120" title="Direct-Audio Timeout [10 – 300s, Default: 120s]. Maximum wait time per candidate verification request.">
                     </div>
                     <div class="form-group col-half mb-0">
+                      <div class="exp-param-header">
+                        <label class="form-label" for="exp-gemma-concurrency" title="Direct-audio concurrency [1 – 32]. Gemini defaults to 10; local Gemma defaults to 1.">Concurrent Requests:</label>
+                        <div class="exp-param-ctrl">
+                          <div class="exp-num-input-wrap" title="Concurrent requests (1 – 32)">
+                            <input type="number" id="exp-gemma-concurrency" class="exp-num-input" min="1" max="32" step="1" value="10" title="Parallel requests sent to direct-audio verifier. (Default: 10 for Gemini, 1 for Gemma 4)">
+                            <span class="exp-num-unit">req</span>
+                          </div>
+                          <span class="badge badge-sm badge-ghost" id="exp-gemma-concurrency-val">10</span>
+                        </div>
+                      </div>
+                      <input type="range" id="exp-gemma-concurrency-slider" class="slider-input exp-slider" min="1" max="32" step="1" value="10" title="Direct-Audio Concurrency [1 – 32]. Gemini defaults to 10; local Gemma defaults to 1.">
+                    </div>
+                  </div>
+                  <div class="form-row mb-2">
+                    <div class="form-group col-full mb-0">
                       <label class="form-label" for="exp-gemma-max-tokens">Max structured-output tokens:</label>
                       <input type="number" id="exp-gemma-max-tokens" class="text-input" min="64" max="4096" step="1" value="1024" title="Maximum tokens allocated for the structured JSON verdict.">
                       <span class="text-xs text-muted" id="exp-gemma-tokens-hint" style="margin-top: 4px; display: block;">Gemini results record per-sample token usage and estimated paid-Standard USD cost; the result funnel shows the run total.</span>

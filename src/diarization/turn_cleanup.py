@@ -2,17 +2,202 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from math import isfinite
-from typing import Iterable, Sequence
+from typing import TYPE_CHECKING, Iterable, Sequence
 
 from src.diarization.schemas import SpeakerTurn
+
+if TYPE_CHECKING:
+    from src.diarization.schemas import DiarizationResult
 
 
 DEFAULT_MIN_TURN_DURATION_S = 0.5
 DEFAULT_MERGE_SAME_SPEAKER_GAP_S = 1.0
 DEFAULT_BOUNDARY_COLLAR_S = 0.04
 DEFAULT_JITTER_MAX_DURATION_S = 3.0
+
+
+@dataclass(frozen=True)
+class DiarizationFilter:
+    """Configurable filter and cleanup pipeline for diarization turns and results.
+
+    Provides fine-grained controls matching SonicStudio's Diarization tab:
+    speaker inclusion/exclusion, minimum/maximum turn duration, overlap
+    exclusion or isolation, confidence thresholding, time-range bounds,
+    custom predicates, and optional turn cleanup (A-B-A jitter correction,
+    boundary collar, same-speaker gap merging, and short-turn removal).
+    """
+
+    speakers: str | Sequence[str] | None = None
+    exclude_speakers: str | Sequence[str] | None = None
+    min_duration_s: float | None = None
+    max_duration_s: float | None = None
+    exclude_overlap: bool = False
+    only_overlap: bool = False
+    min_confidence: float | None = None
+    start_s: float | None = None
+    end_s: float | None = None
+    predicate: Callable[[SpeakerTurn], bool] | None = None
+
+    # Cleanup settings (optional)
+    clean_turns: bool = False
+    clean_first: bool = True
+    min_turn_duration_s: float = DEFAULT_MIN_TURN_DURATION_S
+    merge_same_speaker_gap_s: float = DEFAULT_MERGE_SAME_SPEAKER_GAP_S
+    boundary_collar_s: float = DEFAULT_BOUNDARY_COLLAR_S
+    jitter_max_duration_s: float = DEFAULT_JITTER_MAX_DURATION_S
+
+    def __post_init__(self) -> None:
+        if self.exclude_overlap and self.only_overlap:
+            raise ValueError("exclude_overlap and only_overlap cannot both be True")
+        if self.min_duration_s is not None:
+            if isinstance(self.min_duration_s, bool) or not isinstance(
+                self.min_duration_s, (int, float)
+            ):
+                raise TypeError("min_duration_s must be a number")
+            if not isfinite(self.min_duration_s) or self.min_duration_s < 0:
+                raise ValueError("min_duration_s must be finite and non-negative")
+        if self.max_duration_s is not None:
+            if isinstance(self.max_duration_s, bool) or not isinstance(
+                self.max_duration_s, (int, float)
+            ):
+                raise TypeError("max_duration_s must be a number")
+            if not isfinite(self.max_duration_s) or self.max_duration_s < 0:
+                raise ValueError("max_duration_s must be finite and non-negative")
+        if (
+            self.min_duration_s is not None
+            and self.max_duration_s is not None
+            and self.max_duration_s < self.min_duration_s
+        ):
+            raise ValueError("max_duration_s cannot be less than min_duration_s")
+
+        if self.min_confidence is not None:
+            if isinstance(self.min_confidence, bool) or not isinstance(
+                self.min_confidence, (int, float)
+            ):
+                raise TypeError("min_confidence must be a number")
+            if not isfinite(self.min_confidence) or not 0 <= self.min_confidence <= 1:
+                raise ValueError("min_confidence must be between 0 and 1")
+
+        if self.start_s is not None:
+            if isinstance(self.start_s, bool) or not isinstance(
+                self.start_s, (int, float)
+            ):
+                raise TypeError("start_s must be a number")
+            if not isfinite(self.start_s) or self.start_s < 0:
+                raise ValueError("start_s must be finite and non-negative")
+        if self.end_s is not None:
+            if isinstance(self.end_s, bool) or not isinstance(
+                self.end_s, (int, float)
+            ):
+                raise TypeError("end_s must be a number")
+            if not isfinite(self.end_s) or self.end_s < 0:
+                raise ValueError("end_s must be finite and non-negative")
+        if (
+            self.start_s is not None
+            and self.end_s is not None
+            and self.end_s <= self.start_s
+        ):
+            raise ValueError("end_s must be greater than start_s")
+
+        for name, value in {
+            "min_turn_duration_s": self.min_turn_duration_s,
+            "merge_same_speaker_gap_s": self.merge_same_speaker_gap_s,
+            "boundary_collar_s": self.boundary_collar_s,
+            "jitter_max_duration_s": self.jitter_max_duration_s,
+        }.items():
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise TypeError(f"{name} must be a number")
+            if not isfinite(value) or value < 0:
+                raise ValueError(f"{name} must be finite and non-negative")
+
+    def filter_turns(self, turns: Sequence[SpeakerTurn]) -> list[SpeakerTurn]:
+        """Apply filtering criteria and optional cleanup to a sequence of turns."""
+        if not all(isinstance(turn, SpeakerTurn) for turn in turns):
+            raise TypeError("turns must contain only SpeakerTurn values")
+
+        def _do_clean(items: Sequence[SpeakerTurn]) -> list[SpeakerTurn]:
+            return clean_speaker_turns(
+                items,
+                min_turn_duration_s=self.min_turn_duration_s,
+                merge_same_speaker_gap_s=self.merge_same_speaker_gap_s,
+                boundary_collar_s=self.boundary_collar_s,
+                jitter_max_duration_s=self.jitter_max_duration_s,
+            )
+
+        current = list(turns)
+        if self.clean_turns and self.clean_first:
+            current = _do_clean(current)
+
+        allowed_spks = (
+            {self.speakers}
+            if isinstance(self.speakers, str)
+            else set(self.speakers)
+            if self.speakers is not None
+            else None
+        )
+        excluded_spks = (
+            {self.exclude_speakers}
+            if isinstance(self.exclude_speakers, str)
+            else set(self.exclude_speakers)
+            if self.exclude_speakers is not None
+            else None
+        )
+
+        filtered: list[SpeakerTurn] = []
+        for turn in current:
+            if allowed_spks is not None and turn.speaker_id not in allowed_spks:
+                continue
+            if excluded_spks is not None and turn.speaker_id in excluded_spks:
+                continue
+            if self.min_duration_s is not None and turn.duration_s < self.min_duration_s:
+                continue
+            if self.max_duration_s is not None and turn.duration_s > self.max_duration_s:
+                continue
+            if self.exclude_overlap and turn.overlaps_other_speaker:
+                continue
+            if self.only_overlap and not turn.overlaps_other_speaker:
+                continue
+            if self.min_confidence is not None:
+                if turn.confidence is None or turn.confidence < self.min_confidence:
+                    continue
+            if self.start_s is not None and turn.start_s < self.start_s:
+                continue
+            if self.end_s is not None and turn.end_s > self.end_s:
+                continue
+            if self.predicate is not None and not self.predicate(turn):
+                continue
+            filtered.append(replace(turn))
+
+        if self.clean_turns and not self.clean_first:
+            filtered = _do_clean(filtered)
+
+        return filtered
+
+    def apply(self, result: DiarizationResult) -> DiarizationResult:
+        """Apply filtering criteria and optional cleanup to a DiarizationResult."""
+        from src.diarization.schemas import DiarizationResult as DiarResultCls
+
+        if not isinstance(result, DiarResultCls):
+            raise TypeError(
+                f"result must be a DiarizationResult, got {type(result).__name__}"
+            )
+        filtered_turns = self.filter_turns(result.turns)
+        return result.with_turns(filtered_turns)
+
+    def __call__(
+        self,
+        target: DiarizationResult | Sequence[SpeakerTurn],
+    ) -> DiarizationResult | list[SpeakerTurn]:
+        """Apply this filter to either a DiarizationResult or turn sequence."""
+        from src.diarization.schemas import DiarizationResult as DiarResultCls
+
+        if isinstance(target, DiarResultCls):
+            return self.apply(target)
+        return self.filter_turns(target)
+
 
 
 def clean_speaker_turns(

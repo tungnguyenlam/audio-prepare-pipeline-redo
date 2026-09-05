@@ -5,13 +5,17 @@ from __future__ import annotations
 import json
 import time
 import uuid
-from dataclasses import asdict, dataclass, field
+from collections.abc import Callable, Sequence
+from dataclasses import asdict, dataclass, field, replace
 from math import isfinite
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from src.data_paths import portable_data_path, resolve_data_path
 from src.utils.AudioClass import Audio
+
+if TYPE_CHECKING:
+    from src.diarization.turn_cleanup import DiarizationFilter
 
 
 DIARIZATION_RESULT_KIND = "diarization.result"

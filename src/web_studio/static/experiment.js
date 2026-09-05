@@ -188,6 +188,9 @@ Validation rules:
         gemmaTimeout: document.getElementById('exp-gemma-timeout'),
         gemmaTimeoutSlider: document.getElementById('exp-gemma-timeout-slider'),
         gemmaTimeoutValue: document.getElementById('exp-gemma-timeout-val'),
+        gemmaConcurrency: document.getElementById('exp-gemma-concurrency'),
+        gemmaConcurrencySlider: document.getElementById('exp-gemma-concurrency-slider'),
+        gemmaConcurrencyValue: document.getElementById('exp-gemma-concurrency-val'),
         gemmaPrompt: document.getElementById('exp-gemma-prompt'),
         btnGemmaPromptReset: document.getElementById('btn-exp-gemma-prompt-reset'),
         btnGemmaProbe: document.getElementById('btn-exp-gemma-probe'),
@@ -365,6 +368,13 @@ Validation rules:
         numInput: this.el.gemmaTimeout,
         badge: this.el.gemmaTimeoutValue,
         unit: 's',
+        decimals: 0,
+      });
+      this.bindDualControl({
+        slider: this.el.gemmaConcurrencySlider,
+        numInput: this.el.gemmaConcurrency,
+        badge: this.el.gemmaConcurrencyValue,
+        unit: '',
         decimals: 0,
       });
       this.bindDualControl({
@@ -746,6 +756,7 @@ Validation rules:
       this.setParamValue(this.el.vibevoiceMaxSec, this.el.vibevoiceMaxSecNum, 0.00);
       // Stage 5b: Direct-audio verifier
       this.setParamValue(this.el.gemmaTimeoutSlider, this.el.gemmaTimeout, 120);
+      this.setParamValue(this.el.gemmaConcurrencySlider, this.el.gemmaConcurrency, 10);
       if (this.el.gemmaPrompt) this.el.gemmaPrompt.value = DEFAULT_GEMMA_PROMPT;
       if (this.el.enableGemma) this.el.enableGemma.checked = false;
       if (this.el.gemmaBackend) this.el.gemmaBackend.value = 'gemini:gemini-3.8-flash';
@@ -756,6 +767,14 @@ Validation rules:
 
     syncDirectAudioProvider() {
       const isGemini = this.selectedDirectAudioBackend() === 'gemini';
+      if (this.el.gemmaConcurrency && this.el.gemmaConcurrencySlider) {
+        const curVal = parseInt(this.el.gemmaConcurrency.value, 10);
+        if (isGemini && curVal === 1) {
+          this.setParamValue(this.el.gemmaConcurrencySlider, this.el.gemmaConcurrency, 10);
+        } else if (!isGemini && curVal === 10) {
+          this.setParamValue(this.el.gemmaConcurrencySlider, this.el.gemmaConcurrency, 1);
+        }
+      }
       if (this.el.gemmaLocalFields) {
         this.el.gemmaLocalFields.style.display = isGemini ? 'none' : 'block';
       }
@@ -955,6 +974,7 @@ Validation rules:
         gemma_prompt: this.el.gemmaPrompt?.value,
         gemma_timeout_s: parseFloat(this.el.gemmaTimeout?.value || this.el.gemmaTimeoutSlider?.value || '120'),
         gemma_max_output_tokens: parseInt(this.el.gemmaMaxTokens?.value || '1024', 10),
+        gemma_concurrency: parseInt(this.el.gemmaConcurrency?.value || this.el.gemmaConcurrencySlider?.value || (this.selectedDirectAudioBackend() === 'gemini' ? '10' : '1'), 10),
       };
     },
 
