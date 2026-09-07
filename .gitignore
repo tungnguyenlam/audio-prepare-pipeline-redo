@@ -159,6 +159,7 @@ env.bak/
 venv.bak/
 
 # Local data artifacts
+/data
 /data/
 .data/
 /temp/
@@ -170,6 +171,8 @@ venv.bak/
 *.m4a
 *.ogg
 *.opus
+wandb/
+unsloth_compiled_cache/
 
 # Diarization benchmark runtime outputs (scripts/README stay tracked)
 /benchmark/cache/

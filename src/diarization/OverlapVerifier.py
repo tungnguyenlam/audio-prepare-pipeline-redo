@@ -48,7 +48,7 @@ Validation rules:
 - If word_completeness is "incomplete", boundary_issue must NOT be "none", and failure_codes MUST include at least one of: "clipped_word_start", "clipped_word_end", "unintelligible_boundary".
 - If word_completeness is "complete", boundary_issue MUST be "none" and no clipped codes may be included.
 - Return raw JSON only. Do not add markdown backticks (```json), commentary, or text outside the JSON object."""
-DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS = 1024
+DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS = 2048
 DEFAULT_UNSLOTH_HOST = "localhost"
 DEFAULT_UNSLOTH_PORT = 8888
 DEFAULT_UNSLOTH_ENDPOINT = (
@@ -437,6 +437,7 @@ class GeminiOverlapVerifier(BaseOverlapVerifier):
         prompt: str = OVERLAP_PROMPT,
         max_output_tokens: int = DEFAULT_OVERLAP_MAX_OUTPUT_TOKENS,
         concurrency: int | None = None,
+        thinking_level: str | None = None,
     ) -> None:
         """Initialize the Gemini-backed verifier.
 
@@ -450,12 +451,19 @@ class GeminiOverlapVerifier(BaseOverlapVerifier):
             concurrency: Number of parallel candidate queries allowed when
                 calling ``verify_batch()`` or batch tasks. Defaults to
                 ``GEMINI_CONCURRENCY`` or 10.
+            thinking_level: Reasoning level for thinking models (e.g., 'LOW',
+                'HIGH', 'OFF'). Defaults to ``GEMINI_THINKING_LEVEL`` or 'LOW'.
         """
         self.model = model or os.getenv("GEMINI_MODEL") or DEFAULT_GEMINI_MODEL_ID
         self.api_key = api_key if api_key is not None else os.getenv("GEMINI_API_KEY")
         self.timeout_s = _validate_timeout(timeout_s)
         self.prompt = _validate_prompt(prompt)
         self.max_output_tokens = _validate_max_output_tokens(max_output_tokens)
+        self.thinking_level = (
+            thinking_level
+            if thinking_level is not None
+            else os.getenv("GEMINI_THINKING_LEVEL", "LOW")
+        )
         if concurrency is None:
             env_concurrency = os.getenv("GEMINI_CONCURRENCY")
             if env_concurrency is not None:
@@ -517,6 +525,14 @@ class GeminiOverlapVerifier(BaseOverlapVerifier):
             "https://generativelanguage.googleapis.com/v1beta/models/"
             f"{quote(self.model, safe='')}:generateContent"
         )
+        generation_config: dict[str, Any] = {
+            "responseMimeType": "application/json",
+            "responseSchema": _GEMINI_OVERLAP_SCHEMA,
+            "responseJsonSchema": _OVERLAP_SCHEMA,
+            "maxOutputTokens": self.max_output_tokens,
+        }
+        if self.thinking_level:
+            generation_config["thinkingConfig"] = {"thinkingLevel": self.thinking_level}
         payload = {
             "contents": [
                 {
@@ -532,12 +548,7 @@ class GeminiOverlapVerifier(BaseOverlapVerifier):
                     ],
                 }
             ],
-            "generationConfig": {
-                "responseMimeType": "application/json",
-                "responseSchema": _GEMINI_OVERLAP_SCHEMA,
-                "responseJsonSchema": _OVERLAP_SCHEMA,
-                "maxOutputTokens": self.max_output_tokens,
-            },
+            "generationConfig": generation_config,
         }
         response = _post_json(
             endpoint,
