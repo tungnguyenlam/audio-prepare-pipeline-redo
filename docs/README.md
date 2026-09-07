@@ -29,6 +29,7 @@ flowchart LR
 | **07** | [**Data Contracts & Schemas**](07_data_contracts.md) | Canonical schemas, sidecar specs, and serialization | `DiarizationResult`, `SpeakerProfile`, `ZeroContaminationResult`, `AudioItem`, `.data/` layout |
 | **08** | [**Model Parameters & Trade-offs**](08_model_parameters_and_tradeoffs.md) | Parameter mechanics, directional sensitivity, and guaranteed vs empirical trade-offs | All separation, diarization, purity, and zero-contamination parameters |
 | **09** | [**AMD GPU Compatibility**](09_amd_gpu_compatibility.md) | AMD Radeon RX 9060 XT (16 GB) hardware execution, ROCm setup, and CPU fallbacks | ROCm 7.2, `gfx1200`, MIOpen, rocBLAS, rocFFT, SDPA, CPU fallback breakdown |
+| **10** | [**Experiments & Benchmarks**](../EXPERIMENTS.md) | Chronological experiment log: teacher reasoning comparison, 3-way diarization benchmark, and Gemma 4 E2B distillation | Gemini 3.8 Flash MEDIUM reasoning, Mel-Band RoFormer, DiariZen Large, Gemma 4 E2B |
 | **C** | [**Speech-Domain Concepts**](concepts/README.md) | Beginner-first explainers with diagrams: audio, separation, diarization, DER/Hungarian, embeddings, ASR/alignment, purity, boundaries, benchmarks, infra | Newcomer on-ramp; links back into `01_`–`08_` |
 
 ---

@@ -1,0 +1,1047 @@
+[
+  {
+    "model": "pyannote",
+    "strategy": "mitigated",
+    "speaker": "spk_00",
+    "start_s": 130.307,
+    "end_s": 139.748,
+    "duration_s": 9.441,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/pyannote_turn_02_mit_130.31-139.75.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "complete",
+      "audio_quality": "music_bleed",
+      "decision": "reject",
+      "failure_codes": [
+        "music_bleed"
+      ],
+      "reason": "Audible background acoustic music plays continuously behind the speaker throughout the entire recording.",
+      "latency_s": 2.66,
+      "duration_s": 9.441
+    }
+  },
+  {
+    "model": "pyannote",
+    "strategy": "raw",
+    "speaker": "spk_00",
+    "start_s": 59.869718750000004,
+    "end_s": 72.22221875000001,
+    "duration_s": 12.353,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/pyannote_turn_01_raw_59.87-72.22.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "clipped_word_end",
+      "audio_quality": "noisy_reverberant",
+      "decision": "reject",
+      "failure_codes": [
+        "clipped_word_end",
+        "noisy_reverberant"
+      ],
+      "reason": "The final word is cut off abruptly as the speaker continues talking, and the recording has noticeable room reverb and crowd/hall background noise.",
+      "latency_s": 2.82,
+      "duration_s": 12.352
+    }
+  },
+  {
+    "model": "pyannote",
+    "strategy": "mitigated",
+    "speaker": "spk_00",
+    "start_s": 10.781,
+    "end_s": 20.02,
+    "duration_s": 9.239,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/pyannote_turn_03_mit_10.78-20.02.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "clipped_word_end",
+      "audio_quality": "music_bleed",
+      "decision": "reject",
+      "failure_codes": [
+        "clipped_word_end",
+        "music_bleed"
+      ],
+      "reason": "Background music is present throughout the audio, and the final word is abruptly cut off.",
+      "latency_s": 3.04,
+      "duration_s": 9.239
+    }
+  },
+  {
+    "model": "pyannote",
+    "strategy": "raw",
+    "speaker": "spk_00",
+    "start_s": 10.83096875,
+    "end_s": 19.96034375,
+    "duration_s": 9.129,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/pyannote_turn_03_raw_10.83-19.96.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "clipped_word_end",
+      "audio_quality": "music_bleed",
+      "decision": "reject",
+      "failure_codes": [
+        "clipped_word_end",
+        "music_bleed"
+      ],
+      "reason": "Prominent background music is present throughout the clip, and the final word is clipped abruptly at the end.",
+      "latency_s": 3.46,
+      "duration_s": 9.129
+    }
+  },
+  {
+    "model": "pyannote",
+    "strategy": "mitigated",
+    "speaker": "spk_00",
+    "start_s": 59.82,
+    "end_s": 72.282,
+    "duration_s": 12.462,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/pyannote_turn_01_mit_59.82-72.28.wav",
+    "audit": {
+      "speaker_purity": "secondary_speaker",
+      "word_completeness": "clipped_word_end",
+      "audio_quality": "noisy_reverberant",
+      "decision": "reject",
+      "failure_codes": [
+        "clipped_word_end",
+        "secondary_speaker",
+        "noisy_reverberant"
+      ],
+      "reason": "The audio contains audible background chatter and crowd noise, room reverberation, and is abruptly cut off at the end mid-word.",
+      "latency_s": 3.61,
+      "duration_s": 12.462
+    }
+  },
+  {
+    "model": "pyannote",
+    "strategy": "raw",
+    "speaker": "spk_01",
+    "start_s": 122.03721875000001,
+    "end_s": 126.69471875,
+    "duration_s": 4.657,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/pyannote_turn_05_raw_122.04-126.69.wav",
+    "audit": {
+      "speaker_purity": "overlapping_speech",
+      "word_completeness": "clipped_word_end",
+      "audio_quality": "noisy_reverberant",
+      "decision": "reject",
+      "failure_codes": [
+        "clipped_word_end",
+        "overlapping_speech",
+        "noisy_reverberant"
+      ],
+      "reason": "Multiple background speakers and overlapping voices are present, with severe background noise and a cut-off at the end.",
+      "latency_s": 2.67,
+      "duration_s": 4.657
+    }
+  },
+  {
+    "model": "pyannote",
+    "strategy": "mitigated",
+    "speaker": "spk_01",
+    "start_s": 121.987,
+    "end_s": 126.755,
+    "duration_s": 4.768,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/pyannote_turn_05_mit_121.99-126.75.wav",
+    "audit": {
+      "speaker_purity": "overlapping_speech",
+      "word_completeness": "complete",
+      "audio_quality": "noisy_reverberant",
+      "decision": "reject",
+      "failure_codes": [
+        "overlapping_speech",
+        "noisy_reverberant"
+      ],
+      "reason": "Multiple speakers are talking and laughing over each other in a noisy environment.",
+      "latency_s": 2.38,
+      "duration_s": 4.768
+    }
+  },
+  {
+    "model": "pyannote",
+    "strategy": "mitigated",
+    "speaker": "spk_00",
+    "start_s": 28.179,
+    "end_s": 36.035,
+    "duration_s": 7.856,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/pyannote_turn_04_mit_28.18-36.03.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "clipped_word_end",
+      "audio_quality": "studio_clean",
+      "decision": "reject",
+      "failure_codes": [
+        "clipped_word_end"
+      ],
+      "reason": "The final word 'xe' is abruptly cut off before completing its natural acoustic decay.",
+      "latency_s": 3.85,
+      "duration_s": 7.856
+    }
+  },
+  {
+    "model": "pyannote",
+    "strategy": "raw",
+    "speaker": "spk_00",
+    "start_s": 28.22909375,
+    "end_s": 35.97471875,
+    "duration_s": 7.746,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/pyannote_turn_04_raw_28.23-35.97.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "clipped_word_start",
+      "audio_quality": "studio_clean",
+      "decision": "reject",
+      "failure_codes": [
+        "clipped_word_start"
+      ],
+      "reason": "The initial consonant of the first word is cut off abruptly at the very start of the recording.",
+      "latency_s": 4.21,
+      "duration_s": 7.746
+    }
+  },
+  {
+    "model": "pyannote",
+    "strategy": "raw",
+    "speaker": "spk_00",
+    "start_s": 36.31221875,
+    "end_s": 40.63221875,
+    "duration_s": 4.32,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/pyannote_turn_06_raw_36.31-40.63.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "clipped_word_end",
+      "audio_quality": "studio_clean",
+      "decision": "reject",
+      "failure_codes": [
+        "clipped_word_end"
+      ],
+      "reason": "The final word 'nhận' is abruptly cut off before its coda closure and vowel decay finish.",
+      "latency_s": 3.66,
+      "duration_s": 4.32
+    }
+  },
+  {
+    "model": "pyannote",
+    "strategy": "mitigated",
+    "speaker": "spk_00",
+    "start_s": 36.262,
+    "end_s": 40.692,
+    "duration_s": 4.43,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/pyannote_turn_06_mit_36.26-40.69.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "clipped_word_end",
+      "audio_quality": "studio_clean",
+      "decision": "reject",
+      "failure_codes": [
+        "clipped_word_end"
+      ],
+      "reason": "The final word 'nhận' is cut off prematurely at the end of the audio before full closure and decay.",
+      "latency_s": 2.76,
+      "duration_s": 4.43
+    }
+  },
+  {
+    "model": "pyannote",
+    "strategy": "raw",
+    "speaker": "spk_00",
+    "start_s": 130.35659375,
+    "end_s": 139.68846875,
+    "duration_s": 9.332,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/pyannote_turn_02_raw_130.36-139.69.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "complete",
+      "audio_quality": "music_bleed",
+      "decision": "reject",
+      "failure_codes": [
+        "music_bleed"
+      ],
+      "reason": "Audible background music is present throughout the audio track.",
+      "latency_s": 9.13,
+      "duration_s": 9.332
+    }
+  },
+  {
+    "model": "pyannote",
+    "strategy": "raw",
+    "speaker": "spk_00",
+    "start_s": 114.94971875,
+    "end_s": 118.76346875,
+    "duration_s": 3.814,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/pyannote_turn_08_raw_114.95-118.76.wav",
+    "audit": {
+      "speaker_purity": "overlapping_speech",
+      "word_completeness": "complete",
+      "audio_quality": "studio_clean",
+      "decision": "reject",
+      "failure_codes": [
+        "overlapping_speech"
+      ],
+      "reason": "Another speaker laughs and vocalizes loudly over the primary speaker towards the end of the recording.",
+      "latency_s": 3.33,
+      "duration_s": 3.814
+    }
+  },
+  {
+    "model": "pyannote",
+    "strategy": "mitigated",
+    "speaker": "spk_01",
+    "start_s": 80.458,
+    "end_s": 84.702,
+    "duration_s": 4.244,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/pyannote_turn_07_mit_80.46-84.70.wav",
+    "audit": {
+      "speaker_purity": "secondary_speaker",
+      "word_completeness": "clipped_word_end",
+      "audio_quality": "noisy_reverberant",
+      "decision": "reject",
+      "failure_codes": [
+        "clipped_word_end",
+        "secondary_speaker",
+        "noisy_reverberant"
+      ],
+      "reason": "The audio contains two different speakers talking in a reverberant hall environment, and the final word is abruptly cut off at the end.",
+      "latency_s": 3.99,
+      "duration_s": 4.244
+    }
+  },
+  {
+    "model": "pyannote",
+    "strategy": "mitigated",
+    "speaker": "spk_00",
+    "start_s": 114.9,
+    "end_s": 118.823,
+    "duration_s": 3.923,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/pyannote_turn_08_mit_114.90-118.82.wav",
+    "audit": {
+      "speaker_purity": "overlapping_speech",
+      "word_completeness": "complete",
+      "audio_quality": "noisy_reverberant",
+      "decision": "reject",
+      "failure_codes": [
+        "overlapping_speech",
+        "noisy_reverberant"
+      ],
+      "reason": "The audio contains crowd cheers and overlapping vocal noises alongside severe room reverberation.",
+      "latency_s": 3.48,
+      "duration_s": 3.923
+    }
+  },
+  {
+    "model": "pyannote",
+    "strategy": "raw",
+    "speaker": "spk_01",
+    "start_s": 80.50784375,
+    "end_s": 84.64221875000001,
+    "duration_s": 4.134,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/pyannote_turn_07_raw_80.51-84.64.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "clipped_word_end",
+      "audio_quality": "noisy_reverberant",
+      "decision": "reject",
+      "failure_codes": [
+        "clipped_word_end",
+        "noisy_reverberant"
+      ],
+      "reason": "The final word 'mừng' is cut off abruptly at the end, and the recording contains noticeable hall reverberation from a public address system.",
+      "latency_s": 6.11,
+      "duration_s": 4.134
+    }
+  },
+  {
+    "model": "diarizen",
+    "strategy": "raw",
+    "speaker": "spk_00",
+    "start_s": 130.33249999999998,
+    "end_s": 139.73250000000002,
+    "duration_s": 9.4,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/diarizen_turn_03_raw_130.33-139.73.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "complete",
+      "audio_quality": "music_bleed",
+      "decision": "reject",
+      "failure_codes": [
+        "music_bleed"
+      ],
+      "reason": "There is noticeable background music playing throughout the recording behind the speaker's voice.",
+      "latency_s": 2.7,
+      "duration_s": 9.4
+    }
+  },
+  {
+    "model": "diarizen",
+    "strategy": "raw",
+    "speaker": "spk_00",
+    "start_s": 59.8725,
+    "end_s": 72.1525,
+    "duration_s": 12.28,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/diarizen_turn_02_raw_59.87-72.15.wav",
+    "audit": {
+      "speaker_purity": "secondary_speaker",
+      "word_completeness": "clipped_word_end",
+      "audio_quality": "noisy_reverberant",
+      "decision": "reject",
+      "failure_codes": [
+        "clipped_word_end",
+        "secondary_speaker",
+        "noisy_reverberant"
+      ],
+      "reason": "The audio has prominent background crowd chatter and room reverberation, and it cuts off abruptly mid-sentence on the final word.",
+      "latency_s": 3.24,
+      "duration_s": 12.28
+    }
+  },
+  {
+    "model": "diarizen",
+    "strategy": "mitigated",
+    "speaker": "spk_00",
+    "start_s": 25.762,
+    "end_s": 40.812,
+    "duration_s": 15.05,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/diarizen_turn_01_mit_25.76-40.81.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "clipped_word_end",
+      "audio_quality": "music_bleed",
+      "decision": "reject",
+      "failure_codes": [
+        "clipped_word_end",
+        "music_bleed"
+      ],
+      "reason": "Audible background music plays throughout the recording, and the final word 'nhận' is abruptly cut off before its natural completion.",
+      "latency_s": 5.56,
+      "duration_s": 15.05
+    }
+  },
+  {
+    "model": "diarizen",
+    "strategy": "mitigated",
+    "speaker": "spk_00",
+    "start_s": 130.282,
+    "end_s": 139.793,
+    "duration_s": 9.511,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/diarizen_turn_03_mit_130.28-139.79.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "complete",
+      "audio_quality": "music_bleed",
+      "decision": "reject",
+      "failure_codes": [
+        "music_bleed"
+      ],
+      "reason": "A noticeable background music track is present throughout the entire audio.",
+      "latency_s": 3.17,
+      "duration_s": 9.511
+    }
+  },
+  {
+    "model": "diarizen",
+    "strategy": "mitigated",
+    "speaker": "spk_00",
+    "start_s": 10.663,
+    "end_s": 20.092,
+    "duration_s": 9.429,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/diarizen_turn_04_mit_10.66-20.09.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "complete",
+      "audio_quality": "music_bleed",
+      "decision": "reject",
+      "failure_codes": [
+        "music_bleed"
+      ],
+      "reason": "There is noticeable background music playing throughout the entire recording.",
+      "latency_s": 3.28,
+      "duration_s": 9.429
+    }
+  },
+  {
+    "model": "diarizen",
+    "strategy": "raw",
+    "speaker": "spk_00",
+    "start_s": 10.712500000000002,
+    "end_s": 20.0325,
+    "duration_s": 9.32,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/diarizen_turn_04_raw_10.71-20.03.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "clipped_word_end",
+      "audio_quality": "music_bleed",
+      "decision": "reject",
+      "failure_codes": [
+        "clipped_word_end",
+        "music_bleed"
+      ],
+      "reason": "Audible background music plays throughout the vlog audio, and the recording is abruptly cut off at the end on the final word.",
+      "latency_s": 3.34,
+      "duration_s": 9.32
+    }
+  },
+  {
+    "model": "diarizen",
+    "strategy": "mitigated",
+    "speaker": "spk_00",
+    "start_s": 59.823,
+    "end_s": 72.213,
+    "duration_s": 12.39,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/diarizen_turn_02_mit_59.82-72.21.wav",
+    "audit": {
+      "speaker_purity": "overlapping_speech",
+      "word_completeness": "clipped_word_end",
+      "audio_quality": "noisy_reverberant",
+      "decision": "reject",
+      "failure_codes": [
+        "clipped_word_end",
+        "overlapping_speech",
+        "noisy_reverberant"
+      ],
+      "reason": "Background voices and room chatter overlap with the primary speaker, the environment is reverberant and noisy, and the audio cuts off abruptly at the end.",
+      "latency_s": 6.33,
+      "duration_s": 12.39
+    }
+  },
+  {
+    "model": "diarizen",
+    "strategy": "mitigated",
+    "speaker": "spk_06",
+    "start_s": 111.983,
+    "end_s": 118.733,
+    "duration_s": 6.75,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/diarizen_turn_05_mit_111.98-118.73.wav",
+    "audit": {
+      "speaker_purity": "overlapping_speech",
+      "word_completeness": "complete",
+      "audio_quality": "noisy_reverberant",
+      "decision": "reject",
+      "failure_codes": [
+        "overlapping_speech",
+        "noisy_reverberant"
+      ],
+      "reason": "Multiple speakers are talking and laughing simultaneously over each other in an echoey room.",
+      "latency_s": 2.01,
+      "duration_s": 6.75
+    }
+  },
+  {
+    "model": "diarizen",
+    "strategy": "raw",
+    "speaker": "spk_06",
+    "start_s": 112.0325,
+    "end_s": 118.6725,
+    "duration_s": 6.64,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/diarizen_turn_05_raw_112.03-118.67.wav",
+    "audit": {
+      "speaker_purity": "overlapping_speech",
+      "word_completeness": "complete",
+      "audio_quality": "noisy_reverberant",
+      "decision": "reject",
+      "failure_codes": [
+        "overlapping_speech",
+        "noisy_reverberant"
+      ],
+      "reason": "Multiple voices and laughter are clearly audible and overlapping in the background throughout the recording.",
+      "latency_s": 2.52,
+      "duration_s": 6.64
+    }
+  },
+  {
+    "model": "diarizen",
+    "strategy": "raw",
+    "speaker": "spk_00",
+    "start_s": 0.1925,
+    "end_s": 5.2325,
+    "duration_s": 5.04,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/diarizen_turn_06_raw_0.19-5.23.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "complete",
+      "audio_quality": "music_bleed",
+      "decision": "reject",
+      "failure_codes": [
+        "music_bleed"
+      ],
+      "reason": "Audible background music is present throughout the entire audio clip.",
+      "latency_s": 2.6,
+      "duration_s": 5.04
+    }
+  },
+  {
+    "model": "diarizen",
+    "strategy": "raw",
+    "speaker": "spk_00",
+    "start_s": 25.8125,
+    "end_s": 40.7525,
+    "duration_s": 14.94,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/diarizen_turn_01_raw_25.81-40.75.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "clipped_word_end",
+      "audio_quality": "music_bleed",
+      "decision": "reject",
+      "failure_codes": [
+        "clipped_word_end",
+        "music_bleed"
+      ],
+      "reason": "Audible background music is present throughout the recording, and the final word is abruptly cut off mid-sentence.",
+      "latency_s": 11.56,
+      "duration_s": 14.94
+    }
+  },
+  {
+    "model": "diarizen",
+    "strategy": "mitigated",
+    "speaker": "spk_00",
+    "start_s": 0.143,
+    "end_s": 5.292,
+    "duration_s": 5.149,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/diarizen_turn_06_mit_0.14-5.29.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "complete",
+      "audio_quality": "music_bleed",
+      "decision": "reject",
+      "failure_codes": [
+        "music_bleed"
+      ],
+      "reason": "There is noticeable background music playing throughout the speech signal.",
+      "latency_s": 4.08,
+      "duration_s": 5.149
+    }
+  },
+  {
+    "model": "diarizen",
+    "strategy": "raw",
+    "speaker": "spk_06",
+    "start_s": 107.9325,
+    "end_s": 111.8525,
+    "duration_s": 3.92,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/diarizen_turn_08_raw_107.93-111.85.wav",
+    "audit": {
+      "speaker_purity": "overlapping_speech",
+      "word_completeness": "complete",
+      "audio_quality": "noisy_reverberant",
+      "decision": "reject",
+      "failure_codes": [
+        "overlapping_speech",
+        "noisy_reverberant"
+      ],
+      "reason": "Multiple speakers are conversing and overlapping, along with noticeable room acoustics.",
+      "latency_s": 3.99,
+      "duration_s": 3.92
+    }
+  },
+  {
+    "model": "diarizen",
+    "strategy": "raw",
+    "speaker": "spk_03",
+    "start_s": 80.5125,
+    "end_s": 84.61250000000001,
+    "duration_s": 4.1,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/diarizen_turn_07_raw_80.51-84.61.wav",
+    "audit": {
+      "speaker_purity": "secondary_speaker",
+      "word_completeness": "complete",
+      "audio_quality": "noisy_reverberant",
+      "decision": "reject",
+      "failure_codes": [
+        "secondary_speaker",
+        "noisy_reverberant"
+      ],
+      "reason": "Audible secondary voice/shouting in the background along with significant room reverberation and crowd noise.",
+      "latency_s": 4.53,
+      "duration_s": 4.1
+    }
+  },
+  {
+    "model": "diarizen",
+    "strategy": "mitigated",
+    "speaker": "spk_06",
+    "start_s": 107.883,
+    "end_s": 111.913,
+    "duration_s": 4.03,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/diarizen_turn_08_mit_107.88-111.91.wav",
+    "audit": {
+      "speaker_purity": "overlapping_speech",
+      "word_completeness": "complete",
+      "audio_quality": "noisy_reverberant",
+      "decision": "reject",
+      "failure_codes": [
+        "overlapping_speech",
+        "noisy_reverberant"
+      ],
+      "reason": "Multiple speakers are conversing and talking over each other with audible room background noise.",
+      "latency_s": 2.76,
+      "duration_s": 4.03
+    }
+  },
+  {
+    "model": "threed_speaker",
+    "strategy": "raw",
+    "speaker": "spk_00",
+    "start_s": 59.015,
+    "end_s": 72.4,
+    "duration_s": 13.385,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/threed_speaker_turn_01_raw_59.02-72.40.wav",
+    "audit": {
+      "speaker_purity": "overlapping_speech",
+      "word_completeness": "clipped_word_end",
+      "audio_quality": "noisy_reverberant",
+      "decision": "reject",
+      "failure_codes": [
+        "overlapping_speech",
+        "clipped_word_end",
+        "noisy_reverberant"
+      ],
+      "reason": "There is noticeable background crowd chatter and overlapping speech throughout the recording, severe room reverberation, and the final word is cut off abruptly.",
+      "latency_s": 3.99,
+      "duration_s": 13.385
+    }
+  },
+  {
+    "model": "threed_speaker",
+    "strategy": "raw",
+    "speaker": "spk_00",
+    "start_s": 130.07,
+    "end_s": 139.87,
+    "duration_s": 9.8,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/threed_speaker_turn_02_raw_130.07-139.87.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "complete",
+      "audio_quality": "music_bleed",
+      "decision": "reject",
+      "failure_codes": [
+        "music_bleed"
+      ],
+      "reason": "Audible background acoustic music plays continuously under the speaker's voice.",
+      "latency_s": 3.26,
+      "duration_s": 9.8
+    }
+  },
+  {
+    "model": "threed_speaker",
+    "strategy": "mitigated",
+    "speaker": "spk_00",
+    "start_s": 130.02,
+    "end_s": 139.93,
+    "duration_s": 9.91,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/threed_speaker_turn_02_mit_130.02-139.93.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "complete",
+      "audio_quality": "music_bleed",
+      "decision": "reject",
+      "failure_codes": [
+        "music_bleed"
+      ],
+      "reason": "Audible background music is present throughout the entire recording.",
+      "latency_s": 3.46,
+      "duration_s": 9.91
+    }
+  },
+  {
+    "model": "threed_speaker",
+    "strategy": "raw",
+    "speaker": "spk_00",
+    "start_s": 10.125,
+    "end_s": 19.875,
+    "duration_s": 9.75,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/threed_speaker_turn_03_raw_10.12-19.88.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "clipped_word_end",
+      "audio_quality": "music_bleed",
+      "decision": "reject",
+      "failure_codes": [
+        "clipped_word_end",
+        "music_bleed"
+      ],
+      "reason": "Audible background music is present throughout the audio, and the final word is cut off prematurely at the end.",
+      "latency_s": 3.01,
+      "duration_s": 9.75
+    }
+  },
+  {
+    "model": "diarizen",
+    "strategy": "mitigated",
+    "speaker": "spk_03",
+    "start_s": 80.463,
+    "end_s": 84.673,
+    "duration_s": 4.21,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/diarizen_turn_07_mit_80.46-84.67.wav",
+    "audit": {
+      "speaker_purity": "secondary_speaker",
+      "word_completeness": "complete",
+      "audio_quality": "noisy_reverberant",
+      "decision": "reject",
+      "failure_codes": [
+        "secondary_speaker",
+        "noisy_reverberant"
+      ],
+      "reason": "The recording contains hall reverb, audience clapping, and a loud secondary vocal shout at around 2.3 seconds.",
+      "latency_s": 8.53,
+      "duration_s": 4.21
+    }
+  },
+  {
+    "model": "threed_speaker",
+    "strategy": "mitigated",
+    "speaker": "spk_00",
+    "start_s": 58.965,
+    "end_s": 72.46,
+    "duration_s": 13.495,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/threed_speaker_turn_01_mit_58.97-72.46.wav",
+    "audit": {
+      "speaker_purity": "secondary_speaker",
+      "word_completeness": "clipped_word_end",
+      "audio_quality": "noisy_reverberant",
+      "decision": "reject",
+      "failure_codes": [
+        "clipped_word_end",
+        "secondary_speaker",
+        "noisy_reverberant"
+      ],
+      "reason": "Audible background laughter and secondary voices are present, the environment has room noise and reverberation, and the audio cuts off abruptly at the end mid-sentence.",
+      "latency_s": 5.52,
+      "duration_s": 13.495
+    }
+  },
+  {
+    "model": "threed_speaker",
+    "strategy": "mitigated",
+    "speaker": "spk_00",
+    "start_s": 10.075,
+    "end_s": 19.935,
+    "duration_s": 9.86,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/threed_speaker_turn_03_mit_10.07-19.93.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "clipped_word_end",
+      "audio_quality": "music_bleed",
+      "decision": "reject",
+      "failure_codes": [
+        "clipped_word_end",
+        "music_bleed"
+      ],
+      "reason": "Audible background music plays throughout the entire recording, and the final word is cut off abruptly at the end.",
+      "latency_s": 3.37,
+      "duration_s": 9.86
+    }
+  },
+  {
+    "model": "threed_speaker",
+    "strategy": "raw",
+    "speaker": "spk_00",
+    "start_s": 0.0,
+    "end_s": 7.875,
+    "duration_s": 7.875,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/threed_speaker_turn_05_raw_0.00-7.88.wav",
+    "audit": {
+      "speaker_purity": "secondary_speaker",
+      "word_completeness": "complete",
+      "audio_quality": "music_bleed",
+      "decision": "reject",
+      "failure_codes": [
+        "secondary_speaker",
+        "music_bleed"
+      ],
+      "reason": "A secondary speaker joins at the end of the audio saying 'Chúc mừng', and there is audible background music/bleed throughout.",
+      "latency_s": 2.45,
+      "duration_s": 7.875
+    }
+  },
+  {
+    "model": "threed_speaker",
+    "strategy": "mitigated",
+    "speaker": "spk_00",
+    "start_s": 0.0,
+    "end_s": 7.935,
+    "duration_s": 7.935,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/threed_speaker_turn_05_mit_0.00-7.93.wav",
+    "audit": {
+      "speaker_purity": "secondary_speaker",
+      "word_completeness": "complete",
+      "audio_quality": "studio_clean",
+      "decision": "reject",
+      "failure_codes": [
+        "secondary_speaker"
+      ],
+      "reason": "Another speaker appears at the end shouting 'Chúc mừng'.",
+      "latency_s": 2.34,
+      "duration_s": 7.935
+    }
+  },
+  {
+    "model": "threed_speaker",
+    "strategy": "raw",
+    "speaker": "spk_03",
+    "start_s": 24.375,
+    "end_s": 33.795,
+    "duration_s": 9.42,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/threed_speaker_turn_04_raw_24.38-33.80.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "complete",
+      "audio_quality": "noisy_reverberant",
+      "decision": "reject",
+      "failure_codes": [
+        "noisy_reverberant"
+      ],
+      "reason": "The recording has noticeable room echo and reverberation, lacking the dry clarity required for a studio clean TTS dataset.",
+      "latency_s": 3.95,
+      "duration_s": 9.42
+    }
+  },
+  {
+    "model": "threed_speaker",
+    "strategy": "mitigated",
+    "speaker": "spk_03",
+    "start_s": 24.325,
+    "end_s": 33.855,
+    "duration_s": 9.53,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/threed_speaker_turn_04_mit_24.32-33.85.wav",
+    "audit": {
+      "speaker_purity": "secondary_speaker",
+      "word_completeness": "complete",
+      "audio_quality": "noisy_reverberant",
+      "decision": "reject",
+      "failure_codes": [
+        "secondary_speaker",
+        "noisy_reverberant"
+      ],
+      "reason": "The recording contains noticeable room reverberation from a large hall and faint secondary speaker chatter in the background.",
+      "latency_s": 4.91,
+      "duration_s": 9.53
+    }
+  },
+  {
+    "model": "threed_speaker",
+    "strategy": "raw",
+    "speaker": "spk_03",
+    "start_s": 40.875,
+    "end_s": 46.125,
+    "duration_s": 5.25,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/threed_speaker_turn_07_raw_40.88-46.12.wav",
+    "audit": {
+      "speaker_purity": "secondary_speaker",
+      "word_completeness": "clipped_word_end",
+      "audio_quality": "distorted",
+      "decision": "reject",
+      "failure_codes": [
+        "clipped_word_end",
+        "secondary_speaker",
+        "distorted"
+      ],
+      "reason": "Multiple different speakers are heard across the audio segment, and the final word is clipped off at the end.",
+      "latency_s": 3.02,
+      "duration_s": 5.25
+    }
+  },
+  {
+    "model": "threed_speaker",
+    "strategy": "raw",
+    "speaker": "spk_03",
+    "start_s": 33.795,
+    "end_s": 40.125,
+    "duration_s": 6.33,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/threed_speaker_turn_06_raw_33.80-40.12.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "complete",
+      "audio_quality": "music_bleed",
+      "decision": "reject",
+      "failure_codes": [
+        "music_bleed"
+      ],
+      "reason": "Audible background music (acoustic guitar/instrumental track) is present throughout the recording.",
+      "latency_s": 4.26,
+      "duration_s": 6.33
+    }
+  },
+  {
+    "model": "threed_speaker",
+    "strategy": "mitigated",
+    "speaker": "spk_03",
+    "start_s": 33.745,
+    "end_s": 40.185,
+    "duration_s": 6.44,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/threed_speaker_turn_06_mit_33.74-40.19.wav",
+    "audit": {
+      "speaker_purity": "pure",
+      "word_completeness": "clipped_word_start",
+      "audio_quality": "studio_clean",
+      "decision": "reject",
+      "failure_codes": [
+        "clipped_word_start"
+      ],
+      "reason": "The initial consonant of the first word is cut off at the very beginning of the audio.",
+      "latency_s": 3.51,
+      "duration_s": 6.44
+    }
+  },
+  {
+    "model": "threed_speaker",
+    "strategy": "mitigated",
+    "speaker": "spk_03",
+    "start_s": 40.825,
+    "end_s": 46.185,
+    "duration_s": 5.36,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/threed_speaker_turn_07_mit_40.83-46.19.wav",
+    "audit": {
+      "speaker_purity": "secondary_speaker",
+      "word_completeness": "clipped_word_end",
+      "audio_quality": "distorted",
+      "decision": "reject",
+      "failure_codes": [
+        "clipped_word_end",
+        "secondary_speaker",
+        "distorted"
+      ],
+      "reason": "A secondary voice laughs and interjects in the background during the first segment, and the audio cuts off abruptly at the end with an incomplete number.",
+      "latency_s": 5.17,
+      "duration_s": 5.36
+    }
+  },
+  {
+    "model": "threed_speaker",
+    "strategy": "raw",
+    "speaker": "spk_01",
+    "start_s": 51.375,
+    "end_s": 56.41,
+    "duration_s": 5.035,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/threed_speaker_turn_08_raw_51.38-56.41.wav",
+    "audit": {
+      "speaker_purity": "secondary_speaker",
+      "word_completeness": "complete",
+      "audio_quality": "studio_clean",
+      "decision": "reject",
+      "failure_codes": [
+        "secondary_speaker"
+      ],
+      "reason": "There are two distinct speakers talking in a dialogue sequence within the recording.",
+      "latency_s": 4.75,
+      "duration_s": 5.035
+    }
+  },
+  {
+    "model": "threed_speaker",
+    "strategy": "mitigated",
+    "speaker": "spk_01",
+    "start_s": 51.325,
+    "end_s": 56.47,
+    "duration_s": 5.145,
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/benchmark_v2/cuts/threed_speaker_turn_08_mit_51.33-56.47.wav",
+    "audit": {
+      "speaker_purity": "secondary_speaker",
+      "word_completeness": "complete",
+      "audio_quality": "studio_clean",
+      "decision": "reject",
+      "failure_codes": [
+        "secondary_speaker"
+      ],
+      "reason": "The audio contains two different speakers (a female speaker followed by a male speaker).",
+      "latency_s": 4.6,
+      "duration_s": 5.145
+    }
+  }
+]

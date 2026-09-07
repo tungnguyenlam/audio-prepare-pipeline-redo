@@ -23,8 +23,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("push_hf_audio_dataset")
 
 HF_DATASET_REPO = "tungnguyenlam/vietnamese-acoustic-boundary-verifier-data"
-TRAIN_JSONL = Path(".data/distillation/train_extended.jsonl")
-VAL_JSONL = Path(".data/distillation/val_extended.jsonl")
+TRAIN_JSONL = Path(".data/distillation/train_combined.jsonl")
+VAL_JSONL = Path(".data/distillation/val_combined.jsonl")
 
 
 def load_split_with_audio(jsonl_path: Path) -> Dataset:

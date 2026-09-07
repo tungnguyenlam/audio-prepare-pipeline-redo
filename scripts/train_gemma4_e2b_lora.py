@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""Fine-tune Gemma 4 E4B via LoRA knowledge distillation from Gemini 3.8 Flash.
+"""Fine-tune Gemma 4 E2B via LoRA knowledge distillation from Gemini 3.8 Flash.
 
-Tracks live metrics on Weights & Biases (W&B) and pushes adapter weights to Hugging Face Hub.
+Trains google/gemma-4-E2B-it to evaluate:
+1. Speaker Purity (pure, secondary_speaker, overlapping_speech)
+2. Word Completeness (complete, clipped_word_start, clipped_word_end)
+3. Audio Quality (studio_clean, music_bleed, noisy_reverberant, distorted)
+Tracks metrics on Weights & Biases (W&B) and saves adapters locally.
 """
 
 from __future__ import annotations
@@ -27,7 +31,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
 )
-logger = logging.getLogger("distill_trainer")
+logger = logging.getLogger("distill_trainer_e2b")
 
 # Ensure repository root in sys.path and load environment
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -35,12 +39,12 @@ sys.path.insert(0, str(REPO_ROOT))
 load_dotenv(REPO_ROOT / ".env")
 
 # Hyperparameters & Constants
-MODEL_ID = "google/gemma-4-E4B-it"
-HF_HUB_REPO = "tungnguyenlam/gemma-4-e4b-acoustic-verifier"
-WANDB_PROJECT = "gemma-4-e4b-distill-verifier"
-CHECKPOINT_DIR = Path(".data/distillation/checkpoints/best_adapter")
-TRAIN_JSONL = Path(".data/distillation/train_combined.jsonl")
-VAL_JSONL = Path(".data/distillation/val_combined.jsonl")
+MODEL_ID = "google/gemma-4-E2B-it"
+HF_HUB_REPO = "tungnguyenlam/gemma-4-e2b-acoustic-verifier"
+WANDB_PROJECT = "gemma-4-e2b-distill-verifier"
+CHECKPOINT_DIR = Path(".data/distillation/checkpoints_e2b/best_adapter")
+TRAIN_JSONL = Path(".data/distillation/train_e2b.jsonl")
+VAL_JSONL = Path(".data/distillation/val_e2b.jsonl")
 
 LEARNING_RATE = 2e-4
 WEIGHT_DECAY = 0.01
@@ -162,12 +166,13 @@ def main() -> None:
         wandb.login(key=wandb_key)
         logger.info("W&B login successful.")
     else:
-        logger.warning("WANDB_API_KEY not found in environment; W&B may prompt or run offline.")
+        logger.warning("WANDB_API_KEY not found in environment; running W&B offline.")
+        os.environ["WANDB_MODE"] = "offline"
 
     # 1. Initialize W&B
     run = wandb.init(
         project=WANDB_PROJECT,
-        name=f"gemma4-e4b-lora-{time.strftime('%Y%m%d-%H%M%S')}",
+        name=f"gemma4-e2b-lora-{time.strftime('%Y%m%d-%H%M%S')}",
         config={
             "base_model": MODEL_ID,
             "target_repo": HF_HUB_REPO,
@@ -191,8 +196,8 @@ def main() -> None:
     train_data = load_and_preprocess_dataset(processor, TRAIN_JSONL, "train")
     val_data = load_and_preprocess_dataset(processor, VAL_JSONL, "val")
 
-    # 4. Load Base Model with 4-bit QLoRA and vision CPU offload
-    logger.info("Loading base model %s with 4-bit QLoRA and vision CPU offload...", MODEL_ID)
+    # 4. Load Base Model with 4-bit QLoRA
+    logger.info("Loading base model %s with 4-bit QLoRA...", MODEL_ID)
     device_map = {
         "model.vision_tower": "cpu",
         "model.embed_vision": "cpu",
@@ -349,68 +354,20 @@ def main() -> None:
             model.save_pretrained(str(CHECKPOINT_DIR))
             processor.save_pretrained(str(CHECKPOINT_DIR))
 
-    elapsed_time = time.time() - start_time
-    logger.info("Training completed in %.1f seconds (%.2f minutes).", elapsed_time, elapsed_time / 60)
+    elapsed_mins = (time.time() - start_time) / 60.0
+    logger.info("Training complete in %.2f minutes! Best Val Loss: %.4f", elapsed_mins, best_val_loss)
 
-    # 8. Push to Hugging Face Hub
-    logger.info("Pushing trained LoRA adapter to Hugging Face Hub: %s...", HF_HUB_REPO)
-    try:
-        model.push_to_hub(HF_HUB_REPO, token=hf_token)
-        processor.push_to_hub(HF_HUB_REPO, token=hf_token)
-
-        # Write and push Model Card README
-        readme_content = f"""---
-license: gemma
-base_model: {MODEL_ID}
-tags:
-- audio-acoustic-verification
-- speaker-diarization
-- zero-contamination
-- gemini-distillation
-- lora
-- vietnamese-speech
-datasets:
-- custom-khanhvy-distillation
----
-
-# Gemma 4 E4B Acoustic Boundary Verifier (LoRA Distillation)
-
-This adapter fine-tunes **{MODEL_ID}** using LoRA on acoustic boundary verification and speaker purity, distilled directly from **Google Gemini 3.8 Flash** (`thinkingLevel="MEDIUM"`) on 422 high-resolution Vietnamese conversational speech samples adhering strictly to the `[2.0s, 15.0s]` duration contract.
-
-## Training Details
-- **Teacher Model:** Google Gemini 3.8 Flash
-- **Student Model:** Google Gemma 4 E4B IT
-- **Target Task:** Strict acoustic validation for speech synthesis:
-  1. No clipped word onsets or codas (không lẹm chữ, complete tonal contour).
-  2. Pure single-speaker vocalization with zero trailing secondary voice intrusion (tail speaker intrusion / secondary whispers).
-- **LoRA Hyperparameters:**
-  - Rank: {LORA_R}
-  - Alpha: {LORA_ALPHA}
-  - Targets: `q_proj, v_proj, k_proj, o_proj, gate_proj, up_proj, down_proj`
-  - Epochs: {NUM_EPOCHS}
-  - Optimizer: AdamW (lr={LEARNING_RATE}, cosine warmup)
-- **Tracking:** Weights & Biases project `{WANDB_PROJECT}`.
-
-## Live Verification
-The adapter detects abrupt syllable cuts and secondary speaker intrusion directly in native 16 kHz audio without transcription text hallucination.
-"""
-        readme_path = CHECKPOINT_DIR / "README.md"
-        readme_path.write_text(readme_content, encoding="utf-8")
-
-        from huggingface_hub import HfApi
-        api = HfApi(token=hf_token)
-        api.upload_file(
-            path_or_fileobj=str(readme_path),
-            path_in_repo="README.md",
-            repo_id=HF_HUB_REPO,
-        )
-        logger.info("Successfully pushed model and README to https://huggingface.co/%s", HF_HUB_REPO)
-        wandb.log({"hf_hub_url": f"https://huggingface.co/{HF_HUB_REPO}"})
-    except Exception as exc:
-        logger.error("Failed to push to Hugging Face Hub: %s", exc)
+    # 8. Push to Hugging Face Hub if token is available
+    if hf_token:
+        try:
+            logger.info("Pushing adapter checkpoint to Hugging Face Hub (%s)...", HF_HUB_REPO)
+            model.push_to_hub(HF_HUB_REPO, token=hf_token, private=True)
+            processor.push_to_hub(HF_HUB_REPO, token=hf_token, private=True)
+            logger.info("Successfully pushed adapter to https://huggingface.co/%s", HF_HUB_REPO)
+        except Exception as exc:
+            logger.error("Failed to push adapter to HF Hub: %s", exc)
 
     wandb.finish()
-    logger.info("Fine-tuning pipeline finished successfully!")
 
 
 if __name__ == "__main__":

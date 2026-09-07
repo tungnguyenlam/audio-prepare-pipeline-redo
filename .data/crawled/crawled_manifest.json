@@ -1,0 +1,62 @@
+[
+  {
+    "id": "QBml8L3wS3Q",
+    "title": "Một Góc House Tour Nhà Trấn Thành Cùng 2 Thương Hiệu VIETCERAMICS Và UNIOS",
+    "url": "https://www.youtube.com/watch?v=QBml8L3wS3Q",
+    "channel": "tranthanhtown",
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/crawled/tranthanhtown/UCqL0-EknCK4m5pHrH79fOcw/Một_Góc_House_Tour_Nhà_Trấn_Thành_Cùng_2_Thương_Hiệu_VIETCERAMICS_Và_UNIOS__QBml8L3wS3Q.wav",
+    "duration_s": 716.4749375,
+    "sample_rate": 16000,
+    "channels": 1
+  },
+  {
+    "id": "Oa-mVxGS4cw",
+    "title": "Lấy Lại Gốc Tiếng Anh Trong 3 Tháng (Tất Cả Trong 1 Video) | Tự học Tiếng Anh VyVocab",
+    "url": "https://www.youtube.com/watch?v=Oa-mVxGS4cw",
+    "channel": "khánhvyofficial",
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/crawled/khánhvyofficial/UCwe0_8ud1vpKbWUHnkagorw/Lấy_Lại_Gốc_Tiếng_Anh_Trong_3_Tháng_(Tất_Cả_Trong_1_Video)_Tự_học_Tiếng_Anh_VyVocab__Oa-mVxGS4cw.wav",
+    "duration_s": 1363.6383125,
+    "sample_rate": 16000,
+    "channels": 1
+  },
+  {
+    "id": "i0zYcXBjytE",
+    "title": "PHÁO - CÚ NỔ CHẤN ĐỘNG | Behind the Scene #5 THỎ ƠI!! - Phim Tết TRẤN THÀNH 2026",
+    "url": "https://www.youtube.com/watch?v=i0zYcXBjytE",
+    "channel": "tranthanhtown",
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/crawled/tranthanhtown/UCqL0-EknCK4m5pHrH79fOcw/PHÁO_-_CÚ_NỔ_CHẤN_ĐỘNG_Behind_the_Scene_#5_THỎ_ƠI!!_-_Phim_Tết_TRẤN_THÀNH_2026__i0zYcXBjytE.wav",
+    "duration_s": 266.4954375,
+    "sample_rate": 16000,
+    "channels": 1
+  },
+  {
+    "id": "j83rzAzRDAI",
+    "title": "GÓC NHƯỢC SUY | Behind the Scene #5 THỎ ƠI!! - Phim Tết TRẤN THÀNH 2026",
+    "url": "https://www.youtube.com/watch?v=j83rzAzRDAI",
+    "channel": "tranthanhtown",
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/crawled/tranthanhtown/UCqL0-EknCK4m5pHrH79fOcw/GÓC_NHƯỢC_SUY_Behind_the_Scene_#5_THỎ_ƠI!!_-_Phim_Tết_TRẤN_THÀNH_2026__j83rzAzRDAI.wav",
+    "duration_s": 503.13,
+    "sample_rate": 16000,
+    "channels": 1
+  },
+  {
+    "id": "H0VpjeULCck",
+    "title": "VLOG: Tháp tùng chị gái nhận hàm PGS | Đằng sau các thành tựu viral là gì?(ft.YouTube Works Awards)",
+    "url": "https://www.youtube.com/watch?v=H0VpjeULCck",
+    "channel": "khánhvyofficial",
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/crawled/khánhvyofficial/UCwe0_8ud1vpKbWUHnkagorw/VLOG_Tháp_tùng_chị_gái_nhận_hàm_PGS_Đằng_sau_các_thành_tựu_viral_là_gì_(ft.YouTube_Works_Awards)__H0VpjeULCck.wav",
+    "duration_s": 1066.0165,
+    "sample_rate": 16000,
+    "channels": 1
+  },
+  {
+    "id": "lfIbjICmfW0",
+    "title": "Cách Tận Dụng tối đa Tuổi 20: 2026 Chỉ Cần Làm Tốt Những Điều Cơ Bản này | Kỹ năng Gen Z",
+    "url": "https://www.youtube.com/watch?v=lfIbjICmfW0",
+    "channel": "khánhvyofficial",
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/crawled/khánhvyofficial/UCwe0_8ud1vpKbWUHnkagorw/Cách_Tận_Dụng_tối_đa_Tuổi_20_2026_Chỉ_Cần_Làm_Tốt_Những_Điều_Cơ_Bản_này_Kỹ_năng_Gen_Z__lfIbjICmfW0.wav",
+    "duration_s": 901.503125,
+    "sample_rate": 16000,
+    "channels": 1
+  }
+]

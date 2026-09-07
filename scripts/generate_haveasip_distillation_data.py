@@ -15,6 +15,8 @@ import random
 import sys
 import time
 import wave
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -225,12 +227,18 @@ def main() -> None:
                     existing_paths.add(item.get("audio_path"))
         logger.info("Resuming: already have %d annotated samples.", len(annotated_items))
 
+    pending_candidates = []
     for idx, (cand_wav, cand_kind) in enumerate(candidates):
         resolved = str(cand_wav.resolve())
-        if resolved in existing_paths:
-            continue
+        if resolved not in existing_paths:
+            pending_candidates.append((idx + 1, cand_wav, cand_kind, resolved))
 
-        logger.info("[%d/%d] Annotating %s (%s)...", idx + 1, len(candidates), cand_wav.name, cand_kind)
+    logger.info("Total remaining clips to annotate: %d (concurrency=6)", len(pending_candidates))
+
+    write_lock = threading.Lock()
+
+    def process_candidate(task_tuple):
+        idx_num, cand_wav, cand_kind, resolved = task_tuple
         start_t = time.time()
         try:
             aud = Audio.from_file(cand_wav)
@@ -253,17 +261,25 @@ def main() -> None:
                 "duration_s": round(aud.duration_s, 3),
                 "teacher_latency_s": round(elapsed, 2),
             }
-            annotated_items.append(item)
-            existing_paths.add(resolved)
+            with write_lock:
+                annotated_items.append(item)
+                existing_paths.add(resolved)
+                with open(OUTPUT_JSONL, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(item, ensure_ascii=False) + "\n")
 
-            with open(OUTPUT_JSONL, "a", encoding="utf-8") as f:
-                f.write(json.dumps(item, ensure_ascii=False) + "\n")
-
-            logger.info("  -> Decision: %s | Codes: %s | Elapsed: %.2fs", res.get("decision"), res.get("failure_codes"), elapsed)
+            logger.info("[%d/%d] Done %s (%s) -> %s | Codes: %s | Elapsed: %.2fs",
+                        len(annotated_items), len(candidates), cand_wav.name, cand_kind,
+                        res.get("decision"), res.get("failure_codes"), elapsed)
+            return item
         except Exception as exc:
-            logger.error("  -> Failed to annotate %s: %s", cand_wav.name, exc)
+            logger.error("Failed to annotate %s: %s", cand_wav.name, exc)
+            return None
 
-        time.sleep(0.5)
+    if pending_candidates:
+        with ThreadPoolExecutor(max_workers=6) as executor:
+            futures = [executor.submit(process_candidate, t) for t in pending_candidates]
+            for f in as_completed(futures):
+                _ = f.result()
 
     logger.info("Annotation complete! Total annotated samples: %d", len(annotated_items))
 
