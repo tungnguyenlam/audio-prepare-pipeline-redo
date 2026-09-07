@@ -64,7 +64,15 @@ def build_sample(
     target_json: dict,
 ) -> dict[str, torch.Tensor]:
     """Pre-process a single multimodal audio+text sample with masked labels."""
-    audio_data, _ = librosa.load(audio_path, sr=16000)
+    p = Path(audio_path)
+    if not p.is_file():
+        p = REPO_ROOT / audio_path
+    if not p.is_file() and ".data" in str(audio_path):
+        rel_data = str(audio_path).split(".data/")[-1]
+        p = REPO_ROOT / ".data" / rel_data
+    if not p.is_file():
+        raise FileNotFoundError(f"Audio file not found: {audio_path} (resolved to {p})")
+    audio_data, _ = librosa.load(str(p), sr=16000)
     target_str = json.dumps(target_json, ensure_ascii=False)
 
     messages = [
