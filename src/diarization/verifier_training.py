@@ -172,8 +172,9 @@ def load_trainable_verifier_model(
     processor = AutoProcessor.from_pretrained(model_id, token=hf_token)
 
     # 3. Quantization configuration
+    is_rocm = getattr(torch.version, "hip", None) is not None
     if quantization == "auto":
-        quantization = "4bit" if use_cuda else "none"
+        quantization = "none" if is_rocm else ("4bit" if use_cuda else "none")
 
     bnb_config = None
     device_map = None
@@ -202,7 +203,7 @@ def load_trainable_verifier_model(
             "lm_head": actual_device,
         }
     elif use_cuda and quantization == "none":
-        device_map = "auto"
+        device_map = actual_device
     else:
         # CPU loading
         device_map = "cpu"
