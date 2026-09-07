@@ -127,3 +127,27 @@ To stress-test separation, diarization, and boundary mitigation, audio was inges
 
 ### Acoustic Analysis:
 `gemini-3.5-flash-lite` operates with shallow acoustic reasoning: it detects overt overlapping dialogue and loud secondary voices (e.g. turns 11, 17, 18, 19, 20, 21, 22, 30), but frequently fails to catch subtler boundary clipping (cut-off coda consonants or tone contours) where `gemini-3.8-flash` (MEDIUM reasoning) correctly rejected candidates. This confirms why `gemini-3.8-flash` with reasoning is essential as our primary teacher model for high-fidelity data supervision.
+
+---
+
+## 7. Phase 6: Gemma 4 E2B LoRA Distillation on AMD GPU (ROCm 10.0)
+
+**Model:** `google/gemma-4-E2B-it` (Audio-Language Model).  
+**Dataset:** 220 samples (175 train, 45 validation) mined from real-world Tran Thanh and Khanh Vy vlog recordings with Gemini 3.8 Flash teacher annotations.  
+**Hardware:** AMD Radeon RX 9060 XT (16 GB VRAM, RDNA 4 / `gfx1200`).  
+**Runtime:** ROCm 10.0 / HIP, PyTorch `2.13.0+rocm10.0.0`, `torchvision==0.28.0+rocm10.0.0`.  
+**Script:** [`scripts/train_verifier.py`](scripts/train_verifier.py).  
+**W&B Dashboard:** [chess/gemma-4-distill-verifier](https://wandb.ai/chess/gemma-4-distill-verifier/runs/u3liwf2n).  
+**Hub Adapter:** [tungnguyenlam/gemma-4-e2b-acoustic-verifier](https://huggingface.co/tungnguyenlam/gemma-4-e2b-acoustic-verifier).
+
+### Hardware & Convergence Metrics:
+- **Precision Mode:** Native `bfloat16` (`--quantization none`). Fits within 16 GB VRAM without requiring CUDA-only `bitsandbytes` kernels.
+- **VRAM Utilization:** 16.26 GB peak / 16.38 GB (98% capacity utilized).
+- **GPU Engine Throughput:** 100% active GPU utilization during forward and backward passes (~16 seconds per 20 optimizer steps; ~0.8s per sample with gradient accumulation).
+- **Initial Zero-Shot Validation Loss:** `1.6548`
+- **Final Epoch 3 Validation Loss:** `0.3437` *(79.2% loss reduction)*
+- **Final Train Loss:** `0.2299`
+- **Artifacts:**
+  - Local Checkpoint: `.data/distillation/checkpoints_e2b/best_adapter/` (123 MB bundle: `adapter_model.safetensors`, `adapter_config.json`, tokenizers, and processor configs).
+  - Pushed to Hugging Face Model Hub: `https://huggingface.co/tungnguyenlam/gemma-4-e2b-acoustic-verifier`.
+
