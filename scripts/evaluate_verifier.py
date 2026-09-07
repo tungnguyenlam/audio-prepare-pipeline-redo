@@ -137,6 +137,24 @@ def query_gemini(
     return parsed
 
 
+def extract_json_payload(text: str) -> dict[str, Any]:
+    """Robustly extract and parse JSON object from model output text."""
+    import re
+
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.splitlines()
+        cleaned = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        # Fallback: search for first { and last }
+        match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+        if match:
+            return json.loads(match.group(0))
+        raise
+
+
 def query_hf_local(
     audio_path: Path,
     model: Any,
@@ -150,38 +168,86 @@ def query_hf_local(
 
     t0 = time.time()
     audio_data, _ = librosa.load(str(audio_path), sr=16000)
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "audio", "audio": audio_data},
-                {"type": "text", "text": prompt},
-            ],
-        }
-    ]
-    text = processor.apply_chat_template(messages, add_generation_prompt=True)
-    inputs = processor(text=text, audio=audio_data, return_tensors="pt", sampling_rate=16000)
-    inputs = {k: v.to(device) for k, v in inputs.items()}
 
-    use_cuda = device.startswith("cuda")
-    autocast_ctx = (
-        torch.autocast(device_type="cuda", dtype=torch.bfloat16)
-        if use_cuda
-        else torch.autocast(device_type="cpu", dtype=torch.bfloat16)
+    # Check if model provides custom .chat() interface (e.g., MiniCPM-o)
+    if hasattr(model, "chat") and not hasattr(processor, "apply_chat_template"):
+        msgs = [{"role": "user", "content": prompt}]
+        res = model.chat(image=None, audio=audio_data, msgs=msgs, tokenizer=processor)
+        output_text = res if isinstance(res, str) else str(res)
+    else:
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "audio", "audio": audio_data},
+                    {"type": "text", "text": prompt},
+                ],
+            }
+        ]
+        text = processor.apply_chat_template(messages, add_generation_prompt=True)
+        inputs = processor(text=text, audio=audio_data, return_tensors="pt", sampling_rate=16000)
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+
+        use_cuda = device.startswith("cuda")
+        autocast_ctx = (
+            torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+            if use_cuda
+            else torch.autocast(device_type="cpu", dtype=torch.bfloat16)
+        )
+
+        with torch.no_grad(), autocast_ctx:
+            generated_ids = model.generate(**inputs, max_new_tokens=256, do_sample=False)
+
+        new_tokens = generated_ids[0][inputs["input_ids"].shape[1] :]
+        output_text = processor.decode(new_tokens, skip_special_tokens=True).strip()
+
+    latency = round(time.time() - t0, 3)
+    parsed = extract_json_payload(output_text)
+    parsed["_latency_s"] = latency
+    return parsed
+
+
+def query_endpoint(
+    audio_path: Path,
+    endpoint: str,
+    model_name: str,
+    prompt: str,
+) -> dict[str, Any]:
+    """Query OpenAI / vLLM compatible multimodal audio endpoint."""
+    with open(audio_path, "rb") as f:
+        audio_b64 = base64.b64encode(f.read()).decode("ascii")
+
+    payload = {
+        "model": model_name,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_audio",
+                        "input_audio": {"data": audio_b64, "format": "wav"},
+                    },
+                    {"type": "text", "text": prompt},
+                ],
+            }
+        ],
+        "temperature": 0.0,
+        "max_tokens": 512,
+    }
+
+    t0 = time.time()
+    req = urllib.request.Request(
+        endpoint,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
     )
-
-    with torch.no_grad(), autocast_ctx:
-        generated_ids = model.generate(**inputs, max_new_tokens=256, do_sample=False)
-
-    new_tokens = generated_ids[0][inputs["input_ids"].shape[1] :]
-    output_text = processor.decode(new_tokens, skip_special_tokens=True).strip()
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        res = json.loads(resp.read().decode("utf-8"))
     latency = round(time.time() - t0, 3)
 
-    if output_text.startswith("```"):
-        lines = output_text.splitlines()
-        output_text = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
-
-    parsed = json.loads(output_text)
+    raw_text = res["choices"][0]["message"]["content"]
+    parsed = extract_json_payload(raw_text)
     parsed["_latency_s"] = latency
     return parsed
 
@@ -252,9 +318,12 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     # Backend & Model
-    parser.add_argument("--backend", type=str, default="hf_local", choices=["hf_local", "gemini"], help="Evaluation backend")
-    parser.add_argument("--model", type=str, default="google/gemma-4-E2B-it", help="Model name or HF model ID (e.g. google/gemma-4-E2B-it, gemini-3.5-flash-lite)")
+    parser.add_argument("--backend", type=str, default="hf_local", choices=["hf_local", "gemini", "endpoint"], help="Evaluation backend")
+    parser.add_argument("--model", type=str, default="google/gemma-4-E2B-it", help="Model name or HF model ID (e.g. google/gemma-4-E2B-it, openbmb/MiniCPM-o-4_5, moonshotai/Kimi-Audio-7B-Instruct, gemini-3.5-flash-lite)")
     parser.add_argument("--adapter-path", type=str, default=None, help="LoRA adapter path or HF repo ID (e.g. .data/distillation/checkpoints_e2b/best_adapter)")
+    parser.add_argument("--endpoint", type=str, default="http://localhost:8000/v1/chat/completions", help="OpenAI / vLLM compatible multimodal audio endpoint (for backend=endpoint)")
+    parser.add_argument("--trust-remote-code", action="store_true", default=True, help="Trust remote code when loading custom HF models (e.g. MiniCPM-o, Kimi-Audio)")
+    parser.add_argument("--torch-dtype", type=str, default="bfloat16", choices=["bfloat16", "float16", "float32"], help="PyTorch tensor dtype")
     parser.add_argument("--reasoning-effort", type=str, default="medium", choices=["none", "low", "medium", "high"], help="Reasoning level (for Gemini)")
     parser.add_argument("--device", type=str, default="auto", help="Device for hf_local ('auto', 'cuda:0', 'cpu')")
 
@@ -266,7 +335,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-json", type=str, default=None, help="Path to save raw evaluation output JSON")
     parser.add_argument("--output-report", type=str, default=None, help="Path to save Markdown evaluation report")
     parser.add_argument("--export-csv", type=str, default=None, help="Path to export evaluation results to CSV")
-    parser.add_argument("--concurrency", type=int, default=5, help="Concurrent workers for Gemini queries")
+    parser.add_argument("--concurrency", type=int, default=5, help="Concurrent workers for Gemini/endpoint queries")
 
     return parser.parse_args()
 
@@ -292,13 +361,33 @@ def main() -> None:
         from transformers import AutoProcessor, AutoModelForConditionalGeneration
 
         actual_device = "cuda:0" if (args.device == "auto" and torch.cuda.is_available()) or args.device.startswith("cuda") else "cpu"
-        logger.info("Loading HF model '%s' on %s...", args.model, actual_device)
-        hf_processor = AutoProcessor.from_pretrained(args.model)
-        hf_model = AutoModelForConditionalGeneration.from_pretrained(
-            args.model,
-            torch_dtype=torch.bfloat16,
-            device_map=actual_device,
-        )
+        logger.info("Loading HF model '%s' on %s (trust_remote_code=%s)...", args.model, actual_device, args.trust_remote_code)
+        hf_token = os.getenv("HF_TOKEN")
+        try:
+            hf_processor = AutoProcessor.from_pretrained(args.model, trust_remote_code=args.trust_remote_code, token=hf_token)
+        except Exception:
+            from transformers import AutoTokenizer
+            hf_processor = AutoTokenizer.from_pretrained(args.model, trust_remote_code=args.trust_remote_code, token=hf_token)
+
+        dtype = getattr(torch, args.torch_dtype, torch.bfloat16)
+        try:
+            hf_model = AutoModelForConditionalGeneration.from_pretrained(
+                args.model,
+                torch_dtype=dtype,
+                device_map=actual_device,
+                trust_remote_code=args.trust_remote_code,
+                token=hf_token,
+            )
+        except Exception:
+            from transformers import AutoModel
+            hf_model = AutoModel.from_pretrained(
+                args.model,
+                torch_dtype=dtype,
+                device_map=actual_device,
+                trust_remote_code=args.trust_remote_code,
+                token=hf_token,
+            )
+
         if args.adapter_path:
             logger.info("Attaching LoRA adapter from '%s'...", args.adapter_path)
             hf_model = PeftModel.from_pretrained(hf_model, args.adapter_path)
@@ -315,6 +404,25 @@ def main() -> None:
                 audio_p = resolve_audio_path(raw_path, REPO_ROOT)
                 prompt = item.get("prompt", DEFAULT_ACOUSTIC_PROMPT)
                 fut = executor.submit(query_gemini, audio_p, args.model, api_key, prompt, args.reasoning_effort)
+                future_to_item[fut] = item
+
+            for fut in as_completed(future_to_item):
+                item = future_to_item[fut]
+                try:
+                    res = fut.result()
+                    results.append({"item": item, "prediction": res, "success": True})
+                    logger.info("Sample %s -> %s (latency: %.2fs)", item.get("id", ""), res.get("decision", ""), res.get("_latency_s", 0))
+                except Exception as exc:
+                    logger.error("Sample %s failed: %s", item.get("id", ""), exc)
+                    results.append({"item": item, "error": str(exc), "success": False})
+    elif args.backend == "endpoint":
+        with ThreadPoolExecutor(max_workers=args.concurrency) as executor:
+            future_to_item = {}
+            for item in items:
+                raw_path = item.get("audio_path") or item.get("wav_path") or item.get("audio") or ""
+                audio_p = resolve_audio_path(raw_path, REPO_ROOT)
+                prompt = item.get("prompt", DEFAULT_ACOUSTIC_PROMPT)
+                fut = executor.submit(query_endpoint, audio_p, args.endpoint, args.model, prompt)
                 future_to_item[fut] = item
 
             for fut in as_completed(future_to_item):
