@@ -87,16 +87,9 @@ print('Shard 1 cached:', bool(f1))
 print('Shard 2 cached:', bool(f2))
 "
 ```
-If not yet finished downloading, resume the download:
+If not yet finished downloading, resume with native automatic retry:
 ```bash
-.venv/bin/python -c "
-import os
-from dotenv import load_dotenv
-load_dotenv()
-os.environ['HF_XET_HIGH_PERFORMANCE'] = '1'
-from huggingface_hub import snapshot_download
-snapshot_download('ericleigh007/MiniCPM-o-4_5-BNB-Int4', token=os.getenv('HF_TOKEN'))
-"
+.venv/bin/huggingface-cli download ericleigh007/MiniCPM-o-4_5-BNB-Int4
 ```
 
 ### Step 2: Evaluate MiniCPM-o 4.5 INT4 on 31 Khanh Vy Benchmark Cuts
