@@ -358,7 +358,11 @@ def main() -> None:
     elif args.backend == "hf_local":
         import torch
         from peft import PeftModel
-        from transformers import AutoProcessor, AutoModelForConditionalGeneration
+        from transformers import AutoProcessor, AutoModelForCausalLM, AutoModel
+        try:
+            from transformers import Gemma4ForConditionalGeneration
+        except ImportError:
+            Gemma4ForConditionalGeneration = None
 
         actual_device = "cuda:0" if (args.device == "auto" and torch.cuda.is_available()) or args.device.startswith("cuda") else "cpu"
         logger.info("Loading HF model '%s' on %s (trust_remote_code=%s)...", args.model, actual_device, args.trust_remote_code)
@@ -370,23 +374,34 @@ def main() -> None:
             hf_processor = AutoTokenizer.from_pretrained(args.model, trust_remote_code=args.trust_remote_code, token=hf_token)
 
         dtype = getattr(torch, args.torch_dtype, torch.bfloat16)
+        hf_model = None
+        candidate_classes = []
+        if "gemma-4" in args.model.lower() and Gemma4ForConditionalGeneration is not None:
+            candidate_classes.append(Gemma4ForConditionalGeneration)
         try:
-            hf_model = AutoModelForConditionalGeneration.from_pretrained(
-                args.model,
-                torch_dtype=dtype,
-                device_map=actual_device,
-                trust_remote_code=args.trust_remote_code,
-                token=hf_token,
-            )
+            from transformers import AutoModelForImageTextToText
+            candidate_classes.append(AutoModelForImageTextToText)
         except Exception:
-            from transformers import AutoModel
-            hf_model = AutoModel.from_pretrained(
-                args.model,
-                torch_dtype=dtype,
-                device_map=actual_device,
-                trust_remote_code=args.trust_remote_code,
-                token=hf_token,
-            )
+            pass
+        candidate_classes.extend([AutoModelForCausalLM, AutoModel])
+
+        for cls in candidate_classes:
+            try:
+                hf_model = cls.from_pretrained(
+                    args.model,
+                    torch_dtype=dtype,
+                    device_map=actual_device,
+                    trust_remote_code=args.trust_remote_code,
+                    token=hf_token,
+                )
+                logger.info("Successfully loaded model using %s", cls.__name__)
+                break
+            except Exception as e:
+                logger.debug("Failed loading with %s: %s", cls.__name__, e)
+                continue
+
+        if hf_model is None:
+            raise RuntimeError(f"Could not load model '{args.model}' with any supported model class.")
 
         if args.adapter_path:
             logger.info("Attaching LoRA adapter from '%s'...", args.adapter_path)

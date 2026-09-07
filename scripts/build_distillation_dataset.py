@@ -248,6 +248,141 @@ def cmd_package(args: argparse.Namespace) -> None:
         logger.info("Successfully uploaded dataset to https://huggingface.co/datasets/%s", args.hf_repo)
 
 
+def cmd_augment_boundaries(args: argparse.Namespace) -> None:
+    """Generate synthetic hard-negative boundary clipping examples from clean passing samples."""
+    import numpy as np
+    import soundfile as sf
+    from src.diarization.verifier_training import resolve_audio_path
+
+    out_audio_dir = REPO_ROOT / args.output_audio_dir if not Path(args.output_audio_dir).is_dir() else Path(args.output_audio_dir)
+    out_audio_dir.mkdir(parents=True, exist_ok=True)
+    out_jsonl = REPO_ROOT / args.output_jsonl if not Path(args.output_jsonl).is_file() else Path(args.output_jsonl)
+    out_jsonl.parent.mkdir(parents=True, exist_ok=True)
+
+    input_file = REPO_ROOT / args.input_file if not Path(args.input_file).is_file() else Path(args.input_file)
+    records: list[dict[str, Any]] = []
+    with open(input_file, "r", encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                records.append(json.loads(line))
+
+    # Filter passing samples
+    pass_samples = [
+        r for r in records
+        if r.get("decision") == "pass" or (
+            r.get("target_json", {}).get("speaker_purity") == "pure"
+            and r.get("target_json", {}).get("word_completeness") == "complete"
+        )
+    ]
+    logger.info("Found %d clean passing candidate samples for boundary augmentation.", len(pass_samples))
+
+    if args.max_augmentations and len(pass_samples) > args.max_augmentations // 2:
+        pass_samples = random.sample(pass_samples, args.max_augmentations // 2)
+
+    augmented_records: list[dict[str, Any]] = []
+    count_end = 0
+    count_start = 0
+
+    for sample in pass_samples:
+        raw_path = sample.get("audio_path") or sample.get("wav_path") or sample.get("audio_filepath") or ""
+        audio_p = resolve_audio_path(raw_path, REPO_ROOT)
+        if not audio_p.exists():
+            continue
+
+        try:
+            data, sr = sf.read(str(audio_p))
+        except Exception as e:
+            logger.warning("Could not read %s: %s", audio_p, e)
+            continue
+
+        if len(data.shape) > 1:
+            data = np.mean(data, axis=1)
+
+        dur_s = len(data) / sr
+        if dur_s < 1.0:
+            continue
+
+        base_stem = audio_p.stem
+
+        # 1. Generate clipped_word_end (chop off 80ms - 200ms from vocal end)
+        cut_ms_end = random.uniform(80.0, 200.0)
+        samples_to_cut_end = int((cut_ms_end / 1000.0) * sr)
+        if len(data) > samples_to_cut_end + int(0.5 * sr):
+            clipped_end_data = data[:-samples_to_cut_end]
+            end_wav_path = out_audio_dir / f"{base_stem}_synth_clipped_end.wav"
+            sf.write(str(end_wav_path), clipped_end_data, sr)
+
+            target_end = {
+                "speaker_purity": "pure",
+                "word_completeness": "clipped_word_end",
+                "audio_quality": "studio_clean",
+                "decision": "reject",
+                "failure_codes": ["clipped_word_end"],
+                "reason": (
+                    f"The final syllable is cut off abruptly mid-vocalization ({cut_ms_end:.0f}ms premature truncation), "
+                    "cutting off its natural acoustic decay and coda consonant closure."
+                ),
+            }
+            augmented_records.append({
+                "audio_path": str(end_wav_path),
+                "prompt": sample.get("prompt", DEFAULT_PROMPT),
+                "target_json": target_end,
+                "decision": "reject",
+                "source": "synthetic_clipped_end",
+                "duration_s": round(len(clipped_end_data) / sr, 3),
+            })
+            count_end += 1
+
+        # 2. Generate clipped_word_start (chop off 60ms - 160ms from vocal onset)
+        cut_ms_start = random.uniform(60.0, 160.0)
+        samples_to_cut_start = int((cut_ms_start / 1000.0) * sr)
+        if len(data) > samples_to_cut_start + int(0.5 * sr):
+            clipped_start_data = data[samples_to_cut_start:]
+            start_wav_path = out_audio_dir / f"{base_stem}_synth_clipped_start.wav"
+            sf.write(str(start_wav_path), clipped_start_data, sr)
+
+            target_start = {
+                "speaker_purity": "pure",
+                "word_completeness": "clipped_word_start",
+                "audio_quality": "studio_clean",
+                "decision": "reject",
+                "failure_codes": ["clipped_word_start"],
+                "reason": (
+                    f"The initial syllable is abruptly truncated at the onset ({cut_ms_start:.0f}ms onset attack missing), "
+                    "cutting off its initial consonant closure."
+                ),
+            }
+            augmented_records.append({
+                "audio_path": str(start_wav_path),
+                "prompt": sample.get("prompt", DEFAULT_PROMPT),
+                "target_json": target_start,
+                "decision": "reject",
+                "source": "synthetic_clipped_start",
+                "duration_s": round(len(clipped_start_data) / sr, 3),
+            })
+            count_start += 1
+
+    # Combine original records + augmented records
+    all_combined = records + augmented_records
+    random.shuffle(all_combined)
+
+    with open(out_jsonl, "w", encoding="utf-8") as f:
+        for r in all_combined:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+
+    logger.info(
+        "Augmentation Complete: Generated %d clipped_end + %d clipped_start = %d synthetic negatives.",
+        count_end, count_start, len(augmented_records),
+    )
+    logger.info(
+        "Total Output Dataset: %d samples (Pass: %d, Reject: %d) saved to %s",
+        len(all_combined),
+        sum(1 for r in all_combined if r.get("decision") == "pass"),
+        sum(1 for r in all_combined if r.get("decision") == "reject"),
+        out_jsonl,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Unified speech distillation dataset builder.",
@@ -274,6 +409,14 @@ def main() -> None:
     p_bal.add_argument("--val-ratio", type=float, default=0.20, help="Validation set split ratio (e.g. 0.20 = 20% val)")
     p_bal.add_argument("--target-samples", type=int, default=None, help="Optional max total samples")
     p_bal.set_defaults(func=cmd_balance)
+
+    # Subcommand: augment-boundaries
+    p_aug = subparsers.add_parser("augment-boundaries", help="Generate synthetic boundary-clipping negatives from clean turns")
+    p_aug.add_argument("--input-file", type=str, required=True, help="Input JSONL file containing passing samples")
+    p_aug.add_argument("--output-audio-dir", type=str, default=".data/distillation/augmented_audio", help="Directory to save augmented WAVs")
+    p_aug.add_argument("--output-jsonl", type=str, default=".data/distillation/train_augmented.jsonl", help="Output augmented JSONL file")
+    p_aug.add_argument("--max-augmentations", type=int, default=300, help="Max synthetic samples to generate")
+    p_aug.set_defaults(func=cmd_augment_boundaries)
 
     # Subcommand: package
     p_pkg = subparsers.add_parser("package", help="Compress audio files into tar.gz and optionally upload to HF Hub")
