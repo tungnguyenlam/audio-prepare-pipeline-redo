@@ -21,7 +21,11 @@ All tools follow the repository engineering ideology: **reusable components**, *
 | Script | Purpose | Usage |
 | :--- | :--- | :--- |
 | [`setup_worker_envs.sh`](setup_worker_envs.sh) | Installs and shims isolated worker environments: `.venv-diarizen`, `.venv-3dspeaker`, `.venv-sortformer`, and `.venv-vibevoice`. | `./scripts/setup_worker_envs.sh` |
-| [`sync/`](sync/) | Shell utilities to rsync code and data between local development machine (`VF-TUNGNL5-L`) and model GPU server (`vsf-242`). | `./scripts/sync/code_to_server.sh` |
+| [`sync/code_to_server.sh`](sync/code_to_server.sh) / `from` | Shell utilities to rsync code between local development machine (`VF-TUNGNL5-L`) and model GPU server (`vsf-242` / `10.148.21.12`). | `./scripts/sync/code_to_server.sh` |
+| [`sync/data_to_server.sh`](sync/data_to_server.sh) / `from` | Shell utilities to rsync runtime `.data/` artifacts with the model server. | `./scripts/sync/data_to_server.sh` |
+| [`sync/code_to_loi.sh`](sync/code_to_loi.sh) / `from` | Shell utilities to rsync code with `Host loi` (`loinh8@10.148.1.176`). | `./scripts/sync/code_to_loi.sh` |
+| [`sync/data_to_loi.sh`](sync/data_to_loi.sh) / `from` | Shell utilities to rsync `.data/` artifacts with `Host loi` (`loinh8@10.148.1.176`). | `./scripts/sync/data_to_loi.sh` |
+| [`sync/code_to_anhnct.sh`](sync/code_to_anhnct.sh) / `from` | Shell utilities to rsync code with `anhnct` (`10.148.21.113`). | `./scripts/sync/code_to_anhnct.sh` |
 
 ---
 
