@@ -575,3 +575,58 @@ result = run_zero_contamination_pipeline(
 print(f"Retained {len(result.diarization.turns)} pure turns ({result.funnel_stats['final_pure_speech_duration_s']:.1f}s)")
 result.diarization.save(".data/diarization/results/pure_result.json")
 ```
+
+---
+
+## 7. Foundation Model Overlap Verification & Distillation
+
+While acoustic diarizers (Sortformer, DiariZen) and speaker embedding verifiers (WeSpeaker) filter structural speaker overlaps, subtle conversational edge cases—such as soft background whispers, TV bleed, or laughter intrusions—are best detected by multimodal audio language models.
+
+To avoid continuous commercial API latency and inference costs during large dataset harvests, the pipeline supports **distilling teacher foundation models** (e.g. Gemini 3.8 Flash, Gemini 3.5 Flash-Lite) into compact student models (e.g. Gemma 4 E2B, MiniCPM-o) via LoRA fine-tuning.
+
+### 7.1 Reusable Distillation & Verification Toolset
+
+Three modular CLI tools under [`scripts/`](../scripts/) manage the distillation and evaluation lifecycle:
+
+1. **Dataset Mining & Packaging ([`scripts/build_distillation_dataset.py`](../scripts/build_distillation_dataset.py)):**
+   - Extracts consensus-disagreement segments and high-risk turn transitions from harvested audio.
+   - Annotates candidate turns with teacher reasoning using Gemini 3.8 Flash / 3.5 Flash-Lite.
+   - Balances `pass` vs `reject` classes and splits into train/val JSONL datasets.
+   ```bash
+   uv run python scripts/build_distillation_dataset.py package \
+     --annotated-json .data/distillation/annotated_khanh_vy.json \
+     --output-dir .data/distillation/e2b_train_val \
+     --train-ratio 0.85
+   ```
+
+2. **LoRA Fine-Tuning Engine ([`scripts/train_verifier.py`](../scripts/train_verifier.py)):**
+   - General LoRA fine-tuning supporting any Hugging Face multimodal audio model (`--model-id`).
+   - Supports 4-bit QLoRA on NVIDIA CUDA or native `bfloat16` on AMD ROCm (`--quantization none`).
+   - Integrates Weights & Biases telemetry, multi-sample validation loss tracking, and automatic adapter checkpointing.
+   ```bash
+   .venv/bin/python scripts/train_verifier.py \
+     --model-id google/gemma-4-E2B-it \
+     --device cuda:0 \
+     --quantization none \
+     --epochs 3 \
+     --lr 2e-4 \
+     --accum-steps 4 \
+     --output-dir .data/distillation/checkpoints_e2b/best_adapter
+   ```
+
+3. **Arbitrary Model Evaluator & Benchmarker ([`scripts/evaluate_verifier.py`](../scripts/evaluate_verifier.py)):**
+   - Evaluates any Hugging Face model (`--backend hf --model-id <repo>`), Gemini model (`--backend gemini`), or OpenAI-compatible endpoint (`--backend endpoint --api-url <url>`).
+   - Compares candidate decisions directly against reference annotations (e.g. Gemini 3.8 Flash).
+   - Computes agreement percentage, Cohen's Kappa, confusion matrix, precision, recall, and F1-score.
+   - Generates side-by-side CSV exports and Markdown evaluation reports.
+   ```bash
+   # Benchmark an arbitrary Hugging Face model against Gemini 3.8 Flash reference decisions
+   uv run python scripts/evaluate_verifier.py \
+     --backend hf \
+     --model-id openbmb/MiniCPM-o-4_5 \
+     --trust-remote-code \
+     --benchmark-json .data/distillation/khanh_vy_31_flash_reference.json \
+     --output-report .data/distillation/reports/minicpm_vs_flash.md \
+     --output-csv .data/distillation/reports/minicpm_vs_flash.csv
+   ```
+

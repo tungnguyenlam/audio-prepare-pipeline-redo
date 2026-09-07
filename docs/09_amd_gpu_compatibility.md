@@ -152,3 +152,26 @@ When worker models (`SortformerWorkerDiarizer`, `ClusteringWorkerDiarizer`, `Thr
 - **AMD ROCm / HIP Device Isolation:** When a task specifies a GPU index (e.g. `cuda:1`), the worker manager sets `HIP_VISIBLE_DEVICES`, `ROCR_VISIBLE_DEVICES`, and `CUDA_VISIBLE_DEVICES` simultaneously. This guarantees that ROCm HIP and CUDA runtime layers both expose only the target physical GPU to the child process as device 0.
 - **CPU Fallback Lane:** When running in the `cpu` queue, `CUDA_VISIBLE_DEVICES`, `HIP_VISIBLE_DEVICES`, and `ROCR_VISIBLE_DEVICES` are set to `""`, completely suppressing GPU runtime initialization and ensuring pure CPU execution.
 - **ROCm Path & Kernel Propagation:** All worker subprocesses inherit `/opt/rocm/bin` in `PATH` and `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1` for optimal kernel performance across all isolated environments.
+
+---
+
+## 7. Model Fine-Tuning & LoRA Distillation on AMD GPU
+
+Fine-tuning compact multimodal acoustic verifiers (such as `google/gemma-4-E2B-it`) can be performed directly on the AMD Radeon RX 9060 XT (16 GB VRAM) using native ROCm HIP acceleration without falling back to CPU or remote servers.
+
+### Recommended Configuration
+- **Precision:** Native `bfloat16` (`--quantization none`). Gemma 4 E2B consumes ~4.6 GB VRAM in bfloat16, fitting comfortably within the 16 GB boundary alongside LoRA adapter gradients and optimizer states.
+- **Quantization:** Avoid 4-bit/8-bit quantization (`bitsandbytes`) on AMD ROCm consumer cards (RDNA 4 / `gfx1200`), as upstream `bitsandbytes` wheels compile kernels specifically for NVIDIA CUDA. Native `bfloat16` is faster and avoids CUDA kernel dependency.
+- **Dependency Alignment:** Ensure `torchvision` is installed from AMD's official wheel repository (`torchvision==0.28.0+rocm10.0.0`) to avoid ABI symbol incompatibilities (`operator torchvision::nms does not exist`).
+- **CLI Runner:**
+  ```bash
+  .venv/bin/python scripts/train_verifier.py \
+    --model-id google/gemma-4-E2B-it \
+    --device cuda:0 \
+    --quantization none \
+    --epochs 3 \
+    --lr 2e-4 \
+    --accum-steps 4 \
+    --output-dir .data/distillation/checkpoints_e2b/best_adapter
+  ```
+
