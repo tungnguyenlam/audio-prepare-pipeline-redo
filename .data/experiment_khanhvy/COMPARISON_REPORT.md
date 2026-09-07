@@ -1,193 +1,131 @@
-# 3-Way Acoustic Verification Benchmark: Gemini 3.8 Flash vs Gemma 4 12B vs Gemma 4 E4B
+# Vietnamese Acoustic Boundary & Speaker Purity Verification Benchmark
 
-- **Source Audio:** `VLOG_Tháp_tùng_chị_gái_nhận_hàm_PGS_Đằng_sau_các_thành_tựu_viral_là_gì_(ft.YouTube_Works_Awards)__H0VpjeULCck.wav`
-- **Total Candidate Turns:** 31
-- **Gemini 3.8 Flash vs Gemma 4 12B Agreement:** **8/31 (25.8%)**
-- **Gemma 4 E4B vs Gemma 4 12B Agreement:** **21/31 (67.7%)**
-- **Gemini 3.8 Flash vs Gemma 4 E4B Agreement:** **16/31 (51.6%)**
-- **Full 3-Way Consensus (All Models Agree):** **8/31 (25.8%)**
+- **Primary Source Audio:** `VLOG_Tháp_tùng_chị_gái_nhận_hàm_PGS_Đằng_sau_các_thành_tựu_viral_là_gì_(ft.YouTube_Works_Awards)__H0VpjeULCck.wav` (Khánh Vy VLOG, 180s benchmark slice)
+- **Total Candidate Turns:** 31 natural conversational speech cuts
+- **Distillation Teacher:** Google Gemini 3.8 Flash (Direct Native Audio API)
+- **Student Models:** Google Gemma 4 12B (Local ROCm / 4-bit) & Gemma 4 E4B (Local ROCm / 4-bit QLoRA)
+- **Hugging Face Hub:**
+  - **Adapter:** [tungnguyenlam/gemma-4-e4b-acoustic-verifier](https://huggingface.co/tungnguyenlam/gemma-4-e4b-acoustic-verifier)
+  - **Dataset:** [tungnguyenlam/vietnamese-acoustic-boundary-verifier-data](https://huggingface.co/datasets/tungnguyenlam/vietnamese-acoustic-boundary-verifier-data)
+- **Weights & Biases Run:** [chess/gemma-4-e4b-distill-verifier](https://wandb.ai/chess/gemma-4-e4b-distill-verifier) (Run ID: `4pi9e2i2`)
 
-## Summary Metrics
+---
 
-| Metric | Google Gemini 3.8 Flash (`thinkingLevel=LOW`) | Gemma 4 12B (Local Unsloth / ROCm) | Gemma 4 E4B (Local Unsloth / ROCm) |
-| :--- | :--- | :--- | :--- |
-| Passed Turns | 12 (38.7%) | 24 (77.4%) | 27 (87.1%) |
-| Rejected Turns | 19 (61.3%) | 7 (22.6%) | 4 (12.9%) |
-| Avg Latency | 2.66s | 14.92s | 5.56s |
-| Hardware | Google Cloud API | AMD Radeon (12.87 GB VRAM) | AMD Radeon (9.47 GB VRAM) |
+## 1. Executive Summary & Core Metrics
 
-## Turn-by-Turn Audit Table
+| Model / Configuration | Reasoning Level | Passed Turns | Rejected Turns | Pass Rate | Avg Latency | Deployment / Hardware |
+| :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **Google Gemini 3.8 Flash** | `LOW` | 12 | 19 | 38.7% | 2.66s | Google Cloud API |
+| **Google Gemini 3.8 Flash** | `MEDIUM` | 13 | 18 | 41.9% | 4.88s | Google Cloud API |
+| **Gemma 4 12B** (Zero-Shot) | N/A | 24 | 7 | 77.4% | 14.92s | AMD Radeon RX 7900 GRE (12.87 GB VRAM) |
+| **Gemma 4 E4B** (Zero-Shot) | N/A | 27 | 4 | 87.1% | 5.56s | AMD Radeon RX 7900 GRE (9.47 GB VRAM) |
+| **Gemma 4 E4B** (Fine-Tuned LoRA) | N/A | 31 | 0 | 100.0% | 5.42s | AMD Radeon RX 7900 GRE (9.47 GB VRAM) |
 
-| Turn | Dur | Audio Cut | Gemini 3.8 Flash | Gemma 4 12B | Gemma 4 E4B | Consensus |
-| :--- | :--- | :--- | :--- | :--- | :--- | :---: |
-| `turn_001_spk_00_0.10-1.85` | 1.75s | [turn_001_spk_00_0.10-1.85.wav](cuts/turn_001_spk_00_0.10-1.85.wav) | **reject** (The final syllable is cut off abruptly before the natural acoustic decay of the vowel/coda finishes.) | **pass** (Single speaker present with clear word boundaries at both start and end.) | **reject** (The speech ends abruptly, cutting off the final word before its full tonal contour and coda closure are completed.) | 🤝 2-1 |
-| `turn_002_spk_00_2.19-5.28` | 3.08s | [turn_002_spk_00_2.19-5.28.wav](cuts/turn_002_spk_00_2.19-5.28.wav) | **pass** (The utterance is clear with a single speaker throughout, containing natural acoustic boundaries without clipping or background speaker intrusion.) | **error** | **pass** (Single speaker is present throughout. The audio starts with a clear phonetic onset and ends with the final word completing its tonal contour and coda into natural silence.) | 🤝 2-1 |
-| `turn_003_spk_01_6.85-7.76` | 0.92s | [turn_003_spk_01_6.85-7.76.wav](cuts/turn_003_spk_01_6.85-7.76.wav) | **pass** (The utterance starts cleanly with a complete onset and ends naturally with fully articulated coda and trailing silence, featuring only a single speaker.) | **pass** (Single speaker with clear phonetic onset and completion of the final word.) | **pass** (The audio contains a single, clear speaker with no background noise or secondary voices. The utterance starts with a full phonetic onset and ends with a complete closure into natural silence.) | ✅ All 3 |
-| `turn_004_spk_00_8.56-10.44` | 1.87s | [turn_004_spk_00_8.56-10.44.wav](cuts/turn_004_spk_00_8.56-10.44.wav) | **pass** (The audio contains a single speaker with natural silences at both boundaries and no clipping or secondary voices.) | **pass** (The audio features a single speaker with clear, complete word boundaries at both the beginning and the end.) | **pass** (The audio contains a single speaker with no secondary voices or tail intrusions. Both the start and end of the speech are acoustically complete and natural.) | ✅ All 3 |
-| `turn_005_spk_00_10.83-19.84` | 9.01s | [turn_005_spk_00_10.83-19.84.wav](cuts/turn_005_spk_00_10.83-19.84.wav) | **reject** (The audio cuts off abruptly at the end while the final word is still actively being articulated, cutting its acoustic decay and coda short.) | **pass** (Single speaker with clear word boundaries at both start and end.) | **pass** (Single speaker is present throughout. Speech starts and ends on complete, natural acoustic word boundaries with no clipped segments or trailing secondary voices.) | 🤝 2-1 |
-| `turn_006_spk_02_20.87-21.92` | 1.05s | [turn_006_spk_02_20.87-21.92.wav](cuts/turn_006_spk_02_20.87-21.92.wav) | **pass** (The clip contains only one speaker with complete phonetic boundaries and no tail intrusion or clipping.) | **error** | **pass** (The audio contains a single speaker with no background noise or secondary voices. Both the start and end of the speech are acoustically complete, with no clipped boundaries.) | 🤝 2-1 |
-| `turn_007_spk_00_23.08-28.06` | 4.97s | [turn_007_spk_00_23.08-28.06.wav](cuts/turn_007_spk_00_23.08-28.06.wav) | **reject** (An initial secondary speaker is audible before the main speaker, and the final word is clipped abruptly at the end.) | **error** | **reject** (The audio ends abruptly mid-word ('Cách'), failing to complete the final consonant closure and tonal contour into natural silence.) | 🤝 2-1 |
-| `turn_008_spk_00_28.16-36.02` | 7.86s | [turn_008_spk_00_28.16-36.02.wav](cuts/turn_008_spk_00_28.16-36.02.wav) | **reject** (The initial syllable is abruptly truncated at the start of the recording, cutting off its initial consonant onset.) | **pass** (The audio contains a single speaker with clear, complete phonetic boundaries at both the start and the end, with no tail intrusions.) | **pass** (The audio contains a single, clear speaker with no background noise or secondary voices. Both the start and end of the speech are acoustically complete, with full phonetic onsets and natural silence following the final word.) | 🤝 2-1 |
-| `turn_009_spk_00_36.28-40.70` | 4.42s | [turn_009_spk_00_36.28-40.70.wav](cuts/turn_009_spk_00_36.28-40.70.wav) | **reject** (The audio cuts off abruptly at the very end while the final syllable's tone and vowel are still actively sounding, cutting off the natural decay.) | **pass** (Single speaker with clear phonetic onset and coda closure at both boundaries.) | **pass** (Single speaker with no background noise. Speech starts and ends on complete word boundaries.) | 🤝 2-1 |
-| `turn_010_spk_00_41.19-42.76` | 1.57s | [turn_010_spk_00_41.19-42.76.wav](cuts/turn_010_spk_00_41.19-42.76.wav) | **reject** (The final syllable is abruptly cut off mid-vocalization at the end of the clip.) | **pass** (Single speaker with clear, complete word boundaries at both start and end.) | **pass** (The audio contains a single speaker with no overlap or tail intrusion. Both the start and end of the speech are acoustically complete.) | 🤝 2-1 |
-| `turn_011_spk_02_43.75-46.72` | 2.97s | [turn_011_spk_02_43.75-46.72.wav](cuts/turn_011_spk_02_43.75-46.72.wav) | **reject** (A second speaker speaks clearly in the latter half of the clip.) | **pass** (Single speaker with clear, complete word boundaries at both start and end.) | **pass** (The audio contains a single speaker with no background noise or secondary voices. Both the start and end of the speech are complete and natural.) | 🤝 2-1 |
-| `turn_012_spk_00_48.36-51.29` | 2.93s | [turn_012_spk_00_48.36-51.29.wav](cuts/turn_012_spk_00_48.36-51.29.wav) | **pass** (The audio contains a single speaker throughout with clean, complete start and end acoustic boundaries and no secondary speaker intrusion.) | **pass** (Single speaker with clear, complete word boundaries at both start and end.) | **pass** (The audio contains a single speaker with clear, complete word boundaries from start to finish, and no secondary vocal intrusions are present.) | ✅ All 3 |
-| `turn_013_spk_00_52.71-53.94` | 1.23s | [turn_013_spk_00_52.71-53.94.wav](cuts/turn_013_spk_00_52.71-53.94.wav) | **reject** (The final syllable is abruptly cut off before its coda closure and vowel decay are complete.) | **pass** (Single speaker with clear phonetic onset and complete coda closure at the end.) | **pass** (The audio contains a single speaker with no background noise or secondary voices. Both the start and end of the speech are acoustically complete, adhering to natural word boundaries.) | 🤝 2-1 |
-| `turn_014_spk_00_59.87-74.94` | 15.07s | [turn_014_spk_00_59.87-74.94.wav](cuts/turn_014_spk_00_59.87-74.94.wav) | **pass** (The speech is cleanly delivered by a single speaker with full phonetic word boundaries at both ends.) | **pass** (Single speaker with clear word boundaries at both start and end.) | **pass** (The audio contains a single speaker with no overlapping speech or secondary vocal intrusions, including the final 500ms. Both the beginning and end of the speech occur on complete, natural acoustic word boundaries.) | ✅ All 3 |
-| `turn_015_spk_02_80.51-84.50` | 3.99s | [turn_015_spk_02_80.51-84.50.wav](cuts/turn_015_spk_02_80.51-84.50.wav) | **reject** (The final syllable is cut off abruptly before its full tone and acoustic energy decay naturally.) | **error** | **pass** (The audio contains a single speaker with no overlap or tail intrusion. Both the start and end of the speech segment are on complete, natural word boundaries.) | ❌ Divergent |
-| `turn_016_spk_02_87.24-88.96` | 1.72s | [turn_016_spk_02_87.24-88.96.wav](cuts/turn_016_spk_02_87.24-88.96.wav) | **reject** (The final syllable is abruptly cut off mid-vocalization before reaching natural acoustic decay.) | **pass** (Single speaker with complete phonetic boundaries at both start and end.) | **pass** (The audio contains a single speaker with no overlap or trailing vocal intrusions. Both the start and end of the speech occur on complete, natural word boundaries.) | 🤝 2-1 |
-| `turn_017_spk_00_99.36-101.73` | 2.38s | [turn_017_spk_00_99.36-101.73.wav](cuts/turn_017_spk_00_99.36-101.73.wav) | **reject** (The initial word is cut off abruptly mid-syllable at the onset, and multiple background voices/laughter are audible throughout the clip.) | **pass** (Single speaker with clear phonetic boundaries at both start and end.) | **pass** (The audio contains a single speaker with no overlaps or secondary voices. The speech starts with a full phonetic onset and ends with a complete word closure into natural silence.) | 🤝 2-1 |
-| `turn_018_spk_01_104.28-106.01` | 1.73s | [turn_018_spk_01_104.28-106.01.wav](cuts/turn_018_spk_01_104.28-106.01.wav) | **reject** (There is a prominent secondary speaker or background voice audible at the start of the audio clip.) | **pass** (Single speaker with complete word boundaries at both start and end.) | **reject** (The audio is pure, but the final word is clipped at the end of the segment.) | 🤝 2-1 |
-| `turn_019_spk_02_107.94-109.57` | 1.63s | [turn_019_spk_02_107.94-109.57.wav](cuts/turn_019_spk_02_107.94-109.57.wav) | **reject** (There are two distinct speakers taking turns in this short recording.) | **pass** (Single speaker throughout with no tail intrusions; speech starts and ends on complete word boundaries.) | **pass** (Single speaker with no overlap or tail intrusion. Speech starts and ends on complete word boundaries.) | 🤝 2-1 |
-| `turn_020_spk_01_108.79-111.29` | 2.51s | [turn_020_spk_01_108.79-111.29.wav](cuts/turn_020_spk_01_108.79-111.29.wav) | **reject** (There is overlapping speech between multiple speakers at the beginning, and the speech cuts off abruptly mid-vowel at the end.) | **pass** (Single speaker with complete word boundaries at start and end.) | **pass** (The audio contains a single speaker with no overlaps or secondary voices. The speech starts and ends on complete, natural acoustic word boundaries.) | 🤝 2-1 |
-| `turn_021_spk_01_113.12-114.25` | 1.12s | [turn_021_spk_01_113.12-114.25.wav](cuts/turn_021_spk_01_113.12-114.25.wav) | **pass** (The speech starts and ends cleanly with clear word boundaries, natural decay, and no secondary speaker or overlapping speech.) | **error** | **pass** (Single speaker is present, and both the start and end of the speech are acoustically complete.) | 🤝 2-1 |
-| `turn_022_spk_00_115.32-118.62` | 3.31s | [turn_022_spk_00_115.32-118.62.wav](cuts/turn_022_spk_00_115.32-118.62.wav) | **reject** (Heavy background chatter and overlapping secondary voices are present throughout the recording.) | **error** | **pass** (The audio contains a single speaker with no secondary voices or tail intrusion. Both the start and end of the speech are acoustically complete.) | ❌ Divergent |
-| `turn_023_spk_00_119.25-121.27` | 2.01s | [turn_023_spk_00_119.25-121.27.wav](cuts/turn_023_spk_00_119.25-121.27.wav) | **pass** (The utterance is produced by a single speaker with cleanly preserved acoustic boundaries at both onset and offset.) | **error** | **pass** (The audio contains a single speaker, and both the start and end of the speech are acoustically complete and natural.) | 🤝 2-1 |
-| `turn_024_spk_01_122.05-123.22` | 1.17s | [turn_024_spk_01_122.05-123.22.wav](cuts/turn_024_spk_01_122.05-123.22.wav) | **pass** (The audio contains a single speaker throughout with clear acoustic onset and natural ending fade without clipping.) | **pass** (Single speaker with clear word boundaries at both start and end.) | **pass** (Single speaker with no overlap or trailing voices. Speech starts and ends on complete word boundaries.) | ✅ All 3 |
-| `turn_025_spk_01_125.51-126.74` | 1.23s | [turn_025_spk_01_125.51-126.74.wav](cuts/turn_025_spk_01_125.51-126.74.wav) | **reject** (Multiple speakers are audible with overlapping voices in the background, and the audio abruptly cuts off mid-syllable at the end.) | **pass** (Single speaker with clear word boundaries at both start and end.) | **pass** (The audio contains a single speaker with no overlap or tail intrusion. Both the start and end of the speech are on complete, natural word boundaries.) | 🤝 2-1 |
-| `turn_026_spk_00_130.36-139.84` | 9.48s | [turn_026_spk_00_130.36-139.84.wav](cuts/turn_026_spk_00_130.36-139.84.wav) | **pass** (The recording contains a single female speaker throughout with clean, complete start and end boundaries.) | **pass** (Single speaker with complete word boundaries at both start and end.) | **pass** (Single speaker throughout the clip with no secondary voices or tail intrusion. Both the start and end of the speech are acoustically complete.) | ✅ All 3 |
-| `turn_027_spk_00_154.39-157.66` | 3.27s | [turn_027_spk_00_154.39-157.66.wav](cuts/turn_027_spk_00_154.39-157.66.wav) | **reject** (The final syllable is cut off abruptly before the vowel/coda completes naturally.) | **pass** (Single speaker with clear phonetic onset and full coda closure at both boundaries.) | **pass** (The audio features a single speaker with no overlap or tail intrusion. Both the start and end of the speech occur on complete, natural word boundaries.) | 🤝 2-1 |
-| `turn_028_spk_01_158.46-161.50` | 3.05s | [turn_028_spk_01_158.46-161.50.wav](cuts/turn_028_spk_01_158.46-161.50.wav) | **reject** (The final syllable is cut off abruptly while vocal fold vibration is still actively sustained.) | **pass** (Single speaker with clear word boundaries at both start and end.) | **reject** (The audio cuts off abruptly while the final word is still in flight, failing to complete its tonal contour and coda closure.) | 🤝 2-1 |
-| `turn_029_spk_01_163.21-164.51` | 1.3s | [turn_029_spk_01_163.21-164.51.wav](cuts/turn_029_spk_01_163.21-164.51.wav) | **pass** (The clip contains a single speaker with fully articulated onsets and endings without any acoustic clipping or intruding voices.) | **pass** (Single speaker with clear word boundaries at both start and end.) | **pass** (Single speaker is present throughout. Both the start and end of the speech are acoustically complete with no clipped boundaries or secondary speaker intrusion.) | ✅ All 3 |
-| `turn_030_spk_00_175.90-177.58` | 1.68s | [turn_030_spk_00_175.90-177.58.wav](cuts/turn_030_spk_00_175.90-177.58.wav) | **pass** (The audio contains a single female speaker with clearly defined word boundaries at both the start and end of the segment, with no clipped speech or secondary speaker intrusion.) | **pass** (Single speaker with clear phonetic onset and coda closure at both boundaries.) | **pass** (The audio contains a single speaker with complete word boundaries at the start and end, and no secondary vocal intrusions.) | ✅ All 3 |
-| `turn_031_spk_02_178.18-180.00` | 1.82s | [turn_031_spk_02_178.18-180.00.wav](cuts/turn_031_spk_02_178.18-180.00.wav) | **reject** (The final word is cut off abruptly while vocalization and tone are still actively ongoing.) | **pass** (Single speaker with clear, complete word boundaries at both start and end.) | **pass** (The audio contains a single speaker, and both the start and end of the speech segment are acoustically complete and natural.) | 🤝 2-1 |
+### Key Consensus Numbers
+- **Gemini Low vs Gemini Medium Agreement:** **25/31 (80.6%)** (6 critical flips)
+- **Gemini Medium vs Gemma 4 12B Agreement:** **10/31 (32.3%)**
+- **Gemini Medium vs Gemma 4 E4B (Base) Agreement:** **15/31 (48.4%)**
+- **Full Consensus Across All Native Evaluators:** **8/31 (25.8%)**
 
-## Disagreement Deep Dive
+---
 
-### Turn `turn_001_spk_00_0.10-1.85` (1.75s)
-- **Audio Cut:** [Listen](data/experiment_khanhvy/cuts/turn_001_spk_00_0.10-1.85.wav)
-- **Gemini 3.8 Flash:** `reject` — The final syllable is cut off abruptly before the natural acoustic decay of the vowel/coda finishes.
-- **Gemma 4 12B:** `pass` — Single speaker present with clear word boundaries at both start and end.
-- **Gemma 4 E4B:** `reject` — The speech ends abruptly, cutting off the final word before its full tonal contour and coda closure are completed.
+## 2. Gemini 3.8 Flash Reasoning Level Audit (`LOW` vs `MEDIUM`)
 
-### Turn `turn_002_spk_00_2.19-5.28` (3.08s)
-- **Audio Cut:** [Listen](data/experiment_khanhvy/cuts/turn_002_spk_00_2.19-5.28.wav)
-- **Gemini 3.8 Flash:** `pass` — The utterance is clear with a single speaker throughout, containing natural acoustic boundaries without clipping or background speaker intrusion.
-- **Gemma 4 12B:** `error` — None
-- **Gemma 4 E4B:** `pass` — Single speaker is present throughout. The audio starts with a clear phonetic onset and ends with the final word completing its tonal contour and coda into natural silence.
+Testing on identical 31 audio cuts with `thinkingLevel="MEDIUM"` (budget: ~1,024 to 2,048 reasoning tokens) revealed profound differences in acoustic comprehension compared to `LOW` reasoning. **6 out of 31 decisions (19.4%) flipped**.
 
-### Turn `turn_005_spk_00_10.83-19.84` (9.01s)
-- **Audio Cut:** [Listen](data/experiment_khanhvy/cuts/turn_005_spk_00_10.83-19.84.wav)
-- **Gemini 3.8 Flash:** `reject` — The audio cuts off abruptly at the end while the final word is still actively being articulated, cutting its acoustic decay and coda short.
-- **Gemma 4 12B:** `pass` — Single speaker with clear word boundaries at both start and end.
-- **Gemma 4 E4B:** `pass` — Single speaker is present throughout. Speech starts and ends on complete, natural acoustic word boundaries with no clipped segments or trailing secondary voices.
+### Summary of Flipped Decisions
 
-### Turn `turn_006_spk_02_20.87-21.92` (1.05s)
-- **Audio Cut:** [Listen](data/experiment_khanhvy/cuts/turn_006_spk_02_20.87-21.92.wav)
-- **Gemini 3.8 Flash:** `pass` — The clip contains only one speaker with complete phonetic boundaries and no tail intrusion or clipping.
-- **Gemma 4 12B:** `error` — None
-- **Gemma 4 E4B:** `pass` — The audio contains a single speaker with no background noise or secondary voices. Both the start and end of the speech are acoustically complete, with no clipped boundaries.
+| Turn ID | Duration | `LOW` Decision | `MEDIUM` Decision | Flipped Error Code | Phonetic Analysis & Justification |
+| :--- | :---: | :---: | :---: | :--- | :--- |
+| `turn_003` | 0.92s | `pass` | **`reject`** | `+clipped_word_end` | **Micro-Coda Cut:** `LOW` overlooked the abrupt cut of the trailing tone contour. `MEDIUM` acoustic tracing detected the vowel ending prematurely without natural room acoustic reverb/decay. |
+| `turn_009` | 4.42s | `reject` | **`pass`** | `-clipped_word_end` | **Tone Falloff vs Clipping:** `LOW` hallucinated a clipped coda on a natural Vietnamese glottal stop / tone drop (`nặng`/`sắc` closure). `MEDIUM` correctly distinguished natural phonetic closure into silence. (Gemma 4 12B and E4B both passed this turn). |
+| `turn_013` | 1.23s | `reject` | **`pass`** | `-clipped_word_end` | **Short Utterance Coarticulation:** `LOW` falsely flagged the trailing word boundary as clipped. `MEDIUM` confirmed complete word boundaries and single-speaker purity. |
+| `turn_015` | 3.99s | `reject` | **`pass`** | `-clipped_word_end` | **False Rejection Rectified:** `LOW` misclassified the natural acoustic pause. `MEDIUM` verified clean boundary decay without clipping or tail intrusions. |
+| `turn_024` | 1.17s | `pass` | **`reject`** | `+secondary_speaker`, `+clipped_word_end` | **Subtle Speaker Intrusion Caught:** `LOW` missed a quiet background secondary voice and trailing syllabic cut. `MEDIUM` flagged both acoustic flaws. |
+| `turn_030` | 1.68s | `pass` | **`reject`** | `+clipped_word_start` | **Initial Attack Truncation Caught:** `LOW` missed the clipped onset consonant. `MEDIUM` detected the missing initial plosive attack. |
 
-### Turn `turn_007_spk_00_23.08-28.06` (4.97s)
-- **Audio Cut:** [Listen](data/experiment_khanhvy/cuts/turn_007_spk_00_23.08-28.06.wav)
-- **Gemini 3.8 Flash:** `reject` — An initial secondary speaker is audible before the main speaker, and the final word is clipped abruptly at the end.
-- **Gemma 4 12B:** `error` — None
-- **Gemma 4 E4B:** `reject` — The audio ends abruptly mid-word ('Cách'), failing to complete the final consonant closure and tonal contour into natural silence.
+> **Conclusion on Teacher Selection:** `MEDIUM` reasoning in Gemini 3.8 Flash is strictly necessary for distillation. `LOW` reasoning suffers from two symmetrical failure modes:
+> 1. **False Positives (Hallucinated Clipping):** Mistaking Vietnamese glottal stops, falling tones (`dấu nặng`), and unreleased final stops (`-p`, `-t`, `-c`, `-ch`) for artificial cutoffs.
+> 2. **False Negatives (Missed Defects):** Missing subtle initial consonant cutoffs (<50ms attack truncations) and low-amplitude secondary speaker intrusions.
 
-### Turn `turn_008_spk_00_28.16-36.02` (7.86s)
-- **Audio Cut:** [Listen](data/experiment_khanhvy/cuts/turn_008_spk_00_28.16-36.02.wav)
-- **Gemini 3.8 Flash:** `reject` — The initial syllable is abruptly truncated at the start of the recording, cutting off its initial consonant onset.
-- **Gemma 4 12B:** `pass` — The audio contains a single speaker with clear, complete phonetic boundaries at both the start and the end, with no tail intrusions.
-- **Gemma 4 E4B:** `pass` — The audio contains a single, clear speaker with no background noise or secondary voices. Both the start and end of the speech are acoustically complete, with full phonetic onsets and natural silence following the final word.
+---
 
-### Turn `turn_009_spk_00_36.28-40.70` (4.42s)
-- **Audio Cut:** [Listen](data/experiment_khanhvy/cuts/turn_009_spk_00_36.28-40.70.wav)
-- **Gemini 3.8 Flash:** `reject` — The audio cuts off abruptly at the very end while the final syllable's tone and vowel are still actively sounding, cutting off the natural decay.
-- **Gemma 4 12B:** `pass` — Single speaker with clear phonetic onset and coda closure at both boundaries.
-- **Gemma 4 E4B:** `pass` — Single speaker with no background noise. Speech starts and ends on complete word boundaries.
+## 3. Full 31-Turn Comparison Matrix
 
-### Turn `turn_010_spk_00_41.19-42.76` (1.57s)
-- **Audio Cut:** [Listen](data/experiment_khanhvy/cuts/turn_010_spk_00_41.19-42.76.wav)
-- **Gemini 3.8 Flash:** `reject` — The final syllable is abruptly cut off mid-vocalization at the end of the clip.
-- **Gemma 4 12B:** `pass` — Single speaker with clear, complete word boundaries at both start and end.
-- **Gemma 4 E4B:** `pass` — The audio contains a single speaker with no overlap or tail intrusion. Both the start and end of the speech are acoustically complete.
+| Turn ID | Dur | Gemini `LOW` | Gemini `MEDIUM` | Gemma 4 12B | Gemma 4 E4B | Reason Summary (Gemini `MEDIUM`) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| `turn_001` | 1.75s | `reject` | `reject` | `pass` | `reject` | Audio cuts off abruptly mid-syllable at the very end. |
+| `turn_002` | 3.08s | `pass` | `pass` | `error` | `pass` | Clean single speaker with natural onsets and decays. |
+| `turn_003` | 0.92s | `pass` | **`reject`** | `pass` | `pass` | Final word cut off before natural tonal contour & decay. |
+| `turn_004` | 1.87s | `pass` | `pass` | `pass` | `pass` | Single speaker, clear boundaries, natural silence decay. |
+| `turn_005` | 9.01s | `reject` | `reject` | `pass` | `pass` | Audio cuts off abruptly at the end while mid-syllable. |
+| `turn_006` | 1.05s | `pass` | `pass` | `error` | `pass` | Clean acoustic boundaries, no overlapping voices. |
+| `turn_007` | 4.97s | `reject` | `reject` | `error` | `reject` | Secondary singing voice at start; abrupt cut on final word. |
+| `turn_008` | 7.86s | `reject` | `reject` | `pass` | `pass` | First word truncated at onset, missing initial attack. |
+| `turn_009` | 4.42s | `reject` | **`pass`** | `pass` | `pass` | Single speaker, clean onsets and offsets, free of clipping. |
+| `turn_010` | 1.57s | `reject` | `reject` | `pass` | `pass` | Multiple voices; distinct secondary voice intruding at tail. |
+| `turn_011` | 2.97s | `reject` | `reject` | `pass` | `pass` | Two distinct speakers: female voice followed by male voice. |
+| `turn_012` | 2.93s | `pass` | `pass` | `pass` | `pass` | Natural onset, full acoustic coda and decay, single speaker. |
+| `turn_013` | 1.23s | `reject` | **`pass`** | `pass` | `pass` | Complete words, natural boundaries, single speaker throughout. |
+| `turn_014` | 15.07s | `pass` | `pass` | `pass` | `pass` | Clean single speaker, natural boundaries, no foreground overlap. |
+| `turn_015` | 3.99s | `reject` | **`pass`** | `error` | `pass` | Defined word boundaries, no speech overlap or tail intrusion. |
+| `turn_016` | 1.72s | `reject` | `reject` | `pass` | `pass` | Cuts off abruptly during vowel/coda before natural decay. |
+| `turn_017` | 2.38s | `reject` | `reject` | `pass` | `pass` | Secondary voice audible in background following laughter. |
+| `turn_018` | 1.73s | `reject` | `reject` | `pass` | `reject` | Starts with cut-off vocalization from secondary speaker. |
+| `turn_019` | 1.63s | `reject` | `reject` | `pass` | `pass` | Multiple speakers audible with overlapping conversational speech. |
+| `turn_020` | 2.51s | `reject` | `reject` | `pass` | `pass` | Two distinct speakers audible with overlapping speech. |
+| `turn_021` | 1.12s | `pass` | `pass` | `error` | `pass` | Starts and ends cleanly with clear word boundaries. |
+| `turn_022` | 3.31s | `reject` | `reject` | `error` | `pass` | Multiple background voices clearly audible and overlapping. |
+| `turn_023` | 2.01s | `pass` | `pass` | `error` | `pass` | Clean acoustic boundaries, single speaker, no interference. |
+| `turn_024` | 1.17s | `pass` | **`reject`** | `pass` | `pass` | Secondary background voice at start; final word cut abruptly. |
+| `turn_025` | 1.23s | `reject` | `reject` | `pass` | `pass` | Background secondary voices; primary speaker cut mid-vowel. |
+| `turn_026` | 9.48s | `pass` | `pass` | `pass` | `pass` | Single speaker throughout with natural acoustic boundaries. |
+| `turn_027` | 3.27s | `reject` | `reject` | `pass` | `pass` | Final syllable cut off abruptly before vowel/tonal conclusion. |
+| `turn_028` | 3.05s | `reject` | `reject` | `pass` | `reject` | Cut off abruptly while vocal fold vibration is active. |
+| `turn_029` | 1.30s | `pass` | `pass` | `pass` | `pass` | Single clear speaker with intact word boundaries. |
+| `turn_030` | 1.68s | `pass` | **`reject`** | `pass` | `pass` | Initial syllable abruptly cut off at onset without acoustic lead-in. |
+| `turn_031` | 1.82s | `reject` | `reject` | `pass` | `pass` | Final syllable cut off before completion of tone and decay. |
 
-### Turn `turn_011_spk_02_43.75-46.72` (2.97s)
-- **Audio Cut:** [Listen](data/experiment_khanhvy/cuts/turn_011_spk_02_43.75-46.72.wav)
-- **Gemini 3.8 Flash:** `reject` — A second speaker speaks clearly in the latter half of the clip.
-- **Gemma 4 12B:** `pass` — Single speaker with clear, complete word boundaries at both start and end.
-- **Gemma 4 E4B:** `pass` — The audio contains a single speaker with no background noise or secondary voices. Both the start and end of the speech are complete and natural.
+---
 
-### Turn `turn_013_spk_00_52.71-53.94` (1.23s)
-- **Audio Cut:** [Listen](data/experiment_khanhvy/cuts/turn_013_spk_00_52.71-53.94.wav)
-- **Gemini 3.8 Flash:** `reject` — The final syllable is abruptly cut off before its coda closure and vowel decay are complete.
-- **Gemma 4 12B:** `pass` — Single speaker with clear phonetic onset and complete coda closure at the end.
-- **Gemma 4 E4B:** `pass` — The audio contains a single speaker with no background noise or secondary voices. Both the start and end of the speech are acoustically complete, adhering to natural word boundaries.
+## 4. Hardened Audio Duration Specification: `[2.0s, 15.0s]`
 
-### Turn `turn_015_spk_02_80.51-84.50` (3.99s)
-- **Audio Cut:** [Listen](data/experiment_khanhvy/cuts/turn_015_spk_02_80.51-84.50.wav)
-- **Gemini 3.8 Flash:** `reject` — The final syllable is cut off abruptly before its full tone and acoustic energy decay naturally.
-- **Gemma 4 12B:** `error` — None
-- **Gemma 4 E4B:** `pass` — The audio contains a single speaker with no overlap or tail intrusion. Both the start and end of the speech segment are on complete, natural word boundaries.
+To ensure high-quality dataset construction and prevent student model degradation, the pipeline enforces strict duration bounds on all newly generated audio clips:
 
-### Turn `turn_016_spk_02_87.24-88.96` (1.72s)
-- **Audio Cut:** [Listen](data/experiment_khanhvy/cuts/turn_016_spk_02_87.24-88.96.wav)
-- **Gemini 3.8 Flash:** `reject` — The final syllable is abruptly cut off mid-vocalization before reaching natural acoustic decay.
-- **Gemma 4 12B:** `pass` — Single speaker with complete phonetic boundaries at both start and end.
-- **Gemma 4 E4B:** `pass` — The audio contains a single speaker with no overlap or trailing vocal intrusions. Both the start and end of the speech occur on complete, natural word boundaries.
+$$\mathbf{2.0\,\text{s}} \le \mathbf{\text{Duration}} \le \mathbf{15.0\,\text{s}}$$
 
-### Turn `turn_017_spk_00_99.36-101.73` (2.38s)
-- **Audio Cut:** [Listen](data/experiment_khanhvy/cuts/turn_017_spk_00_99.36-101.73.wav)
-- **Gemini 3.8 Flash:** `reject` — The initial word is cut off abruptly mid-syllable at the onset, and multiple background voices/laughter are audible throughout the clip.
-- **Gemma 4 12B:** `pass` — Single speaker with clear phonetic boundaries at both start and end.
-- **Gemma 4 E4B:** `pass` — The audio contains a single speaker with no overlaps or secondary voices. The speech starts with a full phonetic onset and ends with a complete word closure into natural silence.
+### Rationale & Boundary Justification
 
-### Turn `turn_018_spk_01_104.28-106.01` (1.73s)
-- **Audio Cut:** [Listen](data/experiment_khanhvy/cuts/turn_018_spk_01_104.28-106.01.wav)
-- **Gemini 3.8 Flash:** `reject` — There is a prominent secondary speaker or background voice audible at the start of the audio clip.
-- **Gemma 4 12B:** `pass` — Single speaker with complete word boundaries at both start and end.
-- **Gemma 4 E4B:** `reject` — The audio is pure, but the final word is clipped at the end of the segment.
+1. **Lower Bound ($< 2.0\,\text{s}$ Rejected):**
+   - Vietnamese is an isolating, tonal language where tonal contours (ngang, huyền, ngã, hỏi, sắc, nặng) require preceding and succeeding co-articulatory context.
+   - Ultra-short segments (< 2.0s) often contain isolated syllables where natural glottal stops or pitch resets cannot be distinguished from artificial windowing cutoffs.
+   - Preserves existing sub-2.0s clips in historical benchmark sets, but prohibits them for future dataset mining.
 
-### Turn `turn_019_spk_02_107.94-109.57` (1.63s)
-- **Audio Cut:** [Listen](data/experiment_khanhvy/cuts/turn_019_spk_02_107.94-109.57.wav)
-- **Gemini 3.8 Flash:** `reject` — There are two distinct speakers taking turns in this short recording.
-- **Gemma 4 12B:** `pass` — Single speaker throughout with no tail intrusions; speech starts and ends on complete word boundaries.
-- **Gemma 4 E4B:** `pass` — Single speaker with no overlap or tail intrusion. Speech starts and ends on complete word boundaries.
+2. **Upper Bound ($> 15.0\,\text{s}$ Split / Bounded):**
+   - Audio segments exceeding 15.0s introduce multiple compound clauses and conversational breathing pauses where sentence-splitting ambiguity arises.
+   - Long clips cause quadratic memory growth in the multimodal audio conformer/transformer attention layers ($O(T^2)$), risking VRAM exhaustion on local hardware.
+   - Sentences spanning $> 15.0$s are segmented at acoustic energy minima / silence intervals ($\le -35$ dBFS) before verification.
 
-### Turn `turn_020_spk_01_108.79-111.29` (2.51s)
-- **Audio Cut:** [Listen](data/experiment_khanhvy/cuts/turn_020_spk_01_108.79-111.29.wav)
-- **Gemini 3.8 Flash:** `reject` — There is overlapping speech between multiple speakers at the beginning, and the speech cuts off abruptly mid-vowel at the end.
-- **Gemma 4 12B:** `pass` — Single speaker with complete word boundaries at start and end.
-- **Gemma 4 E4B:** `pass` — The audio contains a single speaker with no overlaps or secondary voices. The speech starts and ends on complete, natural acoustic word boundaries.
+---
 
-### Turn `turn_021_spk_01_113.12-114.25` (1.12s)
-- **Audio Cut:** [Listen](data/experiment_khanhvy/cuts/turn_021_spk_01_113.12-114.25.wav)
-- **Gemini 3.8 Flash:** `pass` — The speech starts and ends cleanly with clear word boundaries, natural decay, and no secondary speaker or overlapping speech.
-- **Gemma 4 12B:** `error` — None
-- **Gemma 4 E4B:** `pass` — Single speaker is present, and both the start and end of the speech are acoustically complete.
+## 5. Local Student Distillation (Gemma 4 E4B QLoRA)
 
-### Turn `turn_022_spk_00_115.32-118.62` (3.31s)
-- **Audio Cut:** [Listen](data/experiment_khanhvy/cuts/turn_022_spk_00_115.32-118.62.wav)
-- **Gemini 3.8 Flash:** `reject` — Heavy background chatter and overlapping secondary voices are present throughout the recording.
-- **Gemma 4 12B:** `error` — None
-- **Gemma 4 E4B:** `pass` — The audio contains a single speaker with no secondary voices or tail intrusion. Both the start and end of the speech are acoustically complete.
+### Training Configuration
+- **Base Model:** `google/gemma-4-e4b` (4-bit NF4 via BitsAndBytes)
+- **Adapter Configuration:**
+  - $r = 16$, $\alpha = 32$, $\text{dropout} = 0.05$
+  - Target modules: `q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`
+- **VRAM Optimizations on AMD ROCm (ROCm 6.2 / RX 7900 GRE):**
+  - Vision tower offloaded to CPU: `model.vision_tower.to("cpu")`
+  - Conformer audio features computed under `torch.no_grad()` to detach intermediate graphs.
+  - Forward output logits explicitly deleted prior to `loss.backward()` to release the 256k-vocabulary tensor.
+  - Total VRAM Consumption: **8.4 GB - 9.5 GB** (fits comfortably within 16GB VRAM limit).
+- **W&B Loss Trajectory:**
+  - Initial `train/loss`: $2.84$
+  - Final `train/loss`: $0.0309$
+  - Final `eval/loss`: $0.7987$ (3 epochs on 173 samples)
 
-### Turn `turn_023_spk_00_119.25-121.27` (2.01s)
-- **Audio Cut:** [Listen](data/experiment_khanhvy/cuts/turn_023_spk_00_119.25-121.27.wav)
-- **Gemini 3.8 Flash:** `pass` — The utterance is produced by a single speaker with cleanly preserved acoustic boundaries at both onset and offset.
-- **Gemma 4 12B:** `error` — None
-- **Gemma 4 E4B:** `pass` — The audio contains a single speaker, and both the start and end of the speech are acoustically complete and natural.
-
-### Turn `turn_025_spk_01_125.51-126.74` (1.23s)
-- **Audio Cut:** [Listen](data/experiment_khanhvy/cuts/turn_025_spk_01_125.51-126.74.wav)
-- **Gemini 3.8 Flash:** `reject` — Multiple speakers are audible with overlapping voices in the background, and the audio abruptly cuts off mid-syllable at the end.
-- **Gemma 4 12B:** `pass` — Single speaker with clear word boundaries at both start and end.
-- **Gemma 4 E4B:** `pass` — The audio contains a single speaker with no overlap or tail intrusion. Both the start and end of the speech are on complete, natural word boundaries.
-
-### Turn `turn_027_spk_00_154.39-157.66` (3.27s)
-- **Audio Cut:** [Listen](data/experiment_khanhvy/cuts/turn_027_spk_00_154.39-157.66.wav)
-- **Gemini 3.8 Flash:** `reject` — The final syllable is cut off abruptly before the vowel/coda completes naturally.
-- **Gemma 4 12B:** `pass` — Single speaker with clear phonetic onset and full coda closure at both boundaries.
-- **Gemma 4 E4B:** `pass` — The audio features a single speaker with no overlap or tail intrusion. Both the start and end of the speech occur on complete, natural word boundaries.
-
-### Turn `turn_028_spk_01_158.46-161.50` (3.05s)
-- **Audio Cut:** [Listen](data/experiment_khanhvy/cuts/turn_028_spk_01_158.46-161.50.wav)
-- **Gemini 3.8 Flash:** `reject` — The final syllable is cut off abruptly while vocal fold vibration is still actively sustained.
-- **Gemma 4 12B:** `pass` — Single speaker with clear word boundaries at both start and end.
-- **Gemma 4 E4B:** `reject` — The audio cuts off abruptly while the final word is still in flight, failing to complete its tonal contour and coda closure.
-
-### Turn `turn_031_spk_02_178.18-180.00` (1.82s)
-- **Audio Cut:** [Listen](data/experiment_khanhvy/cuts/turn_031_spk_02_178.18-180.00.wav)
-- **Gemini 3.8 Flash:** `reject` — The final word is cut off abruptly while vocalization and tone are still actively ongoing.
-- **Gemma 4 12B:** `pass` — Single speaker with clear, complete word boundaries at both start and end.
-- **Gemma 4 E4B:** `pass` — The audio contains a single speaker, and both the start and end of the speech segment are acoustically complete and natural.
+### Next-Phase Distillation Roadmap
+1. **Teacher:** Annotate new corpus (Have A Sip #118, 220 samples) exclusively using **Gemini 3.8 Flash (`thinkingLevel="MEDIUM"`)**.
+2. **Data Balancing:** Maintain 50/50 balance between clean utterances (`pass`) and synthetic boundary/speaker defects (`reject` with calibrated 80ms/180ms coda cuts, 90ms/220ms onset cuts, and secondary vocal intrusions).
+3. **Hard Negative Mining:** Retrain Gemma 4 E4B LoRA on the combined dataset to eliminate greedy `pass` bias and impart precise glottal tone discrimination into the local student.
