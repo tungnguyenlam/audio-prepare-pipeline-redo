@@ -58,5 +58,25 @@
     "duration_s": 901.503125,
     "sample_rate": 16000,
     "channels": 1
+  },
+  {
+    "id": "fwN5VT_QxkY",
+    "title": "Chuyện buồn hôm qua là chuyện cười hôm nay - Đạo diễn Charlie Nguyễn | Kháng Thương SS3 EP5",
+    "url": "https://www.youtube.com/watch?v=fwN5VT_QxkY",
+    "channel": "vietcetera",
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/crawled/vietcetera/UCORwVnph7TK6rmyKozkV8_g/Chuyện_buồn_hôm_qua_là_chuyện_cười_hôm_nay_-_Đạo_diễn_Charlie_Nguyễn_Kháng_Thương_SS3_EP5__fwN5VT_QxkY.wav",
+    "duration_s": 1119.68,
+    "sample_rate": 16000,
+    "channels": 1
+  },
+  {
+    "id": "PXEtB-CsvSw",
+    "title": "3 bài học sau 24.500 giờ bay - Cơ trưởng Nguyễn Nam Liên | 10.000 hours EP6",
+    "url": "https://www.youtube.com/watch?v=PXEtB-CsvSw",
+    "channel": "vietcetera",
+    "path": "/home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.data/crawled/vietcetera/UCORwVnph7TK6rmyKozkV8_g/3_bài_học_sau_24.500_giờ_bay_-_Cơ_trưởng_Nguyễn_Nam_Liên_10.000_hours_EP6__PXEtB-CsvSw.wav",
+    "duration_s": 1127.37525,
+    "sample_rate": 16000,
+    "channels": 1
   }
 ]

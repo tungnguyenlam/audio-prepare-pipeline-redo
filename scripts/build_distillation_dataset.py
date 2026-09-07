@@ -383,6 +383,95 @@ def cmd_augment_boundaries(args: argparse.Namespace) -> None:
     )
 
 
+def cmd_slice_candidates(args: argparse.Namespace) -> None:
+    """Slice raw audio tracks into speech turn candidates using acoustic energy valleys."""
+    import numpy as np
+    import soundfile as sf
+
+    out_dir = REPO_ROOT / args.output_dir if not Path(args.output_dir).is_dir() else Path(args.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    tracks: list[Path] = []
+    for inp in args.input_tracks:
+        p = REPO_ROOT / inp if not Path(inp).exists() else Path(inp)
+        if p.is_file() and p.suffix.lower() in [".wav", ".mp3", ".flac"]:
+            tracks.append(p)
+        elif p.is_dir():
+            tracks.extend(sorted(p.rglob("*.wav")))
+
+    logger.info("Found %d audio tracks to slice candidates from.", len(tracks))
+    min_dur = args.min_duration
+    max_dur = args.max_duration
+    total_saved = 0
+
+    for track_path in tracks:
+        try:
+            data, sr = sf.read(str(track_path))
+        except Exception as e:
+            logger.warning("Failed reading %s: %s", track_path, e)
+            continue
+
+        if len(data.shape) > 1:
+            data = np.mean(data, axis=1)
+
+        dur_s = len(data) / sr
+        logger.info("Slicing candidates from %s (%.1fs)...", track_path.name, dur_s)
+
+        frame_len = int(0.020 * sr)
+        hop_len = int(0.010 * sr)
+        n_frames = (len(data) - frame_len) // hop_len + 1
+        if n_frames <= 0:
+            continue
+
+        frames = np.lib.stride_tricks.sliding_window_view(data[: n_frames * hop_len + frame_len], frame_len)[::hop_len]
+        rms = np.sqrt(np.mean(frames ** 2, axis=1) + 1e-9)
+        max_rms = np.max(rms) + 1e-9
+        db = 20 * np.log10(rms / max_rms)
+
+        is_speech = db > args.threshold_db
+        regions: list[tuple[float, float]] = []
+        in_speech = False
+        start_idx = 0
+        for i, s in enumerate(is_speech):
+            if s and not in_speech:
+                in_speech = True
+                start_idx = i
+            elif not s and in_speech:
+                in_speech = False
+                seg_dur = (i - start_idx) * hop_len / sr
+                if seg_dur >= min_dur:
+                    regions.append((start_idx * hop_len / sr, i * hop_len / sr))
+
+        cuts: list[tuple[float, float]] = []
+        for s_t, e_t in regions:
+            seg_dur = e_t - s_t
+            if seg_dur <= max_dur:
+                cuts.append((s_t, e_t))
+            else:
+                n_chunks = int(np.ceil(seg_dur / 8.0))
+                chunk_len = seg_dur / n_chunks
+                for c in range(n_chunks):
+                    cuts.append((s_t + c * chunk_len, s_t + (c + 1) * chunk_len))
+
+        stem = track_path.stem[:25]
+        track_saved = 0
+        for c_idx, (st, et) in enumerate(cuts):
+            if args.max_cuts_per_track and track_saved >= args.max_cuts_per_track:
+                break
+            s_samp = max(0, int((st - 0.05) * sr))
+            e_samp = min(len(data), int((et + 0.06) * sr))
+            clip = data[s_samp:e_samp]
+            if len(clip) / sr < min_dur:
+                continue
+
+            out_wav = out_dir / f"{stem}_turn_{c_idx:03d}_{st:.1f}-{et:.1f}.wav"
+            sf.write(str(out_wav), clip, sr)
+            total_saved += 1
+            track_saved += 1
+
+    logger.info("Candidate Slicing Complete: Generated %d audio cuts in %s", total_saved, out_dir)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Unified speech distillation dataset builder.",
@@ -417,6 +506,16 @@ def main() -> None:
     p_aug.add_argument("--output-jsonl", type=str, default=".data/distillation/train_augmented.jsonl", help="Output augmented JSONL file")
     p_aug.add_argument("--max-augmentations", type=int, default=300, help="Max synthetic samples to generate")
     p_aug.set_defaults(func=cmd_augment_boundaries)
+
+    # Subcommand: slice-candidates
+    p_sli = subparsers.add_parser("slice-candidates", help="Slice audio tracks into candidate speech turns using energy valleys")
+    p_sli.add_argument("--input-tracks", nargs="+", required=True, help="Input audio files or directories")
+    p_sli.add_argument("--output-dir", type=str, default=".data/distillation/crawled_cuts", help="Directory to save sliced turns")
+    p_sli.add_argument("--min-duration", type=float, default=2.0, help="Minimum duration of speech turn in seconds")
+    p_sli.add_argument("--max-duration", type=float, default=12.0, help="Maximum duration of speech turn in seconds")
+    p_sli.add_argument("--threshold-db", type=float, default=-34.0, help="Silence threshold in dBFS")
+    p_sli.add_argument("--max-cuts-per-track", type=int, default=35, help="Max cuts per input track")
+    p_sli.set_defaults(func=cmd_slice_candidates)
 
     # Subcommand: package
     p_pkg = subparsers.add_parser("package", help="Compress audio files into tar.gz and optionally upload to HF Hub")
