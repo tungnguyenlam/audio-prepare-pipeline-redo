@@ -1,6 +1,8 @@
 # Scripts Directory Index
 
-This directory contains executable runner scripts, training pipelines, ingestion utilities, and benchmark tools for the audio preparation pipeline.
+This directory contains production-ready runner scripts, general CLIs, and utilities for the audio preparation pipeline.
+
+All tools follow the repository engineering ideology: **reusable components**, **parameterization via command-line flags (`--flags`)**, and minimal one-off duplication.
 
 ---
 
@@ -30,41 +32,63 @@ This directory contains executable runner scripts, training pipelines, ingestion
 | [`crawl_channels.py`](crawl_channels.py) | YouTube crawler ingesting long-form videos from channels (`@TRANTHANHTOWN`, `@KhánhVyOFFICIAL`), normalizing to 16kHz mono WAV. | `python scripts/crawl_channels.py --max-videos 3` |
 | [`run_clean_pipeline_benchmark.py`](run_clean_pipeline_benchmark.py) | **Core Benchmark:** Runs Mel-Band RoFormer vocal separation $\to$ Diarizers (Pyannote Comm-1, DiariZen Large, 3D-Speaker) $\to$ Intelligent valley splitting $[2.0\text{s}, 15.0\text{s}]$ $\to$ Zero-contamination boundary mitigation $\to$ Gemini 3.8 Flash (`thinkingLevel="MEDIUM"`) multi-factor acoustic audit. | `python scripts/run_clean_pipeline_benchmark.py` |
 | [`target_speaker.py`](target_speaker.py) | Enrolls target speaker voiceprints (ResNet34 / 3D-Speaker) and filters candidate segments by cosine similarity. | `python scripts/target_speaker.py score --audio input.wav` |
-| [`export_results_csv.py`](export_results_csv.py) | Exports verifier benchmark results and latency stats to CSV format. | `python scripts/export_results_csv.py` |
 
 ---
 
-## 4. Distillation & Model Fine-Tuning
+## 4. Generalized Distillation, Training & Evaluation Tools
 
-| Script | Purpose | Usage |
-| [`generate_e2b_distillation_dataset.py`](generate_e2b_distillation_dataset.py) | **Active Pipeline:** Ingests crawled challenging channels, separates vocals via Mel-Band RoFormer on GPU, segments with DiariZen & Pyannote, applies valley splitting & boundary mitigation, audits with Gemini 3.8 Flash (MEDIUM), and builds `train_e2b.jsonl`. | `python scripts/generate_e2b_distillation_dataset.py` |
-| [`train_gemma4_e2b_lora.py`](train_gemma4_e2b_lora.py) | **Active Student Trainer:** 4-bit QLoRA fine-tuning for `google/gemma-4-E2B-it` with frozen audio tower, training on multi-factor schema (`speaker_purity`, `word_completeness`, `audio_quality`). Logs to W&B. | `python scripts/train_gemma4_e2b_lora.py` |
-| [`train_gemma4_e4b_lora.py`](train_gemma4_e4b_lora.py) | 4-bit QLoRA training pipeline for `google/gemma-4-E4B-it`. | `python scripts/train_gemma4_e4b_lora.py` |
-| [`prepare_combined_dataset.py`](prepare_combined_dataset.py) | Merges multi-source distillation jsonl files, deduplicates, and splits into train/val sets. | `python scripts/prepare_combined_dataset.py` |
-| [`generate_distillation_dataset.py`](generate_distillation_dataset.py) | Generates teacher labels from Gemini 3.8 Flash for candidate audio slices. | `python scripts/generate_distillation_dataset.py` |
-| [`generate_haveasip_distillation_data.py`](generate_haveasip_distillation_data.py) | Generates synthetic boundary-clipped and tail-intrusion test pairs. | `python scripts/generate_haveasip_distillation_data.py` |
-| [`generate_extended_distillation_data.py`](generate_extended_distillation_data.py) | Generates extended hard negative/positive pairs for verifier training. | `python scripts/generate_extended_distillation_data.py` |
-| [`push_dataset_to_hf.py`](push_dataset_to_hf.py) | Packages and pushes labeled audio verification datasets to Hugging Face Hub. | `python scripts/push_dataset_to_hf.py` |
-| [`evaluate_finetuned_verifier.py`](evaluate_finetuned_verifier.py) | Evaluates fine-tuned LoRA student against Gemini 3.8 Flash teacher predictions. | `python scripts/evaluate_finetuned_verifier.py` |
-| [`run_distillation_pipeline.sh`](run_distillation_pipeline.sh) | End-to-end bash orchestrator for distillation dataset building and training. | `./scripts/run_distillation_pipeline.sh` |
+These general tools replace legacy single-purpose scripts. All behaviors are configured via CLI flags.
+
+### 4.1. Student Model Fine-Tuning: [`train_verifier.py`](train_verifier.py)
+Unified trainer for multimodal speech verifiers using LoRA distillation from Gemini teacher annotations. Backed by modular components in [`src/diarization/verifier_training.py`](../src/diarization/verifier_training.py).
+
+- **Hardware Agnostic:** Automatically handles CUDA GPU (4-bit NF4 QLoRA via `bitsandbytes`) or CPU fallback (`bfloat16` with configurable `--cpu-threads`).
+- **Hub Integration:** Automatically pulls dataset tarball from Hugging Face Hub if missing locally, logs to Weights & Biases, and pushes checkpoints to Hugging Face Hub.
+- **Key Flags:**
+  ```bash
+  # Fine-tune Gemma 4 E2B on GPU (default)
+  python scripts/train_verifier.py --model-id google/gemma-4-E2B-it --epochs 3 --lr 2e-4
+
+  # Fine-tune Gemma 4 E4B on CPU
+  python scripts/train_verifier.py --model-id google/gemma-4-E4B-it --device cpu --cpu-threads 16 --quantization none
+  ```
+
+### 4.2. Acoustic Verification & Model Benchmark: [`evaluate_verifier.py`](evaluate_verifier.py)
+Unified evaluator supporting Gemini API models and local Hugging Face / LoRA models on JSONL datasets, directories of WAVs, or experiment turn files.
+
+- **Key Flags:**
+  ```bash
+  # Evaluate Gemini 3.8 Flash on Khanh Vy cuts
+  python scripts/evaluate_verifier.py --backend gemini --model gemini-3.8-flash --reasoning-effort medium --input .data/experiment_khanhvy/cuts/ --output-report report.md --export-csv results.csv
+
+  # Evaluate fine-tuned local LoRA adapter on validation split
+  python scripts/evaluate_verifier.py --backend hf_local --model google/gemma-4-E2B-it --adapter-path .data/distillation/checkpoints_e2b/best_adapter --input .data/distillation/val_e2b.jsonl
+  ```
+
+### 4.3. Distillation Dataset Pipeline: [`build_distillation_dataset.py`](build_distillation_dataset.py)
+Unified dataset builder with subcommands for the entire distillation lifecycle:
+- **`annotate`:** Query Gemini 3.8 Flash teacher across directories of audio turns.
+- **`balance`:** Stratify pass/reject ratios (e.g., 60% pass / 40% reject) and split into `train.jsonl` / `val.jsonl`.
+- **`package`:** Compress audio files into `tar.gz` and optionally upload to Hugging Face Hub dataset repository.
+- **Example Usage:**
+  ```bash
+  # 1. Annotate raw cuts
+  python scripts/build_distillation_dataset.py annotate --audio-dirs .data/clean_benchmark_khanhvy/cuts/ --output-file .data/distillation/annotated.jsonl
+
+  # 2. Balance dataset (60/40 ratio)
+  python scripts/build_distillation_dataset.py balance --input-files .data/distillation/annotated.jsonl --pass-ratio 0.60
+
+  # 3. Package and push to Hub
+  python scripts/build_distillation_dataset.py package --audio-dir .data/distillation_e2b/audio --hf-repo tungnguyenlam/gemma-4-e2b-acoustic-verifier-data
+  ```
+
+### 4.4. One-Click External Runner: [`run_train_4090.sh`](../run_train_4090.sh)
+Root wrapper script for self-contained execution on remote/standalone GPU machines (e.g., RTX 4090). Passes all trailing arguments directly to `scripts/train_verifier.py`.
 
 ---
 
-## 5. Verifier Comparisons & Teacher Benchmarks
+## 5. Archive (`scripts/archive/`)
 
-| Script | Purpose |
-| :--- | :--- |
-| [`compare_gemini_reasoning_levels.py`](compare_gemini_reasoning_levels.py) | Evaluates Gemini 3.8 Flash across reasoning budgets (`NONE`, `LOW`, `MEDIUM`, `HIGH`) to verify boundary detection sensitivity. |
-| [`compare_verifiers_khanhvy.py`](compare_verifiers_khanhvy.py) | Multi-verifier benchmark on Khanh Vy vlog cuts (VibeVoice, Gemma 4, Gemini). |
-| [`evaluate_gemma4_12b_khanhvy.py`](evaluate_gemma4_12b_khanhvy.py) | Evaluates unquantized `google/gemma-4-12B-it` direct-audio reasoning. |
-| [`evaluate_gemma4_12b_q6_khanhvy.py`](evaluate_gemma4_12b_q6_khanhvy.py) | Evaluates llama.cpp GGUF Q6 quantized Gemma 4 12B. |
-| [`evaluate_gemma4_e4b_q8_khanhvy.py`](evaluate_gemma4_e4b_q8_khanhvy.py) | Evaluates llama.cpp GGUF Q8 quantized Gemma 4 E4B. |
-
----
-
-## 6. Archive (`scripts/archive/`)
-
-Exploratory checks, hardware compatibility tests, and diagnostic scripts used during environment setup and debugging are archived under [`scripts/archive/`](archive/):
-- **Hardware & Environment Checks:** `check_vram.py`, `check_unsloth_studio_env.py`, `check_unsloth_audio_support.py`, `check_keys.py`, `check_wandb.py`, `check_status.py`.
-- **Model Architecture Checks:** `check_gemma4_arch.py`, `check_gemma4_support.py`, `check_e4b_size.py`, `check_hf_e4b_repo.py`, `check_hf_user.py`, `inspect_e4b_files.py`.
-- **Smoke Tests & Verification:** `test_audio_processing.py`, `test_bnb_qlora.py`, `test_device_map.py`, `test_eval_load.py`, `test_gemma4_audio_forward.py`, `test_gemma4_lora_setup.py`, `test_gemma4_processor.py`, `test_gemma_vi_2048.py`, `test_label_masking.py`, `test_mel_roformer.py`, `test_module_map.py`, `test_peft_clippable.py`, `test_peft_gemma4.py`, `test_processor_audio.py`, `test_turn1_12b_q6.py`, `test_turn1_e4b_q8.py`, `test_unsloth_e4b_loader.py`, `test_vietnamese_prompt.py`, `diagnose_gemma_vi.py`, `download_base_model.py`, `download_less_quant_models.py`, `load_model_unsloth.py`, `unload_unsloth.py`.
+One-off exploratory checks, ad-hoc model probes, and legacy single-model scripts are archived under [`scripts/archive/`](archive/):
+- **Archived Single-Purpose Scripts:** `train_gemma4_e2b_lora.py`, `train_gemma4_e4b_lora.py`, `evaluate_gemini_35_flash_lite.py`, `evaluate_gemma4_12b_khanhvy.py`, `evaluate_gemma4_12b_q6_khanhvy.py`, `evaluate_gemma4_e4b_q8_khanhvy.py`, `evaluate_finetuned_verifier.py`, `compare_verifiers_khanhvy.py`, `compare_gemini_reasoning_levels.py`, `export_results_csv.py`, `generate_distillation_dataset.py`, `generate_e2b_distillation_dataset.py`, `generate_extended_distillation_data.py`, `generate_haveasip_distillation_data.py`, `prepare_balanced_e2b_dataset.py`, `prepare_combined_dataset.py`, `push_dataset_to_hf.py`.
+- **Diagnostic Probes & Tests:** Hardware tests, vllm/unsloth loaders, and intermediate smoke tests.

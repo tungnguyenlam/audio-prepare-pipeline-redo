@@ -144,10 +144,10 @@ fi
 # 5. Launch Training
 echo ""
 echo "[5/5] Launching Gemma 4 E2B LoRA Distillation Training..."
-echo "Command: $PYTHON_CMD scripts/train_gemma4_e2b_lora.py"
+echo "Command: $PYTHON_CMD scripts/train_verifier.py $@"
 echo "--------------------------------------------------------------------"
 
-$PYTHON_CMD scripts/train_gemma4_e2b_lora.py
+$PYTHON_CMD scripts/train_verifier.py "$@"
 
 echo ""
 echo "===================================================================="
