@@ -160,16 +160,23 @@ def cmd_annotate(args: argparse.Namespace) -> None:
 def cmd_balance(args: argparse.Namespace) -> None:
     input_paths = [Path(p) if Path(p).is_file() else REPO_ROOT / p for p in args.input_files]
     records = []
+    seen_paths = set()
     for p in input_paths:
         with open(p, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line:
-                    records.append(json.loads(line))
+                    item = json.loads(line)
+                    apath = item.get("audio_path")
+                    if apath and apath in seen_paths:
+                        continue
+                    if apath:
+                        seen_paths.add(apath)
+                    records.append(item)
 
     passes = [r for r in records if r.get("decision") == "pass"]
     rejects = [r for r in records if r.get("decision") == "reject"]
-    logger.info("Total input records: %d (Pass: %d, Reject: %d)", len(records), len(passes), len(rejects))
+    logger.info("Total unique input records: %d (Pass: %d, Reject: %d)", len(records), len(passes), len(rejects))
 
     target_pass_ratio = args.pass_ratio
     max_total = args.target_samples or len(records)

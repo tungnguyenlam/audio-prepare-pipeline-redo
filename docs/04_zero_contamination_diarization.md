@@ -588,16 +588,36 @@ To avoid continuous commercial API latency and inference costs during large data
 
 Three modular CLI tools under [`scripts/`](../scripts/) manage the distillation and evaluation lifecycle:
 
-1. **Dataset Mining & Packaging ([`scripts/build_distillation_dataset.py`](../scripts/build_distillation_dataset.py)):**
-   - Extracts consensus-disagreement segments and high-risk turn transitions from harvested audio.
-   - Annotates candidate turns with teacher reasoning using Gemini 3.8 Flash / 3.5 Flash-Lite.
-   - Balances `pass` vs `reject` classes and splits into train/val JSONL datasets.
-   ```bash
-   uv run python scripts/build_distillation_dataset.py package \
-     --annotated-json .data/distillation/annotated_khanh_vy.json \
-     --output-dir .data/distillation/e2b_train_val \
-     --train-ratio 0.85
-   ```
+1. **Dataset Mining, Synthesis & Balancing ([`scripts/build_distillation_dataset.py`](../scripts/build_distillation_dataset.py)):**
+   - **`slice-candidates`**: Extracts non-overlapping speech turns from stem files or crawled tracks using Silero VAD to prepare candidate cuts for teacher annotation:
+     ```bash
+     .venv/bin/python scripts/build_distillation_dataset.py slice-candidates \
+       --input-dir .data/downloads \
+       --output-dir .data/distillation/crawled_cuts \
+       --min-duration 2.5 --max-duration 12.0
+     ```
+   - **`annotate`**: Dispatches candidate audio cuts to Gemini 3.8 Flash / 3.5 Flash-Lite with configurable concurrency and reasoning effort (`medium` / `low` / `none`):
+     ```bash
+     .venv/bin/python scripts/build_distillation_dataset.py annotate \
+       --audio-dirs .data/distillation/crawled_cuts \
+       --output-file .data/distillation/annotated_crawled.jsonl \
+       --teacher-model gemini-3.8-flash --reasoning-effort medium --concurrency 8
+     ```
+   - **`augment-boundaries`**: Generates synthetic hard-negative boundary samples (`clipped_word_end` and `clipped_word_start`) by programmatically shaving 80–200ms from codas and 60–160ms from onsets of clean turns:
+     ```bash
+     .venv/bin/python scripts/build_distillation_dataset.py augment-boundaries \
+       --input-jsonl .data/distillation/train_combined.jsonl \
+       --output-dir .data/distillation/augmented_cuts \
+       --output-jsonl .data/distillation/train_augmented_pool.jsonl
+     ```
+   - **`balance`**: Merges multi-source JSONL datasets, deduplicates by audio path, balances class distribution to a targeted pass ratio (e.g. 45%), and generates stratified train/val splits:
+     ```bash
+     .venv/bin/python scripts/build_distillation_dataset.py balance \
+       --input-files .data/distillation/raw_combined_augmented.jsonl .data/distillation/annotated_crawled_240.jsonl .data/distillation/annotated_vietcetera_58.jsonl \
+       --pass-ratio 0.45 \
+       --train-out .data/distillation/train_v3.jsonl \
+       --val-out .data/distillation/val_v3.jsonl
+     ```
 
 2. **LoRA Fine-Tuning Engine ([`scripts/train_verifier.py`](../scripts/train_verifier.py)):**
    - General LoRA fine-tuning supporting any Hugging Face multimodal audio model (`--model-id`).
@@ -611,7 +631,9 @@ Three modular CLI tools under [`scripts/`](../scripts/) manage the distillation 
      --epochs 3 \
      --lr 2e-4 \
      --accum-steps 4 \
-     --output-dir .data/distillation/checkpoints_e2b/best_adapter
+     --train-file .data/distillation/train_v3.jsonl \
+     --val-file .data/distillation/val_v3.jsonl \
+     --output-dir .data/distillation/checkpoints_e2b_v3/best_adapter
    ```
 
 3. **Arbitrary Model Evaluator & Benchmarker ([`scripts/evaluate_verifier.py`](../scripts/evaluate_verifier.py)):**
@@ -621,7 +643,7 @@ Three modular CLI tools under [`scripts/`](../scripts/) manage the distillation 
    - Generates side-by-side CSV exports and Markdown evaluation reports.
    ```bash
    # Benchmark an arbitrary Hugging Face model against Gemini 3.8 Flash reference decisions
-   uv run python scripts/evaluate_verifier.py \
+   .venv/bin/python scripts/evaluate_verifier.py \
      --backend hf \
      --model-id openbmb/MiniCPM-o-4_5 \
      --trust-remote-code \
@@ -629,4 +651,15 @@ Three modular CLI tools under [`scripts/`](../scripts/) manage the distillation 
      --output-report .data/distillation/reports/minicpm_vs_flash.md \
      --output-csv .data/distillation/reports/minicpm_vs_flash.csv
    ```
+
+### 7.2 The Hybrid DSP + Multimodal LLM Architecture
+
+Empirical evaluation reveals a fundamental boundary between what deterministic digital signal processing (DSP) and multimodal language models (MLLMs) can achieve:
+
+1. **Micro-Boundary Truncations ($< 150\text{ms}$):**
+   - Autoregressive causal student LLMs (~2B) have acoustic priors that classify isolated vocal stems as `pass` when speech is intelligible, failing to penalize truncated syllable codas (e.g., `-ng`, `-t`, `-c`, `-p` closures).
+   - **Deterministic Stage 3 DSP Rule:** Micro-energy valley snapping ($\le -32\text{ dBFS}$) and PhoWhisper forced alignment are strictly required before LLM verification to guarantee acoustic word completeness physically.
+2. **Acoustic & Semantic Cross-Contamination:**
+   - Multimodal LLMs excel at detecting co-host chatter, separated secondary vocal bleed, synthetic reverb, and background music intrusions that fall below traditional energy thresholds.
+   - **Stage 5 LLM Role:** Used specifically as an acoustic gatekeeper for multi-speaker leakage, background music bleed, and distortion.
 

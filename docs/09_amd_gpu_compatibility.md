@@ -151,7 +151,7 @@ When worker models (`SortformerWorkerDiarizer`, `ClusteringWorkerDiarizer`, `Thr
 
 - **AMD ROCm / HIP Device Isolation:** When a task specifies a GPU index (e.g. `cuda:1`), the worker manager sets `HIP_VISIBLE_DEVICES`, `ROCR_VISIBLE_DEVICES`, and `CUDA_VISIBLE_DEVICES` simultaneously. This guarantees that ROCm HIP and CUDA runtime layers both expose only the target physical GPU to the child process as device 0.
 - **CPU Fallback Lane:** When running in the `cpu` queue, `CUDA_VISIBLE_DEVICES`, `HIP_VISIBLE_DEVICES`, and `ROCR_VISIBLE_DEVICES` are set to `""`, completely suppressing GPU runtime initialization and ensuring pure CPU execution.
-- **ROCm Path & Kernel Propagation:** All worker subprocesses inherit `/opt/rocm/bin` in `PATH` and `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1` for optimal kernel performance across all isolated environments.
+- **ROCm Path & Kernel Propagation:** All worker subprocesses inherit `/opt/rocm/bin` in `PATH`. Note that while `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1` can benefit specific conv/GEMM workloads, it should **never** be enabled for multimodal audio LLM training (see Section 7.1).
 
 ---
 
@@ -159,8 +159,30 @@ When worker models (`SortformerWorkerDiarizer`, `ClusteringWorkerDiarizer`, `Thr
 
 Fine-tuning compact multimodal acoustic verifiers (such as `google/gemma-4-E2B-it`) can be performed directly on the AMD Radeon RX 9060 XT (16 GB VRAM) using native ROCm HIP acceleration without falling back to CPU or remote servers.
 
-### Recommended Configuration
-- **Precision:** Native `bfloat16` (`--quantization none`). Gemma 4 E2B consumes ~4.6 GB VRAM in bfloat16, fitting comfortably within the 16 GB boundary alongside LoRA adapter gradients and optimizer states.
+### 7.1 LoRA vs. Full Fine-Tuning Architectural Justification
+
+| Metric | Full Fine-Tuning (`bfloat16`) | LoRA Fine-Tuning ($r=16, \alpha=32$) |
+|---|---|---|
+| **Trainable Parameters** | 2,300,000,000 (100%) | 24,150,000 (0.47%) |
+| **Model Weight VRAM** | 4.6 GB (`bfloat16`) | 4.6 GB (`bfloat16` frozen base) |
+| **Gradients VRAM** | 4.6 GB | ~48 MB (LoRA adapters only) |
+| **Optimizer States (AdamW)** | 18.4 GB ($8 \times 2.3\text{B}$) | ~96 MB ($8 \times 24.15\text{M}$) |
+| **Activations (checkpointed)** | ~2.5 - 3.5 GB | ~2.5 - 3.5 GB |
+| **Minimum Required VRAM** | **$\ge 27.6\text{ GB}$ (Immediate OOM)** | **~11.5 – 13.5 GB (Fits comfortably in 16 GB)** |
+
+**Engineering Verdict:** Full fine-tuning of Gemma 4 E2B is physically impossible on 16 GB VRAM consumer GPUs. Parameter-Efficient Fine-Tuning (PEFT / LoRA) targeting projection matrices (`q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`) is mandatory, maintaining high adaptation quality while using under 14 GB peak VRAM.
+
+### 7.2 Critical RDNA 4 (`gfx1200`) Attention Kernel Constraint
+
+> [!WARNING]
+> Setting `export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1` causes PyTorch attention kernels in Gemma 4 to trigger:
+> ```
+> torch.AcceleratorError: CUDA error: invalid argument (hipErrorInvalidValue)
+> ```
+> **Rule:** Do NOT export `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1` for Gemma 4 training or evaluation on Navi 44 / gfx1200. Allow PyTorch to use standard SDPA / rocBLAS attention, which executes stably at 100% GPU utilization with zero crashes.
+
+### 7.3 Recommended Configuration & Command
+- **Precision:** Native `bfloat16` (`--quantization none`). Gemma 4 E2B base weights consume ~4.6 GB VRAM.
 - **Quantization:** Avoid 4-bit/8-bit quantization (`bitsandbytes`) on AMD ROCm consumer cards (RDNA 4 / `gfx1200`), as upstream `bitsandbytes` wheels compile kernels specifically for NVIDIA CUDA. Native `bfloat16` is faster and avoids CUDA kernel dependency.
 - **Dependency Alignment:** Ensure `torchvision` is installed from AMD's official wheel repository (`torchvision==0.28.0+rocm10.0.0`) to avoid ABI symbol incompatibilities (`operator torchvision::nms does not exist`).
 - **CLI Runner:**
@@ -172,6 +194,8 @@ Fine-tuning compact multimodal acoustic verifiers (such as `google/gemma-4-E2B-i
     --epochs 3 \
     --lr 2e-4 \
     --accum-steps 4 \
-    --output-dir .data/distillation/checkpoints_e2b/best_adapter
+    --train-file .data/distillation/train_v3.jsonl \
+    --val-file .data/distillation/val_v3.jsonl \
+    --output-dir .data/distillation/checkpoints_e2b_v3/best_adapter
   ```
 
