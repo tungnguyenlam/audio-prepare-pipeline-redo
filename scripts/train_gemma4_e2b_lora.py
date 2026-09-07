@@ -39,22 +39,46 @@ sys.path.insert(0, str(REPO_ROOT))
 load_dotenv(REPO_ROOT / ".env")
 
 # Hyperparameters & Constants
-MODEL_ID = "google/gemma-4-E2B-it"
-HF_HUB_REPO = "tungnguyenlam/gemma-4-e2b-acoustic-verifier"
-WANDB_PROJECT = "gemma-4-e2b-distill-verifier"
+MODEL_ID = os.getenv("BASE_MODEL", "google/gemma-4-E2B-it")
+HF_HUB_REPO = os.getenv("HF_HUB_REPO", "tungnguyenlam/gemma-4-e2b-acoustic-verifier")
+HF_DATASET_REPO = os.getenv("HF_DATASET_REPO", "tungnguyenlam/gemma-4-e2b-acoustic-verifier-data")
+WANDB_PROJECT = os.getenv("WANDB_PROJECT", "gemma-4-e2b-distill-verifier")
 CHECKPOINT_DIR = Path(".data/distillation/checkpoints_e2b/best_adapter")
 TRAIN_JSONL = Path(".data/distillation/train_e2b.jsonl")
 VAL_JSONL = Path(".data/distillation/val_e2b.jsonl")
 
-LEARNING_RATE = 2e-4
-WEIGHT_DECAY = 0.01
-NUM_EPOCHS = 3
-ACCUM_STEPS = 4  # Effective batch size = 4
-MAX_GRAD_NORM = 1.0
-LORA_R = 16
-LORA_ALPHA = 32
-LORA_DROPOUT = 0.05
+LEARNING_RATE = float(os.getenv("LEARNING_RATE", "2e-4"))
+WEIGHT_DECAY = float(os.getenv("WEIGHT_DECAY", "0.01"))
+NUM_EPOCHS = int(os.getenv("NUM_EPOCHS", "3"))
+ACCUM_STEPS = int(os.getenv("ACCUM_STEPS", "4"))  # Effective batch size = 4
+MAX_GRAD_NORM = float(os.getenv("MAX_GRAD_NORM", "1.0"))
+LORA_R = int(os.getenv("LORA_R", "16"))
+LORA_ALPHA = int(os.getenv("LORA_ALPHA", "32"))
+LORA_DROPOUT = float(os.getenv("LORA_DROPOUT", "0.05"))
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+
+def ensure_dataset(hf_token: str | None = None) -> None:
+    """Ensure audio dataset is present locally, downloading and unpacking from HF Hub if needed."""
+    audio_dir = REPO_ROOT / ".data" / "distillation_e2b" / "audio"
+    if audio_dir.is_dir() and len(list(audio_dir.glob("*.wav"))) >= 50:
+        logger.info("Found existing audio dataset at %s (%d files).", audio_dir, len(list(audio_dir.glob("*.wav"))))
+        return
+
+    logger.info("Audio dataset not found locally. Downloading from Hugging Face Hub (%s)...", HF_DATASET_REPO)
+    from huggingface_hub import hf_hub_download
+    import tarfile
+
+    tar_path = hf_hub_download(
+        repo_id=HF_DATASET_REPO,
+        filename="e2b_audio_dataset.tar.gz",
+        repo_type="dataset",
+        token=hf_token,
+    )
+    logger.info("Extracting %s into %s...", tar_path, REPO_ROOT)
+    with tarfile.open(tar_path, "r:gz") as tar:
+        tar.extractall(path=str(REPO_ROOT))
+    logger.info("Extracted %d audio files successfully.", len(list(audio_dir.glob("*.wav"))))
 
 
 def build_sample(
@@ -201,6 +225,7 @@ def main() -> None:
     processor = AutoProcessor.from_pretrained(MODEL_ID, token=hf_token)
 
     # 3. Pre-process datasets into memory
+    ensure_dataset(hf_token)
     train_data = load_and_preprocess_dataset(processor, TRAIN_JSONL, "train")
     val_data = load_and_preprocess_dataset(processor, VAL_JSONL, "val")
 
