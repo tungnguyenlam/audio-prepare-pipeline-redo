@@ -170,9 +170,12 @@ def query_hf_local(
     audio_data, _ = librosa.load(str(audio_path), sr=16000)
 
     # Check if model provides custom .chat() interface (e.g., MiniCPM-o)
-    if hasattr(model, "chat") and not hasattr(processor, "apply_chat_template"):
-        msgs = [{"role": "user", "content": prompt}]
-        res = model.chat(image=None, audio=audio_data, msgs=msgs, tokenizer=processor)
+    if hasattr(model, "chat"):
+        msgs = [{"role": "user", "content": [prompt, audio_data]}]
+        try:
+            res = model.chat(image=None, msgs=msgs, tokenizer=processor, generate_audio=False)
+        except TypeError:
+            res = model.chat(image=None, audio=audio_data, msgs=msgs, tokenizer=processor)
         output_text = res if isinstance(res, str) else str(res)
     else:
         messages = [
@@ -385,6 +388,10 @@ def main() -> None:
             pass
         candidate_classes.extend([AutoModelForCausalLM, AutoModel])
 
+        extra_model_kwargs = {}
+        if "minicpm" in args.model.lower():
+            extra_model_kwargs = {"init_vision": False, "init_tts": False}
+
         for cls in candidate_classes:
             try:
                 hf_model = cls.from_pretrained(
@@ -393,6 +400,7 @@ def main() -> None:
                     device_map=actual_device,
                     trust_remote_code=args.trust_remote_code,
                     token=hf_token,
+                    **extra_model_kwargs,
                 )
                 logger.info("Successfully loaded model using %s", cls.__name__)
                 break
