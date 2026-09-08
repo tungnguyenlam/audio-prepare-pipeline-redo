@@ -163,13 +163,34 @@ def query_hf_local(
     prompt: str,
 ) -> dict[str, Any]:
     """Evaluate audio with local Hugging Face model + processor."""
-    import librosa
     import numpy as np
     import torch
 
     t0 = time.time()
-    audio_data, _ = librosa.load(str(audio_path), sr=16000, mono=True)
-    audio_data = np.asarray(audio_data, dtype=np.float32)
+    audio_data = None
+    try:
+        import soundfile as sf
+        raw_audio, sr = sf.read(str(audio_path), dtype="float32")
+        if raw_audio.ndim > 1:
+            raw_audio = raw_audio.mean(axis=1)
+        if sr == 16000:
+            audio_data = raw_audio
+        else:
+            try:
+                import torchaudio
+                t_audio = torch.from_numpy(raw_audio).unsqueeze(0)
+                audio_data = torchaudio.functional.resample(t_audio, orig_freq=sr, new_freq=16000).squeeze(0).numpy()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    if audio_data is None:
+        import librosa
+        raw_audio, _ = librosa.load(str(audio_path), sr=16000, mono=True)
+        audio_data = np.asarray(raw_audio, dtype=np.float32)
+    else:
+        audio_data = np.asarray(audio_data, dtype=np.float32)
 
     # Check if model provides custom .chat() interface (e.g., MiniCPM-o)
     if hasattr(model, "chat"):
