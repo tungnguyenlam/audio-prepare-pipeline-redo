@@ -108,7 +108,13 @@ Unified trainer for multimodal speech verifiers using LoRA distillation from Gem
   ```
 
 ### 4.2. Acoustic Verification & Model Benchmark: [`evaluate_verifier.py`](evaluate_verifier.py)
-Unified evaluator supporting Gemini API models and local Hugging Face / LoRA models on JSONL datasets, directories of WAVs, or experiment turn files.
+Unified evaluator supporting Gemini API models, OpenAI/vLLM endpoints, and local multimodal audio models backed by modular verifier classes in [`src/diarization/verifiers/`](../src/diarization/verifiers/):
+- [`DefaultHFVerifier`](../src/diarization/verifiers/DefaultHFVerifier.py): Lightweight default verifier for standard HF multimodal models (Gemma 4 E2B/E4B, etc.) and LoRA adapters.
+- [`MossAudioVerifier`](../src/diarization/verifiers/MossAudioVerifier.py): Dedicated backend for `OpenMOSS-Team/MOSS-Audio-*` using official `MossAudioModel` & `MossAudioProcessor` with `audio_input_mask`.
+- [`MiniCPMVerifier`](../src/diarization/verifiers/MiniCPMVerifier.py): Dedicated backend for `openbmb/MiniCPM-o-4_5` via custom `.chat()`.
+- [`KimiAudioVerifier`](../src/diarization/verifiers/KimiAudioVerifier.py): Dedicated backend for `moonshotai/Kimi-Audio-7B-Instruct` via `KimiAudio` API.
+- [`GeminiVerifier`](../src/diarization/verifiers/GeminiVerifier.py): Direct REST API integration for Gemini 3.8 Flash teacher benchmark.
+- [`EndpointVerifier`](../src/diarization/verifiers/EndpointVerifier.py): vLLM / OpenAI audio completions endpoint.
 
 - **Key Flags:**
   ```bash
@@ -117,6 +123,9 @@ Unified evaluator supporting Gemini API models and local Hugging Face / LoRA mod
 
   # Evaluate fine-tuned local LoRA adapter on validation split
   python scripts/evaluate_verifier.py --backend hf_local --model google/gemma-4-E2B-it --adapter-path .data/distillation/checkpoints_e2b/best_adapter --input .data/distillation/val_e2b.jsonl
+
+  # Evaluate MOSS-Audio 8B Thinking in dedicated Python 3.12 environment
+  python scripts/evaluate_verifier.py --backend hf_local --model OpenMOSS-Team/MOSS-Audio-8B-Thinking --input .data/experiment_khanhvy/results.json --output-report report_moss.md
 
   # Evaluate MiniCPM-o with custom prompt text or file
   python scripts/evaluate_verifier.py --backend hf_local --model openbmb/MiniCPM-o-4_5 --prompt-file prompts/strict_acoustic.txt --output-report report.md

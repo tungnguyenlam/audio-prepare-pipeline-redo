@@ -19,14 +19,11 @@ Computes:
 from __future__ import annotations
 
 import argparse
-import base64
 import csv
 import json
 import logging
 import os
 import sys
-import time
-import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
@@ -39,6 +36,11 @@ from dotenv import load_dotenv
 load_dotenv(REPO_ROOT / ".env")
 
 from src.diarization.audio_utils import resolve_audio_path
+from src.diarization.verifiers import (
+    DEFAULT_ACOUSTIC_PROMPT,
+    extract_json_payload,
+    get_verifier,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,40 +49,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("evaluate_verifier")
 
-DEFAULT_ACOUSTIC_PROMPT = """Listen to the supplied audio directly. Do not transcribe it.
-Evaluate three strict acoustic dimensions required for clean Text-to-Speech (TTS) training:
 
-1. SPEAKER PURITY:
-   - "pure": Exactly one primary speaker throughout. No background chatter, secondary voices, or intruder laughter.
-   - "secondary_speaker": Another speaker's voice is audible (even a short word, whisper, or breath).
-   - "overlapping_speech": Multiple speakers speaking or laughing simultaneously.
-
-2. WORD COMPLETENESS (Không lẹm chữ, đủ âm tiết):
-   - "complete": All words start and finish on clean acoustic word boundaries with their full vowel decay and coda consonant closure.
-   - "clipped_word_start": The initial word has its onset consonant abruptly cut off.
-   - "clipped_word_end": The final word is cut off abruptly while vocal fold vibration or tone is still in flight.
-
-3. AUDIO QUALITY:
-   - "studio_clean": Clear vocal signal, minimal background artifacts, and no residual music bleed.
-   - "music_bleed": Audible residual background music, beats, or synthetic melodies.
-   - "noisy_reverberant": Severe room echo, reverb, or excessive environmental noise.
-   - "distorted": Clipping distortion, phase artifacts, or muffled frequency response.
-
-DECISION RULE:
-- "pass" ONLY if speaker_purity == "pure" AND word_completeness == "complete" AND audio_quality == "studio_clean".
-- Otherwise "reject".
-
-Return strict JSON only (no markdown, no other text):
-{
-  "speaker_purity": "pure" | "secondary_speaker" | "overlapping_speech",
-  "word_completeness": "complete" | "clipped_word_start" | "clipped_word_end",
-  "audio_quality": "studio_clean" | "music_bleed" | "noisy_reverberant" | "distorted",
-  "decision": "pass" | "reject",
-  "failure_codes": ["clipped_word_start", "clipped_word_end", "secondary_speaker", "overlapping_speech", "music_bleed", "noisy_reverberant", "distorted"],
-  "reason": "Concise English explanation of the acoustic decision."
-}"""
-
-
+# Compatibility wrappers for external imports
 def query_gemini(
     audio_path: Path,
     model: str,
@@ -88,71 +58,10 @@ def query_gemini(
     prompt: str,
     reasoning_effort: str = "none",
 ) -> dict[str, Any]:
-    """Query Gemini REST endpoint directly with audio payload."""
-    with open(audio_path, "rb") as f:
-        audio_b64 = base64.b64encode(f.read()).decode("ascii")
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-    payload: dict[str, Any] = {
-        "contents": [
-            {
-                "parts": [
-                    {"inlineData": {"mimeType": "audio/wav", "data": audio_b64}},
-                    {"text": prompt},
-                ]
-            }
-        ],
-        "generationConfig": {
-            "responseMimeType": "application/json",
-            "temperature": 0.0,
-            "maxOutputTokens": 2048,
-        },
-    }
-    if reasoning_effort and reasoning_effort.lower() != "none":
-        payload["generationConfig"]["thinkingConfig"] = {"thinkingLevel": reasoning_effort.upper()}
-
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-
-    t0 = time.time()
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        res = json.loads(resp.read().decode("utf-8"))
-    latency = round(time.time() - t0, 3)
-
-    candidates = res.get("candidates", [])
-    if not candidates:
-        raise RuntimeError("No candidates returned from Gemini API")
-
-    raw_text = candidates[0]["content"]["parts"][0]["text"].strip()
-    if raw_text.startswith("```"):
-        lines = raw_text.splitlines()
-        raw_text = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
-
-    parsed = json.loads(raw_text)
-    parsed["_latency_s"] = latency
-    return parsed
-
-
-def extract_json_payload(text: str) -> dict[str, Any]:
-    """Robustly extract and parse JSON object from model output text."""
-    import re
-
-    cleaned = text.strip()
-    if cleaned.startswith("```"):
-        lines = cleaned.splitlines()
-        cleaned = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
-    try:
-        return json.loads(cleaned)
-    except Exception:
-        # Fallback: search for first { and last }
-        match = re.search(r"\{.*\}", cleaned, re.DOTALL)
-        if match:
-            return json.loads(match.group(0))
-        raise
+    """Compatibility wrapper around GeminiVerifier."""
+    from src.diarization.verifiers.GeminiVerifier import GeminiVerifier
+    verifier = GeminiVerifier(model=model, api_key=api_key, reasoning_effort=reasoning_effort)
+    return verifier.verify(audio_path, prompt)
 
 
 def query_hf_local(
@@ -162,85 +71,25 @@ def query_hf_local(
     device: str,
     prompt: str,
 ) -> dict[str, Any]:
-    """Evaluate audio with local Hugging Face model + processor."""
-    import numpy as np
+    """Compatibility fallback for raw model+processor tuples."""
+    from src.diarization.verifiers.BaseVerifier import load_audio_waveform
+    import time
     import torch
 
     t0 = time.time()
-    audio_data = None
-    try:
-        import soundfile as sf
-        raw_audio, sr = sf.read(str(audio_path), dtype="float32")
-        if raw_audio.ndim > 1:
-            raw_audio = raw_audio.mean(axis=1)
-        if sr == 16000:
-            audio_data = raw_audio
-        else:
-            try:
-                import torchaudio
-                t_audio = torch.from_numpy(raw_audio).unsqueeze(0)
-                audio_data = torchaudio.functional.resample(t_audio, orig_freq=sr, new_freq=16000).squeeze(0).numpy()
-            except Exception:
-                pass
-    except Exception:
-        pass
+    audio_data = load_audio_waveform(audio_path, target_sr=16000)
 
-    if audio_data is None:
-        import librosa
-        raw_audio, _ = librosa.load(str(audio_path), sr=16000, mono=True)
-        audio_data = np.asarray(raw_audio, dtype=np.float32)
-    else:
-        audio_data = np.asarray(audio_data, dtype=np.float32)
-
-    # Check if model is Kimi-Audio
-    if type(model).__name__ == "KimiAudio" or hasattr(model, "alm"):
+    if hasattr(model, "generate") and type(model).__name__ == "KimiAudio":
         chats = [
             {"role": "user", "message_type": "text", "content": prompt},
             {"role": "user", "message_type": "audio", "content": str(audio_path)},
         ]
-        try:
-            _, text_output = model.generate(chats, output_type="text")
-            output_text = text_output or ""
-        except Exception as e:
-            logger.debug("KimiAudio generate failed: %s", e)
-            raise
-    # Check if model provides custom .chat() interface (e.g., MiniCPM-o)
+        _, text_output = model.generate(chats, output_type="text")
+        output_text = text_output or ""
     elif hasattr(model, "chat"):
         msgs = [{"role": "user", "content": [prompt, audio_data]}]
-        try:
-            # Dedicated MiniCPM-o 4.5 audio-text inference invocation
-            res = model.chat(
-                msgs=msgs,
-                do_sample=False,
-                max_new_tokens=512,
-                generate_audio=False,
-                enable_thinking=False,
-            )
-        except TypeError:
-            try:
-                res = model.chat(
-                    msgs=msgs,
-                    do_sample=False,
-                    max_new_tokens=512,
-                    generate_audio=False,
-                )
-            except TypeError:
-                try:
-                    res = model.chat(
-                        image=None,
-                        msgs=msgs,
-                        tokenizer=processor,
-                        generate_audio=False,
-                    )
-                except TypeError:
-                    res = model.chat(image=None, audio=audio_data, msgs=msgs, tokenizer=processor)
-
-        if isinstance(res, tuple):
-            output_text = res[0] if len(res) > 0 else ""
-        elif isinstance(res, str):
-            output_text = res
-        else:
-            output_text = str(res)
+        res = model.chat(msgs=msgs, do_sample=False, max_new_tokens=512, generate_audio=False)
+        output_text = res[0] if isinstance(res, tuple) else str(res)
     else:
         messages = [
             {
@@ -254,17 +103,8 @@ def query_hf_local(
         text = processor.apply_chat_template(messages, add_generation_prompt=True)
         inputs = processor(text=text, audio=audio_data, return_tensors="pt", sampling_rate=16000)
         inputs = {k: v.to(device) for k, v in inputs.items()}
-
-        use_cuda = device.startswith("cuda")
-        autocast_ctx = (
-            torch.autocast(device_type="cuda", dtype=torch.bfloat16)
-            if use_cuda
-            else torch.autocast(device_type="cpu", dtype=torch.bfloat16)
-        )
-
-        with torch.no_grad(), autocast_ctx:
+        with torch.no_grad():
             generated_ids = model.generate(**inputs, max_new_tokens=256, do_sample=False)
-
         new_tokens = generated_ids[0][inputs["input_ids"].shape[1] :]
         output_text = processor.decode(new_tokens, skip_special_tokens=True).strip()
 
@@ -280,43 +120,10 @@ def query_endpoint(
     model_name: str,
     prompt: str,
 ) -> dict[str, Any]:
-    """Query OpenAI / vLLM compatible multimodal audio endpoint."""
-    with open(audio_path, "rb") as f:
-        audio_b64 = base64.b64encode(f.read()).decode("ascii")
-
-    payload = {
-        "model": model_name,
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "input_audio",
-                        "input_audio": {"data": audio_b64, "format": "wav"},
-                    },
-                    {"type": "text", "text": prompt},
-                ],
-            }
-        ],
-        "temperature": 0.0,
-        "max_tokens": 512,
-    }
-
-    t0 = time.time()
-    req = urllib.request.Request(
-        endpoint,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        res = json.loads(resp.read().decode("utf-8"))
-    latency = round(time.time() - t0, 3)
-
-    raw_text = res["choices"][0]["message"]["content"]
-    parsed = extract_json_payload(raw_text)
-    parsed["_latency_s"] = latency
-    return parsed
+    """Compatibility wrapper around EndpointVerifier."""
+    from src.diarization.verifiers.EndpointVerifier import EndpointVerifier
+    verifier = EndpointVerifier(endpoint=endpoint, model=model_name)
+    return verifier.verify(audio_path, prompt)
 
 
 def load_input_items(input_path: str, ground_truth_file: str | None = None) -> list[dict[str, Any]]:
@@ -385,14 +192,56 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     # Backend & Model
-    parser.add_argument("--backend", type=str, default="hf_local", choices=["hf_local", "gemini", "endpoint"], help="Evaluation backend")
-    parser.add_argument("--model", type=str, default="google/gemma-4-E2B-it", help="Model name or HF model ID (e.g. google/gemma-4-E2B-it, openbmb/MiniCPM-o-4_5, moonshotai/Kimi-Audio-7B-Instruct, gemini-3.5-flash-lite)")
-    parser.add_argument("--adapter-path", type=str, default=None, help="LoRA adapter path or HF repo ID (e.g. .data/distillation/checkpoints_e2b/best_adapter)")
-    parser.add_argument("--endpoint", type=str, default="http://localhost:8000/v1/chat/completions", help="OpenAI / vLLM compatible multimodal audio endpoint (for backend=endpoint)")
-    parser.add_argument("--trust-remote-code", action="store_true", default=True, help="Trust remote code when loading custom HF models (e.g. MiniCPM-o, Kimi-Audio)")
-    parser.add_argument("--torch-dtype", type=str, default="bfloat16", choices=["bfloat16", "float16", "float32"], help="PyTorch tensor dtype")
-    parser.add_argument("--reasoning-effort", type=str, default="medium", choices=["none", "low", "medium", "high"], help="Reasoning level (for Gemini)")
-    parser.add_argument("--device", type=str, default="auto", help="Device for hf_local ('auto', 'cuda:0', 'cpu')")
+    parser.add_argument(
+        "--backend",
+        type=str,
+        default="hf_local",
+        choices=["hf_local", "gemini", "endpoint"],
+        help="Evaluation backend",
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="google/gemma-4-E2B-it",
+        help=(
+            "Model name or HF model ID (e.g. google/gemma-4-E2B-it, "
+            "OpenMOSS-Team/MOSS-Audio-8B-Thinking, openbmb/MiniCPM-o-4_5, "
+            "moonshotai/Kimi-Audio-7B-Instruct, gemini-3.8-flash)"
+        ),
+    )
+    parser.add_argument("--adapter-path", type=str, default=None, help="LoRA adapter path or HF repo ID")
+    parser.add_argument(
+        "--endpoint",
+        type=str,
+        default="http://localhost:8000/v1/chat/completions",
+        help="OpenAI / vLLM compatible multimodal audio endpoint",
+    )
+    parser.add_argument(
+        "--trust-remote-code",
+        action="store_true",
+        default=True,
+        help="Trust remote code when loading custom HF models",
+    )
+    parser.add_argument(
+        "--torch-dtype",
+        type=str,
+        default="bfloat16",
+        choices=["bfloat16", "float16", "float32"],
+        help="PyTorch tensor dtype",
+    )
+    parser.add_argument(
+        "--reasoning-effort",
+        type=str,
+        default="medium",
+        choices=["none", "low", "medium", "high"],
+        help="Reasoning level (for Gemini)",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="auto",
+        help="Device for hf_local ('auto', 'cuda:0', 'cpu', 'mps')",
+    )
 
     # Input & Ground Truth
     parser.add_argument("--input", type=str, default=".data/experiment_khanhvy/results.json", help="Input JSON/JSONL or folder of WAV files")
@@ -485,189 +334,31 @@ def main() -> None:
         cli_prompt = args.prompt.strip()
         logger.info("Using custom evaluation prompt from CLI (%d chars)", len(cli_prompt))
 
-    # Initialize model backend
-    hf_model = None
-    hf_processor = None
-    actual_device = "cpu"
-
-    if args.backend == "gemini":
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            logger.error("GEMINI_API_KEY environment variable is required for gemini backend.")
-            sys.exit(1)
-    elif args.backend == "hf_local":
-        import torch
-        from transformers import AutoModel
-
-        dtype_map = {
-            "bfloat16": torch.bfloat16,
-            "float16": torch.float16,
-            "float32": torch.float32,
-        }
-        dtype = dtype_map.get(args.torch_dtype, torch.bfloat16)
-
-        actual_device = "cuda:0" if (args.device == "auto" and torch.cuda.is_available()) or args.device.startswith("cuda") else "cpu"
-        logger.info("Loading HF model '%s' on %s (trust_remote_code=%s)...", args.model, actual_device, args.trust_remote_code)
-        hf_token = os.getenv("HF_TOKEN")
-        model_name_lower = args.model.lower()
-        is_minicpm = "minicpm-o" in model_name_lower or "minicpmo" in model_name_lower
-        is_kimi = "kimi" in model_name_lower
-
-        if is_kimi:
-            logger.info("Detected Kimi-Audio model family ('%s'). Initializing KimiAudio API...", args.model)
-            kimi_dir = REPO_ROOT / ".data" / "models" / "Kimi-Audio"
-            if kimi_dir.is_dir() and str(kimi_dir) not in sys.path:
-                sys.path.insert(0, str(kimi_dir))
-
-            try:
-                from kimia_infer.api.kimia import KimiAudio
-            except ImportError:
-                try:
-                    from kimi_audio import KimiAudio
-                except ImportError as e:
-                    raise ImportError(
-                        f"KimiAudio could not be imported: {e}. "
-                        "Please run `./scripts/setup_kimi_env.sh` to install Kimi-Audio dependencies into .venv-kimi."
-                    )
-
-            if actual_device.startswith("cuda") and hasattr(torch.cuda, "set_device"):
-                try:
-                    dev_idx = int(actual_device.split(":")[-1]) if ":" in actual_device else 0
-                    torch.cuda.set_device(dev_idx)
-                except Exception:
-                    pass
-
-            hf_model = KimiAudio(model_path=args.model, load_detokenizer=False)
-            hf_processor = None
-            logger.info("Successfully loaded %s with KimiAudio API (load_detokenizer=False)", args.model)
-        elif is_minicpm:
-            logger.info("Detected MiniCPM-o model family ('%s'). Using dedicated AutoModel + SDPA chat path...", args.model)
-            try:
-                from transformers import AutoTokenizer
-                hf_processor = AutoTokenizer.from_pretrained(args.model, trust_remote_code=args.trust_remote_code, token=hf_token)
-            except Exception as e:
-                logger.debug("AutoTokenizer not loaded for %s: %s, falling back to AutoProcessor", args.model, e)
-                try:
-                    hf_processor = AutoProcessor.from_pretrained(args.model, trust_remote_code=args.trust_remote_code, token=hf_token)
-                except Exception:
-                    hf_processor = None
-
-            extra_model_kwargs = {
-                "init_vision": False,
-                "init_audio": True,
-                "init_tts": False,
-            }
-            try:
-                hf_model = AutoModel.from_pretrained(
-                    args.model,
-                    trust_remote_code=args.trust_remote_code,
-                    attn_implementation="sdpa",
-                    torch_dtype=dtype,
-                    token=hf_token,
-                    **extra_model_kwargs,
-                )
-            except TypeError as e:
-                logger.debug("Failed with sdpa/init kwargs (%s), falling back to standard AutoModel kwargs", e)
-                hf_model = AutoModel.from_pretrained(
-                    args.model,
-                    trust_remote_code=args.trust_remote_code,
-                    torch_dtype=dtype,
-                    token=hf_token,
-                    **extra_model_kwargs,
-                )
-
-            if hasattr(hf_model, "eval"):
-                hf_model = hf_model.eval()
-            if actual_device.startswith("cuda") and hasattr(hf_model, "cuda"):
-                hf_model = hf_model.cuda()
-            elif hasattr(hf_model, "to") and actual_device != "cpu":
-                hf_model = hf_model.to(actual_device)
-
-            if hasattr(hf_model, "config") and hasattr(hf_model.config, "stream_input"):
-                hf_model.config.stream_input = False
-
-            logger.info("Successfully loaded %s with dedicated AutoModel path (stream_input=False)", args.model)
-        else:
-            from transformers import AutoProcessor, AutoModelForCausalLM
-            try:
-                from transformers import Gemma4ForConditionalGeneration
-            except ImportError:
-                Gemma4ForConditionalGeneration = None
-
-            try:
-                hf_processor = AutoProcessor.from_pretrained(args.model, trust_remote_code=args.trust_remote_code, token=hf_token)
-            except Exception:
-                from transformers import AutoTokenizer
-                hf_processor = AutoTokenizer.from_pretrained(args.model, trust_remote_code=args.trust_remote_code, token=hf_token)
-
-            hf_model = None
-            candidate_classes = []
-            if "gemma-4" in args.model.lower() and Gemma4ForConditionalGeneration is not None:
-                candidate_classes.append(Gemma4ForConditionalGeneration)
-            try:
-                from transformers import AutoModelForImageTextToText
-                candidate_classes.append(AutoModelForImageTextToText)
-            except Exception:
-                pass
-            candidate_classes.extend([AutoModelForCausalLM, AutoModel])
-
-            load_errors: list[str] = []
-            for cls in candidate_classes:
-                try:
-                    hf_model = cls.from_pretrained(
-                        args.model,
-                        torch_dtype=dtype,
-                        device_map=actual_device,
-                        trust_remote_code=args.trust_remote_code,
-                        token=hf_token,
-                    )
-                    logger.info("Successfully loaded model using %s", cls.__name__)
-                    break
-                except Exception as e:
-                    load_errors.append(f"{cls.__name__}: {e}")
-                    logger.debug("Failed loading with %s: %s", cls.__name__, e)
-                    continue
-
-            if hf_model is None:
-                err_detail = " | ".join(load_errors)
-                raise RuntimeError(f"Could not load model '{args.model}' with any supported model class. Errors: {err_detail}")
-
-        if args.adapter_path:
-            from peft import PeftModel
-            logger.info("Attaching LoRA adapter from '%s'...", args.adapter_path)
-            hf_model = PeftModel.from_pretrained(hf_model, args.adapter_path)
-        hf_model.eval()
+    # Initialize model verifier using modular factory
+    logger.info("Initializing verifier (backend=%s, model=%s)...", args.backend, args.model)
+    verifier = get_verifier(
+        backend=args.backend,
+        model=args.model,
+        device=args.device,
+        adapter_path=args.adapter_path,
+        endpoint=args.endpoint,
+        trust_remote_code=args.trust_remote_code,
+        torch_dtype=args.torch_dtype,
+        reasoning_effort=args.reasoning_effort,
+        hf_token=os.getenv("HF_TOKEN"),
+    )
 
     # Evaluation loop
     results: list[dict[str, Any]] = []
 
-    if args.backend == "gemini":
+    if verifier.supports_concurrency:
         with ThreadPoolExecutor(max_workers=args.concurrency) as executor:
             future_to_item = {}
             for item in items:
                 raw_path = item.get("audio_path") or item.get("wav_path") or item.get("audio") or ""
                 audio_p = resolve_audio_path(raw_path, REPO_ROOT)
                 prompt = cli_prompt if cli_prompt is not None else item.get("prompt", DEFAULT_ACOUSTIC_PROMPT)
-                fut = executor.submit(query_gemini, audio_p, args.model, api_key, prompt, args.reasoning_effort)
-                future_to_item[fut] = (item, prompt)
-
-            for fut in as_completed(future_to_item):
-                item, prompt = future_to_item[fut]
-                try:
-                    res = fut.result()
-                    results.append({"item": item, "prompt": prompt, "prediction": res, "success": True})
-                    logger.info("Sample %s -> %s (latency: %.2fs)", item.get("id", ""), res.get("decision", ""), res.get("_latency_s", 0))
-                except Exception as exc:
-                    logger.error("Sample %s failed: %s", item.get("id", ""), exc)
-                    results.append({"item": item, "prompt": prompt, "error": str(exc), "success": False})
-    elif args.backend == "endpoint":
-        with ThreadPoolExecutor(max_workers=args.concurrency) as executor:
-            future_to_item = {}
-            for item in items:
-                raw_path = item.get("audio_path") or item.get("wav_path") or item.get("audio") or ""
-                audio_p = resolve_audio_path(raw_path, REPO_ROOT)
-                prompt = cli_prompt if cli_prompt is not None else item.get("prompt", DEFAULT_ACOUSTIC_PROMPT)
-                fut = executor.submit(query_endpoint, audio_p, args.endpoint, args.model, prompt)
+                fut = executor.submit(verifier.verify, audio_p, prompt)
                 future_to_item[fut] = (item, prompt)
 
             for fut in as_completed(future_to_item):
@@ -685,7 +376,7 @@ def main() -> None:
             audio_p = resolve_audio_path(raw_path, REPO_ROOT)
             prompt = cli_prompt if cli_prompt is not None else item.get("prompt", DEFAULT_ACOUSTIC_PROMPT)
             try:
-                res = query_hf_local(audio_p, hf_model, hf_processor, actual_device, prompt)
+                res = verifier.verify(audio_p, prompt)
                 results.append({"item": item, "prompt": prompt, "prediction": res, "success": True})
                 logger.info("Sample %s -> %s (latency: %.2fs)", item.get("id", ""), res.get("decision", ""), res.get("_latency_s", 0))
             except Exception as exc:
