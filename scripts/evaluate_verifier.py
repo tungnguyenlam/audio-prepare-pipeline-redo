@@ -391,14 +391,69 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-report", type=str, default=None, help="Path to save Markdown evaluation report")
     parser.add_argument("--export-csv", type=str, default=None, help="Path to export evaluation results to CSV")
     parser.add_argument("--concurrency", type=int, default=5, help="Concurrent workers for Gemini/endpoint queries")
+    parser.add_argument("--hf-dataset-repo", type=str, default="tungnguyenlam/gemma-4-e2b-acoustic-verifier-data", help="HF dataset repository to fetch missing audio from")
 
     return parser.parse_args()
+
+
+def ensure_evaluation_audio(
+    items: list[dict[str, Any]],
+    repo_root: Path,
+    hf_dataset_repo: str = "tungnguyenlam/gemma-4-e2b-acoustic-verifier-data",
+) -> None:
+    """Check if audio files in evaluation set exist locally, downloading from HF Hub if needed."""
+    missing_count = 0
+    sample_missing: str | None = None
+    for item in items:
+        raw_path = item.get("audio_path") or item.get("wav_path") or item.get("audio") or ""
+        try:
+            p = resolve_audio_path(raw_path, repo_root)
+            if not p.is_file():
+                missing_count += 1
+                if sample_missing is None:
+                    sample_missing = str(raw_path)
+        except FileNotFoundError:
+            missing_count += 1
+            if sample_missing is None:
+                sample_missing = str(raw_path)
+
+    if missing_count == 0:
+        return
+
+    logger.warning(
+        "Found %d/%d evaluation audio files missing locally (e.g. %s). Attempting automatic download from Hugging Face Hub...",
+        missing_count,
+        len(items),
+        sample_missing,
+    )
+
+    hf_token = os.getenv("HF_TOKEN")
+    from huggingface_hub import hf_hub_download
+    import tarfile
+
+    archive_name = "khanhvy_cuts.tar.gz" if (sample_missing and "experiment_khanhvy" in sample_missing) else "e2b_audio_dataset.tar.gz"
+
+    try:
+        logger.info("Downloading dataset archive '%s' from HF Hub '%s'...", archive_name, hf_dataset_repo)
+        tar_path = hf_hub_download(
+            repo_id=hf_dataset_repo,
+            filename=archive_name,
+            repo_type="dataset",
+            token=hf_token,
+        )
+        logger.info("Extracting %s into %s...", tar_path, repo_root)
+        with tarfile.open(tar_path, "r:gz") as tar:
+            tar.extractall(path=str(repo_root))
+        logger.info("Successfully extracted audio files into %s.", repo_root)
+    except Exception as exc:
+        logger.error("Failed to automatically fetch evaluation audio from HF Hub: %s", exc)
 
 
 def main() -> None:
     args = parse_args()
     items = load_input_items(args.input, args.ground_truth)
     logger.info("Loaded %d evaluation items from %s", len(items), args.input)
+    ensure_evaluation_audio(items, REPO_ROOT, args.hf_dataset_repo)
 
     # Initialize model backend
     hf_model = None
