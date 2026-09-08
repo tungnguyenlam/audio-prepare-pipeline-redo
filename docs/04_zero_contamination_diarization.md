@@ -592,7 +592,8 @@ To avoid continuous commercial API latency and inference costs during large data
 Three modular CLI tools under [`scripts/`](../scripts/) manage the distillation and evaluation lifecycle:
 
 1. **Dataset Mining, Synthesis & Balancing ([`scripts/build_distillation_dataset.py`](../scripts/build_distillation_dataset.py)):**
-   - **`slice-candidates`**: Extracts non-overlapping speech turns from stem files or crawled tracks using Silero VAD to prepare candidate cuts for teacher annotation:
+   - **Locked pool growth** uses [`scripts/audit_tts_data.py`](../scripts/audit_tts_data.py) `extract` on already ingested sources (`run_zero_contamination_pipeline` with the measured no-gap-expansion word lock and 2–15 s segmentation), then `teacher` / `export` / `combine`. Do not use energy-valley `slice-candidates` for production-strategy pool growth.
+   - **`slice-candidates`**: Legacy VAD/energy-valley slicer for older distillation cuts; not the current TTS lock policy:
      ```bash
      .venv/bin/python scripts/build_distillation_dataset.py slice-candidates \
        --input-dir .data/downloads \
@@ -613,13 +614,14 @@ Three modular CLI tools under [`scripts/`](../scripts/) manage the distillation 
        --output-dir .data/distillation/augmented_cuts \
        --output-jsonl .data/distillation/train_augmented_pool.jsonl
      ```
-   - **`balance`**: Merges multi-source JSONL datasets, deduplicates by audio path, balances class distribution to a targeted pass ratio (e.g. 45%), and generates stratified train/val splits:
+   - **`balance`**: Split by verified `recording_id` first, then optionally class-balance only the training split. Validation recordings stay source-disjoint. Duplicate audio bytes and missing recording IDs are rejected; existing output paths are never overwritten:
      ```bash
      .venv/bin/python scripts/build_distillation_dataset.py balance \
-       --input-files .data/distillation/raw_combined_augmented.jsonl .data/distillation/annotated_crawled_240.jsonl .data/distillation/annotated_vietcetera_58.jsonl \
-       --pass-ratio 0.45 \
-       --train-out .data/distillation/train_v3.jsonl \
-       --val-out .data/distillation/val_v3.jsonl
+       --input-files .data/tts_strategy/pool_20260908_v2/labeled_pool.jsonl \
+       --pass-ratio 0.50 \
+       --validation-recordings youtube:fwN5VT_QxkY youtube:Oa-mVxGS4cw \
+       --train-out .data/tts_strategy/pool_20260908_v2/train.jsonl \
+       --val-out .data/tts_strategy/pool_20260908_v2/calibration.jsonl
      ```
 
 2. **LoRA Fine-Tuning Engine ([`scripts/train_verifier.py`](../scripts/train_verifier.py)):**

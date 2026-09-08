@@ -33,7 +33,7 @@ All tools follow the repository engineering ideology: **reusable components**, *
 
 | Script | Purpose | Usage |
 | :--- | :--- | :--- |
-| [`crawl_channels.py`](crawl_channels.py) | YouTube crawler ingesting long-form videos from channels (`@TRANTHANHTOWN`, `@KhánhVyOFFICIAL`), normalizing to 16kHz mono WAV. | `python scripts/crawl_channels.py --max-videos 3` |
+| [`crawl_channels.py`](crawl_channels.py) | YouTube crawler ingesting long-form videos from channels (`@TRANTHANHTOWN`, `@KhánhVyOFFICIAL`) or explicit `--urls`, skipping IDs already in the crawled manifest, normalizing to 16kHz mono WAV. | `python scripts/crawl_channels.py --urls 'https://www.youtube.com/watch?v=VIDEO_ID'` |
 | [`run_clean_pipeline_benchmark.py`](run_clean_pipeline_benchmark.py) | **Core Benchmark:** Runs Mel-Band RoFormer vocal separation $\to$ Diarizers (Pyannote Comm-1, DiariZen Large, 3D-Speaker) $\to$ Intelligent valley splitting $[2.0\text{s}, 15.0\text{s}]$ $\to$ Zero-contamination boundary mitigation $\to$ Gemini 3.8 Flash (`thinkingLevel="MEDIUM"`) multi-factor acoustic audit. | `python scripts/run_clean_pipeline_benchmark.py` |
 | [`target_speaker.py`](target_speaker.py) | Enrolls target speaker voiceprints (ResNet34 / 3D-Speaker) and filters candidate segments by cosine similarity. | `python scripts/target_speaker.py score --audio input.wav` |
 
@@ -60,18 +60,34 @@ uv run --no-sync python scripts/audit_tts_data.py report --packet .data/tts_stra
 uv run --no-sync python scripts/audit_tts_data.py lineage --output .data/tts_strategy/lineage_20260908_v2
 uv run --no-sync python scripts/audit_tts_data.py export --packet .data/tts_strategy/pool_20260908 --output .data/tts_strategy/pool_20260908/labeled_pool.jsonl
 uv run --no-sync python scripts/audit_tts_data.py boundaries --packet .data/tts_strategy/phase1_20260908 --source .data/experiment_khanhvy/khanhvy_180s_slice.wav --output .data/tts_strategy/boundaries_20260908 --device cuda:0
+uv run --no-sync python scripts/crawl_channels.py --urls 'https://www.youtube.com/watch?v=VIDEO_ID'
+.venv-sortformer/bin/python scripts/audit_tts_data.py extract \
+  --manifest .data/crawled/crawled_manifest.json --only-ids VIDEO_ID \
+  --output .data/tts_strategy/extract_20260908 --device cuda:0
+uv run --no-sync python scripts/audit_tts_data.py teacher --packet .data/tts_strategy/extract_20260908/review_packet --limit 75
+uv run --no-sync python scripts/audit_tts_data.py export --packet .data/tts_strategy/extract_20260908/review_packet --output .data/tts_strategy/extract_20260908/labeled.jsonl
+uv run --no-sync python scripts/audit_tts_data.py combine \
+  --inputs .data/tts_strategy/pool_20260908/labeled_pool.jsonl .data/tts_strategy/extract_20260908/labeled.jsonl \
+  --output .data/tts_strategy/pool_20260908_v2/labeled_pool.jsonl
 ```
 
 `prepare` requires a new output directory. `teacher` caches each completed label,
 requires `GEMINI_API_KEY` from the root `.env`, and sends audio to Google only when
 explicitly invoked. No API calls occur in `prepare`, `report`, `lineage`, `export`,
-or the locate stage of `boundaries`. `boundaries` locates each packet cut as an
-exact PCM crop of `--source`, then calls `align_and_lock_syllable_boundaries` and
-`smart_segment_speaker_turns` (2–15 s TTS duration policy). Changed children are
-copied into `review_packet/` for a later `teacher` run. `report` supports
-adjudicated human labels or the user-approved teacher labels and never treats
-missing labels as clean. Its confidence bound assumes independent sampling and
-is diagnostic only for this recording-dependent challenge set.
+`extract`, `combine`, or the locate stage of `boundaries`. `boundaries` locates each
+packet cut as an exact PCM crop of `--source`, then calls
+`align_and_lock_syllable_boundaries` and `smart_segment_speaker_turns` (2–15 s TTS
+duration policy). Changed children are copied into `review_packet/` for a later
+`teacher` run. `extract` composes `run_zero_contamination_pipeline` on already
+ingested sources with the measured no-gap-expansion lock and 2–15 s segmentation,
+then writes a teacher packet. Use `.venv-sortformer/bin/python` so PhoWhisper sees
+the ROCm GPU; the project `.venv` currently ships CUDA wheels that report no GPU.
+`--consensus` is off by default because `.venv-diarizen` is CPU torch on this host.
+`crawl_channels.py --urls` skips IDs already in `.data/crawled/crawled_manifest.json`.
+`combine` refuses reserved challenge rows and duplicate bytes across recordings.
+`report` supports adjudicated human labels or the user-approved teacher labels and
+never treats missing labels as clean. Its confidence bound assumes independent
+sampling and is diagnostic only for this recording-dependent challenge set.
 
 `export` joins completed MEDIUM labels to rows that already have verified
 `recording_id` values. `balance` in `build_distillation_dataset.py` then splits

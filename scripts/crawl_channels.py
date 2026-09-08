@@ -20,7 +20,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.data_paths import DATA_DIR
-from src.utils.AudioClass import Audio
 from src.yt_crawler.YtCrawlerClass import YtCrawler
 
 logging.basicConfig(
@@ -91,6 +90,41 @@ def list_channel_videos(
     return videos
 
 
+def watch_url(value: str) -> tuple[str, str]:
+    """Return (video_id, canonical watch URL) from a URL or bare ID."""
+    raw = value.strip()
+    if "watch?v=" in raw:
+        video_id = raw.split("watch?v=", 1)[1].split("&", 1)[0]
+    elif "youtu.be/" in raw:
+        video_id = raw.split("youtu.be/", 1)[1].split("?", 1)[0].strip("/")
+    else:
+        video_id = raw.split("/")[-1].split("?")[0]
+    if not video_id:
+        raise ValueError(f"Could not parse a YouTube video ID from {value!r}")
+    return video_id, f"https://www.youtube.com/watch?v={video_id}"
+
+
+def ingest_url(
+    url: str,
+    crawler: YtCrawler,
+    channel_slug: str,
+) -> dict[str, Any]:
+    """Download one YouTube URL with the existing crawler and return a manifest row."""
+    logger.info("--- Downloading: %s ---", url)
+    audio = crawler.download(url)
+    video_id = audio.source_id or url.rsplit("v=", 1)[-1]
+    return {
+        "id": video_id,
+        "title": audio.title or video_id,
+        "url": url if "watch?v=" in url else f"https://www.youtube.com/watch?v={video_id}",
+        "channel": channel_slug,
+        "path": str(Path(audio.path).resolve()),
+        "duration_s": audio.duration_s,
+        "sample_rate": audio.sample_rate,
+        "channels": audio.channels,
+    }
+
+
 def crawl_channel(
     channel_url: str,
     max_videos: int = 2,
@@ -98,13 +132,15 @@ def crawl_channel(
     max_dur: float = 1800.0,
     sample_rate: int = 16000,
     out_base_dir: Path = DATA_DIR / "crawled",
+    skip_ids: set[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Crawl selected videos from a channel."""
+    """Crawl selected videos from a channel, skipping IDs already in the manifest."""
     chan_slug = sanitize_channel_name(channel_url)
     target_dir = out_base_dir / chan_slug
     work_dir = target_dir / "work"
     target_dir.mkdir(parents=True, exist_ok=True)
     work_dir.mkdir(parents=True, exist_ok=True)
+    known = skip_ids or set()
 
     crawler = YtCrawler(
         output_dir=target_dir,
@@ -118,9 +154,9 @@ def crawl_channel(
     # Filter by duration
     suitable = [
         v for v in all_vids
-        if min_dur <= v["duration"] <= max_dur
+        if min_dur <= v["duration"] <= max_dur and v["id"] not in known
     ]
-    logger.info("Found %d suitable videos (between %.0fs and %.0fs) for %s", len(suitable), min_dur, max_dur, chan_slug)
+    logger.info("Found %d new suitable videos (between %.0fs and %.0fs) for %s", len(suitable), min_dur, max_dur, chan_slug)
 
     selected = suitable[:max_videos]
     crawled_manifest = []
@@ -129,28 +165,11 @@ def crawl_channel(
         vid_id = v["id"]
         vid_title = v["title"]
         vid_url = f"https://www.youtube.com/watch?v={vid_id}"
-        expected_wav = target_dir / f"{vid_id}.wav"
 
         logger.info("--- Downloading: %s (%s, %.1fs) ---", vid_title, vid_id, v["duration"])
         try:
-            if expected_wav.is_file():
-                logger.info("Audio already exists: %s", expected_wav)
-                audio = Audio.from_file(expected_wav)
-            else:
-                audio = crawler.download(vid_url)
-
-            entry = {
-                "id": audio.source_id or vid_id,
-                "title": audio.title or vid_title,
-                "url": vid_url,
-                "channel": chan_slug,
-                "path": str(audio.path.resolve()),
-                "duration_s": audio.duration_s,
-                "sample_rate": audio.sample_rate,
-                "channels": audio.channels,
-            }
-            crawled_manifest.append(entry)
-            logger.info("Successfully ingested: %s (%.2fs, %dHz)", audio.title, audio.duration_s, audio.sample_rate)
+            crawled_manifest.append(ingest_url(vid_url, crawler, chan_slug))
+            logger.info("Successfully ingested: %s", vid_title)
         except Exception as exc:
             logger.error("Failed to download video %s: %s", vid_url, exc)
 
@@ -161,9 +180,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Crawl audio from challenging YouTube channels.")
     parser.add_argument(
         "--channels",
-        nargs="+",
-        default=DEFAULT_CHANNELS,
-        help="List of YouTube channel URLs or handles.",
+        nargs="*",
+        default=None,
+        help="Channel URLs to sample. Defaults to Tran Thanh and Khanh Vy when --urls is omitted.",
     )
     parser.add_argument(
         "--max-videos",
@@ -189,6 +208,12 @@ def main() -> None:
         default=16000,
         help="Output sample rate in Hz (default 16000).",
     )
+    parser.add_argument(
+        "--urls",
+        nargs="+",
+        default=[],
+        help="Specific watch URLs or video IDs to ingest, skipping IDs already in the manifest.",
+    )
     args = parser.parse_args()
 
     out_base = DATA_DIR / "crawled"
@@ -205,8 +230,32 @@ def main() -> None:
 
     all_crawled = list(existing_manifest)
     known_ids = {item["id"] for item in all_crawled}
+    channels = args.channels if args.channels is not None else ([] if args.urls else DEFAULT_CHANNELS)
 
-    for chan_url in args.channels:
+    if args.urls:
+        crawler = YtCrawler(
+            output_dir=out_base,
+            work_dir=out_base / "work",
+            audio_format="wav",
+            sample_rate=args.sample_rate,
+            channels=1,
+        )
+        for raw in args.urls:
+            video_id, url = watch_url(raw)
+            if video_id in known_ids:
+                logger.info("Skipping already crawled %s", video_id)
+                continue
+            try:
+                entry = ingest_url(url, crawler, "selected")
+                if entry["id"] in known_ids:
+                    logger.info("Skipping already crawled %s", entry["id"])
+                    continue
+                all_crawled.append(entry)
+                known_ids.add(entry["id"])
+            except Exception as exc:
+                logger.error("Failed to download %s: %s", url, exc)
+
+    for chan_url in channels:
         logger.info("=== Processing Channel: %s ===", chan_url)
         items = crawl_channel(
             chan_url,
@@ -215,6 +264,7 @@ def main() -> None:
             max_dur=args.max_duration,
             sample_rate=args.sample_rate,
             out_base_dir=out_base,
+            skip_ids=known_ids,
         )
         for it in items:
             if it["id"] not in known_ids:

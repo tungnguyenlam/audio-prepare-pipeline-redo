@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit TTS manifests and evaluate boundary repairs against source audio."""
+"""Audit TTS manifests, extract locked candidates, and evaluate boundary repairs."""
 
 from __future__ import annotations
 
@@ -629,6 +629,182 @@ def evaluate_boundaries(args: argparse.Namespace) -> None:
     print(json.dumps(summary, indent=2))
 
 
+def spaced_sample(items: list[Any], limit: int) -> list[Any]:
+    """Keep temporal coverage when a recording yields more clips than the teacher budget."""
+    if limit <= 0 or len(items) <= limit:
+        return list(items)
+    if limit == 1:
+        return [items[len(items) // 2]]
+    step = (len(items) - 1) / (limit - 1)
+    chosen, seen = [], set()
+    for index in range(limit):
+        cursor = int(round(index * step))
+        while cursor in seen and cursor < len(items) - 1:
+            cursor += 1
+        seen.add(cursor)
+        chosen.append(items[cursor])
+    return chosen
+
+
+def extract_locked_candidates(args: argparse.Namespace) -> None:
+    """Diarize ingested sources, apply the measured lock, and emit a teacher packet."""
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    from dotenv import load_dotenv
+    load_dotenv(ROOT / ".env")
+    os.environ.setdefault("HF_HOME", str(ROOT / ".data/huggingface"))
+    import torch
+    from src.diarization.zero_contamination import (
+        ZeroContaminationConfig,
+        run_zero_contamination_pipeline,
+    )
+    from src.utils.AudioClass import Audio
+    from src.utils.AudioCutter import AudioCutter
+
+    if args.device.startswith("cuda") and not torch.cuda.is_available():
+        raise RuntimeError(
+            f"Requested {args.device} but this interpreter has no CUDA/ROCm. "
+            "Run extract with .venv-sortformer/bin/python."
+        )
+    output = local_path(args.output)
+    if not output.is_relative_to(ROOT / ".data") or output.exists():
+        raise ValueError("Choose a new directory under .data/.")
+    sources: list[dict[str, Any]] = []
+    if args.manifest:
+        manifest = json.loads(local_path(args.manifest).read_text())
+        wanted = set(args.only_ids or [])
+        for row in manifest:
+            if wanted and row["id"] not in wanted:
+                continue
+            sources.append({
+                "recording_id": f"youtube:{row['id']}", "path": row["path"],
+                "title": row.get("title"), "channel": row.get("channel"),
+                "source_duration_s": row.get("duration_s"),
+            })
+        if wanted and {s["recording_id"].split(":", 1)[1] for s in sources} != wanted:
+            missing = wanted - {s["recording_id"].split(":", 1)[1] for s in sources}
+            raise ValueError(f"Manifest missing requested IDs: {sorted(missing)}")
+    else:
+        if not args.sources or not args.recording_ids or len(args.sources) != len(args.recording_ids):
+            raise ValueError("Provide matching --sources and --recording-ids, or --manifest.")
+        for path, recording_id in zip(args.sources, args.recording_ids):
+            sources.append({"recording_id": recording_id, "path": str(local_path(path))})
+    reserved = {"youtube:H0VpjeULCck"}
+    blocked = [s for s in sources if s["recording_id"] in reserved]
+    if blocked:
+        raise ValueError(f"Challenge recording is reserved: {[s['recording_id'] for s in blocked]}")
+    output.mkdir(parents=True)
+    review_packet = output / "review_packet"
+    review_audio = review_packet / "review_audio"
+    review_audio.mkdir(parents=True)
+    token = os.environ.get("HF_TOKEN")
+    config = ZeroContaminationConfig(
+        primary_backend=args.primary_backend, primary_device=args.device,
+        enable_consensus=args.consensus, secondary_backend="diarizen",
+        enable_collar_erosion=True, enable_context_collar=True,
+        enable_syllable_alignment=True, aligner_engine=args.aligner_engine,
+        aligner_model=args.aligner_model, aligner_language="vi",
+        aligner_device=args.device, enable_smart_segmentation=True,
+        target_min_duration_s=args.min_duration_s, target_max_duration_s=args.max_duration_s,
+        enable_energy_snapping=False, enable_homogeneity=False,
+        enable_gemma=False, enable_vibevoice=False, device=args.device, token=token,
+    )
+    cutter = AudioCutter(output_dir=output / "cuts")
+    blind, references, source_rows = [], [], []
+    for source in sources:
+        path = local_path(source["path"])
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        recording_id = source["recording_id"]
+        video_id = recording_id.split(":", 1)[-1]
+        audio = Audio.from_file(path, source_id=recording_id, title=source.get("title") or path.stem)
+        print(f"extract {recording_id}: {audio.duration_s:.1f}s", flush=True)
+        result = run_zero_contamination_pipeline(
+            audio, config, progress_callback=lambda p, m: print(f"  {p:.0%} {m}", flush=True),
+        )
+        turns = list(result.diarization.turns)
+        selected = spaced_sample(turns, args.max_clips_per_recording)
+        cuts_dir = output / "cuts" / video_id
+        cuts_dir.mkdir(parents=True, exist_ok=True)
+        source_row = {
+            **source, "path": str(path.relative_to(ROOT)), "duration_s": audio.duration_s,
+            "funnel": result.funnel_stats, "emitted_turns": len(turns),
+            "selected_turns": len(selected), "stage_log": result.stage_log,
+        }
+        source_rows.append(source_row)
+        write_json(output / f"{video_id}_pipeline.json", result.to_dict())
+        write_jsonl(output / f"{video_id}_segment_audits.jsonl", result.segment_audits)
+        write_jsonl(output / f"{video_id}_boundary_audits.jsonl", result.boundary_audits)
+        for index, turn in enumerate(selected, 1):
+            review_id = f"{video_id}_{index:04d}"
+            cut_audio = cutter.cut(
+                audio, turn.start_s, turn.end_s, unit="seconds",
+                output_path=cuts_dir / f"{turn.speaker_id}_{turn.start_s:.4f}-{turn.end_s:.4f}.wav",
+            )
+            cut_path = Path(cut_audio.path)
+            digest = inspect_audio(cut_path)["sha256"]
+            rel = f"review_audio/{review_id}.wav"
+            shutil.copyfile(cut_path, review_packet / rel)
+            duration_s = cut_audio.duration_s
+            blind.append({
+                "review_id": review_id, "audio_path": rel, "audio_sha256": digest,
+                "duration_s": duration_s, "rubric_version": "tts-v1",
+                "reviewer_id": None, "decision": None,
+                "dimensions": dict.fromkeys(DIMENSIONS), "defects": [],
+                "context_reviewed": False, "notes": "",
+            })
+            references.append({
+                "review_id": review_id, "audio_path": str(cut_path.relative_to(ROOT)),
+                "sha256": digest, "duration_s": duration_s,
+                "recording_id": recording_id, "source_path": str(path.relative_to(ROOT)),
+                "speaker_id": turn.speaker_id, "start_s": turn.start_s, "end_s": turn.end_s,
+                "transcript": getattr(turn, "_transcript", None),
+                "lock_policy": "no_gap_expansion_competitor_conflict",
+            })
+    write_jsonl(output / "sources.jsonl", source_rows)
+    write_jsonl(review_packet / "blind_review.jsonl", blind)
+    write_jsonl(review_packet / "private_reference.jsonl", references)
+    summary = {
+        "recordings": len(sources), "emitted_turns": sum(r["emitted_turns"] for r in source_rows),
+        "teacher_clips": len(blind),
+        "max_clips_per_recording": args.max_clips_per_recording,
+        "duration_policy_s": [args.min_duration_s, args.max_duration_s],
+        "primary_backend": args.primary_backend, "consensus": args.consensus,
+        "aligner": {"engine": args.aligner_engine, "model": args.aligner_model, "device": args.device},
+        "reserved_excluded": sorted(reserved),
+        "caveat": "Sortformer-only unless --consensus. DiariZen on this host is CPU torch. Not a production quality claim.",
+    }
+    write_json(output / "summary.json", summary)
+    print(json.dumps(summary, indent=2))
+
+
+def combine_labeled_pools(args: argparse.Namespace) -> None:
+    """Join source-resolved labeled JSONL files without overwriting or duplicating bytes."""
+    output = local_path(args.output)
+    if not output.is_relative_to(ROOT / ".data") or output.exists():
+        raise ValueError("Choose a new JSONL under .data/.")
+    combined, seen = [], {}
+    for path in args.inputs:
+        for row in read_jsonl(local_path(path)):
+            if not row.get("recording_id") or row["recording_id"] == "youtube:H0VpjeULCck":
+                raise ValueError(f"Refusing unlabeled or reserved challenge rows from {path}")
+            digest = row["audio_sha256"]
+            previous = seen.get(digest)
+            if previous:
+                if previous["recording_id"] != row["recording_id"]:
+                    raise ValueError(f"Duplicate audio across recordings: {digest}")
+                continue
+            seen[digest] = row
+            combined.append(row)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    write_jsonl(output, combined)
+    print(json.dumps({
+        "combined": len(combined), "output": str(output),
+        "recordings": dict(Counter(r["recording_id"] for r in combined)),
+        "decisions": dict(Counter(r["decision"] for r in combined)),
+    }, indent=2))
+
+
 def teacher_audit(args: argparse.Namespace) -> None:
     """Run bounded, resumable MEDIUM ground-truth calls on a blind packet."""
     from dotenv import load_dotenv
@@ -788,6 +964,25 @@ def main() -> None:
     bounds_parser.add_argument("--device", default="cuda:0")
     bounds_parser.add_argument("--min-duration-s", type=float, default=2.0)
     bounds_parser.add_argument("--max-duration-s", type=float, default=15.0)
+    extract_parser = commands.add_parser(
+        "extract", help="Diarize ingested sources and emit locked 2-15s teacher candidates")
+    extract_parser.add_argument("--output", required=True)
+    extract_parser.add_argument("--manifest", help="Crawled manifest JSON")
+    extract_parser.add_argument("--only-ids", nargs="+", help="Video IDs from --manifest")
+    extract_parser.add_argument("--sources", nargs="+", help="Source WAV paths")
+    extract_parser.add_argument("--recording-ids", nargs="+", help="Verified recording IDs matching --sources")
+    extract_parser.add_argument("--primary-backend", default="sortformer")
+    extract_parser.add_argument("--consensus", action="store_true")
+    extract_parser.add_argument("--aligner-engine", default="whisper_timestamped")
+    extract_parser.add_argument("--aligner-model", default="vinai/PhoWhisper-small")
+    extract_parser.add_argument("--device", default="cuda:0")
+    extract_parser.add_argument("--min-duration-s", type=float, default=2.0)
+    extract_parser.add_argument("--max-duration-s", type=float, default=15.0)
+    extract_parser.add_argument("--max-clips-per-recording", type=int, default=25)
+    combine_parser = commands.add_parser(
+        "combine", help="Join source-resolved labeled JSONL files into a new pool")
+    combine_parser.add_argument("--inputs", nargs="+", required=True)
+    combine_parser.add_argument("--output", required=True)
     args = parser.parse_args()
     if args.command == "prepare":
         prepare(args)
@@ -799,6 +994,10 @@ def main() -> None:
         restore_lineage(args)
     elif args.command == "export":
         export_labels(args)
+    elif args.command == "extract":
+        extract_locked_candidates(args)
+    elif args.command == "combine":
+        combine_labeled_pools(args)
     else:
         evaluate_boundaries(args)
 

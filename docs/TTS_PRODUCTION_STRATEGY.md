@@ -29,9 +29,15 @@ inter-turn gaps raised accepted risk (15 reject / 1 pass among new children).
 Rejecting every ASR-overlapping edge dropped all 31 clips. The measured policy
 is: do not expand into gaps; reject only competitor/adjacent-turn word
 completions. That emits 8 duration-eligible crops with inherited MEDIUM R = 50%.
-Next unblocked task is growing the source-disjoint pool, then a local acoustic
-baseline for music/reverb/in-interval secondary speech. ASR edge overlap is not
-clipping proof.
+
+The first locked growth increment is done. Three new recordings were ingested
+and extracted with Sortformer + the measured lock (no DiariZen consensus on this
+AMD host). Fresh MEDIUM: 20 pass / 16 reject. The labeled pool is now 133 clips
+across 10 recordings (62 pass / 71 reject); calibration recordings are frozen.
+Studio interview (`10.000 hours` EP5) yielded 16/19 passes; the music-backed FPT
+vlog yielded 2/13. Next unblocked task is more first-tier narration/interview
+sources, then a local acoustic baseline for leftover music/reverb/in-interval
+secondary speech. ASR edge overlap is not clipping proof.
 
 The user authorized saving, committing, pushing, and executing this strategy,
 with regular detailed commits so another model can continue. This authorization

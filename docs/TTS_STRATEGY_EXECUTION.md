@@ -3,18 +3,19 @@
 ## Current handoff — 2026-09-08
 
 - Strategy: [TTS_PRODUCTION_STRATEGY.md](TTS_PRODUCTION_STRATEGY.md).
-- Active phase: 1 evidence is in place; Phase 2 boundary repair is measured and
-  not yet a quality win.
+- Active phase: 1 evidence is in place; Phase 2 lock is a competitor-conflict gate,
+  not a clip repairer. The labeled pool now has 10 source-disjoint recordings.
 - Authorization: user requested execution with regular commits and pushes.
 - User clarification: Gemini 3.8 Flash MEDIUM is accepted as human-quality ground
   truth; API hearing is explicitly authorized. Separate human review is not a gate.
-- Completed MEDIUM API audits: 31 legacy challenge clips, 97 source-resolved
-  training-pool clips, and 16 relocked children from the 180 s source.
+- Completed MEDIUM API audits: 31 legacy challenge clips, 97 legacy source-resolved
+  clips, 16 relocked 180 s children, and 36 new locked extracts.
 - No training or test cases have run. Word-lock expansion into inter-turn gaps
   did not repair clipped rejects into passes.
-- Next: grow the source-disjoint training pool with the measured no-gap-expansion
-  lock; then fit/calibrate a local acoustic baseline for music, reverb, and
-  in-interval secondary speech. Do not treat ASR edge overlap as clipping proof.
+- Next: keep growing with studio-interview / narration sources (Vietcetera
+  `10.000 hours` is the current best tier); then fit/calibrate a local acoustic
+  baseline for music, reverb, and in-interval secondary speech. Do not treat ASR
+  edge overlap as clipping proof. Do not prefer music-backed vlogs for pool growth.
 
 ## Checkpoints
 
@@ -168,6 +169,66 @@ Follow-up on the same 31 located cuts after disabling gap expansion:
   and reverb — not gap expansion.
 
 Word lock is now a measured competitor-conflict gate, not a clip repairer.
+
+### 7. Source-disjoint pool growth (Sortformer + measured lock)
+
+Commands:
+```bash
+uv run --no-sync python scripts/crawl_channels.py --urls \
+  'https://www.youtube.com/watch?v=3Nll-JLzvvE' \
+  'https://www.youtube.com/watch?v=NI8JVXNWlN8' \
+  'https://www.youtube.com/watch?v=zK3qFnKZFRo'
+.venv-sortformer/bin/python scripts/audit_tts_data.py extract \
+  --manifest .data/crawled/crawled_manifest.json \
+  --only-ids 3Nll-JLzvvE NI8JVXNWlN8 zK3qFnKZFRo \
+  --output .data/tts_strategy/extract_20260908 --device cuda:0
+uv run --no-sync python scripts/audit_tts_data.py teacher \
+  --packet .data/tts_strategy/extract_20260908/review_packet --limit 36
+uv run --no-sync python scripts/audit_tts_data.py export \
+  --packet .data/tts_strategy/extract_20260908/review_packet \
+  --output .data/tts_strategy/extract_20260908/labeled.jsonl
+uv run --no-sync python scripts/audit_tts_data.py combine \
+  --inputs .data/tts_strategy/pool_20260908/labeled_pool.jsonl \
+            .data/tts_strategy/extract_20260908/labeled.jsonl \
+  --output .data/tts_strategy/pool_20260908_v2/labeled_pool.jsonl
+uv run --no-sync python scripts/build_distillation_dataset.py balance \
+  --input-files .data/tts_strategy/pool_20260908_v2/labeled_pool.jsonl \
+  --pass-ratio 0.50 \
+  --validation-recordings youtube:fwN5VT_QxkY youtube:Oa-mVxGS4cw \
+  --train-out .data/tts_strategy/pool_20260908_v2/train.jsonl \
+  --val-out .data/tts_strategy/pool_20260908_v2/calibration.jsonl
+```
+
+New sources (challenge `youtube:H0VpjeULCck` remains reserved): Vietcetera
+`10.000 hours` EP5 dancer (`3Nll-JLzvvE`, 806 s), EP4 catwalk (`NI8JVXNWlN8`,
+699 s), and Khanh Vy FPT campus vlog (`zK3qFnKZFRo`, 492 s). Extraction composed
+`run_zero_contamination_pipeline` with Sortformer, context collar, the measured
+no-gap-expansion word lock (PhoWhisper-small on `cuda:0`), and 2–15 s smart
+segmentation. Consensus was off: `.venv-diarizen` is CPU torch on this host.
+The project `.venv` still has CUDA wheels that report no GPU; extract must use
+`.venv-sortformer` (PyTorch `2.13.0+rocm10.0.0`).
+
+Funnel and fresh MEDIUM labels (36/36 `gemini-3.8-flash`, thinking MEDIUM):
+
+| Recording | Source s | Diarizer turns | After lock | Emitted | Pass / reject | Pass min / source hour |
+|---|---:|---:|---:|---:|---:|---:|
+| `3Nll-JLzvvE` | 805.8 | 93 | 27 | 19 | 16 / 3 | 6.67 |
+| `NI8JVXNWlN8` | 698.9 | 30 | 7 | 4 | 2 / 2 | 1.33 |
+| `zK3qFnKZFRo` | 492.0 | 30 | 20 | 13 | 2 / 11 | 0.89 |
+
+Usage: 14,480 prompt + 6,577 answer + 12,162 thinking = 33,219 tokens.
+Defect occurrences among the 16 rejects: music 10, secondary speaker 6,
+clipped end 4, clipped start 2, reverb 2, effects 2. Eleven of 13 FPT-vlog
+clips fail, mostly music plus secondary speech. The dancer interview is the
+current best first-tier source; lock still drops most catwalk turns and does
+not remove music.
+
+Pool: 97 → 133 labeled clips across 7 → 10 recordings (62 pass / 71 reject).
+Calibration recordings stay frozen (`youtube:fwN5VT_QxkY`, `youtube:Oa-mVxGS4cw`,
+26 clips). Training split rebuilt at 90 clips (45/45) under
+`.data/tts_strategy/pool_20260908_v2/`; the 2026-09-08 files were not
+overwritten. 26 calibration clips still cannot support a <10% one-sided 95%
+bound. Not a production quality claim. No new training run.
 
 ## Continuation rules
 
