@@ -867,13 +867,17 @@ def _lock_turns_with_words(
     audio_duration_s: float | None = None,
     competitor_intervals_by_speaker: dict[str, list[tuple[float, float]]] | None = None,
 ) -> tuple[list[SpeakerTurn], list[dict[str, Any]]]:
-    """Snap speaker turn boundaries to complete words to prevent syllable clipping.
+    """Keep incoming bounds; reject only when a word completion hits a speaker-safe wall.
 
-    Constrains word expansions to safe regions:
-    1. Does not overlap preceding or succeeding turns (or competitor speakers).
-    2. Does not exceed audio duration [0.0, audio_duration_s].
-    3. Does not expand outside consensus bounds into disputed speech.
-    4. Does not encroach into raw competitor intervals from primary or secondary diarizers.
+    Inter-turn gaps are not trusted same-speaker regions, so this function does
+    not expand into them. Completing a recognized word that would enter a
+    competitor or adjacent turn is rejected. ASR timestamps that merely overlap
+    an edge into an undiarized gap are not enough to reject or to repair.
+    Clamp bounds:
+    1. Do not overlap preceding or succeeding turns (or competitor speakers).
+    2. Do not exceed audio duration [0.0, audio_duration_s].
+    3. Do not leave consensus bounds into disputed speech.
+    4. Do not encroach into raw competitor intervals from primary or secondary diarizers.
     """
     if not turns:
         return [], []
@@ -921,44 +925,43 @@ def _lock_turns_with_words(
 
         safe_min, safe_max = safe_bounds.get(i, (0.0, audio_duration_s or float("inf")))
 
-        new_start = turn.start_s
-        new_end = turn.end_s
-
-        # 1. End boundary protection (Syllable Coda / Trailing Word Guard)
-        for w in words:
-            w_start = float(w["start"])
-            w_end = float(w["end"])
-            # Mid-word cut: turn ends during active word
-            if w_start < turn.end_s < w_end:
-                new_end = max(new_end, w_end)
-
-        # 2. Start boundary protection (Leading Word Guard)
-        for w in words:
-            w_start = float(w["start"])
-            w_end = float(w["end"])
-            # Turn starts inside a word
-            if w_start < turn.start_s < w_end:
-                new_start = min(new_start, w_start)
-
-        # Clamp strictly to safe bounds
-        new_start = max(safe_min, new_start)
-        new_end = min(safe_max, new_end)
+        wanted_start = turn.start_s
+        wanted_end = turn.end_s
+        for word in words:
+            word_start = float(word["start"])
+            word_end = float(word["end"])
+            if word_start < turn.end_s < word_end:
+                wanted_end = max(wanted_end, word_end)
+            if word_start < turn.start_s < word_end:
+                wanted_start = min(wanted_start, word_start)
+        clamped_start = max(safe_min, wanted_start)
+        clamped_end = min(safe_max, wanted_end)
+        expansion_blocked = (
+            wanted_start < turn.start_s - 1e-4 and clamped_start > wanted_start + 1e-4
+        ) or (
+            wanted_end > turn.end_s + 1e-4 and clamped_end < wanted_end - 1e-4
+        )
+        # Keep the incoming interval. Inter-turn gaps are not trusted repairs.
+        new_start = max(safe_min, turn.start_s)
+        new_end = min(safe_max, turn.end_s)
         new_start_s = round(new_start, 4)
         new_end_s = round(new_end, 4)
-
-        blocked_word = any(
-            float(w["start"]) < edge < float(w["end"])
-            for w in words for edge in (new_start_s, new_end_s)
+        shrunk = new_start_s > turn.start_s + 1e-4 or new_end_s < turn.end_s - 1e-4
+        blocked_after_shrink = shrunk and any(
+            float(word["start"]) < edge < float(word["end"])
+            for word in words for edge in (new_start_s, new_end_s)
         )
+
         complete_words = [w for w in words
                           if new_start_s <= float(w["start"]) < float(w["end"]) <= new_end_s]
-        if new_start_s >= new_end_s or blocked_word or not complete_words:
+        if new_start_s >= new_end_s or expansion_blocked or blocked_after_shrink or not complete_words:
             audits.append({
                 "raw_start_s": raw_start, "raw_end_s": raw_end,
                 "original_start_s": orig_start, "original_end_s": orig_end,
                 "start_s": turn.start_s, "end_s": turn.end_s,
                 "policy": policy, "action": "reject",
-                "error": "word_boundary_conflicts_with_safe_bounds" if blocked_word
+                "error": "word_boundary_conflicts_with_safe_bounds"
+                if expansion_blocked or blocked_after_shrink
                 else "no_complete_words_in_safe_interval",
             })
             continue
