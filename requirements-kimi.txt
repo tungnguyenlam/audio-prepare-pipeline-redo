@@ -1,6 +1,7 @@
 # Requirements for Kimi-Audio (tested with moonshotai/Kimi-Audio-7B-Instruct)
-torch>=2.4.0
-torchaudio>=2.4.0
+# Note: Install using scripts/setup_kimi_env.sh to properly build flash-attn without build isolation.
+torch==2.6.0
+torchaudio==2.6.0
 transformers
 accelerate
 soundfile
