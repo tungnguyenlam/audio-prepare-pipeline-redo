@@ -20,14 +20,19 @@ DEFAULT_UNSLOTH_PORT = 8888
 DEFAULT_UNSLOTH_MODEL = "unsloth/gemma-4-12b-it-GGUF"
 
 
-def _derive_models_url(endpoint: str) -> str:
-    """Derive the OpenAI-compatible /v1/models URL from a chat completions endpoint."""
+def _derive_unsloth_url(endpoint: str, path: str) -> str:
+    """Derive an endpoint URL (e.g. /v1/status, /v1/load, /v1/models) from chat endpoint."""
     url = endpoint.rstrip("/")
     if url.endswith("/chat/completions"):
-        return url[: -len("/chat/completions")] + "/models"
-    if url.endswith("/v1"):
-        return f"{url}/models"
-    return f"{url}/models"
+        base = url[: -len("/chat/completions")]
+    elif url.endswith("/v1"):
+        base = url
+    else:
+        base = f"{url}/v1"
+    clean_path = path.lstrip("/")
+    if clean_path.startswith("v1/"):
+        clean_path = clean_path[3:]
+    return f"{base}/{clean_path}"
 
 
 class UnslothVerifier(EndpointVerifier):
@@ -38,6 +43,8 @@ class UnslothVerifier(EndpointVerifier):
       http://{UNSLOTH_HOST:localhost}:{UNSLOTH_PORT:8888}/v1/chat/completions.
     - Default model auto-configured from UNSLOTH_MODEL, probed from /v1/models,
       or 'unsloth/gemma-4-12b-it-GGUF'.
+    - GGUF variant support (e.g. Q8_0, UD-Q6_K_XL, Q4_K_M, BF16) passed in completions,
+      queried via /v1/status, and switchable via load_model().
     - Authentication via UNSLOTH_API_KEY (falling back to OPENAI_API_KEY).
     - Multi-payload format support with automatic fallback:
         1. Standard OpenAI multimodal (`type: input_audio`)
@@ -51,6 +58,7 @@ class UnslothVerifier(EndpointVerifier):
         endpoint: str | None = None,
         model: str | None = None,
         api_key: str | None = None,
+        gguf_variant: str | None = None,
         timeout_s: float = 120.0,
         temperature: float = 0.0,
         max_tokens: int = 1024,
@@ -72,7 +80,10 @@ class UnslothVerifier(EndpointVerifier):
         # 2. Resolve API key
         resolved_api_key = api_key or os.getenv("UNSLOTH_API_KEY") or os.getenv("OPENAI_API_KEY")
 
-        # 3. Resolve model
+        # 3. Resolve GGUF variant
+        self.gguf_variant = gguf_variant or os.getenv("UNSLOTH_GGUF_VARIANT") or os.getenv("GGUF_VARIANT")
+
+        # 4. Resolve model
         resolved_model = model
         if not resolved_model or resolved_model in {"default", "google/gemma-4-E2B-it"}:
             env_model = os.getenv("UNSLOTH_MODEL")
@@ -96,21 +107,33 @@ class UnslothVerifier(EndpointVerifier):
         )
         self.payload_mode = payload_mode
         logger.info(
-            "Initialized UnslothVerifier targeting '%s' (model='%s', api_key_configured=%s, mode=%s).",
+            "Initialized UnslothVerifier targeting '%s' (model='%s', variant=%s, api_key_configured=%s, mode=%s).",
             self.endpoint,
             self.model,
+            self.gguf_variant,
             bool(self.api_key),
             self.payload_mode,
         )
 
     @classmethod
     def _probe_loaded_model(cls, endpoint: str, api_key: str | None = None, timeout_s: float = 3.0) -> str | None:
-        """Probe /v1/models on the Unsloth endpoint to discover loaded model."""
-        models_url = _derive_models_url(endpoint)
+        """Probe /v1/status or /v1/models on the Unsloth endpoint to discover loaded model."""
         headers = {}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
+
+        # Try /v1/status first
         try:
+            status_url = _derive_unsloth_url(endpoint, "status")
+            sdata = send_http_request(status_url, method="GET", headers=headers, timeout_s=timeout_s)
+            if isinstance(sdata, dict) and sdata.get("active_model"):
+                return str(sdata["active_model"])
+        except Exception:
+            pass
+
+        # Fallback to /v1/models
+        try:
+            models_url = _derive_unsloth_url(endpoint, "models")
             res = send_http_request(models_url, method="GET", headers=headers, timeout_s=timeout_s)
             data = res.get("data")
             if isinstance(data, list) and data:
@@ -124,39 +147,148 @@ class UnslothVerifier(EndpointVerifier):
         return None
 
     def check_ready(self, timeout_s: float = 5.0) -> dict[str, Any]:
-        """Check if Unsloth endpoint is reachable and responsive."""
-        models_url = _derive_models_url(self.endpoint)
+        """Check if Unsloth endpoint is reachable, responsive, and report status/variant."""
         headers = self._get_headers()
+        status_url = _derive_unsloth_url(self.endpoint, "status")
+        models_url = _derive_unsloth_url(self.endpoint, "models")
+
+        active_model = self.model
+        active_variant = self.gguf_variant
+        server_status = "ready"
+        models: list[str] = []
+
+        # 1. Try querying /v1/status
+        try:
+            sdata = send_http_request(status_url, method="GET", headers=headers, timeout_s=timeout_s)
+            if isinstance(sdata, dict):
+                active_model = sdata.get("active_model") or self.model
+                active_variant = sdata.get("gguf_variant") or self.gguf_variant
+                server_status = sdata.get("status", "ready")
+                loaded = sdata.get("loaded", [])
+                if isinstance(loaded, list):
+                    models.extend(str(m) for m in loaded if m)
+        except Exception:
+            pass
+
+        # 2. Query /v1/models
         try:
             res = send_http_request(models_url, method="GET", headers=headers, timeout_s=timeout_s)
-            models: list[str] = []
             data = res.get("data")
             if isinstance(data, list):
                 for m in data:
                     if isinstance(m, dict) and m.get("id"):
-                        models.append(str(m["id"]))
+                        mid = str(m["id"])
+                        if mid not in models:
+                            models.append(mid)
             elif res.get("id"):
-                models.append(str(res["id"]))
-            return {
-                "ready": True,
-                "endpoint": self.endpoint,
-                "models": models,
-                "active_model": self.model,
-                "message": f"Unsloth endpoint is ready ({len(models)} model(s) detected).",
-            }
+                mid = str(res["id"])
+                if mid not in models:
+                    models.append(mid)
         except Exception as exc:
-            return {
-                "ready": False,
-                "endpoint": self.endpoint,
-                "models": [],
-                "active_model": self.model,
-                "message": f"Unsloth endpoint unreachable at {self.endpoint}: {exc}",
-            }
+            if not models and server_status != "loaded":
+                return {
+                    "ready": False,
+                    "endpoint": self.endpoint,
+                    "models": [],
+                    "active_model": self.model,
+                    "gguf_variant": self.gguf_variant,
+                    "message": f"Unsloth endpoint unreachable at {self.endpoint}: {exc}",
+                }
+
+        return {
+            "ready": True,
+            "endpoint": self.endpoint,
+            "models": models,
+            "active_model": active_model,
+            "gguf_variant": active_variant,
+            "status": server_status,
+            "message": f"Unsloth endpoint is ready (active={active_model}, variant={active_variant}).",
+        }
+
+    def load_model(
+        self,
+        model_path: str | None = None,
+        gguf_variant: str | None = None,
+        force_cancel_active: bool = True,
+        timeout_s: float = 60.0,
+        poll_interval_s: float = 2.0,
+    ) -> bool:
+        """Request Unsloth Studio to load a specific model and/or GGUF variant."""
+        target_model = model_path or self.model
+        target_variant = gguf_variant or self.gguf_variant
+
+        load_url = _derive_unsloth_url(self.endpoint, "load")
+        payload: dict[str, Any] = {
+            "model_path": target_model,
+            "force_cancel_active": force_cancel_active,
+        }
+        if target_variant:
+            payload["gguf_variant"] = target_variant
+
+        logger.info(
+            "Requesting Unsloth to load '%s' (variant=%s)...",
+            target_model,
+            target_variant,
+        )
+        try:
+            res = send_http_request(
+                load_url,
+                method="POST",
+                payload=payload,
+                headers=self._get_headers(),
+                timeout_s=15.0,
+            )
+            logger.info("Unsloth /v1/load response: %s", res.get("status") if isinstance(res, dict) else res)
+        except Exception as exc:
+            logger.warning("Unsloth /v1/load request failed: %s", exc)
+            return False
+
+        # Poll status
+        status_url = _derive_unsloth_url(self.endpoint, "status")
+        t_end = time.time() + timeout_s
+        attempt = 0
+        while time.time() < t_end:
+            attempt += 1
+            time.sleep(poll_interval_s)
+            try:
+                sdata = send_http_request(
+                    status_url,
+                    method="GET",
+                    headers=self._get_headers(),
+                    timeout_s=5.0,
+                )
+                active = sdata.get("active_model")
+                loaded = sdata.get("loaded", [])
+                variant = sdata.get("gguf_variant")
+                status = sdata.get("status")
+                logger.debug(
+                    "Status poll [%d]: status=%s active=%s variant=%s",
+                    attempt,
+                    status,
+                    active,
+                    variant,
+                )
+                if active == target_model or target_model in loaded or status == "loaded":
+                    if not target_variant or variant == target_variant:
+                        logger.info(
+                            "Model %s (variant=%s) is successfully loaded and ready for inference!",
+                            target_model,
+                            target_variant,
+                        )
+                        self.model = target_model
+                        if target_variant:
+                            self.gguf_variant = target_variant
+                        return True
+            except Exception as exc:
+                logger.debug("Status check poll error: %s", exc)
+
+        logger.warning("Timed out waiting for Unsloth to load %s (variant=%s)", target_model, target_variant)
+        return False
 
     def _build_payload(self, audio_b64: str, prompt: str, mode: str) -> dict[str, Any]:
-        """Build request payload according to the configured mode."""
+        """Build request payload according to configured mode and GGUF variant."""
         if mode == "audio_base64":
-            return {
+            payload = {
                 "model": self.model,
                 "messages": [{"role": "user", "content": prompt}],
                 "audio_base64": audio_b64,
@@ -164,7 +296,7 @@ class UnslothVerifier(EndpointVerifier):
                 "max_tokens": self.max_tokens,
             }
         elif mode == "standard":
-            return {
+            payload = {
                 "model": self.model,
                 "messages": [
                     {
@@ -182,7 +314,7 @@ class UnslothVerifier(EndpointVerifier):
                 "max_tokens": self.max_tokens,
             }
         else:  # hybrid
-            return {
+            payload = {
                 "model": self.model,
                 "messages": [
                     {
@@ -201,6 +333,11 @@ class UnslothVerifier(EndpointVerifier):
                 "max_tokens": self.max_tokens,
             }
 
+        if self.gguf_variant:
+            payload["gguf_variant"] = self.gguf_variant
+
+        return payload
+
     def verify(self, audio_path: Path, prompt: str) -> dict[str, Any]:
         with open(audio_path, "rb") as f:
             audio_b64 = base64.b64encode(f.read()).decode("ascii")
@@ -212,8 +349,13 @@ class UnslothVerifier(EndpointVerifier):
             res = self._post_json(payload)
         except Exception as exc:
             err_str = str(exc).lower()
+            # If server rejected gguf_variant in completion payload
+            if "gguf_variant" in err_str and "gguf_variant" in payload:
+                logger.debug("Server rejected payload gguf_variant, retrying without it.")
+                payload.pop("gguf_variant", None)
+                res = self._post_json(payload)
             # If server rejected root audio_base64, try standard format
-            if self.payload_mode == "hybrid" and (
+            elif self.payload_mode == "hybrid" and (
                 "extra fields" in err_str
                 or "audio_base64" in err_str
                 or "unknown field" in err_str
@@ -263,4 +405,6 @@ class UnslothVerifier(EndpointVerifier):
         parsed["_latency_s"] = latency
         if reasoning:
             parsed["_reasoning"] = reasoning
+        if self.gguf_variant:
+            parsed["_gguf_variant"] = self.gguf_variant
         return parsed

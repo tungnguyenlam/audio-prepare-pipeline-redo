@@ -128,8 +128,8 @@ Unified evaluator supporting Gemini API models, OpenAI/vLLM endpoints, and local
   LIMIT=100 OFFSET=0 ./scripts/run_gold_verifier_eval.sh
   RESUME_JSON=.data/tts_strategy/gold_benchmark_20260908/reports/prior.json ./scripts/run_gold_verifier_eval.sh
 
-  # Evaluate via Unsloth Studio endpoint (auto-resolves host:port, model probe, thinking tokens)
-  python scripts/evaluate_verifier.py --backend unsloth --endpoint http://127.0.0.1:8888/v1/chat/completions --model "OpenMOSS-Team/MOSS-Audio-8B-Thinking" --api-key "$UNSLOTH_API_KEY"
+  # Evaluate via Unsloth Studio endpoint with specific port and GGUF variant
+  python scripts/evaluate_verifier.py --backend unsloth --model "unsloth/gemma-4-12b-it-GGUF" --variant Q8_0 --port 8888 --api-key "$UNSLOTH_API_KEY"
 
   # Evaluate fine-tuned local LoRA adapter on validation split
   python scripts/evaluate_verifier.py --backend hf_local --model google/gemma-4-E2B-it --adapter-path .data/distillation/checkpoints_e2b/best_adapter --input .data/distillation/val_e2b.jsonl

@@ -349,6 +349,13 @@ def parse_args() -> argparse.Namespace:
         help="Port for Unsloth or Endpoint backend (e.g. 8888 or 8000)",
     )
     parser.add_argument(
+        "--gguf-variant",
+        "--variant",
+        type=str,
+        default=None,
+        help="GGUF quantization variant for Unsloth models (e.g. Q8_0, UD-Q6_K_XL, Q4_K_M, Q5_K_M, BF16)",
+    )
+    parser.add_argument(
         "--trust-remote-code",
         action="store_true",
         default=True,
@@ -560,7 +567,15 @@ def main() -> None:
         endpoint_arg = f"http://{host}:{port}/v1/chat/completions"
 
     # Initialize model verifier using modular factory
-    logger.info("Initializing verifier (backend=%s, model=%s)...", args.backend, model_arg)
+    if args.gguf_variant:
+        logger.info(
+            "Initializing verifier (backend=%s, model=%s, variant=%s)...",
+            args.backend,
+            model_arg,
+            args.gguf_variant,
+        )
+    else:
+        logger.info("Initializing verifier (backend=%s, model=%s)...", args.backend, model_arg)
     verifier = get_verifier(
         backend=args.backend,
         model=model_arg,
@@ -572,6 +587,7 @@ def main() -> None:
         reasoning_effort=args.reasoning_effort,
         api_key=args.api_key,
         hf_token=os.getenv("HF_TOKEN"),
+        gguf_variant=args.gguf_variant,
     )
 
     # Evaluation loop

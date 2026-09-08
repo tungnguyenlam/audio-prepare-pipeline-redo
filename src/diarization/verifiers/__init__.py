@@ -28,6 +28,7 @@ def get_verifier(
     reasoning_effort: str = "medium",
     api_key: str | None = None,
     hf_token: str | None = None,
+    gguf_variant: str | None = None,
     **kwargs: Any,
 ) -> BaseVerifier:
     """Factory helper to instantiate the appropriate speech acoustic verifier.
@@ -47,6 +48,7 @@ def get_verifier(
         reasoning_effort: Thinking level for Gemini ('none', 'low', 'medium', 'high').
         api_key: Optional API key override (Gemini, Endpoint, or Unsloth).
         hf_token: Optional Hugging Face authentication token.
+        gguf_variant: Optional GGUF quantization variant for Unsloth models (e.g. 'Q8_0').
 
     Returns:
         Configured BaseVerifier instance.
@@ -65,6 +67,7 @@ def get_verifier(
             endpoint=endpoint,
             model=model,
             api_key=api_key,
+            gguf_variant=gguf_variant,
             **kwargs,
         )
 
@@ -74,11 +77,13 @@ def get_verifier(
             "unsloth" in (model or "").lower()
             or "unsloth" in (endpoint or "").lower()
             or (api_key and "unsloth" in api_key.lower())
+            or gguf_variant is not None
         ):
             return UnslothVerifier(
                 endpoint=endpoint,
                 model=model,
                 api_key=api_key,
+                gguf_variant=gguf_variant,
                 **kwargs,
             )
         return EndpointVerifier(
