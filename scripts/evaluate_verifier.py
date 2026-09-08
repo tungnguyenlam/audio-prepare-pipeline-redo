@@ -337,6 +337,18 @@ def parse_args() -> argparse.Namespace:
         help="OpenAI / vLLM / Unsloth compatible multimodal audio endpoint",
     )
     parser.add_argument(
+        "--host",
+        type=str,
+        default=None,
+        help="Host for Unsloth or Endpoint backend (e.g. 127.0.0.1 or localhost)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="Port for Unsloth or Endpoint backend (e.g. 8888 or 8000)",
+    )
+    parser.add_argument(
         "--trust-remote-code",
         action="store_true",
         default=True,
@@ -521,18 +533,31 @@ def main() -> None:
         cli_prompt = args.prompt.strip()
         logger.info("Using custom evaluation prompt from CLI (%d chars)", len(cli_prompt))
 
-    # Resolve endpoint and model defaults when unsloth backend is selected
+    # Resolve endpoint, host, port, and model defaults
     model_arg = args.model
     endpoint_arg = args.endpoint
+    default_port = 8888 if args.backend == "unsloth" else 8000
+
+    # Handle literal :PORT or :$PORT in endpoint string if user passed template URL
+    if endpoint_arg and (":PORT" in endpoint_arg or ":$PORT" in endpoint_arg):
+        target_port = args.port or int(os.getenv("UNSLOTH_PORT", str(default_port)))
+        endpoint_arg = endpoint_arg.replace(":PORT", f":{target_port}").replace(":$PORT", f":{target_port}")
+        logger.info("Substituted placeholder ':PORT' in endpoint with ':%s'", target_port)
+
     if args.backend == "unsloth":
-        if endpoint_arg is None:
-            host = os.getenv("UNSLOTH_HOST", "localhost").strip() or "localhost"
-            port = os.getenv("UNSLOTH_PORT", "8888").strip() or "8888"
-            endpoint_arg = os.getenv("UNSLOTH_ENDPOINT") or f"http://{host}:{port}/v1/chat/completions"
+        if endpoint_arg is None or args.host or args.port:
+            host = args.host or os.getenv("UNSLOTH_HOST", "127.0.0.1").strip() or "127.0.0.1"
+            port = args.port or int(os.getenv("UNSLOTH_PORT", "8888").strip() or "8888")
+            if not args.host and not args.port and os.getenv("UNSLOTH_ENDPOINT"):
+                endpoint_arg = os.getenv("UNSLOTH_ENDPOINT")
+            else:
+                endpoint_arg = f"http://{host}:{port}/v1/chat/completions"
         if model_arg == "google/gemma-4-E2B-it":
             model_arg = os.getenv("UNSLOTH_MODEL") or "unsloth/gemma-4-12b-it-GGUF"
-    elif endpoint_arg is None:
-        endpoint_arg = "http://localhost:8000/v1/chat/completions"
+    elif endpoint_arg is None or args.host or args.port:
+        host = args.host or "127.0.0.1"
+        port = args.port or default_port
+        endpoint_arg = f"http://{host}:{port}/v1/chat/completions"
 
     # Initialize model verifier using modular factory
     logger.info("Initializing verifier (backend=%s, model=%s)...", args.backend, model_arg)
