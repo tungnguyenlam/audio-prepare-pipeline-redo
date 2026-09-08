@@ -24,6 +24,13 @@ each checkpoint commit. Do not mistake proposed experiments for completed work.
 Runtime manifests, audio, and reports live under `.data/` and are not pushed;
 record reproducible commands and concise findings in tracked documentation.
 
+The 2026-09-08 located-cut evaluation is done: all 31 challenge clips are exact
+crops of `khanhvy_180s_slice.wav`, and word-lock *expansion* into inter-turn
+gaps did not improve accepted-sample risk. Next unblocked task is to reject
+those edges instead of filling the gaps, then rerun the same evaluation command
+on `.data/tts_strategy/boundaries_20260908` locations (new output directory).
+Do not grow the training pool on top of an unfixed expansion policy.
+
 The user authorized saving, committing, pushing, and executing this strategy,
 with regular detailed commits so another model can continue. This authorization
 does not override AGENTS.md's prohibition on writing/running test cases without

@@ -57,14 +57,25 @@ The legacy challenge set cannot establish a representative production risk rate.
 uv run --no-sync python scripts/audit_tts_data.py prepare --output .data/tts_strategy/phase1_20260908
 uv run --no-sync python scripts/audit_tts_data.py teacher --packet .data/tts_strategy/phase1_20260908 --limit 31
 uv run --no-sync python scripts/audit_tts_data.py report --packet .data/tts_strategy/phase1_20260908 --labels .data/tts_strategy/phase1_20260908/gemini_medium/labels.jsonl --eligible-only
+uv run --no-sync python scripts/audit_tts_data.py lineage --output .data/tts_strategy/lineage_20260908_v2
+uv run --no-sync python scripts/audit_tts_data.py export --packet .data/tts_strategy/pool_20260908 --output .data/tts_strategy/pool_20260908/labeled_pool.jsonl
+uv run --no-sync python scripts/audit_tts_data.py boundaries --packet .data/tts_strategy/phase1_20260908 --source .data/experiment_khanhvy/khanhvy_180s_slice.wav --output .data/tts_strategy/boundaries_20260908 --device cuda:0
 ```
 
 `prepare` requires a new output directory. `teacher` caches each completed label,
 requires `GEMINI_API_KEY` from the root `.env`, and sends audio to Google only when
-explicitly invoked. No API calls occur in `prepare` or `report`. `report` supports
+explicitly invoked. No API calls occur in `prepare`, `report`, `lineage`, `export`,
+or the locate stage of `boundaries`. `boundaries` locates each packet cut as an
+exact PCM crop of `--source`, then calls `align_and_lock_syllable_boundaries` and
+`smart_segment_speaker_turns` (2–15 s TTS duration policy). Changed children are
+copied into `review_packet/` for a later `teacher` run. `report` supports
 adjudicated human labels or the user-approved teacher labels and never treats
 missing labels as clean. Its confidence bound assumes independent sampling and
 is diagnostic only for this recording-dependent challenge set.
+
+`export` joins completed MEDIUM labels to rows that already have verified
+`recording_id` values. `balance` in `build_distillation_dataset.py` then splits
+whole recordings and refuses to overwrite existing manifests.
 
 ### 4.1. Student Model Fine-Tuning: [`train_verifier.py`](train_verifier.py)
 Unified trainer for multimodal speech verifiers using LoRA distillation from Gemini teacher annotations. Backed by modular components in [`src/diarization/verifier_training.py`](../src/diarization/verifier_training.py).
@@ -95,15 +106,15 @@ Unified evaluator supporting Gemini API models and local Hugging Face / LoRA mod
 ### 4.3. Distillation Dataset Pipeline: [`build_distillation_dataset.py`](build_distillation_dataset.py)
 Unified dataset builder with subcommands for the entire distillation lifecycle:
 - **`annotate`:** Query Gemini 3.8 Flash teacher across directories of audio turns.
-- **`balance`:** Stratify pass/reject ratios (e.g., 60% pass / 40% reject) and split into `train.jsonl` / `val.jsonl`.
+- **`balance`:** Split by verified `recording_id` first, then optionally class-balance only the training split. Validation recordings stay source-disjoint and are not class-balanced. Duplicate audio bytes and missing recording IDs are rejected. Existing output paths are never overwritten.
 - **`package`:** Compress audio files into `tar.gz` and optionally upload to Hugging Face Hub dataset repository.
 - **Example Usage:**
   ```bash
   # 1. Annotate raw cuts
   python scripts/build_distillation_dataset.py annotate --audio-dirs .data/clean_benchmark_khanhvy/cuts/ --output-file .data/distillation/annotated.jsonl
 
-  # 2. Balance dataset (60/40 ratio)
-  python scripts/build_distillation_dataset.py balance --input-files .data/distillation/annotated.jsonl --pass-ratio 0.60
+  # 2. Recording-disjoint split; class-balance training only
+  python scripts/build_distillation_dataset.py balance --input-files .data/tts_strategy/pool_20260908/labeled_pool.jsonl --pass-ratio 0.50 --validation-recordings youtube:fwN5VT_QxkY youtube:Oa-mVxGS4cw --train-out .data/tts_strategy/pool_20260908/train_v2.jsonl --val-out .data/tts_strategy/pool_20260908/calibration_v2.jsonl
 
   # 3. Package and push to Hub
   python scripts/build_distillation_dataset.py package --audio-dir .data/distillation_e2b/audio --hf-repo tungnguyenlam/gemma-4-e2b-acoustic-verifier-data

@@ -95,8 +95,10 @@ flowchart TD
 - `align_and_lock_syllable_boundaries(...)`: Requested alignment fails closed:
   loading/inference errors return no candidates and rejection audit records.
   Whisper/remote word locking rejects missing complete-word evidence and edges
-  that still intersect recognized words after speaker-safe clamping. MMS currently
-  uses CTC blank evidence, not transcript-conditioned word alignment.
+  that still intersect recognized words after speaker-safe clamping. Expanding
+  into the gap between extracted turns is not a trusted-region repair and is
+  not a purity or completeness guarantee. MMS currently uses CTC blank evidence,
+  not transcript-conditioned word alignment.
 - `smart_segment_speaker_turns(...)`: Outputs only intervals within configured
   minimum/maximum durations. New cuts require nonoverlapping ASR word gaps of at
   least `min_pause_s`; acoustic refinement stays inside that gap. No unrestricted

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -158,6 +159,11 @@ def cmd_annotate(args: argparse.Namespace) -> None:
 
 
 def cmd_balance(args: argparse.Namespace) -> None:
+    """Split whole recordings, then optionally balance only the training split."""
+    if not 0 < args.pass_ratio < 1 or not 0 < args.val_ratio < 1:
+        raise ValueError("pass-ratio and val-ratio must be between zero and one.")
+    if args.target_samples is not None and args.target_samples < 1:
+        raise ValueError("target-samples must be positive.")
     input_paths = [Path(p) if Path(p).is_file() else REPO_ROOT / p for p in args.input_files]
     records = []
     seen_paths = set()
@@ -167,6 +173,10 @@ def cmd_balance(args: argparse.Namespace) -> None:
                 line = line.strip()
                 if line:
                     item = json.loads(line)
+                    if not item.get("recording_id"):
+                        raise ValueError("Every row needs a verified recording_id; recover or quarantine legacy lineage first.")
+                    if item.get("decision") not in {"pass", "reject"}:
+                        raise ValueError("Unresolved/unlabeled rows must be quarantined before splitting.")
                     apath = item.get("audio_path")
                     if apath and apath in seen_paths:
                         continue
@@ -174,31 +184,50 @@ def cmd_balance(args: argparse.Namespace) -> None:
                         seen_paths.add(apath)
                     records.append(item)
 
-    passes = [r for r in records if r.get("decision") == "pass"]
-    rejects = [r for r in records if r.get("decision") == "reject"]
-    logger.info("Total unique input records: %d (Pass: %d, Reject: %d)", len(records), len(passes), len(rejects))
+    recording_ids = sorted({r["recording_id"] for r in records})
+    if len(recording_ids) < 2:
+        raise ValueError("At least two recordings are required for disjoint train/validation splits.")
+    # Shared intros or copied files can leak even when recording IDs differ.
+    hashes: dict[str, str] = {}
+    for row in records:
+        audio_path = Path(row["audio_path"])
+        if not audio_path.is_absolute():
+            audio_path = REPO_ROOT / audio_path
+        with audio_path.open("rb") as handle:
+            digest = hashlib.file_digest(handle, "sha256").hexdigest()
+        if digest in hashes:
+            raise ValueError("Duplicate audio bytes found; deduplicate/quarantine before balancing.")
+        hashes[digest] = row["recording_id"]
+    rng = random.Random(42)
+    rng.shuffle(recording_ids)
+    if args.validation_recordings:
+        validation_ids = set(args.validation_recordings)
+        if not validation_ids < set(recording_ids):
+            raise ValueError("Validation recordings must be a nonempty proper subset of input recordings.")
+    else:
+        count = max(1, min(len(recording_ids) - 1, round(len(recording_ids) * args.val_ratio)))
+        validation_ids = set(recording_ids[:count])
+    val_data = [r for r in records if r["recording_id"] in validation_ids]
+    training = [r for r in records if r["recording_id"] not in validation_ids]
+    passes = [r for r in training if r["decision"] == "pass"]
+    rejects = [r for r in training if r["decision"] == "reject"]
 
     target_pass_ratio = args.pass_ratio
-    max_total = args.target_samples or len(records)
+    max_total = args.target_samples or len(training)
 
     # Compute balanced counts
     target_passes = min(len(passes), int(max_total * target_pass_ratio))
     target_rejects = min(len(rejects), int(target_passes * ((1.0 - target_pass_ratio) / target_pass_ratio)))
 
-    random.seed(42)
-    selected_passes = random.sample(passes, target_passes)
-    selected_rejects = random.sample(rejects, target_rejects)
-    dataset = selected_passes + selected_rejects
-    random.shuffle(dataset)
-
-    # Split train and val
-    val_ratio = args.val_ratio
-    val_count = max(1, int(len(dataset) * val_ratio))
-    val_data = dataset[:val_count]
-    train_data = dataset[val_count:]
+    if not target_passes or not target_rejects:
+        raise ValueError("Training split cannot supply both classes at this balance; collect more sources.")
+    train_data = rng.sample(passes, target_passes) + rng.sample(rejects, target_rejects)
+    rng.shuffle(train_data)
 
     out_train = REPO_ROOT / args.train_out if not Path(args.train_out).is_file() else Path(args.train_out)
     out_val = REPO_ROOT / args.val_out if not Path(args.val_out).is_file() else Path(args.val_out)
+    if out_train.resolve() == out_val.resolve() or out_train.exists() or out_val.exists():
+        raise ValueError("Choose distinct new output paths; existing splits are never overwritten.")
     out_train.parent.mkdir(parents=True, exist_ok=True)
     out_val.parent.mkdir(parents=True, exist_ok=True)
 
@@ -220,6 +249,7 @@ def cmd_balance(args: argparse.Namespace) -> None:
         sum(1 for r in val_data if r.get("decision") == "reject"),
     )
     logger.info("Saved: %s and %s", out_train, out_val)
+    logger.info("Validation recordings (not class-balanced): %s", sorted(validation_ids))
 
 
 def cmd_package(args: argparse.Namespace) -> None:
@@ -502,8 +532,9 @@ def main() -> None:
     p_bal.add_argument("--train-out", type=str, default=".data/distillation/train_e2b.jsonl", help="Output train JSONL")
     p_bal.add_argument("--val-out", type=str, default=".data/distillation/val_e2b.jsonl", help="Output val JSONL")
     p_bal.add_argument("--pass-ratio", type=float, default=0.60, help="Target ratio of passing samples (e.g. 0.60 = 60% pass, 40% reject)")
-    p_bal.add_argument("--val-ratio", type=float, default=0.20, help="Validation set split ratio (e.g. 0.20 = 20% val)")
-    p_bal.add_argument("--target-samples", type=int, default=None, help="Optional max total samples")
+    p_bal.add_argument("--val-ratio", type=float, default=0.20, help="Fraction of recording groups held for validation")
+    p_bal.add_argument("--validation-recordings", nargs="+", help="Explicit recording IDs to hold for validation")
+    p_bal.add_argument("--target-samples", type=int, default=None, help="Optional maximum training samples after recording split")
     p_bal.set_defaults(func=cmd_balance)
 
     # Subcommand: augment-boundaries

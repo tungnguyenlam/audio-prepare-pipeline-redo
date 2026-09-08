@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit existing TTS manifests/predictions without inference or external calls."""
+"""Audit TTS manifests and evaluate boundary repairs against source audio."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import math
 import os
 import random
 import shutil
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -377,6 +378,257 @@ def restore_lineage(args: argparse.Namespace) -> None:
     print(json.dumps(summary, indent=2))
 
 
+def export_labels(args: argparse.Namespace) -> None:
+    """Join completed ground truth to source-resolved candidate identities."""
+    packet = local_path(args.packet)
+    references = {r["review_id"]: r for r in read_jsonl(packet / "private_reference.jsonl")}
+    labels = read_jsonl(packet / "gemini_medium/labels.jsonl")
+    output = local_path(args.output)
+    if not output.is_relative_to(ROOT / ".data") or output.exists():
+        raise ValueError("Choose a new JSONL under .data/.")
+    exported = []
+    for label in labels:
+        ref = references[label["review_id"]]
+        if not ref.get("recording_id"):
+            raise ValueError("Resolve recording IDs before exporting training examples.")
+        if label["audio_sha256"] != ref["sha256"]:
+            raise ValueError("Label/audio identity mismatch.")
+        if label["decision"] not in {"pass", "reject"}:
+            continue
+        path = local_path(ref["audio_path"])
+        with path.open("rb") as handle:
+            if hashlib.file_digest(handle, "sha256").hexdigest() != label["audio_sha256"]:
+                raise ValueError("Original audio has changed since annotation.")
+        exported.append({
+            "audio_path": str(path.relative_to(ROOT)), "audio_sha256": ref["sha256"],
+            "recording_id": ref["recording_id"], "duration_s": ref["duration_s"],
+            "decision": label["decision"], "dimensions": label["dimensions"],
+            "defects": label["defects"], "label_provenance": label["label_provenance"],
+            "evaluator": label["reviewer_id"], "rubric_version": label["rubric_version"],
+            "evaluation_config_sha256": label["config_sha256"],
+            "evaluation_path": str((packet / "gemini_medium" / f"{label['review_id']}.json").relative_to(ROOT)),
+        })
+    output.parent.mkdir(parents=True, exist_ok=True)
+    write_jsonl(output, exported)
+    print(json.dumps({"exported": len(exported), "output": str(output),
+                      "recordings": dict(Counter(r["recording_id"] for r in exported)),
+                      "decisions": dict(Counter(r["decision"] for r in exported))}, indent=2))
+
+
+def speaker_id_from_candidate(candidate_id: str | None) -> str:
+    """Recover a speaker label from legacy turn filenames; unknown stays explicit."""
+    parts = (candidate_id or "").split("_")
+    for index, part in enumerate(parts[:-1]):
+        if part == "spk":
+            return f"spk_{parts[index + 1]}"
+    return "spk_unknown"
+
+
+def exact_start_frame(source, cut) -> int:
+    """Return the first sample index where cut is a byte-identical crop of source."""
+    import numpy as np
+
+    source = np.asarray(source)
+    cut = np.asarray(cut)
+    if source.ndim != 1 or cut.ndim != 1 or source.dtype != cut.dtype:
+        raise ValueError("Source and cut must be mono arrays with the same dtype.")
+    if len(cut) > len(source):
+        raise ValueError("Cut is longer than the source recording.")
+    width = source.dtype.itemsize
+    needle = cut[: min(256, len(cut))].tobytes()
+    blob = source.tobytes()
+    cursor = 0
+    while True:
+        index = blob.find(needle, cursor)
+        if index < 0:
+            raise ValueError("Cut is not an exact crop of the source.")
+        if index % width == 0:
+            frame = index // width
+            if frame + len(cut) <= len(source) and (source[frame:frame + len(cut)] == cut).all():
+                return int(frame)
+        cursor = index + width
+
+
+def competitor_intervals(turns) -> dict[str, list[tuple[float, float]]]:
+    """Map each speaker to other speakers' intervals from the same candidate set."""
+    intervals = {}
+    for turn in turns:
+        intervals[turn.speaker_id] = [
+            (other.start_s, other.end_s) for other in turns
+            if other.speaker_id != turn.speaker_id
+        ]
+    return intervals
+
+
+def evaluate_boundaries(args: argparse.Namespace) -> None:
+    """Locate legacy cuts in source audio, then relock/split with public APIs."""
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    from dotenv import load_dotenv
+    load_dotenv(ROOT / ".env")
+    os.environ.setdefault("HF_HOME", str(ROOT / ".data/huggingface"))
+    import soundfile as sf
+    from src.diarization.schemas import SpeakerTurn
+    from src.diarization.zero_contamination import (
+        align_and_lock_syllable_boundaries,
+        smart_segment_speaker_turns,
+    )
+    from src.utils.AudioClass import Audio
+    from src.utils.AudioCutter import AudioCutter
+
+    packet = local_path(args.packet)
+    source_path = local_path(args.source)
+    output = local_path(args.output)
+    if not output.is_relative_to(ROOT / ".data") or output.exists():
+        raise ValueError("Choose a new directory under .data/.")
+    output.mkdir(parents=True)
+    references = read_jsonl(packet / "private_reference.jsonl")
+    labels = {}
+    label_path = packet / "gemini_medium/labels.jsonl"
+    if label_path.is_file():
+        labels = {row["review_id"]: row for row in read_jsonl(label_path)}
+    source, sample_rate = sf.read(source_path, dtype="int16", always_2d=False)
+    if getattr(source, "ndim", 1) > 1:
+        source = source[:, 0]
+    locations = []
+    turns = []
+    for ref in references:
+        cut, cut_rate = sf.read(local_path(ref["audio_path"]), dtype="int16", always_2d=False)
+        if getattr(cut, "ndim", 1) > 1:
+            cut = cut[:, 0]
+        if cut_rate != sample_rate:
+            raise ValueError(f"Sample-rate mismatch for {ref['review_id']}: {cut_rate} vs {sample_rate}.")
+        frame = exact_start_frame(source, cut)
+        start_s = frame / sample_rate
+        end_s = (frame + len(cut)) / sample_rate
+        meta_start = ref.get("start_s")
+        location = {
+            "review_id": ref["review_id"], "candidate_id": ref.get("candidate_id"),
+            "audio_path": str(Path(ref["audio_path"])), "audio_sha256": ref.get("sha256"),
+            "source_path": str(source_path.relative_to(ROOT)),
+            "sample_rate": sample_rate, "start_frame": frame, "n_samples": int(len(cut)),
+            "located_start_s": start_s, "located_end_s": end_s,
+            "meta_start_s": meta_start, "meta_end_s": ref.get("end_s"),
+            "meta_delta_s": None if meta_start is None else start_s - float(meta_start),
+            "speaker_id": speaker_id_from_candidate(ref.get("candidate_id")),
+        }
+        locations.append(location)
+        turn = SpeakerTurn(speaker_id=location["speaker_id"], start_s=start_s, end_s=end_s)
+        turn._original_start_s = start_s
+        turn._original_end_s = end_s
+        turn._raw_start_s = start_s
+        turn._raw_end_s = end_s
+        turns.append(turn)
+    write_jsonl(output / "locations.jsonl", locations)
+
+    audio = Audio.from_file(source_path, source_id="youtube:H0VpjeULCck",
+                            title=source_path.stem)
+    locked, lock_audits = align_and_lock_syllable_boundaries(
+        audio, turns, aligner_engine=args.aligner_engine, aligner_model=args.aligner_model,
+        aligner_language="vi", aligner_device=args.device,
+        competitor_intervals_by_speaker=competitor_intervals(turns),
+    )
+    write_jsonl(output / "lock_audits.jsonl", lock_audits)
+    if len(lock_audits) != len(references):
+        raise ValueError("Word-lock audits must preserve one record per incoming cut.")
+    segmented, segment_audits = smart_segment_speaker_turns(
+        audio, locked, min_duration_s=args.min_duration_s, max_duration_s=args.max_duration_s,
+    )
+    write_jsonl(output / "segment_audits.jsonl", segment_audits)
+
+    cutter = AudioCutter(output_dir=output / "locked_cuts")
+    children_dir = output / "locked_cuts"
+    children_dir.mkdir(exist_ok=True)
+    children_by_parent: dict[tuple[float, float], list[dict[str, Any]]] = defaultdict(list)
+    for child in segmented:
+        parent_key = (
+            round(float(getattr(child, "_original_start_s", child.start_s)), 6),
+            round(float(getattr(child, "_original_end_s", child.end_s)), 6),
+        )
+        cut_audio = cutter.cut(audio, child.start_s, child.end_s, unit="seconds",
+                               output_path=children_dir / f"{child.speaker_id}_{child.start_s:.4f}-{child.end_s:.4f}.wav")
+        digest = inspect_audio(Path(cut_audio.path))["sha256"]
+        children_by_parent[parent_key].append({
+            "start_s": child.start_s, "end_s": child.end_s, "duration_s": child.duration_s,
+            "speaker_id": child.speaker_id, "audio_path": str(Path(cut_audio.path).relative_to(ROOT)),
+            "audio_sha256": digest, "transcript": getattr(child, "_transcript", None),
+        })
+
+    review_packet = output / "review_packet"
+    review_audio = review_packet / "review_audio"
+    review_audio.mkdir(parents=True)
+    blind, comparison = [], []
+    for ref, location, audit in zip(references, locations, lock_audits):
+        parent_key = (round(location["located_start_s"], 6), round(location["located_end_s"], 6))
+        children = children_by_parent.get(parent_key, [])
+        old = labels.get(ref["review_id"], {})
+        lock_rejected = audit.get("action") == "reject"
+        row = {
+            "review_id": ref["review_id"], "location": location,
+            "old_decision": old.get("decision"), "old_defects": old.get("defects", []),
+            "lock": {k: audit.get(k) for k in (
+                "action", "error", "policy", "start_s", "end_s",
+                "delta_start_ms", "delta_end_ms", "tail_rescued", "transcript")},
+            "children": children,
+            "pipeline_decision": "reject" if lock_rejected or not children else "emit",
+        }
+        comparison.append(row)
+        for index, child in enumerate(children, 1):
+            child_start = int(round(child["start_s"] * sample_rate))
+            child_end = int(round(child["end_s"] * sample_rate))
+            child["bounds_unchanged"] = (
+                child_start == location["start_frame"]
+                and child_end == location["start_frame"] + location["n_samples"]
+            )
+            if child["bounds_unchanged"]:
+                continue
+            review_id = f"{ref['review_id']}_c{index:02d}"
+            rel = f"review_audio/{review_id}.wav"
+            shutil.copyfile(ROOT / child["audio_path"], review_packet / rel)
+            child["teacher_review_id"] = review_id
+            blind.append({
+                "review_id": review_id, "audio_path": rel, "audio_sha256": child["audio_sha256"],
+                "duration_s": child["duration_s"], "parent_review_id": ref["review_id"],
+                "rubric_version": "tts-v1", "reviewer_id": None, "decision": None,
+                "dimensions": dict.fromkeys(DIMENSIONS), "defects": [],
+                "context_reviewed": False, "notes": "",
+            })
+    write_jsonl(output / "comparison.jsonl", comparison)
+    write_jsonl(review_packet / "blind_review.jsonl", blind)
+    write_jsonl(review_packet / "private_reference.jsonl", comparison)
+    clipping_codes = {"clipped_word_start", "clipped_word_end"}
+    summary = {
+        "source": str(source_path.relative_to(ROOT)), "clips": len(references),
+        "aligner_engine": args.aligner_engine, "aligner_model": args.aligner_model,
+        "aligner_device": args.device,
+        "duration_policy_s": [args.min_duration_s, args.max_duration_s],
+        "located_exact": len(locations),
+        "meta_delta_s": {
+            "min": min((row["meta_delta_s"] for row in locations if row["meta_delta_s"] is not None), default=None),
+            "max": max((row["meta_delta_s"] for row in locations if row["meta_delta_s"] is not None), default=None),
+        },
+        "lock_rejected": sum(row["pipeline_decision"] == "reject" and row["lock"].get("action") == "reject"
+                             for row in comparison),
+        "emitted": sum(row["pipeline_decision"] == "emit" for row in comparison),
+        "emitted_children": sum(len(row["children"]) for row in comparison),
+        "bounds_unchanged": sum(c.get("bounds_unchanged") for row in comparison for c in row["children"]),
+        "changed_children_for_teacher": len(blind),
+        "old_clipped_still_present": sum(
+            row["old_decision"] == "reject"
+            and any(d.get("code") in clipping_codes for d in row["old_defects"])
+            for row in comparison),
+        "old_clipped_pipeline_reject": sum(
+            row["pipeline_decision"] == "reject"
+            and any(d.get("code") in clipping_codes for d in row["old_defects"])
+            for row in comparison),
+        "old_pass_pipeline_reject": sum(
+            row["old_decision"] == "pass" and row["pipeline_decision"] == "reject" for row in comparison),
+        "caveat": "Sample-accurate location is established. Quality of emitted repairs requires a fresh MEDIUM audit of changed children.",
+    }
+    write_json(output / "summary.json", summary)
+    print(json.dumps(summary, indent=2))
+
+
 def teacher_audit(args: argparse.Namespace) -> None:
     """Run bounded, resumable MEDIUM ground-truth calls on a blind packet."""
     from dotenv import load_dotenv
@@ -523,6 +775,19 @@ def main() -> None:
     lineage_parser = commands.add_parser("lineage", help="Recover legacy source IDs with explicit evidence")
     lineage_parser.add_argument("--manifests", nargs="+", default=[".data/distillation/train_v3.jsonl", ".data/distillation/val_v3.jsonl"])
     lineage_parser.add_argument("--output", required=True)
+    export_parser = commands.add_parser("export", help="Join fresh labels with verified source identities")
+    export_parser.add_argument("--packet", required=True)
+    export_parser.add_argument("--output", required=True)
+    bounds_parser = commands.add_parser(
+        "boundaries", help="Locate cuts in source audio and relock/split with public APIs")
+    bounds_parser.add_argument("--packet", required=True)
+    bounds_parser.add_argument("--source", required=True)
+    bounds_parser.add_argument("--output", required=True)
+    bounds_parser.add_argument("--aligner-engine", default="whisper_timestamped")
+    bounds_parser.add_argument("--aligner-model", default="vinai/PhoWhisper-small")
+    bounds_parser.add_argument("--device", default="cuda:0")
+    bounds_parser.add_argument("--min-duration-s", type=float, default=2.0)
+    bounds_parser.add_argument("--max-duration-s", type=float, default=15.0)
     args = parser.parse_args()
     if args.command == "prepare":
         prepare(args)
@@ -530,8 +795,12 @@ def main() -> None:
         label_report(args)
     elif args.command == "teacher":
         teacher_audit(args)
-    else:
+    elif args.command == "lineage":
         restore_lineage(args)
+    elif args.command == "export":
+        export_labels(args)
+    else:
+        evaluate_boundaries(args)
 
 
 if __name__ == "__main__":

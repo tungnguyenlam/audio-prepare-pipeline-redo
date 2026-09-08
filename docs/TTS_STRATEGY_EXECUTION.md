@@ -3,18 +3,18 @@
 ## Current handoff — 2026-09-08
 
 - Strategy: [TTS_PRODUCTION_STRATEGY.md](TTS_PRODUCTION_STRATEGY.md).
-- Active phase: 1, establish evidence and an executable audit workflow.
+- Active phase: 1 evidence is in place; Phase 2 boundary repair is measured and
+  not yet a quality win.
 - Authorization: user requested execution with regular commits and pushes.
-- Working tree was clean on `main`, tracking `origin/main`, before work began.
 - User clarification: Gemini 3.8 Flash MEDIUM is accepted as human-quality ground
   truth; API hearing is explicitly authorized. Separate human review is not a gate.
-- Plan commit `db025ad` is pushed to `origin/main`.
-- Completed MEDIUM API audits: 31 legacy challenge clips and 97 source-resolved
-  training-pool clips. Responses, labels, configuration/input hashes and usage are cached.
-- No training or test cases have run. Boundary behavior is now stricter (see below);
-  acoustic improvement has not yet been measured.
-- Next: run real-audio boundary evaluation with local timestamp evidence, grow the
-  source-disjoint dataset, then fit/calibrate a specialized acoustic baseline.
+- Completed MEDIUM API audits: 31 legacy challenge clips, 97 source-resolved
+  training-pool clips, and 16 relocked children from the 180 s source.
+- No training or test cases have run. Word-lock expansion into inter-turn gaps
+  did not repair clipped rejects into passes.
+- Next: stop expanding intersecting words into undiarized gaps (reject those
+  edges instead), re-evaluate the same 31 located cuts, then grow the
+  source-disjoint dataset.
 
 ## Checkpoints
 
@@ -105,6 +105,51 @@ Lineage recovery results:
 - Source context caution: first legacy clip was not byte-for-byte equal to a
   crop of `khanhvy_180s_slice.wav` at its rounded metadata timestamps. Establish
   processing/timestamp correspondence before using that file to repair old cuts.
+
+### 6. Real-audio boundary evaluation (no quality win)
+
+Commands:
+```bash
+uv run --no-sync python scripts/audit_tts_data.py boundaries \
+  --packet .data/tts_strategy/phase1_20260908 \
+  --source .data/experiment_khanhvy/khanhvy_180s_slice.wav \
+  --output .data/tts_strategy/boundaries_20260908 \
+  --device cuda:0 --aligner-model vinai/PhoWhisper-small
+uv run --no-sync python scripts/audit_tts_data.py teacher \
+  --packet .data/tts_strategy/boundaries_20260908/review_packet --limit 16
+```
+
+Correspondence: all 31 challenge cuts are exact PCM crops of
+`.data/experiment_khanhvy/khanhvy_180s_slice.wav`. Filename/metadata timestamps
+are rounded to 0.01 s and miss the true start by −4.7 ms to +4.7 ms. Repair work
+must use located sample indices, not `round(start_s * sr)`.
+
+Relock used public `align_and_lock_syllable_boundaries` and
+`smart_segment_speaker_turns` with PhoWhisper-small on `cuda:0` (RX 9060 XT,
+PyTorch `2.13.0+rocm10.0.0`). Incoming turns were the 31 located cuts, with
+other extracted speakers as competitor intervals. Duration policy was the TTS
+2–15 s window, not the pipeline 3–10 s default.
+
+Outcomes: lock rejected 9/31 (8 `word_boundary_conflicts_with_safe_bounds`,
+1 `no_complete_words_in_safe_interval`). Segmentation rejected 7 more as
+`below_min_duration` (four of those were old MEDIUM passes shorter than 2 s).
+16 children were emitted; all had moved bounds. Fresh MEDIUM: 15 reject / 1 pass
+(R = 93.8% among emitted children). Usage: 5,619 prompt + 3,738 answer + 7,623
+thinking = 16,980 tokens. All 16 responses identify `gemini-3.8-flash`.
+
+Repair scorecard for the 10 old clipped rejects: 5 dropped by lock/duration,
+0 became a MEDIUM pass, 1 still clipped, 4 lost the clip defect but gained
+secondary-speaker/music/effects. Of 6 old MEDIUM passes that still emitted,
+only `clip_0009` remained a pass; expansions created new clipping or imported
+neighbors on the others.
+
+This is not a production quality claim. Expanding an intersecting word into the
+gap between extracted turns is unsafe: those gaps were never shown to be
+trusted same-speaker audio. Next boundary change: reject that edge instead of
+filling the gap, then repeat this same located-cut evaluation.
+
+`export` and recording-group `balance` now exist so source-disjoint splits can
+be rebuilt without overwriting the 2026-09-08 pool. No new training run.
 
 ## Continuation rules
 

@@ -108,7 +108,10 @@ when purity is more important than yield.
 
 Requested alignment fails closed: loading or inference errors reject candidates
 and record errors. Whisper/remote locking rejects missing complete-word evidence
-and edges still crossing recognized words after safe clamping. MMS currently
+and edges still crossing recognized words after safe clamping. Expanding an
+intersecting word into the gap between extracted turns is not a trusted-region
+repair: on the 31 Khanh Vy challenge cuts this imported secondary speech and
+created new clipping; zero old clipped rejects became MEDIUM passes. MMS currently
 uses CTC blank probabilities, not transcript-conditioned word alignment.
 
 ### Experiment-tab recipe: trade compute and yield for speaker purity
