@@ -289,7 +289,7 @@ def cmd_augment_boundaries(args: argparse.Namespace) -> None:
     """Generate synthetic hard-negative boundary clipping examples from clean passing samples."""
     import numpy as np
     import soundfile as sf
-    from src.diarization.verifier_training import resolve_audio_path
+    from src.diarization.audio_utils import resolve_audio_path
 
     out_audio_dir = REPO_ROOT / args.output_audio_dir if not Path(args.output_audio_dir).is_dir() else Path(args.output_audio_dir)
     out_audio_dir.mkdir(parents=True, exist_ok=True)

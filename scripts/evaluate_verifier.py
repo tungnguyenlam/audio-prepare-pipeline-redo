@@ -38,7 +38,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from dotenv import load_dotenv
 load_dotenv(REPO_ROOT / ".env")
 
-from src.diarization.verifier_training import resolve_audio_path
+from src.diarization.audio_utils import resolve_audio_path
 
 logging.basicConfig(
     level=logging.INFO,

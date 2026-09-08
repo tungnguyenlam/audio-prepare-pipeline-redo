@@ -16,27 +16,17 @@ from peft import LoraConfig, PeftModel, get_peft_model
 from transformers import (
     AutoProcessor,
     BitsAndBytesConfig,
-    Gemma4ForConditionalGeneration,
     get_cosine_schedule_with_warmup,
 )
 
+try:
+    from transformers import Gemma4ForConditionalGeneration
+except ImportError:
+    Gemma4ForConditionalGeneration = None
+
+from src.diarization.audio_utils import resolve_audio_path
+
 logger = logging.getLogger("verifier_training")
-
-
-def resolve_audio_path(audio_path: str | Path, repo_root: Path) -> Path:
-    """Resolve audio path across absolute, relative, or shared workspace locations."""
-    p = Path(audio_path)
-    if p.is_file():
-        return p
-    candidate = repo_root / audio_path
-    if candidate.is_file():
-        return candidate
-    if ".data" in str(audio_path):
-        rel_data = str(audio_path).split(".data/")[-1]
-        candidate = repo_root / ".data" / rel_data
-        if candidate.is_file():
-            return candidate
-    raise FileNotFoundError(f"Audio file not found: {audio_path} (resolved from {repo_root})")
 
 
 def ensure_hf_dataset(
@@ -208,6 +198,12 @@ def load_trainable_verifier_model(
         # CPU loading
         device_map = "cpu"
         torch_dtype = torch.bfloat16
+
+    if Gemma4ForConditionalGeneration is None:
+        raise ImportError(
+            "Gemma4ForConditionalGeneration is not available in your transformers installation. "
+            "Please use an environment with transformers >= 4.51.0+ supporting Gemma 4."
+        )
 
     logger.info("Loading base model %s (quantization=%s, dtype=%s)...", model_id, quantization, torch_dtype)
     model = Gemma4ForConditionalGeneration.from_pretrained(
