@@ -9,7 +9,8 @@
 - User clarification: Gemini 3.8 Flash MEDIUM is accepted as human-quality ground
   truth; API hearing is explicitly authorized. Separate human review is not a gate.
 - Completed MEDIUM API audits: 31 legacy challenge clips, 97 legacy source-resolved
-  clips, 16 relocked 180 s children, and 36 new locked extracts.
+  clips, 16 relocked 180 s children, and 36 new locked extracts (20 pass / 16 reject;
+  14,480 + 6,577 + 12,162 = 33,219 tokens). Combined pool 133 / 10 recordings.
 - No training or test cases have run. Word-lock expansion into inter-turn gaps
   did not repair clipped rejects into passes.
 - Next: keep growing with studio-interview / narration sources (Vietcetera
@@ -208,32 +209,65 @@ segmentation. Consensus was off: `.venv-diarizen` is CPU torch on this host.
 The project `.venv` still has CUDA wheels that report no GPU; extract must use
 `.venv-sortformer` (PyTorch `2.13.0+rocm10.0.0`).
 
-Funnel and fresh MEDIUM labels (36/36 `gemini-3.8-flash`, thinking MEDIUM):
+Funnel and fresh MEDIUM labels (36/36 completed, 0 unresolved; all
+`gemini-3.8-flash`, `thinkingLevel=MEDIUM`, reviewer
+`gemini-3.8-flash:MEDIUM`, rubric `tts-v1`, provenance
+`user_accepted_gemini_ground_truth`, service tier `standard`, one config
+hash). Wall clock: extract 178.840 s (funnel sum 175.06 s), teacher 195.123 s
+(per-clip latency min 3.374 s / mean 5.383 s / max 8.696 s / sum 193.792 s).
+Sources total 1,996.66 s (0.5546 h) at 16 kHz mono. Emitted clip durations
+2.484–14.714 s (sum 238.846 s, mean 6.635 s). No teacher-cap subsample:
+`max_clips_per_recording=25` and every recording emitted ≤19 clips.
 
-| Recording | Source s | Diarizer turns | After lock | Emitted | Pass / reject | Pass min / source hour |
-|---|---:|---:|---:|---:|---:|---:|
-| `3Nll-JLzvvE` | 805.8 | 93 | 27 | 19 | 16 / 3 | 6.67 |
-| `NI8JVXNWlN8` | 698.9 | 30 | 7 | 4 | 2 / 2 | 1.33 |
-| `zK3qFnKZFRo` | 492.0 | 30 | 20 | 13 | 2 / 11 | 0.89 |
+| Recording | Source s | Extract s | ×RT | Diarizer turns (speech s) | After lock | Emitted | Pass / reject | Pass s | Acc. min / src h | Defects |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `3Nll-JLzvvE` | 805.82 | 75.82 | 10.628 | 93 (598.20) | 27 (184.69) | 19 (103.23) | 16 / 3 | 89.544 | 6.667 | music 1, reverb 1, clipped start 1 |
+| `NI8JVXNWlN8` | 698.88 | 59.80 | 11.687 | 30 (633.08) | 7 (158.87) | 4 (21.46) | 2 / 2 | 15.484 | 1.329 | music 1, clipped end 1 |
+| `zK3qFnKZFRo` | 491.96 | 39.44 | 12.474 | 30 (228.84) | 20 (162.55) | 13 (114.16) | 2 / 11 | 7.311 | 0.892 | music 8, secondary 6, clipped end 3, effects 2, clipped start 1, reverb 1 |
+| **total** | **1996.66** | **175.06** | **11.405** | **153 (1460.12)** | **54 (506.11)** | **36 (238.85)** | **20 / 16** | **112.339** | **3.376** | music 10, secondary 6, clipped end 4, clipped start 2, reverb 2, effects 2 |
 
-Usage: 14,480 prompt + 6,577 answer + 12,162 thinking = 33,219 tokens.
-Defect occurrences among the 16 rejects: music 10, secondary speaker 6,
-clipped end 4, clipped start 2, reverb 2, effects 2. Eleven of 13 FPT-vlog
-clips fail, mostly music plus secondary speech. The dancer interview is the
-current best first-tier source; lock still drops most catwalk turns and does
-not remove music.
+Lock dropped 66 + 23 + 10 = 99 / 153 diarizer turns (speech 413.51 + 474.21 +
+66.29 = 954.01 s). Segmentation dropped 8 + 3 + 7 = 18 / 54 remaining turns
+(speech 81.46 + 137.41 + 48.39 = 267.26 s). Pass rate among emitted clips:
+20/36 = 55.6% (dancer 16/19 = 84.2%, catwalk 2/4 = 50.0%, FPT vlog 2/13 =
+15.4%). Planning yield floor is 10 accepted minutes / source hour; dancer
+reached 6.667, the three-source mix 3.376. Emitted speaker IDs: `spk_00` 24,
+`spk_04` 5, `spk_03` 4, `spk_01` 3 (FPT vlog is the only multi-speaker
+emit). Artifact: `.data/tts_strategy/extract_20260908/measurements.json`.
 
-Pool: 97 → 133 labeled clips across 7 → 10 recordings (62 pass / 71 reject).
-Calibration recordings stay frozen (`youtube:fwN5VT_QxkY`, `youtube:Oa-mVxGS4cw`,
-26 clips). Training split rebuilt at 90 clips (45/45) under
-`.data/tts_strategy/pool_20260908_v2/`; the 2026-09-08 files were not
-overwritten. 26 calibration clips still cannot support a <10% one-sided 95%
-bound. Not a production quality claim. No new training run.
+Usage: 14,480 prompt + 6,577 answer + 12,162 thinking = 33,219 tokens. No
+prices assumed. The dancer interview is the current best first-tier source;
+lock still drops most catwalk turns (30 → 4) and does not remove music.
+
+Pool arithmetic (legacy 2026-09-08 files not overwritten):
+
+- Legacy labeled: 97 clips / 7 recordings (42 pass / 55 reject; 3.537 pass min).
+- New locked labels: 36 clips / 3 recordings (20 pass / 16 reject; 1.872 pass min).
+- Combined `pool_20260908_v2/labeled_pool.jsonl`: 133 clips / 10 recordings
+  (62 pass / 71 reject; 5.409 pass min + 7.316 reject min).
+- Combined by recording: `j83rzAzRDAI` 22, `3Nll-JLzvvE` 19, `QBml8L3wS3Q` 18,
+  `i0zYcXBjytE` 14, `Oa-mVxGS4cw` 13, `fwN5VT_QxkY` 13, `zK3qFnKZFRo` 13,
+  `lfIbjICmfW0` 11, `PXEtB-CsvSw` 6, `NI8JVXNWlN8` 4.
+- Calibration frozen: `youtube:fwN5VT_QxkY` 13 + `youtube:Oa-mVxGS4cw` 13 = 26
+  (17 pass / 9 reject), same as v1.
+- v1 train: 50 (25/25) from 71 eligible after discarding 21.
+- v2 train: 90 (45/45) from 107 eligible (45 pass / 62 reject) after discarding
+  17 rejects to keep a 0.50 pass ratio. By recording: `3Nll-JLzvvE` 19,
+  `j83rzAzRDAI` 19, `QBml8L3wS3Q` 15, `i0zYcXBjytE` 12, `zK3qFnKZFRo` 10,
+  `lfIbjICmfW0` 8, `PXEtB-CsvSw` 4, `NI8JVXNWlN8` 3.
+- iid one-sided 95% upper at zero errors: 0.109 on n=26 calibration; 0.047 on
+  n=62 teacher passes. Both are diagnostic only (recording-clustered, not a
+  release sample). 26 calibration clips still cannot support a <10% bound.
+  Not a production quality claim. No new training run.
 
 ## Continuation rules
 
 Keep this section current in every meaningful checkpoint. Record exact commands,
-counts, caveats, pending human/hardware dependencies, and next bounded tasks.
-Never claim completion just because a script or plan exists. Preserve runtime
-artifacts under `.data/`; pushes contain source/docs only. Do not infer human
-judgments from Gemini. Follow AGENTS.md, including no test cases without request.
+**every measured number** (counts, durations, keep/drop fractions, rates, token
+usage, latencies, wall times), caveats, pending human/hardware dependencies, and
+next bounded tasks. Do not round a measured value away or replace it with a
+qualitative summary. Persist the same figures under `.data/` (for example
+`extract_*/measurements.json`) so a later run can diff them. Never claim
+completion just because a script or plan exists. Preserve runtime artifacts
+under `.data/`; pushes contain source/docs only. Do not infer human judgments
+from Gemini. Follow AGENTS.md, including no test cases without request.

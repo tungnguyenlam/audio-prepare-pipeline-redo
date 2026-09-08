@@ -32,12 +32,18 @@ completions. That emits 8 duration-eligible crops with inherited MEDIUM R = 50%.
 
 The first locked growth increment is done. Three new recordings were ingested
 and extracted with Sortformer + the measured lock (no DiariZen consensus on this
-AMD host). Fresh MEDIUM: 20 pass / 16 reject. The labeled pool is now 133 clips
-across 10 recordings (62 pass / 71 reject); calibration recordings are frozen.
-Studio interview (`10.000 hours` EP5) yielded 16/19 passes; the music-backed FPT
-vlog yielded 2/13. Next unblocked task is more first-tier narration/interview
-sources, then a local acoustic baseline for leftover music/reverb/in-interval
-secondary speech. ASR edge overlap is not clipping proof.
+AMD host). Measured totals: 1,996.66 s source → 36 emitted clips (20 pass /
+16 reject, 112.339 s pass audio, 3.376 accepted min / source hour). Combined
+labeled pool is 133 clips / 10 recordings (62 pass / 71 reject; 5.409 pass min).
+Calibration is frozen at 26 clips. v2 train is 90 (45/45) after discarding 17
+of 107 eligible rows. Full figures are in
+[execution log checkpoint 7](TTS_STRATEGY_EXECUTION.md). Studio interview
+(`10.000 hours` EP5) yielded 16/19 passes (6.667 min / source hour); the
+music-backed FPT vlog yielded 2/13 (0.892). Next unblocked task is more
+first-tier narration/interview sources, then a local acoustic baseline for
+leftover music/reverb/in-interval secondary speech. ASR edge overlap is not
+clipping proof. Log every measured number in the execution log at each
+checkpoint.
 
 The user authorized saving, committing, pushing, and executing this strategy,
 with regular detailed commits so another model can continue. This authorization
