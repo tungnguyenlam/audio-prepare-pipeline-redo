@@ -1,5 +1,12 @@
 # Data Contract (Master Gateway)
 
+Boundary/segmentation audits may include `action="reject"`. Word-lock rejection
+records include `error` describing missing word evidence or a conflict with safe
+bounds. Segmentation rejection records include `reason`, `speaker_id`, parent
+start/end, and rejected start/end. Accepted `supported_word_gap` split records
+include `word_gap_start_s` and `word_gap_end_s`. Rejected remainders are absent
+from output turns; consumers must not interpret every audit as an accepted clip.
+
 [← Docs Index](README.md) | [API Contract Gateway →](api_contract.md) | [Full Schema Reference →](07_data_contracts.md)
 
 ---

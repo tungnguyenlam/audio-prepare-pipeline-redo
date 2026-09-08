@@ -22,7 +22,7 @@ flowchart TD
     S3 --> S3_SUB
     S3_SUB --> S4["Stage 4: Dense WeSpeaker Homogeneity Filter"]
     S4 --> S5["Stage 5: Foundation Model Overlap Verification (Gemma 4 / VibeVoice)"]
-    S5 --> OUTPUT["ZeroContaminationResult (Guaranteed Pure Single-Speaker Turns)"]
+    S5 --> OUTPUT["ZeroContaminationResult (Candidates Passing Enabled Gates)"]
 ```
 
 ---
@@ -65,7 +65,7 @@ Use this as the starting configuration in the Experiment tab:
 | Stage 3, Option B | Model | `vinai/PhoWhisper-large` | High-precision Vietnamese checkpoint; use `vinai/PhoWhisper-small` if memory or latency is limiting. |
 | Stage 3, Option B | Language | `vi` | Prevents unnecessary language auto-detection. |
 | Stage 3, Option B | Device | `"same"` (or dedicated GPU / CPU) | Sequential execution with automatic memory clearing on single-GPU servers. |
-| Stage 3, Option C | Energy/RMS Valley Snapping | **Disabled** | It runs after word locking and may move a protected boundary inward again. It is primarily a click-removal tool. |
+| Stage 3, Option C | Energy/RMS Valley Snapping | **Disabled** | It runs before word locking. Energy minima alone cannot establish word completeness. |
 | Stage 3, Option D | Intelligent Turn Segmentation | **Optional / Enabled for TTS** | Splits long turns (>10s) at natural ASR punctuation/pauses and RMS valleys into optimal TTS training slices (3–10s). |
 
 The equivalent core configuration is:
@@ -106,10 +106,10 @@ zero-other-speaker guarantees simultaneously at an overlapping or immediate
 speaker handoff. Inspect those boundaries and prefer rejecting the entire turn
 when purity is more important than yield.
 
-Forced alignment is also **fail-open**: if its model cannot load or inference
-fails, the pipeline logs the error and retains the incoming candidate boundaries.
-Confirm the task's stage log and boundary audit before treating an output as
-word-locked.
+Requested alignment fails closed: loading or inference errors reject candidates
+and record errors. Whisper/remote locking rejects missing complete-word evidence
+and edges still crossing recognized words after safe clamping. MMS currently
+uses CTC blank probabilities, not transcript-conditioned word alignment.
 
 ### Experiment-tab recipe: trade compute and yield for speaker purity
 
@@ -149,9 +149,8 @@ config = ZeroContaminationConfig(
 ```
 
 This is an attrition funnel, not a purity proof. Model mistakes remain possible,
-and Stage 5 verifier exceptions are recorded without automatically rejecting the
-candidate. Review the stage log, audit records, and verifier metadata whenever a
-strict dataset claim matters.
+and Stage 5 verifier exceptions reject candidates and are recorded. Review the
+stage log, audit records, and verifier metadata whenever a strict dataset claim matters.
 
 ---
 
@@ -167,7 +166,7 @@ Runs the primary diarizer (e.g. `Sortformer`, `DiariZen`, or `Pyannote 3.1`) wit
 When `enable_consensus=True`, an orthogonal secondary diarization engine (e.g. DiariZen or Pyannote) processes the audio concurrently on `secondary_device` (e.g. `cuda:1`).
 - Uses the **Hungarian maximum-weight bipartite matching algorithm** to establish optimal 1-to-1 speaker correspondence.
 - Keeps an interval **if and only if both engines unanimously agree** on speaker identity and neither detects concurrent speech.
-- Eliminates single-model hallucinations and boundary drift.
+- Can remove disagreements; shared diarizer errors remain possible.
 
 ### Stage 3: Boundary & Syllable Integrity Gate
 Aims for clean turn transitions without truncating recognized words:
@@ -181,8 +180,8 @@ Aims for clean turn transitions without truncating recognized words:
    - Runs **before** forced alignment as an acoustic candidate refinement.
 3. **Forced Alignment Syllable Lock (`enable_syllable_alignment`) [Final Boundary Authority]:**
    - Utilizes `whisper_timestamped` with fine-tuned checkpoints such as `vinai/PhoWhisper-small` (or PyTorch MMS-FA / remote Whisper endpoints).
-   - Snaps candidate boundaries outward to word/syllable bounds, preventing slicing through active syllables.
-   - Acts as the final authority on turn boundaries: overrides previous acoustic cuts so words are never clipped in half ("không bị lẹm chữ").
+   - Moves candidate boundaries toward recognized word bounds and rejects conflicts with speaker-safe limits.
+   - Refines outer boundaries before optional segmentation. New child boundaries require supported word gaps; ASR timing uncertainty still requires verification.
    - Automatically pre-configures PyTorch Hub non-interactively to trust Silero VAD (`snakers4/silero-vad`), with graceful fallback to `vad=False` if network/download hurdles occur.
    - Transparently recovers from CUDA OOM errors by clearing VRAM cache and retrying on CPU.
 
@@ -197,7 +196,7 @@ Candidate turns passing acoustic gates are verified by multimodal foundation mod
 2. **Stage 5b: Direct-Audio Quality Verifier (Semantic & Completeness Auditor):** Sends surviving candidate audio directly to local Gemma 4 or Google Gemini. It rejects a second speaker (simultaneous or sequential), clipped initial/final speech (“lẹm chữ”), tail intrusions, uncertainty, and request/schema failures. It does not transcribe.
 
   #### Prompt Steering & Structured Output Extraction:
-  - **Structured JSON Schema Extraction:** The verifier does not rely on regex or loose text generation. For Gemini, it enforces `generationConfig.responseMimeType` plus `responseJsonSchema` (`_OVERLAP_SCHEMA`). For Gemma 4 (Unsloth), it enforces `response_format: {"type": "json_schema", "strict": True}`. Both constrain model token sampling to guaranteed valid JSON matching `_OVERLAP_SCHEMA`.
+  - **Structured JSON Schema Extraction:** The verifier does not rely on regex or loose text generation. For Gemini, it enforces `generationConfig.responseMimeType` plus `responseJsonSchema` (`_OVERLAP_SCHEMA`). For Gemma 4 (Unsloth), it enforces `response_format: {"type": "json_schema", "strict": True}`. Both request schema-constrained JSON; request, parsing, and validation failures remain possible and reject the candidate.
   - **Targeted Tail Intrusion Guard:** A major failure mode in dialogue harvesting is a secondary speaker cutting in, whispering, laughing, or offering a backchannel ("vâng", "dạ", "ừ", "yeah", "uh-huh") during the final 200–500ms of a turn. The prompt explicitly directs the model to scrutinize the final 500ms with heightened sensitivity, triggering rejection code `tail_speaker_intrusion` or `secondary_speaker` upon detecting any foreign vocalization.
   - **Acoustic Word Completeness (Anti-Lẹm Chữ):** The prompt distinguishes acoustic completeness from grammatical completeness. Grammatically incomplete excerpts are preserved, but turns cutting in abruptly mid-vowel/consonant (`clipped_word_start`) or cutting off sharply during vocal fold vibration or tonal coda release (`clipped_word_end`) are rejected.
   - **Supported Failure Codes:** `overlapping_speech`, `secondary_speaker`, `tail_speaker_intrusion`, `clipped_word_start`, `clipped_word_end`, `unintelligible_boundary`, `insufficient_evidence`. Only turns with `speaker_purity="pure"` and `word_completeness="complete"` receive `decision="pass"`.
@@ -361,7 +360,7 @@ consumed by `_run_backend`, so changing it currently does not affect output.
 | Parameter | Type & Range | Default | Increasing (+) Value | Decreasing (-) Value | The Core Trade-off |
 |---|---|---|---|---|---|
 | **`enable_collar_erosion`** | `bool` `{True, False}` | `True` | Enables boundary trimming logic (including context-aware collar guard). | Retains raw diarizer boundary timestamps without any inward safety margins. | **Boundary Bleed Protection vs. Turn Length.** Essential for eliminating transition cross-talk in multi-speaker audio. |
-| **`boundary_collar_s`** | `float` `[0.0, 5.0s]` | `0.35s` (350ms) | Shaves a thicker protective buffer inward from turn boundaries. Absolutely guarantees zero transition bleed. | Shaves less audio. Preserves shorter words and closer turn margins, but increases the risk of edge contamination. | **Transition Safety Margin vs. Speech Retention.** If collar is larger than turn duration, the entire turn is eliminated. |
+| **`boundary_collar_s`** | `float` `[0.0, 5.0s]` | `0.35s` (350ms) | Shaves a thicker protective buffer inward from turn boundaries. Can reduce transition bleed but may clip target speech. | Shaves less audio. Preserves shorter words and closer turn margins, but increases the risk of edge contamination. | **Transition Safety Margin vs. Speech Retention.** If collar is larger than turn duration, the entire turn is eliminated. |
 | **`min_turn_duration_s`** | `float` `[0.1, 30.0s]` | `0.80s` | Discards turns shorter than this duration after shaving. Purges micro-flutter, backchannel murmurs ("uh-huh"), and brief coughs. | Retains short monosyllabic utterances ("yes", "no", "hi"). Admits brief transient acoustic artifacts and unstable short turns. | **Acoustic Sentence Stability vs. Monosyllabic Dialogue Yield.** For TTS dataset generation, turns $<0.8s$ rarely contain full phonemic context. |
 | **`transition_exclusion_s`** | `float` `[0.0, 5.0s]` | `0.50s` | If the gap between two different speakers is less than this threshold, applies additional collar shaving: $\frac{\text{exclusion} - \text{gap}}{2}$. | Only penalizes speaker handoffs that occur nearly instantaneously. Tolerates tight back-and-forth exchanges. | **Speaker Switch Isolation vs. Rapid Dialogue Retention.** Higher values aggressively erode turns surrounding fast speaker transitions. |
 | **`allow_gap_merge`** | `bool` `{True, False}` | `False` | Merges consecutive turns of the same speaker across silent pauses into longer paragraph chunks. | Treats every utterance as an isolated turn bounded by silence. Prevents inter-sentence silence or breath from being baked into clips. | **Long-Form Paragraph Continuity vs. Granular Audio-Sentence Isolation.** Always keep `False` for single-sentence TTS voice dataset creation. |
@@ -377,7 +376,7 @@ consumed by `_run_backend`, so changing it currently does not affect output.
 #### Stage 3b: Option B — Syllable & Word Forced Alignment Lock
 
 This is the compute-heavy step to enable when complete Vietnamese words are the
-priority. It runs before energy snapping.
+priority. It runs after energy snapping.
 
 | Parameter | Type & Range | Default | Increasing / Selected Value | Decreasing / Selected Value | The Core Trade-off |
 |---|---|---|---|---|---|
@@ -386,14 +385,14 @@ priority. It runs before energy snapping.
 | **`aligner_model`** | `str` (HF Hub ID / path) | `"vinai/PhoWhisper-small"` | For Vietnamese, use `vinai/PhoWhisper-large` to spend more compute for high recognition accuracy and timestamps. | Use `vinai/PhoWhisper-small` when memory or latency is limiting. | **Alignment Precision vs. Inference Latency.** |
 | **`aligner_device`** | `str` `{"same", "cpu", "cuda:0", ...}` | `"cpu"` | `"same"` shares primary device sequentially with automatic memory cleanup; a dedicated GPU runs in parallel. | CPU avoids GPU OOM but takes longer. | **Alignment Speed vs. GPU Allocation Complexity.** |
 
-Forced alignment is fail-open: a loading or inference failure retains the incoming
-turn boundaries. Verify the stage log or audit before treating the result as
-word-locked.
+Requested alignment fails closed: a loading or inference failure returns no
+candidates and records rejection audits. Word locking is evidence-based refinement,
+not a guarantee. The MMS backend uses blank probabilities rather than word alignment.
 
 #### Stage 3c: Option C — Micro-Acoustic Energy & RMS Valley Snapping
 
-This step runs after forced alignment to eliminate slicing clicks and waveform pops without
-destroying aligned words.
+This step runs before word alignment. It proposes nearby energy minima and zero
+crossings, which can still lie inside spoken sounds. It cannot certify a safe cut.
 
 | Parameter | Type & Range | Default | Increasing (+) Value | Decreasing (-) Value | The Core Trade-off |
 |---|---|---|---|---|---|
@@ -410,7 +409,7 @@ This step cuts overly long speaker monologues into TTS-optimal chunks (3–10s) 
 Why this is critical for TTS datasets:
 - **Downstream Audits:** If a 60-second monologue has a 0.5s cough or secondary blip at second 58, downstream Stage 4/5 will discard all 60 seconds. Sizing into 3–10s chunks ensures clean sentences are retained.
 - **Model Training:** Acoustic TTS tokenizers and diffusion vocoders require short, well-bounded utterances (typically 3–12s) to prevent GPU out-of-memory errors and attention alignment failure.
-- **Natural Boundary Selection:** When ASR word timestamps are available (via Stage 3b or internal Whisper/PhoWhisper pass), splits prioritize sentence boundaries (`.`, `!`, `?`), clause boundaries (`,`, `;`), and inter-word silence pauses $\ge$ `min_split_pause_s`. If ASR is unavailable, it gracefully falls back to micro-acoustic RMS silence valleys. All cut points snap to the nearest waveform zero-crossing to prevent click artifacts.
+- **Natural Boundary Selection:** New cuts require a nonoverlapping recognized-word gap at least `min_split_pause_s` long. Punctuation only ranks supported gaps. Acoustic refinement stays inside the gap with a 20 ms margin from word edges. Long remainders without a supported gap are rejected, with no arbitrary valley fallback. Outputs obey configured minimum/maximum durations; tiny tails are not merged past the maximum. Outer boundaries remain dependent on preceding refinement and downstream verification.
 
 | Parameter | Type & Range | Default | Increasing (+) Value | Decreasing (-) Value | The Core Trade-off |
 |---|---|---|---|---|---|
@@ -652,14 +651,12 @@ Three modular CLI tools under [`scripts/`](../scripts/) manage the distillation 
      --output-csv .data/distillation/reports/minicpm_vs_flash.csv
    ```
 
-### 7.2 The Hybrid DSP + Multimodal LLM Architecture
+### 7.2 Current strategy and evidence limits
 
-Empirical evaluation reveals a fundamental boundary between what deterministic digital signal processing (DSP) and multimodal language models (MLLMs) can achieve:
-
-1. **Micro-Boundary Truncations ($< 150\text{ms}$):**
-   - Autoregressive causal student LLMs (~2B) have acoustic priors that classify isolated vocal stems as `pass` when speech is intelligible, failing to penalize truncated syllable codas (e.g., `-ng`, `-t`, `-c`, `-p` closures).
-   - **Deterministic Stage 3 DSP Rule:** Micro-energy valley snapping ($\le -32\text{ dBFS}$) and PhoWhisper forced alignment are strictly required before LLM verification to guarantee acoustic word completeness physically.
-2. **Acoustic & Semantic Cross-Contamination:**
-   - Multimodal LLMs excel at detecting co-host chatter, separated secondary vocal bleed, synthetic reverb, and background music intrusions that fall below traditional energy thresholds.
-   - **Stage 5 LLM Role:** Used specifically as an acoustic gatekeeper for multi-speaker leakage, background music bleed, and distortion.
-
+The prior claim that DSP and forced alignment physically guarantee completeness
+was unsupported. The E2B all-pass result does not isolate an architectural cause:
+source leakage, supervision and audio-path behavior also require investigation.
+Follow [the active strategy](TTS_PRODUCTION_STRATEGY.md) and
+[execution log](TTS_STRATEGY_EXECUTION.md). The primary next model is a specialized
+temporal acoustic verifier; 12B is a bounded challenger. The user accepts Gemini
+3.8 Flash MEDIUM as ground truth for development audio judgments.

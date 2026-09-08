@@ -284,7 +284,7 @@ Defined in [`src/diarization/zero_contamination.py`](../src/diarization/zero_con
       "end_s": 5.05,
       "duration_s": 3.45,
       "status": "passed",
-      "rejection_reason": "Pure single-speaker guaranteed",
+      "rejection_reason": "Passed enabled gates",
       "transcript": "chào các bạn",
       "min_similarity": 0.882,
       "gemma_decision": { "speaker_purity": "pure", "word_completeness": "complete", "boundary_issue": "none", "failure_codes": [], "decision": "pass", "reason": "One speaker with intact word boundaries" },
@@ -304,7 +304,7 @@ Defined in [`src/diarization/zero_contamination.py`](../src/diarization/zero_con
     "final_pure_turns_count": 15,
     "final_pure_speech_duration_s": 42.6,
     "total_elapsed_s": 8.42,
-    "contamination_risk_rating": "NEGLIGIBLE (<0.1% estimated 2-speaker leakage)"
+    "contamination_risk_rating": "Passed enabled validation gates; no calibrated probability implied"
   },
   "stage_log": [ ... ],
   "config": { ... },
@@ -315,7 +315,8 @@ Defined in [`src/diarization/zero_contamination.py`](../src/diarization/zero_con
     { "raw_start_s": 1.25, "raw_end_s": 5.40, "start_s": 1.60, "end_s": 5.05, "policy": "whisper_lock_PhoWhisper-large", "tail_rescued": true }
   ],
   "segment_audits": [
-    { "original_start_s": 1.25, "original_end_s": 25.40, "chunks_count": 3, "cut_points_s": [8.40, 16.95], "reason": "Split into 3 chunks (ASR punctuation/pause)" }
+    { "action": "split", "method": "supported_word_gap", "speaker_id": "spk_00", "parent_start_s": 1.25, "parent_end_s": 25.40, "child_start_s": 1.25, "child_end_s": 8.40, "child_duration_s": 7.15, "word_gap_start_s": 8.20, "word_gap_end_s": 8.60 },
+    { "action": "reject", "reason": "no_supported_word_gap", "speaker_id": "spk_00", "parent_start_s": 1.25, "parent_end_s": 25.40, "rejected_start_s": 8.40, "rejected_end_s": 25.40 }
   ]
 }
 ```

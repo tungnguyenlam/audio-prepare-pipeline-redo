@@ -9,11 +9,12 @@
 - User clarification: Gemini 3.8 Flash MEDIUM is accepted as human-quality ground
   truth; API hearing is explicitly authorized. Separate human review is not a gate.
 - Plan commit `db025ad` is pushed to `origin/main`.
-- Offline inventory completed. A fresh 31-clip MEDIUM full-rubric API audit is
-  running; each completed response/label is cached under the packet directory.
-- No training or test cases have run. Pipeline behavior is unchanged so far.
-- Next: finish teacher audit, record scores and defects, restore source lineage
-  before replacement splits, then perform independent boundary engineering.
+- Completed MEDIUM API audits: 31 legacy challenge clips and 97 source-resolved
+  training-pool clips. Responses, labels, configuration/input hashes and usage are cached.
+- No training or test cases have run. Boundary behavior is now stricter (see below);
+  acoustic improvement has not yet been measured.
+- Next: run real-audio boundary evaluation with local timestamp evidence, grow the
+  source-disjoint dataset, then fit/calibrate a specialized acoustic baseline.
 
 ## Checkpoints
 
@@ -60,8 +61,50 @@ uv run --no-sync python scripts/audit_tts_data.py lineage --output .data/tts_str
 Lineage recovery results:
 - Unique known lineage: 233 clips (95 quarantined: 76 HaveASip with missing original video IDs, 15 unlinked augmentations, 4 duplicate audio across recordings).
 - Challenge recording reserved: 136 clips from `youtube:H0VpjeULCck` permanently isolated from unseen evaluations.
-- Clean eligible pool: 97 unique clips across 7 YouTube source recordings (2–15s duration).
+- Source-resolved eligible pool: 97 unique clips across 7 YouTube source recordings
+  (2–15s duration); eligibility does not mean acoustically clean.
 - Artifacts: `.data/tts_strategy/lineage_20260908_v2/` and `.data/tts_strategy/pool_20260908/`.
+
+### 4. Fresh ground truth and source-disjoint pilot data
+
+- Explicit MEDIUM full-rubric challenge results: 21 rejects / 10 passes out of 31.
+  E2B accepts all: accepted error 67.7% overall; 11/15 = 73.3% for 2–15 s clips.
+  Defect occurrences: secondary speaker 10, clipped end 6, reverb 4, clipped start
+  4, music 3, effects 2, overlap 2, excessive noise 1 (multi-label, not additive risk).
+- Challenge API usage: 9,883 prompt + 6,296 answer + 13,995 thinking = 30,174 tokens.
+  All 31 responses identify `gemini-3.8-flash`. No prices assumed.
+- Fifteen challenge audio files are byte-identical to old training audio. This
+  challenge cannot establish generalization for the old E2B model.
+- The 97-clip source-resolved pool has 42 passes / 55 rejects after fresh MEDIUM
+  evaluation. Export: `.data/tts_strategy/pool_20260908/labeled_pool.jsonl`.
+- Pilot training split: 50 clips (25/25), five recordings. Calibration: 26 clips
+  (17 pass / 9 reject), two recordings (`youtube:fwN5VT_QxkY`, `youtube:Oa-mVxGS4cw`).
+  Training balancing discarded 21 rows; full pool is preserved. No new untouched
+  release split exists. 26 calibration clips cannot support a <10% one-sided 95%
+  bound even with zero errors; do not claim production qualification.
+- Sandbox masks GPU availability. Outside it: AMD RX 9060 XT, PyTorch
+  `2.13.0+rocm10.0.0`, HIP `7.15.26333`, one device. 4090 access unverified.
+  Default-cache lookups for PhoWhisper-small and WavLM Base+ configs found nothing.
+- The original source URL for HaveASip was requested asynchronously; continue
+  independent work while its 76 clips and unresolved derivatives remain quarantined.
+
+### 5. Boundary correctness engineering (no measured quality claim yet)
+
+- Word locking only expands words intersecting the original edge; padding no
+  longer propagates expansion into successive words. If speaker-safe clamping
+  still cuts a recognized word, or no complete word remains, reject with an audit.
+- Requested alignment loading/inference failures return no candidates with
+  rejection audits. MMS remains an acoustic CTC-blank heuristic, not actual
+  transcript-conditioned word alignment; docs now state that limitation.
+- Smart segmentation requires ASR word gaps, checks overlapping/nested word
+  coverage, keeps acoustic movement inside the gap, and enforces configured
+  min/max lengths. Removed arbitrary valley fallback and oversized tail merging.
+  Unsupported remainders are rejected rather than forced into training clips.
+- Static AST parsing and `git diff --check` pass. No test cases were written/run.
+  A real-audio before/after assessment is still required before a quality claim.
+- Source context caution: first legacy clip was not byte-for-byte equal to a
+  crop of `khanhvy_180s_slice.wav` at its rounded metadata timestamps. Establish
+  processing/timestamp correspondence before using that file to repair old cuts.
 
 ## Continuation rules
 

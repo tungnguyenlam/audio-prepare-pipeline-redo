@@ -92,6 +92,17 @@ flowchart TD
 👉 *Full specification:* [**04. Zero-Contamination Diarization Pipeline**](04_zero_contamination_diarization.md)
 
 - `run_zero_contamination_pipeline(audio, config, progress_callback=None) -> ZeroContaminationResult`: Complete 5-stage pipeline (Asymmetric detection → Dual-engine Hungarian consensus → Context-aware collar & Syllable lock → WeSpeaker homogeneity → Foundation models). Progress callback receives `(progress_0_to_1, message)`.
+- `align_and_lock_syllable_boundaries(...)`: Requested alignment fails closed:
+  loading/inference errors return no candidates and rejection audit records.
+  Whisper/remote word locking rejects missing complete-word evidence and edges
+  that still intersect recognized words after speaker-safe clamping. MMS currently
+  uses CTC blank evidence, not transcript-conditioned word alignment.
+- `smart_segment_speaker_turns(...)`: Outputs only intervals within configured
+  minimum/maximum durations. New cuts require nonoverlapping ASR word gaps of at
+  least `min_pause_s`; acoustic refinement stays inside that gap. No unrestricted
+  valley fallback or oversized micro-tail merge. Unsupported remainders are
+  rejected and audited. Invalid finite/positive parameter constraints raise
+  `ValueError`. These checks do not guarantee perceptual word completeness.
 
 ### 5. Benchmark Audio Mixing
 👉 *Full specification:* [**05. Benchmark Separation & Audio Mixing**](05_benchmark_and_mixing.md)

@@ -929,36 +929,45 @@ def _lock_turns_with_words(
             w_start = float(w["start"])
             w_end = float(w["end"])
             # Mid-word cut: turn ends during active word
-            if w_start <= new_end < w_end:
-                new_end = max(new_end, w_end + 0.05)
-            # Immediate trailing word: word ended within 150ms after turn end
-            elif 0.0 < (w_end - new_end) <= 0.15 and w_start < new_end:
-                new_end = max(new_end, w_end + 0.05)
+            if w_start < turn.end_s < w_end:
+                new_end = max(new_end, w_end)
 
         # 2. Start boundary protection (Leading Word Guard)
         for w in words:
             w_start = float(w["start"])
             w_end = float(w["end"])
             # Turn starts inside a word
-            if w_start < new_start <= w_end:
-                new_start = min(new_start, max(0.0, w_start - 0.05))
+            if w_start < turn.start_s < w_end:
+                new_start = min(new_start, w_start)
 
         # Clamp strictly to safe bounds
         new_start = max(safe_min, new_start)
         new_end = min(safe_max, new_end)
-        if new_start >= new_end:
-            # Revert to turn boundaries if clamping caused inversion
-            new_start = turn.start_s
-            new_end = turn.end_s
-
         new_start_s = round(new_start, 4)
         new_end_s = round(new_end, 4)
+
+        blocked_word = any(
+            float(w["start"]) < edge < float(w["end"])
+            for w in words for edge in (new_start_s, new_end_s)
+        )
+        complete_words = [w for w in words
+                          if new_start_s <= float(w["start"]) < float(w["end"]) <= new_end_s]
+        if new_start_s >= new_end_s or blocked_word or not complete_words:
+            audits.append({
+                "raw_start_s": raw_start, "raw_end_s": raw_end,
+                "original_start_s": orig_start, "original_end_s": orig_end,
+                "start_s": turn.start_s, "end_s": turn.end_s,
+                "policy": policy, "action": "reject",
+                "error": "word_boundary_conflicts_with_safe_bounds" if blocked_word
+                else "no_complete_words_in_safe_interval",
+            })
+            continue
 
         # Collect words for turn transcript
         raw_words_in_turn = [
             w
             for w in words
-            if (float(w["start"]) >= new_start_s - 0.15 and float(w["end"]) <= new_end_s + 0.15)
+            if (float(w["start"]) >= new_start_s and float(w["end"]) <= new_end_s)
         ]
         words_in_turn = [
             str(w.get("text", "")).strip()
@@ -1493,7 +1502,7 @@ def align_and_lock_syllable_boundaries(
             raise ValueError(f"Unsupported aligner engine: {aligner_engine}")
 
     except Exception as exc:
-        logger.warning("Forced alignment syllable lock failed (%s), keeping candidate turns: %s", aligner_engine, exc)
+        logger.warning("Forced alignment syllable lock failed (%s), rejecting candidate turns: %s", aligner_engine, exc)
         fallback_audits = [
             {
                 "raw_start_s": getattr(t, "_raw_start_s", t.start_s),
@@ -1507,10 +1516,11 @@ def align_and_lock_syllable_boundaries(
                 "policy": getattr(t, "_boundary_policy", "standard"),
                 "tail_rescued": getattr(t, "_tail_rescued", False),
                 "error": str(exc),
+                "action": "reject",
             }
             for t in turns
         ]
-        return list(turns), fallback_audits
+        return [], fallback_audits
 
 
 def _copy_turn_meta(src: SpeakerTurn, dst: SpeakerTurn, policy: str = "smart_segmentation") -> None:
@@ -1543,235 +1553,125 @@ def smart_segment_speaker_turns(
     hop_len_ms: float = DEFAULT_ENERGY_HOP_LEN_MS,
     search_window_s: float = DEFAULT_ENERGY_SEARCH_WINDOW_S,
 ) -> tuple[list[SpeakerTurn], list[dict[str, Any]]]:
-    """Segment long speaker turns into TTS-optimal sentence-length chunks.
+    """Split at supported word gaps; reject remainders without a safe split.
 
-    Uses ASR word timestamps, terminal/clause punctuation, and natural breathing
-    pauses to avoid cutting mid-syllable or mid-word. Snaps the final cut point
-    to the nearest micro-acoustic energy valley and zero-crossing to prevent clicks.
+    ASR timing is evidence, not proof of acoustic completeness. Newly introduced
+    cuts stay inside a pause between nonoverlapping recognized words. Punctuation
+    alone and unrestricted waveform minima cannot authorize a split.
 
     Args:
-        audio: Target Audio instance.
-        turns: Candidate speaker turns to segment.
-        max_duration_s: Target maximum turn length in seconds (default 10.0s).
-        min_duration_s: Target minimum turn length in seconds (default 3.0s).
-        min_pause_s: Minimum silence gap between words to consider a split (default 0.20s).
-        words: Optional word timestamps from Whisper ASR.
-        frame_len_ms: RMS frame length for acoustic valley snapping.
-        hop_len_ms: RMS hop step for acoustic valley snapping.
-        search_window_s: Window radius for acoustic valley snapping.
+        audio: File-backed source audio.
+        turns: Candidate turns whose outer boundaries have already been refined.
+        max_duration_s: Maximum output duration, including trailing remainders.
+        min_duration_s: Minimum output duration; shorter candidates are rejected.
+        min_pause_s: Required gap between recognized words, in seconds.
+        words: Source-relative word timestamps, or word metadata on input turns.
+        frame_len_ms: RMS analysis frame length.
+        hop_len_ms: RMS analysis hop.
+        search_window_s: Acoustic search radius, constrained inside the word gap.
 
     Returns:
-        (segmented_turns, segmentation_audits)
+        Accepted children and audits for splits and rejected remainders.
+
+    Raises:
+        ValueError: If duration or acoustic search parameters are invalid.
     """
+    parameters = (min_duration_s, max_duration_s, min_pause_s,
+                  frame_len_ms, hop_len_ms, search_window_s)
+    if not all(math.isfinite(v) and v > 0 for v in parameters) or min_duration_s > max_duration_s:
+        raise ValueError("Expected finite positive parameters and min_duration_s <= max_duration_s.")
     if not turns:
         return [], []
-
-    any_long = any(t.duration_s > max_duration_s for t in turns)
-    if not any_long:
-        return list(turns), []
+    if words is None:
+        words = [w for turn in turns for w in getattr(turn, "_words", [])]
+    valid_words = []
+    for word in words:
+        start, end = float(word["start"]), float(word["end"])
+        if math.isfinite(start) and math.isfinite(end) and 0 <= start < end:
+            valid_words.append(word)
+    valid_words.sort(key=lambda w: (float(w["start"]), float(w["end"])))
 
     waveform, sr = sf.read(str(audio.path), dtype="float32", always_2d=False)
     if waveform.ndim > 1:
         waveform = waveform.mean(axis=1)
-
-    frame_samples = max(1, int(round(frame_len_ms * sr / 1000.0)))
-    hop_samples = max(1, int(round(hop_len_ms * sr / 1000.0)))
-    search_samples = int(round(search_window_s * sr))
-
-    if words is None:
-        words = []
-        for t in turns:
-            if hasattr(t, "_words") and t._words:
-                words.extend(t._words)
-
-    TERMINAL_PUNCT = {".", "!", "?", "...", "…"}
-    CLAUSE_PUNCT = {",", ";", ":", "—", "-", "–"}
-
-    segmented_turns: list[SpeakerTurn] = []
+    frame_samples = max(1, int(round(frame_len_ms * sr / 1000)))
+    hop_samples = max(1, int(round(hop_len_ms * sr / 1000)))
+    accepted: list[SpeakerTurn] = []
     audits: list[dict[str, Any]] = []
 
     for turn in turns:
-        if turn.duration_s <= max_duration_s:
-            segmented_turns.append(turn)
-            continue
-
-        # Gather words inside this turn
-        t_words = [
-            w for w in (words or [])
-            if float(w["start"]) >= turn.start_s - 0.15 and float(w["end"]) <= turn.end_s + 0.15
-        ]
-        t_words.sort(key=lambda w: (float(w["start"]), float(w["end"])))
-
-        curr_start = turn.start_s
-        turn_end = turn.end_s
-
-        while (turn_end - curr_start) > max_duration_s:
-            remaining = turn_end - curr_start
-
-            # If remaining speech is within 2 * max_duration_s, balance the two halves
-            if remaining <= 2.0 * max_duration_s:
-                ideal_split = curr_start + (remaining / 2.0)
-                search_min = max(curr_start + min_duration_s, ideal_split - 2.0)
-                search_max = min(turn_end - min_duration_s, ideal_split + 2.0)
-                if search_max <= search_min:
-                    search_min = curr_start + min_duration_s
-                    search_max = curr_start + max_duration_s
-            else:
-                search_min = curr_start + min_duration_s
-                search_max = curr_start + max_duration_s
-
-            search_min = min(search_min, turn_end - 0.5)
-            search_max = min(search_max, turn_end)
-
-            best_cut: float | None = None
-            best_score = -1.0
-            split_method = "acoustic_rms_valley"
-
-            # Search word boundaries
-            if len(t_words) >= 2:
-                for idx_w in range(len(t_words) - 1):
-                    w1 = t_words[idx_w]
-                    w2 = t_words[idx_w + 1]
-                    w1_end = float(w1["end"])
-                    w2_start = float(w2["start"])
-
-                    cand_time = (w1_end + w2_start) / 2.0 if w2_start > w1_end else w1_end
-                    if search_min <= cand_time <= search_max:
-                        text1 = str(w1.get("text", "")).strip()
-                        pause = max(0.0, w2_start - w1_end)
-
-                        has_term = any(text1.endswith(p) for p in TERMINAL_PUNCT)
-                        has_clause = any(text1.endswith(p) for p in CLAUSE_PUNCT)
-
-                        if has_term and pause >= 0.12:
-                            score = 100.0 + min(pause, 1.0) * 10.0
-                            method = "terminal_punctuation_pause"
-                        elif has_term:
-                            score = 80.0 + min(pause, 1.0) * 10.0
-                            method = "terminal_punctuation"
-                        elif has_clause and pause >= 0.12:
-                            score = 60.0 + min(pause, 1.0) * 10.0
-                            method = "clause_punctuation_pause"
-                        elif has_clause:
-                            score = 40.0 + min(pause, 1.0) * 10.0
-                            method = "clause_punctuation"
-                        elif pause >= min_pause_s:
-                            score = 25.0 + min(pause, 1.0) * 10.0
-                            method = "inter_word_pause"
-                        else:
-                            midpoint = (search_min + search_max) / 2.0
-                            dist_norm = 1.0 - (abs(cand_time - midpoint) / max(0.1, (search_max - search_min) / 2.0))
-                            score = 10.0 + max(0.0, dist_norm) * 5.0
-                            method = "inter_word_gap"
-
-                        if score > best_score:
-                            best_score = score
-                            best_cut = cand_time
-                            split_method = method
-
-            # Fallback to acoustic energy valley if no ASR word candidate in window
-            if best_cut is None:
-                mid_samp = int(round(((search_min + search_max) / 2.0) * sr))
-                half_win_samp = max(frame_samples, int(round((search_max - search_min) / 2.0 * sr)))
-                valley_samp = _find_local_valley(
-                    waveform,
-                    mid_samp,
-                    search_samples=half_win_samp,
-                    frame_samples=frame_samples,
-                    hop_samples=hop_samples,
-                )
-                best_cut = valley_samp / sr
-                split_method = "acoustic_rms_valley"
-            else:
-                # Snap the chosen word gap to local acoustic zero-crossing
-                cut_samp = int(round(best_cut * sr))
-                snap_radius = min(search_samples, int(round(0.06 * sr)))
-                valley_samp = _find_local_valley(
-                    waveform,
-                    cut_samp,
-                    search_samples=snap_radius,
-                    frame_samples=frame_samples,
-                    hop_samples=hop_samples,
-                )
-                best_cut = valley_samp / sr
-
-            best_cut = round(float(best_cut), 4)
-            if best_cut <= curr_start + 0.5:
-                best_cut = round(curr_start + min_duration_s, 4)
-
-            # Create child turn
-            child = SpeakerTurn(
-                speaker_id=turn.speaker_id,
-                start_s=round(curr_start, 4),
-                end_s=best_cut,
-                confidence=turn.confidence,
-            )
-            _copy_turn_meta(turn, child, policy="smart_segmentation")
-            child_words = [
-                w for w in t_words
-                if float(w["start"]) >= child.start_s - 0.1 and float(w["end"]) <= child.end_s + 0.1
-            ]
-            child._words = child_words
-            child._transcript = " ".join([str(w.get("text", "")).strip() for w in child_words if w.get("text")]) or getattr(turn, "_transcript", None)
-
-            segmented_turns.append(child)
-            audits.append({
-                "action": "split",
-                "method": split_method,
-                "speaker_id": turn.speaker_id,
-                "parent_start_s": turn.start_s,
-                "parent_end_s": turn.end_s,
-                "child_start_s": child.start_s,
-                "child_end_s": child.end_s,
-                "child_duration_s": round(child.duration_s, 3),
-                "transcript": child._transcript,
-            })
-
-            curr_start = best_cut
-
-        # Trailing segment
-        if turn_end > curr_start:
-            tail_dur = turn_end - curr_start
-            if tail_dur >= min(1.0, min_duration_s):
-                child = SpeakerTurn(
-                    speaker_id=turn.speaker_id,
-                    start_s=round(curr_start, 4),
-                    end_s=round(turn_end, 4),
-                    confidence=turn.confidence,
-                )
-                _copy_turn_meta(turn, child, policy="smart_segmentation")
-                child_words = [
-                    w for w in t_words
-                    if float(w["start"]) >= child.start_s - 0.1 and float(w["end"]) <= child.end_s + 0.1
-                ]
-                child._words = child_words
-                child._transcript = " ".join([str(w.get("text", "")).strip() for w in child_words if w.get("text")]) or getattr(turn, "_transcript", None)
-                segmented_turns.append(child)
+        current = turn.start_s
+        turn_words = [w for w in valid_words
+                      if float(w["end"]) > turn.start_s and float(w["start"]) < turn.end_s]
+        while current < turn.end_s:
+            remaining = turn.end_s - current
+            reason = None
+            method = "tail_remainder"
+            cut = turn.end_s
+            if remaining < min_duration_s:
+                reason = "below_min_duration"
+            elif remaining > max_duration_s:
+                candidates = []
+                # Track the furthest end so nested/overlapping word spans cannot
+                # create a false gap between two adjacent sorted entries.
+                covered_end = current
+                for left, right in zip(turn_words, turn_words[1:]):
+                    covered_end = max(covered_end, float(left["end"]))
+                    gap_start, gap_end = covered_end, float(right["start"])
+                    if gap_end - gap_start < min_pause_s:
+                        continue
+                    # Keep acoustic refinement away from recognized word edges.
+                    lower = max(gap_start + 0.02, current + min_duration_s)
+                    upper = min(gap_end - 0.02, current + max_duration_s,
+                                turn.end_s - min_duration_s)
+                    if lower > upper:
+                        continue
+                    midpoint = (lower + upper) / 2
+                    radius = min(search_window_s, (upper - lower) / 2)
+                    sample = _find_local_valley(
+                        waveform, int(round(midpoint * sr)),
+                        search_samples=int(radius * sr),
+                        frame_samples=frame_samples, hop_samples=hop_samples,
+                    )
+                    candidate = sample / sr
+                    # A zero crossing can leave the search window. Do not clamp
+                    # it onto a word edge; use the supported midpoint instead.
+                    if not lower <= candidate <= upper:
+                        candidate = midpoint
+                    punctuation = str(left.get("text", "")).rstrip().endswith((".", "!", "?", "…"))
+                    candidates.append((punctuation, candidate, gap_start, gap_end))
+                if not candidates:
+                    reason = "no_supported_word_gap"
+                else:
+                    _, cut, gap_start, gap_end = max(candidates)
+                    method = "supported_word_gap"
+            if reason:
                 audits.append({
-                    "action": "split_tail",
-                    "method": "tail_remainder",
-                    "speaker_id": turn.speaker_id,
-                    "parent_start_s": turn.start_s,
-                    "parent_end_s": turn.end_s,
-                    "child_start_s": child.start_s,
-                    "child_end_s": child.end_s,
-                    "child_duration_s": round(child.duration_s, 3),
-                    "transcript": child._transcript,
+                    "action": "reject", "reason": reason, "speaker_id": turn.speaker_id,
+                    "parent_start_s": turn.start_s, "parent_end_s": turn.end_s,
+                    "rejected_start_s": current, "rejected_end_s": turn.end_s,
                 })
-            elif segmented_turns:
-                # Merge tiny micro-tail (<1s) into preceding child turn
-                last_child = segmented_turns[-1]
-                updated_child = replace(last_child, end_s=round(turn_end, 4))
-                _copy_turn_meta(last_child, updated_child, policy="smart_segmentation")
-                updated_words = [
-                    w for w in t_words
-                    if float(w["start"]) >= updated_child.start_s - 0.1 and float(w["end"]) <= turn_end + 0.1
-                ]
-                updated_child._words = updated_words
-                updated_child._transcript = " ".join([str(w.get("text", "")).strip() for w in updated_words if w.get("text")]) or getattr(last_child, "_transcript", None)
-                segmented_turns[-1] = updated_child
+                break
 
-    return segmented_turns, audits
+            child = SpeakerTurn(speaker_id=turn.speaker_id, start_s=current,
+                                end_s=cut, confidence=turn.confidence)
+            _copy_turn_meta(turn, child, policy="smart_segmentation")
+            child._words = [w for w in turn_words
+                            if float(w["start"]) >= current and float(w["end"]) <= cut]
+            child._transcript = " ".join(str(w.get("text", "")).strip() for w in child._words) or None
+            accepted.append(child)
+            audit = {
+                "action": "split" if method == "supported_word_gap" else "split_tail",
+                "method": method, "speaker_id": turn.speaker_id,
+                "parent_start_s": turn.start_s, "parent_end_s": turn.end_s,
+                "child_start_s": current, "child_end_s": cut,
+                "child_duration_s": child.duration_s, "transcript": child._transcript,
+            }
+            if method == "supported_word_gap":
+                audit.update(word_gap_start_s=gap_start, word_gap_end_s=gap_end)
+            audits.append(audit)
+            current = cut
+    return accepted, audits
 
 
 def filter_by_embedding_homogeneity(
@@ -2436,7 +2336,7 @@ def run_zero_contamination_pipeline(
                     device=aligner_dev,
                 )
             except Exception as asr_exc:
-                logger.warning("ASR word extraction for segmentation failed (%s); falling back to acoustic energy valleys.", asr_exc)
+                logger.warning("ASR word extraction for segmentation failed (%s); long turns without word gaps will be rejected.", asr_exc)
                 all_words = []
 
         segmented_turns, segment_audits = smart_segment_speaker_turns(
