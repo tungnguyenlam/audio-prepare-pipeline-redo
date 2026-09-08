@@ -412,12 +412,14 @@ def main() -> None:
             sys.exit(1)
     elif args.backend == "hf_local":
         import torch
-        from peft import PeftModel
-        from transformers import AutoProcessor, AutoModelForCausalLM, AutoModel
-        try:
-            from transformers import Gemma4ForConditionalGeneration
-        except ImportError:
-            Gemma4ForConditionalGeneration = None
+        from transformers import AutoModel
+
+        dtype_map = {
+            "bfloat16": torch.bfloat16,
+            "float16": torch.float16,
+            "float32": torch.float32,
+        }
+        dtype = dtype_map.get(args.torch_dtype, torch.bfloat16)
 
         actual_device = "cuda:0" if (args.device == "auto" and torch.cuda.is_available()) or args.device.startswith("cuda") else "cpu"
         logger.info("Loading HF model '%s' on %s (trust_remote_code=%s)...", args.model, actual_device, args.trust_remote_code)
@@ -473,6 +475,12 @@ def main() -> None:
 
             logger.info("Successfully loaded %s with dedicated AutoModel path (stream_input=False)", args.model)
         else:
+            from transformers import AutoProcessor, AutoModelForCausalLM
+            try:
+                from transformers import Gemma4ForConditionalGeneration
+            except ImportError:
+                Gemma4ForConditionalGeneration = None
+
             try:
                 hf_processor = AutoProcessor.from_pretrained(args.model, trust_remote_code=args.trust_remote_code, token=hf_token)
             except Exception:
@@ -512,6 +520,7 @@ def main() -> None:
                 raise RuntimeError(f"Could not load model '{args.model}' with any supported model class. Errors: {err_detail}")
 
         if args.adapter_path:
+            from peft import PeftModel
             logger.info("Attaching LoRA adapter from '%s'...", args.adapter_path)
             hf_model = PeftModel.from_pretrained(hf_model, args.adapter_path)
         hf_model.eval()
