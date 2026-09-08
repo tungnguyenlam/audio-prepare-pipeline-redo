@@ -114,12 +114,16 @@ Unified evaluator supporting Gemini API models, OpenAI/vLLM endpoints, and local
 - [`MiniCPMVerifier`](../src/diarization/verifiers/MiniCPMVerifier.py): Dedicated backend for `openbmb/MiniCPM-o-4_5` via custom `.chat()`.
 - [`KimiAudioVerifier`](../src/diarization/verifiers/KimiAudioVerifier.py): Dedicated backend for `moonshotai/Kimi-Audio-7B-Instruct` via `KimiAudio` API.
 - [`GeminiVerifier`](../src/diarization/verifiers/GeminiVerifier.py): Direct REST API integration for Gemini 3.8 Flash teacher benchmark.
-- [`EndpointVerifier`](../src/diarization/verifiers/EndpointVerifier.py): vLLM / OpenAI audio completions endpoint.
+- [`EndpointVerifier`](../src/diarization/verifiers/EndpointVerifier.py): vLLM / OpenAI audio completions endpoint with proxy-safe transport.
+- [`UnslothVerifier`](../src/diarization/verifiers/UnslothVerifier.py): Specialized child verifier for Unsloth Studio / unsloth server endpoints with model auto-probing, dual payload compatibility (OpenAI multimodal + root `audio_base64`), and thinking/reasoning model support.
 
 - **Key Flags:**
   ```bash
   # Evaluate Gemini 3.8 Flash on Khanh Vy cuts (optional --api-key override)
   python scripts/evaluate_verifier.py --backend gemini --model gemini-3.8-flash --api-key "$GEMINI_API_KEY" --reasoning-effort medium --input .data/experiment_khanhvy/cuts/ --output-report report.md --export-csv results.csv
+
+  # Evaluate via Unsloth Studio endpoint (auto-resolves host:port, model probe, thinking tokens)
+  python scripts/evaluate_verifier.py --backend unsloth --endpoint http://127.0.0.1:8888/v1/chat/completions --model "OpenMOSS-Team/MOSS-Audio-8B-Thinking" --api-key "$UNSLOTH_API_KEY"
 
   # Evaluate fine-tuned local LoRA adapter on validation split
   python scripts/evaluate_verifier.py --backend hf_local --model google/gemma-4-E2B-it --adapter-path .data/distillation/checkpoints_e2b/best_adapter --input .data/distillation/val_e2b.jsonl

@@ -196,7 +196,7 @@ def parse_args() -> argparse.Namespace:
         "--backend",
         type=str,
         default="hf_local",
-        choices=["hf_local", "gemini", "endpoint"],
+        choices=["hf_local", "gemini", "endpoint", "unsloth"],
         help="Evaluation backend",
     )
     parser.add_argument(
@@ -205,16 +205,16 @@ def parse_args() -> argparse.Namespace:
         default="google/gemma-4-E2B-it",
         help=(
             "Model name or HF model ID (e.g. google/gemma-4-E2B-it, "
-            "OpenMOSS-Team/MOSS-Audio-8B-Thinking, openbmb/MiniCPM-o-4_5, "
-            "moonshotai/Kimi-Audio-7B-Instruct, gemini-3.8-flash)"
+            "unsloth/gemma-4-12b-it-GGUF, OpenMOSS-Team/MOSS-Audio-8B-Thinking, "
+            "openbmb/MiniCPM-o-4_5, moonshotai/Kimi-Audio-7B-Instruct, gemini-3.8-flash)"
         ),
     )
     parser.add_argument("--adapter-path", type=str, default=None, help="LoRA adapter path or HF repo ID")
     parser.add_argument(
         "--endpoint",
         type=str,
-        default="http://localhost:8000/v1/chat/completions",
-        help="OpenAI / vLLM compatible multimodal audio endpoint",
+        default=None,
+        help="OpenAI / vLLM / Unsloth compatible multimodal audio endpoint",
     )
     parser.add_argument(
         "--trust-remote-code",
@@ -240,7 +240,7 @@ def parse_args() -> argparse.Namespace:
         "--api-key",
         type=str,
         default=None,
-        help="API key for Gemini or Endpoint backends (defaults to GEMINI_API_KEY or OPENAI_API_KEY env var)",
+        help="API key for Gemini, Endpoint, or Unsloth backends (defaults to GEMINI_API_KEY, OPENAI_API_KEY, or UNSLOTH_API_KEY env var)",
     )
     parser.add_argument(
         "--device",
@@ -340,14 +340,27 @@ def main() -> None:
         cli_prompt = args.prompt.strip()
         logger.info("Using custom evaluation prompt from CLI (%d chars)", len(cli_prompt))
 
+    # Resolve endpoint and model defaults when unsloth backend is selected
+    model_arg = args.model
+    endpoint_arg = args.endpoint
+    if args.backend == "unsloth":
+        if endpoint_arg is None:
+            host = os.getenv("UNSLOTH_HOST", "localhost").strip() or "localhost"
+            port = os.getenv("UNSLOTH_PORT", "8888").strip() or "8888"
+            endpoint_arg = os.getenv("UNSLOTH_ENDPOINT") or f"http://{host}:{port}/v1/chat/completions"
+        if model_arg == "google/gemma-4-E2B-it":
+            model_arg = os.getenv("UNSLOTH_MODEL") or "unsloth/gemma-4-12b-it-GGUF"
+    elif endpoint_arg is None:
+        endpoint_arg = "http://localhost:8000/v1/chat/completions"
+
     # Initialize model verifier using modular factory
-    logger.info("Initializing verifier (backend=%s, model=%s)...", args.backend, args.model)
+    logger.info("Initializing verifier (backend=%s, model=%s)...", args.backend, model_arg)
     verifier = get_verifier(
         backend=args.backend,
-        model=args.model,
+        model=model_arg,
         device=args.device,
         adapter_path=args.adapter_path,
-        endpoint=args.endpoint,
+        endpoint=endpoint_arg,
         trust_remote_code=args.trust_remote_code,
         torch_dtype=args.torch_dtype,
         reasoning_effort=args.reasoning_effort,

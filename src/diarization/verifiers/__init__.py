@@ -14,6 +14,7 @@ from src.diarization.verifiers.MiniCPMVerifier import MiniCPMVerifier
 from src.diarization.verifiers.KimiAudioVerifier import KimiAudioVerifier
 from src.diarization.verifiers.GeminiVerifier import GeminiVerifier
 from src.diarization.verifiers.EndpointVerifier import EndpointVerifier
+from src.diarization.verifiers.UnslothVerifier import UnslothVerifier
 
 
 def get_verifier(
@@ -32,18 +33,19 @@ def get_verifier(
     """Factory helper to instantiate the appropriate speech acoustic verifier.
 
     Routes to specialized verifiers for models requiring special loaders (MOSS-Audio,
-    MiniCPM-o, Kimi-Audio) or defaults to DefaultHFVerifier, GeminiVerifier, or EndpointVerifier.
+    MiniCPM-o, Kimi-Audio) or defaults to DefaultHFVerifier, GeminiVerifier,
+    UnslothVerifier, or EndpointVerifier.
 
     Args:
-        backend: Evaluation backend ('hf_local', 'gemini', 'endpoint').
+        backend: Evaluation backend ('hf_local', 'gemini', 'endpoint', 'unsloth').
         model: Model name, path, or Hugging Face repository ID.
         device: Target execution device ('auto', 'cuda:0', 'cpu', 'mps').
         adapter_path: Optional LoRA adapter path or Hugging Face Hub ID.
-        endpoint: API endpoint URL for backend='endpoint'.
+        endpoint: API endpoint URL for backend='endpoint' or 'unsloth'.
         trust_remote_code: Whether to allow remote HF code execution.
         torch_dtype: Model tensor precision ('bfloat16', 'float16', 'float32').
         reasoning_effort: Thinking level for Gemini ('none', 'low', 'medium', 'high').
-        api_key: Optional Gemini API key override.
+        api_key: Optional API key override (Gemini, Endpoint, or Unsloth).
         hf_token: Optional Hugging Face authentication token.
 
     Returns:
@@ -58,7 +60,27 @@ def get_verifier(
             **kwargs,
         )
 
+    if backend_lower in {"unsloth", "unsloth_local", "unsloth_studio"}:
+        return UnslothVerifier(
+            endpoint=endpoint,
+            model=model,
+            api_key=api_key,
+            **kwargs,
+        )
+
     if backend_lower == "endpoint":
+        # If the target or key clearly indicates Unsloth Studio, use UnslothVerifier for maximum compatibility
+        if (
+            "unsloth" in (model or "").lower()
+            or "unsloth" in (endpoint or "").lower()
+            or (api_key and "unsloth" in api_key.lower())
+        ):
+            return UnslothVerifier(
+                endpoint=endpoint,
+                model=model,
+                api_key=api_key,
+                **kwargs,
+            )
         return EndpointVerifier(
             endpoint=endpoint,
             model=model,
@@ -117,6 +139,7 @@ __all__ = [
     "KimiAudioVerifier",
     "GeminiVerifier",
     "EndpointVerifier",
+    "UnslothVerifier",
     "DEFAULT_ACOUSTIC_PROMPT",
     "extract_json_payload",
     "load_audio_waveform",

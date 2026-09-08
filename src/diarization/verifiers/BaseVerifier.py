@@ -47,18 +47,54 @@ Return strict JSON only (no markdown, no other text):
 
 
 def extract_json_payload(text: str) -> dict[str, Any]:
-    """Robustly extract and parse JSON object from model output text."""
+    """Robustly extract and parse JSON object from model output text.
+
+    Handles thinking/reasoning tags (<think>...</think>), markdown code fences
+    (```json ... ```), nested braces, and surrounding commentary.
+    """
     cleaned = text.strip()
-    if cleaned.startswith("```"):
-        lines = cleaned.splitlines()
-        cleaned = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
+
+    # 1. Strip thinking / reasoning tags if present
+    cleaned_no_think = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.DOTALL).strip()
+    target_text = cleaned_no_think if cleaned_no_think else cleaned
+
+    # 2. Check for markdown code blocks (e.g. ```json ... ``` or ``` ... ```)
+    code_blocks = re.findall(r"```(?:json)?\s*([\s\S]*?)\s*```", target_text)
+    for block in reversed(code_blocks):
+        try:
+            return json.loads(block.strip())
+        except Exception:
+            pass
+
+    # 3. Direct JSON parse
     try:
-        return json.loads(cleaned)
+        return json.loads(target_text)
     except Exception:
-        match = re.search(r"\{.*\}", cleaned, re.DOTALL)
-        if match:
-            return json.loads(match.group(0))
-        raise
+        pass
+
+    # 4. Search for balanced { ... } starting from the end (final model answer)
+    end_idx = target_text.rfind("}")
+    if end_idx != -1:
+        depth = 0
+        for i in range(end_idx, -1, -1):
+            if target_text[i] == "}":
+                depth += 1
+            elif target_text[i] == "{":
+                depth -= 1
+                if depth == 0:
+                    candidate = target_text[i : end_idx + 1]
+                    try:
+                        return json.loads(candidate)
+                    except Exception:
+                        pass
+                    break
+
+    # 5. Fallback regex search for { ... }
+    match = re.search(r"\{.*\}", target_text, re.DOTALL)
+    if match:
+        return json.loads(match.group(0))
+
+    raise ValueError(f"No valid JSON object could be extracted from: {text[:200]}")
 
 
 def load_audio_waveform(audio_path: str | Path, target_sr: int = 16000) -> np.ndarray:

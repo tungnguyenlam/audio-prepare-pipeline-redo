@@ -20,10 +20,18 @@
   unique (plus earlier lineage joins). v1/v2/v3 left intact.
 - Experiment-tab measured harvest recipe (`recipe_nolock`) is the Studio Reset /
   status default. See checkpoint 8.
-- No training or test cases have run.
+- **Local verifier vs gold (checkpoint 10):** Gemma 4 E2B LoRA V3 on the 288-clip
+  MEDIUM gold is still an all-pass classifier (288/288 `pass`). Agreement
+  **55.2%** equals the Gemini pass rate; F1 **71.1%**; 129 contamination leaks
+  (0 true rejects). Prior 31-cut Khanh Vy figure was **38.7%** agreement.
+- **Gemini 3.5 Flash-Lite vs gold (checkpoint 11):** same 288-clip MEDIUM gold,
+  `--reasoning-effort medium`. Agreement **63.2%**, F1 **73.5%**, 47 rejects
+  (35 true / 12 false), 94 contamination leaks. Beats E2B V3 on agreement/F1
+  because it can reject; still far from teacher quality.
 - Next: grow studio-interview / narration sources with the measured harvest
-  recipe; then fit/calibrate a local acoustic baseline. Prefer a *new* held-out
-  recording for future generalization checks. Do not prefer music-backed vlogs.
+  recipe; retrain or calibrate the student so it can reject (music / secondary
+  speaker first). Prefer a *new* held-out recording for future generalization
+  checks. Do not prefer music-backed vlogs.
 
 ## Checkpoints
 
@@ -342,6 +350,89 @@ source-disjoint unseen test anymore. Reserve a fresh recording later when
 unseen-source generalization must be measured. `combine` still refuses
 challenge rows unless `--include-reserved-challenge` is passed. `extract`
 still blocks harvesting that recording by default.
+
+### 10. Local verifier benchmark (E2B V3 vs 288-clip MEDIUM gold)
+
+Command (ROCm GPU via `.venv-sortformer`; transformers upgraded to `5.16.1`
+plus CPU `torchvision==0.28.0` so Gemma 4 processor imports; weights resolved
+through `HF_HOME=.data/huggingface` symlink to the existing
+`~/.cache/huggingface/hub/models--google--gemma-4-E2B-it` cache):
+
+```bash
+.venv-sortformer/bin/python scripts/evaluate_verifier.py \
+  --backend hf_local \
+  --model google/gemma-4-E2B-it \
+  --adapter-path .data/distillation/checkpoints_e2b_v3/best_adapter \
+  --device cuda:0 \
+  --torch-dtype bfloat16 \
+  --input .data/tts_strategy/gold_benchmark_20260908/eval_input.jsonl \
+  --output-report .data/tts_strategy/gold_benchmark_20260908/reports/e2b_v3_vs_gemini38_medium.md \
+  --output-json .data/tts_strategy/gold_benchmark_20260908/reports/e2b_v3_vs_gemini38_medium.json \
+  --export-csv .data/tts_strategy/gold_benchmark_20260908/reports/e2b_v3_vs_gemini38_medium.csv
+```
+
+Ground truth: Gemini 3.8 Flash MEDIUM on `gold_benchmark_20260908` (159 pass /
+129 reject). Student: Gemma 4 E2B + LoRA V3.
+
+| Metric | Value |
+|---|---:|
+| Evaluated / success | 288 / 288 |
+| Avg latency | 3.52 s |
+| Model pass / reject | **288 / 0** |
+| Agreement vs Gemini | **55.2%** (159/288) |
+| Precision / recall / F1 | 55.2% / 100.0% / **71.1%** |
+| True pass / true reject | 159 / 0 |
+| Contamination leaks / false rejects | **129 / 0** |
+
+Same all-pass failure mode as the 31-cut Khanh Vy probe (38.7% agreement there):
+agreement on this gold set is exactly the Gemini pass rate because the student
+never rejects. Defect codes among the 129 leaks (a clip may have several):
+music 61, secondary_speaker 37, clipped_word_end 29, reverberation 17,
+sound_effect 16, clipped_word_start 13, overlapping_speech 8, excessive_noise 3.
+Largest leak source: `youtube:H0VpjeULCck` (36).
+
+Reports also copied to
+`.data/distillation/reports/finetuned_e2b_v3_vs_gold_benchmark_20260908.{md,json,csv}`.
+Root `.venv` still has CUDA torch with `cuda=False` on this host; do not use it
+for GPU Gemma inference until ROCm wheels are restored there.
+
+### 11. Gemini 3.5 Flash-Lite vs 288-clip MEDIUM gold
+
+Yes — reasoning effort is controllable via
+`evaluate_verifier.py --reasoning-effort {none,low,medium,high}` → API
+`thinkingConfig.thinkingLevel`. Probed on `gemini-3.5-flash-lite`: `none`,
+`low`, and `medium` all succeed. This run used **medium** to match the gold
+teacher effort.
+
+```bash
+uv run --no-sync python scripts/evaluate_verifier.py \
+  --backend gemini \
+  --model gemini-3.5-flash-lite \
+  --reasoning-effort medium \
+  --concurrency 8 \
+  --input .data/tts_strategy/gold_benchmark_20260908/eval_input.jsonl \
+  --output-report .data/tts_strategy/gold_benchmark_20260908/reports/gemini35_flash_lite_medium_vs_gemini38_medium.md \
+  --output-json .data/tts_strategy/gold_benchmark_20260908/reports/gemini35_flash_lite_medium_vs_gemini38_medium.json \
+  --export-csv .data/tts_strategy/gold_benchmark_20260908/reports/gemini35_flash_lite_medium_vs_gemini38_medium.csv
+```
+
+| Metric | Flash-Lite MEDIUM | E2B V3 LoRA (ckpt 10) |
+|---|---:|---:|
+| Agreement vs 3.8 Flash MEDIUM | **63.2%** (182/288) | 55.2% (159/288) |
+| Precision / recall / F1 | 61.0% / 92.5% / **73.5%** | 55.2% / 100% / 71.1% |
+| Model pass / reject | 241 / **47** | 288 / 0 |
+| True pass / true reject | 147 / **35** | 159 / 0 |
+| Contamination leaks / false rejects | 94 / **12** | 129 / 0 |
+| Avg latency | 2.81 s | 3.52 s |
+
+Lite can reject (unlike E2B V3), so agreement beats the all-pass baseline, but
+94/129 Gemini rejects still leak. Dominant missed codes among leaks: music 40,
+clipped_word_end 25, secondary_speaker 23. Historical 31-cut lite probe
+(no thinkingConfig) was 51.6% agreement; this MEDIUM gold run is stronger but
+not teacher-grade.
+
+Reports also at
+`.data/distillation/reports/gemini35_flash_lite_medium_vs_gold_benchmark_20260908.{md,json,csv}`.
 
 ## Continuation rules
 

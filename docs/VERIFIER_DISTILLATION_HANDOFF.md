@@ -8,9 +8,11 @@
 > A fresh explicit MEDIUM full-rubric audit is required. The user accepts Gemini
 > 3.8 Flash MEDIUM as ground truth; separate human review is not required.
 
-**Last Updated:** 2026-09-07 22:33 (Local Time)  
+**Last Updated:** 2026-09-08 (Local Time)  
 **Host Environment:** `tungnl5@VF-TUNGNL5-L` | AMD Radeon RX 9060 XT (16 GB VRAM, ROCm 10.0 / HIP)  
-**Active Python Runtime:** `.venv/bin/python` (Python 3.13, PyTorch 2.13.0+rocm10.0.0, Transformers 5.16.1)
+**Gemma eval runtime:** `.venv-sortformer/bin/python` (PyTorch `2.13.0+rocm10.0.0`,
+Transformers `5.16.1`, CPU `torchvision==0.28.0`). Root `.venv` currently has
+CUDA torch with no GPU; do not use it for Gemma inference on this host.
 
 ---
 
@@ -45,12 +47,28 @@ All fine-tuning was executed on the local AMD GPU (`cuda:0`) in native `bfloat16
 | **V2** | + Synthetic boundary hard-negatives (312 samples) | 3 | 1.6164 | **0.2756** | 83.0% | `.data/distillation/checkpoints_e2b_v2/best_adapter` |
 | **V3** | Master balanced crawl + boundary cuts (328 samples) | 3 | 1.6924 | **0.3285** | 80.6% | [tungnguyenlam/gemma-4-e2b-acoustic-verifier](https://huggingface.co/tungnguyenlam/gemma-4-e2b-acoustic-verifier) (W&B: `sm0ky3on`) |
 
-### C. Benchmark on 31 Khanh Vy Test Cuts & Architectural Verdict
-- **Results:** 31/31 cuts predicted as `pass` (Agreement with Gemini 3.8 Flash: **38.7%**, 12 True Passes, 19 False Passes, 0 False Rejects).
-- **Technical Diagnosis:** The 31 test cuts are isolated vocal stems from Mel-Band RoFormer. A 2B causal audio LLM conformer treats 80-150ms trailing coda decay or quiet secondary bleed as acceptable natural speech, exhibiting a high inductive bias toward predicting `pass`.
+### C. Benchmark vs Gemini 3.8 Flash MEDIUM
+- **31 Khanh Vy cuts (historical):** 31/31 `pass`; agreement **38.7%** (12 TP / 19 FP / 0 TN / 0 FN).
+- **288-clip unified gold `gold_benchmark_20260908` (2026-09-08):** E2B LoRA V3
+  still predicts **288/288 `pass`**. Agreement **55.2%** (159/288) = Gemini pass
+  rate; precision 55.2%, recall 100%, F1 **71.1%**; **129 contamination leaks**,
+  **0 true rejects**; avg latency 3.52 s. Report:
+  `.data/tts_strategy/gold_benchmark_20260908/reports/e2b_v3_vs_gemini38_medium.md`
+  (also `.data/distillation/reports/finetuned_e2b_v3_vs_gold_benchmark_20260908.md`).
+- **Same gold, `gemini-3.5-flash-lite` + `--reasoning-effort medium`:** agreement
+  **63.2%** (182/288), F1 **73.5%**, pass/reject **241/47**, true rejects **35**,
+  leaks **94**, false rejects **12**, avg latency 2.81 s. Reasoning effort is
+  controllable (`none`/`low`/`medium`/`high`); lite accepts at least none–medium.
+  Report:
+  `.data/tts_strategy/gold_benchmark_20260908/reports/gemini35_flash_lite_medium_vs_gemini38_medium.md`.
+- **Technical Diagnosis:** The student remains an all-pass classifier on this
+  gold set. Dominant missed reject codes: music (61), secondary_speaker (37),
+  clipped_word_end (29). Agreement rises with a higher Gemini pass fraction, not
+  because the model learned to reject. Flash-Lite MEDIUM can reject and beats
+  E2B V3 on agreement/F1, but still misses most music/clipping rejects vs 3.8.
 - **Architectural Law (Hybrid Pipeline):**
   - **Stage 3 (Deterministic DSP):** Micro-Energy Valley Snapping ($\le -32\text{ dBFS}$) and PhoWhisper Forced Alignment Syllable Lock are strictly required to physically prevent boundary truncations.
-  - **Stage 5 (Student Multimodal LLM):** Used specifically as the gatekeeper for co-host cross-talk, secondary vocal leakage, reverb, and music bleed.
+  - **Stage 5 (Student Multimodal LLM):** Used specifically as the gatekeeper for co-host cross-talk, secondary vocal leakage, reverb, and music bleed — **not ready** until reject capability appears on the 288-clip gold.
 
 ---
 
