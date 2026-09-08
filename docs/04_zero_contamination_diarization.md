@@ -640,19 +640,22 @@ Three modular CLI tools under [`scripts/`](../scripts/) manage the distillation 
    ```
 
 3. **Arbitrary Model Evaluator & Benchmarker ([`scripts/evaluate_verifier.py`](../scripts/evaluate_verifier.py)):**
-   - Evaluates any Hugging Face model (`--backend hf --model-id <repo>`), Gemini model (`--backend gemini`), or OpenAI-compatible endpoint (`--backend endpoint --api-url <url>`).
-   - Compares candidate decisions directly against reference annotations (e.g. Gemini 3.8 Flash).
-   - Computes agreement percentage, Cohen's Kappa, confusion matrix, precision, recall, and F1-score.
+   - Evaluates any Hugging Face model (`--backend hf_local`), Gemini (`--backend gemini`), or OpenAI-compatible endpoint (`--backend endpoint` / `unsloth`).
+   - Default `--input` is the unified MEDIUM gold set
+     (`.data/tts_strategy/gold_benchmark_20260908/eval_input.jsonl`, 288 clips).
+     The old 31-cut Khanh Vy probe is deprecated for benchmarking.
+   - Compares candidate decisions against Gemini MEDIUM reference labels in the input.
+   - Computes agreement, confusion matrix, precision, recall, F1, and (for Gemini API) estimated USD cost.
    - Generates side-by-side CSV exports and Markdown evaluation reports.
    ```bash
-   # Benchmark an arbitrary Hugging Face model against Gemini 3.8 Flash reference decisions
-   .venv/bin/python scripts/evaluate_verifier.py \
-     --backend hf \
-     --model-id openbmb/MiniCPM-o-4_5 \
-     --trust-remote-code \
-     --benchmark-json .data/distillation/khanh_vy_31_flash_reference.json \
-     --output-report .data/distillation/reports/minicpm_vs_flash.md \
-     --output-csv .data/distillation/reports/minicpm_vs_flash.csv
+   # Benchmark a local model against the default gold set
+   .venv-sortformer/bin/python scripts/evaluate_verifier.py \
+     --backend hf_local \
+     --model google/gemma-4-E2B-it \
+     --adapter-path .data/distillation/checkpoints_e2b_v3/best_adapter \
+     --device cuda:0 \
+     --output-report .data/tts_strategy/gold_benchmark_20260908/reports/e2b_v3.md \
+     --export-csv .data/tts_strategy/gold_benchmark_20260908/reports/e2b_v3.csv
    ```
 
 ### 7.2 Current strategy and evidence limits

@@ -29,7 +29,8 @@
   (35 true / 12 false), 94 contamination leaks. Beats E2B V3 on agreement/F1
   because it can reject; still far from teacher quality. Cost was not recorded
   on that run; `GeminiVerifier` now logs USD automatically (checkpoint 12).
-  Portable full-gold runner: `./scripts/run_gold_verifier_eval.sh`.
+  Canonical eval CLI: `scripts/evaluate_verifier.py` (default `--input` is the
+  288-clip gold set; the old 31-cut Khanh Vy path is deprecated).
 - Next: grow studio-interview / narration sources with the measured harvest
   recipe; retrain or calibrate the student so it can reject (music / secondary
   speaker first). Prefer a *new* held-out recording for future generalization
@@ -447,20 +448,31 @@ thread-safe session total, and logs running USD. `evaluate_verifier.py` writes
 usage/cost into summary JSON, Markdown, CSV (`cost_usd`), and the console.
 `OverlapVerifier` reuses the same pricing helpers.
 
-Portable full-gold runner for another machine (preflight + materialize audio
-into `.data/tts_strategy/gold_benchmark_20260908/audio/` + evaluate):
+Canonical eval set is the unified MEDIUM gold
+(`.data/tts_strategy/gold_benchmark_20260908/eval_input.jsonl`, 288 clips) —
+now the **default** `--input` for `scripts/evaluate_verifier.py`. The old
+31-cut `.data/experiment_khanhvy/` probe is deprecated for benchmarking (CLI
+warns if passed).
+
+Portable run on another machine (sync repo + `.data/`, or materialize once):
 
 ```bash
 export GEMINI_API_KEY=...
-# sync repo + .data/ first (or rely on --materialize-audio after local paths resolve)
-./scripts/run_gold_verifier_eval.sh gemini-3.5-flash-lite medium 8
-# shard / resume:
-LIMIT=100 OFFSET=0 ./scripts/run_gold_verifier_eval.sh
-RESUME_JSON=path/to/partial.json ./scripts/run_gold_verifier_eval.sh
+python scripts/evaluate_verifier.py --backend gemini --model gemini-3.5-flash-lite \
+  --reasoning-effort medium --concurrency 8 \
+  --materialize-audio .data/tts_strategy/gold_benchmark_20260908/audio \
+  --output-report .data/tts_strategy/gold_benchmark_20260908/reports/run.md \
+  --output-json .data/tts_strategy/gold_benchmark_20260908/reports/run.json \
+  --export-csv .data/tts_strategy/gold_benchmark_20260908/reports/run.csv
+
+# shard / resume
+python scripts/evaluate_verifier.py --backend gemini --model gemini-3.5-flash-lite \
+  --offset 0 --limit 100 --resume-json path/to/partial.json \
+  --output-json .data/tts_strategy/gold_benchmark_20260908/reports/shard.json
 ```
 
-Also on `evaluate_verifier.py`: `--check-audio-only`, `--materialize-audio`,
-`--limit`, `--offset`, `--resume-json`, `--allow-missing-audio`.
+Also: `--check-audio-only`, `--materialize-audio`, `--limit`, `--offset`,
+`--resume-json`, `--allow-missing-audio`.
 
 Reports also at
 `.data/distillation/reports/gemini35_flash_lite_medium_vs_gold_benchmark_20260908.{md,json,csv}`.

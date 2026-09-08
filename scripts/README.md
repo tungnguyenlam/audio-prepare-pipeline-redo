@@ -119,14 +119,25 @@ Unified evaluator supporting Gemini API models, OpenAI/vLLM endpoints, and local
 
 - **Key Flags:**
   ```bash
-  # Evaluate Gemini 3.8 Flash on Khanh Vy cuts (optional --api-key override)
-  python scripts/evaluate_verifier.py --backend gemini --model gemini-3.8-flash --api-key "$GEMINI_API_KEY" --reasoning-effort medium --input .data/experiment_khanhvy/cuts/ --output-report report.md --export-csv results.csv
+  # Full MEDIUM gold (default --input = gold_benchmark_20260908, 288 clips)
+  python scripts/evaluate_verifier.py --backend gemini --model gemini-3.5-flash-lite \
+    --reasoning-effort medium --concurrency 8 \
+    --output-report .data/tts_strategy/gold_benchmark_20260908/reports/run.md \
+    --output-json .data/tts_strategy/gold_benchmark_20260908/reports/run.json \
+    --export-csv .data/tts_strategy/gold_benchmark_20260908/reports/run.csv
 
-  # Full 288-clip MEDIUM gold (portable; materializes audio under gold dir)
-  ./scripts/run_gold_verifier_eval.sh gemini-3.5-flash-lite medium 8
-  # or shard / resume:
-  LIMIT=100 OFFSET=0 ./scripts/run_gold_verifier_eval.sh
-  RESUME_JSON=.data/tts_strategy/gold_benchmark_20260908/reports/prior.json ./scripts/run_gold_verifier_eval.sh
+  # Shard / resume on another machine
+  python scripts/evaluate_verifier.py --backend gemini --model gemini-3.5-flash-lite \
+    --offset 0 --limit 100 --resume-json path/to/partial.json \
+    --materialize-audio .data/tts_strategy/gold_benchmark_20260908/audio \
+    --output-json .data/tts_strategy/gold_benchmark_20260908/reports/shard.json
+
+  # Local LoRA student on the same gold default
+  .venv-sortformer/bin/python scripts/evaluate_verifier.py --backend hf_local \
+    --model google/gemma-4-E2B-it \
+    --adapter-path .data/distillation/checkpoints_e2b_v3/best_adapter \
+    --device cuda:0 \
+    --output-report .data/tts_strategy/gold_benchmark_20260908/reports/e2b_v3.md
 
   # Evaluate via Unsloth Studio endpoint with specific port and GGUF variant
   python scripts/evaluate_verifier.py --backend unsloth --model "unsloth/gemma-4-12b-it-GGUF" --variant Q8_0 --port 8888 --api-key "$UNSLOTH_API_KEY"
@@ -134,16 +145,13 @@ Unified evaluator supporting Gemini API models, OpenAI/vLLM endpoints, and local
   # Evaluate fine-tuned local LoRA adapter on validation split
   python scripts/evaluate_verifier.py --backend hf_local --model google/gemma-4-E2B-it --adapter-path .data/distillation/checkpoints_e2b/best_adapter --input .data/distillation/val_e2b.jsonl
 
-  # Evaluate MOSS-Audio 8B Thinking in dedicated Python 3.12 environment
-  python scripts/evaluate_verifier.py --backend hf_local --model OpenMOSS-Team/MOSS-Audio-8B-Thinking --input .data/experiment_khanhvy/results.json --output-report report_moss.md
-
-  # Evaluate MiniCPM-o with custom prompt text or file
+  # Other local backends on the gold default (override --input only if needed)
+  python scripts/evaluate_verifier.py --backend hf_local --model OpenMOSS-Team/MOSS-Audio-8B-Thinking --output-report report_moss.md
   python scripts/evaluate_verifier.py --backend hf_local --model openbmb/MiniCPM-o-4_5 --prompt-file prompts/strict_acoustic.txt --output-report report.md
-
-  # Evaluate Kimi-Audio 7B Instruct (.venv-kimi setup via scripts/setup_kimi_env.sh)
-  .venv-kimi/bin/python scripts/evaluate_verifier.py --backend hf_local --model moonshotai/Kimi-Audio-7B-Instruct --input .data/experiment_khanhvy/results.json --output-report report_kimi.md
+  .venv-kimi/bin/python scripts/evaluate_verifier.py --backend hf_local --model moonshotai/Kimi-Audio-7B-Instruct --output-report report_kimi.md
   ```
-- **Portability flags on `evaluate_verifier.py`:** `--check-audio-only`, `--materialize-audio DIR`, `--limit`, `--offset`, `--resume-json`, `--allow-missing-audio`. Gemini runs log estimated USD cost into the JSON summary, Markdown report, CSV (`cost_usd`), and console.
+- **Canonical eval set:** `.data/tts_strategy/gold_benchmark_20260908/eval_input.jsonl` (288 clips). The old 31-cut `.data/experiment_khanhvy/` path is deprecated for benchmarking; the CLI warns if you pass it.
+- **Portability flags:** `--check-audio-only`, `--materialize-audio DIR`, `--limit`, `--offset`, `--resume-json`, `--allow-missing-audio`. Gemini runs log estimated USD cost into the JSON summary, Markdown report, CSV (`cost_usd`), and console.
 ### 4.3. Distillation Dataset Pipeline: [`build_distillation_dataset.py`](build_distillation_dataset.py)
 Unified dataset builder with subcommands for the entire distillation lifecycle:
 - **`annotate`:** Query Gemini 3.8 Flash teacher across directories of audio turns.

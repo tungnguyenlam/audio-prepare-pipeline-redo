@@ -131,10 +131,9 @@ OpenBMB requires `transformers==4.51.0` and `torch<=2.8.0`. To prevent downgradi
   --backend hf_local \
   --model openbmb/MiniCPM-o-4_5 \
   --device cuda:0 \
-  --input .data/experiment_khanhvy/results.json \
-  --output-json .data/eval_minicpm_o45.json \
-  --output-report .data/eval_minicpm_o45.md \
-  --export-csv .data/eval_minicpm_o45.csv
+  --output-json .data/tts_strategy/gold_benchmark_20260908/reports/minicpm_o45.json \
+  --output-report .data/tts_strategy/gold_benchmark_20260908/reports/minicpm_o45.md \
+  --export-csv .data/tts_strategy/gold_benchmark_20260908/reports/minicpm_o45.csv
 ```
 
 ### Step 3: Evaluate Kimi-Audio-7B-Instruct
@@ -143,10 +142,9 @@ OpenBMB requires `transformers==4.51.0` and `torch<=2.8.0`. To prevent downgradi
   --backend hf_local \
   --model moonshotai/Kimi-Audio-7B-Instruct \
   --device auto \
-  --input .data/experiment_khanhvy/results.json \
-  --output-json .data/distillation/reports/kimi_audio_7b_eval.json \
-  --output-report .data/distillation/reports/kimi_audio_7b_vs_gemini38.md \
-  --export-csv .data/distillation/reports/kimi_audio_7b_vs_gemini38.csv
+  --output-json .data/tts_strategy/gold_benchmark_20260908/reports/kimi_audio_7b.json \
+  --output-report .data/tts_strategy/gold_benchmark_20260908/reports/kimi_audio_7b.md \
+  --export-csv .data/tts_strategy/gold_benchmark_20260908/reports/kimi_audio_7b.csv
 ```
 
 ### Step 4: Update Documentation

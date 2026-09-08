@@ -1,33 +1,41 @@
 #!/usr/bin/env python3
-"""Unified CLI for evaluating direct-audio speech verifiers and benchmarking against Gemini 3.8 Flash.
+"""Unified CLI for evaluating direct-audio speech verifiers against Gemini MEDIUM gold.
 
-Supports evaluating any Hugging Face multimodal audio model (base or fine-tuned with LoRA)
-or Gemini API models on:
-  - The 288-clip MEDIUM gold set (`.data/tts_strategy/gold_benchmark_20260908/eval_input.jsonl`)
-  - The 31 Khanh Vy benchmark cuts (`.data/experiment_khanhvy/results.json` or directory of cuts)
-  - Distillation datasets (`.data/distillation/val_e2b.jsonl`, `train_e2b.jsonl`)
-  - Any directory of WAV files
+Default evaluation set is the unified MEDIUM gold pool
+(`.data/tts_strategy/gold_benchmark_20260908/eval_input.jsonl`, 288 clips).
+The old 31-cut Khanh Vy probe (`.data/experiment_khanhvy/`) is deprecated for
+benchmarking — keep those files for historical reports only.
+
+Also accepts distillation JSONL, any WAV folder, or an explicit ``--input``.
 
 Computes:
   - Model distribution (Pass / Reject counts, percentage, latency)
-  - Agreement rate with Gemini 3.8 Flash reference
+  - Agreement rate with Gemini 3.8 Flash MEDIUM reference labels in the input
   - Confusion matrix (True Pass, True Reject, Contamination Leaks, False Rejects)
   - Precision, Recall, F1
   - Gemini API usage + estimated USD cost (automatic via GeminiVerifier)
   - Side-by-side disagreement table with model vs Gemini reasoning
   - Markdown summary reports and spreadsheet-ready CSV export
 
-Portable gold run (another machine)::
+Examples::
 
-    ./scripts/run_gold_verifier_eval.sh gemini-3.5-flash-lite medium
-    # or
+    # Full gold (default --input)
     python scripts/evaluate_verifier.py --backend gemini --model gemini-3.5-flash-lite \\
       --reasoning-effort medium --concurrency 8 \\
-      --input .data/tts_strategy/gold_benchmark_20260908/eval_input.jsonl \\
-      --materialize-audio .data/tts_strategy/gold_benchmark_20260908/audio \\
       --output-report .data/tts_strategy/gold_benchmark_20260908/reports/run.md \\
       --output-json .data/tts_strategy/gold_benchmark_20260908/reports/run.json \\
       --export-csv .data/tts_strategy/gold_benchmark_20260908/reports/run.csv
+
+    # Local LoRA student on the same gold set
+    .venv-sortformer/bin/python scripts/evaluate_verifier.py --backend hf_local \\
+      --model google/gemma-4-E2B-it \\
+      --adapter-path .data/distillation/checkpoints_e2b_v3/best_adapter \\
+      --device cuda:0
+
+    # Portable sync: copy clips under gold/audio then evaluate
+    python scripts/evaluate_verifier.py --backend gemini --model gemini-3.5-flash-lite \\
+      --materialize-audio .data/tts_strategy/gold_benchmark_20260908/audio \\
+      --check-audio-only
 """
 
 from __future__ import annotations
@@ -389,7 +397,16 @@ def parse_args() -> argparse.Namespace:
     )
 
     # Input & Ground Truth
-    parser.add_argument("--input", type=str, default=".data/experiment_khanhvy/results.json", help="Input JSON/JSONL or folder of WAV files")
+    parser.add_argument(
+        "--input",
+        type=str,
+        default=".data/tts_strategy/gold_benchmark_20260908/eval_input.jsonl",
+        help=(
+            "Input JSON/JSONL or folder of WAV files. Default is the unified "
+            "MEDIUM gold set (>=200 clips). The old 31-cut Khanh Vy results.json "
+            "is deprecated for benchmarking."
+        ),
+    )
     parser.add_argument("--ground-truth", type=str, default=None, help="Optional external ground-truth JSON/JSONL with Gemini verdicts")
 
     # Prompt Options
@@ -485,6 +502,13 @@ def ensure_evaluation_audio(
 
 def main() -> None:
     args = parse_args()
+    input_l = str(args.input).replace("\\", "/").lower()
+    if "experiment_khanhvy" in input_l:
+        logger.warning(
+            "Deprecated eval set: .data/experiment_khanhvy is the old 31-cut probe. "
+            "Prefer the default gold set "
+            "(.data/tts_strategy/gold_benchmark_20260908/eval_input.jsonl)."
+        )
     items = load_input_items(args.input, args.ground_truth)
     logger.info("Loaded %d evaluation items from %s", len(items), args.input)
     ensure_evaluation_audio(items, REPO_ROOT, args.hf_dataset_repo)
