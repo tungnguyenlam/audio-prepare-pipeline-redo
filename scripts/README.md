@@ -118,8 +118,8 @@ Unified evaluator supporting Gemini API models, OpenAI/vLLM endpoints, and local
 
 - **Key Flags:**
   ```bash
-  # Evaluate Gemini 3.8 Flash on Khanh Vy cuts
-  python scripts/evaluate_verifier.py --backend gemini --model gemini-3.8-flash --reasoning-effort medium --input .data/experiment_khanhvy/cuts/ --output-report report.md --export-csv results.csv
+  # Evaluate Gemini 3.8 Flash on Khanh Vy cuts (optional --api-key override)
+  python scripts/evaluate_verifier.py --backend gemini --model gemini-3.8-flash --api-key "$GEMINI_API_KEY" --reasoning-effort medium --input .data/experiment_khanhvy/cuts/ --output-report report.md --export-csv results.csv
 
   # Evaluate fine-tuned local LoRA adapter on validation split
   python scripts/evaluate_verifier.py --backend hf_local --model google/gemma-4-E2B-it --adapter-path .data/distillation/checkpoints_e2b/best_adapter --input .data/distillation/val_e2b.jsonl

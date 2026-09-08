@@ -25,10 +25,12 @@ class EndpointVerifier(BaseVerifier):
         self,
         endpoint: str = "http://localhost:8000/v1/chat/completions",
         model: str = "default",
+        api_key: str | None = None,
         **kwargs: Any,
     ) -> None:
         self.endpoint = endpoint
         self.model = model
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         logger.info("Initialized EndpointVerifier targeting '%s' (model='%s').", endpoint, model)
 
     def verify(self, audio_path: Path, prompt: str) -> dict[str, Any]:
@@ -54,10 +56,14 @@ class EndpointVerifier(BaseVerifier):
         }
 
         t0 = time.time()
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
         req = urllib.request.Request(
             self.endpoint,
             data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers=headers,
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=120) as resp:

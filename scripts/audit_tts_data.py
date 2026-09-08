@@ -783,15 +783,24 @@ def combine_labeled_pools(args: argparse.Namespace) -> None:
     output = local_path(args.output)
     if not output.is_relative_to(ROOT / ".data") or output.exists():
         raise ValueError("Choose a new JSONL under .data/.")
+    include_reserved = bool(getattr(args, "include_reserved_challenge", False))
+    reserved = {"youtube:H0VpjeULCck"}
     combined, seen = [], {}
     for path in args.inputs:
         for row in read_jsonl(local_path(path)):
-            if not row.get("recording_id") or row["recording_id"] == "youtube:H0VpjeULCck":
-                raise ValueError(f"Refusing unlabeled or reserved challenge rows from {path}")
+            recording_id = row.get("recording_id")
+            if not recording_id:
+                raise ValueError(f"Refusing unlabeled rows from {path}")
+            if recording_id in reserved and not include_reserved:
+                raise ValueError(
+                    f"Refusing reserved challenge rows from {path}; "
+                    "pass --include-reserved-challenge to merge them into a "
+                    "unified benchmark gold set."
+                )
             digest = row["audio_sha256"]
             previous = seen.get(digest)
             if previous:
-                if previous["recording_id"] != row["recording_id"]:
+                if previous["recording_id"] != recording_id:
                     raise ValueError(f"Duplicate audio across recordings: {digest}")
                 continue
             seen[digest] = row
@@ -800,6 +809,7 @@ def combine_labeled_pools(args: argparse.Namespace) -> None:
     write_jsonl(output, combined)
     print(json.dumps({
         "combined": len(combined), "output": str(output),
+        "include_reserved_challenge": include_reserved,
         "recordings": dict(Counter(r["recording_id"] for r in combined)),
         "decisions": dict(Counter(r["decision"] for r in combined)),
     }, indent=2))
@@ -983,6 +993,11 @@ def main() -> None:
         "combine", help="Join source-resolved labeled JSONL files into a new pool")
     combine_parser.add_argument("--inputs", nargs="+", required=True)
     combine_parser.add_argument("--output", required=True)
+    combine_parser.add_argument(
+        "--include-reserved-challenge",
+        action="store_true",
+        help="Allow youtube:H0VpjeULCck rows when building a unified benchmark gold set",
+    )
     args = parser.parse_args()
     if args.command == "prepare":
         prepare(args)

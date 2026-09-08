@@ -62,6 +62,7 @@ def get_verifier(
         return EndpointVerifier(
             endpoint=endpoint,
             model=model,
+            api_key=api_key,
             **kwargs,
         )
 

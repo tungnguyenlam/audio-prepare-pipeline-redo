@@ -4,28 +4,26 @@
 
 - Strategy: [TTS_PRODUCTION_STRATEGY.md](TTS_PRODUCTION_STRATEGY.md).
 - Active phase: 1 evidence is in place; Phase 2 lock is a competitor-conflict gate,
-  not a clip repairer. The labeled pool now has 10 source-disjoint recordings.
+  not a clip repairer.
 - Authorization: user requested execution with regular commits and pushes.
 - User clarification: Gemini 3.8 Flash MEDIUM is accepted as human-quality ground
   truth; API hearing is explicitly authorized. Separate human review is not a gate.
-- Completed MEDIUM API audits: 31 legacy challenge clips, 97 legacy source-resolved
-  clips, 16 relocked 180 s children, 36 new locked extracts (20 pass / 16 reject;
-  14,480 + 6,577 + 12,162 = 33,219 tokens), and 110 unique Experiment-tab sweep
-  clips (88 pass / 22 reject; 42,143 + 16,651 + 38,246 = 97,040 tokens).
-  Sweep labels are preserved under
-  `.data/tts_strategy/experiment_tab_sweep_20260908/` and merged into
-  `pool_20260908_v3` (241 clips / 10 recordings; 148 pass / 93 reject after
-  SHA dedupe; 2 byte-identical overlaps with v2 dropped).
-- Experiment-tab measured harvest recipe (`recipe_nolock`) is now the Studio
-  Reset / status default: onset 0.70, offset 0.50, collar 0.20, silence tail 0.25,
-  smart seg 2–15 s, word lock off, consensus off. See checkpoint 8.
-- No training or test cases have run. Word-lock expansion into inter-turn gaps
-  did not repair clipped rejects into passes.
-- Next: apply the measured harvest recipe to grow studio-interview / narration
-  sources (Vietcetera `10.000 hours` remains the best tier); then fit/calibrate
-  a local acoustic baseline for music, reverb, and in-interval secondary speech.
-  Do not treat ASR edge overlap as clipping proof. Do not prefer music-backed
-  vlogs for pool growth.
+- **Unified MEDIUM gold / benchmark pool:** `pool_20260908_v4` /
+  `gold_benchmark_20260908` = **288 clips / 11 recordings** (159 pass / 129 reject).
+  This merges v3 (241) with the former held-out Khanh Vy challenge (31 originals +
+  16 relocked boundary children from `youtube:H0VpjeULCck`). User requested the
+  merge because n=31 was too small for benchmarking. **There is no longer a
+  source-disjoint held-out recording inside this file**; reserve a fresh source
+  later if unseen-source generalization must be measured.
+- Completed MEDIUM API audits feeding v4: phase1 challenge 31, source-resolved
+  pool 97, boundary children 16, locked extracts 36, Experiment-tab sweep 110
+  unique (plus earlier lineage joins). v1/v2/v3 left intact.
+- Experiment-tab measured harvest recipe (`recipe_nolock`) is the Studio Reset /
+  status default. See checkpoint 8.
+- No training or test cases have run.
+- Next: grow studio-interview / narration sources with the measured harvest
+  recipe; then fit/calibrate a local acoustic baseline. Prefer a *new* held-out
+  recording for future generalization checks. Do not prefer music-backed vlogs.
 
 ## Checkpoints
 
@@ -321,6 +319,29 @@ overlaps already in v2. Recording counts after merge: `3Nll-JLzvvE` 85,
 `Oa-mVxGS4cw` 13, `fwN5VT_QxkY` 13, `zK3qFnKZFRo` 13, `lfIbjICmfW0` 11,
 `NI8JVXNWlN8` 4. Calibration freeze unchanged (`fwN5VT_QxkY` + `Oa-mVxGS4cw`).
 v2 left intact. Still not a production quality claim.
+
+### 9. Unified benchmark gold (challenge holdout merged)
+
+User request: merge the former held-out Khanh Vy challenge into the larger
+MEDIUM gold set because n=31 was too small for benchmarking.
+
+Exported `.data/tts_strategy/khanhvy_challenge_20260908/labeled.jsonl`:
+31 phase1 challenge originals + 16 boundary-relock children, all
+`youtube:H0VpjeULCck`, Gemini 3.8 Flash MEDIUM (11 pass / 36 reject among the
+47). `audit_tts_data.py combine --include-reserved-challenge` then built
+`.data/tts_strategy/pool_20260908_v4/labeled_pool.jsonl` (also copied to
+`.data/tts_strategy/gold_benchmark_20260908/labeled_pool.jsonl`):
+
+- **288 clips / 11 recordings** (159 pass / 129 reject)
+- Adds `youtube:H0VpjeULCck`: 47
+- Prior v3 recordings unchanged in count except the new recording row
+- v1/v2/v3 left intact
+
+Trade-off: this file is a bigger gold/benchmark set, but it is **not** a
+source-disjoint unseen test anymore. Reserve a fresh recording later when
+unseen-source generalization must be measured. `combine` still refuses
+challenge rows unless `--include-reserved-challenge` is passed. `extract`
+still blocks harvesting that recording by default.
 
 ## Continuation rules
 

@@ -237,6 +237,12 @@ def parse_args() -> argparse.Namespace:
         help="Reasoning level (for Gemini)",
     )
     parser.add_argument(
+        "--api-key",
+        type=str,
+        default=None,
+        help="API key for Gemini or Endpoint backends (defaults to GEMINI_API_KEY or OPENAI_API_KEY env var)",
+    )
+    parser.add_argument(
         "--device",
         type=str,
         default="auto",
@@ -345,6 +351,7 @@ def main() -> None:
         trust_remote_code=args.trust_remote_code,
         torch_dtype=args.torch_dtype,
         reasoning_effort=args.reasoning_effort,
+        api_key=args.api_key,
         hf_token=os.getenv("HF_TOKEN"),
     )
 
