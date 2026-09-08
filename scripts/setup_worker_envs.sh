@@ -5,7 +5,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 print_usage() {
-    echo "Usage: $0 [all|sortformer|3dspeaker|vibevoice|diarizen|status] [--force]"
+    echo "Usage: $0 [all|sortformer|3dspeaker|vibevoice|diarizen|minicpmo|status] [--force]"
     echo ""
     echo "Device-agnostic environment provisioner for Sonic pipeline isolated models."
     echo ""
@@ -15,6 +15,7 @@ print_usage() {
     echo "  3dspeaker    ModelScope 3D-Speaker (.venv-3dspeaker, Python 3.13)"
     echo "  vibevoice    VibeVoice-ASR purity verifier (.venv-vibevoice, Python 3.13)"
     echo "  diarizen     DiariZen WavLM (.venv-diarizen, Python 3.10)"
+    echo "  minicpmo     MiniCPM-o 4.5 / 2.6 verifier (.venv-minicpmo, Python 3.11)"
     echo "  status       Display environment and hardware acceleration status"
     echo ""
     echo "Options:"
@@ -284,12 +285,47 @@ print('   -> DiariZenPipeline: successfully loaded')
     echo "🎉 ${venv_dir} ready!"
 }
 
+setup_minicpmo() {
+    local venv_dir=".venv-minicpmo"
+    echo ""
+    echo "========================================================"
+    echo "  Setting up MiniCPM-o verifier worker (${venv_dir})"
+    echo "========================================================"
+
+    if [ "$FORCE" -eq 1 ] && [ -d "$venv_dir" ]; then
+        echo "🗑️  Removing existing ${venv_dir} (--force)..."
+        rm -rf "$venv_dir"
+    fi
+
+    if [ ! -d "$venv_dir" ]; then
+        echo "📦 Ensuring Python 3.11 is available via uv..."
+        uv python install 3.11
+        echo "📦 Creating Python 3.11 virtual environment ${venv_dir}..."
+        uv venv --python 3.11 "$venv_dir"
+    fi
+
+    local py_bin="${venv_dir}/bin/python"
+
+    echo "📦 Installing MiniCPM-o requirements (pinned transformers==4.51.0)..."
+    uv pip install --python "$py_bin" -r requirements-minicpmo.txt
+
+    echo "✅ Verifying MiniCPM-o installation..."
+    "$py_bin" -c "
+import torch
+dev_type = 'CUDA' if torch.cuda.is_available() else 'CPU'
+print(f'   -> Torch: {torch.__version__} ({dev_type})')
+import transformers
+print(f'   -> Transformers: {transformers.__version__}')
+"
+    echo "🎉 ${venv_dir} ready!"
+}
+
 status_report() {
     echo ""
     echo "========================================================"
     echo "  Virtual Environments Status Report (${HW_DESC})"
     echo "========================================================"
-    local venvs=(".venv" ".venv-sortformer" ".venv-3dspeaker" ".venv-vibevoice" ".venv-diarizen")
+    local venvs=(".venv" ".venv-sortformer" ".venv-3dspeaker" ".venv-vibevoice" ".venv-diarizen" ".venv-minicpmo")
     for v in "${venvs[@]}"; do
         if [ -x "${v}/bin/python" ]; then
             local info
@@ -329,6 +365,9 @@ case "$TARGET" in
     diarizen)
         setup_diarizen
         ;;
+    minicpmo|minicpm)
+        setup_minicpmo
+        ;;
     status|check)
         status_report
         ;;
@@ -337,6 +376,7 @@ case "$TARGET" in
         setup_3dspeaker
         setup_vibevoice
         setup_diarizen
+        setup_minicpmo
         status_report
         ;;
     *)

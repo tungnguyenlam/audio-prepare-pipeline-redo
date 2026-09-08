@@ -100,16 +100,23 @@ If not yet finished downloading, resume with native automatic retry:
 .venv/bin/huggingface-cli download ericleigh007/MiniCPM-o-4_5-BNB-Int4
 ```
 
-### Step 2: Evaluate MiniCPM-o 4.5 INT4 on 31 Khanh Vy Benchmark Cuts
+### Step 2: Provision Isolated MiniCPM-o Environment (.venv-minicpmo) & Evaluate
+OpenBMB requires `transformers==4.51.0` and `torch<=2.8.0`. To prevent downgrading the main pipeline, use the isolated `.venv-minicpmo`:
 ```bash
-.venv/bin/python scripts/evaluate_verifier.py \
+# Provision isolated environment via setup script:
+./scripts/setup_minicpmo_env.sh
+# Or alternatively:
+# ./scripts/setup_worker_envs.sh minicpmo
+
+# Evaluate MiniCPM-o 4.5 (FP16 / BF16 or INT4):
+.venv-minicpmo/bin/python scripts/evaluate_verifier.py \
   --backend hf_local \
-  --model ericleigh007/MiniCPM-o-4_5-BNB-Int4 \
+  --model openbmb/MiniCPM-o-4_5 \
   --device cuda:0 \
   --input .data/experiment_khanhvy/results.json \
-  --output-json .data/distillation/reports/minicpmo_int4_eval.json \
-  --output-report .data/distillation/reports/minicpmo_int4_vs_gemini38.md \
-  --export-csv .data/distillation/reports/minicpmo_int4_vs_gemini38.csv
+  --output-json .data/eval_minicpm_o45.json \
+  --output-report .data/eval_minicpm_o45.md \
+  --export-csv .data/eval_minicpm_o45.csv
 ```
 
 ### Step 3: Evaluate Kimi-Audio-7B-Instruct

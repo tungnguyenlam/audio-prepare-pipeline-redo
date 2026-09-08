@@ -164,19 +164,50 @@ def query_hf_local(
 ) -> dict[str, Any]:
     """Evaluate audio with local Hugging Face model + processor."""
     import librosa
+    import numpy as np
     import torch
 
     t0 = time.time()
-    audio_data, _ = librosa.load(str(audio_path), sr=16000)
+    audio_data, _ = librosa.load(str(audio_path), sr=16000, mono=True)
+    audio_data = np.asarray(audio_data, dtype=np.float32)
 
     # Check if model provides custom .chat() interface (e.g., MiniCPM-o)
     if hasattr(model, "chat"):
         msgs = [{"role": "user", "content": [prompt, audio_data]}]
         try:
-            res = model.chat(image=None, msgs=msgs, tokenizer=processor, generate_audio=False)
+            # Dedicated MiniCPM-o 4.5 audio-text inference invocation
+            res = model.chat(
+                msgs=msgs,
+                do_sample=False,
+                max_new_tokens=512,
+                generate_audio=False,
+                enable_thinking=False,
+            )
         except TypeError:
-            res = model.chat(image=None, audio=audio_data, msgs=msgs, tokenizer=processor)
-        output_text = res if isinstance(res, str) else str(res)
+            try:
+                res = model.chat(
+                    msgs=msgs,
+                    do_sample=False,
+                    max_new_tokens=512,
+                    generate_audio=False,
+                )
+            except TypeError:
+                try:
+                    res = model.chat(
+                        image=None,
+                        msgs=msgs,
+                        tokenizer=processor,
+                        generate_audio=False,
+                    )
+                except TypeError:
+                    res = model.chat(image=None, audio=audio_data, msgs=msgs, tokenizer=processor)
+
+        if isinstance(res, tuple):
+            output_text = res[0] if len(res) > 0 else ""
+        elif isinstance(res, str):
+            output_text = res
+        else:
+            output_text = str(res)
     else:
         messages = [
             {
@@ -370,46 +401,94 @@ def main() -> None:
         actual_device = "cuda:0" if (args.device == "auto" and torch.cuda.is_available()) or args.device.startswith("cuda") else "cpu"
         logger.info("Loading HF model '%s' on %s (trust_remote_code=%s)...", args.model, actual_device, args.trust_remote_code)
         hf_token = os.getenv("HF_TOKEN")
-        try:
-            hf_processor = AutoProcessor.from_pretrained(args.model, trust_remote_code=args.trust_remote_code, token=hf_token)
-        except Exception:
-            from transformers import AutoTokenizer
-            hf_processor = AutoTokenizer.from_pretrained(args.model, trust_remote_code=args.trust_remote_code, token=hf_token)
+        model_name_lower = args.model.lower()
+        is_minicpm = "minicpm-o" in model_name_lower or "minicpmo" in model_name_lower
 
-        dtype = getattr(torch, args.torch_dtype, torch.bfloat16)
-        hf_model = None
-        candidate_classes = []
-        if "gemma-4" in args.model.lower() and Gemma4ForConditionalGeneration is not None:
-            candidate_classes.append(Gemma4ForConditionalGeneration)
-        try:
-            from transformers import AutoModelForImageTextToText
-            candidate_classes.append(AutoModelForImageTextToText)
-        except Exception:
-            pass
-        candidate_classes.extend([AutoModelForCausalLM, AutoModel])
-
-        extra_model_kwargs = {}
-        if "minicpm" in args.model.lower():
-            extra_model_kwargs = {"init_vision": False, "init_tts": False}
-
-        for cls in candidate_classes:
+        if is_minicpm:
+            logger.info("Detected MiniCPM-o model family ('%s'). Using dedicated AutoModel + SDPA chat path...", args.model)
             try:
-                hf_model = cls.from_pretrained(
+                from transformers import AutoTokenizer
+                hf_processor = AutoTokenizer.from_pretrained(args.model, trust_remote_code=args.trust_remote_code, token=hf_token)
+            except Exception as e:
+                logger.debug("AutoTokenizer not loaded for %s: %s, falling back to AutoProcessor", args.model, e)
+                try:
+                    hf_processor = AutoProcessor.from_pretrained(args.model, trust_remote_code=args.trust_remote_code, token=hf_token)
+                except Exception:
+                    hf_processor = None
+
+            extra_model_kwargs = {
+                "init_vision": False,
+                "init_audio": True,
+                "init_tts": False,
+            }
+            try:
+                hf_model = AutoModel.from_pretrained(
                     args.model,
-                    torch_dtype=dtype,
-                    device_map=actual_device,
                     trust_remote_code=args.trust_remote_code,
+                    attn_implementation="sdpa",
+                    torch_dtype=dtype,
                     token=hf_token,
                     **extra_model_kwargs,
                 )
-                logger.info("Successfully loaded model using %s", cls.__name__)
-                break
-            except Exception as e:
-                logger.debug("Failed loading with %s: %s", cls.__name__, e)
-                continue
+            except TypeError as e:
+                logger.debug("Failed with sdpa/init kwargs (%s), falling back to standard AutoModel kwargs", e)
+                hf_model = AutoModel.from_pretrained(
+                    args.model,
+                    trust_remote_code=args.trust_remote_code,
+                    torch_dtype=dtype,
+                    token=hf_token,
+                    **extra_model_kwargs,
+                )
 
-        if hf_model is None:
-            raise RuntimeError(f"Could not load model '{args.model}' with any supported model class.")
+            if hasattr(hf_model, "eval"):
+                hf_model = hf_model.eval()
+            if actual_device.startswith("cuda") and hasattr(hf_model, "cuda"):
+                hf_model = hf_model.cuda()
+            elif hasattr(hf_model, "to") and actual_device != "cpu":
+                hf_model = hf_model.to(actual_device)
+
+            if hasattr(hf_model, "config") and hasattr(hf_model.config, "stream_input"):
+                hf_model.config.stream_input = False
+
+            logger.info("Successfully loaded %s with dedicated AutoModel path (stream_input=False)", args.model)
+        else:
+            try:
+                hf_processor = AutoProcessor.from_pretrained(args.model, trust_remote_code=args.trust_remote_code, token=hf_token)
+            except Exception:
+                from transformers import AutoTokenizer
+                hf_processor = AutoTokenizer.from_pretrained(args.model, trust_remote_code=args.trust_remote_code, token=hf_token)
+
+            hf_model = None
+            candidate_classes = []
+            if "gemma-4" in args.model.lower() and Gemma4ForConditionalGeneration is not None:
+                candidate_classes.append(Gemma4ForConditionalGeneration)
+            try:
+                from transformers import AutoModelForImageTextToText
+                candidate_classes.append(AutoModelForImageTextToText)
+            except Exception:
+                pass
+            candidate_classes.extend([AutoModelForCausalLM, AutoModel])
+
+            load_errors: list[str] = []
+            for cls in candidate_classes:
+                try:
+                    hf_model = cls.from_pretrained(
+                        args.model,
+                        torch_dtype=dtype,
+                        device_map=actual_device,
+                        trust_remote_code=args.trust_remote_code,
+                        token=hf_token,
+                    )
+                    logger.info("Successfully loaded model using %s", cls.__name__)
+                    break
+                except Exception as e:
+                    load_errors.append(f"{cls.__name__}: {e}")
+                    logger.debug("Failed loading with %s: %s", cls.__name__, e)
+                    continue
+
+            if hf_model is None:
+                err_detail = " | ".join(load_errors)
+                raise RuntimeError(f"Could not load model '{args.model}' with any supported model class. Errors: {err_detail}")
 
         if args.adapter_path:
             logger.info("Attaching LoRA adapter from '%s'...", args.adapter_path)
