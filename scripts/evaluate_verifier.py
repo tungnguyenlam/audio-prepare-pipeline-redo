@@ -3,6 +3,7 @@
 
 Supports evaluating any Hugging Face multimodal audio model (base or fine-tuned with LoRA)
 or Gemini API models on:
+  - The 288-clip MEDIUM gold set (`.data/tts_strategy/gold_benchmark_20260908/eval_input.jsonl`)
   - The 31 Khanh Vy benchmark cuts (`.data/experiment_khanhvy/results.json` or directory of cuts)
   - Distillation datasets (`.data/distillation/val_e2b.jsonl`, `train_e2b.jsonl`)
   - Any directory of WAV files
@@ -12,8 +13,21 @@ Computes:
   - Agreement rate with Gemini 3.8 Flash reference
   - Confusion matrix (True Pass, True Reject, Contamination Leaks, False Rejects)
   - Precision, Recall, F1
+  - Gemini API usage + estimated USD cost (automatic via GeminiVerifier)
   - Side-by-side disagreement table with model vs Gemini reasoning
   - Markdown summary reports and spreadsheet-ready CSV export
+
+Portable gold run (another machine)::
+
+    ./scripts/run_gold_verifier_eval.sh gemini-3.5-flash-lite medium
+    # or
+    python scripts/evaluate_verifier.py --backend gemini --model gemini-3.5-flash-lite \\
+      --reasoning-effort medium --concurrency 8 \\
+      --input .data/tts_strategy/gold_benchmark_20260908/eval_input.jsonl \\
+      --materialize-audio .data/tts_strategy/gold_benchmark_20260908/audio \\
+      --output-report .data/tts_strategy/gold_benchmark_20260908/reports/run.md \\
+      --output-json .data/tts_strategy/gold_benchmark_20260908/reports/run.json \\
+      --export-csv .data/tts_strategy/gold_benchmark_20260908/reports/run.csv
 """
 
 from __future__ import annotations
@@ -23,6 +37,7 @@ import csv
 import json
 import logging
 import os
+import shutil
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -36,6 +51,7 @@ from dotenv import load_dotenv
 load_dotenv(REPO_ROOT / ".env")
 
 from src.diarization.audio_utils import resolve_audio_path
+from src.diarization.gemini_pricing import aggregate_prediction_costs
 from src.diarization.verifiers import (
     DEFAULT_ACOUSTIC_PROMPT,
     extract_json_payload,
@@ -48,6 +64,12 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("evaluate_verifier")
+
+
+def resolve_out_path(path_str: str) -> Path:
+    """Resolve a report/output path relative to the repo root when not absolute."""
+    path = Path(path_str)
+    return path if path.is_absolute() else REPO_ROOT / path
 
 
 # Compatibility wrappers for external imports
@@ -186,6 +208,104 @@ def extract_reference_verdict(item: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def item_audio_raw_path(item: dict[str, Any]) -> str:
+    """Return the raw audio path field from an eval item."""
+    return str(item.get("audio_path") or item.get("wav_path") or item.get("audio") or "")
+
+
+def preflight_audio(
+    items: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
+    """Split items into those with resolvable audio vs missing paths."""
+    ok: list[dict[str, Any]] = []
+    missing: list[tuple[str, str]] = []
+    for item in items:
+        raw = item_audio_raw_path(item)
+        try:
+            path = resolve_audio_path(raw, REPO_ROOT)
+        except Exception:
+            missing.append((str(item.get("id", "")), raw))
+            continue
+        if not Path(path).is_file():
+            missing.append((str(item.get("id", "")), raw))
+            continue
+        item = dict(item)
+        item["_resolved_audio_path"] = str(path)
+        ok.append(item)
+    return ok, missing
+
+
+def materialize_audio_bundle(
+    items: list[dict[str, Any]],
+    audio_dir: Path,
+) -> list[dict[str, Any]]:
+    """Copy clip audio into ``audio_dir`` and rewrite ``audio_path`` relative to repo."""
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    rewritten: list[dict[str, Any]] = []
+    for item in items:
+        src = Path(
+            item.get("_resolved_audio_path")
+            or resolve_audio_path(item_audio_raw_path(item), REPO_ROOT)
+        )
+        dest_name = f"{item.get('id', src.stem)}{src.suffix or '.wav'}"
+        dest = audio_dir / dest_name
+        if not dest.is_file() or dest.stat().st_size != src.stat().st_size:
+            shutil.copy2(src, dest)
+        try:
+            rel = dest.relative_to(REPO_ROOT)
+        except ValueError:
+            rel = dest
+        new_item = dict(item)
+        new_item["audio_path"] = str(rel)
+        new_item["_resolved_audio_path"] = str(dest)
+        rewritten.append(new_item)
+    manifest = audio_dir.parent / "eval_input.materialized.jsonl"
+    with open(manifest, "w", encoding="utf-8") as f:
+        for row in rewritten:
+            out = {k: v for k, v in row.items() if not str(k).startswith("_")}
+            f.write(json.dumps(out, ensure_ascii=False) + "\n")
+    logger.info("Materialized %d clips under %s (manifest %s)", len(rewritten), audio_dir, manifest)
+    return rewritten
+
+
+def load_completed_ids(resume_json: str | None) -> set[str]:
+    """Return item ids already present in a prior output JSON."""
+    if not resume_json:
+        return set()
+    path = resolve_out_path(resume_json)
+    if not path.is_file():
+        logger.warning("Resume JSON not found: %s", path)
+        return set()
+    data = json.loads(path.read_text(encoding="utf-8"))
+    done: set[str] = set()
+    for row in data.get("results", []):
+        if not row.get("success"):
+            continue
+        item = row.get("item") or {}
+        iid = item.get("id")
+        if iid:
+            done.add(str(iid))
+    logger.info("Resume: skipping %d completed ids from %s", len(done), path)
+    return done
+
+
+def format_cost_section(cost_block: dict[str, Any] | None) -> str:
+    """Render markdown for usage/cost totals."""
+    if not cost_block:
+        return ""
+    usage = cost_block.get("usage") or {}
+    cost = cost_block.get("cost") or {}
+    if not usage.get("requests") and not cost.get("priced_requests"):
+        return ""
+    return f"""
+## API Usage & Estimated Cost
+
+- **Requests priced:** {cost.get("priced_requests", 0)} (unpriced: {cost.get("unpriced_requests", 0)})
+- **Tokens:** prompt={usage.get("prompt_tokens", 0)}, audio_in={usage.get("audio_input_tokens", 0)}, output={usage.get("output_tokens", 0)}, thinking={usage.get("thinking_tokens", 0)}, total={usage.get("total_tokens", 0)}
+- **Estimated USD (paid Standard, as of {cost.get("rate_card_as_of", "?")}):** input=${float(cost.get("input_usd", 0.0)):.6f}, output+thinking=${float(cost.get("output_usd", 0.0)):.6f}, **total=${float(cost.get("total_usd", 0.0)):.6f}**
+"""
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Unified speech verifier evaluation & Gemini 3.8 Flash benchmark CLI.",
@@ -263,6 +383,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--export-csv", type=str, default=None, help="Path to export evaluation results to CSV")
     parser.add_argument("--concurrency", type=int, default=5, help="Concurrent workers for Gemini/endpoint queries")
     parser.add_argument("--hf-dataset-repo", type=str, default="tungnguyenlam/gemma-4-e2b-acoustic-verifier-data", help="HF dataset repository to fetch missing audio from")
+    parser.add_argument("--limit", type=int, default=None, help="Evaluate at most N items after offset/resume filters")
+    parser.add_argument("--offset", type=int, default=0, help="Skip the first N items (for sharding across machines)")
+    parser.add_argument(
+        "--resume-json",
+        type=str,
+        default=None,
+        help="Prior output JSON; skip item ids that already succeeded",
+    )
+    parser.add_argument(
+        "--check-audio-only",
+        action="store_true",
+        help="Resolve audio paths and exit without calling models",
+    )
+    parser.add_argument(
+        "--allow-missing-audio",
+        action="store_true",
+        help="Skip missing audio instead of failing the preflight",
+    )
+    parser.add_argument(
+        "--materialize-audio",
+        type=str,
+        default=None,
+        help="Copy clips into this directory and rewrite audio_path for portable sync",
+    )
 
     return parser.parse_args()
 
@@ -326,6 +470,43 @@ def main() -> None:
     logger.info("Loaded %d evaluation items from %s", len(items), args.input)
     ensure_evaluation_audio(items, REPO_ROOT, args.hf_dataset_repo)
 
+    if args.offset:
+        items = items[args.offset :]
+        logger.info("Applied offset=%d -> %d items remain", args.offset, len(items))
+
+    done_ids = load_completed_ids(args.resume_json)
+    if done_ids:
+        before = len(items)
+        items = [it for it in items if str(it.get("id", "")) not in done_ids]
+        logger.info("Resume filter removed %d items -> %d remain", before - len(items), len(items))
+
+    if args.limit is not None:
+        items = items[: max(0, args.limit)]
+        logger.info("Applied limit=%d -> %d items", args.limit, len(items))
+
+    present, missing = preflight_audio(items)
+    if missing:
+        logger.warning("Missing audio for %d/%d items (showing up to 5):", len(missing), len(items))
+        for iid, raw in missing[:5]:
+            logger.warning("  id=%s path=%s", iid, raw)
+        if not args.allow_missing_audio:
+            logger.error("Audio preflight failed. Sync missing files or pass --allow-missing-audio.")
+            sys.exit(2)
+    items = present
+    logger.info("Audio preflight OK for %d items", len(items))
+
+    if args.materialize_audio:
+        audio_dir = resolve_out_path(args.materialize_audio)
+        items = materialize_audio_bundle(items, audio_dir)
+
+    if args.check_audio_only:
+        logger.info("Check-audio-only complete (%d ready, %d missing).", len(items), len(missing))
+        sys.exit(0 if (not missing or args.allow_missing_audio) else 2)
+
+    if not items:
+        logger.error("No evaluation items left to run.")
+        sys.exit(1)
+
     cli_prompt = None
     if args.prompt_file:
         p_file = Path(args.prompt_file)
@@ -371,12 +552,16 @@ def main() -> None:
     # Evaluation loop
     results: list[dict[str, Any]] = []
 
+    def _audio_for(item: dict[str, Any]) -> Path:
+        if item.get("_resolved_audio_path"):
+            return Path(item["_resolved_audio_path"])
+        return resolve_audio_path(item_audio_raw_path(item), REPO_ROOT)
+
     if verifier.supports_concurrency:
         with ThreadPoolExecutor(max_workers=args.concurrency) as executor:
             future_to_item = {}
             for item in items:
-                raw_path = item.get("audio_path") or item.get("wav_path") or item.get("audio") or ""
-                audio_p = resolve_audio_path(raw_path, REPO_ROOT)
+                audio_p = _audio_for(item)
                 prompt = cli_prompt if cli_prompt is not None else item.get("prompt", DEFAULT_ACOUSTIC_PROMPT)
                 fut = executor.submit(verifier.verify, audio_p, prompt)
                 future_to_item[fut] = (item, prompt)
@@ -386,19 +571,34 @@ def main() -> None:
                 try:
                     res = fut.result()
                     results.append({"item": item, "prompt": prompt, "prediction": res, "success": True})
-                    logger.info("Sample %s -> %s (latency: %.2fs)", item.get("id", ""), res.get("decision", ""), res.get("_latency_s", 0))
+                    cost = res.get("_cost") or {}
+                    cost_s = f" cost=${float(cost['total_usd']):.6f}" if cost.get("total_usd") is not None else ""
+                    logger.info(
+                        "Sample %s -> %s (latency: %.2fs)%s",
+                        item.get("id", ""),
+                        res.get("decision", ""),
+                        res.get("_latency_s", 0),
+                        cost_s,
+                    )
                 except Exception as exc:
                     logger.error("Sample %s failed: %s", item.get("id", ""), exc)
                     results.append({"item": item, "prompt": prompt, "error": str(exc), "success": False})
     else:
         for item in items:
-            raw_path = item.get("audio_path") or item.get("wav_path") or item.get("audio") or ""
-            audio_p = resolve_audio_path(raw_path, REPO_ROOT)
+            audio_p = _audio_for(item)
             prompt = cli_prompt if cli_prompt is not None else item.get("prompt", DEFAULT_ACOUSTIC_PROMPT)
             try:
                 res = verifier.verify(audio_p, prompt)
                 results.append({"item": item, "prompt": prompt, "prediction": res, "success": True})
-                logger.info("Sample %s -> %s (latency: %.2fs)", item.get("id", ""), res.get("decision", ""), res.get("_latency_s", 0))
+                cost = res.get("_cost") or {}
+                cost_s = f" cost=${float(cost['total_usd']):.6f}" if cost.get("total_usd") is not None else ""
+                logger.info(
+                    "Sample %s -> %s (latency: %.2fs)%s",
+                    item.get("id", ""),
+                    res.get("decision", ""),
+                    res.get("_latency_s", 0),
+                    cost_s,
+                )
             except Exception as exc:
                 logger.error("Sample %s failed: %s", item.get("id", ""), exc)
                 results.append({"item": item, "prompt": prompt, "error": str(exc), "success": False})
@@ -409,6 +609,13 @@ def main() -> None:
     reject_count = sum(1 for r in successful if r["prediction"].get("decision") == "reject")
     latencies = [r["prediction"]["_latency_s"] for r in successful if "_latency_s" in r["prediction"]]
     avg_latency = round(sum(latencies) / max(1, len(latencies)), 2)
+
+    cost_block = aggregate_prediction_costs([r["prediction"] for r in successful])
+    if hasattr(verifier, "get_cost_summary"):
+        session_cost = verifier.get_cost_summary()
+        # Prefer live session totals when the verifier tracks them.
+        if session_cost.get("usage", {}).get("requests"):
+            cost_block = {"usage": session_cost["usage"], "cost": session_cost["cost"]}
 
     # Compute comparison against Gemini reference
     comparisons = []
@@ -460,6 +667,24 @@ def main() -> None:
     logger.info("Model: %s | Evaluated: %d | Success: %d", args.model, len(results), len(successful))
     logger.info("Distribution: Pass=%d (%.1f%%) | Reject=%d (%.1f%%)", pass_count, (pass_count / max(1, len(successful))) * 100, reject_count, (reject_count / max(1, len(successful))) * 100)
     logger.info("Average Latency: %.2fs", avg_latency)
+    usage_tot = cost_block.get("usage") or {}
+    cost_tot = cost_block.get("cost") or {}
+    if usage_tot.get("requests"):
+        logger.info(
+            "API usage: requests=%d prompt=%d output=%d thinking=%d total=%d",
+            usage_tot.get("requests", 0),
+            usage_tot.get("prompt_tokens", 0),
+            usage_tot.get("output_tokens", 0),
+            usage_tot.get("thinking_tokens", 0),
+            usage_tot.get("total_tokens", 0),
+        )
+        logger.info(
+            "Estimated API cost: $%.6f USD (paid Standard as of %s; input=$%.6f output+think=$%.6f)",
+            float(cost_tot.get("total_usd", 0.0)),
+            cost_tot.get("rate_card_as_of", "?"),
+            float(cost_tot.get("input_usd", 0.0)),
+            float(cost_tot.get("output_usd", 0.0)),
+        )
 
     if has_ref:
         logger.info("---------------- GEMINI 3.8 FLASH BENCHMARK ----------------")
@@ -473,13 +698,14 @@ def main() -> None:
     sample_prompt = cli_prompt or (results[0].get("prompt") if results else DEFAULT_ACOUSTIC_PROMPT)
 
     if args.output_json:
-        out_p = REPO_ROOT / args.output_json if not Path(args.output_json).is_file() else Path(args.output_json)
+        out_p = resolve_out_path(args.output_json)
         out_p.parent.mkdir(parents=True, exist_ok=True)
         with open(out_p, "w", encoding="utf-8") as f:
             json.dump({
                 "model": args.model,
                 "backend": args.backend,
                 "adapter_path": args.adapter_path,
+                "reasoning_effort": args.reasoning_effort if args.backend == "gemini" else None,
                 "prompt": sample_prompt,
                 "summary": {
                     "total": len(results),
@@ -489,13 +715,15 @@ def main() -> None:
                     "avg_latency_s": avg_latency,
                     "agreement_rate": agreement_rate if has_ref else None,
                     "f1_score": f1 if has_ref else None,
+                    "usage": cost_block.get("usage"),
+                    "cost": cost_block.get("cost"),
                 },
                 "results": results,
             }, f, ensure_ascii=False, indent=2)
         logger.info("Saved raw JSON results to %s", out_p)
 
     if args.export_csv:
-        csv_p = REPO_ROOT / args.export_csv if not Path(args.export_csv).is_file() else Path(args.export_csv)
+        csv_p = resolve_out_path(args.export_csv)
         csv_p.parent.mkdir(parents=True, exist_ok=True)
         fieldnames = [
             "id",
@@ -506,6 +734,10 @@ def main() -> None:
             "model_reason",
             "gemini_reason",
             "latency_s",
+            "prompt_tokens",
+            "output_tokens",
+            "thinking_tokens",
+            "cost_usd",
             "prompt",
         ]
         rows = []
@@ -515,6 +747,8 @@ def main() -> None:
             ref = extract_reference_verdict(it) or {}
             m_dec = pred.get("decision", "")
             g_dec = ref.get("decision", "")
+            usage = pred.get("_usage") or {}
+            cost = pred.get("_cost") or {}
             rows.append({
                 "id": it.get("id", ""),
                 "audio_path": it.get("audio_path") or it.get("wav_path", ""),
@@ -524,6 +758,10 @@ def main() -> None:
                 "model_reason": pred.get("reason", ""),
                 "gemini_reason": ref.get("reason", ""),
                 "latency_s": pred.get("_latency_s", ""),
+                "prompt_tokens": usage.get("prompt_tokens", ""),
+                "output_tokens": usage.get("output_tokens", ""),
+                "thinking_tokens": usage.get("thinking_tokens", ""),
+                "cost_usd": cost.get("total_usd", ""),
                 "prompt": r.get("prompt", ""),
             })
         with open(csv_p, "w", encoding="utf-8", newline="") as f:
@@ -533,7 +771,7 @@ def main() -> None:
         logger.info("Exported side-by-side comparison CSV to %s", csv_p)
 
     if args.output_report:
-        rpt_p = REPO_ROOT / args.output_report if not Path(args.output_report).is_file() else Path(args.output_report)
+        rpt_p = resolve_out_path(args.output_report)
         rpt_p.parent.mkdir(parents=True, exist_ok=True)
 
         disagree_table = ""
@@ -570,11 +808,18 @@ def main() -> None:
 | **Total Model** | {tp + fp} | {fn + tn} | {len(comparisons)} |
 """
 
+        cost_section = format_cost_section(cost_block)
+        effort_line = (
+            f"- **Reasoning effort:** `{args.reasoning_effort}`\n"
+            if args.backend == "gemini"
+            else ""
+        )
+
         report_content = f"""# Speech Verifier Benchmark Report
 
 - **Evaluated Model:** `{args.model}` ({args.backend})
 - **LoRA Adapter:** `{args.adapter_path or "None (Base Model)"}`
-- **Evaluation Dataset:** `{args.input}`
+{effort_line}- **Evaluation Dataset:** `{args.input}`
 - **Total Evaluated:** {len(results)}
 - **Successful:** {len(successful)} ({len(successful)/max(1, len(results))*100:.1f}%)
 - **Average Latency:** {avg_latency}s
@@ -587,6 +832,7 @@ def main() -> None:
 | **Reject** | {reject_count} | {reject_count/max(1, len(successful))*100:.1f}% |
 | **Total** | {len(successful)} | 100.0% |
 
+{cost_section}
 {benchmark_section}
 {disagree_table}
 

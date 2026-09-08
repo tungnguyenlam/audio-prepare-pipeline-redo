@@ -27,7 +27,9 @@
 - **Gemini 3.5 Flash-Lite vs gold (checkpoint 11):** same 288-clip MEDIUM gold,
   `--reasoning-effort medium`. Agreement **63.2%**, F1 **73.5%**, 47 rejects
   (35 true / 12 false), 94 contamination leaks. Beats E2B V3 on agreement/F1
-  because it can reject; still far from teacher quality.
+  because it can reject; still far from teacher quality. Cost was not recorded
+  on that run; `GeminiVerifier` now logs USD automatically (checkpoint 12).
+  Portable full-gold runner: `./scripts/run_gold_verifier_eval.sh`.
 - Next: grow studio-interview / narration sources with the measured harvest
   recipe; retrain or calibrate the student so it can reject (music / secondary
   speaker first). Prefer a *new* held-out recording for future generalization
@@ -430,6 +432,35 @@ Lite can reject (unlike E2B V3), so agreement beats the all-pass baseline, but
 clipped_word_end 25, secondary_speaker 23. Historical 31-cut lite probe
 (no thinkingConfig) was 51.6% agreement; this MEDIUM gold run is stronger but
 not teacher-grade.
+
+**Cost note:** That 288-clip Flash-Lite run completed before automatic cost
+instrumentation. Per-call `_usage`/`_cost` is now logged by `GeminiVerifier`
+(shared rate card `src/diarization/gemini_pricing.py`, as of 2026-09-04 paid
+Standard). A post-fix smoke of 2 clips cost **$0.000805** (~$0.12 extrapolated
+to 288 if thinking stays near zero). Re-runs should record exact totals in the
+report JSON/Markdown.
+
+### 12. Automatic Gemini cost logging + portable gold eval
+
+`GeminiVerifier.verify` now always attaches `_usage` / `_cost`, accumulates a
+thread-safe session total, and logs running USD. `evaluate_verifier.py` writes
+usage/cost into summary JSON, Markdown, CSV (`cost_usd`), and the console.
+`OverlapVerifier` reuses the same pricing helpers.
+
+Portable full-gold runner for another machine (preflight + materialize audio
+into `.data/tts_strategy/gold_benchmark_20260908/audio/` + evaluate):
+
+```bash
+export GEMINI_API_KEY=...
+# sync repo + .data/ first (or rely on --materialize-audio after local paths resolve)
+./scripts/run_gold_verifier_eval.sh gemini-3.5-flash-lite medium 8
+# shard / resume:
+LIMIT=100 OFFSET=0 ./scripts/run_gold_verifier_eval.sh
+RESUME_JSON=path/to/partial.json ./scripts/run_gold_verifier_eval.sh
+```
+
+Also on `evaluate_verifier.py`: `--check-audio-only`, `--materialize-audio`,
+`--limit`, `--offset`, `--resume-json`, `--allow-missing-audio`.
 
 Reports also at
 `.data/distillation/reports/gemini35_flash_lite_medium_vs_gold_benchmark_20260908.{md,json,csv}`.

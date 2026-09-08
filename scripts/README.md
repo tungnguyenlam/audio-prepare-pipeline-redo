@@ -113,7 +113,7 @@ Unified evaluator supporting Gemini API models, OpenAI/vLLM endpoints, and local
 - [`MossAudioVerifier`](../src/diarization/verifiers/MossAudioVerifier.py): Dedicated backend for `OpenMOSS-Team/MOSS-Audio-*` using official `MossAudioModel` & `MossAudioProcessor` with `audio_input_mask`.
 - [`MiniCPMVerifier`](../src/diarization/verifiers/MiniCPMVerifier.py): Dedicated backend for `openbmb/MiniCPM-o-4_5` via custom `.chat()`.
 - [`KimiAudioVerifier`](../src/diarization/verifiers/KimiAudioVerifier.py): Dedicated backend for `moonshotai/Kimi-Audio-7B-Instruct` via `KimiAudio` API.
-- [`GeminiVerifier`](../src/diarization/verifiers/GeminiVerifier.py): Direct REST API integration for Gemini 3.8 Flash teacher benchmark.
+- [`GeminiVerifier`](../src/diarization/verifiers/GeminiVerifier.py): Direct REST API integration for Gemini models. Automatically attaches `_usage` / `_cost` per call and accumulates session totals (paid Standard rate card in `src/diarization/gemini_pricing.py`).
 - [`EndpointVerifier`](../src/diarization/verifiers/EndpointVerifier.py): vLLM / OpenAI audio completions endpoint with proxy-safe transport.
 - [`UnslothVerifier`](../src/diarization/verifiers/UnslothVerifier.py): Specialized child verifier for Unsloth Studio / unsloth server endpoints with model auto-probing, dual payload compatibility (OpenAI multimodal + root `audio_base64`), and thinking/reasoning model support.
 
@@ -121,6 +121,12 @@ Unified evaluator supporting Gemini API models, OpenAI/vLLM endpoints, and local
   ```bash
   # Evaluate Gemini 3.8 Flash on Khanh Vy cuts (optional --api-key override)
   python scripts/evaluate_verifier.py --backend gemini --model gemini-3.8-flash --api-key "$GEMINI_API_KEY" --reasoning-effort medium --input .data/experiment_khanhvy/cuts/ --output-report report.md --export-csv results.csv
+
+  # Full 288-clip MEDIUM gold (portable; materializes audio under gold dir)
+  ./scripts/run_gold_verifier_eval.sh gemini-3.5-flash-lite medium 8
+  # or shard / resume:
+  LIMIT=100 OFFSET=0 ./scripts/run_gold_verifier_eval.sh
+  RESUME_JSON=.data/tts_strategy/gold_benchmark_20260908/reports/prior.json ./scripts/run_gold_verifier_eval.sh
 
   # Evaluate via Unsloth Studio endpoint (auto-resolves host:port, model probe, thinking tokens)
   python scripts/evaluate_verifier.py --backend unsloth --endpoint http://127.0.0.1:8888/v1/chat/completions --model "OpenMOSS-Team/MOSS-Audio-8B-Thinking" --api-key "$UNSLOTH_API_KEY"
@@ -137,7 +143,7 @@ Unified evaluator supporting Gemini API models, OpenAI/vLLM endpoints, and local
   # Evaluate Kimi-Audio 7B Instruct (.venv-kimi setup via scripts/setup_kimi_env.sh)
   .venv-kimi/bin/python scripts/evaluate_verifier.py --backend hf_local --model moonshotai/Kimi-Audio-7B-Instruct --input .data/experiment_khanhvy/results.json --output-report report_kimi.md
   ```
-
+- **Portability flags on `evaluate_verifier.py`:** `--check-audio-only`, `--materialize-audio DIR`, `--limit`, `--offset`, `--resume-json`, `--allow-missing-audio`. Gemini runs log estimated USD cost into the JSON summary, Markdown report, CSV (`cost_usd`), and console.
 ### 4.3. Distillation Dataset Pipeline: [`build_distillation_dataset.py`](build_distillation_dataset.py)
 Unified dataset builder with subcommands for the entire distillation lifecycle:
 - **`annotate`:** Query Gemini 3.8 Flash teacher across directories of audio turns.

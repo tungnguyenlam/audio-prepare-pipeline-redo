@@ -288,7 +288,10 @@ optional usage/cost metadata, via `verify(audio)` or concurrent `verify_batch(au
   Experiment selector includes current audio-understanding Gemini 3 Flash,
   Flash-Lite, and 3.1 Pro options. Requires server-side `GEMINI_API_KEY`.
   Supports high-throughput concurrent candidate verification (defaults to 10
-  parallel queries via `concurrency` or `GEMINI_CONCURRENCY`).
+  parallel queries via `concurrency` or `GEMINI_CONCURRENCY`). Usage/cost
+  estimates use the shared paid-Standard rate card in
+  [`src/diarization/gemini_pricing.py`](../src/diarization/gemini_pricing.py)
+  (same helpers as `GeminiVerifier` in the distillation eval path).
 
 ### `VibeVoicePurityVerifier`
 Uses Microsoft VibeVoice-ASR (default checkpoint `microsoft/VibeVoice-ASR-HF`; verified quantized choices include INT8/NF4; the zero-contamination default is `Dubedo/VibeVoice-ASR-HF-INT8`):
