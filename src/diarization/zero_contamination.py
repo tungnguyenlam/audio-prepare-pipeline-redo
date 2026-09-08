@@ -952,9 +952,9 @@ def _lock_turns_with_words(
             for word in words for edge in (new_start_s, new_end_s)
         )
 
-        complete_words = [w for w in words
-                          if new_start_s <= float(w["start"]) < float(w["end"]) <= new_end_s]
-        if new_start_s >= new_end_s or expansion_blocked or blocked_after_shrink or not complete_words:
+        overlapping_words = [w for w in words
+                             if float(w["end"]) > new_start_s and float(w["start"]) < new_end_s]
+        if new_start_s >= new_end_s or expansion_blocked or blocked_after_shrink or not overlapping_words:
             audits.append({
                 "raw_start_s": raw_start, "raw_end_s": raw_end,
                 "original_start_s": orig_start, "original_end_s": orig_end,

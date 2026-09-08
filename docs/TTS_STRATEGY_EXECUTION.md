@@ -12,9 +12,9 @@
   training-pool clips, and 16 relocked children from the 180 s source.
 - No training or test cases have run. Word-lock expansion into inter-turn gaps
   did not repair clipped rejects into passes.
-- Next: stop expanding intersecting words into undiarized gaps (reject those
-  edges instead), re-evaluate the same 31 located cuts, then grow the
-  source-disjoint dataset.
+- Next: grow the source-disjoint training pool with the measured no-gap-expansion
+  lock; then fit/calibrate a local acoustic baseline for music, reverb, and
+  in-interval secondary speech. Do not treat ASR edge overlap as clipping proof.
 
 ## Checkpoints
 
@@ -90,9 +90,9 @@ Lineage recovery results:
 
 ### 5. Boundary correctness engineering (no measured quality claim yet)
 
-- Word locking only expands words intersecting the original edge; padding no
-  longer propagates expansion into successive words. If speaker-safe clamping
-  still cuts a recognized word, or no complete word remains, reject with an audit.
+- Word locking does not expand into inter-turn gaps. Completing a recognized
+  word that would enter a competitor or adjacent turn is rejected. ASR overlap
+  into an undiarized gap is not treated as clipping proof (see checkpoint 6).
 - Requested alignment loading/inference failures return no candidates with
   rejection audits. MMS remains an acoustic CTC-blank heuristic, not actual
   transcript-conditioned word alignment; docs now state that limitation.
@@ -150,6 +150,24 @@ filling the gap, then repeat this same located-cut evaluation.
 
 `export` and recording-group `balance` now exist so source-disjoint splits can
 be rebuilt without overwriting the 2026-09-08 pool. No new training run.
+
+Follow-up on the same 31 located cuts after disabling gap expansion:
+
+- v2 (`boundaries_20260908_v2`): reject every ASR-overlapping edge. Lock
+  dropped all 31 (30 `word_boundary_conflicts_with_safe_bounds`, 1 no words).
+  PhoWhisper-small timestamps overlap essentially every challenge edge, so this
+  is not a usable production gate. Yield zero; R undefined.
+- v3 (`boundaries_20260908_v3`): do not expand into gaps; reject only when
+  completing a word would enter a competitor or adjacent turn. Lock again
+  rejected 9/31 (same 8 safe-bound conflicts + 1 empty interval). Duration
+  policy dropped 13 more as `<2 s` and 1 for `no_supported_word_gap`. 8 children
+  emitted. Four are byte-identical to the original crop; four differ by at most
+  one sample from 0.1 ms timestamp rounding. Inherited MEDIUM labels on those
+  eight: 4 pass / 4 reject, R = 50%. No new API calls. Still not a production
+  claim. Remaining rejects are in-interval secondary speech, music, effects,
+  and reverb — not gap expansion.
+
+Word lock is now a measured competitor-conflict gate, not a clip repairer.
 
 ## Continuation rules
 

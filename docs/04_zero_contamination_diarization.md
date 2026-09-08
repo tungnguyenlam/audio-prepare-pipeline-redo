@@ -60,7 +60,7 @@ Use this as the starting configuration in the Experiment tab:
 | Stage 3, Option A | Context-Aware Handoff Guard | Enabled | Shaves near another speaker but extends into silence when a handoff is not nearby. |
 | Stage 3, Option A | Handoff Risk Distance | `0.85s` | Retains the normal speaker-transition safety horizon. |
 | Stage 3, Option A | Silence Tail Release | `0.25s` | Adds more trailing room for Vietnamese tones and codas when silence follows. |
-| Stage 3, Option B | Forced Alignment Lock | Enabled | Rejects a turn when a recognized word still crosses an edge after speaker-safe clamping. Does not expand into inter-turn gaps. |
+| Stage 3, Option B | Forced Alignment Lock | Enabled | Does not expand into inter-turn gaps. Rejects when completing a recognized word would enter a competitor or adjacent turn. |
 | Stage 3, Option B | Engine | `whisper_timestamped` | Produces word timestamps used by the boundary lock. |
 | Stage 3, Option B | Model | `vinai/PhoWhisper-large` | High-precision Vietnamese checkpoint; use `vinai/PhoWhisper-small` if memory or latency is limiting. |
 | Stage 3, Option B | Language | `vi` | Prevents unnecessary language auto-detection. |
@@ -107,10 +107,10 @@ speaker handoff. Inspect those boundaries and prefer rejecting the entire turn
 when purity is more important than yield.
 
 Requested alignment fails closed: loading or inference errors reject candidates
-and record errors. Whisper/remote locking stays inside the incoming turn after
-speaker-safe clamping and rejects edges that still intersect recognized words.
-It does not expand into inter-turn gaps. MMS currently uses CTC blank
-probabilities, not transcript-conditioned word alignment.
+and record errors. Whisper/remote locking does not expand into inter-turn gaps.
+Completing a recognized word that would enter a competitor or adjacent turn is
+rejected. ASR overlap into an undiarized gap is not treated as clipping proof.
+MMS currently uses CTC blank probabilities, not transcript-conditioned word alignment.
 
 ### Experiment-tab recipe: trade compute and yield for speaker purity
 
@@ -181,7 +181,10 @@ Aims for clean turn transitions without truncating recognized words:
    - Runs **before** forced alignment as an acoustic candidate refinement.
 3. **Forced Alignment Syllable Lock (`enable_syllable_alignment`) [Final Boundary Authority]:**
    - Utilizes `whisper_timestamped` with fine-tuned checkpoints such as `vinai/PhoWhisper-small` (or PyTorch MMS-FA / remote Whisper endpoints).
-   - Stays inside the incoming turn after speaker-safe clamping. If a recognized word still crosses an edge, the turn is rejected rather than expanded into an inter-turn gap.
+   - Stays inside the incoming turn. Completing a recognized word that would
+     enter a competitor or adjacent turn is rejected. ASR overlap into an
+     undiarized gap is not treated as proof of clipping and is not repaired by
+     expansion.
    - Refines outer boundaries before optional segmentation. New child boundaries require supported word gaps; ASR timing uncertainty still requires verification.
    - Automatically pre-configures PyTorch Hub non-interactively to trust Silero VAD (`snakers4/silero-vad`), with graceful fallback to `vad=False` if network/download hurdles occur.
    - Transparently recovers from CUDA OOM errors by clearing VRAM cache and retrying on CPU.

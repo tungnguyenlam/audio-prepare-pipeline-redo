@@ -24,12 +24,14 @@ each checkpoint commit. Do not mistake proposed experiments for completed work.
 Runtime manifests, audio, and reports live under `.data/` and are not pushed;
 record reproducible commands and concise findings in tracked documentation.
 
-The 2026-09-08 located-cut evaluation is done: all 31 challenge clips are exact
-crops of `khanhvy_180s_slice.wav`, and word-lock *expansion* into inter-turn
-gaps did not improve accepted-sample risk. Next unblocked task is to reject
-those edges instead of filling the gaps, then rerun the same evaluation command
-on `.data/tts_strategy/boundaries_20260908` locations (new output directory).
-Do not grow the training pool on top of an unfixed expansion policy.
+The 2026-09-08 located-cut evaluation is done. Word-lock *expansion* into
+inter-turn gaps raised accepted risk (15 reject / 1 pass among new children).
+Rejecting every ASR-overlapping edge dropped all 31 clips. The measured policy
+is: do not expand into gaps; reject only competitor/adjacent-turn word
+completions. That emits 8 duration-eligible crops with inherited MEDIUM R = 50%.
+Next unblocked task is growing the source-disjoint pool, then a local acoustic
+baseline for music/reverb/in-interval secondary speech. ASR edge overlap is not
+clipping proof.
 
 The user authorized saving, committing, pushing, and executing this strategy,
 with regular detailed commits so another model can continue. This authorization
