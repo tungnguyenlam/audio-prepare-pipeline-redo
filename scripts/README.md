@@ -120,6 +120,9 @@ Unified evaluator supporting Gemini API models and local Hugging Face / LoRA mod
 
   # Evaluate MiniCPM-o with custom prompt text or file
   python scripts/evaluate_verifier.py --backend hf_local --model openbmb/MiniCPM-o-4_5 --prompt-file prompts/strict_acoustic.txt --output-report report.md
+
+  # Evaluate Kimi-Audio 7B Instruct (.venv-kimi setup via scripts/setup_kimi_env.sh)
+  .venv-kimi/bin/python scripts/evaluate_verifier.py --backend hf_local --model moonshotai/Kimi-Audio-7B-Instruct --input .data/experiment_khanhvy/results.json --output-report report_kimi.md
   ```
 
 ### 4.3. Distillation Dataset Pipeline: [`build_distillation_dataset.py`](build_distillation_dataset.py)

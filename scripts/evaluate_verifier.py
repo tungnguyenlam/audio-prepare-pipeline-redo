@@ -192,8 +192,20 @@ def query_hf_local(
     else:
         audio_data = np.asarray(audio_data, dtype=np.float32)
 
+    # Check if model is Kimi-Audio
+    if type(model).__name__ == "KimiAudio" or hasattr(model, "alm"):
+        chats = [
+            {"role": "user", "message_type": "text", "content": prompt},
+            {"role": "user", "message_type": "audio", "content": str(audio_path)},
+        ]
+        try:
+            _, text_output = model.generate(chats, output_type="text")
+            output_text = text_output or ""
+        except Exception as e:
+            logger.debug("KimiAudio generate failed: %s", e)
+            raise
     # Check if model provides custom .chat() interface (e.g., MiniCPM-o)
-    if hasattr(model, "chat"):
+    elif hasattr(model, "chat"):
         msgs = [{"role": "user", "content": [prompt, audio_data]}]
         try:
             # Dedicated MiniCPM-o 4.5 audio-text inference invocation
@@ -499,8 +511,36 @@ def main() -> None:
         hf_token = os.getenv("HF_TOKEN")
         model_name_lower = args.model.lower()
         is_minicpm = "minicpm-o" in model_name_lower or "minicpmo" in model_name_lower
+        is_kimi = "kimi" in model_name_lower
 
-        if is_minicpm:
+        if is_kimi:
+            logger.info("Detected Kimi-Audio model family ('%s'). Initializing KimiAudio API...", args.model)
+            kimi_dir = REPO_ROOT / ".data" / "models" / "Kimi-Audio"
+            if kimi_dir.is_dir() and str(kimi_dir) not in sys.path:
+                sys.path.insert(0, str(kimi_dir))
+
+            try:
+                from kimia_infer.api.kimia import KimiAudio
+            except ImportError:
+                try:
+                    from kimi_audio import KimiAudio
+                except ImportError as e:
+                    raise ImportError(
+                        f"KimiAudio could not be imported: {e}. "
+                        "Please run `./scripts/setup_kimi_env.sh` to install Kimi-Audio dependencies into .venv-kimi."
+                    )
+
+            if actual_device.startswith("cuda") and hasattr(torch.cuda, "set_device"):
+                try:
+                    dev_idx = int(actual_device.split(":")[-1]) if ":" in actual_device else 0
+                    torch.cuda.set_device(dev_idx)
+                except Exception:
+                    pass
+
+            hf_model = KimiAudio(model_path=args.model, load_detokenizer=False)
+            hf_processor = None
+            logger.info("Successfully loaded %s with KimiAudio API (load_detokenizer=False)", args.model)
+        elif is_minicpm:
             logger.info("Detected MiniCPM-o model family ('%s'). Using dedicated AutoModel + SDPA chat path...", args.model)
             try:
                 from transformers import AutoTokenizer
