@@ -45,10 +45,23 @@ historical titles calling these MEDIUM do not establish actual provenance.
 The fresh audit uses model `gemini-3.8-flash`, `thinkingLevel=MEDIUM`, a structured
 nine-dimension rubric, exact input hashes, raw responses and usage metadata.
 
-New script: `scripts/audit_tts_data.py` (`prepare`, `teacher`, `report`). Artifacts:
+New script: `scripts/audit_tts_data.py` (`prepare`, `teacher`, `report`, `lineage`). Artifacts:
 `.data/tts_strategy/phase1_20260908/`. No inference runs during inventory; no
 pytest/unit cases were written or run. Production risk remains unqualified due
 to challenge sampling, not due to a requirement for additional human review.
+
+### 3. Legacy recording lineage recovery
+
+Command:
+```bash
+uv run --no-sync python scripts/audit_tts_data.py lineage --output .data/tts_strategy/lineage_20260908_v2
+```
+
+Lineage recovery results:
+- Unique known lineage: 233 clips (95 quarantined: 76 HaveASip with missing original video IDs, 15 unlinked augmentations, 4 duplicate audio across recordings).
+- Challenge recording reserved: 136 clips from `youtube:H0VpjeULCck` permanently isolated from unseen evaluations.
+- Clean eligible pool: 97 unique clips across 7 YouTube source recordings (2–15s duration).
+- Artifacts: `.data/tts_strategy/lineage_20260908_v2/` and `.data/tts_strategy/pool_20260908/`.
 
 ## Continuation rules
 

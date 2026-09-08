@@ -167,7 +167,8 @@ def prepare(args: argparse.Namespace) -> None:
     rows, summary = inventory({"train": local_path(args.train), "validation": local_path(args.validation)})
     write_jsonl(output / "inventory.jsonl", rows)
     write_json(output / "inventory_summary.json", summary)
-    saved = json.loads(local_path(args.evaluation).read_text())
+    saved = ({"results": [{"item": r, "prediction": {}} for r in read_jsonl(local_path(args.candidates))]}
+             if args.candidates else json.loads(local_path(args.evaluation).read_text()))
     candidates = []
     cache = {}
     for result in saved["results"]:
@@ -177,7 +178,7 @@ def prepare(args: argparse.Namespace) -> None:
             cache[path] = inspect_audio(path)
         ref = item.get("gemini") or item.get("target_json") or {}
         candidates.append({
-            "audio_path": str(path), "candidate_id": item.get("id") or item.get("turn_id"),
+            "audio_path": str(path), "candidate_id": item.get("id") or item.get("turn_id") or path.stem,
             "start_s": item.get("start_s"), "end_s": item.get("end_s"),
             "recording_id": item.get("recording_id"),
             "prediction_decision": (result.get("prediction") or {}).get("decision"),
@@ -189,7 +190,7 @@ def prepare(args: argparse.Namespace) -> None:
     all_summary = summarize_candidates(candidates)
     eligible = [r for r in candidates if "duration_s" in r and 2 <= r["duration_s"] <= 15]
     report = {
-        "sampling": "legacy_challenge_set_not_random_production",
+        "sampling": "legacy_training_pool_not_random_production" if args.candidates else "legacy_challenge_set_not_random_production",
         "model": saved.get("model"), "adapter_path": saved.get("adapter_path"),
         "all_durations": all_summary, "duration_2_15_s": summarize_candidates(eligible),
         "references_without_audio_quality": sum(not r["reference_quality_assessed"] for r in candidates),
@@ -222,9 +223,10 @@ def prepare(args: argparse.Namespace) -> None:
     write_json(output / "inputs.json", {
         "train": str(local_path(args.train)), "validation": str(local_path(args.validation)),
         "evaluation": str(local_path(args.evaluation)),
+        "candidates": str(local_path(args.candidates)) if args.candidates else None,
         "input_sha256": {name: hashlib.sha256(local_path(value).read_bytes()).hexdigest()
                          for name, value in vars(args).items()
-                         if name in {"train", "validation", "evaluation"}},
+                         if name in {"train", "validation", "evaluation", "candidates"} and value},
     })
     (output / "REVIEW.md").write_text(
         "# Blind challenge review\n\nReview only blind_review.jsonl and review_audio/. "
@@ -282,6 +284,97 @@ def label_report(args: argparse.Namespace) -> None:
         "release_qualified": False,
         "caveat": "Challenge sampling and recording dependence prevent production qualification.",
     }, indent=2))
+
+
+def restore_lineage(args: argparse.Namespace) -> None:
+    """Recover legacy recording IDs from manifests and documented generators."""
+    output = local_path(args.output)
+    if not output.is_relative_to(ROOT / ".data"):
+        raise ValueError("Output must be under .data/.")
+    output.mkdir(parents=True, exist_ok=False)
+    crawled = json.loads((ROOT / ".data/crawled/crawled_manifest.json").read_text())
+    audited = json.loads((ROOT / ".data/distillation_e2b/audit_manifest.json").read_text())
+    audited_by_path = {local_path(r["path"]): r["video_id"] for r in audited}
+    prefix_ids: dict[str, set[str]] = defaultdict(set)
+    for row in crawled:
+        prefix_ids[Path(row["path"]).stem[:25]].add(row["id"])
+    parent_dirs = [ROOT / ".data/distillation" / p for p in
+                   ("audio", "extended/audio", "haveasip/audio", "crawled_cuts", "vietcetera_cuts")]
+
+    def identify(path: Path) -> tuple[str | None, str]:
+        relative = path.relative_to(ROOT).as_posix()
+        if path in audited_by_path:
+            return "youtube:" + audited_by_path[path], "distillation_e2b/audit_manifest.json:path+video_id"
+        if relative.startswith((".data/distillation/crawled_cuts/", ".data/distillation/vietcetera_cuts/")):
+            prefix = path.stem.split("_turn_", 1)[0]
+            ids = prefix_ids.get(prefix, set())
+            if len(ids) == 1:
+                return "youtube:" + next(iter(ids)), "unique crawled manifest prefix; build_distillation_dataset slice uses stem[:25]"
+        if relative.startswith((".data/distillation/audio/", ".data/distillation/extended/audio/")):
+            return "youtube:H0VpjeULCck", "archived generate_distillation_dataset/generate_extended_distillation_data + compare_verifiers_khanhvy source"
+        if relative.startswith(".data/distillation/haveasip/audio/"):
+            return None, "local HaveASip source family known; original recording/video ID missing"
+        if relative.startswith(".data/distillation/augmented_audio/"):
+            for suffix in ("_synth_clipped_start", "_synth_clipped_end"):
+                if path.stem.endswith(suffix):
+                    base_name = path.stem[:-len(suffix)] + ".wav"
+                    parents = [directory / base_name for directory in parent_dirs if (directory / base_name).is_file()]
+                    identities = [identify(parent) for parent in parents]
+                    ids = {identity for identity, _ in identities}
+                    if len(ids) == 1 and None not in ids:
+                        return next(iter(ids)), "augmentation inherits existing parent: " + ",".join(str(p.relative_to(ROOT)) for p in parents)
+                    return None, "missing/ambiguous/unresolved augmentation parent recording"
+        return None, "unresolved lineage"
+
+    known, quarantine = [], []
+    seen: dict[str, str | None] = {}
+    for manifest in args.manifests:
+        for row in read_jsonl(local_path(manifest)):
+            path = local_path(row["audio_path"])
+            identity, evidence = identify(path)
+            audio = inspect_audio(path)
+            restored = {**row, "audio_path": str(path.relative_to(ROOT)),
+                        "recording_id": identity, "lineage_evidence": evidence,
+                        "audio_sha256": audio.get("sha256"), "duration_s": audio.get("duration_s"),
+                        "label_provenance": "legacy_not_reauthenticated_medium"}
+            if not identity or not audio.get("sha256"):
+                quarantine.append(restored)
+                continue
+            digest = audio["sha256"]
+            if digest in seen:
+                if seen[digest] != identity:
+                    # Shared intros/reused audio can cross otherwise distinct recordings.
+                    previous = [r for r in known if r["audio_sha256"] == digest]
+                    for duplicate in previous:
+                        duplicate["quarantine_reason"] = "duplicate_audio_across_recordings"
+                        quarantine.append(duplicate)
+                        known.remove(duplicate)
+                    seen[digest] = None
+                    restored["quarantine_reason"] = "duplicate_audio_across_recordings"
+                else:
+                    restored["quarantine_reason"] = "duplicate_audio_bytes"
+                quarantine.append(restored)
+                continue
+            seen[digest] = identity
+            known.append(restored)
+    # Challenge recording is permanently reserved, never presented as unseen.
+    challenge = [r for r in known if r["recording_id"] == "youtube:H0VpjeULCck"]
+    eligible = [r for r in known if r not in challenge and 2 <= r["duration_s"] <= 15]
+    outside = [r for r in known if r not in challenge and not 2 <= r["duration_s"] <= 15]
+    for name, rows in (("known_lineage", known), ("quarantine", quarantine),
+                       ("reserved_challenge_recording", challenge), ("eligible_pool", eligible),
+                       ("outside_duration", outside)):
+        write_jsonl(output / f"{name}.jsonl", rows)
+    summary = {
+        "known_unique": len(known), "quarantined": len(quarantine),
+        "reserved_challenge_recording": len(challenge), "eligible_pool": len(eligible),
+        "outside_duration": len(outside),
+        "eligible_recordings": dict(Counter(r["recording_id"] for r in eligible)),
+        "quarantine_reasons": dict(Counter(r.get("quarantine_reason", r["lineage_evidence"]) for r in quarantine)),
+        "qualification": "Lineage recovery only; legacy labels are not fresh full-rubric MEDIUM ground truth.",
+    }
+    write_json(output / "summary.json", summary)
+    print(json.dumps(summary, indent=2))
 
 
 def teacher_audit(args: argparse.Namespace) -> None:
@@ -418,6 +511,7 @@ def main() -> None:
     prepare_parser.add_argument("--train", default=".data/distillation/train_v3.jsonl")
     prepare_parser.add_argument("--validation", default=".data/distillation/val_v3.jsonl")
     prepare_parser.add_argument("--evaluation", default=".data/distillation/reports/finetuned_e2b_v3_eval.json")
+    prepare_parser.add_argument("--candidates", help="Instead prepare an unlabeled prediction packet from candidate JSONL")
     prepare_parser.add_argument("--output", required=True, help="New directory under .data/; must not exist")
     report_parser = commands.add_parser("report")
     report_parser.add_argument("--packet", required=True)
@@ -426,13 +520,18 @@ def main() -> None:
     teacher_parser = commands.add_parser("teacher", help="User-authorized Gemini MEDIUM ground-truth audit")
     teacher_parser.add_argument("--packet", required=True)
     teacher_parser.add_argument("--limit", type=int, default=31)
+    lineage_parser = commands.add_parser("lineage", help="Recover legacy source IDs with explicit evidence")
+    lineage_parser.add_argument("--manifests", nargs="+", default=[".data/distillation/train_v3.jsonl", ".data/distillation/val_v3.jsonl"])
+    lineage_parser.add_argument("--output", required=True)
     args = parser.parse_args()
     if args.command == "prepare":
         prepare(args)
     elif args.command == "report":
         label_report(args)
-    else:
+    elif args.command == "teacher":
         teacher_audit(args)
+    else:
+        restore_lineage(args)
 
 
 if __name__ == "__main__":
