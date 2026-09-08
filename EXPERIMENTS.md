@@ -2,6 +2,13 @@
 
 This log records the complete trajectory of experiments, architectural decisions, model comparisons, and benchmark results in this repository.
 
+> Historical experiment record. Follow [the active production strategy](docs/TTS_PRODUCTION_STRATEGY.md)
+> and [execution log](docs/TTS_STRATEGY_EXECUTION.md) for current decisions.
+> Statements below about acoustic mechanisms or architectural necessity were not
+> established by controlled comparisons. Saved legacy Khanh Vy references omit
+> audio quality; the archived generator uses LOW despite historical MEDIUM labels.
+> The current audit records explicit Gemini 3.8 Flash MEDIUM provenance and the full rubric.
+
 ---
 
 ## 1. Pipeline Evolution Overview
@@ -150,4 +157,3 @@ To stress-test separation, diarization, and boundary mitigation, audio was inges
 - **Artifacts:**
   - Local Checkpoint: `.data/distillation/checkpoints_e2b/best_adapter/` (123 MB bundle: `adapter_model.safetensors`, `adapter_config.json`, tokenizers, and processor configs).
   - Pushed to Hugging Face Model Hub: `https://huggingface.co/tungnguyenlam/gemma-4-e2b-acoustic-verifier`.
-

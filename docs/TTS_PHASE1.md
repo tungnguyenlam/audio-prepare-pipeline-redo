@@ -2,6 +2,15 @@
 
 Parent: [production strategy](TTS_PRODUCTION_STRATEGY.md).
 
+## Updated ground-truth authority
+
+The user explicitly accepts Gemini 3.8 Flash MEDIUM as human-quality ground
+truth and authorizes API audio assessment. Execute this brief with that evaluator;
+the original human-review requirements below are now optional. Preserve exact
+evaluator/input provenance. Do not reuse legacy labels as MEDIUM merely because
+a historical report says so: the archived Khanh Vy generator configures LOW,
+and all 31 saved references omit audio_quality. Re-audit the complete rubric.
+
 ## Work order
 
 1. Inventory existing V3 manifests and saved verifier predictions without model

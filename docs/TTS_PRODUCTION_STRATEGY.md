@@ -2,6 +2,19 @@
 
 Created 2026-09-08. Status: execution started; no production quality claim established.
 
+## Controlling user clarification — 2026-09-08
+
+The user has tested Gemini 3.8 Flash Medium against human judgment and explicitly
+accepts it as ground truth. The user authorizes API calls for assistant audio
+hearing. **Use fresh, provenance-recorded Gemini 3.8 Flash MEDIUM evaluations to
+execute the strategy; do not block on separate human annotation.** References to
+required human review below describe the original strategy and are superseded by
+this instruction. Human review is optional adjudication, not a phase gate.
+Record evaluator model, MEDIUM configuration, full quality rubric, input hashes,
+response and usage. A Gemini-ground-truth metric is valid for project decisions;
+do not call those labels human-authored. Representative source sampling and
+source-disjoint evaluation remain necessary. Production inference stays local.
+
 ## Resume here
 
 Read this document, [execution log](TTS_STRATEGY_EXECUTION.md), and

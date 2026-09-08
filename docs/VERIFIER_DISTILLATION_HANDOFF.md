@@ -1,5 +1,13 @@
 # Speech Verifier Distillation & Evaluation — Session Handoff Context
 
+> Historical session record, superseded for next actions by
+> [TTS production strategy](TTS_PRODUCTION_STRATEGY.md) and its
+> [execution log](TTS_STRATEGY_EXECUTION.md). Do not automatically resume the
+> downloads/model runs below. Architecture explanations are hypotheses; the
+> existing Khanh Vy labels omit audio quality and their generator configures LOW.
+> A fresh explicit MEDIUM full-rubric audit is required. The user accepts Gemini
+> 3.8 Flash MEDIUM as ground truth; separate human review is not required.
+
 **Last Updated:** 2026-09-07 22:33 (Local Time)  
 **Host Environment:** `tungnl5@VF-TUNGNL5-L` | AMD Radeon RX 9060 XT (16 GB VRAM, ROCm 10.0 / HIP)  
 **Active Python Runtime:** `.venv/bin/python` (Python 3.13, PyTorch 2.13.0+rocm10.0.0, Transformers 5.16.1)

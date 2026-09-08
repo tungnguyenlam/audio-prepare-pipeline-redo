@@ -43,6 +43,29 @@ All tools follow the repository engineering ideology: **reusable components**, *
 
 These general tools replace legacy single-purpose scripts. All behaviors are configured via CLI flags.
 
+### Production-strategy audit: [`audit_tts_data.py`](audit_tts_data.py)
+
+Inventories existing manifests without inference; records exact duplicate files,
+missing audio, duration eligibility, unknown source lineage, and saved-reference
+acceptance error. Creates an opaque-name review packet under `.data/` without
+overwriting existing reviews. The user accepts Gemini 3.8 Flash MEDIUM as ground
+truth; the `teacher` subcommand makes bounded, resumable API calls with all nine
+quality dimensions, input/configuration hashes, responses, and token usage saved.
+The legacy challenge set cannot establish a representative production risk rate.
+
+```bash
+uv run --no-sync python scripts/audit_tts_data.py prepare --output .data/tts_strategy/phase1_20260908
+uv run --no-sync python scripts/audit_tts_data.py teacher --packet .data/tts_strategy/phase1_20260908 --limit 31
+uv run --no-sync python scripts/audit_tts_data.py report --packet .data/tts_strategy/phase1_20260908 --labels .data/tts_strategy/phase1_20260908/gemini_medium/labels.jsonl --eligible-only
+```
+
+`prepare` requires a new output directory. `teacher` caches each completed label,
+requires `GEMINI_API_KEY` from the root `.env`, and sends audio to Google only when
+explicitly invoked. No API calls occur in `prepare` or `report`. `report` supports
+adjudicated human labels or the user-approved teacher labels and never treats
+missing labels as clean. Its confidence bound assumes independent sampling and
+is diagnostic only for this recording-dependent challenge set.
+
 ### 4.1. Student Model Fine-Tuning: [`train_verifier.py`](train_verifier.py)
 Unified trainer for multimodal speech verifiers using LoRA distillation from Gemini teacher annotations. Backed by modular components in [`src/diarization/verifier_training.py`](../src/diarization/verifier_training.py).
 
