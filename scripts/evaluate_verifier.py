@@ -386,6 +386,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input", type=str, default=".data/experiment_khanhvy/results.json", help="Input JSON/JSONL or folder of WAV files")
     parser.add_argument("--ground-truth", type=str, default=None, help="Optional external ground-truth JSON/JSONL with Gemini verdicts")
 
+    # Prompt Options
+    parser.add_argument("--prompt", type=str, default=None, help="Custom prompt string override for evaluation")
+    parser.add_argument("--prompt-file", type=str, default=None, help="Path to file containing custom prompt")
+
     # Outputs
     parser.add_argument("--output-json", type=str, default=None, help="Path to save raw evaluation output JSON")
     parser.add_argument("--output-report", type=str, default=None, help="Path to save Markdown evaluation report")
@@ -454,6 +458,20 @@ def main() -> None:
     items = load_input_items(args.input, args.ground_truth)
     logger.info("Loaded %d evaluation items from %s", len(items), args.input)
     ensure_evaluation_audio(items, REPO_ROOT, args.hf_dataset_repo)
+
+    cli_prompt = None
+    if args.prompt_file:
+        p_file = Path(args.prompt_file)
+        if not p_file.is_file():
+            p_file = REPO_ROOT / args.prompt_file
+        if not p_file.is_file():
+            logger.error("Prompt file not found: %s", args.prompt_file)
+            sys.exit(1)
+        cli_prompt = p_file.read_text(encoding="utf-8").strip()
+        logger.info("Loaded custom evaluation prompt from %s (%d chars)", p_file, len(cli_prompt))
+    elif args.prompt:
+        cli_prompt = args.prompt.strip()
+        logger.info("Using custom evaluation prompt from CLI (%d chars)", len(cli_prompt))
 
     # Initialize model backend
     hf_model = None
@@ -589,50 +607,50 @@ def main() -> None:
             for item in items:
                 raw_path = item.get("audio_path") or item.get("wav_path") or item.get("audio") or ""
                 audio_p = resolve_audio_path(raw_path, REPO_ROOT)
-                prompt = item.get("prompt", DEFAULT_ACOUSTIC_PROMPT)
+                prompt = cli_prompt if cli_prompt is not None else item.get("prompt", DEFAULT_ACOUSTIC_PROMPT)
                 fut = executor.submit(query_gemini, audio_p, args.model, api_key, prompt, args.reasoning_effort)
-                future_to_item[fut] = item
+                future_to_item[fut] = (item, prompt)
 
             for fut in as_completed(future_to_item):
-                item = future_to_item[fut]
+                item, prompt = future_to_item[fut]
                 try:
                     res = fut.result()
-                    results.append({"item": item, "prediction": res, "success": True})
+                    results.append({"item": item, "prompt": prompt, "prediction": res, "success": True})
                     logger.info("Sample %s -> %s (latency: %.2fs)", item.get("id", ""), res.get("decision", ""), res.get("_latency_s", 0))
                 except Exception as exc:
                     logger.error("Sample %s failed: %s", item.get("id", ""), exc)
-                    results.append({"item": item, "error": str(exc), "success": False})
+                    results.append({"item": item, "prompt": prompt, "error": str(exc), "success": False})
     elif args.backend == "endpoint":
         with ThreadPoolExecutor(max_workers=args.concurrency) as executor:
             future_to_item = {}
             for item in items:
                 raw_path = item.get("audio_path") or item.get("wav_path") or item.get("audio") or ""
                 audio_p = resolve_audio_path(raw_path, REPO_ROOT)
-                prompt = item.get("prompt", DEFAULT_ACOUSTIC_PROMPT)
+                prompt = cli_prompt if cli_prompt is not None else item.get("prompt", DEFAULT_ACOUSTIC_PROMPT)
                 fut = executor.submit(query_endpoint, audio_p, args.endpoint, args.model, prompt)
-                future_to_item[fut] = item
+                future_to_item[fut] = (item, prompt)
 
             for fut in as_completed(future_to_item):
-                item = future_to_item[fut]
+                item, prompt = future_to_item[fut]
                 try:
                     res = fut.result()
-                    results.append({"item": item, "prediction": res, "success": True})
+                    results.append({"item": item, "prompt": prompt, "prediction": res, "success": True})
                     logger.info("Sample %s -> %s (latency: %.2fs)", item.get("id", ""), res.get("decision", ""), res.get("_latency_s", 0))
                 except Exception as exc:
                     logger.error("Sample %s failed: %s", item.get("id", ""), exc)
-                    results.append({"item": item, "error": str(exc), "success": False})
+                    results.append({"item": item, "prompt": prompt, "error": str(exc), "success": False})
     else:
         for item in items:
             raw_path = item.get("audio_path") or item.get("wav_path") or item.get("audio") or ""
             audio_p = resolve_audio_path(raw_path, REPO_ROOT)
-            prompt = item.get("prompt", DEFAULT_ACOUSTIC_PROMPT)
+            prompt = cli_prompt if cli_prompt is not None else item.get("prompt", DEFAULT_ACOUSTIC_PROMPT)
             try:
                 res = query_hf_local(audio_p, hf_model, hf_processor, actual_device, prompt)
-                results.append({"item": item, "prediction": res, "success": True})
+                results.append({"item": item, "prompt": prompt, "prediction": res, "success": True})
                 logger.info("Sample %s -> %s (latency: %.2fs)", item.get("id", ""), res.get("decision", ""), res.get("_latency_s", 0))
             except Exception as exc:
                 logger.error("Sample %s failed: %s", item.get("id", ""), exc)
-                results.append({"item": item, "error": str(exc), "success": False})
+                results.append({"item": item, "prompt": prompt, "error": str(exc), "success": False})
 
     # Summary Statistics & Comparisons
     successful = [r for r in results if r.get("success")]
@@ -701,6 +719,8 @@ def main() -> None:
         logger.info("  Precision: %.1f%% | Recall: %.1f%% | F1: %.1f%%", precision, recall, f1)
 
     # Save outputs
+    sample_prompt = cli_prompt or (results[0].get("prompt") if results else DEFAULT_ACOUSTIC_PROMPT)
+
     if args.output_json:
         out_p = REPO_ROOT / args.output_json if not Path(args.output_json).is_file() else Path(args.output_json)
         out_p.parent.mkdir(parents=True, exist_ok=True)
@@ -709,6 +729,7 @@ def main() -> None:
                 "model": args.model,
                 "backend": args.backend,
                 "adapter_path": args.adapter_path,
+                "prompt": sample_prompt,
                 "summary": {
                     "total": len(results),
                     "success": len(successful),
@@ -734,6 +755,7 @@ def main() -> None:
             "model_reason",
             "gemini_reason",
             "latency_s",
+            "prompt",
         ]
         rows = []
         for r in successful:
@@ -751,6 +773,7 @@ def main() -> None:
                 "model_reason": pred.get("reason", ""),
                 "gemini_reason": ref.get("reason", ""),
                 "latency_s": pred.get("_latency_s", ""),
+                "prompt": r.get("prompt", ""),
             })
         with open(csv_p, "w", encoding="utf-8", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -815,6 +838,12 @@ def main() -> None:
 
 {benchmark_section}
 {disagree_table}
+
+## Evaluation Prompt
+
+```text
+{sample_prompt}
+```
 """
         with open(rpt_p, "w", encoding="utf-8") as f:
             f.write(report_content)

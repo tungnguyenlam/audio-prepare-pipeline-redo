@@ -117,6 +117,9 @@ Unified evaluator supporting Gemini API models and local Hugging Face / LoRA mod
 
   # Evaluate fine-tuned local LoRA adapter on validation split
   python scripts/evaluate_verifier.py --backend hf_local --model google/gemma-4-E2B-it --adapter-path .data/distillation/checkpoints_e2b/best_adapter --input .data/distillation/val_e2b.jsonl
+
+  # Evaluate MiniCPM-o with custom prompt text or file
+  python scripts/evaluate_verifier.py --backend hf_local --model openbmb/MiniCPM-o-4_5 --prompt-file prompts/strict_acoustic.txt --output-report report.md
   ```
 
 ### 4.3. Distillation Dataset Pipeline: [`build_distillation_dataset.py`](build_distillation_dataset.py)
