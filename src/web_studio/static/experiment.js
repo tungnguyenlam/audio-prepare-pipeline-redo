@@ -581,25 +581,50 @@ Validation rules:
         this.populateDeviceSelect(this.el.vibevoiceDevice, devices, 'same', true);
 
         if (data.defaults) {
-          if (data.defaults.aligner_engine && this.el.alignerEngine) {
-            this.el.alignerEngine.value = data.defaults.aligner_engine;
+          const d = data.defaults;
+          if (d.target_onset != null) this.setParamValue(this.el.targetOnset, this.el.targetOnsetNum, d.target_onset);
+          if (d.target_offset != null) this.setParamValue(this.el.targetOffset, this.el.targetOffsetNum, d.target_offset);
+          if (d.boundary_collar_s != null) this.setParamValue(this.el.boundaryCollar, this.el.boundaryCollarNum, d.boundary_collar_s);
+          if (d.min_turn_duration_s != null) this.setParamValue(this.el.minDuration, this.el.minDurationNum, d.min_turn_duration_s);
+          if (d.handoff_risk_distance_s != null) this.setParamValue(this.el.handoffRisk, this.el.handoffRiskNum, d.handoff_risk_distance_s);
+          if (d.silence_tail_buffer_s != null) this.setParamValue(this.el.silenceTail, this.el.silenceTailNum, d.silence_tail_buffer_s);
+          if (d.target_max_duration_s != null) this.setParamValue(this.el.targetMaxDur, this.el.targetMaxDurNum, d.target_max_duration_s);
+          if (d.target_min_duration_s != null) this.setParamValue(this.el.targetMinDur, this.el.targetMinDurNum, d.target_min_duration_s);
+          if (this.el.enableConsensus && typeof d.enable_consensus === 'boolean') {
+            this.el.enableConsensus.checked = d.enable_consensus;
+            if (this.el.consensusFields) this.el.consensusFields.style.display = d.enable_consensus ? 'block' : 'none';
+          }
+          if (this.el.enableSmartSegmentation && typeof d.enable_smart_segmentation === 'boolean') {
+            this.el.enableSmartSegmentation.checked = d.enable_smart_segmentation;
+            if (this.el.smartSegmentationFields) {
+              this.el.smartSegmentationFields.style.display = d.enable_smart_segmentation ? 'block' : 'none';
+            }
+          }
+          if (this.el.enableSyllableAlign && typeof d.enable_syllable_alignment === 'boolean') {
+            this.el.enableSyllableAlign.checked = d.enable_syllable_alignment;
+            if (this.el.syllableAlignFields) {
+              this.el.syllableAlignFields.style.display = d.enable_syllable_alignment ? 'block' : 'none';
+            }
+          }
+          if (d.aligner_engine && this.el.alignerEngine) {
+            this.el.alignerEngine.value = d.aligner_engine;
             this.el.alignerEngine.dispatchEvent(new Event('change'));
           }
-          if (data.defaults.aligner_model && this.el.alignerModel) {
-            this.el.alignerModel.value = data.defaults.aligner_model;
+          if (d.aligner_model && this.el.alignerModel) {
+            this.el.alignerModel.value = d.aligner_model;
           }
-          if (data.defaults.aligner_language && this.el.alignerLang) {
-            this.el.alignerLang.value = data.defaults.aligner_language;
+          if (d.aligner_language && this.el.alignerLang) {
+            this.el.alignerLang.value = d.aligner_language;
           }
           if (this.el.gemmaPrompt) {
             const promptVal = (this.el.gemmaPrompt.value || '').trim();
             if (!promptVal || promptVal.includes('Return only the requested structured result and never include a transcript')) {
-              this.el.gemmaPrompt.value = data.defaults.gemma_prompt || DEFAULT_GEMMA_PROMPT;
+              this.el.gemmaPrompt.value = d.gemma_prompt || DEFAULT_GEMMA_PROMPT;
             }
           }
-          if (this.el.gemmaMaxTokens && data.defaults.gemma_max_output_tokens) {
+          if (this.el.gemmaMaxTokens && d.gemma_max_output_tokens) {
             if (!this.el.gemmaMaxTokens.value || this.el.gemmaMaxTokens.value === '256') {
-              this.el.gemmaMaxTokens.value = String(data.defaults.gemma_max_output_tokens);
+              this.el.gemmaMaxTokens.value = String(d.gemma_max_output_tokens);
             }
           }
         }
@@ -708,21 +733,22 @@ Validation rules:
     },
 
     resetToDefaults() {
+      // Measured 2026-09-08 studio-interview harvest recipe (recipe_nolock).
       if (this.el.primaryBackend) this.el.primaryBackend.value = 'sortformer';
-      this.setParamValue(this.el.targetOnset, this.el.targetOnsetNum, 0.80);
-      this.setParamValue(this.el.targetOffset, this.el.targetOffsetNum, 0.65);
+      this.setParamValue(this.el.targetOnset, this.el.targetOnsetNum, 0.70);
+      this.setParamValue(this.el.targetOffset, this.el.targetOffsetNum, 0.50);
       this.setParamValue(this.el.competitorOnset, this.el.competitorOnsetNum, 0.20);
-      if (this.el.enableConsensus) { this.el.enableConsensus.checked = true; this.el.consensusFields.style.display = 'block'; }
+      if (this.el.enableConsensus) { this.el.enableConsensus.checked = false; this.el.consensusFields.style.display = 'none'; }
       if (this.el.secondaryBackend) this.el.secondaryBackend.value = 'diarizen';
       if (this.el.secondaryDevice) this.el.secondaryDevice.value = 'same';
       if (this.el.enableCollar) { this.el.enableCollar.checked = true; this.el.collarFields.style.display = 'block'; }
-      this.setParamValue(this.el.boundaryCollar, this.el.boundaryCollarNum, 0.35);
-      this.setParamValue(this.el.minDuration, this.el.minDurationNum, 0.80);
+      this.setParamValue(this.el.boundaryCollar, this.el.boundaryCollarNum, 0.20);
+      this.setParamValue(this.el.minDuration, this.el.minDurationNum, 0.60);
       this.setParamValue(this.el.transitionExclusion, this.el.transitionExclusionNum, 0.50);
       // Stage 3a: Option A - Context-Aware Handoff Guard
       if (this.el.enableContextCollar) { this.el.enableContextCollar.checked = true; this.el.contextCollarFields.style.display = 'block'; }
-      this.setParamValue(this.el.handoffRisk, this.el.handoffRiskNum, 0.80);
-      this.setParamValue(this.el.silenceTail, this.el.silenceTailNum, 0.027);
+      this.setParamValue(this.el.handoffRisk, this.el.handoffRiskNum, 0.85);
+      this.setParamValue(this.el.silenceTail, this.el.silenceTailNum, 0.25);
       // Stage 3b: Option B - Syllable & Word Forced Alignment Lock
       if (this.el.enableSyllableAlign) { this.el.enableSyllableAlign.checked = false; this.el.syllableAlignFields.style.display = 'none'; }
       if (this.el.alignerEngine) {
@@ -739,9 +765,9 @@ Validation rules:
       this.setParamValue(this.el.energyHop, this.el.energyHopNum, 0.5);
       this.setParamValue(this.el.energyFloor, this.el.energyFloorNum, -30);
       // Stage 3d: Option D - Intelligent Turn Segmentation
-      if (this.el.enableSmartSegmentation) { this.el.enableSmartSegmentation.checked = false; this.el.smartSegmentationFields.style.display = 'none'; }
-      this.setParamValue(this.el.targetMaxDur, this.el.targetMaxDurNum, 10.0);
-      this.setParamValue(this.el.targetMinDur, this.el.targetMinDurNum, 3.0);
+      if (this.el.enableSmartSegmentation) { this.el.enableSmartSegmentation.checked = true; this.el.smartSegmentationFields.style.display = 'block'; }
+      this.setParamValue(this.el.targetMaxDur, this.el.targetMaxDurNum, 15.0);
+      this.setParamValue(this.el.targetMinDur, this.el.targetMinDurNum, 2.0);
       this.setParamValue(this.el.minSplitPause, this.el.minSplitPauseNum, 0.20);
       // Stage 4: Dense WeSpeaker Homogeneity
       if (this.el.enableHomo) { this.el.enableHomo.checked = false; this.el.homoFields.style.display = 'none'; }
@@ -921,21 +947,21 @@ Validation rules:
         device: this.el.deviceSelect?.value || 'auto',
         primary_device: this.el.deviceSelect?.value || 'auto',
         primary_backend: this.el.primaryBackend?.value || 'sortformer',
-        target_onset: parseFloat(this.el.targetOnsetNum?.value || this.el.targetOnset?.value || '0.80'),
-        target_offset: parseFloat(this.el.targetOffsetNum?.value || this.el.targetOffset?.value || '0.65'),
+        target_onset: parseFloat(this.el.targetOnsetNum?.value || this.el.targetOnset?.value || '0.70'),
+        target_offset: parseFloat(this.el.targetOffsetNum?.value || this.el.targetOffset?.value || '0.50'),
         competitor_onset: parseFloat(this.el.competitorOnsetNum?.value || this.el.competitorOnset?.value || '0.20'),
         enable_consensus: Boolean(this.el.enableConsensus?.checked),
         secondary_backend: this.el.secondaryBackend?.value || 'diarizen',
         secondary_device: this.el.secondaryDevice?.value || 'same',
         // Stage 3 Base
         enable_collar_erosion: collarGateEnabled,
-        boundary_collar_s: parseFloat(this.el.boundaryCollarNum?.value || this.el.boundaryCollar?.value || '0.35'),
-        min_turn_duration_s: parseFloat(this.el.minDurationNum?.value || this.el.minDuration?.value || '0.80'),
+        boundary_collar_s: parseFloat(this.el.boundaryCollarNum?.value || this.el.boundaryCollar?.value || '0.20'),
+        min_turn_duration_s: parseFloat(this.el.minDurationNum?.value || this.el.minDuration?.value || '0.60'),
         transition_exclusion_s: parseFloat(this.el.transitionExclusionNum?.value || this.el.transitionExclusion?.value || '0.50'),
         // Stage 3a: Option A - Context-Aware Handoff Guard
         enable_context_collar: collarGateEnabled && Boolean(this.el.enableContextCollar?.checked),
-        handoff_risk_distance_s: parseFloat(this.el.handoffRiskNum?.value || this.el.handoffRisk?.value || '0.80'),
-        silence_tail_buffer_s: parseFloat(this.el.silenceTailNum?.value || this.el.silenceTail?.value || '0.027'),
+        handoff_risk_distance_s: parseFloat(this.el.handoffRiskNum?.value || this.el.handoffRisk?.value || '0.85'),
+        silence_tail_buffer_s: parseFloat(this.el.silenceTailNum?.value || this.el.silenceTail?.value || '0.25'),
         // Stage 3b: Option B - Syllable & Word Forced Alignment Lock
         enable_syllable_alignment: collarGateEnabled && Boolean(this.el.enableSyllableAlign?.checked),
         aligner_engine: this.el.alignerEngine?.value || 'whisper_timestamped',
@@ -951,8 +977,8 @@ Validation rules:
         energy_hop_len_ms: parseFloat(this.el.energyHopNum?.value || this.el.energyHop?.value || '0.5'),
         // Stage 3d: Option D - Intelligent Turn Segmentation
         enable_smart_segmentation: collarGateEnabled && Boolean(this.el.enableSmartSegmentation?.checked),
-        target_max_duration_s: parseFloat(this.el.targetMaxDurNum?.value || this.el.targetMaxDur?.value || '10.0'),
-        target_min_duration_s: parseFloat(this.el.targetMinDurNum?.value || this.el.targetMinDur?.value || '3.0'),
+        target_max_duration_s: parseFloat(this.el.targetMaxDurNum?.value || this.el.targetMaxDur?.value || '15.0'),
+        target_min_duration_s: parseFloat(this.el.targetMinDurNum?.value || this.el.targetMinDur?.value || '2.0'),
         min_split_pause_s: parseFloat(this.el.minSplitPauseNum?.value || this.el.minSplitPause?.value || '0.20'),
         // Stage 4: Dense WeSpeaker Homogeneity
         enable_homogeneity: Boolean(this.el.enableHomo?.checked),

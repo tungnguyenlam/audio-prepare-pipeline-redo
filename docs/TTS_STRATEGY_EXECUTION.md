@@ -9,14 +9,23 @@
 - User clarification: Gemini 3.8 Flash MEDIUM is accepted as human-quality ground
   truth; API hearing is explicitly authorized. Separate human review is not a gate.
 - Completed MEDIUM API audits: 31 legacy challenge clips, 97 legacy source-resolved
-  clips, 16 relocked 180 s children, and 36 new locked extracts (20 pass / 16 reject;
-  14,480 + 6,577 + 12,162 = 33,219 tokens). Combined pool 133 / 10 recordings.
+  clips, 16 relocked 180 s children, 36 new locked extracts (20 pass / 16 reject;
+  14,480 + 6,577 + 12,162 = 33,219 tokens), and 110 unique Experiment-tab sweep
+  clips (88 pass / 22 reject; 42,143 + 16,651 + 38,246 = 97,040 tokens).
+  Sweep labels are preserved under
+  `.data/tts_strategy/experiment_tab_sweep_20260908/` and merged into
+  `pool_20260908_v3` (241 clips / 10 recordings; 148 pass / 93 reject after
+  SHA dedupe; 2 byte-identical overlaps with v2 dropped).
+- Experiment-tab measured harvest recipe (`recipe_nolock`) is now the Studio
+  Reset / status default: onset 0.70, offset 0.50, collar 0.20, silence tail 0.25,
+  smart seg 2–15 s, word lock off, consensus off. See checkpoint 8.
 - No training or test cases have run. Word-lock expansion into inter-turn gaps
   did not repair clipped rejects into passes.
-- Next: keep growing with studio-interview / narration sources (Vietcetera
-  `10.000 hours` is the current best tier); then fit/calibrate a local acoustic
-  baseline for music, reverb, and in-interval secondary speech. Do not treat ASR
-  edge overlap as clipping proof. Do not prefer music-backed vlogs for pool growth.
+- Next: apply the measured harvest recipe to grow studio-interview / narration
+  sources (Vietcetera `10.000 hours` remains the best tier); then fit/calibrate
+  a local acoustic baseline for music, reverb, and in-interval secondary speech.
+  Do not treat ASR edge overlap as clipping proof. Do not prefer music-backed
+  vlogs for pool growth.
 
 ## Checkpoints
 
@@ -259,6 +268,59 @@ Pool arithmetic (legacy 2026-09-08 files not overwritten):
   n=62 teacher passes. Both are diagnostic only (recording-clustered, not a
   release sample). 26 calibration clips still cannot support a <10% bound.
   Not a production quality claim. No new training run.
+
+### 8. Experiment-tab config sweep (Gemini 3.8 Flash MEDIUM judge)
+
+Commands / artifacts under `.data/experiment_tab_sweep/` (`run_sweep.py`,
+`measurements.json`, `scorecard.json`, `joined_labels.jsonl`,
+`unique_review_packet/`).
+
+Two 180 s slices (360.0 s source total): Vietcetera EP6 pilot
+`youtube:PXEtB-CsvSw` and EP5 dancer `youtube:3Nll-JLzvvE`. Device
+`cuda:0` via `.venv-sortformer`. Stage 5 Gemini/VibeVoice off so the teacher
+was independent. Consensus off (DiariZen is CPU torch on this host). Challenge
+`youtube:H0VpjeULCck` unused. Six configs:
+
+| Config | Emitted (2–15 s) | Pass / reject | Pass s | Acc. min / src h | Clip S/E rejects | Notes |
+|---|---:|---:|---:|---:|---:|---|
+| `tab_defaults` | 37 | 30 / 7 | 167.140 | 27.857 | 0 / 0 | Library collar defaults; music 6, secondary 1 |
+| `defaults_smartseg` | 39 | 28 / 11 | 157.490 | 26.248 | 1 / 1 | Smart seg alone; more music/effects children |
+| **`recipe_nolock`** | **39** | **31 / 8** | **184.918** | **30.820** | **1 / 2** | Soft onset/collar + smart seg; **winner** |
+| `extract_lock` | 10 | 9 / 1 | 42.496 | 7.083 | 0 / 0 | PhoWhisper-small lock; PXEtB → 1 clip / 0 pass s |
+| `completeness_recipe` | 7 | 6 / 1 | 28.190 | 4.698 | 0 / 1 | Docs recipe with lock; yield collapse |
+| `recipe_energy` | 5 | 5 / 0 | 18.174 | 3.029 | 0 / 0 | Energy+lock zeroed PXEtB |
+
+Winner defects among rejects (not in the pass pool): music 4, clipped_word_end 2,
+clipped_word_start 1, secondary_speaker 1, reverberation 2. Pass-pool clipping
+was zero for every config (rejects are discarded). Word lock dropped interview
+turns as `word_boundary_conflicts_with_safe_bounds` (PXEtB extract_lock:
+20 → 1 emitted). Energy snapping plus lock zeroed PXEtB.
+
+Teacher: 110 unique clips, all `gemini-3.8-flash`, `thinkingLevel=MEDIUM`,
+reviewer `gemini-3.8-flash:MEDIUM`, rubric `tts-v1`, provenance
+`user_accepted_gemini_ground_truth`, service tier `standard`. Usage:
+42,143 prompt + 16,651 answer + 38,246 thinking = 97,040 tokens. Latency
+min 2.764 s / mean 4.732 s / max 10.122 s / sum 520.543 s. Pipeline wall
+sum across 12 runs: see `run_summaries.json`.
+
+Studio Experiment tab Reset / `/api/experiment/status` defaults now match
+`recipe_nolock`. Library `ZeroContaminationConfig` dataclass constants are
+unchanged for non-UI callers. Docs: `04_zero_contamination_diarization.md`,
+`08_model_parameters_and_tradeoffs.md`. Not a production quality claim; does
+not cover music-backed vlogs; music leakage still needs a later teacher or
+Stage 5 gate.
+
+Durable reuse of the paid labels (do not discard): unique-by-SHA export
+`.data/tts_strategy/experiment_tab_sweep_20260908/labeled.jsonl` (110 clips,
+88 pass / 22 reject; audio copies under `.../audio/`; evaluation JSON under
+`.../gemini_medium/`). Combined with v2 via `audit_tts_data.py combine` into
+`.data/tts_strategy/pool_20260908_v3/labeled_pool.jsonl`: **241 clips /
+10 recordings** (148 pass / 93 reject). SHA dedupe dropped 2 byte-identical
+overlaps already in v2. Recording counts after merge: `3Nll-JLzvvE` 85,
+`PXEtB-CsvSw` 48, `j83rzAzRDAI` 22, `QBml8L3wS3Q` 18, `i0zYcXBjytE` 14,
+`Oa-mVxGS4cw` 13, `fwN5VT_QxkY` 13, `zK3qFnKZFRo` 13, `lfIbjICmfW0` 11,
+`NI8JVXNWlN8` 4. Calibration freeze unchanged (`fwN5VT_QxkY` + `Oa-mVxGS4cw`).
+v2 left intact. Still not a production quality claim.
 
 ## Continuation rules
 

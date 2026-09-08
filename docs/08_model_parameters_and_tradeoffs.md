@@ -348,11 +348,13 @@ flowchart TD
 > Syllable & Word Forced Alignment Lock**, select `whisper_timestamped`, set
 > language to `vi`, and use `vinai/PhoWhisper-large` when compute permits. Start
 > with `target_onset=0.70`, `target_offset=0.50`,
-> `boundary_collar_s=0.20`, `enable_context_collar=True`, and
-> `silence_tail_buffer_s=0.25`. Keep `enable_energy_snapping=False`, because
-> energy snapping executes after word locking and can move the protected boundary
-> inward. See the complete UI-by-UI recipe in
-> [04. Zero-Contamination Diarization](04_zero_contamination_diarization.md#experiment-tab-recipe-prioritize-complete-vietnamese-words-không-bị-lẹm-chữ).
+> `boundary_collar_s=0.20`, `enable_context_collar=True`,
+> `silence_tail_buffer_s=0.25`, `enable_smart_segmentation=True` (2–15 s),
+> and `enable_syllable_alignment=False`. Keep `enable_energy_snapping=False`.
+> On two studio-interview 180 s slices (2026-09-08), word lock collapsed yield
+> via `word_boundary_conflicts_with_safe_bounds`; it is a competitor-conflict gate,
+> not a clip repairer. See the complete UI-by-UI recipe in
+> [04. Zero-Contamination Diarization](04_zero_contamination_diarization.md#experiment-tab-recipe-studio-interview-harvest-measured-2026-09-08).
 
 > **Quick answer for speaker purity:** the actual additional-compute gates are
 > Stage 2 `enable_consensus`, Stage 4 `enable_homogeneity` with a lower

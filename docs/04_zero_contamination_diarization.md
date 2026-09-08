@@ -36,37 +36,43 @@ In contrast, **zero-contamination diarization** is designed specifically for **c
 - **Multi-speaker contamination is fatal:** Even 50 ms of a secondary speaker's voice in a training clip can contaminate acoustic tokenizers and voice cloning models.
 - **Chopped syllable boundaries are unacceptable:** Truncating Vietnamese tonal contours or syllable codas ($-p, -t, -k, -m, -n, -ng$) ruins speech synthesis naturalness.
 
-### Experiment-tab recipe: prioritize complete Vietnamese words (không bị lẹm chữ)
+### Experiment-tab recipe: studio-interview harvest (measured 2026-09-08)
 
-The control that directly spends additional compute to protect complete words is
-**Stage 3 → Option B: Syllable & Word Forced Alignment Lock**. Gemma 4,
-VibeVoice, and WeSpeaker validate speaker purity; they do not repair clipped word
-boundaries.
+Gemini 3.8 Flash MEDIUM judged six Experiment-tab configs on two 180 s
+Vietcetera studio-interview slices (`PXEtB-CsvSw`, `3Nll-JLzvvE`; 360 s
+source). Stage 5 was off so the teacher was not a circular gate. Consensus was
+off: DiariZen on the primary machine is CPU torch. Challenge recording
+`youtube:H0VpjeULCck` was not used. This is not a production quality claim and
+does not cover music-backed vlogs.
 
-The Experiment UI highlights this panel with a **COMPUTE → WORD COMPLETENESS**
-callout and bolds its engine, model, device, and language controls. Stage 1 is
-separately labeled as boundary tuning because changing its thresholds does not
-add inference compute.
+**Winner by accepted minutes** (`recipe_nolock`): 31 pass / 8 reject,
+184.918 s pass, **30.820 accepted min / source hour**. Pass-pool clipping was
+zero (rejects are not kept). Remaining emitted defects Gemini caught: music 4,
+clipped end 2, clipped start 1, secondary 1, reverb 2.
+
+Word lock was the yield killer, not a clip repairer. With PhoWhisper-small
+lock + 2–15 s segmentation, `word_boundary_conflicts_with_safe_bounds` dropped
+PXEtB from 20 diarizer turns to 1 emitted clip (0 pass s) and the pair to
+7.083 accepted min / source hour. Energy snapping plus lock zeroed PXEtB.
+Unlocked library collar defaults (onset 0.80 / offset 0.65 / collar 0.35)
+were second: 167.140 s pass, 27.857 min / source hour, **0 clipping rejects**.
 
 Use this as the starting configuration in the Experiment tab:
 
 | UI step | Control | Recommended value | Why |
 |---|---|---|---|
 | Input | Primary Diarizer | `Sortformer` | The Experiment pipeline applies `target_onset` and `target_offset` to this backend. |
-| Stage 1 | Target Speaker Onset | `0.70` | Opens the turn on softer evidence than the `0.80` default, helping retain initial consonants. |
-| Stage 1 | Target Speaker Offset | `0.50` | Holds the turn open longer than the `0.65` default, helping retain final codas and fading syllables. |
-| Stage 2 | Dual-Engine Consensus | Enabled; secondary `DiariZen` | Spends additional compute to reject boundaries on which two different diarizers disagree. |
-| Stage 3 | Base Collar Inward Shave | `0.20s` | Reduces deterministic inward trimming from the `0.35s` default. Increase it again if speaker bleed appears. |
+| Stage 1 | Target Speaker Onset | `0.70` | Softer than the previous 0.80 tab default; recovered more Gemini-pass speech than lock configs. |
+| Stage 1 | Target Speaker Offset | `0.50` | Holds the turn open longer than 0.65, helping retain final codas. |
+| Stage 2 | Dual-Engine Consensus | **Disabled** unless a second GPU diarizer is actually available | Not measured here. DiariZen is CPU torch on the primary AMD host; leave off for this harvest recipe. |
+| Stage 3 | Base Collar Inward Shave | `0.20s` | Less inward trim than 0.35 s. Increase it again if speaker bleed appears. |
+| Stage 3 | Min Surviving Turn | `0.60s` | Keeps short but complete replies; smart segmentation then sizes TTS clips. |
 | Stage 3, Option A | Context-Aware Handoff Guard | Enabled | Shaves near another speaker but extends into silence when a handoff is not nearby. |
-| Stage 3, Option A | Handoff Risk Distance | `0.85s` | Retains the normal speaker-transition safety horizon. |
-| Stage 3, Option A | Silence Tail Release | `0.25s` | Adds more trailing room for Vietnamese tones and codas when silence follows. |
-| Stage 3, Option B | Forced Alignment Lock | Enabled | Does not expand into inter-turn gaps. Rejects when completing a recognized word would enter a competitor or adjacent turn. |
-| Stage 3, Option B | Engine | `whisper_timestamped` | Produces word timestamps used by the boundary lock. |
-| Stage 3, Option B | Model | `vinai/PhoWhisper-large` | High-precision Vietnamese checkpoint; use `vinai/PhoWhisper-small` if memory or latency is limiting. |
-| Stage 3, Option B | Language | `vi` | Prevents unnecessary language auto-detection. |
-| Stage 3, Option B | Device | `"same"` (or dedicated GPU / CPU) | Sequential execution with automatic memory clearing on single-GPU servers. |
-| Stage 3, Option C | Energy/RMS Valley Snapping | **Disabled** | It runs before word locking. Energy minima alone cannot establish word completeness. |
-| Stage 3, Option D | Intelligent Turn Segmentation | **Optional / Enabled for TTS** | Splits long turns (>10s) at natural ASR punctuation/pauses and RMS valleys into optimal TTS training slices (3–10s). |
+| Stage 3, Option A | Handoff Risk Distance | `0.85s` | Speaker-transition safety horizon. |
+| Stage 3, Option A | Silence Tail Release | `0.25s` | Trailing room for Vietnamese tones and codas when silence follows. |
+| Stage 3, Option B | Forced Alignment Lock | **Disabled** for this harvest | Competitor-conflict gate, not a clip repairer. On these interviews it rejected most turns. Enable only when inspecting dense overlapping dialogue and accepting that yield may collapse. |
+| Stage 3, Option C | Energy/RMS Valley Snapping | **Disabled** | Combined with lock it zeroed one source. Do not use as a completeness substitute. |
+| Stage 3, Option D | Intelligent Turn Segmentation | **Enabled** | 2–15 s TTS duration policy. Splits long monologue turns so they are not dropped as >15 s. |
 
 The equivalent core configuration is:
 
@@ -75,36 +81,28 @@ config = ZeroContaminationConfig(
     primary_backend="sortformer",
     target_onset=0.70,
     target_offset=0.50,
-    enable_consensus=True,
-    secondary_backend="diarizen",
-    secondary_device="same",
+    enable_consensus=False,
     enable_collar_erosion=True,
     boundary_collar_s=0.20,
     min_turn_duration_s=0.60,
     enable_context_collar=True,
     handoff_risk_distance_s=0.85,
     silence_tail_buffer_s=0.25,
-    enable_syllable_alignment=True,
-    aligner_engine="whisper_timestamped",
-    aligner_model="vinai/PhoWhisper-large",
-    aligner_language="vi",
-    aligner_device="same",
+    enable_syllable_alignment=False,
     enable_energy_snapping=False,
-    enable_homogeneity=True,
-    homogeneity_device="same",
-    homogeneity_window_s=0.80,
-    homogeneity_hop_s=0.10,
-    min_homogeneity_similarity=0.74,
-    enable_gemma=True,
-    gemma_backend="gemini",
-    gemma_model="gemini-3.8-flash",
+    enable_smart_segmentation=True,
+    target_min_duration_s=2.0,
+    target_max_duration_s=15.0,
+    enable_homogeneity=False,
+    enable_gemma=False,
+    enable_vibevoice=False,
 )
 ```
 
-This preset prioritizes word completeness, but it cannot make complete-word and
-zero-other-speaker guarantees simultaneously at an overlapping or immediate
-speaker handoff. Inspect those boundaries and prefer rejecting the entire turn
-when purity is more important than yield.
+Without a later teacher or Stage 5 gate, emitted music and the few clipped
+children still leak. Gemini pass minutes already exclude those. Inspect
+handoffs and prefer rejecting the entire turn when purity matters more than
+yield.
 
 Requested alignment fails closed: loading or inference errors reject candidates
 and record errors. Whisper/remote locking does not expand into inter-turn gaps.

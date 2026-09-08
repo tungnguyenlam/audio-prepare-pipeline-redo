@@ -100,23 +100,26 @@ class ExperimentRouteHandler:
             "gemma4": True,
             "gemini": True,
         }
+        # Experiment-tab UI defaults follow the measured 2026-09-08
+        # studio-interview harvest recipe (docs/04). Library ZeroContaminationConfig
+        # constants remain unchanged for non-UI callers.
         defaults = {
             "primary_backend": "sortformer",
             "primary_device": default_dev,
-            "target_onset": DEFAULT_TARGET_ONSET,
-            "target_offset": DEFAULT_TARGET_OFFSET,
+            "target_onset": 0.70,
+            "target_offset": 0.50,
             "competitor_onset": DEFAULT_COMPETITOR_ONSET,
-            "enable_consensus": True,
+            "enable_consensus": False,
             "secondary_backend": "diarizen",
             "secondary_device": "same",
             "enable_collar_erosion": True,
-            "boundary_collar_s": DEFAULT_COLLAR_EROSION_S,
-            "min_turn_duration_s": DEFAULT_MIN_TURN_DURATION_S,
+            "boundary_collar_s": 0.20,
+            "min_turn_duration_s": 0.60,
             "transition_exclusion_s": DEFAULT_TRANSITION_EXCLUSION_S,
             # Syllable & Boundary Integrity Gate
             "enable_context_collar": True,
-            "handoff_risk_distance_s": DEFAULT_HANDOFF_RISK_DISTANCE_S,
-            "silence_tail_buffer_s": DEFAULT_SILENCE_TAIL_BUFFER_S,
+            "handoff_risk_distance_s": 0.85,
+            "silence_tail_buffer_s": 0.25,
             "enable_syllable_alignment": False,
             "aligner_engine": "whisper_timestamped",
             "aligner_model": "vinai/PhoWhisper-small",
@@ -129,9 +132,9 @@ class ExperimentRouteHandler:
             "energy_frame_len_ms": DEFAULT_ENERGY_FRAME_LEN_MS,
             "energy_hop_len_ms": DEFAULT_ENERGY_HOP_LEN_MS,
             # Smart Segmentation
-            "enable_smart_segmentation": False,
-            "target_max_duration_s": DEFAULT_TARGET_MAX_DURATION_S,
-            "target_min_duration_s": DEFAULT_TARGET_MIN_DURATION_S,
+            "enable_smart_segmentation": True,
+            "target_max_duration_s": 15.0,
+            "target_min_duration_s": 2.0,
             "min_split_pause_s": DEFAULT_MIN_SPLIT_PAUSE_S,
             # Homogeneity
             "enable_homogeneity": False,
