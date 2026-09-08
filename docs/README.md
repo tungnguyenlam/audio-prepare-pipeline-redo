@@ -4,6 +4,14 @@ Welcome to the **audio-prepare-pipeline-redo** documentation. This pipeline prov
 
 ---
 
+## Active production strategy
+
+For the next engineering and experiment work, start with
+[Local Vietnamese TTS production strategy](TTS_PRODUCTION_STRATEGY.md),
+[execution and continuation log](TTS_STRATEGY_EXECUTION.md), and
+[Phase 1 audit brief](TTS_PHASE1.md). Historical teacher evaluations are not
+human-verified production quality measurements.
+
 ## 🧭 Reading Order & Operational Flow
 
 The documentation is organized modularly to match the natural audio processing lifecycle:
