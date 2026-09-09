@@ -15,7 +15,7 @@ from typing import Any, Sequence
 import numpy as np
 import soundfile as sf
 from _manifest import arguments, load, save
-from _common.files import ROOT, identity, probe, read_json
+from _common.files import ROOT, identity, probe, progress, read_json
 logger = logging.getLogger(__name__)
 
 def _ensure_torch_hub_trusted() -> None:
@@ -434,6 +434,7 @@ def main() -> int:
               'device': args.device, 'endpoint': args.endpoint,
               'words_file': identity(args.words_file) if args.words_file else None}
     os.environ.setdefault('TORCH_HOME', str(ROOT / '.data/torch'))
+    progress('ALIGN_START', f'Running alignment engine={args.engine} on {source.name}')
     with contextlib.redirect_stdout(sys.stderr):
         if args.engine == 'words':
             words = read_json(args.words_file)['words']
@@ -444,6 +445,7 @@ def main() -> int:
             turns, audits = _run_mms_fa_alignment(source, manifest['turns'], device=args.device)
         else:
             turns, audits = _run_whisper_timestamped_alignment(source, manifest['turns'], model_name=args.model, language=args.language, device=args.device)
+    progress('ALIGN_DONE', f'Produced {len(turns)} aligned turns')
     save(args, manifest, source, turns, 'align', values, audits=audits)
     return 0
 

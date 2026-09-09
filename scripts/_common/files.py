@@ -10,6 +10,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unicodedata
 import re
 
@@ -29,8 +30,48 @@ def positive_int(value: str) -> int:
     return result
 
 
-def parser(description: str, operation: str, model: str | None = None, *, segments: bool = False) -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description=description)
+def log_config(title: str, args: argparse.Namespace | dict) -> None:
+    if getattr(args, 'quiet', False):
+        return
+    name = title or (sys.argv[0] if sys.argv else 'command')
+    if '/' in name or '\\' in name:
+        name = Path(name).name
+    items = vars(args) if isinstance(args, argparse.Namespace) else args
+    border = '=' * 60
+    lines = [border, f'[{name}] CONFIGURATION:']
+    for k in sorted(items.keys()):
+        lines.append(f'  {k:<24}: {items[k]}')
+    lines.append(border)
+    print('\n'.join(lines), file=sys.stderr, flush=True)
+
+
+class LoggingArgumentParser(argparse.ArgumentParser):
+    """ArgumentParser that logs parsed arguments to stderr upon successful parsing."""
+    def parse_args(self, args=None, namespace=None):
+        ns = super().parse_args(args=args, namespace=namespace)
+        log_config(self.prog or (sys.argv[0] if sys.argv else 'command'), ns)
+        return ns
+
+
+def progress(action: str, detail: str = '', *, current: int | None = None, total: int | None = None, elapsed_s: float | None = None) -> None:
+    """Print real-time progress update to stderr."""
+    items = []
+    if current is not None and total is not None and total > 0:
+        pct = (current / total) * 100.0
+        items.append(f'[{current}/{total}] ({pct:5.1f}%)')
+    elif current is not None:
+        items.append(f'[{current}]')
+    items.append(action.upper())
+    if detail:
+        items.append(detail)
+    if elapsed_s is not None:
+        items.append(f'({elapsed_s:.2f}s)')
+    timestamp = time.strftime('%H:%M:%S')
+    print(f'[{timestamp}] ' + ' : '.join(items), file=sys.stderr, flush=True)
+
+
+def parser(description: str, operation: str, model: str | None = None, *, segments: bool = False) -> LoggingArgumentParser:
+    p = LoggingArgumentParser(description=description)
     p.add_argument('--input-file', type=Path)
     p.add_argument('--input-dir', type=Path)
     if not segments:
@@ -200,14 +241,26 @@ def safe_name(value: str, limit: int | None = None) -> str:
 
 
 def batch(pairs: list[tuple[Path, Path]], process) -> int:
+    total = len(pairs)
+    if total == 0:
+        progress('BATCH', '0 items to process')
+        return 0
     failed = 0
-    for src, dest in pairs:
+    t_start = time.perf_counter()
+    progress('BATCH', f'Starting batch processing of {total} item(s)')
+    for idx, (src, dest) in enumerate(pairs, 1):
+        item_start = time.perf_counter()
+        progress('ITEM_START', f'{src.name} -> {dest.name}', current=idx, total=total)
         try:
             with contextlib.redirect_stdout(sys.stderr):
                 process(src, dest)
+            elapsed = time.perf_counter() - item_start
+            progress('ITEM_DONE', f'{src.name}', current=idx, total=total, elapsed_s=elapsed)
             print(dest, flush=True)
         except Exception as exc:
+            elapsed = time.perf_counter() - item_start
             failed += 1
-            print(f'FAILED {src}: {exc}', file=sys.stderr)
-    print(f'{len(pairs) - failed} succeeded; {failed} failed', file=sys.stderr)
+            progress('ITEM_FAIL', f'{src.name}: {exc}', current=idx, total=total, elapsed_s=elapsed)
+    total_elapsed = time.perf_counter() - t_start
+    progress('BATCH_COMPLETE', f'{total - failed} succeeded; {failed} failed', elapsed_s=total_elapsed)
     return int(failed > 0)

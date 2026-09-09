@@ -6,12 +6,12 @@ import math
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import identity, probe, read_json, write_json
+from _common.files import LoggingArgumentParser, identity, probe, progress, read_json, write_json
 from _common.segments import normalize_turns, source_path
 
 
-def arguments(description: str) -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description=description)
+def arguments(description: str) -> LoggingArgumentParser:
+    p = LoggingArgumentParser(description=description)
     p.add_argument('--input-manifest', type=Path, required=True)
     p.add_argument('--output-manifest', type=Path, required=True)
     p.add_argument('--input-file', type=Path)
@@ -29,6 +29,7 @@ def load(args) -> tuple[dict, Path]:
     manifest['turns'] = normalize_turns(manifest['turns'], source)
     for turn in manifest['turns']:
         turn.setdefault('confidence', None)
+    progress('LOAD_MANIFEST', f'Loaded {len(manifest["turns"])} turns from {args.input_manifest.name} (audio: {source.name})')
     return manifest, source
 
 
@@ -46,8 +47,10 @@ def save(args, manifest: dict, source: Path, turns: list[dict], operation: str, 
     turns = normalize_turns(turns, source)
     for turn in turns:
         turn.pop('clip_frames', None)
+    progress('SAVE_MANIFEST', f'Saving {len(turns)} turns ({operation}) -> {destination.name}')
     write_json(destination, {**metadata, 'turns': turns,
                'speaker_ids': sorted({t['speaker_id'] for t in turns}),
                'source_sample_rate': probe(source)['sample_rate'],
                'clips_valid': False, 'complete': True, **details})
+    progress('MANIFEST_DONE', f'Wrote {destination.name}')
     print(destination)

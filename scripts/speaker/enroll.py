@@ -9,11 +9,11 @@ import shutil
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import ROOT, safe_name
+from _common.files import LoggingArgumentParser, ROOT, progress, safe_name
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description=__doc__)
+    p = LoggingArgumentParser(description=__doc__)
     p.add_argument('--name', required=True, help='Speaker profile name')
     p.add_argument('--clip', dest='clips', action='append', default=[], type=Path, help='Reference clip file (repeatable)')
     p.add_argument('--clip-dir', type=Path, help='Directory of reference WAV clips')
@@ -82,8 +82,8 @@ def main() -> int:
         'channel_url': args.channel_url,
     }
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
+    progress('ENROLL_DONE', f'Enrolled {len(new_clip_names)} clips for speaker {args.name!r} at {profile_dir}')
     print(manifest_path)
-    print(f'Enrolled {len(new_clip_names)} clips for speaker {args.name!r} at {profile_dir}', file=sys.stderr)
     return 0
 
 

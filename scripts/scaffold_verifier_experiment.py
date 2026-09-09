@@ -3,10 +3,13 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import re
 from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _common.files import LoggingArgumentParser, progress
 
 
 def main() -> None:
@@ -15,7 +18,7 @@ def main() -> None:
     Raises:
         OSError: If the workspace cannot be created or written.
     """
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = LoggingArgumentParser(description=__doc__)
     parser.add_argument("--name", required=True, help="New experiment directory name")
     args = parser.parse_args()
     if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]*", args.name):
@@ -80,6 +83,7 @@ def main() -> None:
         with (root / name).open("x", encoding="utf-8") as handle:
             json.dump(value, handle, ensure_ascii=False, indent=2)
             handle.write("\n")
+    progress('SCAFFOLD_DONE', f'Created {root.relative_to(repo_root)}')
     print(f"Created {root.relative_to(repo_root)} (scaffold only)")
     print("Next: follow docs/E2B_VERIFIER_EXPERIMENT.md; benchmark is reserved.")
 

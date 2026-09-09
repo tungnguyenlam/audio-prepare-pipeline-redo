@@ -6,11 +6,11 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import read_json
+from _common.files import LoggingArgumentParser, progress, read_json
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description=__doc__)
+    p = LoggingArgumentParser(description=__doc__)
     p.add_argument('--input-manifest', type=Path, required=True, help='Path to segments.json')
     p.add_argument('--reference-manifest', type=Path, help='Optional reference segments.json for comparison')
     p.add_argument('--output-file', type=Path, required=True, help='Output image path (.png, .svg, .pdf)')
@@ -22,6 +22,7 @@ def main() -> int:
     if dest.exists() and not args.overwrite:
         p.error(f'Destination exists: {dest}; use --overwrite')
 
+    progress('PLOT_START', f'Rendering Gantt chart: {args.input_manifest.name}')
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
@@ -46,6 +47,7 @@ def main() -> int:
     plt.tight_layout()
     plt.savefig(dest, dpi=200)
     plt.close(fig)
+    progress('PLOT_DONE', f'Saved plot to {dest.name}')
     print(dest)
     return 0
 

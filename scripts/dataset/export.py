@@ -9,11 +9,11 @@ from pathlib import Path
 import sys
 import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import completed, digest, identity, read_json, request, write_json
+from _common.files import LoggingArgumentParser, completed, digest, identity, progress, read_json, request, write_json
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description=__doc__)
+    p = LoggingArgumentParser(description=__doc__)
     p.add_argument('--input-manifest', type=Path, required=True)
     p.add_argument('--output-file', type=Path, required=True)
     p.add_argument('--format', choices=('jsonl', 'csv'), required=True)
@@ -25,10 +25,12 @@ def main() -> int:
         p.error('Output and its JSON sidecar must differ from the input manifest and each other')
     metadata = request(identity(args.input_manifest), 'dataset_export', {'format': args.format})
     if completed(destination, metadata, args.overwrite):
+        progress('EXPORT_CACHED', f'Output already complete: {destination.name}')
         print(destination)
         return 0
     manifest = read_json(args.input_manifest)
     entries = manifest['entries']
+    progress('EXPORT_START', f'Exporting {len(entries)} entries to {args.format.upper()}')
     destination.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(dir=destination.parent, suffix='.tmp')
     try:
@@ -46,6 +48,7 @@ def main() -> int:
         write_json(sidecar, {**metadata, 'output': {'sha256': digest(destination), 'rows': len(entries)}})
     finally:
         Path(temporary).unlink(missing_ok=True)
+    progress('EXPORT_DONE', f'Wrote {len(entries)} rows -> {destination.name}')
     print(destination)
     return 0
 

@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import ROOT, completed, identity, positive_int, publish, request
+from _common.files import LoggingArgumentParser, ROOT, completed, identity, positive_int, progress, publish, request
 import librosa
 import numpy as np
 import soundfile as sf
@@ -145,7 +145,7 @@ def mix(speech: Path, music: Path, target_smr_db: float, seed: int, output_dir: 
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description=__doc__)
+    p = LoggingArgumentParser(description=__doc__)
     p.add_argument('--speech', type=Path, required=True)
     p.add_argument('--music', type=Path, required=True)
     p.add_argument('--smr-db', type=float, required=True)
@@ -169,12 +169,16 @@ def main() -> int:
     wanted = [request(source, 'mix', {**params, 'stem': name}) for name in names]
     skips = [completed(path, metadata, args.overwrite) for path, metadata in zip(destinations, wanted)]
     if not all(skips):
+        progress('MIX_START', f'Mixing speech ({args.speech.name}) + music ({args.music.name}) at SMR={args.smr_db}dB (seed={args.seed})')
         args.work_dir.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=args.work_dir) as work:
             effective = mix(args.speech, args.music, args.smr_db, args.seed, Path(work),
                             args.sample_rate, args.channels, args.peak_ceiling_dbfs)
             for dest, metadata in zip(destinations, wanted):
                 publish(Path(work) / dest.name, dest, {**metadata, 'mixing': effective})
+        progress('MIX_DONE', f'Generated reference and mixture stems in {args.output_dir.name}')
+    else:
+        progress('MIX_CACHED', f'Outputs already exist in {args.output_dir.name}')
     for dest in destinations:
         print(dest)
     return 0

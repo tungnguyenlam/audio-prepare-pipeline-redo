@@ -5,7 +5,7 @@ import argparse
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import identity, positive_int, read_json, write_json
+from _common.files import LoggingArgumentParser, identity, positive_int, progress, read_json, write_json
 import librosa
 import numpy as np
 import soundfile as sf
@@ -40,7 +40,7 @@ def load_mono_waveform(path: str | Path, target_sr: int = 44100) -> np.ndarray:
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description=__doc__)
+    p = LoggingArgumentParser(description=__doc__)
     p.add_argument('--input-file', type=Path, required=True)
     p.add_argument('--reference-file', type=Path, required=True)
     p.add_argument('--mixture-file', type=Path)
@@ -60,6 +60,7 @@ def main() -> int:
             print(dest)
             return 0
         p.error('Conflicting output; use --overwrite')
+    progress('EVAL_SEP', f'Evaluating SI-SDR: {args.input_file.name} vs {args.reference_file.name}')
     estimate, reference = [load_mono_waveform(path, args.sample_rate) for path in paths[:2]]
     if not len(estimate) or not len(reference):
         p.error('Inputs must contain audio')
@@ -69,6 +70,7 @@ def main() -> int:
         metrics['mixture_si_sdr_db'] = si_sdr_db(mixture, reference)
         metrics['si_sdri_db'] = metrics['si_sdr_db'] - metrics['mixture_si_sdr_db']
     write_json(dest, {**metadata, 'metrics': metrics})
+    progress('EVAL_SEP_DONE', f'SI-SDR: {metrics["si_sdr_db"]:.2f} dB -> {dest.name}')
     print(dest)
     return 0
 

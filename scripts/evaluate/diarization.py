@@ -299,12 +299,11 @@ def evaluate_diarization(
 
 
 def main() -> int:
-    import argparse
     from pathlib import Path
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from _common.files import identity, read_json, write_json
-    p = argparse.ArgumentParser(description=__doc__)
+    from _common.files import LoggingArgumentParser, identity, progress, read_json, write_json
+    p = LoggingArgumentParser(description=__doc__)
     p.add_argument('--reference-manifest', type=Path, required=True)
     p.add_argument('--input-manifest', type=Path, required=True)
     p.add_argument('--duration', type=float, required=True)
@@ -325,10 +324,12 @@ def main() -> int:
             print(dest)
             return 0
         p.error('Conflicting output; use --overwrite')
+    progress('EVAL_DIAR', f'Evaluating DER: {args.input_manifest.name} vs {args.reference_manifest.name} (collar={args.collar}s)')
     metrics = evaluate_diarization(read_json(args.reference_manifest)['turns'],
                                    read_json(args.input_manifest)['turns'], duration_s=args.duration,
                                    collar_s=args.collar, skip_overlap=args.skip_overlap)
     write_json(dest, {**metadata, 'metrics': metrics})
+    progress('EVAL_DIAR_DONE', f'DER: {metrics["der"] * 100:.2f}%, Miss: {metrics["miss"] * 100:.2f}%, FA: {metrics["false_alarm"] * 100:.2f}%, Conf: {metrics["speaker_confusion"] * 100:.2f}% -> {dest.name}')
     print(dest)
     return 0
 

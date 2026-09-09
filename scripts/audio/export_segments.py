@@ -5,12 +5,12 @@ import argparse
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import ROOT, identity, positive_int, read_json, request
+from _common.files import LoggingArgumentParser, ROOT, identity, positive_int, read_json, request
 from _common.segments import export, manifest_complete, source_path
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description=__doc__)
+    p = LoggingArgumentParser(description=__doc__)
     p.add_argument('--input-manifest', type=Path, required=True)
     p.add_argument('--input-file', type=Path)
     p.add_argument('--output-dir', type=Path, default=ROOT / '.data/export_segments/out')

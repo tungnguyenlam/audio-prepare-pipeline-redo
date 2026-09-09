@@ -6,11 +6,11 @@ import math
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import identity, read_json, write_json
+from _common.files import LoggingArgumentParser, identity, progress, read_json, write_json
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description=__doc__)
+    p = LoggingArgumentParser(description=__doc__)
     p.add_argument('--input-manifest', type=Path, required=True)
     p.add_argument('--output-manifest', type=Path, required=True)
     p.add_argument('--tag', action='append', default=[], help='Require every supplied tag')
@@ -27,6 +27,8 @@ def main() -> int:
                 'parameters': {'tags': sorted(set(args.tag)), 'exclude_tags': sorted(set(args.exclude_tag)),
                                'min_duration': args.min_duration, 'max_duration': args.max_duration}}
     source = read_json(args.input_manifest)
+    total = len(source.get('entries', []))
+    progress('FILTER_START', f'Filtering {total} entries from {args.input_manifest.name}')
     entries = [entry for entry in source['entries'] if set(args.tag) <= set(entry.get('tags', []))
                and not set(args.exclude_tag) & set(entry.get('tags', []))
                and entry['duration_s'] >= args.min_duration
@@ -40,6 +42,7 @@ def main() -> int:
             p.error('Conflicting output; use --overwrite')
     else:
         write_json(args.output_manifest, output)
+    progress('FILTER_DONE', f'Retained {len(entries)} of {total} entries -> {args.output_manifest.name}')
     print(args.output_manifest.resolve())
     return 0
 

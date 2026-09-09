@@ -6,12 +6,12 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import identity, probe, read_json, write_json
+from _common.files import LoggingArgumentParser, identity, probe, progress, read_json, write_json
 from _common.segments import normalize_turns, source_path
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description=__doc__)
+    p = LoggingArgumentParser(description=__doc__)
     p.add_argument('--input-manifest', type=Path, required=True, help='Manifest with scored segments')
     p.add_argument('--output-manifest', type=Path, required=True, help='Filtered output manifest')
     p.add_argument('--threshold', type=float, default=0.6, help='Minimum similarity threshold')
@@ -24,6 +24,7 @@ def main() -> int:
     manifest = read_json(args.input_manifest)
     source = source_path(manifest, args.input_manifest, args.input_file)
     raw_turns = manifest.get('turns', [])
+    progress('FILTER_START', f'Filtering {len(raw_turns)} turns (threshold>={args.threshold}, min_dur>={args.min_duration_s}s)')
 
     kept_turns = []
     for turn in raw_turns:
@@ -64,8 +65,8 @@ def main() -> int:
             return 0
         p.error(f'Conflicting output: {dest}; use --overwrite')
     write_json(dest, metadata)
+    progress('FILTER_DONE', f'Kept {len(normalized)} of {len(raw_turns)} turns -> {dest.name}')
     print(dest)
-    print(f'Kept {len(normalized)} of {len(raw_turns)} segments', file=sys.stderr)
     return 0
 
 

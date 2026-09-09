@@ -5,20 +5,24 @@ import json
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import inputs, parser, probe
+from _common.files import inputs, parser, probe, progress
 
 
 def main() -> int:
     p = parser(__doc__, 'info', segments=True)
     args = p.parse_args()
+    items = inputs(args)
+    total = len(items)
+    progress('INFO_START', f'Probing {total} audio file(s)')
     failed = 0
-    for src, _ in inputs(args):
+    for idx, (src, _) in enumerate(items, 1):
         try:
             print(json.dumps({'path': str(src), **probe(src)}))
+            progress('PROBED', f'{src.name}', current=idx, total=total)
         except Exception as exc:
             failed += 1
-            print(f'FAILED {src}: {exc}', file=sys.stderr)
-    print(f'{failed} failed', file=sys.stderr)
+            progress('PROBE_FAIL', f'{src.name}: {exc}', current=idx, total=total)
+    progress('INFO_DONE', f'{total - failed} probed; {failed} failed')
     return int(failed > 0)
 
 

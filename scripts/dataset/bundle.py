@@ -9,11 +9,11 @@ import sys
 import tempfile
 import zipfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import completed, digest, identity, read_json, request, safe_name, write_json
+from _common.files import LoggingArgumentParser, completed, digest, identity, progress, read_json, request, safe_name, write_json
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description=__doc__)
+    p = LoggingArgumentParser(description=__doc__)
     p.add_argument('--input-manifest', type=Path, required=True)
     p.add_argument('--output-file', type=Path, required=True)
     p.add_argument('--overwrite', action='store_true')
@@ -32,24 +32,31 @@ def main() -> int:
         p.error('Output and sidecar must differ from every input')
     metadata = request(identity(args.input_manifest), 'dataset_bundle', {'sources': [identity(path) for path in files]})
     if completed(destination, metadata, args.overwrite):
+        progress('BUNDLE_CACHED', f'Bundle already complete: {destination.name}')
         print(destination)
         return 0
+    total = len(files)
+    progress('BUNDLE_START', f'Bundling {total} files into {destination.name}')
     destination.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(dir=destination.parent, suffix='.zip')
     os.close(fd)
+    step = max(1, total // 10)
     try:
         entries = []
         with zipfile.ZipFile(temporary, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
-            for i, (entry, source) in enumerate(zip(manifest['entries'], files)):
-                name = f'audio/{i:06d}-{safe_name(source.name)}'
+            for i, (entry, source) in enumerate(zip(manifest['entries'], files), 1):
+                name = f'audio/{i - 1:06d}-{safe_name(source.name)}'
                 archive.write(source, name)
                 entries.append({**entry, 'path': name, 'relative_path': name})
+                if i == 1 or i == total or i % step == 0:
+                    progress('BUNDLE_FILE', f'{name}', current=i, total=total)
             archive.writestr('manifest.json', json.dumps({'schema_version': 1, 'entries': entries}, ensure_ascii=False, indent=2))
         write_json(sidecar, {**metadata, 'output': {}})
         os.replace(temporary, destination)
         write_json(sidecar, {**metadata, 'output': {'sha256': digest(destination), 'files': len(entries)}})
     finally:
         Path(temporary).unlink(missing_ok=True)
+    progress('BUNDLE_DONE', f'Wrote {len(entries)} files -> {destination.name}')
     print(destination)
     return 0
 

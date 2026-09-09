@@ -8,11 +8,11 @@ import sys
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import read_json, write_json
+from _common.files import LoggingArgumentParser, progress, read_json, write_json
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description=__doc__)
+    p = LoggingArgumentParser(description=__doc__)
     p.add_argument("--predictions-dir", type=Path, required=True, help="Directory containing candidate verdict JSON files")
     p.add_argument("--reference-dir", type=Path, required=True, help="Directory containing reference verdict JSON files")
     p.add_argument("--output-file", type=Path, required=True, help="Path to write evaluation results JSON")
@@ -33,6 +33,7 @@ def main() -> int:
     if not matched_keys:
         p.error(f"No matching audio keys between {args.predictions_dir} and {args.reference_dir}")
 
+    progress('EVAL_START', f'Evaluating {len(matched_keys)} matched predictions vs references')
     tp, fp, tn, fn = 0, 0, 0, 0
     # Positive = reject (defect caught); Negative = pass (clean)
     reasons_breakdown: dict[str, dict[str, int]] = {}
@@ -105,6 +106,7 @@ def main() -> int:
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     write_json(dest, summary)
+    progress('EVAL_DONE', f'Accuracy: {accuracy * 100:.2f}%, Defect Recall: {reject_recall * 100:.2f}% -> {dest.name}')
     print(dest)
 
     # Print clean readable report to stderr

@@ -10,7 +10,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import ROOT, identity, probe, read_json, safe_name, write_json
+from _common.files import LoggingArgumentParser, ROOT, identity, probe, progress, read_json, safe_name, write_json
 from _common.segments import normalize_turns, source_path
 
 DEFAULT_EMBEDDING_MODEL_ID = "pyannote/wespeaker-voxceleb-resnet34-LM"
@@ -77,7 +77,7 @@ def embed_audio_interval(inference, path: Path, start_s: float | None = None, en
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description=__doc__)
+    p = LoggingArgumentParser(description=__doc__)
     p.add_argument('--input-manifest', type=Path, required=True, help='Diarization segments.json')
     p.add_argument('--output-manifest', type=Path, required=True, help='Scored output manifest')
     p.add_argument('--profile', required=True, help='Enrolled speaker profile name or directory')
@@ -95,7 +95,7 @@ def main() -> int:
     turns = normalize_turns(manifest.get('turns', []), source)
 
     profile_name, clip_paths = load_profile_clips(args.profile, args.profiles_dir)
-
+    progress('CENTROID', f'Embedding {len(clip_paths)} clips for profile {profile_name!r}')
     inference = get_embedder(args.model_id, args.device)
 
     # Compute centroid
@@ -104,7 +104,7 @@ def main() -> int:
         try:
             clip_vectors.append(embed_audio_interval(inference, c))
         except Exception as exc:
-            print(f"Warning: Failed to embed profile clip {c.name}: {exc}", file=sys.stderr)
+            progress('CLIP_FAIL', f'Failed to embed profile clip {c.name}: {exc}')
     if not clip_vectors:
         p.error(f"Failed to embed any reference clips for profile {profile_name!r}")
     centroid = np.mean(np.stack(clip_vectors), axis=0)
@@ -113,8 +113,11 @@ def main() -> int:
         p.error("Profile centroid is zero vector")
     centroid = centroid / c_norm
 
+    total_turns = len(turns)
+    progress('SCORE', f'Scoring {total_turns} turns against profile centroid')
     scored_turns = []
-    for i, turn in enumerate(turns):
+    step = max(1, total_turns // 10)
+    for i, turn in enumerate(turns, 1):
         dur = turn['end_s'] - turn['start_s']
         sim = -1.0
         if dur >= MIN_EMBEDDING_DURATION_S:
@@ -132,6 +135,8 @@ def main() -> int:
             'similarity': round(sim, 4),
             'overlaps_other_speaker': overlaps_other,
         })
+        if i == 1 or i == total_turns or i % step == 0:
+            progress('SCORE_TURN', f'{dur:.2f}s (sim={sim:.3f})', current=i, total=total_turns)
 
     dest = args.output_manifest.resolve()
     metadata = {
@@ -158,6 +163,7 @@ def main() -> int:
             return 0
         p.error(f'Conflicting output: {dest}; use --overwrite')
     write_json(dest, metadata)
+    progress('SCORE_DONE', f'Saved {len(scored_turns)} scored turns to {dest.name}')
     print(dest)
     return 0
 

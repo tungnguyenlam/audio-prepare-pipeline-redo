@@ -6,11 +6,11 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import read_json
+from _common.files import LoggingArgumentParser, progress, read_json
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description=__doc__)
+    p = LoggingArgumentParser(description=__doc__)
     p.add_argument('--metrics-file', dest='files', action='append', required=True, type=Path, help='Evaluation metrics JSON file (repeatable)')
     p.add_argument('--output-file', type=Path, required=True, help='Output image path (.png, .svg, .pdf)')
     p.add_argument('--title', help='Custom plot title')
@@ -56,11 +56,13 @@ def main() -> int:
     else:
         p.error('Unrecognized metric format in input files')
 
+    progress('PLOT_START', f'Plotting comparison metrics for {len(args.files)} files')
     ax.grid(True, axis='y', linestyle='--', alpha=0.5)
     dest.parent.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
     plt.savefig(dest, dpi=200)
     plt.close(fig)
+    progress('PLOT_DONE', f'Saved plot to {dest.name}')
     print(dest)
     return 0
 

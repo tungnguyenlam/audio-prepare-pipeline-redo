@@ -27,7 +27,8 @@ flowchart TD
 - **Mutual Exclusion:** Providing directory input with `--output-file` is rejected.
 - **Path Resolution:** Relative paths resolve against the caller's working directory. Default output directories live under `.data/<operation>/<model>/out`.
 - **Sequential Execution:** Directory batches are snapshotted before processing and executed sequentially. A model is loaded once per command invocation.
-- **Exit Status:** Successful file paths go to stdout; progress goes to stderr. Any file failure yields nonzero exit status.
+- **Exit Status & Stream Discipline:** Successful file paths go to stdout; configuration logging and real-time progress indicators go to stderr. Any file failure yields nonzero exit status.
+- **Configuration & Live Progress:** Every command immediately logs its complete parsed configuration to stderr upon launch and streams real-time progress updates with timestamps, stage labels, item percentages, and elapsed times.
 - **Idempotency & Overwrite:** Existing outputs with matching metadata and intact hashes are skipped. Overwriting inputs in place is disallowed. Conflicting outputs require `--overwrite`.
 
 ## Command Reference Matrix

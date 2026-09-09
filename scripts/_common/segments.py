@@ -5,7 +5,7 @@ import math
 import os
 from pathlib import Path
 import tempfile
-from _common.files import FileContractError, convert, digest, probe, read_json, safe_name, write_json
+from _common.files import FileContractError, convert, digest, probe, progress, read_json, safe_name, write_json
 
 
 def source_path(manifest: dict, manifest_path: Path, override: Path | None = None) -> Path:
@@ -58,15 +58,18 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
     import soundfile as sf
     info = probe(source)
     turns = normalize_turns(manifest['turns'], source)
+    turns_count = len(turns)
+    progress('EXPORT', f'Exporting {turns_count} clip(s) from {source.name}')
     output = {**manifest, 'timestamp_origin': 'diarized_input', 'source_sample_rate': info['sample_rate'],
               'sample_rate': sample_rate or info['sample_rate'], 'channels': channels, 'turns': turns, 'complete': False}
     destination.parent.mkdir(parents=True, exist_ok=True)
     # An interrupted export is recognizable and can be retried.
     write_json(destination, output)
     work_dir.mkdir(parents=True, exist_ok=True)
+    step = max(1, turns_count // 10)
     with tempfile.TemporaryDirectory(dir=work_dir) as directory, sf.SoundFile(source) as audio:
         work = Path(directory)
-        for i, turn in enumerate(turns):
+        for i, turn in enumerate(turns, 1):
             audio.seek(turn['start_sample'])
             data = audio.read(turn['end_sample'] - turn['start_sample'], dtype='float32', always_2d=True)
             raw, staged = work / 'raw.wav', work / 'clip.wav'
@@ -74,7 +77,7 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
             convert(raw, staged, output['sample_rate'], channels)
             name = (f"{safe_name(source.stem)}_{safe_name(str(manifest.get('model') or 'segments'))}_"
                     f"{safe_name(turn['speaker_id'])}_{round(turn['start_s'] * 1000):09d}-"
-                    f"{round(turn['end_s'] * 1000):09d}_{i + 1:04d}.wav")
+                    f"{round(turn['end_s'] * 1000):09d}_{i:04d}.wav")
             clip = destination.parent / name
             if clip.resolve() == source.resolve():
                 raise FileContractError('Clip would overwrite source')
@@ -88,5 +91,8 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
             finally:
                 Path(temporary).unlink(missing_ok=True)
             turn.update(clip=name, clip_sha256=digest(clip), clip_frames=probe(clip)['frames'])
+            if i == 1 or i == turns_count or i % step == 0:
+                progress('EXPORT_CLIP', f'{name}', current=i, total=turns_count)
     output['complete'] = True
     write_json(destination, output)
+    progress('EXPORT_COMPLETE', f'Exported {turns_count} clips to {destination.parent.name}')

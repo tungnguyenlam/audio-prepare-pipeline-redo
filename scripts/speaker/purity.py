@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import ROOT, identity, probe, read_json, safe_name, write_json
+from _common.files import LoggingArgumentParser, ROOT, identity, probe, progress, read_json, safe_name, write_json
 from _common.segments import normalize_turns, source_path
 from speaker.score import embed_audio_interval, get_embedder, load_profile_clips, DEFAULT_EMBEDDING_MODEL_ID
 
@@ -48,7 +48,7 @@ def other_speaker_overlap_duration(all_turns: list[dict], spk_id: str, start_s: 
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description=__doc__)
+    p = LoggingArgumentParser(description=__doc__)
     p.add_argument('--input-manifest', type=Path, required=True, help='Manifest containing candidate turns')
     p.add_argument('--output-manifest', type=Path, required=True, help='Purity verification output manifest')
     p.add_argument('--profile', required=True, help='Enrolled speaker profile name or dir')
@@ -71,6 +71,7 @@ def main() -> int:
     turns = normalize_turns(manifest.get('turns', []), source)
 
     profile_name, clip_paths = load_profile_clips(args.profile, args.profiles_dir)
+    progress('CENTROID', f'Embedding {len(clip_paths)} clips for profile {profile_name!r}')
     inference = get_embedder(args.model_id, args.device)
 
     clip_vectors = []
@@ -78,7 +79,7 @@ def main() -> int:
         try:
             clip_vectors.append(embed_audio_interval(inference, c))
         except Exception as exc:
-            print(f"Warning: Failed to embed clip {c.name}: {exc}", file=sys.stderr)
+            progress('CLIP_FAIL', f'Failed to embed clip {c.name}: {exc}')
     if not clip_vectors:
         p.error(f"Failed to embed reference clips for profile {profile_name!r}")
     centroid = np.mean(np.stack(clip_vectors), axis=0)
@@ -87,9 +88,12 @@ def main() -> int:
         p.error("Profile centroid is zero vector")
     centroid = centroid / c_norm
 
+    total_turns = len(turns)
+    progress('PURITY_START', f'Checking purity for {total_turns} turns against profile {profile_name!r}')
     verified_turns = []
     pass_count, reject_count = 0, 0
-    for turn in turns:
+    step = max(1, total_turns // 10)
+    for i, turn in enumerate(turns, 1):
         dur = turn['end_s'] - turn['start_s']
         spk = turn['speaker_id']
         overlap_dur = other_speaker_overlap_duration(turns, spk, turn['start_s'], turn['end_s'])
@@ -129,6 +133,8 @@ def main() -> int:
             'purity_reason': reason,
             'other_speaker_overlap_s': round(overlap_dur, 3),
         })
+        if i == 1 or i == total_turns or i % step == 0:
+            progress('PURITY_TURN', f'{decision} ({reason})', current=i, total=total_turns)
 
     dest = args.output_manifest.resolve()
     metadata = {
@@ -159,8 +165,8 @@ def main() -> int:
             return 0
         p.error(f'Conflicting output: {dest}; use --overwrite')
     write_json(dest, metadata)
+    progress('PURITY_DONE', f'{pass_count} passed, {reject_count} rejected -> {dest.name}')
     print(dest)
-    print(f'Purity check: {pass_count} passed, {reject_count} rejected', file=sys.stderr)
     return 0
 
 

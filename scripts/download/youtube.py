@@ -7,11 +7,11 @@ from pathlib import Path
 import sys
 import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import ROOT, completed, convert, positive_int, publish, read_json, request, safe_name
+from _common.files import LoggingArgumentParser, ROOT, completed, convert, positive_int, progress, publish, read_json, request, safe_name
 
 
-def arguments(description: str, bulk: bool = False) -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description=description)
+def arguments(description: str, bulk: bool = False) -> LoggingArgumentParser:
+    p = LoggingArgumentParser(description=description)
     p.add_argument('--url', required=True)
     p.add_argument('--sample-rate', type=positive_int, default=16000)
     p.add_argument('--output-dir', type=Path, default=ROOT / '.data/download/out')
@@ -28,6 +28,7 @@ def download(url: str, args) -> Path:
     options = {'noplaylist': True, 'format': 'bestaudio/best', 'quiet': True, 'no_warnings': False}
     if args.cookie_file:
         options['cookiefile'] = str(args.cookie_file.resolve())
+    progress('METADATA', f'Fetching info for {url}')
     with YoutubeDL(options) as ydl:
         info = ydl.extract_info(url, download=False)
     if not info or info.get('_type') in {'playlist', 'multi_video'}:
@@ -46,16 +47,20 @@ def download(url: str, args) -> Path:
         if existing_id and existing_id != video_id:
             dest = dest.with_name(f'{dest.stem}-{safe_name(video_id)}.wav')
     if completed(dest, metadata, args.overwrite):
+        progress('CACHED', f'Already completed: {dest.name}')
         return dest
     args.work_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=args.work_dir) as work:
         options['outtmpl'] = str(Path(work) / 'source.%(ext)s')
+        progress('DOWNLOAD', f'Downloading: {title}')
         with YoutubeDL(options) as ydl:
             downloaded = ydl.extract_info(url, download=True)
             src = Path(ydl.prepare_filename(downloaded))
         staged = Path(work) / 'output.wav'
+        progress('CONVERT', f'Converting {src.name} -> {args.sample_rate}Hz mono WAV')
         convert(src, staged, args.sample_rate, 1)
         publish(staged, dest, metadata)
+    progress('COMPLETE', f'Saved to {dest.name}')
     return dest
 
 
@@ -65,10 +70,11 @@ def main() -> int:
         with contextlib.redirect_stdout(sys.stderr):
             dest = download(args.url, args)
         print(dest)
-        print('1 succeeded; 0 failed', file=sys.stderr)
+        progress('STATUS', '1 succeeded; 0 failed')
         return 0
     except Exception as exc:
-        print(f'FAILED: {exc}\n0 succeeded; 1 failed', file=sys.stderr)
+        progress('ERROR', f'{exc}')
+        progress('STATUS', '0 succeeded; 1 failed')
         return 1
 
 

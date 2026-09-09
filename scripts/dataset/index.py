@@ -5,7 +5,7 @@ import argparse
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import ROOT, identity, inputs, parser, probe, read_json, write_json
+from _common.files import ROOT, identity, inputs, parser, probe, progress, read_json, write_json
 
 
 def main() -> int:
@@ -17,14 +17,19 @@ def main() -> int:
     destination = (args.output_manifest or args.output_dir / 'manifest.json').resolve()
     if destination in {src.resolve() for src, _ in sources}:
         p.error('Cannot overwrite an input')
+    total = len(sources)
+    progress('INDEX_START', f'Indexing {total} audio files')
     entries, failures = [], []
-    for src, relative in sources:
+    step = max(1, total // 10)
+    for idx, (src, relative) in enumerate(sources, 1):
         try:
             entries.append({'path': str(src.resolve()), 'relative_path': str(relative),
                             **identity(src), **probe(src), 'tags': sorted(set(args.tag))})
+            if idx == 1 or idx == total or idx % step == 0:
+                progress('INDEX_FILE', f'{relative}', current=idx, total=total)
         except Exception as exc:
             failures.append({'path': str(src), 'error': str(exc)})
-            print(f'FAILED {src}: {exc}', file=sys.stderr)
+            progress('INDEX_FAIL', f'{src}: {exc}', current=idx, total=total)
     manifest = {'schema_version': 1, 'operation': 'index', 'entries': entries, 'failures': failures,
                 'complete': not failures}
     if destination.exists() and not args.overwrite:
@@ -32,8 +37,8 @@ def main() -> int:
             p.error('Conflicting manifest; use --overwrite')
     else:
         write_json(destination, manifest)
+    progress('INDEX_DONE', f'{len(entries)} succeeded; {len(failures)} failed -> {destination.name}')
     print(destination)
-    print(f'{len(entries)} succeeded; {len(failures)} failed', file=sys.stderr)
     return int(bool(failures))
 
 
