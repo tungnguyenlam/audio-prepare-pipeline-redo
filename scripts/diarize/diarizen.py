@@ -217,7 +217,7 @@ def main() -> int:
                          'sample_rate': rate, 'channels': args.channels, 'checkpoint': args.model,
                          'min_duration_s': args.min_duration_s, 'max_duration_s': args.max_duration_s,
                          'segmentation_step': args.segmentation_step, 'binarize_onset': args.binarize_onset,
-                         'binarize_offset': args.binarize_offset}, model_name)
+                         'binarize_offset': args.binarize_offset}, 'diarizen')
         if manifest_complete(dest, wanted, args.overwrite):
             return
         pipeline.min_speakers = exact or minimum or pipeline.min_speakers
