@@ -15,7 +15,7 @@ from _common.files import (LoggingArgumentParser, ROOT, completed, convert,
 def arguments(description: str, bulk: bool = False) -> LoggingArgumentParser:
     p = LoggingArgumentParser(description=description)
     p.add_argument('--url', required=True)
-    p.add_argument('--sample-rate', type=positive_int, default=16000)
+    p.add_argument('--sample-rate', type=positive_int, default=48000)
     p.add_argument('--output-dir', type=Path, default=None,
                    help='Output directory (default: dynamic per audio family under .data/download/<family>)')
     if not bulk:

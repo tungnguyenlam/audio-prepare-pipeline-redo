@@ -25,7 +25,7 @@ flowchart LR
 
 **Defined in:** [`src/benchmark/separation/mixer.py`](../src/benchmark/separation/mixer.py)
 
-`AudioMixer` combines isolated speech stems with musical accompaniment under controlled, repeatable Signal-to-Music Ratio (SMR / SNR dB) levels to evaluate source separators. Constructor: `AudioMixer(sample_rate=44100, channels=2, peak_ceiling_dbfs=-1.0)`.
+`AudioMixer` combines isolated speech stems with musical accompaniment under controlled, repeatable Signal-to-Music Ratio (SMR / SNR dB) levels to evaluate source separators. Constructor: `AudioMixer(sample_rate=48000, channels=2, peak_ceiling_dbfs=-1.0)`.
 
 ### `AudioMixer.mix(...) -> AudioMixResult`
 
@@ -67,7 +67,7 @@ def mix(
 | **`target_smr_db`** | `mix()` | `float` `[-30.0, +30.0 dB]` | *Required* | Speech dominates mixture; music is substantially attenuated. Easier separation benchmark. | Music overpowers speech; extreme stress-test for separation models (replicates club music or loud café ambiance). | **Benchmark Difficulty Level.** `+6 dB` represents typical podcast/video with soft background music; `-5 dB` represents heavy audio bleed stress-testing. |
 | **`seed`** | `mix()` | `int` | *Required* | N/A | N/A | **Bit-Exact Reproducibility.** Deterministically sets crop offset of background music track via `np.random.default_rng(seed)`. |
 | **`peak_ceiling_dbfs`** | Constructor | `float` `[-20.0, 0.0 dBFS]` | `-1.0 dBFS` | Allows higher peak output volume. Less headroom for inter-sample peaks or lossy encoding (MP3/AAC). | Lowers master volume; guarantees large safety headroom against DAC reconstruction clipping. | **Master Volume vs. Digital Inter-Sample Headroom.** |
-| **`sample_rate`** | Constructor | `int` `[8000, 96000 Hz]` | `44100 Hz` | Higher acoustic bandwidth up to Nyquist limit; larger WAV files on disk. | Smaller file size; limits frequency spectrum to Nyquist frequency ($\frac{\text{SR}}{2}$). | **Acoustic Bandwidth Fidelity vs. Memory Footprint.** |
+| **`sample_rate`** | Constructor | `int` `[8000, 96000 Hz]` | `48000 Hz` | Higher acoustic bandwidth up to Nyquist limit; larger WAV files on disk. | Smaller file size; limits frequency spectrum to Nyquist frequency ($\frac{\text{SR}}{2}$). | **Acoustic Bandwidth Fidelity vs. Memory Footprint.** |
 | **`channels`** | Constructor | `int` `{1, 2}` | `2` (Stereo) | Emits stereo mixtures preserving spatial panning. | Emits mono mixtures (folds channels via mean); halves file size and memory footprint. | **Spatial Panning Representation vs. Processing Memory.** |
 
 ---
@@ -139,7 +139,7 @@ from src.benchmark.separation import AudioMixer
 speech = Audio.from_file(".data/quick_save/speech_track.wav")
 music = Audio.from_file(".data/quick_save/bg_music.wav")
 
-mixer = AudioMixer(sample_rate=44100, channels=1)
+mixer = AudioMixer(sample_rate=48000, channels=1)
 result = mixer.mix(
     speech=speech,
     music=music,

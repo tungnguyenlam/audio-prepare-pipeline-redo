@@ -9,7 +9,7 @@ and segment manifests.
 ## 0. Audio Family & Standard Naming Contract
 
 Audio files ingested via download or pipeline inception establish a canonical **Audio Family**:
-- **Downloaded audio filename:** `{video_id}_{safe_title_10}-{sample_rate}.wav` (e.g. `dQw4w9WgXcQ_Never-Gonn-16000.wav`)
+- **Downloaded audio filename:** `{video_id}_{safe_title_10}-{sample_rate}.wav` (e.g. `dQw4w9WgXcQ_Never-Gonn-48000.wav`)
 - **Audio Family Key:** `{video_id}_{safe_title_10}`
 - **Dynamic per-family output routing:** Downstream pipeline stages infer this family key from the input filename or its sibling `.json` sidecar, dynamically directing default outputs into `.data/<operation>/[<model>/]<family>/`:
   - Download: `.data/download/<family>/`
@@ -37,15 +37,15 @@ sibling `.json` file (`recording.wav` -> `recording.json`):
   "operation": "separate",
   "model": "htdemucs_ft",
   "parameters": {
-    "sample_rate": 44100,
+    "sample_rate": 48000,
     "channels": 1,
     "stem": "vocals",
     "device": "cpu"
   },
   "output": {
-    "sample_rate": 44100,
+    "sample_rate": 48000,
     "channels": 1,
-    "frames": 220500,
+    "frames": 240000,
     "duration_s": 5.0,
     "format": "wav",
     "sha256": "123456..."
@@ -75,7 +75,7 @@ example_htdemucs_ft/
   "timestamp_origin": "diarized_input",
   "model": "sortformer",
   "parameters": {
-    "sample_rate": 44100,
+    "sample_rate": 48000,
     "channels": 1
   },
   "turns": [
@@ -93,7 +93,7 @@ example_htdemucs_ft/
     }
   ],
   "speaker_ids": ["spk00"],
-  "source_sample_rate": 44100,
+  "source_sample_rate": 48000,
   "complete": true
 }
 ```
@@ -174,7 +174,7 @@ Evaluation commands output metrics JSON with complete source provenance:
   "schema_version": 1,
   "operation": "separation_metrics",
   "source": [...],
-  "parameters": {"sample_rate": 44100},
+  "parameters": {"sample_rate": 48000},
   "metrics": {
     "si_sdr_db": 14.82,
     "sdr_db": 15.11

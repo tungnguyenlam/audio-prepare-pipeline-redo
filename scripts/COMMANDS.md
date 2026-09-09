@@ -104,7 +104,7 @@ bash scripts/download/channel.sh --url 'https://www.youtube.com/@CHANNEL/videos'
 uv run python scripts/audio/info.py --input-file .data/source.wav
 
 # Convert sample-rate, channels, format
-uv run python scripts/audio/convert.py --input-dir .data/input --output-dir .data/converted --sample-rate 44100 --channels 1
+uv run python scripts/audio/convert.py --input-dir .data/input --output-dir .data/converted --sample-rate 48000 --channels 1
 
 # Sample-accurate cutting
 uv run python scripts/audio/cut.py --input-file .data/source.wav --start 12.34 --end 18.92 --output-file .data/cut.wav

@@ -21,22 +21,22 @@ amplitude measurements taken `sample_rate` times per second (Hz).
 
 - 16,000 Hz = 16,000 snapshots/second. Enough for speech intelligibility;
   diarization models (Sortformer, CAM++) usually want this.
-- 44,100 Hz = CD quality. The default target in this repo
-  (`DEFAULT_SAMPLE_RATE` in `AudioClass`, `AudioMixer(sample_rate=44100)`).
+- 48,000 Hz = Standard professional video / broadcast quality. The default target in this repo
+  (`AudioMixer(sample_rate=48000)`).
 
 **Nyquist rule (the one sentence):** to capture a frequency `f`, you must sample
-faster than `2 × f`. Human hearing tops out near 20 kHz, so 44.1 kHz covers it.
+faster than `2 × f`. Human hearing tops out near 20 kHz, so 48 kHz easily covers it.
 
 ```mermaid
 flowchart TD
     W["5 ms of a 440 Hz tone (smooth wave)"] --> S16["16 kHz: ~80 dots on the curve"]
-    W --> S44["44.1 kHz: ~220 dots on the curve"]
+    W --> S48["48 kHz: ~240 dots on the curve"]
     S16 --> Q["More dots = smoother highs, bigger files"]
-    S44 --> Q
+    S48 --> Q
 ```
 
-**Worked example.** 10 s of mono audio at 44,100 Hz = 441,000 samples. Stored as
-32-bit float that is ~1.76 MB per channel before headers. Stereo doubles it.
+**Worked example.** 10 s of mono audio at 48,000 Hz = 480,000 samples. Stored as
+32-bit float that is ~1.92 MB per channel before headers. Stereo doubles it.
 
 ## 2. Channels, WAV, PCM
 
@@ -49,7 +49,7 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    PCM["PCM samples: -0.02, 0.31, 0.28, ..."] --> HDR["WAV header: 44100 Hz, 1 ch, 213.25 s"]
+    PCM["PCM samples: -0.02, 0.31, 0.28, ..."] --> HDR["WAV header: 48000 Hz, 1 ch, 213.25 s"]
     HDR --> FILE["sample.wav"]
     FILE --> PROBE["probe_wav() reads header only"]
 ```

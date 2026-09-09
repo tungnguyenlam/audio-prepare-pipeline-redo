@@ -30,7 +30,7 @@ def si_sdr_db(estimate: np.ndarray, reference: np.ndarray) -> float:
     return float(10.0 * np.log10(target_energy / noise_energy))
 
 
-def load_mono_waveform(path: str | Path, target_sr: int = 44100) -> np.ndarray:
+def load_mono_waveform(path: str | Path, target_sr: int = 48000) -> np.ndarray:
     """Load audio file as mono float64 array."""
     data, sr = sf.read(str(path), dtype="float64", always_2d=True)
     mono = np.mean(data, axis=1)
@@ -44,7 +44,7 @@ def main() -> int:
     p.add_argument('--input-file', type=Path, required=True)
     p.add_argument('--reference-file', type=Path, required=True)
     p.add_argument('--mixture-file', type=Path)
-    p.add_argument('--sample-rate', type=positive_int, default=44100)
+    p.add_argument('--sample-rate', type=positive_int, default=48000)
     p.add_argument('--output-file', type=Path, required=True)
     p.add_argument('--overwrite', action='store_true')
     args = p.parse_args()

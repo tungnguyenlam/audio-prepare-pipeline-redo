@@ -52,17 +52,17 @@ uv run python scripts/download/youtube.py \
 
 # 2. Separate vocal stem
 bash scripts/separate/htdemucs_ft.sh \
-  --input-file .data/downloads/example-44100.wav \
+  --input-file .data/downloads/example-48000.wav \
   --output-dir .data/separated
 
 # 3. Diarize speaker turns (generates <stem>/segments.json + WAV clips)
 bash scripts/diarize/sortformer.sh \
-  --input-file .data/separated/example-44100_htdemucs_ft.wav \
+  --input-file .data/separated/example-48000_htdemucs_ft.wav \
   --output-dir .data/turns
 
 # 4. Refine purity through independent stages
 uv run python scripts/purity/cleanup.py \
-  --input-manifest .data/turns/example-44100_htdemucs_ft/segments.json \
+  --input-manifest .data/turns/example-48000_htdemucs_ft/segments.json \
   --output-manifest .data/purity/cleaned.json
 
 uv run python scripts/purity/collar.py \

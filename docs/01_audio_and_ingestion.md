@@ -101,7 +101,7 @@ Computes a compact, human-readable fingerprint summarizing the audio's lineage:
 ```text
 <source_id>__<history_steps>__<duration_s>s_<sample_rate>Hz_<channels>ch
 ```
-Duration renders with two decimals (e.g. `213.25s_44100Hz_1ch`).
+Duration renders with two decimals (e.g. `213.25s_48000Hz_1ch`).
 
 ### `Audio.save_to(dest: str | Path) -> Audio`
 
@@ -155,7 +155,7 @@ def ingest(
     output_dir: str | Path = DATA_DIR / "yt_crawler" / "downloads",
     work_dir: str | Path = DATA_DIR / "yt_crawler" / "work",
     audio_format: str = "wav",
-    sample_rate: int | None = 44100,
+    sample_rate: int | None = 48000,
     channels: int = 1,
     **kwargs: Any,
 ) -> Audio:
@@ -163,7 +163,7 @@ def ingest(
 
 Convenience class method that instantiates `YtCrawler` and invokes `download()`.
 - `link`: YouTube video URL.
-- `sample_rate`: Target rate in Hz (default `44100`). Pass `sample_rate=None` to preserve source rate.
+- `sample_rate`: Target rate in Hz (default `48000`). Pass `sample_rate=None` to preserve source rate.
 - `channels`: Output channel count (default `1` mono).
 - `**kwargs`: Forwarded crawler options (e.g. `retries`, `cookies_file`, `cookies_from_browser`, `proxy`, `progress_callback`, `yt_dlp_bin`, `ffmpeg_bin`).
 
@@ -182,11 +182,11 @@ Executes the download process:
 
 **Raises:** `DownloadError` if `yt-dlp`, metadata parsing, audio stream selection, or `ffmpeg` fails.
 
-### `parse_crawl_sample_rate(value, *, default=44100) -> int | None`
+### `parse_crawl_sample_rate(value, *, default=48000) -> int | None`
 
 Parses user or API sample-rate choices:
 - Accepts `"native"`, `0`, or empty/missing values → returns `None` (preserving source rate).
-- Accepts positive Hz integer or string (e.g. `44100`, `"48000"`) → returns `int`.
+- Accepts positive Hz integer or string (e.g. `48000`, `"44100"`) → returns `int`.
 
 ### `YtCrawler.build_command(url: str, target_work_dir: Path) -> list[str]`
 

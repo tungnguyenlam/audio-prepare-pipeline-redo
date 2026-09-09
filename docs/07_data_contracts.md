@@ -94,7 +94,7 @@ Whenever an `Audio` object is saved, an adjacent JSON sidecar is written:
   "channel_id": "UCuAXFkgsw1L7xaCfnd5JJOw",
   "channel_name": "Rick Astley",
   "channel_url": "https://www.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw",
-  "sample_rate": 44100,
+  "sample_rate": 48000,
   "duration_s": 213.25,
   "channels": 1,
   "format": "wav",

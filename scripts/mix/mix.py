@@ -150,7 +150,7 @@ def main() -> int:
     p.add_argument('--music', type=Path, required=True)
     p.add_argument('--smr-db', type=float, required=True)
     p.add_argument('--seed', type=int, required=True)
-    p.add_argument('--sample-rate', type=positive_int, default=44100)
+    p.add_argument('--sample-rate', type=positive_int, default=48000)
     p.add_argument('--channels', type=int, choices=(1, 2), default=2)
     p.add_argument('--peak-ceiling-dbfs', type=float, default=-1.0)
     p.add_argument('--output-dir', type=Path, default=ROOT / '.data/mix/out')
