@@ -22,27 +22,57 @@ and `ffprobe` must be available. Export authentication variables (`HF_TOKEN`,
 `GEMINI_API_KEY`, `OPENAI_API_KEY`, `UNSLOTH_API_KEY`) explicitly. `HF_HOME`
 defaults to the repository's `.data/huggingface` when not already set.
 
-Provision environments automatically with hardware auto-detection (AMD ROCm vs NVIDIA CUDA vs CPU):
+Provision environments automatically with hardware auto-detection (AMD ROCm vs NVIDIA CUDA vs CPU).
+Scripts can be invoked directly from `./envs/` or through the wrapper launchers under `scripts/`:
 
 ```bash
-# Provision all core environments (audio, separation, pyannote, verify, align)
+# Provision all environments (core pipeline + isolated model workers):
+./envs/setup_worker_envs.sh all
+# or via wrapper: bash scripts/setup_worker_envs.sh all
+
+# Provision all core pipeline environments (audio, separation, pyannote, verify, align):
 ./envs/setup_worker_envs.sh core
 
-# Or provision a specific environment:
-./envs/setup_worker_envs.sh separation
-./envs/setup_worker_envs.sh pyannote
-./envs/setup_worker_envs.sh diarizen
-./envs/setup_worker_envs.sh sortformer
-./envs/setup_worker_envs.sh 3dspeaker
-./envs/setup_worker_envs.sh verify
+# Provision all isolated model worker environments (sortformer, 3dspeaker, vibevoice, diarizen, minicpmo, kimi):
+./envs/setup_worker_envs.sh workers
+
+# Or provision a specific environment (add --force to recreate from scratch):
+./envs/setup_worker_envs.sh audio        # Lightweight audio utilities (.venvs/audio, Python 3.13)
+./envs/setup_worker_envs.sh separation   # Demucs, BS-RoFormer, Mel-RoFormer (.venvs/separation, Python 3.13)
+./envs/setup_worker_envs.sh pyannote     # Pyannote 3.1 & Community-1 diarization/scoring (.venvs/pyannote, Python 3.13)
+./envs/setup_worker_envs.sh verify       # HF, Whisper, Gemma direct-audio verifiers (.venvs/verify, Python 3.13)
+./envs/setup_worker_envs.sh align        # Whisper-timestamped alignment (.venvs/align, Python 3.13)
+./envs/setup_worker_envs.sh sortformer   # NeMo Sortformer & Clustering (.venvs/sortformer, Python 3.13)
+./envs/setup_worker_envs.sh 3dspeaker    # ModelScope 3D-Speaker (.venvs/3dspeaker, Python 3.13)
+./envs/setup_worker_envs.sh vibevoice    # VibeVoice-ASR purity verifier (.venvs/vibevoice, Python 3.13)
+./envs/setup_worker_envs.sh diarizen     # DiariZen WavLM (.venvs/diarizen, Python 3.10)
+./envs/setup_worker_envs.sh minicpmo     # MiniCPM-o 4.5 / 2.6 (.venvs/minicpmo, Python 3.11)
+./envs/setup_worker_envs.sh kimi         # Kimi-Audio (.venvs/kimi, Python 3.11)
 
 # Check health and hardware acceleration across all environments:
 ./envs/setup_worker_envs.sh status
 ```
 
-Or provision manually via `uv`:
+### Dedicated setup scripts
+
+Specialized verifier models have dedicated setup scripts with specialized compilation/submodule steps:
 
 ```bash
+# MiniCPM-o 4.5 / 2.6 environment (Python 3.11, OpenBMB dependencies):
+./envs/setup_minicpmo_env.sh [--clean]
+# or: bash scripts/setup_minicpmo_env.sh [--clean]
+
+# Kimi-Audio environment (Python 3.11, Moonshot submodule, FlashAttention):
+./envs/setup_kimi_env.sh [--clean]
+# or: bash scripts/setup_kimi_env.sh [--clean]
+```
+
+### Manual provisioning via `uv`
+
+Every environment corresponds to a requirements file under `envs/`:
+
+```bash
+# Core environments (Python 3.13):
 uv venv --python 3.13 .venvs/audio
 uv pip install --python .venvs/audio/bin/python -r envs/requirements-audio.txt
 
@@ -58,6 +88,37 @@ uv pip install --python .venvs/pyannote/bin/python -r envs/requirements-pyannote
 uv venv --python 3.13 .venvs/verify
 uv pip install --python .venvs/verify/bin/python --index-url https://download.pytorch.org/whl/cu128 torch torchaudio
 uv pip install --python .venvs/verify/bin/python -r envs/requirements-verify.txt
+
+uv venv --python 3.13 .venvs/align
+uv pip install --python .venvs/align/bin/python --index-url https://download.pytorch.org/whl/cu128 torch torchaudio
+uv pip install --python .venvs/align/bin/python -r envs/requirements-align.txt
+
+# Worker environments:
+uv venv --python 3.13 .venvs/sortformer
+uv pip install --python .venvs/sortformer/bin/python --index-url https://download.pytorch.org/whl/cu128 torch torchaudio
+uv pip install --python .venvs/sortformer/bin/python -r envs/requirements-sortformer.txt
+
+uv venv --python 3.13 .venvs/3dspeaker
+uv pip install --python .venvs/3dspeaker/bin/python --index-url https://download.pytorch.org/whl/cu128 torch torchaudio
+uv pip install --python .venvs/3dspeaker/bin/python -r envs/requirements-3dspeaker.txt
+
+uv venv --python 3.13 .venvs/vibevoice
+uv pip install --python .venvs/vibevoice/bin/python --index-url https://download.pytorch.org/whl/cu128 torch torchaudio
+uv pip install --python .venvs/vibevoice/bin/python -r envs/requirements-vibevoice.txt
+
+# DiariZen requires Python 3.10:
+uv venv --python 3.10 .venvs/diarizen
+uv pip install --python .venvs/diarizen/bin/python --index-url https://download.pytorch.org/whl/cu128 torch torchaudio
+uv pip install --python .venvs/diarizen/bin/python -r envs/requirements-diarizen.txt
+
+# MiniCPM-o requires Python 3.11:
+uv venv --python 3.11 .venvs/minicpmo
+uv pip install --python .venvs/minicpmo/bin/python --index-url https://download.pytorch.org/whl/cu128 torch torchaudio
+uv pip install --python .venvs/minicpmo/bin/python -r envs/requirements-minicpmo.txt
+
+# Kimi-Audio requires Python 3.11 with Moonshot submodule and FlashAttention (recommended: use ./envs/setup_kimi_env.sh):
+uv venv --python 3.11 .venvs/kimi
+uv pip install --python .venvs/kimi/bin/python -r envs/requirements-kimi.txt
 ```
 
 | Launchers | Default environment | Interpreter override |
@@ -87,7 +148,7 @@ Relative paths below are relative to your current working directory.
 ### Download
 
 ```bash
-# Single video download (mono WAV, 16 kHz default)
+# Single video download (mono WAV, 48 kHz default)
 bash scripts/download/youtube.sh --url 'https://www.youtube.com/watch?v=VIDEO' --output-dir .data/downloads
 
 # Playlist download

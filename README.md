@@ -19,7 +19,7 @@ background worker, or hidden queue.
 # Inspect an audio file
 uv run python scripts/audio/info.py --input-file .data/source.wav
 
-# Download a video as mono WAV (44.1 kHz default)
+# Download a video as mono WAV (48 kHz default)
 uv run python scripts/download/youtube.py --url 'https://www.youtube.com/watch?v=VIDEO' --output-dir .data/downloads
 ```
 
