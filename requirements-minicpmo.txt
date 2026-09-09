@@ -7,3 +7,5 @@ transformers==4.51.0
 accelerate
 minicpmo-utils>=1.0.5
 librosa
+pysocks>=1.7.1
+httpx[socks]>=0.28.1

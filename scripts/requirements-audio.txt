@@ -4,3 +4,5 @@ numpy>=2.4.6
 librosa>=0.11.0
 matplotlib>=3.11.1
 yt-dlp>=2026.8.4.234419.dev0
+pysocks>=1.7.1
+httpx[socks]>=0.28.1
