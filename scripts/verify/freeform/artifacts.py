@@ -6,18 +6,41 @@ directory also import the top-level ``scripts/_common`` namespace package.
 
 from __future__ import annotations
 
+import argparse
 import os
 import tempfile
 from pathlib import Path
 from typing import Any, Callable
 
-from _common.files import batch, digest, identity, read_json, request, write_json
+from _common.files import batch, digest, identity, positive_int, read_json, request, write_json
 
 
 def read_prompt(path: Path, label: str = "Prompt") -> str:
     if not path.is_file():
         raise ValueError(f"{label} file not found: {path}")
     return path.read_text(encoding="utf-8")
+
+
+def add_prompt_arguments(
+    command: argparse.ArgumentParser, *, top_p: bool = False
+) -> None:
+    """Add options shared by every free-form generation backend."""
+    command.add_argument("--prompt-file", type=Path, required=True)
+    command.add_argument("--system-prompt-file", type=Path)
+    command.add_argument("--max-tokens", type=positive_int, default=4096)
+    command.add_argument("--temperature", type=float, default=0.0)
+    if top_p:
+        command.add_argument("--top-p", type=float)
+
+
+def load_prompts(args: Any) -> tuple[str, str | None]:
+    prompt = read_prompt(args.prompt_file)
+    system_prompt = (
+        read_prompt(args.system_prompt_file, "System prompt")
+        if args.system_prompt_file is not None
+        else None
+    )
+    return prompt, system_prompt
 
 
 def write_text(path: Path, value: str) -> None:

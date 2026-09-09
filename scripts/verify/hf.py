@@ -12,7 +12,6 @@ from typing import Any
 import torch
 
 from _audio import (
-    DEFAULT_ACOUSTIC_PROMPT,
     extract_json_payload,
     load_audio_waveform,
 )
@@ -118,7 +117,6 @@ class DefaultHFVerifier:
         prompt: str,
         *,
         system_prompt: str | None = None,
-        audio_position: str = "before",
         max_new_tokens: int = 512,
         temperature: float = 0.0,
         top_p: float | None = None,
@@ -128,11 +126,7 @@ class DefaultHFVerifier:
 
         audio_part = {"type": "audio", "audio": audio_data}
         prompt_part = {"type": "text", "text": prompt}
-        content = (
-            [audio_part, prompt_part]
-            if audio_position == "before"
-            else [prompt_part, audio_part]
-        )
+        content = [prompt_part, audio_part]
         messages = []
         if system_prompt is not None:
             messages.append(
@@ -191,7 +185,8 @@ class DefaultHFVerifier:
 def main() -> int:
     import argparse
     import contextlib
-    from _common.files import batch, destinations, identity, parser, read_json, request, write_json
+    from _cli import load_prompt, resolved_parameters, run_verifier
+    from _common.files import destinations, parser
 
     p = parser('Verify audio with hf; writes verdicts without filtering audio.', 'verify', 'hf')
     p.add_argument('--prompt-file', type=Path, help='Path to prompt text file')
@@ -212,34 +207,20 @@ def main() -> int:
         )
     }
 
-    if args.prompt_file and args.prompt_file.is_file():
-        prompt = args.prompt_file.read_text(encoding='utf-8').strip()
-    elif Path('prompts/acoustic_defect.txt').is_file():
-        prompt = Path('prompts/acoustic_defect.txt').read_text(encoding='utf-8').strip()
-    else:
-        prompt = DEFAULT_ACOUSTIC_PROMPT
+    prompt = load_prompt(args.prompt_file)
 
     with contextlib.redirect_stdout(sys.stderr):
         verifier = DefaultHFVerifier(**parameters)
     parameters['prompt'] = prompt
 
-    for key in ('model', 'model_id', 'endpoint', 'gguf_variant', 'device'):
-        if hasattr(verifier, key) and isinstance(getattr(verifier, key), (str, int, float, bool, type(None))):
-            parameters[key] = getattr(verifier, key)
-
-    def process(src: Path, dest: Path) -> None:
-        wanted = request(identity(src), 'verify', parameters, 'hf')
-        if dest.exists() and not args.overwrite:
-            old = read_json(dest)
-            if all(old.get(k) == v for k, v in wanted.items()) and 'verdict' in old:
-                return
-            raise ValueError(f'Conflicting output: {dest}; use --overwrite')
-        verdict = verifier.verify(src, prompt)
-        if not isinstance(verdict, dict) or verdict.get('decision') not in {'pass', 'reject'}:
-            raise ValueError('Verifier did not return a pass/reject decision')
-        write_json(dest, {**wanted, 'verdict': verdict})
-
-    return batch(pairs, process)
+    parameters = resolved_parameters(parameters, verifier)
+    return run_verifier(
+        args=args,
+        pairs=pairs,
+        backend='hf',
+        parameters=parameters,
+        verify=lambda source: verifier.verify(source, prompt),
+    )
 
 
 if __name__ == '__main__':

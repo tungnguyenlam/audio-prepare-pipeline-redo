@@ -12,8 +12,8 @@ SCRIPTS_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(VERIFY_DIR))
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-from _common.files import destinations, parser, positive_int  # noqa: E402
-from freeform.artifacts import read_prompt, run_freeform  # noqa: E402
+from _common.files import destinations, parser  # noqa: E402
+from freeform.artifacts import add_prompt_arguments, load_prompts, run_freeform  # noqa: E402
 from hf import DefaultHFVerifier  # noqa: E402
 
 
@@ -23,8 +23,7 @@ def main() -> int:
         "verify",
         "freeform-hf",
     )
-    command.add_argument("--prompt-file", type=Path, required=True)
-    command.add_argument("--system-prompt-file", type=Path)
+    add_prompt_arguments(command, top_p=True)
     command.add_argument("--model-id", default="google/gemma-4-E2B-it")
     command.add_argument("--device", default="auto")
     command.add_argument("--adapter-path")
@@ -38,18 +37,9 @@ def main() -> int:
     )
     command.add_argument("--load-in-4bit", action="store_true")
     command.add_argument("--load-in-8bit", action="store_true")
-    command.add_argument("--audio-position", choices=("before", "after"), default="before")
-    command.add_argument("--max-tokens", type=positive_int, default=4096)
-    command.add_argument("--temperature", type=float, default=0.0)
-    command.add_argument("--top-p", type=float)
     args = command.parse_args()
 
-    prompt = read_prompt(args.prompt_file)
-    system_prompt = (
-        read_prompt(args.system_prompt_file, "System prompt")
-        if args.system_prompt_file is not None
-        else None
-    )
+    prompt, system_prompt = load_prompts(args)
     parameters = {
         "model_id": args.model_id,
         "device": args.device,
@@ -60,7 +50,6 @@ def main() -> int:
         "load_in_8bit": args.load_in_8bit,
         "prompt": prompt,
         "system_prompt": system_prompt,
-        "audio_position": args.audio_position,
         "max_tokens": args.max_tokens,
         "temperature": args.temperature,
         "top_p": args.top_p,
@@ -86,7 +75,6 @@ def main() -> int:
             source,
             prompt,
             system_prompt=system_prompt,
-            audio_position=args.audio_position,
             max_new_tokens=args.max_tokens,
             temperature=args.temperature,
             top_p=args.top_p,

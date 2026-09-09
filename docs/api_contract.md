@@ -65,16 +65,16 @@ flowchart TD
 | | `scripts/purity/snap.py` | `--input-manifest`, `--output-manifest` | Acoustic boundary-snapped `segments.json` |
 | | `scripts/purity/align.sh` | `--input-manifest`, `--output-manifest`, `--words-file` | Word-locked `segments.json` |
 | | `scripts/purity/segment.py` | `--input-manifest`, `--words-file`, `--output-manifest` | Duration-bounded `segments.json` |
-| **Verification** | `scripts/verify/hf.sh` | `--input-file` / `--input-dir`, `--output-dir`, `--prompt-file` | Verdict JSON with decision and reason |
-| | `scripts/verify/gemini.sh` | `--input-file` / `--input-dir`, `--output-dir`, `--model`, `--concurrency`, `--max-tokens`, `--temperature`, `--prompt-file` | Gemini direct-audio verdict JSON |
+| **Verification** | `scripts/verify/hf.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir`, `--prompt-file` | Verdict JSON with decision and reason |
+| | `scripts/verify/gemini.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir`, `--model`, `--concurrency`, `--max-tokens`, `--temperature`, `--prompt-file` | Gemini direct-audio verdict JSON |
 | | `scripts/verify/freeform/{gemini,endpoint,hf}.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir`, `--prompt-file`, model/backend options | Unparsed model text plus a JSON sidecar containing response details; experimental, not a verdict |
-| | `scripts/verify/endpoint.sh` | `--input-file` / `--input-dir`, `--output-dir`, `--endpoint` | OpenAI-compatible endpoint verdict JSON |
-| | `scripts/verify/unsloth.sh` | `--input-file` / `--input-dir`, `--output-dir`, `--endpoint` | Unsloth chat endpoint verdict JSON |
-| | `scripts/verify/vllm.sh` | `--input-file` / `--input-dir`, `--output-dir`, `--model`, `--endpoint`, `--prompt-file` | vLLM offline batch or server verdict JSON |
-| | `scripts/verify/moss.sh` | `--input-file` / `--input-dir`, `--output-dir` | MOSS-Audio verdict JSON |
-| | `scripts/verify/minicpm.sh` | `--input-file` / `--input-dir`, `--output-dir` | MiniCPM-o verdict JSON |
-| | `scripts/verify/kimi.sh` | `--input-file` / `--input-dir`, `--output-dir` | Kimi-Audio verdict JSON |
-| | `scripts/verify/vibevoice.sh` | `--input-file` / `--input-dir`, `--output-dir`, `--min-secondary-speech-s` | VibeVoice-ASR speaker count verdict JSON |
+| | `scripts/verify/endpoint.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir`, `--endpoint` | OpenAI-compatible endpoint verdict JSON |
+| | `scripts/verify/unsloth.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir`, `--endpoint` | Unsloth chat endpoint verdict JSON |
+| | `scripts/verify/vllm.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir`, `--model`, `--endpoint`, `--prompt-file` | vLLM offline batch or server verdict JSON |
+| | `scripts/verify/moss.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir` | MOSS-Audio verdict JSON |
+| | `scripts/verify/minicpm.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir` | MiniCPM-o verdict JSON |
+| | `scripts/verify/kimi.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir` | Kimi-Audio verdict JSON |
+| | `scripts/verify/vibevoice.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir`, `--min-secondary-speech-s` | VibeVoice-ASR speaker count verdict JSON |
 | | `scripts/verify/evaluate_verifier.py` | `--predictions-dir`, `--reference-dir`, `--output-file` | Accuracy, defect recall, FRR, and latency JSON |
 | **Mix & Eval** | `scripts/mix/mix.py` | `--speech`, `--music`, `--smr-db`, `--seed`, `--output-dir` | Mixture, stem references, mix metadata |
 | | `scripts/evaluate/separation.py` | `--input-file`, `--reference-file`, `--mixture-file`, `--output-file` | SI-SDR and SDR metrics JSON |

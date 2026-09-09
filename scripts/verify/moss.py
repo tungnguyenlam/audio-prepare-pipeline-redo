@@ -171,8 +171,8 @@ class MossAudioVerifier:
 def main() -> int:
     import argparse
     import contextlib
-    from _audio import DEFAULT_ACOUSTIC_PROMPT
-    from _common.files import batch, destinations, identity, parser, read_json, request, write_json
+    from _cli import load_prompt, resolved_parameters, run_verifier
+    from _common.files import destinations, parser
     p = parser('Verify audio with moss; writes verdicts without filtering audio.', 'verify', 'moss')
     p.add_argument('--prompt-file', type=Path)
     p.add_argument('--model-id', type=str, default='OpenMOSS-Team/MOSS-Audio-8B-Thinking')
@@ -183,26 +183,15 @@ def main() -> int:
     args = p.parse_args()
     pairs = destinations(args, '_moss', '.json')
     parameters = {key: getattr(args, key) for key in ('model_id', 'device', 'trust_remote_code', 'torch_dtype', 'adapter_path')}
-    prompt = args.prompt_file.read_text(encoding='utf-8') if args.prompt_file else DEFAULT_ACOUSTIC_PROMPT
+    prompt = load_prompt(args.prompt_file)
     with contextlib.redirect_stdout(sys.stderr):
         verifier = MossAudioVerifier(**parameters)
     parameters['prompt'] = prompt
-    # Record environment-derived model and endpoint values, never API credentials.
-    for key in ('model', 'model_id', 'endpoint', 'gguf_variant', 'device'):
-        if hasattr(verifier, key) and isinstance(getattr(verifier, key), (str, int, float, bool, type(None))):
-            parameters[key] = getattr(verifier, key)
-    def process(src, dest):
-        wanted = request(identity(src), 'verify', parameters, 'moss')
-        if dest.exists() and not args.overwrite:
-            old = read_json(dest)
-            if all(old.get(k) == v for k, v in wanted.items()) and 'verdict' in old:
-                return
-            raise ValueError(f'Conflicting output: {dest}; use --overwrite')
-        verdict = verifier.verify(src, prompt)
-        if not isinstance(verdict, dict) or verdict.get('decision') not in {'pass', 'reject'}:
-            raise ValueError('Verifier did not return a pass/reject decision')
-        write_json(dest, {**wanted, 'verdict': verdict})
-    return batch(pairs, process)
+    parameters = resolved_parameters(parameters, verifier)
+    return run_verifier(
+        args=args, pairs=pairs, backend='moss', parameters=parameters,
+        verify=lambda source: verifier.verify(source, prompt),
+    )
 
 
 if __name__ == '__main__':

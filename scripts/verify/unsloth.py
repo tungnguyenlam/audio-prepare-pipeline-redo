@@ -307,11 +307,11 @@ class UnslothVerifier(EndpointVerifier):
                     {
                         "role": "user",
                         "content": [
+                            {"type": "text", "text": prompt},
                             {
                                 "type": "input_audio",
                                 "input_audio": {"data": audio_b64, "format": "wav"},
                             },
-                            {"type": "text", "text": prompt},
                         ],
                     }
                 ],
@@ -325,11 +325,11 @@ class UnslothVerifier(EndpointVerifier):
                     {
                         "role": "user",
                         "content": [
+                            {"type": "text", "text": prompt},
                             {
                                 "type": "input_audio",
                                 "input_audio": {"data": audio_b64, "format": "wav"},
                             },
-                            {"type": "text", "text": prompt},
                         ],
                     }
                 ],
@@ -419,8 +419,8 @@ class UnslothVerifier(EndpointVerifier):
 def main() -> int:
     import argparse
     import contextlib
-    from _audio import DEFAULT_ACOUSTIC_PROMPT
-    from _common.files import batch, destinations, identity, parser, read_json, request, write_json
+    from _cli import load_prompt, resolved_parameters, run_verifier
+    from _common.files import destinations, parser
     p = parser('Verify audio with unsloth; writes verdicts without filtering audio.', 'verify', 'unsloth')
     p.add_argument('--prompt-file', type=Path)
     p.add_argument('--endpoint', type=str, default=None)
@@ -434,31 +434,15 @@ def main() -> int:
     args = p.parse_args()
     pairs = destinations(args, '_unsloth', '.json')
     parameters = {key: getattr(args, key) for key in ('endpoint', 'model', 'gguf_variant', 'timeout_s', 'temperature', 'max_tokens', 'auto_probe_model', 'payload_mode')}
-    if args.prompt_file and args.prompt_file.is_file():
-        prompt = args.prompt_file.read_text(encoding='utf-8').strip()
-    elif Path('prompts/acoustic_defect.txt').is_file():
-        prompt = Path('prompts/acoustic_defect.txt').read_text(encoding='utf-8').strip()
-    else:
-        prompt = DEFAULT_ACOUSTIC_PROMPT
+    prompt = load_prompt(args.prompt_file)
     with contextlib.redirect_stdout(sys.stderr):
         verifier = UnslothVerifier(**parameters)
     parameters['prompt'] = prompt
-    # Record environment-derived model and endpoint values, never API credentials.
-    for key in ('model', 'model_id', 'endpoint', 'gguf_variant', 'device'):
-        if hasattr(verifier, key) and isinstance(getattr(verifier, key), (str, int, float, bool, type(None))):
-            parameters[key] = getattr(verifier, key)
-    def process(src, dest):
-        wanted = request(identity(src), 'verify', parameters, 'unsloth')
-        if dest.exists() and not args.overwrite:
-            old = read_json(dest)
-            if all(old.get(k) == v for k, v in wanted.items()) and 'verdict' in old:
-                return
-            raise ValueError(f'Conflicting output: {dest}; use --overwrite')
-        verdict = verifier.verify(src, prompt)
-        if not isinstance(verdict, dict) or verdict.get('decision') not in {'pass', 'reject'}:
-            raise ValueError('Verifier did not return a pass/reject decision')
-        write_json(dest, {**wanted, 'verdict': verdict})
-    return batch(pairs, process)
+    parameters = resolved_parameters(parameters, verifier)
+    return run_verifier(
+        args=args, pairs=pairs, backend='unsloth', parameters=parameters,
+        verify=lambda source: verifier.verify(source, prompt),
+    )
 
 
 if __name__ == '__main__':

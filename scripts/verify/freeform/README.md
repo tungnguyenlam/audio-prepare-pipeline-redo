@@ -19,7 +19,7 @@ All three commands share their output and metadata handling through
 `artifacts.py`; its distinct module name prevents it from shadowing the
 repository-wide `scripts/_common` helpers when a command is launched directly.
 
-For each input it writes:
+For each Gemini input it writes:
 
 - `<stem>_gemini.txt`: the first candidate's text, character-for-character as
   returned in its text parts (multiple text parts are concatenated without
@@ -63,13 +63,23 @@ bash scripts/verify/freeform/hf.sh \
   --prompt-file .data/prompts/describe_audio.txt
 ```
 
-Use `--system-prompt-file` to test system/user prompt separation and
-`--audio-position before|after` to test whether part ordering changes behavior.
-`--top-p` and `--top-k` are optional sampling controls. `--input-file` takes
-precedence over `--input-dir`; with one input, `--output-file` is the exact text
-destination. The `.json` suffix is reserved for its metadata sidecar.
+Use `--system-prompt-file` to test system/user prompt separation. The user
+message always places the prompt before the audio. `--top-p` and `--top-k` are
+optional sampling controls where supported.
 
-Provider-specific generation remains in the existing verifier runner when one
-exists. `endpoint.py` and `hf.py` expose raw `generate()` methods used by both
-their production verifier and these experiments. `_common.py` owns only the
-shared experiment artifact/resume contract.
+All commands accept both file and directory forms:
+
+- `--input-file` with `--output-file` writes to that exact text path.
+- `--input-file` with `--output-dir` derives a backend-specific filename.
+- `--input-dir` with `--output-dir` recursively processes every supported audio
+  file and preserves relative directories.
+
+`--input-file` takes precedence if both input flags are supplied.
+`--output-file` cannot be combined with directory input because every audio
+input produces its own text result. The `.json` suffix is reserved for the
+metadata sidecar.
+
+Provider-specific generation remains in the existing verifier runner.
+`gemini.py`, `endpoint.py`, and `hf.py` expose raw `generate()` methods used by
+both their production verifier and these experiments. `artifacts.py` owns only
+the shared experiment CLI and artifact/resume contract.

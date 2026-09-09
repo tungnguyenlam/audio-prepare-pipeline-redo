@@ -11,9 +11,9 @@ SCRIPTS_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(VERIFY_DIR))
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-from _common.files import destinations, parser, positive_int  # noqa: E402
+from _common.files import destinations, parser  # noqa: E402
 from endpoint import EndpointVerifier  # noqa: E402
-from freeform.artifacts import read_prompt, run_freeform  # noqa: E402
+from freeform.artifacts import add_prompt_arguments, load_prompts, run_freeform  # noqa: E402
 
 
 def main() -> int:
@@ -22,30 +22,20 @@ def main() -> int:
         "verify",
         "freeform-endpoint",
     )
-    command.add_argument("--prompt-file", type=Path, required=True)
-    command.add_argument("--system-prompt-file", type=Path)
+    add_prompt_arguments(command)
     command.add_argument(
         "--endpoint", default="http://localhost:8000/v1/chat/completions"
     )
     command.add_argument("--model", default="default")
-    command.add_argument("--audio-position", choices=("before", "after"), default="before")
-    command.add_argument("--temperature", type=float, default=0.0)
-    command.add_argument("--max-tokens", type=positive_int, default=4096)
     command.add_argument("--timeout-s", type=float, default=120.0)
     args = command.parse_args()
 
-    prompt = read_prompt(args.prompt_file)
-    system_prompt = (
-        read_prompt(args.system_prompt_file, "System prompt")
-        if args.system_prompt_file is not None
-        else None
-    )
+    prompt, system_prompt = load_prompts(args)
     parameters = {
         "endpoint": args.endpoint,
         "model": args.model,
         "prompt": prompt,
         "system_prompt": system_prompt,
-        "audio_position": args.audio_position,
         "temperature": args.temperature,
         "max_tokens": args.max_tokens,
     }
@@ -68,7 +58,6 @@ def main() -> int:
             source,
             prompt,
             system_prompt=system_prompt,
-            audio_position=args.audio_position,
         ),
     )
 

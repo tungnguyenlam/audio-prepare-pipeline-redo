@@ -12,7 +12,8 @@ import time
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import batch, destinations, identity, parser, read_json, request, write_json
+from _cli import resolved_parameters, run_verifier
+from _common.files import destinations, parser
 
 logger = logging.getLogger(__name__)
 
@@ -113,17 +114,13 @@ def main() -> int:
     with contextlib.redirect_stdout(sys.stderr):
         verifier = VibeVoiceVerifier(model_id=args.model_id, device=args.device, max_new_tokens=args.max_new_tokens)
 
-    def process(src, dest):
-        wanted = request(identity(src), 'verify', parameters, 'vibevoice')
-        if dest.exists() and not args.overwrite:
-            old = read_json(dest)
-            if all(old.get(k) == v for k, v in wanted.items()) and 'verdict' in old:
-                return
-            raise ValueError(f'Conflicting output: {dest}; use --overwrite')
-        verdict = verifier.verify(src, min_secondary_speech_s=args.min_secondary_speech_s)
-        write_json(dest, {**wanted, 'verdict': verdict})
-
-    return batch(pairs, process)
+    parameters = resolved_parameters(parameters, verifier)
+    return run_verifier(
+        args=args, pairs=pairs, backend='vibevoice', parameters=parameters,
+        verify=lambda source: verifier.verify(
+            source, min_secondary_speech_s=args.min_secondary_speech_s
+        ),
+    )
 
 
 if __name__ == '__main__':

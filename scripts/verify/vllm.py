@@ -2,27 +2,26 @@
 from __future__ import annotations
 
 import argparse
-import base64
 import contextlib
-import json
 import logging
 import os
 from pathlib import Path
 import sys
 import time
 from typing import Any
-import urllib.request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _audio import DEFAULT_ACOUSTIC_PROMPT, extract_json_payload, load_audio_waveform
-from _common.files import batch, destinations, identity, parser, read_json, request, write_json
+from _audio import extract_json_payload, load_audio_waveform
+from _cli import load_prompt, run_verifier
+from _common.files import destinations, parser
+from endpoint import EndpointVerifier
 
 logger = logging.getLogger("verifier.vllm")
 
 DEFAULT_MODEL_ID = "google/gemma-4-E2B-it"
 
 
-class VLLMServerVerifier:
+class VLLMServerVerifier(EndpointVerifier):
     """Queries a running vLLM server via OpenAI-compatible chat completions."""
 
     def __init__(
@@ -34,63 +33,19 @@ class VLLMServerVerifier:
         max_tokens: int = 512,
         api_key: str | None = None,
     ) -> None:
-        self.endpoint = endpoint
-        self.model = model
-        self.timeout_s = timeout_s
-        self.temperature = temperature
-        self.max_tokens = max_tokens
-        self.api_key = api_key or os.getenv("VLLM_API_KEY") or os.getenv("OPENAI_API_KEY")
-
-    def verify(self, audio_path: Path, prompt: str) -> dict[str, Any]:
-        with open(audio_path, "rb") as f:
-            audio_b64 = base64.b64encode(f.read()).decode("ascii")
-
-        payload = {
-            "model": self.model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "input_audio",
-                            "input_audio": {"data": audio_b64, "format": "wav"},
-                        },
-                        {"type": "text", "text": prompt},
-                    ],
-                }
-            ],
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
-        }
-
-        headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-
-        req = urllib.request.Request(
-            self.endpoint,
-            data=json.dumps(payload).encode("utf-8"),
-            headers=headers,
-            method="POST",
+        super().__init__(
+            endpoint=endpoint,
+            model=model,
+            timeout_s=timeout_s,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            api_key=api_key or os.getenv("VLLM_API_KEY") or os.getenv("OPENAI_API_KEY"),
         )
 
-        t0 = time.time()
-        with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        latency = round(time.time() - t0, 3)
-
-        choices = data.get("choices", [])
-        if not choices:
-            raise RuntimeError(f"vLLM server returned no choices: {data}")
-
-        msg = choices[0].get("message", {})
-        raw_content = msg.get("content", "")
-        parsed = extract_json_payload(raw_content)
-        parsed["_latency_s"] = latency
+    def verify(self, audio_path: Path, prompt: str) -> dict[str, Any]:
+        parsed = super().verify(audio_path, prompt)
         parsed["_engine"] = "vllm_server"
         parsed["_model"] = self.model
-        if "usage" in data:
-            parsed["_usage"] = data["usage"]
         return parsed
 
 
@@ -135,7 +90,7 @@ class VLLMOfflineVerifier:
         audio_data = load_audio_waveform(audio_path, target_sr=16000)
 
         # Standard multimodal prompt formatting for vLLM audio models
-        prompt_with_tag = f"<|audio|>\n{prompt}"
+        prompt_with_tag = f"{prompt}\n<|audio|>"
         inputs = {
             "prompt": prompt_with_tag,
             "multi_modal_data": {"audio": (audio_data, 16000)},
@@ -171,14 +126,7 @@ def main() -> int:
 
     pairs = destinations(args, "_vllm", ".json")
 
-    # Load prompt: priority is user --prompt-file -> prompts/acoustic_defect.txt -> DEFAULT_ACOUSTIC_PROMPT
-    prompt = None
-    if args.prompt_file and args.prompt_file.is_file():
-        prompt = args.prompt_file.read_text(encoding="utf-8").strip()
-    elif (Path("prompts/acoustic_defect.txt")).is_file():
-        prompt = Path("prompts/acoustic_defect.txt").read_text(encoding="utf-8").strip()
-    else:
-        prompt = DEFAULT_ACOUSTIC_PROMPT
+    prompt = load_prompt(args.prompt_file)
 
     parameters = {
         "model": args.model,
@@ -210,20 +158,10 @@ def main() -> int:
 
     parameters["prompt"] = prompt
 
-    def process(src: Path, dest: Path) -> None:
-        wanted = request(identity(src), "verify", parameters, "vllm")
-        if dest.exists() and not args.overwrite:
-            old = read_json(dest)
-            if all(old.get(k) == v for k, v in wanted.items()) and "verdict" in old:
-                return
-            raise ValueError(f"Conflicting output: {dest}; use --overwrite")
-
-        verdict = verifier.verify(src, prompt)
-        if not isinstance(verdict, dict) or verdict.get("decision") not in {"pass", "reject"}:
-            raise ValueError("Verifier did not return a pass/reject decision")
-        write_json(dest, {**wanted, "verdict": verdict})
-
-    return batch(pairs, process)
+    return run_verifier(
+        args=args, pairs=pairs, backend="vllm", parameters=parameters,
+        verify=lambda source: verifier.verify(source, prompt),
+    )
 
 
 if __name__ == "__main__":

@@ -180,6 +180,11 @@ uv run python scripts/purity/segment.py --input-manifest .data/aligned.json --wo
 
 ### Audio verification
 
+Every verifier accepts `--input-file` or `--input-dir`. Pair a single input
+with either an exact `--output-file` or a derived path under `--output-dir`;
+directory input requires `--output-dir`. Model prompts are placed before audio
+in multimodal messages.
+
 ```bash
 # Gemini direct-audio verifier (3.8 Flash, 3.5 Flash-Lite) with custom prompt and concurrency
 bash scripts/verify/gemini.sh --input-dir .data/clips --output-dir .data/verdicts/gemini \

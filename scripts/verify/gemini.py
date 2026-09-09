@@ -9,6 +9,7 @@ import concurrent.futures
 import contextlib
 import json
 import logging
+import mimetypes
 import os
 import random
 import threading
@@ -26,11 +27,41 @@ from _gemini_pricing import (
     normalize_gemini_usage,
 )
 from _audio import (
-    DEFAULT_ACOUSTIC_PROMPT,
     extract_json_payload,
 )
 
 logger = logging.getLogger("verifier.gemini")
+
+MIME_TYPES = {
+    ".aac": "audio/aac",
+    ".aiff": "audio/aiff",
+    ".flac": "audio/flac",
+    ".m4a": "audio/mp4",
+    ".mp3": "audio/mpeg",
+    ".ogg": "audio/ogg",
+    ".opus": "audio/ogg",
+    ".wav": "audio/wav",
+    ".webm": "audio/webm",
+}
+
+
+def audio_mime_type(path: Path) -> str:
+    return MIME_TYPES.get(path.suffix.lower()) or mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+
+
+def response_text(response: dict[str, Any]) -> str:
+    """Concatenate the first candidate's text parts without altering them."""
+    candidates = response.get("candidates")
+    if not isinstance(candidates, list) or not candidates or not isinstance(candidates[0], dict):
+        return ""
+    content = candidates[0].get("content")
+    if not isinstance(content, dict) or not isinstance(content.get("parts"), list):
+        return ""
+    return "".join(
+        part["text"]
+        for part in content["parts"]
+        if isinstance(part, dict) and isinstance(part.get("text"), str)
+    )
 
 
 def _load_repo_env() -> None:
@@ -77,6 +108,7 @@ class GeminiVerifier:
         max_tokens: int = 2048,
         temperature: float = 0.0,
         top_p: float | None = None,
+        top_k: int | None = None,
         timeout_s: float = 120.0,
         **kwargs: Any,
     ) -> None:
@@ -85,7 +117,7 @@ class GeminiVerifier:
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         if not self.api_key:
             raise ValueError(
-                "GEMINI_API_KEY environment variable, .env setting, or --api-key parameter is required for GeminiVerifier."
+                "GEMINI_API_KEY environment variable or .env setting is required for GeminiVerifier."
             )
         self.reasoning_effort = reasoning_effort
         self.max_retries = max_retries
@@ -93,6 +125,7 @@ class GeminiVerifier:
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.top_p = top_p
+        self.top_k = top_k
         self.timeout_s = timeout_s
         self._lock = threading.Lock()
         self._usage_totals = empty_usage_totals()
@@ -135,7 +168,14 @@ class GeminiVerifier:
             self._cost_totals = empty_cost_totals()
             self._cost_totals["model"] = self.model
 
-    def verify(self, audio_path: Path, prompt: str) -> dict[str, Any]:
+    def generate(
+        self,
+        audio_path: Path,
+        prompt: str,
+        *,
+        system_prompt: str | None = None,
+        json_response: bool = False,
+    ) -> dict[str, Any]:
         audio_path = Path(audio_path)
         with open(audio_path, "rb") as f:
             audio_b64 = base64.b64encode(f.read()).decode("ascii")
@@ -157,20 +197,26 @@ class GeminiVerifier:
         payload: dict[str, Any] = {
             "contents": [
                 {
+                    "role": "user",
                     "parts": [
-                        {"inlineData": {"mimeType": "audio/wav", "data": audio_b64}},
                         {"text": prompt},
+                        {"inlineData": {"mimeType": audio_mime_type(audio_path), "data": audio_b64}},
                     ]
                 }
             ],
             "generationConfig": {
-                "responseMimeType": "application/json",
                 "temperature": self.temperature,
                 "maxOutputTokens": self.max_tokens,
             },
         }
+        if system_prompt is not None:
+            payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
+        if json_response:
+            payload["generationConfig"]["responseMimeType"] = "application/json"
         if self.top_p is not None:
             payload["generationConfig"]["topP"] = self.top_p
+        if self.top_k is not None:
+            payload["generationConfig"]["topK"] = self.top_k
         if self.reasoning_effort and self.reasoning_effort.lower() != "none":
             payload["generationConfig"]["thinkingConfig"] = {
                 "thinkingLevel": self.reasoning_effort.upper()
@@ -178,6 +224,7 @@ class GeminiVerifier:
 
         t0 = time.time()
         res = None
+        response_headers: dict[str, str] = {}
         for attempt in range(1, self.max_retries + 1):
             if self._session is not None:
                 try:
@@ -202,6 +249,11 @@ class GeminiVerifier:
                     if not resp.ok:
                         raise RuntimeError(f"Gemini API HTTP {resp.status_code} error: {resp.text}")
                     res = resp.json()
+                    response_headers = {
+                        key: value
+                        for key, value in resp.headers.items()
+                        if key.lower() in {"content-type", "date", "server", "x-request-id"}
+                    }
                     break
                 except Exception as exc:
                     if isinstance(exc, RuntimeError):
@@ -238,6 +290,11 @@ class GeminiVerifier:
                 try:
                     with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
                         res = json.loads(resp.read().decode("utf-8"))
+                        response_headers = {
+                            key: value
+                            for key, value in resp.headers.items()
+                            if key.lower() in {"content-type", "date", "server", "x-request-id"}
+                        }
                         break
                 except urllib.error.HTTPError as exc:
                     err_msg = exc.read().decode("utf-8", errors="replace")
@@ -272,52 +329,61 @@ class GeminiVerifier:
         if not res:
             raise RuntimeError("Gemini API call failed to return a response.")
 
-        candidates = res.get("candidates", [])
-        if not candidates:
-            raise RuntimeError(f"No candidates returned from Gemini API: {res}")
-
-        raw_text = candidates[0]["content"]["parts"][0]["text"].strip()
-        parsed = extract_json_payload(raw_text)
-        parsed["_latency_s"] = latency
-
         usage = normalize_gemini_usage(
             res.get("usageMetadata"),
             audio_duration_s=audio_duration_s,
         )
         cost = estimate_gemini_cost(self.model, usage)
-        parsed["_usage"] = usage
-        parsed["_cost"] = cost
-        parsed["_model"] = self.model
-        parsed["_reasoning_effort"] = self.reasoning_effort
-        parsed["_engine"] = "gemini"
-        if res.get("modelVersion"):
-            parsed["_model_version"] = res["modelVersion"]
-
         with self._lock:
             accumulate_usage(self._usage_totals, usage)
             accumulate_cost(self._cost_totals, cost)
-            running = round(float(self._cost_totals.get("total_usd", 0.0)), 6)
+        return {
+            "text": response_text(res),
+            "latency_s": latency,
+            "headers": response_headers,
+            "usage": usage,
+            "cost": cost,
+            "provider_body": res,
+        }
 
-        cost_usd = float(cost["total_usd"]) if cost else None
-        if cost_usd is None:
+    def verify(self, audio_path: Path, prompt: str) -> dict[str, Any]:
+        generated = self.generate(audio_path, prompt, json_response=True)
+        raw_text = generated["text"].strip()
+        if not raw_text:
+            raise RuntimeError(f"No text returned from Gemini API: {generated['provider_body']}")
+        parsed = extract_json_payload(raw_text)
+        parsed["_latency_s"] = generated["latency_s"]
+        parsed["_usage"] = generated["usage"]
+        parsed["_cost"] = generated["cost"]
+        parsed["_model"] = self.model
+        parsed["_reasoning_effort"] = self.reasoning_effort
+        parsed["_engine"] = "gemini"
+        provider_body = generated["provider_body"]
+        if provider_body.get("modelVersion"):
+            parsed["_model_version"] = provider_body["modelVersion"]
+
+        with self._lock:
+            running = round(float(self._cost_totals.get("total_usd", 0.0)), 6)
+        cost = generated["cost"]
+        if cost:
             logger.info(
-                "Gemini %s usage prompt=%d out=%d think=%d running=$%.6f",
-                audio_path.name,
-                usage.get("prompt_tokens", 0),
-                usage.get("output_tokens", 0),
-                usage.get("thinking_tokens", 0),
+                "Gemini %s -> %s | tokens p/o/t=%d/%d/%d | cost=$%.6f | session=$%.6f",
+                Path(audio_path).name,
+                parsed.get("decision", "?"),
+                generated["usage"].get("prompt_tokens", 0),
+                generated["usage"].get("output_tokens", 0),
+                generated["usage"].get("thinking_tokens", 0),
+                float(cost["total_usd"]),
                 running,
             )
         else:
             logger.info(
-                "Gemini %s -> %s | tokens p/o/t=%d/%d/%d | cost=$%.6f | session=$%.6f",
-                audio_path.name,
+                "Gemini %s -> %s | tokens p/o/t=%d/%d/%d | unpriced",
+                Path(audio_path).name,
                 parsed.get("decision", "?"),
-                usage.get("prompt_tokens", 0),
-                usage.get("output_tokens", 0),
-                usage.get("thinking_tokens", 0),
-                cost_usd,
-                running,
+                generated["usage"].get("prompt_tokens", 0),
+                generated["usage"].get("output_tokens", 0),
+                generated["usage"].get("thinking_tokens", 0),
             )
         return parsed
 
@@ -371,18 +437,18 @@ def batch_concurrent(
 
 
 def main() -> int:
-    import argparse
-    from _common.files import destinations, identity, parser, positive_int, read_json, request, write_json
+    from _cli import load_prompt, resolved_parameters, verdict_processor
+    from _common.files import destinations, parser, positive_int
 
     p = parser('Verify audio with gemini; writes verdicts without filtering audio.', 'verify', 'gemini')
     p.add_argument('--prompt-file', type=Path, help='Path to prompt text file')
     p.add_argument('--model', type=str, default='gemini-3.8-flash', help='Gemini model (e.g. gemini-3.8-flash, gemini-3.5-flash-lite)')
     p.add_argument('--reasoning-effort', type=str, default='medium', choices=('low', 'medium', 'high', 'none'))
-    p.add_argument('--api-key', type=str, default=None, help='Gemini API key (defaults to GEMINI_API_KEY env var or .env)')
     p.add_argument('--concurrency', type=positive_int, default=1, help='Number of concurrent API requests (default: 1)')
     p.add_argument('--max-tokens', type=positive_int, default=2048, help='Maximum output tokens (default: 2048)')
     p.add_argument('--temperature', type=float, default=0.0, help='Sampling temperature (default: 0.0)')
     p.add_argument('--top-p', type=float, default=None, help='Nucleus sampling top_p (optional)')
+    p.add_argument('--top-k', type=positive_int, default=None, help='Top-k sampling (optional)')
     p.add_argument('--timeout-s', type=float, default=120.0, help='Timeout in seconds per API request (default: 120.0)')
     p.add_argument('--max-retries', type=positive_int, default=5, help='Maximum retry attempts per request (default: 5)')
     args = p.parse_args()
@@ -391,20 +457,15 @@ def main() -> int:
     init_kwargs = {
         'model': args.model,
         'reasoning_effort': args.reasoning_effort,
-        'api_key': args.api_key,
         'max_tokens': args.max_tokens,
         'temperature': args.temperature,
         'top_p': args.top_p,
+        'top_k': args.top_k,
         'timeout_s': args.timeout_s,
         'max_retries': args.max_retries,
     }
 
-    if args.prompt_file and args.prompt_file.is_file():
-        prompt = args.prompt_file.read_text(encoding='utf-8').strip()
-    elif Path('prompts/acoustic_defect.txt').is_file():
-        prompt = Path('prompts/acoustic_defect.txt').read_text(encoding='utf-8').strip()
-    else:
-        prompt = DEFAULT_ACOUSTIC_PROMPT
+    prompt = load_prompt(args.prompt_file)
 
     with contextlib.redirect_stdout(sys.stderr):
         verifier = GeminiVerifier(**init_kwargs)
@@ -418,22 +479,15 @@ def main() -> int:
     }
     if verifier.top_p is not None:
         parameters['top_p'] = verifier.top_p
-
-    for key in ('model', 'model_id', 'endpoint', 'gguf_variant', 'device'):
-        if hasattr(verifier, key) and isinstance(getattr(verifier, key), (str, int, float, bool, type(None))):
-            parameters[key] = getattr(verifier, key)
-
-    def process(src: Path, dest: Path) -> None:
-        wanted = request(identity(src), 'verify', parameters, 'gemini')
-        if dest.exists() and not args.overwrite:
-            old = read_json(dest)
-            if all(old.get(k) == v for k, v in wanted.items()) and 'verdict' in old:
-                return
-            raise ValueError(f'Conflicting output: {dest}; use --overwrite')
-        verdict = verifier.verify(src, prompt)
-        if not isinstance(verdict, dict) or verdict.get('decision') not in {'pass', 'reject'}:
-            raise ValueError('Verifier did not return a pass/reject decision')
-        write_json(dest, {**wanted, 'verdict': verdict})
+    if verifier.top_k is not None:
+        parameters['top_k'] = verifier.top_k
+    parameters = resolved_parameters(parameters, verifier)
+    process = verdict_processor(
+        args=args,
+        backend='gemini',
+        parameters=parameters,
+        verify=lambda source: verifier.verify(source, prompt),
+    )
 
     res = batch_concurrent(pairs, process, concurrency=args.concurrency)
     cost_summary = verifier.get_cost_summary()
