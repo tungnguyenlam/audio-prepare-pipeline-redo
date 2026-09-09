@@ -37,6 +37,7 @@ cd "$REPO_ROOT"
 echo "1/4. Installing build and runtime foundation (numpy, torch==2.6.0, torchaudio==2.6.0)..."
 uv pip install --python "$PY" numpy
 uv pip install --python "$PY" \
+    --index-url https://download.pytorch.org/whl/cu124 \
     "torch==2.6.0" \
     "torchaudio==2.6.0" \
     packaging ninja setuptools wheel

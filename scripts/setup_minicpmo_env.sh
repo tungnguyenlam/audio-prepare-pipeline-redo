@@ -8,29 +8,42 @@ echo "========================================================"
 echo "  Setting up isolated MiniCPM-o environment (.venv-minicpmo)"
 echo "========================================================"
 
-# MiniCPM-o requires transformers==4.51.0 and torch <= 2.8.0.
-# We create a dedicated isolated environment so the main pipeline is untouched.
+if [ "${1:-}" = "--clean" ] || [ "${1:-}" = "--recreate" ]; then
+    echo "Cleaning existing .venv-minicpmo..."
+    rm -rf .venv-minicpmo
+fi
+
 uv python install 3.11
 uv venv .venv-minicpmo --python 3.11
 
+PY=".venv-minicpmo/bin/python"
+
+# If NVIDIA GPU present, select PyTorch wheel index matching driver CUDA version
+if command -v nvidia-smi >/dev/null 2>&1; then
+    cuda_ver=$(nvidia-smi | sed -n "s/.*CUDA Version: \([0-9]\+\.[0-9]\+\).*/\1/p" | head -n 1)
+    case "$cuda_ver" in
+        13.*) cu_url="" ;;
+        12.8*) cu_url="https://download.pytorch.org/whl/cu128" ;;
+        12.7*|12.6*) cu_url="https://download.pytorch.org/whl/cu126" ;;
+        12.5*|12.4*) cu_url="https://download.pytorch.org/whl/cu124" ;;
+        *) cu_url="https://download.pytorch.org/whl/cu128" ;;
+    esac
+    if [ -n "$cu_url" ]; then
+        echo "⚡ Pre-installing torch for CUDA $cuda_ver from $cu_url..."
+        uv pip install --python "$PY" --index-url "$cu_url" "torch>=2.3.0,<=2.8.0" "torchaudio<=2.8.0"
+    fi
+fi
+
 echo "Installing OpenBMB MiniCPM-o dependencies..."
-uv pip install --python .venv-minicpmo/bin/python -r requirements-minicpmo.txt
+uv pip install --python "$PY" -r requirements-minicpmo.txt
 
 echo "Verifying environment..."
-.venv-minicpmo/bin/python -c "
+"$PY" -c "
 import torch
-dev_type = 'CUDA' if torch.cuda.is_available() else 'CPU'
+dev_type = f'CUDA ({torch.cuda.get_device_name(0)})' if torch.cuda.is_available() else 'CPU'
 print(f'   -> Torch: {torch.__version__} ({dev_type})')
 import transformers
 print(f'   -> Transformers: {transformers.__version__}')
 "
 
 echo "🎉 .venv-minicpmo is ready!"
-echo ""
-echo "To evaluate MiniCPM-o 4.5, run:"
-echo ".venv-minicpmo/bin/python scripts/evaluate_verifier.py \\"
-echo "  --backend hf_local \\"
-echo "  --model openbmb/MiniCPM-o-4_5 \\"
-echo "  --output-json .data/tts_strategy/gold_benchmark_20260908/reports/minicpm_o45.json \\"
-echo "  --output-report .data/tts_strategy/gold_benchmark_20260908/reports/minicpm_o45.md \\"
-echo "  --export-csv .data/tts_strategy/gold_benchmark_20260908/reports/minicpm_o45.csv"

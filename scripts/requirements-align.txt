@@ -1,8 +1,8 @@
 # Explicit alignment environment (.venv-align).
 numpy>=2.4.6
 soundfile>=0.14.0
-torch>=2.13.0
-torchaudio>=2.11.0
+torch>=2.4.0
+torchaudio>=2.4.0
 whisper-timestamped>=1.15.0
 transformers>=4.48.0
 pysocks>=1.7.1

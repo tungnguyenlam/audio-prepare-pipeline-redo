@@ -12,16 +12,37 @@ and `ffprobe` must be available. Export authentication variables (`HF_TOKEN`,
 `GEMINI_API_KEY`, `OPENAI_API_KEY`, `UNSLOTH_API_KEY`) explicitly. `HF_HOME`
 defaults to the repository's `.data/huggingface` when not already set.
 
-Lightweight environments can run the isolated components:
+Provision environments automatically with hardware auto-detection (AMD ROCm vs NVIDIA CUDA vs CPU):
+
+```bash
+# Provision all core environments (audio, separation, pyannote, verify, align)
+./scripts/setup_worker_envs.sh core
+
+# Or provision a specific environment:
+./scripts/setup_worker_envs.sh separation
+./scripts/setup_worker_envs.sh pyannote
+
+# Check health and hardware acceleration across all environments:
+./scripts/setup_worker_envs.sh status
+```
+
+Or provision manually via `uv`:
 
 ```bash
 uv venv --python 3.13 .venv-audio
 uv pip install --python .venv-audio/bin/python -r scripts/requirements-audio.txt
+
+# On NVIDIA GPUs with driver < 580 (CUDA <= 12.8), specify the matching wheel index:
 uv venv --python 3.13 .venv-separation
+uv pip install --python .venv-separation/bin/python --index-url https://download.pytorch.org/whl/cu128 torch torchaudio
 uv pip install --python .venv-separation/bin/python -r scripts/requirements-separation.txt
+
 uv venv --python 3.13 .venv-pyannote
+uv pip install --python .venv-pyannote/bin/python --index-url https://download.pytorch.org/whl/cu128 torch torchaudio
 uv pip install --python .venv-pyannote/bin/python -r scripts/requirements-pyannote.txt
+
 uv venv --python 3.13 .venv-verify
+uv pip install --python .venv-verify/bin/python --index-url https://download.pytorch.org/whl/cu128 torch torchaudio
 uv pip install --python .venv-verify/bin/python -r scripts/requirements-verify.txt
 ```
 

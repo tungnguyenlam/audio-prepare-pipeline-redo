@@ -1,8 +1,8 @@
 # Install explicitly into .venv-separation. Launchers never install packages.
 numpy>=2.4.6
 soundfile>=0.14.0
-torch>=2.13.0
-torchaudio>=2.11.0
+torch>=2.4.0
+torchaudio>=2.4.0
 demucs>=4.0.1
 bs-roformer-infer @ git+https://github.com/openmirlab/bs-roformer-infer.git
 melband-roformer-infer @ git+https://github.com/openmirlab/melband-roformer-infer.git
