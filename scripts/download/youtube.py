@@ -13,7 +13,7 @@ from _common.files import ROOT, completed, convert, positive_int, publish, read_
 def arguments(description: str, bulk: bool = False) -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=description)
     p.add_argument('--url', required=True)
-    p.add_argument('--sample-rate', type=positive_int, default=44100)
+    p.add_argument('--sample-rate', type=positive_int, default=16000)
     p.add_argument('--output-dir', type=Path, default=ROOT / '.data/download/out')
     if not bulk:
         p.add_argument('--output-file', type=Path)
