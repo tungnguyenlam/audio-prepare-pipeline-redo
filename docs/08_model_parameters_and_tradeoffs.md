@@ -155,6 +155,17 @@ Sortformer outputs an 80ms multi-speaker activity probability matrix for up to 4
 - **The Trade-off:** Constrains search space against degenerate clustering solutions at the risk of misclassifying recordings outside the bounds.
 - **Certainty:** **Guaranteed** boundary constraint.
 
+#### `segmentation_step` (`float`, default: `0.1`, range: `(0, 1]`) [DiariZen]
+- **What it is:** Shifting ratio used by the sliding window during segmentation inference (`step = segmentation_step * seg_duration`).
+- **Decreasing `segmentation_step` (e.g. `0.05`):** Increases temporal granularity of overlapping chunk inference (e.g. sliding every 0.8s instead of 1.6s on 16s chunks), providing more voting/aggregation samples across window edges.
+- **The Trade-off:** Boundary Precision & Consistency vs. Processing Time / VRAM throughput.
+- **Certainty:** **Guaranteed** sliding window step adjustment.
+
+#### `binarize_onset` & `binarize_offset` (`float`, default: `0.5`, range: `[0, 1]`) [DiariZen]
+- **What it is:** Hysteresis thresholds passed to pyannote's `Binarize` to convert `discrete_diarization` into speech turn annotations.
+- **Note on Current Upstream DiariZen:** The input array fed into `Binarize` is the output of `reconstruct()`, which is already a discrete binary array containing only `0.0` and `1.0` (derived from powerset argmax hard predictions and per-frame speaker counts). Consequently, adjusting `onset` and `offset` between `(0.0, 1.0)` produces identical turn boundaries in upstream DiariZen. These flags are exposed for forward compatibility and experimentation.
+- **Certainty:** **Guaranteed** parameter application to `Binarize`; **Empirical** effect negligible on discrete 0/1 matrices.
+
 ---
 
 ### 2.3 `ThreeDSpeakerDiarizer` (ModelScope FSMN + CAM++)

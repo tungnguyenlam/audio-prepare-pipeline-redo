@@ -138,6 +138,9 @@ bash scripts/diarize/pyannote_31.sh --input-file .data/source.wav --output-dir .
 bash scripts/diarize/clustering.sh --input-file .data/source.wav --output-dir .data/turns
 bash scripts/diarize/threed_speaker.sh --input-file .data/source.wav --output-dir .data/turns
 bash scripts/diarize/diarizen.sh --input-file .data/source.wav --output-dir .data/turns
+
+# DiariZen with custom segmentation step and binarize thresholds
+bash scripts/diarize/diarizen.sh --input-file .data/source.wav --output-dir .data/turns --segmentation-step 0.05 --binarize-onset 0.5 --binarize-offset 0.6
 ```
 
 ### Target speaker operations

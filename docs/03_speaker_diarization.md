@@ -77,17 +77,15 @@ NVIDIA NeMo Sortformer model:
 
 ---
 
-### `DiariZenDiarizer` & `DiariZenWorkerDiarizer`
+### `DiariZen` Diarization
 
-**Defined in:**
-- [`src/diarization/DiariZenDiarizer.py`](../src/diarization/DiariZenDiarizer.py)
-- [`src/diarization/DiariZenWorkerDiarizer.py`](../src/diarization/DiariZenWorkerDiarizer.py)
+**Command:** [`scripts/diarize/diarizen.sh`](../scripts/diarize/diarizen.sh) / [`scripts/diarize/diarizen.py`](../scripts/diarize/diarizen.py)
 
 DiariZen overlap-aware diarization system:
-- Utilizes WavLM Large representation with WeSpeaker embeddings and VBx clustering.
+- Utilizes WavLM Large representation with WeSpeaker embeddings and VBx clustering (`BUT-FIT/diarizen-wavlm-large-s80-md-v2`).
 - Preserves concurrent turns during multi-speaker overlapping segments.
-- Clamps timestamps to `audio.duration_s` to eliminate boundary overshoot errors.
-- `DiariZenWorkerDiarizer` runs `.venv-diarizen/bin/python -m src.diarization.diarizen_worker`, isolating GPU assignments via `CUDA_VISIBLE_DEVICES`.
+- Supports `--segmentation-step` (default: `0.1`, range: `(0, 1]`) to control the sliding window inference step ratio (step = `segmentation_step * seg_duration`).
+- Supports `--binarize-onset` and `--binarize-offset` (default: `0.5`, range: `[0, 1]`) for final `Binarize` thresholding. Note that upstream DiariZen powerset mapping produces discrete hard decisions into `reconstruct()`, so changing hysteresis thresholds has minimal effect unless earlier continuous segmentation stages are adapted.
 
 ---
 
