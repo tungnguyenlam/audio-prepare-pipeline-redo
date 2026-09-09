@@ -45,7 +45,7 @@ def main() -> int:
         entries = []
         with zipfile.ZipFile(temporary, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
             for i, (entry, source) in enumerate(zip(manifest['entries'], files), 1):
-                name = f'audio/{i - 1:06d}-{safe_name(source.name)}'
+                name = f'audio/{i - 1:06d}-{safe_name(source.stem)}{source.suffix}'
                 archive.write(source, name)
                 entries.append({**entry, 'path': name, 'relative_path': name})
                 if i == 1 or i == total or i % step == 0:

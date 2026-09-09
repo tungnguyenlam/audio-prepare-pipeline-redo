@@ -22,7 +22,7 @@ import contextlib
 import sys
 from dataclasses import asdict
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import batch, convert, identity, inputs, parser, positive_int, probe, request
+from _common.files import batch, convert, identity, inputs, parser, positive_int, probe, request, safe_name
 from _common.segments import export, manifest_complete
 
 
@@ -1133,7 +1133,8 @@ def main() -> int:
     p.add_argument('--sample-rate', type=positive_int)
     p.add_argument('--channels', type=int, choices=(1, 2), default=1)
     args = p.parse_args()
-    pairs = [(src, args.output_dir.resolve() / rel.parent / rel.stem / 'segments.json') for src, rel in inputs(args)]
+    safe_parent = lambda rel: Path(*[safe_name(p) for p in rel.parent.parts]) if rel.parent.parts else Path('.')
+    pairs = [(src, args.output_dir.resolve() / safe_parent(rel) / safe_name(rel.stem) / 'segments.json') for src, rel in inputs(args)]
     if len({dest for _, dest in pairs}) != len(pairs):
         p.error('Multiple inputs map to the same output directory')
     keys = ('model_id', 'revision', 'model_filename', 'checkpoint_path', 'device', 'batch_size',

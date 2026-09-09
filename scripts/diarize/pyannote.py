@@ -5,8 +5,15 @@ import contextlib
 import os
 from pathlib import Path
 import sys
+
+# Prevent this script from shadowing the installed 'pyannote' package
+_script_dir = str(Path(__file__).resolve().parent)
+while _script_dir in sys.path:
+    sys.path.remove(_script_dir)
+sys.modules.pop('pyannote', None)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import batch, identity, inputs, parser, positive_int, probe, request
+
+from _common.files import batch, identity, inputs, parser, positive_int, probe, request, safe_name
 from _common.segments import export, manifest_complete
 
 
@@ -29,7 +36,8 @@ def main() -> int:
     for attr in ('output_dir', 'work_dir'):
         if getattr(args, attr) == p.get_default(attr):
             setattr(args, attr, getattr(args, attr).parent.parent / model_name / getattr(args, attr).name)
-    pairs = [(src, args.output_dir.resolve() / rel.parent / rel.stem / 'segments.json') for src, rel in inputs(args)]
+    safe_parent = lambda rel: Path(*[safe_name(p) for p in rel.parent.parts]) if rel.parent.parts else Path('.')
+    pairs = [(src, args.output_dir.resolve() / safe_parent(rel) / safe_name(rel.stem) / 'segments.json') for src, rel in inputs(args)]
     if len({dest for _, dest in pairs}) != len(pairs):
         p.error('Multiple inputs map to the same output directory')
     import soundfile as sf

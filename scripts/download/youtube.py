@@ -38,7 +38,7 @@ def download(url: str, args) -> Path:
     source = {'video_id': video_id, 'title': title, 'url': info.get('webpage_url') or url}
     metadata = request(source, 'download', {'sample_rate': args.sample_rate, 'channels': 1}, 'youtube')
     explicit = getattr(args, 'output_file', None)
-    dest = (explicit or args.output_dir / f'{safe_name(title, 10)}-{args.sample_rate}.wav').resolve()
+    dest = (explicit or args.output_dir / f'{safe_name(title, 80, default="video")}-{args.sample_rate}.wav').resolve()
     if not explicit and (dest.exists() or dest.with_suffix('.json').exists()):
         try:
             existing_id = read_json(dest.with_suffix('.json')).get('source', {}).get('video_id')

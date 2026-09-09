@@ -110,7 +110,8 @@ def inputs(args: argparse.Namespace) -> list[tuple[Path, Path]]:
 
 
 def destinations(args: argparse.Namespace, suffix: str = '', extension: str = '.wav') -> list[tuple[Path, Path]]:
-    pairs = [(src, (args.output_file or args.output_dir / rel.parent / (rel.stem + suffix + extension)).resolve())
+    safe_parent = lambda rel: Path(*[safe_name(p) for p in rel.parent.parts]) if rel.parent.parts else Path('.')
+    pairs = [(src, (args.output_file or args.output_dir / safe_parent(rel) / f'{safe_name(rel.stem)}{suffix}{extension}').resolve())
              for src, rel in inputs(args)]
     sources = {src.resolve() for src, _ in pairs}
     seen = set()
@@ -237,10 +238,24 @@ def convert(src: Path, dest: Path, sample_rate: int, channels: int, *, start: fl
     subprocess.run(cmd, check=True, stdout=sys.stderr)
 
 
-def safe_name(value: str, limit: int | None = None) -> str:
-    value = unicodedata.normalize('NFKC', value)
-    value = re.sub(r'[\x00-\x1f<>:"/\\|?*]', '', value).strip(' .')
-    return (value[:limit].rstrip(' .') if limit else value) or 'video'
+def safe_name(value: str, limit: int | None = None, default: str = 'audio') -> str:
+    """Sanitize string for filenames: strictly [a-zA-Z0-9_-], spaces -> hyphens, no dots."""
+    if not value:
+        return default
+    # Map Vietnamese stroked-d characters before unicode decomposition
+    value = value.replace('đ', 'd').replace('Đ', 'D')
+    # Decompose unicode characters and strip combining diacritical marks
+    value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode('ascii')
+    # Replace spaces, dots, and any non-alphanumeric character (except underscore and hyphen) with hyphen
+    value = re.sub(r'[^a-zA-Z0-9_]+', '-', value)
+    # Clean up awkward combinations of - and _ like -_ or _-
+    value = re.sub(r'-*_-*', '_', value)
+    value = re.sub(r'-+', '-', value)
+    value = re.sub(r'_+', '_', value)
+    value = value.strip('-_')
+    if limit and len(value) > limit:
+        value = value[:limit].rstrip('-_')
+    return value or default
 
 
 def batch(pairs: list[tuple[Path, Path]], process) -> int:

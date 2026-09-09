@@ -26,7 +26,7 @@ import argparse
 import contextlib
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import batch, convert, identity, inputs, parser, positive_int, probe, request
+from _common.files import batch, convert, identity, inputs, parser, positive_int, probe, request, safe_name
 from _common.segments import export, manifest_complete
 
 logger = logging.getLogger(__name__)
@@ -446,8 +446,8 @@ def main() -> int:
     p.add_argument('--model-cache-dir', type=Path, default=None)
     p.add_argument('--speakerlab-root', type=Path, default=None)
     p.add_argument('--include-overlap', action=argparse.BooleanOptionalAction, default=False)
-    args = p.parse_args()
-    pairs = [(src, args.output_dir.resolve() / rel.parent / rel.stem / 'segments.json') for src, rel in inputs(args)]
+    safe_parent = lambda rel: Path(*[safe_name(p) for p in rel.parent.parts]) if rel.parent.parts else Path('.')
+    pairs = [(src, args.output_dir.resolve() / safe_parent(rel) / safe_name(rel.stem) / 'segments.json') for src, rel in inputs(args)]
     if len({dest for _, dest in pairs}) != len(pairs):
         p.error('Multiple inputs map to the same output directory')
     parameters = {key: getattr(args, key) for key in ('device', 'num_speakers', 'batch_size', 'chunk_duration_s', 'chunk_step_s', 'model_cache_dir', 'speakerlab_root', 'include_overlap')}

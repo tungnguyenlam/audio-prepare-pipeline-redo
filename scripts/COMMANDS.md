@@ -261,6 +261,10 @@ uv run python scripts/dataset/bundle.py --input-manifest .data/filtered.json --o
 - Directory input is snapshotted recursively in sorted order. The output
   subtree is excluded; identical input/output roots and colliding derived names
   are rejected before processing. Subdirectories are mirrored.
+- Audio names and directories (`safe_name`) strictly allow `[a-zA-Z0-9_-]`. Spaces
+  and dots inside stems/directories are converted to `-`, Unicode diacritics are
+  transliterated to ASCII (e.g. Vietnamese `đ/Đ` -> `d/D`), and special characters
+  are stripped to prevent shell argument-splitting and path issues.
 - Files are processed sequentially. A model is loaded once per invocation.
   Individual failures do not stop later files. Batch summaries go to stderr;
   successful output paths go to stdout; any file failure yields nonzero status.
