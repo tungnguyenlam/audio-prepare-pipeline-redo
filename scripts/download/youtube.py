@@ -7,19 +7,23 @@ from pathlib import Path
 import sys
 import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import LoggingArgumentParser, ROOT, completed, convert, positive_int, progress, publish, read_json, request, safe_name
+from _common.files import (LoggingArgumentParser, ROOT, completed, convert,
+                           family_audio_name, family_name, positive_int,
+                           progress, publish, read_json, request, safe_name)
 
 
 def arguments(description: str, bulk: bool = False) -> LoggingArgumentParser:
     p = LoggingArgumentParser(description=description)
     p.add_argument('--url', required=True)
     p.add_argument('--sample-rate', type=positive_int, default=16000)
-    p.add_argument('--output-dir', type=Path, default=ROOT / '.data/download/out')
+    p.add_argument('--output-dir', type=Path, default=None,
+                   help='Output directory (default: dynamic per audio family under .data/download/<family>)')
     if not bulk:
         p.add_argument('--output-file', type=Path)
     p.add_argument('--work-dir', type=Path, default=ROOT / '.data/download/work')
     p.add_argument('--cookie-file', type=Path)
     p.add_argument('--overwrite', action='store_true')
+    p.set_defaults(_operation='download', _default_base=ROOT / '.data/download')
     return p
 
 
@@ -38,14 +42,14 @@ def download(url: str, args) -> Path:
     source = {'video_id': video_id, 'title': title, 'url': info.get('webpage_url') or url}
     metadata = request(source, 'download', {'sample_rate': args.sample_rate, 'channels': 1}, 'youtube')
     explicit = getattr(args, 'output_file', None)
-    dest = (explicit or args.output_dir / f'{safe_name(title, 80, default="video")}-{args.sample_rate}.wav').resolve()
-    if not explicit and (dest.exists() or dest.with_suffix('.json').exists()):
-        try:
-            existing_id = read_json(dest.with_suffix('.json')).get('source', {}).get('video_id')
-        except (ValueError, OSError):
-            existing_id = None
-        if existing_id and existing_id != video_id:
-            dest = dest.with_name(f'{dest.stem}-{safe_name(video_id)}.wav')
+    family = family_name(video_id, title)
+    filename = family_audio_name(video_id, title, args.sample_rate)
+    if explicit is not None:
+        dest = explicit.resolve()
+    elif args.output_dir is not None:
+        dest = (args.output_dir.resolve() / filename).resolve()
+    else:
+        dest = (ROOT / '.data/download' / family / filename).resolve()
     if completed(dest, metadata, args.overwrite):
         progress('CACHED', f'Already completed: {dest.name}')
         return dest

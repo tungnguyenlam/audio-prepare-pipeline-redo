@@ -5,7 +5,7 @@ import argparse
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import LoggingArgumentParser, ROOT, identity, positive_int, read_json, request
+from _common.files import LoggingArgumentParser, ROOT, identity, infer_audio_family, positive_int, read_json, request
 from _common.segments import export, manifest_complete, source_path
 
 
@@ -13,7 +13,7 @@ def main() -> int:
     p = LoggingArgumentParser(description=__doc__)
     p.add_argument('--input-manifest', type=Path, required=True)
     p.add_argument('--input-file', type=Path)
-    p.add_argument('--output-dir', type=Path, default=ROOT / '.data/export_segments/out')
+    p.add_argument('--output-dir', type=Path, default=None, help='Output directory (default: dynamic per audio family under .data/audio/clips/<family>)')
     p.add_argument('--work-dir', type=Path, default=ROOT / '.data/export_segments/work')
     p.add_argument('--sample-rate', type=positive_int)
     p.add_argument('--channels', type=int, choices=(1, 2), default=1)
@@ -30,7 +30,8 @@ def main() -> int:
         p.error('--min-duration-s cannot exceed --max-duration-s')
     manifest = read_json(args.input_manifest)
     source = source_path(manifest, args.input_manifest, args.input_file)
-    destination = args.output_dir.resolve() / 'segments.json'
+    output_dir = args.output_dir.resolve() if args.output_dir is not None else (ROOT / '.data/audio/clips' / infer_audio_family(args.input_manifest)).resolve()
+    destination = output_dir / 'segments.json'
     if destination == args.input_manifest.resolve() or source.is_relative_to(destination.parent):
         p.error('Output directory must be separate from the input manifest and source')
     wanted = request(identity(source), 'export_segments', {'input_manifest': identity(args.input_manifest),

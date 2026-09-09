@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import LoggingArgumentParser, ROOT, identity, probe, progress, read_json, safe_name, write_json
+from _common.files import LoggingArgumentParser, ROOT, identity, infer_audio_family, probe, progress, read_json, safe_name, write_json
 from _common.segments import normalize_turns, source_path
 from speaker.score import embed_audio_interval, get_embedder, load_profile_clips, DEFAULT_EMBEDDING_MODEL_ID
 
@@ -50,7 +50,7 @@ def other_speaker_overlap_duration(all_turns: list[dict], spk_id: str, start_s: 
 def main() -> int:
     p = LoggingArgumentParser(description=__doc__)
     p.add_argument('--input-manifest', type=Path, required=True, help='Manifest containing candidate turns')
-    p.add_argument('--output-manifest', type=Path, required=True, help='Purity verification output manifest')
+    p.add_argument('--output-manifest', type=Path, help='Purity verification output manifest (default: dynamic per family under .data/speaker/purity/<family>/segments.json)')
     p.add_argument('--profile', required=True, help='Enrolled speaker profile name or dir')
     p.add_argument('--profiles-dir', type=Path, default=ROOT / '.data' / 'speaker_profiles')
     p.add_argument('--similarity-threshold', type=float, default=0.6)
@@ -136,7 +136,7 @@ def main() -> int:
         if i == 1 or i == total_turns or i % step == 0:
             progress('PURITY_TURN', f'{decision} ({reason})', current=i, total=total_turns)
 
-    dest = args.output_manifest.resolve()
+    dest = args.output_manifest.resolve() if args.output_manifest is not None else (ROOT / '.data/speaker/purity' / infer_audio_family(args.input_manifest) / 'segments.json').resolve()
     metadata = {
         'schema_version': 1,
         'source': identity(source),

@@ -6,20 +6,24 @@ import math
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import LoggingArgumentParser, identity, probe, progress, read_json, write_json
+from _common.files import LoggingArgumentParser, ROOT, identity, infer_audio_family, probe, progress, read_json, write_json
 from _common.segments import normalize_turns, source_path
 
 
 def arguments(description: str) -> LoggingArgumentParser:
     p = LoggingArgumentParser(description=description)
     p.add_argument('--input-manifest', type=Path, required=True)
-    p.add_argument('--output-manifest', type=Path, required=True)
+    p.add_argument('--output-manifest', type=Path, help='Output manifest (default: dynamic per family under .data/purity/<stage>/<family>/segments.json)')
     p.add_argument('--input-file', type=Path)
     p.add_argument('--overwrite', action='store_true')
     return p
 
 
 def load(args) -> tuple[dict, Path]:
+    if getattr(args, 'output_manifest', None) is None:
+        stage = Path(sys.argv[0]).stem if sys.argv else 'purity'
+        family = infer_audio_family(args.input_manifest)
+        args.output_manifest = (ROOT / '.data/purity' / stage / family / 'segments.json').resolve()
     if args.input_manifest.resolve() == args.output_manifest.resolve():
         raise ValueError('Input and output manifests must differ')
     manifest = read_json(args.input_manifest)

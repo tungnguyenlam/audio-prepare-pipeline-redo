@@ -25,9 +25,8 @@ flowchart TD
 
 - **Precedence:** `--input-file` takes precedence over `--input-dir`. For single-output commands, `--output-file` takes precedence over `--output-dir` and is the exact destination.
 - **Mutual Exclusion:** Providing directory input with `--output-file` is rejected.
-- **Path Resolution:** Relative paths resolve against the caller's working directory. Default output directories live under `.data/<operation>/<model>/out`.
+- **Path Resolution & Audio Families:** Relative paths resolve against the caller's working directory. Default output directories are dynamic per audio family under `.data/<operation>/[<model>/]<family>/` (e.g. `.data/download/<family>/`, `.data/separate/<model>/<family>/`, `.data/diarize/<model>/<family>/`). Downloaded audio filenames follow `<id>_<title10>-<sample_rate>.wav` to anchor audio family identity across all downstream steps. Explicit `--output-dir` or `--output-file` overrides defaults.
 - **Sequential Execution:** Directory batches are snapshotted before processing and executed sequentially. A model is loaded once per command invocation.
-- **Exit Status & Stream Discipline:** Successful file paths go to stdout; configuration logging and real-time progress indicators go to stderr. Any file failure yields nonzero exit status.
 - **Configuration & Live Progress:** Every command immediately logs its complete parsed configuration to stderr upon launch and streams real-time progress updates with timestamps, stage labels, item percentages, and elapsed times.
 - **Idempotency & Overwrite:** Existing outputs with matching metadata and intact hashes are skipped. Overwriting inputs in place is disallowed. Conflicting outputs require `--overwrite`.
 

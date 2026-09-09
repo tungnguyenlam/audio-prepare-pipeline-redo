@@ -40,9 +40,13 @@ def log_config(title: str, args: argparse.Namespace | dict) -> None:
     border = '=' * 60
     lines = [border, f'[{name}] CONFIGURATION:']
     for k in sorted(items.keys()):
+        if k.startswith('_'):
+            continue
         val = items[k]
         if k == 'sample_rate' and val is None:
             val = 'None (preserve source)'
+        elif k == 'output_dir' and val is None:
+            val = 'None (dynamic per audio family)'
         lines.append(f'  {k:<24}: {val}')
     lines.append(border)
     print('\n'.join(lines), file=sys.stderr, flush=True)
@@ -73,6 +77,84 @@ def progress(action: str, detail: str = '', *, current: int | None = None, total
     print(f'[{timestamp}] ' + ' : '.join(items), file=sys.stderr, flush=True)
 
 
+def safe_name(value: str, limit: int | None = None, default: str = 'audio') -> str:
+    """Sanitize string for filenames: strictly [a-zA-Z0-9_-], spaces -> hyphens, no dots."""
+    if not value:
+        return default
+    # Map Vietnamese stroked-d characters before unicode decomposition
+    value = value.replace('đ', 'd').replace('Đ', 'D')
+    # Decompose unicode characters and strip combining diacritical marks
+    value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode('ascii')
+    # Replace spaces, dots, and any non-alphanumeric character (except underscore and hyphen) with hyphen
+    value = re.sub(r'[^a-zA-Z0-9_]+', '-', value)
+    # Clean up awkward combinations of - and _ like -_ or _-
+    value = re.sub(r'-*_-*', '_', value)
+    value = re.sub(r'-+', '-', value)
+    value = re.sub(r'_+', '_', value)
+    value = value.strip('-_')
+    if limit and len(value) > limit:
+        value = value[:limit].rstrip('-_')
+    return value or default
+
+
+def family_name(video_id: str, title: str) -> str:
+    """Return canonical family identifier: {safe_id}_{safe_title_10}."""
+    return f"{safe_name(video_id)}_{safe_name(title, 10, default='video')}"
+
+
+def family_audio_name(video_id: str, title: str, sample_rate: int | None = None, extension: str = '.wav') -> str:
+    """Return standard download audio filename: {safe_id}_{safe_title_10}[-{sample_rate}].wav."""
+    fam = family_name(video_id, title)
+    rate_suffix = f"-{sample_rate}" if sample_rate else ""
+    ext = extension if extension.startswith('.') else f".{extension}"
+    return f"{fam}{rate_suffix}{ext}"
+
+
+def infer_audio_family(path: Path) -> str:
+    """Infer the audio family identifier from an audio or manifest path."""
+    json_path = path if path.suffix.lower() == '.json' else path.with_suffix('.json')
+    if json_path.is_file():
+        try:
+            data = read_json(json_path)
+            src_info = data.get('source') or {}
+            origin_info = src_info.get('origin') or data.get('origin') or {}
+            vid = src_info.get('video_id') or origin_info.get('video_id')
+            title = src_info.get('title') or origin_info.get('title')
+            if vid:
+                return family_name(str(vid), str(title or 'video'))
+        except (ValueError, OSError):
+            pass
+
+    stem = path.stem
+    if stem in {'segments', 'output', 'source', 'vocals', 'accompaniment', 'mixture'}:
+        if path.parent.name and path.parent.name not in {'out', 'work', 'download', 'separate', 'diarize'}:
+            return path.parent.name
+
+    # Check for <id>_<title10> pattern (e.g. 11-char YT id, or id_title10-<sample_rate>)
+    m = re.match(r'^([a-zA-Z0-9_-]{11})_([a-zA-Z0-9-]{1,10})(?:-\d+)?(?:_.*)?$', stem)
+    if m:
+        return f"{m.group(1)}_{m.group(2)}"
+    m = re.match(r'^([a-zA-Z0-9_-]+?)_([a-zA-Z0-9-]{1,10})-\d+(?:_.*)?$', stem)
+    if m:
+        return f"{m.group(1)}_{m.group(2)}"
+
+    return safe_name(stem)
+
+
+def resolve_output_dir(args: argparse.Namespace, src: Path) -> Path:
+    if getattr(args, 'output_dir', None) is not None:
+        return args.output_dir.resolve()
+    base = getattr(args, '_default_base', None)
+    if base is None:
+        op = getattr(args, '_operation', 'audio')
+        mod = getattr(args, '_model', None)
+        base = ROOT / '.data' / op
+        if mod:
+            base /= mod
+    family = infer_audio_family(src)
+    return (base / family).resolve()
+
+
 def parser(description: str, operation: str, model: str | None = None, *, segments: bool = False) -> LoggingArgumentParser:
     p = LoggingArgumentParser(description=description)
     p.add_argument('--input-file', type=Path)
@@ -82,14 +164,16 @@ def parser(description: str, operation: str, model: str | None = None, *, segmen
     base = ROOT / '.data' / operation
     if model:
         base /= model
-    p.add_argument('--output-dir', type=Path, default=base / 'out')
+    p.add_argument('--output-dir', type=Path, default=None,
+                   help='Output directory (default: dynamic per audio family under .data/<operation>/<model>/<family>)')
     p.add_argument('--work-dir', type=Path, default=base / 'work')
     p.add_argument('--overwrite', action='store_true')
+    p.set_defaults(_operation=operation, _model=model, _default_base=base)
     return p
 
 
 def inputs(args: argparse.Namespace) -> list[tuple[Path, Path]]:
-    out = args.output_dir.resolve()
+    out = args.output_dir.resolve() if getattr(args, 'output_dir', None) is not None else None
     if args.input_file is not None:
         src = args.input_file.resolve()
         if not src.is_file():
@@ -102,17 +186,26 @@ def inputs(args: argparse.Namespace) -> list[tuple[Path, Path]]:
     root = args.input_dir.resolve()
     if not root.is_dir():
         raise FileContractError(f'Input directory not found: {root}')
-    if root == out:
+    if out is not None and root == out:
         raise FileContractError('Input and output roots must differ')
     return [(p, p.relative_to(root)) for p in sorted(root.rglob('*'))
             if p.is_file() and p.suffix.lower() in AUDIO_SUFFIXES
-            and not p.resolve().is_relative_to(out)]
+            and (out is None or not p.resolve().is_relative_to(out))]
 
 
 def destinations(args: argparse.Namespace, suffix: str = '', extension: str = '.wav') -> list[tuple[Path, Path]]:
     safe_parent = lambda rel: Path(*[safe_name(p) for p in rel.parent.parts]) if rel.parent.parts else Path('.')
-    pairs = [(src, (args.output_file or args.output_dir / safe_parent(rel) / f'{safe_name(rel.stem)}{suffix}{extension}').resolve())
-             for src, rel in inputs(args)]
+    explicit_out = getattr(args, 'output_dir', None)
+    pairs = []
+    for src, rel in inputs(args):
+        if getattr(args, 'output_file', None) is not None:
+            dest = args.output_file.resolve()
+        elif explicit_out is not None:
+            dest = (explicit_out.resolve() / safe_parent(rel) / f'{safe_name(rel.stem)}{suffix}{extension}').resolve()
+        else:
+            out_dir = resolve_output_dir(args, src)
+            dest = (out_dir / f'{safe_name(rel.stem)}{suffix}{extension}').resolve()
+        pairs.append((src, dest))
     sources = {src.resolve() for src, _ in pairs}
     seen = set()
     for src, dest in pairs:
@@ -120,6 +213,32 @@ def destinations(args: argparse.Namespace, suffix: str = '', extension: str = '.
             raise FileContractError(f'Cannot overwrite an input: {dest}')
         if dest in seen:
             raise FileContractError(f'Multiple inputs map to {dest}; use separate invocations or rename inputs')
+        seen.add(dest)
+    return pairs
+
+
+def manifest_destinations(args: argparse.Namespace, filename: str = 'segments.json') -> list[tuple[Path, Path]]:
+    safe_parent = lambda rel: Path(*[safe_name(p) for p in rel.parent.parts]) if rel.parent.parts else Path('.')
+    explicit_out = getattr(args, 'output_dir', None)
+    all_inputs = inputs(args)
+    if explicit_out is not None:
+        pairs = [(src, (explicit_out.resolve() / safe_parent(rel) / safe_name(rel.stem) / filename).resolve())
+                 for src, rel in all_inputs]
+    else:
+        families = [infer_audio_family(src) for src, _ in all_inputs]
+        has_multiple_same_family = len(families) != len(set(families))
+        pairs = []
+        for src, rel in all_inputs:
+            base_dir = resolve_output_dir(args, src)
+            if has_multiple_same_family:
+                dest = (base_dir / safe_name(rel.stem) / filename).resolve()
+            else:
+                dest = (base_dir / filename).resolve()
+            pairs.append((src, dest))
+    seen = set()
+    for src, dest in pairs:
+        if dest in seen:
+            raise FileContractError(f'Multiple inputs map to {dest}; use separate invocations or specify distinct output directories')
         seen.add(dest)
     return pairs
 
@@ -236,26 +355,6 @@ def convert(src: Path, dest: Path, sample_rate: int, channels: int, *, start: fl
         cmd += ['-t', str(end - (start or 0))]
     cmd += ['-vn', '-ar', str(sample_rate), '-ac', str(channels), '-c:a', 'pcm_f32le' if floating else 'pcm_s16le', '-f', 'wav', str(dest)]
     subprocess.run(cmd, check=True, stdout=sys.stderr)
-
-
-def safe_name(value: str, limit: int | None = None, default: str = 'audio') -> str:
-    """Sanitize string for filenames: strictly [a-zA-Z0-9_-], spaces -> hyphens, no dots."""
-    if not value:
-        return default
-    # Map Vietnamese stroked-d characters before unicode decomposition
-    value = value.replace('đ', 'd').replace('Đ', 'D')
-    # Decompose unicode characters and strip combining diacritical marks
-    value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode('ascii')
-    # Replace spaces, dots, and any non-alphanumeric character (except underscore and hyphen) with hyphen
-    value = re.sub(r'[^a-zA-Z0-9_]+', '-', value)
-    # Clean up awkward combinations of - and _ like -_ or _-
-    value = re.sub(r'-*_-*', '_', value)
-    value = re.sub(r'-+', '-', value)
-    value = re.sub(r'_+', '_', value)
-    value = value.strip('-_')
-    if limit and len(value) > limit:
-        value = value[:limit].rstrip('-_')
-    return value or default
 
 
 def batch(pairs: list[tuple[Path, Path]], process) -> int:

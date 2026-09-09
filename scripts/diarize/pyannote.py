@@ -14,7 +14,7 @@ while _script_dir in sys.path:
 sys.modules.pop('pyannote', None)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from _common.files import batch, identity, inputs, parser, positive_int, probe, request, safe_name
+from _common.files import batch, identity, inputs, manifest_destinations, parser, positive_int, probe, request, safe_name
 from _common.segments import export, manifest_complete
 
 
@@ -42,13 +42,12 @@ def main() -> int:
         (exact and minimum and exact < minimum) or (exact and maximum and exact > maximum)):
         p.error('Inconsistent speaker count bounds')
     model_name = 'pyannote_31' if args.model == 'pyannote/speaker-diarization-3.1' else 'pyannote_community1'
-    for attr in ('output_dir', 'work_dir'):
-        if getattr(args, attr) == p.get_default(attr):
-            setattr(args, attr, getattr(args, attr).parent.parent / model_name / getattr(args, attr).name)
-    safe_parent = lambda rel: Path(*[safe_name(p) for p in rel.parent.parts]) if rel.parent.parts else Path('.')
-    pairs = [(src, args.output_dir.resolve() / safe_parent(rel) / safe_name(rel.stem) / 'segments.json') for src, rel in inputs(args)]
-    if len({dest for _, dest in pairs}) != len(pairs):
-        p.error('Multiple inputs map to the same output directory')
+    args._model = model_name
+    if getattr(args, '_default_base', None) is not None:
+        args._default_base = args._default_base.parent / model_name
+    if args.work_dir == p.get_default('work_dir'):
+        args.work_dir = args.work_dir.parent.parent / model_name / args.work_dir.name
+    pairs = manifest_destinations(args)
     import soundfile as sf
     import torch
     from pyannote.audio import Pipeline

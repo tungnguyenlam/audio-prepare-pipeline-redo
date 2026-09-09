@@ -6,6 +6,18 @@ All public pipeline data is file-backed. Objects in memory are not passed across
 commands. Commands communicate exclusively through WAV files, sibling JSON sidecars,
 and segment manifests.
 
+## 0. Audio Family & Standard Naming Contract
+
+Audio files ingested via download or pipeline inception establish a canonical **Audio Family**:
+- **Downloaded audio filename:** `{video_id}_{safe_title_10}-{sample_rate}.wav` (e.g. `dQw4w9WgXcQ_Never-Gonn-16000.wav`)
+- **Audio Family Key:** `{video_id}_{safe_title_10}`
+- **Dynamic per-family output routing:** Downstream pipeline stages infer this family key from the input filename or its sibling `.json` sidecar, dynamically directing default outputs into `.data/<operation>/[<model>/]<family>/`:
+  - Download: `.data/download/<family>/`
+  - Separation: `.data/separate/<model>/<family>/`
+  - Diarization: `.data/diarize/<model>/<family>/segments.json` (and turn clips)
+  - Speaker / Purity: `.data/<operation>/<stage>/<family>/segments.json`
+  - Verification: `.data/verify/<model>/<family>/`
+
 ## 1. Audio Sidecar Contract (`recording.json`)
 
 Commands producing single audio files (`youtube.py`, `convert.py`, `cut.py`,

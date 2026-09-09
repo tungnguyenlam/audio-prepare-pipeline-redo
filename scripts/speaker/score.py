@@ -10,7 +10,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import LoggingArgumentParser, ROOT, identity, probe, progress, read_json, safe_name, write_json
+from _common.files import LoggingArgumentParser, ROOT, identity, infer_audio_family, probe, progress, read_json, safe_name, write_json
 from _common.segments import normalize_turns, source_path
 
 DEFAULT_EMBEDDING_MODEL_ID = "pyannote/wespeaker-voxceleb-resnet34-LM"
@@ -79,7 +79,7 @@ def embed_audio_interval(inference, path: Path, start_s: float | None = None, en
 def main() -> int:
     p = LoggingArgumentParser(description=__doc__)
     p.add_argument('--input-manifest', type=Path, required=True, help='Diarization segments.json')
-    p.add_argument('--output-manifest', type=Path, required=True, help='Scored output manifest')
+    p.add_argument('--output-manifest', type=Path, help='Scored output manifest (default: dynamic per family under .data/speaker/score/<family>/segments.json)')
     p.add_argument('--profile', required=True, help='Enrolled speaker profile name or directory')
     p.add_argument('--profiles-dir', type=Path, default=ROOT / '.data' / 'speaker_profiles', help='Profiles root directory')
     p.add_argument('--model-id', default=DEFAULT_EMBEDDING_MODEL_ID, help='Pyannote embedding model ID')
@@ -138,7 +138,7 @@ def main() -> int:
         if i == 1 or i == total_turns or i % step == 0:
             progress('SCORE_TURN', f'{dur:.2f}s (sim={sim:.3f})', current=i, total=total_turns)
 
-    dest = args.output_manifest.resolve()
+    dest = args.output_manifest.resolve() if args.output_manifest is not None else (ROOT / '.data/speaker/score' / infer_audio_family(args.input_manifest) / 'segments.json').resolve()
     metadata = {
         'schema_version': 1,
         'source': identity(source),

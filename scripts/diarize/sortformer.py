@@ -22,7 +22,7 @@ import contextlib
 import sys
 from dataclasses import asdict
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import batch, convert, identity, inputs, parser, positive_int, probe, request, safe_name
+from _common.files import batch, convert, identity, inputs, manifest_destinations, parser, positive_int, probe, request, safe_name
 from _common.segments import export, manifest_complete
 
 
@@ -1141,10 +1141,7 @@ def main() -> int:
         p.error('--max-duration-s must be finite and positive')
     if args.min_duration_s is not None and args.max_duration_s is not None and args.min_duration_s > args.max_duration_s:
         p.error('--min-duration-s cannot exceed --max-duration-s')
-    safe_parent = lambda rel: Path(*[safe_name(p) for p in rel.parent.parts]) if rel.parent.parts else Path('.')
-    pairs = [(src, args.output_dir.resolve() / safe_parent(rel) / safe_name(rel.stem) / 'segments.json') for src, rel in inputs(args)]
-    if len({dest for _, dest in pairs}) != len(pairs):
-        p.error('Multiple inputs map to the same output directory')
+    pairs = manifest_destinations(args)
     keys = ('model_id', 'revision', 'model_filename', 'checkpoint_path', 'device', 'batch_size',
             'window_duration_s', 'overlap_duration_s', 'oom_retry_window_s', 'embedding_model_id',
             'enable_speaker_similarity', 'embedding_similarity_threshold', 'overlap_match_threshold',

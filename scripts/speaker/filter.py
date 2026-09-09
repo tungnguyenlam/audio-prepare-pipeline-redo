@@ -6,14 +6,14 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import LoggingArgumentParser, identity, probe, progress, read_json, write_json
+from _common.files import LoggingArgumentParser, ROOT, identity, infer_audio_family, probe, progress, read_json, write_json
 from _common.segments import normalize_turns, source_path
 
 
 def main() -> int:
     p = LoggingArgumentParser(description=__doc__)
     p.add_argument('--input-manifest', type=Path, required=True, help='Manifest with scored segments')
-    p.add_argument('--output-manifest', type=Path, required=True, help='Filtered output manifest')
+    p.add_argument('--output-manifest', type=Path, help='Filtered output manifest (default: dynamic per family under .data/speaker/filter/<family>/segments.json)')
     p.add_argument('--threshold', type=float, default=0.6, help='Minimum similarity threshold')
     p.add_argument('--min-duration-s', type=float, default=1.5, help='Minimum segment duration in seconds')
     p.add_argument('--exclude-overlap', action=argparse.BooleanOptionalAction, default=True, help='Exclude turns overlapping other speakers')
@@ -40,7 +40,7 @@ def main() -> int:
         kept_turns.append(turn)
 
     normalized = normalize_turns(kept_turns, source)
-    dest = args.output_manifest.resolve()
+    dest = args.output_manifest.resolve() if args.output_manifest is not None else (ROOT / '.data/speaker/filter' / infer_audio_family(args.input_manifest) / 'segments.json').resolve()
     metadata = {
         'schema_version': 1,
         'source': identity(source),

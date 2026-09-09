@@ -21,9 +21,8 @@ from typing import Any
 
 import argparse
 import contextlib
-import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import batch, convert, identity, inputs, parser, positive_int, probe, request, safe_name
+from _common.files import batch, convert, identity, inputs, manifest_destinations, parser, positive_int, probe, request, safe_name
 from _common.segments import export, manifest_complete
 
 logger = logging.getLogger(__name__)
@@ -418,9 +417,7 @@ def main() -> int:
         p.error('--max-duration-s must be finite and positive')
     if args.min_duration_s is not None and args.max_duration_s is not None and args.min_duration_s > args.max_duration_s:
         p.error('--min-duration-s cannot exceed --max-duration-s')
-    pairs = [(src, args.output_dir.resolve() / safe_parent(rel) / safe_name(rel.stem) / 'segments.json') for src, rel in inputs(args)]
-    if len({dest for _, dest in pairs}) != len(pairs):
-        p.error('Multiple inputs map to the same output directory')
+    pairs = manifest_destinations(args)
     parameters = {key: getattr(args, key) for key in ('device', 'num_speakers', 'batch_size', 'vad_model', 'speaker_model', 'max_num_speakers', 'num_workers', 'vad_onset', 'vad_offset', 'vad_pad_onset_s', 'vad_pad_offset_s', 'vad_min_duration_on_s', 'vad_min_duration_off_s')}
     args.work_dir.mkdir(parents=True, exist_ok=True)
     with contextlib.redirect_stdout(sys.stderr):
