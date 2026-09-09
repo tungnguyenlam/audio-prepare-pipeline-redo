@@ -125,9 +125,16 @@ def infer_audio_family(path: Path) -> str:
         except (ValueError, OSError):
             pass
 
+    manifest_path = (path / 'segments.json') if path.is_dir() else (path.parent / 'segments.json')
+    if manifest_path.is_file() and path != manifest_path:
+        try:
+            return infer_audio_family(manifest_path)
+        except Exception:
+            pass
+
     stem = path.stem
     if stem in {'segments', 'output', 'source', 'vocals', 'accompaniment', 'mixture'}:
-        if path.parent.name and path.parent.name not in {'out', 'work', 'download', 'separate', 'diarize'}:
+        if path.parent.name and path.parent.name not in {'out', 'work', 'download', 'separate', 'diarize', 'verify'}:
             return path.parent.name
 
     # Check for <id>_<title10> pattern (e.g. 11-char YT id, or id_title10-<sample_rate>)
@@ -137,6 +144,12 @@ def infer_audio_family(path: Path) -> str:
     m = re.match(r'^([a-zA-Z0-9_-]+?)_([a-zA-Z0-9-]{1,10})-\d+(?:_.*)?$', stem)
     if m:
         return f"{m.group(1)}_{m.group(2)}"
+
+    # Check for parent directory family pattern (e.g. 11-char YT id, or id_title10)
+    if path.parent.name and path.parent.name not in {'out', 'work', 'download', 'separate', 'diarize', 'verify', 'audio', '.'}:
+        m_parent = re.match(r'^([a-zA-Z0-9_-]{11})(?:_([a-zA-Z0-9-]{1,10}))?(?:_.*)?$', path.parent.name)
+        if m_parent:
+            return f"{m_parent.group(1)}_{m_parent.group(2)}" if m_parent.group(2) else m_parent.group(1)
 
     return safe_name(stem)
 
@@ -196,15 +209,20 @@ def inputs(args: argparse.Namespace) -> list[tuple[Path, Path]]:
 def destinations(args: argparse.Namespace, suffix: str = '', extension: str = '.wav') -> list[tuple[Path, Path]]:
     safe_parent = lambda rel: Path(*[safe_name(p) for p in rel.parent.parts]) if rel.parent.parts else Path('.')
     explicit_out = getattr(args, 'output_dir', None)
+    if explicit_out is not None:
+        out_root = explicit_out.resolve()
+    elif getattr(args, 'input_dir', None) is not None:
+        out_root = resolve_output_dir(args, args.input_dir)
+    else:
+        out_root = None
+
     pairs = []
     for src, rel in inputs(args):
         if getattr(args, 'output_file', None) is not None:
             dest = args.output_file.resolve()
-        elif explicit_out is not None:
-            dest = (explicit_out.resolve() / safe_parent(rel) / f'{safe_name(rel.stem)}{suffix}{extension}').resolve()
         else:
-            out_dir = resolve_output_dir(args, src)
-            dest = (out_dir / f'{safe_name(rel.stem)}{suffix}{extension}').resolve()
+            base_dir = out_root if out_root is not None else resolve_output_dir(args, src)
+            dest = (base_dir / safe_parent(rel) / f'{safe_name(rel.stem)}{suffix}{extension}').resolve()
         pairs.append((src, dest))
     sources = {src.resolve() for src, _ in pairs}
     seen = set()

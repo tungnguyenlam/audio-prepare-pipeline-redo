@@ -259,7 +259,8 @@ uv run python scripts/purity/segment.py --input-manifest .data/aligned.json --wo
 
 Every verifier accepts `--input-file` or `--input-dir`. Pair a single input
 with either an exact `--output-file` or a derived path under `--output-dir`;
-directory input requires `--output-dir`. Model prompts are placed before audio
+if `--output-dir` is omitted, outputs default dynamically per audio family
+(`.data/verify/<model>/<family>/`). Model prompts are placed before audio
 in multimodal messages.
 
 ```bash
