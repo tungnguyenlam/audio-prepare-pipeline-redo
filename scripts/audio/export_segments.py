@@ -17,17 +17,28 @@ def main() -> int:
     p.add_argument('--work-dir', type=Path, default=ROOT / '.data/export_segments/work')
     p.add_argument('--sample-rate', type=positive_int)
     p.add_argument('--channels', type=int, choices=(1, 2), default=1)
+    p.add_argument('--min-duration-s', type=float, default=2.0, help='Minimum turn duration in seconds to keep and export (default: 2.0)')
+    p.add_argument('--max-duration-s', type=float, default=15.0, help='Maximum turn duration in seconds to keep and export (default: 15.0)')
     p.add_argument('--overwrite', action='store_true')
     args = p.parse_args()
+    import math
+    if args.min_duration_s is not None and (not math.isfinite(args.min_duration_s) or args.min_duration_s < 0):
+        p.error('--min-duration-s must be finite and non-negative')
+    if args.max_duration_s is not None and (not math.isfinite(args.max_duration_s) or args.max_duration_s <= 0):
+        p.error('--max-duration-s must be finite and positive')
+    if args.min_duration_s is not None and args.max_duration_s is not None and args.min_duration_s > args.max_duration_s:
+        p.error('--min-duration-s cannot exceed --max-duration-s')
     manifest = read_json(args.input_manifest)
     source = source_path(manifest, args.input_manifest, args.input_file)
     destination = args.output_dir.resolve() / 'segments.json'
     if destination == args.input_manifest.resolve() or source.is_relative_to(destination.parent):
         p.error('Output directory must be separate from the input manifest and source')
     wanted = request(identity(source), 'export_segments', {'input_manifest': identity(args.input_manifest),
-                     'sample_rate': args.sample_rate, 'channels': args.channels}, manifest.get('model'))
+                     'sample_rate': args.sample_rate, 'channels': args.channels,
+                     'min_duration_s': args.min_duration_s, 'max_duration_s': args.max_duration_s}, manifest.get('model'))
     if not manifest_complete(destination, wanted, args.overwrite):
-        export({**wanted, 'turns': manifest['turns']}, source, destination, args.work_dir, args.sample_rate, args.channels)
+        export({**wanted, 'turns': manifest['turns']}, source, destination, args.work_dir, args.sample_rate, args.channels,
+               args.min_duration_s, args.max_duration_s)
     print(destination)
     return 0
 

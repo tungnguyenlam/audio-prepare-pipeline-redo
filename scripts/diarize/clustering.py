@@ -408,7 +408,16 @@ def main() -> int:
     p.add_argument('--vad-pad-offset-s', type=float, default=0.2)
     p.add_argument('--vad-min-duration-on-s', type=float, default=0.5)
     p.add_argument('--vad-min-duration-off-s', type=float, default=0.5)
+    p.add_argument('--min-duration-s', type=float, default=2.0, help='Minimum turn duration in seconds to keep and export (default: 2.0)')
+    p.add_argument('--max-duration-s', type=float, default=15.0, help='Maximum turn duration in seconds to keep and export (default: 15.0)')
     safe_parent = lambda rel: Path(*[safe_name(p) for p in rel.parent.parts]) if rel.parent.parts else Path('.')
+    args = p.parse_args()
+    if args.min_duration_s is not None and (not math.isfinite(args.min_duration_s) or args.min_duration_s < 0):
+        p.error('--min-duration-s must be finite and non-negative')
+    if args.max_duration_s is not None and (not math.isfinite(args.max_duration_s) or args.max_duration_s <= 0):
+        p.error('--max-duration-s must be finite and positive')
+    if args.min_duration_s is not None and args.max_duration_s is not None and args.min_duration_s > args.max_duration_s:
+        p.error('--min-duration-s cannot exceed --max-duration-s')
     pairs = [(src, args.output_dir.resolve() / safe_parent(rel) / safe_name(rel.stem) / 'segments.json') for src, rel in inputs(args)]
     if len({dest for _, dest in pairs}) != len(pairs):
         p.error('Multiple inputs map to the same output directory')
@@ -421,12 +430,13 @@ def main() -> int:
     parameters = {key: str(value.resolve()) if isinstance(value, Path) else value for key, value in parameters.items()}
     def process(src, dest):
         rate = args.sample_rate or probe(src)['sample_rate']
-        wanted = request(identity(src), 'diarize', {**parameters, 'sample_rate': rate, 'channels': args.channels}, 'clustering')
+        wanted = request(identity(src), 'diarize', {**parameters, 'sample_rate': rate, 'channels': args.channels,
+                         'min_duration_s': args.min_duration_s, 'max_duration_s': args.max_duration_s}, 'clustering')
         if manifest_complete(dest, wanted, args.overwrite):
             return
         turns = model.diarize(src)
         export({**wanted, 'speaker_ids': sorted({t['speaker_id'] for t in turns}), 'turns': turns},
-               src, dest, args.work_dir, rate, args.channels)
+               src, dest, args.work_dir, rate, args.channels, args.min_duration_s, args.max_duration_s)
     try:
         return batch(pairs, process)
     finally:

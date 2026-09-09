@@ -54,14 +54,25 @@ def manifest_complete(path: Path, wanted: dict, overwrite: bool) -> bool:
     return False
 
 
-def export(manifest: dict, source: Path, destination: Path, work_dir: Path, sample_rate: int | None = None, channels: int = 1) -> None:
+def export(manifest: dict, source: Path, destination: Path, work_dir: Path, sample_rate: int | None = None, channels: int = 1,
+           min_duration_s: float | None = None, max_duration_s: float | None = None) -> None:
     import soundfile as sf
     info = probe(source)
     turns = normalize_turns(manifest['turns'], source)
+    params = manifest.get('parameters', {})
+    if min_duration_s is None:
+        min_duration_s = params.get('min_duration_s', 2.0)
+    if max_duration_s is None:
+        max_duration_s = params.get('max_duration_s', 15.0)
+    if min_duration_s is not None:
+        turns = [t for t in turns if (t['end_s'] - t['start_s']) >= min_duration_s]
+    if max_duration_s is not None:
+        turns = [t for t in turns if (t['end_s'] - t['start_s']) <= max_duration_s]
     turns_count = len(turns)
     progress('EXPORT', f'Exporting {turns_count} clip(s) from {source.name}')
     output = {**manifest, 'timestamp_origin': 'diarized_input', 'source_sample_rate': info['sample_rate'],
-              'sample_rate': sample_rate or info['sample_rate'], 'channels': channels, 'turns': turns, 'complete': False}
+              'sample_rate': sample_rate or info['sample_rate'], 'channels': channels, 'turns': turns,
+              'speaker_ids': sorted({t['speaker_id'] for t in turns}), 'complete': False}
     destination.parent.mkdir(parents=True, exist_ok=True)
     # An interrupted export is recognizable and can be retried.
     write_json(destination, output)

@@ -124,14 +124,17 @@ bash scripts/separate/mvsep_mdx23.sh --input-file .data/source.wav --stem vocals
 ### Speaker diarization
 
 ```bash
-# Sortformer diarization (produces <stem>/segments.json and clips)
+# Sortformer diarization (defaults to exporting clips between 2s and 15s)
 bash scripts/diarize/sortformer.sh --input-dir .data/separated --output-dir .data/turns
 
-# Pyannote Community-1 / 3.1
+# Override clip duration bounds when needed
+bash scripts/diarize/sortformer.sh --input-file .data/source.wav --output-dir .data/turns --min-duration-s 1.0 --max-duration-s 30.0
+
+# Pyannote Community-1 / 3.1 (default 2s to 15s)
 bash scripts/diarize/pyannote_community1.sh --input-file .data/source.wav --output-dir .data/turns
 bash scripts/diarize/pyannote_31.sh --input-file .data/source.wav --output-dir .data/turns
 
-# NeMo Clustering / 3D-Speaker / DiariZen
+# NeMo Clustering / 3D-Speaker / DiariZen (all default to 2s to 15s)
 bash scripts/diarize/clustering.sh --input-file .data/source.wav --output-dir .data/turns
 bash scripts/diarize/threed_speaker.sh --input-file .data/source.wav --output-dir .data/turns
 bash scripts/diarize/diarizen.sh --input-file .data/source.wav --output-dir .data/turns
