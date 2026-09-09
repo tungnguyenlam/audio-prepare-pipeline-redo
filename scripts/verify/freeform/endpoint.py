@@ -6,14 +6,18 @@ import os
 import sys
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
 VERIFY_DIR = Path(__file__).resolve().parents[1]
-SCRIPTS_DIR = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(VERIFY_DIR))
-sys.path.insert(0, str(SCRIPTS_DIR))
 
-from _common.files import destinations, parser  # noqa: E402
+from scripts._common.files import destinations, parser  # noqa: E402
 from endpoint import EndpointVerifier  # noqa: E402
-from freeform.artifacts import add_prompt_arguments, load_prompts, run_freeform  # noqa: E402
+from scripts.verify.freeform.artifacts import (  # noqa: E402
+    add_prompt_arguments,
+    load_prompts,
+    run_freeform,
+)
 
 
 def main() -> int:

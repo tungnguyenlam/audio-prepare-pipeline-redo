@@ -8,11 +8,23 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Callable
 
-from _common.files import batch, digest, identity, positive_int, read_json, request, write_json
+REPO_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO_ROOT))
+
+from scripts._common.files import (  # noqa: E402
+    batch,
+    digest,
+    identity,
+    positive_int,
+    read_json,
+    request,
+    write_json,
+)
 
 
 def read_prompt(path: Path, label: str = "Prompt") -> str:

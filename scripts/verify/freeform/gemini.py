@@ -5,13 +5,13 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
 VERIFY_DIR = Path(__file__).resolve().parents[1]
-SCRIPTS_DIR = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(VERIFY_DIR))
-sys.path.insert(0, str(SCRIPTS_DIR))
 
-from _common.files import destinations, parser, positive_int  # noqa: E402
-from freeform.artifacts import (  # noqa: E402
+from scripts._common.files import destinations, parser, positive_int  # noqa: E402
+from scripts.verify.freeform.artifacts import (  # noqa: E402
     add_prompt_arguments,
     load_prompts,
     run_freeform,
