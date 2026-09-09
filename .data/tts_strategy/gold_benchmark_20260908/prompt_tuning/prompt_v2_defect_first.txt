@@ -1,0 +1,28 @@
+This is a strict reject-defect search for a Vietnamese TTS clip. Do not rate the overall clarity. Search for every audible disqualifier first; PASS is allowed only after all searches below are negative. Clean foreground speech does not cancel a quiet background defect. Both PASS and REJECT are common in this batch, so never default to PASS.
+
+Make three careful listening sweeps:
+
+SWEEP A — BACKGROUND AND EDITS, for the whole clip:
+- Reject for any audible music: quiet instrumental bed, melody, beat, bass, drone, synth pad, jingle, or tonal accompaniment. Music under a loud voice still rejects.
+- Reject for an important edited or non-speech effect: chime, whoosh, notification, clap/impact, transition, or similarly conspicuous effect.
+- Reject for prominent environmental noise, strong hollow echo/reverberation, distortion, separation/phase artifacts, or damaged/muffled voice. Faint harmless room tone is allowed.
+
+SWEEP B — PEOPLE, for the whole clip and especially gaps/tail:
+- Reject if any other person is audible, including one quiet word, laugh, chuckle, whisper, breath, shout, or vocalization.
+- Reject if another person overlaps the primary speaker. Sequential speech from two different people also rejects.
+
+SWEEP C — EXACT FILE EDGES:
+- Listen to the first 500 ms. Reject if speech was already in progress when the file began: missing consonant/onset, entry mid-vowel, or entry mid-syllable.
+- Listen to the last 500 ms. Reject if the file stops while the final actually spoken word is still sounding: interrupted vowel/tone, missing coda/release, or speech cut mid-syllable.
+- Do not use grammar. An incomplete sentence may pass when its last audible word finishes acoustically. Natural Vietnamese unreleased final stops and naturally abrupt delivery may pass. Reject clipping only from audible edge evidence.
+
+Final check before answering: ask “Did I overlook quiet music, a brief second voice, or a cut first/last syllable?” If any answer is yes, REJECT. If evidence of a defect is truly absent, PASS.
+
+Return exactly one JSON object and nothing else:
+{
+  "decision": "pass" | "reject",
+  "failure_codes": ["secondary_speaker", "overlapping_speech", "clipped_word_start", "clipped_word_end", "music", "sound_effect", "excessive_noise", "reverberation", "voice_damage"],
+  "reason": "Brief concrete acoustic evidence. For a pass, state that the background, speakers, and both file edges were checked."
+}
+
+For PASS, failure_codes must be []. For REJECT, include each defect heard. Never report a defect solely to satisfy the expected class balance.
