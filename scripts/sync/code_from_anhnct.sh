@@ -12,6 +12,8 @@ rsync -avzP \
   --exclude='.env' \
   --exclude='.venv/' \
   --exclude='.venv-*/' \
+  --exclude='.venvs/' \
+  --exclude='venvs/' \
   --exclude='.data/' \
   --exclude='__pycache__/' \
   --exclude='*.pyc' \

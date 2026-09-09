@@ -5,7 +5,7 @@ Instructions for coding agents working in this repository.
 ## Hard rules
 
 - Do not write or run test cases unless the user explicitly instructed.
-- Do not commit, push, or amend unless the user asked.
+- Commit and push changes after finishing each task.
 - Do not add orchestration that chains crawl → separate → diarize → mix. Callers compose the standalone commands.
 - Keep runtime artifacts out of git. Write downloads, stems, cuts, and plots under `.data/` (gitignored). Do not commit `.wav` / `.mp3` / similar media.
 - Update the documentation affected by every code change. Archive stale documents when working in their area, but do not expand an otherwise focused change into an unrelated documentation rewrite. Documentation must accurately reflect the current pipeline, APIs, models, and interfaces.

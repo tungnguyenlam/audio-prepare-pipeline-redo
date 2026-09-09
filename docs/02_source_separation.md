@@ -102,7 +102,7 @@ High-performance MDX23 vocal separator runner:
 - **Defaults:** Configured with a resource-conscious single Kim ONNX model (`single_onnx=True`, `use_kim_model_1=False` selects Kim checkpoint 2) and `0.25` overlap for high speed and low VRAM footprint.
 - **Ensemble Mode:** High-quality vocal separation can be enabled by passing `single_onnx=False`, `overlap_large=0.6`, and `overlap_small=0.5`. `large_gpu=True` opts into higher-VRAM settings; `chunk_size` overrides the CLI chunking; `only_vocals` defaults from `two_stems` (`vocals`/`instrumental` → vocals-only).
 - **Chunked Processing:** Long audio files are split into bounded 10-minute WAV chunks (`max_segment_seconds=600`) to prevent OOM errors, with the separated stem concatenated afterward. Pass `None` to process in one pass.
-- **Progress Tracking:** The internal CLI prints `PROGRESS: N%` lines, allowing the web task queue to report smooth percentage updates.
+- **Progress Tracking:** The internal CLI prints `PROGRESS: N%` lines, allowing callers and progress monitors to report smooth percentage updates.
 - **Subprocess Isolation:** Device selection (e.g. `device="cuda:1"`) is isolated using `CUDA_VISIBLE_DEVICES` so child processes strictly execute on the specified physical GPU.
 - Raises `MVSepMDX23Error` if PyTorch CUDA or `onnxruntime-gpu` (`CUDAExecutionProvider`) is missing when CUDA is requested, if `max_segment_seconds <= 0`, for unsupported `two_stems`, or if the subprocess exits non-zero.
 

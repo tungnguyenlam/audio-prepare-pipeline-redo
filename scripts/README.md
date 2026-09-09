@@ -23,6 +23,7 @@ For detailed command options and usage examples, see the [Command Cookbook and C
 
 ## Environment Setup Scripts
 
-- `setup_worker_envs.sh`: Sets up isolated worker environments for Sortformer, 3D-Speaker, DiariZen, and VibeVoice.
-- `setup_kimi_env.sh`: Sets up isolated environment for Kimi-Audio.
-- `setup_minicpmo_env.sh`: Sets up isolated environment for MiniCPM-o.
+Grouped and organized under [`envs/`](../envs/) (with forwarding wrappers in `scripts/`):
+- `envs/setup_worker_envs.sh`: Sets up isolated worker environments for Sortformer, 3D-Speaker, DiariZen, and VibeVoice.
+- `envs/setup_kimi_env.sh`: Sets up isolated environment for Kimi-Audio.
+- `envs/setup_minicpmo_env.sh`: Sets up isolated environment for MiniCPM-o.

@@ -1,6 +1,6 @@
 # 07. Data Contracts & Serialization Schemas
 
-[← 06. Web Applications](06_web_applications.md) | [Docs Index](README.md)
+[← 05. Benchmark & Mixing](05_benchmark_and_mixing.md) | [Docs Index](README.md)
 
 ---
 
@@ -328,9 +328,9 @@ total.
 
 ---
 
-## 7. Pipeline `AudioItem` Schema
+### 7. Pipeline `AudioItem` Schema
 
-**Defined in:** [`src/web_pipeline/dataset_manager.py`](../src/web_pipeline/dataset_manager.py). Stored in `.data/pipeline/dataset_registry.json` (`REGISTRY_FILE`; sibling `datasets.json`, `exports/`, `imports/`, `stems/`):
+Stored in `.data/pipeline/dataset_registry.json` (`REGISTRY_FILE`; sibling `datasets.json`, `exports/`, `imports/`, `stems/`):
 - Identity: `id`, `source_id`, `title`, `path` (repo-relative), `dataset` (default `"Default"`), `duration`, `sample_rate`, `channels`, `native_sample_rate`, `format`, `source_url`, channel fields.
 - `custom_tags`: User-editable tags; `system_tags`: machine-managed namespaced tags (`type:`, `stage:`, `speaker:`, `profile:`, `verification:`; legacy `tags` migrated on load). `tags` property returns both combined.
 - `stems`: Mapping of model → `{stem_name: path}`.
@@ -342,7 +342,7 @@ total.
 
 ## 8. Decoupled Labeled Quality Dataset Schema
 
-**Defined in:** [`src/web_studio/labeler_handler.py`](../src/web_studio/labeler_handler.py). Stored in `.data/labeled_datasets/<dataset_name>/`:
+Stored in `.data/labeled_datasets/<dataset_name>/`:
 - **Audio Directory (`audio/`):** Contains standalone 16-bit PCM `.wav` cuts (`<source_id>_<speaker_id>_<start_ms>_<end_ms>.wav`) sliced directly from source recordings. The audio files are physically independent of any original crawler or diarization results.
 - **Manifest (`manifest.json`):**
   ```json
@@ -369,7 +369,7 @@ total.
 
 ## 9. Quality Classifier Checkpoint & Metrics Schema
 
-**Defined in:** [`src/web_studio/labeler_handler.py`](../src/web_studio/labeler_handler.py). Stored in `.data/diarization/models/<dataset_name>_<run_id>/`:
+Stored in `.data/diarization/models/<dataset_name>_<run_id>/`:
 - **Model Weights (`best_head.pt`, `best_backbone.pt`):**
   - `best_head.pt`: PyTorch state dict of the boundary-aware MLP projection head and LayerNorm layers.
   - `best_backbone.pt`: PyTorch state dict of fine-tuned backbone transformer layers (saved during `full` or `top_layers` training).

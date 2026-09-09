@@ -3,7 +3,7 @@
 Cascaded audio-only pipeline from
 https://github.com/modelscope/3D-Speaker : FSMN VAD, CAM++ speaker embeddings,
 then spectral clustering, with optional pyannote overlap refinement. Requires
-the isolated environment pinned in ``requirements-3dspeaker.txt``. The
+the isolated environment pinned in ``envs/requirements-3dspeaker.txt``. The
 ``speakerlab`` sources are shallow-cloned into ``.data/3d-speaker`` on first
 load when missing (``speakerlab`` is not published as a package).
 """
@@ -265,7 +265,7 @@ class _ThreeDSpeaker:
         except ImportError as exc:
             raise RuntimeError(
                 "3D-Speaker diarizer dependencies are unavailable. Install the "
-                "pinned requirements-3dspeaker.txt dependencies in an isolated "
+                "pinned envs/requirements-3dspeaker.txt dependencies in an isolated "
                 "environment."
             ) from exc
 
@@ -280,7 +280,7 @@ class _ThreeDSpeaker:
                 "speakerlab is unavailable. Clone "
                 "https://github.com/modelscope/3D-Speaker into .data/3d-speaker "
                 "or set THREEDSPEAKER_ROOT, and install "
-                "requirements-3dspeaker.txt."
+                "envs/requirements-3dspeaker.txt."
             ) from exc
 
         target_device = self._resolve_device(torch)

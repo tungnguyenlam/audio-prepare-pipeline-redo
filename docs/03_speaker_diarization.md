@@ -73,7 +73,7 @@ NVIDIA NeMo Sortformer model:
 - **Windowed Inference:** Processes up to 6 minutes per window (`window_duration_s=360.0`) with a 1-minute overlap (`overlap_duration_s=60.0`) between adjacent windows. Automatic fallback to 3-minute windows (`oom_retry_window_s=180.0`) if GPU OOM occurs.
 - **Hysteresis Post-Processing:** Configurable `onset=0.74`, `offset=0.64`, `pad_onset_s=0.12`, `pad_offset_s=0.20`.
 - **Pre-Inference Enrollment:** `diarize()` (not the constructor) accepts `enrollment_name` and `enrollment_clips`. Embeds clean reference clips with TitaNet before target inference; seeds global speaker 0 during window stitching.
-- **Worker Isolation:** `SortformerWorkerDiarizer` launches `.venv-sortformer/bin/python -m src.diarization.sortformer_worker` to keep NeMo out of the web server runtime. Supports `cancel()`.
+- **Worker Isolation:** Sortformer runs in an isolated Python environment (`.venvs/sortformer`) to keep NeMo isolated from other pipeline dependencies. Supports `cancel()`.
 
 ---
 

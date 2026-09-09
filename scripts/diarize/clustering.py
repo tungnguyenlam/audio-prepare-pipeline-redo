@@ -3,7 +3,7 @@
 Cascaded pipeline from the NeMo speaker-diarization models documentation:
 MarbleNet voice-activity detection, TitaNet speaker embeddings, then spectral
 clustering. Requires the isolated NeMo environment pinned in
-``requirements-sortformer.txt``.
+``envs/requirements-sortformer.txt``.
 """
 
 from __future__ import annotations
@@ -112,7 +112,7 @@ class _Clustering:
         except ImportError as exc:
             raise RuntimeError(
                 "Clustering diarizer dependencies are unavailable. Install the "
-                "pinned requirements-sortformer.txt dependencies in an isolated "
+                "pinned envs/requirements-sortformer.txt dependencies in an isolated "
                 "NeMo environment."
             ) from exc
 
@@ -127,7 +127,7 @@ class _Clustering:
         except (ImportError, AttributeError) as exc:
             raise RuntimeError(
                 "Clustering diarizer dependencies are unavailable. Install the "
-                "pinned requirements-sortformer.txt dependencies in an isolated "
+                "pinned envs/requirements-sortformer.txt dependencies in an isolated "
                 "NeMo environment."
             ) from exc
 

@@ -11,8 +11,10 @@ background worker, or hidden queue.
 
 ```bash
 # Setup lightweight execution environment
-uv venv --python 3.13 .venv-audio
-uv pip install --python .venv-audio/bin/python -r scripts/requirements-audio.txt
+./envs/setup_worker_envs.sh audio
+# or manually:
+# uv venv --python 3.13 .venvs/audio
+# uv pip install --python .venvs/audio/bin/python -r envs/requirements-audio.txt
 
 # Inspect an audio file
 uv run python scripts/audio/info.py --input-file .data/source.wav

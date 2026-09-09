@@ -16,59 +16,59 @@ Provision environments automatically with hardware auto-detection (AMD ROCm vs N
 
 ```bash
 # Provision all core environments (audio, separation, pyannote, verify, align)
-./scripts/setup_worker_envs.sh core
+./envs/setup_worker_envs.sh core
 
 # Or provision a specific environment:
-./scripts/setup_worker_envs.sh separation
-./scripts/setup_worker_envs.sh pyannote
-./scripts/setup_worker_envs.sh diarizen
-./scripts/setup_worker_envs.sh sortformer
-./scripts/setup_worker_envs.sh 3dspeaker
-./scripts/setup_worker_envs.sh verify
+./envs/setup_worker_envs.sh separation
+./envs/setup_worker_envs.sh pyannote
+./envs/setup_worker_envs.sh diarizen
+./envs/setup_worker_envs.sh sortformer
+./envs/setup_worker_envs.sh 3dspeaker
+./envs/setup_worker_envs.sh verify
 
 # Check health and hardware acceleration across all environments:
-./scripts/setup_worker_envs.sh status
+./envs/setup_worker_envs.sh status
 ```
 
 Or provision manually via `uv`:
 
 ```bash
-uv venv --python 3.13 .venv-audio
-uv pip install --python .venv-audio/bin/python -r scripts/requirements-audio.txt
+uv venv --python 3.13 .venvs/audio
+uv pip install --python .venvs/audio/bin/python -r envs/requirements-audio.txt
 
 # On NVIDIA GPUs with driver < 580 (CUDA <= 12.8), specify the matching wheel index:
-uv venv --python 3.13 .venv-separation
-uv pip install --python .venv-separation/bin/python --index-url https://download.pytorch.org/whl/cu128 torch torchaudio
-uv pip install --python .venv-separation/bin/python -r scripts/requirements-separation.txt
+uv venv --python 3.13 .venvs/separation
+uv pip install --python .venvs/separation/bin/python --index-url https://download.pytorch.org/whl/cu128 torch torchaudio
+uv pip install --python .venvs/separation/bin/python -r envs/requirements-separation.txt
 
-uv venv --python 3.13 .venv-pyannote
-uv pip install --python .venv-pyannote/bin/python --index-url https://download.pytorch.org/whl/cu128 torch torchaudio
-uv pip install --python .venv-pyannote/bin/python -r scripts/requirements-pyannote.txt
+uv venv --python 3.13 .venvs/pyannote
+uv pip install --python .venvs/pyannote/bin/python --index-url https://download.pytorch.org/whl/cu128 torch torchaudio
+uv pip install --python .venvs/pyannote/bin/python -r envs/requirements-pyannote.txt
 
-uv venv --python 3.13 .venv-verify
-uv pip install --python .venv-verify/bin/python --index-url https://download.pytorch.org/whl/cu128 torch torchaudio
-uv pip install --python .venv-verify/bin/python -r scripts/requirements-verify.txt
+uv venv --python 3.13 .venvs/verify
+uv pip install --python .venvs/verify/bin/python --index-url https://download.pytorch.org/whl/cu128 torch torchaudio
+uv pip install --python .venvs/verify/bin/python -r envs/requirements-verify.txt
 ```
 
 | Launchers | Default environment | Interpreter override |
 |---|---|---|
-| `separate/{htdemucs,htdemucs_ft,bs_roformer,mel_roformer,mvsep_mdx23}.sh` | `.venv-separation` | `SEPARATION_PYTHON` |
-| `diarize/{pyannote_31,pyannote_community1}.sh` | `.venv-pyannote` | `DIARIZATION_PYTHON` |
-| `diarize/{sortformer,clustering}.sh` | `.venv-sortformer` | `DIARIZATION_PYTHON` |
-| `diarize/threed_speaker.sh` | `.venv-3dspeaker` | `DIARIZATION_PYTHON` |
-| `diarize/diarizen.sh` | `.venv-diarizen` | `DIARIZATION_PYTHON` |
-| `speaker/{score,purity}.sh` | `.venv-pyannote` | `DIARIZATION_PYTHON` |
-| `purity/align.sh` | `.venv-audio` | `ALIGN_PYTHON` |
-| `verify/{hf,endpoint,unsloth,gemini}.sh` | `.venv-verify` | `VERIFIER_PYTHON` |
-| `verify/vllm.sh` | `.venv-vllm` | `VLLM_PYTHON` |
-| `verify/moss.sh` | `.venv-moss` | `VERIFIER_PYTHON` |
-| `verify/minicpm.sh` | `.venv-minicpmo` | `VERIFIER_PYTHON` |
-| `verify/kimi.sh` | `.venv-kimi` | `VERIFIER_PYTHON` |
-| `verify/vibevoice.sh` | `.venv-vibevoice` | `VERIFIER_PYTHON` |
+| `separate/{htdemucs,htdemucs_ft,bs_roformer,mel_roformer,mvsep_mdx23}.sh` | `.venvs/separation` (fallback: `.venvs/main`) | `SEPARATION_PYTHON` |
+| `diarize/{pyannote_31,pyannote_community1}.sh` | `.venvs/pyannote` (fallback: `.venvs/main`) | `DIARIZATION_PYTHON` |
+| `diarize/{sortformer,clustering}.sh` | `.venvs/sortformer` | `DIARIZATION_PYTHON` |
+| `diarize/threed_speaker.sh` | `.venvs/3dspeaker` | `DIARIZATION_PYTHON` |
+| `diarize/diarizen.sh` | `.venvs/diarizen` | `DIARIZATION_PYTHON` |
+| `speaker/{score,purity}.sh` | `.venvs/pyannote` (fallback: `.venvs/main`) | `DIARIZATION_PYTHON` |
+| `purity/align.sh` | `.venvs/align` (fallback: `.venvs/main`) | `ALIGN_PYTHON` |
+| `verify/{hf,endpoint,unsloth,gemini}.sh` | `.venvs/verify` (fallback: `.venvs/main`) | `VERIFIER_PYTHON` |
+| `verify/vllm.sh` | `.venvs/vllm` | `VLLM_PYTHON` |
+| `verify/moss.sh` | `.venvs/moss` | `VERIFIER_PYTHON` |
+| `verify/minicpm.sh` | `.venvs/minicpmo` | `VERIFIER_PYTHON` |
+| `verify/kimi.sh` | `.venvs/kimi` | `VERIFIER_PYTHON` |
+| `verify/vibevoice.sh` | `.venvs/vibevoice` | `VERIFIER_PYTHON` |
 
 ## Command cookbook
 
-Run Python commands with `.venv-audio/bin/python` (or `uv run python`).
+Run Python commands with `.venvs/main/bin/python` (or `uv run python`).
 Relative paths below are relative to your current working directory.
 
 ### Download

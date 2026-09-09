@@ -32,7 +32,7 @@ flowchart LR
 | 07 | [Overlap & Purity Models](07_overlap_purity_models.md) | What contamination is, VibeVoice speaker tokens, Gemma/Gemini direct-audio checks, fail-closed vs fail-open | `03_speaker_diarization.md`, `04_zero_contamination_diarization.md` |
 | 08 | [Boundary Hygiene](08_boundary_hygiene.md) | Collars, context-aware shaving, pre/post-roll blockers, energy valleys, jitter, gap merging | `03_speaker_diarization.md`, `04_zero_contamination_diarization.md` |
 | 09 | [Benchmarks & Datasets](09_benchmarks_datasets.md) | How to read DER tables, collar protocol, what each dataset tests, why ViYT-Diar matters | `bench-paper-diarize.md`, `05_benchmark_and_mixing.md` |
-| 10 | [Infrastructure](10_infrastructure.md) | ManagedModel, VRAM/OOM, worker venvs, per-device queues, SSE/telemetry, sidecars | `02_source_separation.md`, `06_web_applications.md`, `07_data_contracts.md` |
+| 10 | [Infrastructure](10_infrastructure.md) | ManagedModel, VRAM/OOM, worker venvs, sidecars | `02_source_separation.md`, `07_data_contracts.md`, `09_amd_gpu_compatibility.md` |
 
 ## How these guides stay regression-free
 

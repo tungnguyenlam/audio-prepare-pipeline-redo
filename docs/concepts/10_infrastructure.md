@@ -1,6 +1,6 @@
 # 10. Infrastructure (models, GPUs, queues — the backstage)
 
-[← Concepts Index](README.md) | [Main docs: 02 lifecycle, 06 web](../02_source_separation.md)
+[← Concepts Index](README.md) | [Main docs: 02 lifecycle](../02_source_separation.md)
 
 Speech models are heavy (GBs of weights, GBs of VRAM). This guide explains the
 machinery that keeps them from colliding.
@@ -34,41 +34,25 @@ Long-file defenses in this repo: 10-min separation chunks
 (`max_segment_seconds=600`), 6-min diarization windows with 1-min overlap,
 alignment CPU retry.
 
-## 3. Worker isolation: why five virtualenvs?
+## 3. Worker isolation: why isolated virtualenvs?
 
 NeMo pins Lightning/HF-Hub versions that fight DiariZen, 3D-Speaker, and
 VibeVoice. Solution: one venv per quarrelsome family, spoken to via
-subprocesses:
+subprocess launchers:
 
 ```mermaid
 flowchart LR
-    WEB["Web server (.venv)"] --> S[".venv-sortformer: Sortformer + clustering"]
-    WEB --> D[".venv-diarizen: DiariZen"]
-    WEB --> T[".venv-3dspeaker: 3D-Speaker (ModelScope)"]
-    WEB --> V[".venv-vibevoice: VibeVoice-ASR"]
+    RUNNER["Pipeline Runner (.venvs/main)"] --> S[".venvs/sortformer: Sortformer + clustering"]
+    RUNNER --> D[".venvs/diarizen: DiariZen"]
+    RUNNER --> T[".venvs/3dspeaker: 3D-Speaker (ModelScope)"]
+    RUNNER --> V[".venvs/vibevoice: VibeVoice-ASR"]
 ```
 
 `CUDA_VISIBLE_DEVICES`, `HIP_VISIBLE_DEVICES`, and `ROCR_VISIBLE_DEVICES` pin each child to its GPU (`cuda:0` vs `cuda:1`), so
 primary/secondary consensus engines truly run in parallel across NVIDIA and AMD ROCm architectures.
-On startup, `scripts/start_web.sh` automatically reconciles any existing worker environments to match the host hardware.
-`cancel()` kills the process group; shutdown reaps `yt-dlp`/`ffmpeg`/Demucs/MVSEP descendants.
+On setup, `envs/setup_worker_envs.sh` automatically reconciles any existing worker environments to match the host hardware.
 
-## 4. Per-device queues + SSE telemetry
-
-```mermaid
-flowchart TD
-    J["Jobs"] --> Q0["FIFO lane cuda:0 (1–8 workers)"]
-    J --> Q1["FIFO lane cuda:1"]
-    J --> QC["FIFO lane cpu (metadata, ZIPs)"]
-    Q0 & Q1 & QC --> SSE["GET /api/events: job states + HW telemetry"]
-    SSE --> UI["SonicPipeline UI + x-Realtime speedup"]
-```
-
-CPU-bound ingest never steals a GPU slot. Telemetry (VRAM, temp, power,
-CPU/RAM/disk, `N× Realtime`) streams over Server-Sent Events alongside job
-updates.
-
-## 5. Persistence that survives sync
+## 4. Persistence that survives sync
 
 ```mermaid
 flowchart LR
@@ -84,5 +68,5 @@ prevent half-written JSON on crash; sidecars rehydrate `Audio.from_file()`.
 ## Where to go next
 
 - Lifecycle API → `../02_source_separation.md` §3.
-- Queues/dataset/telemetry endpoints → `../06_web_applications.md`.
+- Hardware configuration → `../09_amd_gpu_compatibility.md`.
 - Schemas → `../07_data_contracts.md`.

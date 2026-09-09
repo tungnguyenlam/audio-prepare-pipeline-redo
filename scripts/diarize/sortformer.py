@@ -183,7 +183,7 @@ class _Sortformer:
         except ImportError as exc:
             raise RuntimeError(
                 "Sortformer dependencies are unavailable. Install the pinned "
-                "requirements-sortformer.txt dependencies in an isolated NeMo "
+                "envs/requirements-sortformer.txt dependencies in an isolated NeMo "
                 "environment."
             ) from exc
 
@@ -199,7 +199,7 @@ class _Sortformer:
         except (ImportError, AttributeError) as exc:
             raise RuntimeError(
                 "Sortformer dependencies are unavailable. Install the pinned "
-                "requirements-sortformer.txt dependencies in an isolated NeMo "
+                "envs/requirements-sortformer.txt dependencies in an isolated NeMo "
                 "environment."
             ) from exc
 

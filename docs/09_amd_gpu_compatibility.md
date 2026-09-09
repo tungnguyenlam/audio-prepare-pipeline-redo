@@ -103,15 +103,15 @@ These operations do not have native ROCm GPU acceleration in the standard scient
 
 ---
 
-## 5. Automated Hardware Detection & Setup (`start_web.sh` & `setup_worker_envs.sh`)
-
-Running `./scripts/start_web.sh` (or `start_studio.sh` / `start_pipeline.sh`) automatically detects whether the host is equipped with an AMD GPU (ROCm) or NVIDIA GPU (CUDA), sets the required environment flags, and reconciles the virtual environment's PyTorch stack without manual intervention:
-
-- **Primary & Worker Virtual Environments Reconciled:** On server startup, `start_web.sh` inspects the primary `.venv` and **all existing worker environments** (`.venv-sortformer`, `.venv-3dspeaker`, `.venv-vibevoice`, `.venv-diarizen`). If an environment is running mismatched wheels (e.g. CUDA wheels on an AMD machine), it automatically swaps them for the host accelerator without user intervention.
-- **Dedicated Worker Provisioning Script (`setup_worker_envs.sh`):** Use `./scripts/setup_worker_envs.sh [all|sortformer|3dspeaker|vibevoice|diarizen|status]` to bootstrap any or all worker environments with auto-detected hardware configuration.
-- **Automatic AMD ROCm Bootstrap:** Detects AMD GPU hardware, ensures ROCm tools are in `PATH`, sets `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1`, verifies PyTorch HIP support, and installs modular ROCm wheels if needed.
-- **Automatic NVIDIA CUDA Bootstrap:** Detects NVIDIA GPU hardware and ensures CUDA-enabled PyTorch wheels are in place.
-- **Hardware Telemetry Integration:** Automatically polls `rocm-smi` (for AMD) or `nvidia-smi` (for NVIDIA) to display live GPU temperature, utilization, VRAM usage, and power draw in the SonicStudio and SonicPipeline web dashboards.
+### 5. Automated Hardware Detection & Setup (`setup_worker_envs.sh`)
+ 
+ Running `./envs/setup_worker_envs.sh` (or `./scripts/setup_worker_envs.sh`) automatically detects whether the host is equipped with an AMD GPU (ROCm) or NVIDIA GPU (CUDA), sets the required environment flags, and reconciles the virtual environment's PyTorch stack without manual intervention:
+ 
+ - **Primary & Worker Virtual Environments Reconciled:** The provisioning script inspects the primary `.venvs/main` and **all worker environments** (`.venvs/sortformer`, `.venvs/3dspeaker`, `.venvs/vibevoice`, `.venvs/diarizen`). If an environment is running mismatched wheels (e.g. CUDA wheels on an AMD machine), it automatically swaps them for the host accelerator without user intervention.
+ - **Dedicated Worker Provisioning Script (`setup_worker_envs.sh`):** Use `./envs/setup_worker_envs.sh [all|sortformer|3dspeaker|vibevoice|diarizen|status]` to bootstrap any or all worker environments with auto-detected hardware configuration.
+ - **Automatic AMD ROCm Bootstrap:** Detects AMD GPU hardware, ensures ROCm tools are in `PATH`, sets `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1`, verifies PyTorch HIP support, and installs modular ROCm wheels if needed.
+ - **Automatic NVIDIA CUDA Bootstrap:** Detects NVIDIA GPU hardware and ensures CUDA-enabled PyTorch wheels are in place.
+ - **Hardware Telemetry Verification:** Verifies device availability using `rocm-smi` (for AMD) or `nvidia-smi` (for NVIDIA) and tests PyTorch GPU tensor execution.
 
 ### Manual RDNA 4 (`gfx1200` / RX 9060 XT) Setup Reference
 

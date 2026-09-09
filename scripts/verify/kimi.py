@@ -51,7 +51,7 @@ class KimiAudioVerifier:
             except ImportError as e:
                 raise ImportError(
                     f"KimiAudio could not be imported: {e}. "
-                    "Please run `./scripts/setup_kimi_env.sh` to install Kimi-Audio dependencies into .venv-kimi."
+                    "Please run `./envs/setup_kimi_env.sh` to install Kimi-Audio dependencies into .venvs/kimi."
                 ) from e
 
         if self.device.startswith("cuda") and hasattr(torch.cuda, "set_device"):

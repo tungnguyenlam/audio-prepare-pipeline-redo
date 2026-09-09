@@ -1,6 +1,6 @@
 # 05. Benchmark Separation & Audio Mixing
 
-[← 04. Zero Contamination](04_zero_contamination_diarization.md) | [Docs Index](README.md) | [Next: 06. Web Applications →](06_web_applications.md)
+[← 04. Zero Contamination](04_zero_contamination_diarization.md) | [Docs Index](README.md) | [Next: 07. Data Contracts →](07_data_contracts.md)
 
 ---
 
