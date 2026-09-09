@@ -15,6 +15,9 @@ Available execution paths:
 
 None of these commands parses the generated answer. The model may return prose,
 Markdown, JSON, XML, a transcript, or any other text requested by the prompt.
+All three commands share their output and metadata handling through
+`artifacts.py`; its distinct module name prevents it from shadowing the
+repository-wide `scripts/_common` helpers when a command is launched directly.
 
 For each input it writes:
 

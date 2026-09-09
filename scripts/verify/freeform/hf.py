@@ -13,7 +13,7 @@ sys.path.insert(0, str(VERIFY_DIR))
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 from _common.files import destinations, parser, positive_int  # noqa: E402
-from freeform._common import read_prompt, run_freeform  # noqa: E402
+from freeform.artifacts import read_prompt, run_freeform  # noqa: E402
 from hf import DefaultHFVerifier  # noqa: E402
 
 

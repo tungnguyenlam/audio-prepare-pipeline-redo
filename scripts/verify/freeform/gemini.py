@@ -22,7 +22,7 @@ from _common.files import (  # noqa: E402
     positive_int,
 )
 from _gemini_pricing import estimate_gemini_cost, normalize_gemini_usage  # noqa: E402
-from freeform._common import read_prompt, run_freeform  # noqa: E402
+from freeform.artifacts import read_prompt, run_freeform  # noqa: E402
 
 
 MIME_TYPES = {

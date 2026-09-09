@@ -1,4 +1,8 @@
-"""Shared artifact contract for freeform audio-model experiments."""
+"""Shared artifact contract for freeform audio-model experiments.
+
+This module deliberately avoids the name ``_common`` because commands in this
+directory also import the top-level ``scripts/_common`` namespace package.
+"""
 
 from __future__ import annotations
 
