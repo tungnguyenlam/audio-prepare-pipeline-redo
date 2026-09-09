@@ -112,19 +112,33 @@ class DefaultHFVerifier:
 
         self.model.eval()
 
-    def verify(self, audio_path: Path, prompt: str) -> dict[str, Any]:
+    def generate(
+        self,
+        audio_path: Path,
+        prompt: str,
+        *,
+        system_prompt: str | None = None,
+        audio_position: str = "before",
+        max_new_tokens: int = 512,
+        temperature: float = 0.0,
+        top_p: float | None = None,
+    ) -> dict[str, Any]:
         t0 = time.time()
         audio_data = load_audio_waveform(audio_path, target_sr=16000)
 
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "audio", "audio": audio_data},
-                    {"type": "text", "text": prompt},
-                ],
-            }
-        ]
+        audio_part = {"type": "audio", "audio": audio_data}
+        prompt_part = {"type": "text", "text": prompt}
+        content = (
+            [audio_part, prompt_part]
+            if audio_position == "before"
+            else [prompt_part, audio_part]
+        )
+        messages = []
+        if system_prompt is not None:
+            messages.append(
+                {"role": "system", "content": [{"type": "text", "text": system_prompt}]}
+            )
+        messages.append({"role": "user", "content": content})
         if hasattr(self.processor, "apply_chat_template"):
             text = self.processor.apply_chat_template(messages, add_generation_prompt=True)
             inputs = self.processor(text=text, audio=audio_data, return_tensors="pt", sampling_rate=16000)
@@ -140,15 +154,35 @@ class DefaultHFVerifier:
             else torch.autocast(device_type="cpu", dtype=self.dtype)
         )
 
+        generation = {
+            "max_new_tokens": max_new_tokens,
+            "do_sample": temperature > 0,
+        }
+        if temperature > 0:
+            generation["temperature"] = temperature
+            if top_p is not None:
+                generation["top_p"] = top_p
+
         with torch.no_grad(), autocast_ctx:
-            generated_ids = self.model.generate(**inputs, max_new_tokens=512, do_sample=False)
+            generated_ids = self.model.generate(**inputs, **generation)
 
         new_tokens = generated_ids[0][inputs["input_ids"].shape[1] :]
-        output_text = self.processor.decode(new_tokens, skip_special_tokens=True).strip()
+        output_text = self.processor.decode(new_tokens, skip_special_tokens=True)
 
         latency = round(time.time() - t0, 3)
-        parsed = extract_json_payload(output_text)
-        parsed["_latency_s"] = latency
+        return {
+            "text": output_text,
+            "latency_s": latency,
+            "provider_body": {
+                "generated_text": output_text,
+                "generated_token_count": int(new_tokens.shape[-1]),
+            },
+        }
+
+    def verify(self, audio_path: Path, prompt: str) -> dict[str, Any]:
+        generated = self.generate(audio_path, prompt)
+        parsed = extract_json_payload(generated["text"].strip())
+        parsed["_latency_s"] = generated["latency_s"]
         parsed["_engine"] = "huggingface"
         parsed["_model"] = self.model_id
         return parsed

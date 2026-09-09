@@ -186,6 +186,20 @@ bash scripts/verify/gemini.sh --input-dir .data/clips --output-dir .data/verdict
   --model gemini-3.8-flash --reasoning-effort medium --prompt-file prompts/acoustic_defect.txt \
   --concurrency 4 --max-tokens 2048 --temperature 0.0
 
+# Freeform Gemini audio experiment: preserve arbitrary text plus the full API response
+bash scripts/verify/freeform/gemini.sh --input-dir .data/clips \
+  --output-dir .data/verify/freeform-gemini/baseline \
+  --prompt-file .data/prompts/describe_audio.txt --temperature 0.2
+
+# The same freeform contract for an OpenAI-compatible endpoint or local HF model
+bash scripts/verify/freeform/endpoint.sh --input-dir .data/clips \
+  --output-dir .data/verify/freeform-endpoint/baseline \
+  --endpoint http://localhost:8000/v1/chat/completions --model google/gemma-4-E2B-it \
+  --prompt-file .data/prompts/describe_audio.txt
+bash scripts/verify/freeform/hf.sh --input-dir .data/clips \
+  --output-dir .data/verify/freeform-hf/baseline --model-id google/gemma-4-E2B-it \
+  --prompt-file .data/prompts/describe_audio.txt
+
 # Gemma 4 / HF direct-audio verifier (E2B, E4B, 12B) with custom prompt
 bash scripts/verify/hf.sh --input-dir .data/clips --output-dir .data/verdicts/hf \
   --model-id google/gemma-4-E2B-it --prompt-file prompts/acoustic_defect.txt

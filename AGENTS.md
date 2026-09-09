@@ -8,7 +8,17 @@ Instructions for coding agents working in this repository.
 - Do not commit, push, or amend unless the user asked.
 - Do not add orchestration that chains crawl → separate → diarize → mix. Callers compose the standalone commands.
 - Keep runtime artifacts out of git. Write downloads, stems, cuts, and plots under `.data/` (gitignored). Do not commit `.wav` / `.mp3` / similar media.
-- Constantly write and maintain documentation. Proactively update or archive stale docs so that documentation accurately and truthfully reflects the current state of the pipeline, APIs, models, and interfaces. Never let documentation drift behind code changes.
+- Update the documentation affected by every code change. Archive stale documents when working in their area, but do not expand an otherwise focused change into an unrelated documentation rewrite. Documentation must accurately reflect the current pipeline, APIs, models, and interfaces.
+- Never log, persist, or echo credentials. The shared argument parser logs parsed options, so secrets should come from environment variables unless the logging path explicitly redacts them.
+
+## Scope and completion discipline
+
+- Inspect the relevant command, its adjacent backends, shared helpers, launcher, and documented file contract before implementing. Do not declare completion based on the first matching file found.
+- Preserve the grammatical scope of the request. If the user asks about "models", "backends", or a generic capability, inventory the current backend families and either support all relevant families or explicitly state which are unsupported and why. Do not silently implement only one example backend.
+- Before adding a parallel implementation, search for an existing inference, transport, model-loading, file-contract, or retry path that can be reused. Do not copy a production request path into an experimental command merely to avoid a small refactor.
+- Keep raw model generation separate from task-specific parsing and validation. Production verifiers may parse a raw response into a verdict; prompt/format experiments must reuse the same generation path and preserve the unparsed response.
+- A shared helper is justified when at least two current commands use the same behavior. Keep provider-specific payload construction in the provider runner; share only stable artifact, file-contract, and transport behavior.
+- Before reporting completion, inspect the final diff, confirm new files are included, validate CLI/launcher wiring without invoking paid models, and state any validation intentionally omitted by these instructions.
 
 ## Engineering ideology
 
@@ -48,7 +58,7 @@ A Python 3.13 audio-prepare pipeline: ingest YouTube (or local files), separate 
 | `scripts/diarize/` | Speaker diarization commands and launchers (`sortformer`, `pyannote`, `clustering`, `threed_speaker`, `diarizen`) |
 | `scripts/speaker/` | Target speaker enrollment, turn scoring, threshold filtering, and candidate purity verification |
 | `scripts/purity/` | Purity refinement pipeline stages (`consensus`, `cleanup`, `collar`, `snap`, `align`, `segment`) |
-| `scripts/verify/` | Candidate audio verifiers (`hf`, `gemini`, `endpoint`, `unsloth`, `moss`, `minicpm`, `kimi`, `vibevoice`) |
+| `scripts/verify/` | Candidate audio verifiers plus `freeform/` prompt-and-format experiments that preserve raw model responses |
 | `scripts/audio/` | Core audio utilities (`info`, `convert`, `cut`, `export_segments`, `compare_waveforms`, `compare_spectrograms`) |
 | `scripts/mix/` | Calibrated speech + music mixing with controlled SMR |
 | `scripts/evaluate/` | Separation SI-SDR metrics, diarization DER metrics, Gantt timeline and comparison plots |
