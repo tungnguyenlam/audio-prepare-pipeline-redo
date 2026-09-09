@@ -6,6 +6,16 @@ downstream commands. There is no implicit orchestration or hidden queue.
 
 ## Environment setup
 
+Use `bash scripts/<group>/<command>.sh` for Bash invocation. Every public Python
+CLI has a same-name `.sh` launcher, including downloads and audio utilities.
+Do not pass `.py` files to Bash: Bash parses them as shell code, causing
+`from: command not found` and syntax errors. Python files remain callable with
+an appropriate Python interpreter.
+
+```bash
+bash scripts/download/youtube.sh --url 'https://youtu.be/UuQgxxfU_Hc'
+```
+
 Launchers select an existing interpreter, forward arguments unchanged, and retain
 the caller's working directory. They never install dependencies. System `ffmpeg`
 and `ffprobe` must be available. Export authentication variables (`HF_TOKEN`,
@@ -52,8 +62,9 @@ uv pip install --python .venvs/verify/bin/python -r envs/requirements-verify.txt
 
 | Launchers | Default environment | Interpreter override |
 |---|---|---|
+| `download/*.sh`, `audio/*.sh`, `dataset/*.sh`, `evaluate/*.sh`, `mix/mix.sh`, `speaker/{enroll,filter}.sh`, `purity/{consensus,cleanup,collar,snap,segment}.sh`, `verify/evaluate_verifier.sh`, `scaffold_verifier_experiment.sh` | `.venvs/audio` (fallbacks: `.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
 | `separate/{htdemucs,htdemucs_ft,bs_roformer,mel_roformer,mvsep_mdx23}.sh` | `.venvs/separation` (fallback: `.venvs/main`) | `SEPARATION_PYTHON` |
-| `diarize/{pyannote_31,pyannote_community1}.sh` | `.venvs/pyannote` (fallback: `.venvs/main`) | `DIARIZATION_PYTHON` |
+| `diarize/{pyannote,pyannote_31,pyannote_community1}.sh` | `.venvs/pyannote` (fallback: `.venvs/main`) | `DIARIZATION_PYTHON` |
 | `diarize/{sortformer,clustering}.sh` | `.venvs/sortformer` | `DIARIZATION_PYTHON` |
 | `diarize/threed_speaker.sh` | `.venvs/3dspeaker` | `DIARIZATION_PYTHON` |
 | `diarize/diarizen.sh` | `.venvs/diarizen` | `DIARIZATION_PYTHON` |
@@ -68,20 +79,22 @@ uv pip install --python .venvs/verify/bin/python -r envs/requirements-verify.txt
 
 ## Command cookbook
 
-Run Python commands with `.venvs/main/bin/python` (or `uv run python`).
+Run Python commands with `.venvs/main/bin/python` (or `uv run python`), or use
+`bash` with the matching `.sh` launcher. `AUDIO_PYTHON` takes an executable path;
+it overrides interpreter selection for lightweight commands.
 Relative paths below are relative to your current working directory.
 
 ### Download
 
 ```bash
-# Single video download (mono WAV, 44.1 kHz default)
-uv run python scripts/download/youtube.py --url 'https://www.youtube.com/watch?v=VIDEO' --output-dir .data/downloads
+# Single video download (mono WAV, 16 kHz default)
+bash scripts/download/youtube.sh --url 'https://www.youtube.com/watch?v=VIDEO' --output-dir .data/downloads
 
 # Playlist download
-uv run python scripts/download/playlist.py --url 'https://www.youtube.com/playlist?list=PLAYLIST' --output-dir .data/downloads
+bash scripts/download/playlist.sh --url 'https://www.youtube.com/playlist?list=PLAYLIST' --output-dir .data/downloads
 
 # Channel download
-uv run python scripts/download/channel.py --url 'https://www.youtube.com/@CHANNEL/videos' --output-dir .data/downloads
+bash scripts/download/channel.sh --url 'https://www.youtube.com/@CHANNEL/videos' --output-dir .data/downloads
 ```
 
 ### Audio utilities

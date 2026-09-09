@@ -4,6 +4,12 @@ This directory contains standalone commands, launchers, and utilities for the au
 
 For detailed command options and usage examples, see the [Command Cookbook and Contracts](COMMANDS.md).
 
+Every public Python command has a matching Bash launcher. For example, run
+`bash scripts/download/youtube.sh --url 'https://youtu.be/UuQgxxfU_Hc'`.
+Use `.sh` with Bash; `.py` files require Python. Lightweight launchers select
+`.venvs/audio`, `.venv-audio`, `.venvs/main`, then `.venv`, or the executable path
+in `AUDIO_PYTHON`. Model launchers select their dedicated environments.
+
 ## Subdirectories
 
 | Directory | Purpose | Key Commands |
