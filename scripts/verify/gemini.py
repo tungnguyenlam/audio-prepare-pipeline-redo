@@ -5,6 +5,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import base64
+import concurrent.futures
+import contextlib
 import json
 import logging
 import os
@@ -72,6 +74,10 @@ class GeminiVerifier:
         reasoning_effort: str = "medium",
         max_retries: int = 5,
         base_backoff_s: float = 2.0,
+        max_tokens: int = 2048,
+        temperature: float = 0.0,
+        top_p: float | None = None,
+        timeout_s: float = 120.0,
         **kwargs: Any,
     ) -> None:
         del kwargs  # accept factory extras without failing
@@ -84,6 +90,10 @@ class GeminiVerifier:
         self.reasoning_effort = reasoning_effort
         self.max_retries = max_retries
         self.base_backoff_s = base_backoff_s
+        self.max_tokens = max_tokens
+        self.temperature = temperature
+        self.top_p = top_p
+        self.timeout_s = timeout_s
         self._lock = threading.Lock()
         self._usage_totals = empty_usage_totals()
         self._cost_totals = empty_cost_totals()
@@ -96,9 +106,11 @@ class GeminiVerifier:
         except ImportError:
             self._session = None
         logger.info(
-            "Initialized GeminiVerifier with model '%s' (reasoning_effort=%s, session_transport=%s).",
+            "Initialized GeminiVerifier with model '%s' (reasoning_effort=%s, max_tokens=%d, temp=%.2f, session_transport=%s).",
             model,
             reasoning_effort,
+            max_tokens,
+            temperature,
             "requests" if self._session is not None else "urllib",
         )
 
@@ -153,10 +165,12 @@ class GeminiVerifier:
             ],
             "generationConfig": {
                 "responseMimeType": "application/json",
-                "temperature": 0.0,
-                "maxOutputTokens": 2048,
+                "temperature": self.temperature,
+                "maxOutputTokens": self.max_tokens,
             },
         }
+        if self.top_p is not None:
+            payload["generationConfig"]["topP"] = self.top_p
         if self.reasoning_effort and self.reasoning_effort.lower() != "none":
             payload["generationConfig"]["thinkingConfig"] = {
                 "thinkingLevel": self.reasoning_effort.upper()
@@ -171,7 +185,7 @@ class GeminiVerifier:
                         url,
                         json=payload,
                         headers={"Content-Type": "application/json"},
-                        timeout=120,
+                        timeout=self.timeout_s,
                     )
                     if resp.status_code in (429, 500, 502, 503, 504) and attempt < self.max_retries:
                         sleep_s = (self.base_backoff_s * (2 ** (attempt - 1))) + random.uniform(0.1, 1.0)
@@ -222,7 +236,7 @@ class GeminiVerifier:
                     method="POST",
                 )
                 try:
-                    with urllib.request.urlopen(req, timeout=120) as resp:
+                    with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
                         res = json.loads(resp.read().decode("utf-8"))
                         break
                 except urllib.error.HTTPError as exc:
@@ -308,16 +322,69 @@ class GeminiVerifier:
         return parsed
 
 
+def batch_concurrent(
+    pairs: list[tuple[Path, Path]],
+    process,
+    concurrency: int = 1,
+) -> int:
+    from _common.files import batch, progress
+
+    if concurrency <= 1 or len(pairs) <= 1:
+        return batch(pairs, process)
+
+    total = len(pairs)
+    failed = 0
+    completed = 0
+    lock = threading.Lock()
+    t_start = time.perf_counter()
+    progress("BATCH", f"Starting concurrent batch processing of {total} item(s) (concurrency={concurrency})")
+
+    def task(item_idx: int, src: Path, dest: Path) -> tuple[bool, Path, str]:
+        item_start = time.perf_counter()
+        with lock:
+            progress("ITEM_START", f"{src.name} -> {dest.name}", current=item_idx, total=total)
+        try:
+            with contextlib.redirect_stdout(sys.stderr):
+                process(src, dest)
+            elapsed = time.perf_counter() - item_start
+            return True, dest, f"{src.name} ({elapsed:.2f}s)"
+        except Exception as exc:
+            elapsed = time.perf_counter() - item_start
+            return False, dest, f"{src.name}: {exc} ({elapsed:.2f}s)"
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
+        futures = [pool.submit(task, idx, src, dest) for idx, (src, dest) in enumerate(pairs, 1)]
+        for future in concurrent.futures.as_completed(futures):
+            success, dest, msg = future.result()
+            with lock:
+                completed += 1
+                if success:
+                    progress("ITEM_DONE", msg, current=completed, total=total)
+                    print(dest, flush=True)
+                else:
+                    failed += 1
+                    progress("ITEM_FAIL", msg, current=completed, total=total)
+
+    total_elapsed = time.perf_counter() - t_start
+    progress("BATCH_COMPLETE", f"{total - failed} succeeded; {failed} failed", elapsed_s=total_elapsed)
+    return int(failed > 0)
+
+
 def main() -> int:
     import argparse
-    import contextlib
-    from _common.files import batch, destinations, identity, parser, read_json, request, write_json
+    from _common.files import destinations, identity, parser, positive_int, read_json, request, write_json
 
     p = parser('Verify audio with gemini; writes verdicts without filtering audio.', 'verify', 'gemini')
     p.add_argument('--prompt-file', type=Path, help='Path to prompt text file')
     p.add_argument('--model', type=str, default='gemini-3.8-flash', help='Gemini model (e.g. gemini-3.8-flash, gemini-3.5-flash-lite)')
     p.add_argument('--reasoning-effort', type=str, default='medium', choices=('low', 'medium', 'high', 'none'))
     p.add_argument('--api-key', type=str, default=None, help='Gemini API key (defaults to GEMINI_API_KEY env var or .env)')
+    p.add_argument('--concurrency', type=positive_int, default=1, help='Number of concurrent API requests (default: 1)')
+    p.add_argument('--max-tokens', type=positive_int, default=2048, help='Maximum output tokens (default: 2048)')
+    p.add_argument('--temperature', type=float, default=0.0, help='Sampling temperature (default: 0.0)')
+    p.add_argument('--top-p', type=float, default=None, help='Nucleus sampling top_p (optional)')
+    p.add_argument('--timeout-s', type=float, default=120.0, help='Timeout in seconds per API request (default: 120.0)')
+    p.add_argument('--max-retries', type=positive_int, default=5, help='Maximum retry attempts per request (default: 5)')
     args = p.parse_args()
 
     pairs = destinations(args, '_gemini', '.json')
@@ -325,6 +392,11 @@ def main() -> int:
         'model': args.model,
         'reasoning_effort': args.reasoning_effort,
         'api_key': args.api_key,
+        'max_tokens': args.max_tokens,
+        'temperature': args.temperature,
+        'top_p': args.top_p,
+        'timeout_s': args.timeout_s,
+        'max_retries': args.max_retries,
     }
 
     if args.prompt_file and args.prompt_file.is_file():
@@ -341,7 +413,11 @@ def main() -> int:
         'model': verifier.model,
         'reasoning_effort': verifier.reasoning_effort,
         'prompt': prompt,
+        'max_tokens': verifier.max_tokens,
+        'temperature': verifier.temperature,
     }
+    if verifier.top_p is not None:
+        parameters['top_p'] = verifier.top_p
 
     for key in ('model', 'model_id', 'endpoint', 'gguf_variant', 'device'):
         if hasattr(verifier, key) and isinstance(getattr(verifier, key), (str, int, float, bool, type(None))):
@@ -359,7 +435,16 @@ def main() -> int:
             raise ValueError('Verifier did not return a pass/reject decision')
         write_json(dest, {**wanted, 'verdict': verdict})
 
-    return batch(pairs, process)
+    res = batch_concurrent(pairs, process, concurrency=args.concurrency)
+    cost_summary = verifier.get_cost_summary()
+    logger.info(
+        "Session summary: %d input tokens, %d output tokens, %d think tokens | Total cost: $%.6f",
+        cost_summary["usage"].get("prompt_tokens", 0),
+        cost_summary["usage"].get("output_tokens", 0),
+        cost_summary["usage"].get("thinking_tokens", 0),
+        cost_summary["cost"].get("total_usd", 0.0),
+    )
+    return res
 
 
 if __name__ == '__main__':

@@ -181,9 +181,10 @@ uv run python scripts/purity/segment.py --input-manifest .data/aligned.json --wo
 ### Audio verification
 
 ```bash
-# Gemini direct-audio verifier (3.8 Flash, 3.5 Flash-Lite) with custom prompt
+# Gemini direct-audio verifier (3.8 Flash, 3.5 Flash-Lite) with custom prompt and concurrency
 bash scripts/verify/gemini.sh --input-dir .data/clips --output-dir .data/verdicts/gemini \
-  --model gemini-3.8-flash --reasoning-effort medium --prompt-file prompts/acoustic_defect.txt
+  --model gemini-3.8-flash --reasoning-effort medium --prompt-file prompts/acoustic_defect.txt \
+  --concurrency 4 --max-tokens 2048 --temperature 0.0
 
 # Gemma 4 / HF direct-audio verifier (E2B, E4B, 12B) with custom prompt
 bash scripts/verify/hf.sh --input-dir .data/clips --output-dir .data/verdicts/hf \

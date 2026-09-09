@@ -66,7 +66,7 @@ flowchart TD
 | | `scripts/purity/align.sh` | `--input-manifest`, `--output-manifest`, `--words-file` | Word-locked `segments.json` |
 | | `scripts/purity/segment.py` | `--input-manifest`, `--words-file`, `--output-manifest` | Duration-bounded `segments.json` |
 | **Verification** | `scripts/verify/hf.sh` | `--input-file` / `--input-dir`, `--output-dir`, `--prompt-file` | Verdict JSON with decision and reason |
-| | `scripts/verify/gemini.sh` | `--input-file` / `--input-dir`, `--output-dir`, `--model`, `--api-key`, `--prompt-file` | Gemini direct-audio verdict JSON |
+| | `scripts/verify/gemini.sh` | `--input-file` / `--input-dir`, `--output-dir`, `--model`, `--concurrency`, `--max-tokens`, `--temperature`, `--prompt-file` | Gemini direct-audio verdict JSON |
 | | `scripts/verify/endpoint.sh` | `--input-file` / `--input-dir`, `--output-dir`, `--endpoint` | OpenAI-compatible endpoint verdict JSON |
 | | `scripts/verify/unsloth.sh` | `--input-file` / `--input-dir`, `--output-dir`, `--endpoint` | Unsloth chat endpoint verdict JSON |
 | | `scripts/verify/vllm.sh` | `--input-file` / `--input-dir`, `--output-dir`, `--model`, `--endpoint`, `--prompt-file` | vLLM offline batch or server verdict JSON |
