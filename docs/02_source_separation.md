@@ -39,7 +39,7 @@ def separate(self, audio: Audio) -> Audio:
 1. **Path Validation:** Verifies that `audio.path` exists before starting inference.
 2. **Identity Preservation:** Automatically copies `source_id`, `title`, and `native_sample_rate` from input to output.
 3. **History Step Tracking:** Appends a sanitized transformation tag (e.g. `htdemucs_vocals`, `mvsep_kim_vocal`) to `audio.history`.
-4. **Format Normalization:** Normalizes the output stem to the separator's target sample rate (default 44,100 Hz), mono channel layout, and PCM WAV container (`format="wav"`).
+4. **Format Normalization:** Normalizes the output stem to preserve the input audio's native sample rate by default (or the explicitly configured `--sample-rate`), mono channel layout, and PCM WAV container (`format="wav"`), while resampling internally as required by the model architecture (`--model-sample-rate`, e.g. 44,100 Hz).
 5. **Output Verification:** Probes the final WAV file on disk to guarantee valid duration and channel metadata.
 6. **Error Granularity:** Raises backend-specific custom exceptions instead of generic `Exception`.
 

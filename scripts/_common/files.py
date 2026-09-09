@@ -40,7 +40,10 @@ def log_config(title: str, args: argparse.Namespace | dict) -> None:
     border = '=' * 60
     lines = [border, f'[{name}] CONFIGURATION:']
     for k in sorted(items.keys()):
-        lines.append(f'  {k:<24}: {items[k]}')
+        val = items[k]
+        if k == 'sample_rate' and val is None:
+            val = 'None (preserve source)'
+        lines.append(f'  {k:<24}: {val}')
     lines.append(border)
     print('\n'.join(lines), file=sys.stderr, flush=True)
 

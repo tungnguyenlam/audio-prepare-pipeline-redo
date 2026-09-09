@@ -16,7 +16,7 @@ def main() -> int:
     p.add_argument('--backend')
     p.add_argument('--stem', default='vocals')
     p.add_argument('--model-sample-rate', type=positive_int, default=44100)
-    p.add_argument('--sample-rate', type=positive_int)
+    p.add_argument('--sample-rate', type=positive_int, help='output sample rate in Hz (default: preserve source)')
     p.add_argument('--channels', type=int, choices=(1, 2), default=1)
     args = p.parse_args()
     pairs = destinations(args, '_mel_roformer')

@@ -21,6 +21,10 @@ Provision environments automatically with hardware auto-detection (AMD ROCm vs N
 # Or provision a specific environment:
 ./scripts/setup_worker_envs.sh separation
 ./scripts/setup_worker_envs.sh pyannote
+./scripts/setup_worker_envs.sh diarizen
+./scripts/setup_worker_envs.sh sortformer
+./scripts/setup_worker_envs.sh 3dspeaker
+./scripts/setup_worker_envs.sh verify
 
 # Check health and hardware acceleration across all environments:
 ./scripts/setup_worker_envs.sh status

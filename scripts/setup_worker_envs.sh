@@ -468,20 +468,18 @@ setup_diarizen() {
 
     local py_bin="${venv_dir}/bin/python"
 
+    local index_url="https://download.pytorch.org/whl/cpu"
     if [ "$HAS_NVIDIA_GPU" -eq 1 ]; then
-        echo "⚡ Installing NVIDIA CUDA PyTorch 2.1.1 stack into ${venv_dir}..."
-        uv pip install --python "$py_bin" \
-            torch==2.1.1 torchvision==0.16.1 torchaudio==2.1.1 \
-            --index-url https://download.pytorch.org/whl/cu121
-    else
-        echo "⚡ Installing CPU/compatible PyTorch 2.1.1 stack into ${venv_dir}..."
-        uv pip install --python "$py_bin" \
-            torch==2.1.1 torchvision==0.16.1 torchaudio==2.1.1 \
-            --index-url https://download.pytorch.org/whl/cpu
+        index_url="https://download.pytorch.org/whl/cu121"
     fi
 
+    echo "⚡ Installing PyTorch 2.1.1 stack into ${venv_dir}..."
+    uv pip install --python "$py_bin" \
+        torch==2.1.1 torchvision==0.16.1 torchaudio==2.1.1 \
+        --index-url "$index_url"
+
     echo "📦 Installing DiariZen requirements..."
-    uv pip install --python "$py_bin" -r requirements-diarizen.txt
+    uv pip install --python "$py_bin" --extra-index-url "$index_url" -r requirements-diarizen.txt
 
     if [ "$HAS_AMD_GPU" -eq 1 ]; then
         if "$py_bin" -c "import importlib.util; exit(0 if importlib.util.find_spec('torchcodec') else 1)" 2>/dev/null; then

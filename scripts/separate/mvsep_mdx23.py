@@ -147,7 +147,7 @@ def main() -> int:
     p = parser(__doc__, 'separate', 'mvsep_mdx23')
     p.add_argument('--device', default='auto')
     p.add_argument('--stem', default='vocals', choices=sorted(_STEM_OUTPUT_IDS.keys()))
-    p.add_argument('--sample-rate', type=positive_int)
+    p.add_argument('--sample-rate', type=positive_int, help='output sample rate in Hz (default: preserve source)')
     p.add_argument('--channels', type=int, choices=(1, 2), default=1)
     p.add_argument('--overlap-large', type=float, default=0.25)
     p.add_argument('--overlap-small', type=float, default=0.25)

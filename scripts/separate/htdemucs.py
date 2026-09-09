@@ -14,7 +14,7 @@ def main() -> int:
     p.add_argument('--model', choices=('htdemucs', 'htdemucs_ft'), default='htdemucs')
     p.add_argument('--device', default='cpu')
     p.add_argument('--stem', default='vocals', choices=('vocals', 'instrumental', 'drums', 'bass', 'other'))
-    p.add_argument('--sample-rate', type=positive_int)
+    p.add_argument('--sample-rate', type=positive_int, help='output sample rate in Hz (default: preserve source)')
     p.add_argument('--channels', type=int, choices=(1, 2), default=1)
     p.add_argument('--shifts', type=int, default=1)
     p.add_argument('--overlap', type=float, default=0.25)
