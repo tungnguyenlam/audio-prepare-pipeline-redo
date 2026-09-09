@@ -34,7 +34,7 @@ NeMo, 3D-Speaker, DiariZen, verifiers), see [Standalone Commands Reference](scri
 | **Audio tools** | Metadata info, format conversion, cutting, segment clip export, waveform & spectrogram comparer plots | `scripts/audio/{info,convert,cut,export_segments,compare_waveforms,compare_spectrograms}.py` |
 | **Speaker ops** | Reference profile enrollment, turn scoring, threshold filtering, candidate sliding-window purity verification | `scripts/speaker/{enroll,score,filter,purity}.py` |
 | **Purity stages** | Diarizer consensus, turn cleanup, collar adjustment, acoustic boundary snapping, word alignment, duration segmentation | `scripts/purity/{consensus,cleanup,collar,snap,align,segment}.py` |
-| **Verification** | Gemma 4 direct-audio, Endpoint, Unsloth, Gemini, MOSS, MiniCPM-o, Kimi, VibeVoice-ASR speaker count | `scripts/verify/{hf,endpoint,unsloth,gemini,moss,minicpm,kimi,vibevoice}.sh` |
+| **Verification** | Gemma 4 direct-audio, Endpoint, Unsloth, vLLM, Gemini, MOSS, MiniCPM-o, Kimi, VibeVoice-ASR speaker count | `scripts/verify/{hf,endpoint,unsloth,vllm,gemini,moss,minicpm,kimi,vibevoice}.sh`, `evaluate_verifier.py` |
 | **Mix & eval** | SMR-controlled speech+music mixing, SI-SDR separation metrics, DER diarization metrics, Gantt & metrics plots | `scripts/mix/mix.py`, `scripts/evaluate/{separation,diarization,plot_diarization,plot_metrics}.py` |
 | **Dataset tools** | File-based directory indexing, duration/tag filtering, JSONL/CSV manifest export, ZIP bundling | `scripts/dataset/{index,filter,export,bundle}.py` |
 

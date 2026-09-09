@@ -408,6 +408,7 @@ class UnslothVerifier(EndpointVerifier):
 
         parsed = extract_json_payload(target_text)
         parsed["_latency_s"] = latency
+        parsed["_engine"] = "unsloth"
         if reasoning:
             parsed["_reasoning"] = reasoning
         if self.gguf_variant:
@@ -433,7 +434,12 @@ def main() -> int:
     args = p.parse_args()
     pairs = destinations(args, '_unsloth', '.json')
     parameters = {key: getattr(args, key) for key in ('endpoint', 'model', 'gguf_variant', 'timeout_s', 'temperature', 'max_tokens', 'auto_probe_model', 'payload_mode')}
-    prompt = args.prompt_file.read_text(encoding='utf-8') if args.prompt_file else DEFAULT_ACOUSTIC_PROMPT
+    if args.prompt_file and args.prompt_file.is_file():
+        prompt = args.prompt_file.read_text(encoding='utf-8').strip()
+    elif Path('prompts/acoustic_defect.txt').is_file():
+        prompt = Path('prompts/acoustic_defect.txt').read_text(encoding='utf-8').strip()
+    else:
+        prompt = DEFAULT_ACOUSTIC_PROMPT
     with contextlib.redirect_stdout(sys.stderr):
         verifier = UnslothVerifier(**parameters)
     parameters['prompt'] = prompt

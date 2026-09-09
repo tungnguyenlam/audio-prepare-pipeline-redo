@@ -4,16 +4,15 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-
 import logging
 import os
 import time
-from pathlib import Path
 from typing import Any
 
 import torch
 
 from _audio import (
+    DEFAULT_ACOUSTIC_PROMPT,
     extract_json_payload,
     load_audio_waveform,
 )
@@ -22,7 +21,7 @@ logger = logging.getLogger("verifier.default_hf")
 
 
 class DefaultHFVerifier:
-    """Default Hugging Face multimodal audio verifier (e.g., Gemma 4 E2B/E4B, standard HF models)."""
+    """Default Hugging Face multimodal audio verifier (e.g., Gemma 4 E2B/E4B/12B, standard HF models)."""
 
     def __init__(
         self,
@@ -31,6 +30,8 @@ class DefaultHFVerifier:
         adapter_path: str | None = None,
         trust_remote_code: bool = True,
         torch_dtype: str = "bfloat16",
+        load_in_4bit: bool = False,
+        load_in_8bit: bool = False,
         hf_token: str | None = None,
     ) -> None:
         dtype_map = {
@@ -59,6 +60,18 @@ class DefaultHFVerifier:
             from transformers import AutoTokenizer
             self.processor = AutoTokenizer.from_pretrained(model_id, trust_remote_code=trust_remote_code, token=self.hf_token)
 
+        quant_kwargs: dict[str, Any] = {}
+        if load_in_4bit or load_in_8bit:
+            try:
+                from transformers import BitsAndBytesConfig
+                quant_kwargs["quantization_config"] = BitsAndBytesConfig(
+                    load_in_4bit=load_in_4bit,
+                    load_in_8bit=load_in_8bit,
+                    bnb_4bit_compute_dtype=self.dtype,
+                )
+            except ImportError as exc:
+                raise RuntimeError("bitsandbytes required for --load-in-4bit / --load-in-8bit") from exc
+
         self.model = None
         candidate_classes = []
         if "gemma-4" in model_id.lower() and Gemma4ForConditionalGeneration is not None:
@@ -79,6 +92,7 @@ class DefaultHFVerifier:
                     device_map=self.device,
                     trust_remote_code=trust_remote_code,
                     token=self.hf_token,
+                    **quant_kwargs,
                 )
                 logger.info("Successfully loaded model using %s", cls.__name__)
                 break
@@ -111,8 +125,12 @@ class DefaultHFVerifier:
                 ],
             }
         ]
-        text = self.processor.apply_chat_template(messages, add_generation_prompt=True)
-        inputs = self.processor(text=text, audio=audio_data, return_tensors="pt", sampling_rate=16000)
+        if hasattr(self.processor, "apply_chat_template"):
+            text = self.processor.apply_chat_template(messages, add_generation_prompt=True)
+            inputs = self.processor(text=text, audio=audio_data, return_tensors="pt", sampling_rate=16000)
+        else:
+            inputs = self.processor(text=prompt, audio=audio_data, return_tensors="pt", sampling_rate=16000)
+
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
         use_cuda = self.device.startswith("cuda")
@@ -123,7 +141,7 @@ class DefaultHFVerifier:
         )
 
         with torch.no_grad(), autocast_ctx:
-            generated_ids = self.model.generate(**inputs, max_new_tokens=256, do_sample=False)
+            generated_ids = self.model.generate(**inputs, max_new_tokens=512, do_sample=False)
 
         new_tokens = generated_ids[0][inputs["input_ids"].shape[1] :]
         output_text = self.processor.decode(new_tokens, skip_special_tokens=True).strip()
@@ -131,33 +149,51 @@ class DefaultHFVerifier:
         latency = round(time.time() - t0, 3)
         parsed = extract_json_payload(output_text)
         parsed["_latency_s"] = latency
+        parsed["_engine"] = "huggingface"
+        parsed["_model"] = self.model_id
         return parsed
 
 
 def main() -> int:
     import argparse
     import contextlib
-    from _audio import DEFAULT_ACOUSTIC_PROMPT
     from _common.files import batch, destinations, identity, parser, read_json, request, write_json
+
     p = parser('Verify audio with hf; writes verdicts without filtering audio.', 'verify', 'hf')
-    p.add_argument('--prompt-file', type=Path)
-    p.add_argument('--model-id', type=str, default='google/gemma-4-E2B-it')
+    p.add_argument('--prompt-file', type=Path, help='Path to prompt text file')
+    p.add_argument('--model-id', type=str, default='google/gemma-4-E2B-it', help='Hugging Face model repository ID')
     p.add_argument('--device', type=str, default='auto')
-    p.add_argument('--adapter-path', type=str, default=None)
+    p.add_argument('--adapter-path', type=str, default=None, help='Optional LoRA adapter checkpoint directory')
     p.add_argument('--trust-remote-code', action=argparse.BooleanOptionalAction, default=True)
-    p.add_argument('--torch-dtype', type=str, default='bfloat16')
+    p.add_argument('--torch-dtype', type=str, default='bfloat16', choices=('bfloat16', 'float16', 'float32'))
+    p.add_argument('--load-in-4bit', action='store_true', help='Load model in 4-bit NF4 with bitsandbytes')
+    p.add_argument('--load-in-8bit', action='store_true', help='Load model in 8-bit with bitsandbytes')
     args = p.parse_args()
+
     pairs = destinations(args, '_hf', '.json')
-    parameters = {key: getattr(args, key) for key in ('model_id', 'device', 'adapter_path', 'trust_remote_code', 'torch_dtype')}
-    prompt = args.prompt_file.read_text(encoding='utf-8') if args.prompt_file else DEFAULT_ACOUSTIC_PROMPT
+    parameters = {
+        key: getattr(args, key) for key in (
+            'model_id', 'device', 'adapter_path', 'trust_remote_code',
+            'torch_dtype', 'load_in_4bit', 'load_in_8bit'
+        )
+    }
+
+    if args.prompt_file and args.prompt_file.is_file():
+        prompt = args.prompt_file.read_text(encoding='utf-8').strip()
+    elif Path('prompts/acoustic_defect.txt').is_file():
+        prompt = Path('prompts/acoustic_defect.txt').read_text(encoding='utf-8').strip()
+    else:
+        prompt = DEFAULT_ACOUSTIC_PROMPT
+
     with contextlib.redirect_stdout(sys.stderr):
         verifier = DefaultHFVerifier(**parameters)
     parameters['prompt'] = prompt
-    # Record environment-derived model and endpoint values, never API credentials.
+
     for key in ('model', 'model_id', 'endpoint', 'gguf_variant', 'device'):
         if hasattr(verifier, key) and isinstance(getattr(verifier, key), (str, int, float, bool, type(None))):
             parameters[key] = getattr(verifier, key)
-    def process(src, dest):
+
+    def process(src: Path, dest: Path) -> None:
         wanted = request(identity(src), 'verify', parameters, 'hf')
         if dest.exists() and not args.overwrite:
             old = read_json(dest)
@@ -168,6 +204,7 @@ def main() -> int:
         if not isinstance(verdict, dict) or verdict.get('decision') not in {'pass', 'reject'}:
             raise ValueError('Verifier did not return a pass/reject decision')
         write_json(dest, {**wanted, 'verdict': verdict})
+
     return batch(pairs, process)
 
 

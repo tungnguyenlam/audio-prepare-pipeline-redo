@@ -68,10 +68,12 @@ flowchart TD
 | | `scripts/verify/gemini.sh` | `--input-file` / `--input-dir`, `--output-dir`, `--model` | Gemini direct-audio verdict JSON |
 | | `scripts/verify/endpoint.sh` | `--input-file` / `--input-dir`, `--output-dir`, `--endpoint` | OpenAI-compatible endpoint verdict JSON |
 | | `scripts/verify/unsloth.sh` | `--input-file` / `--input-dir`, `--output-dir`, `--endpoint` | Unsloth chat endpoint verdict JSON |
+| | `scripts/verify/vllm.sh` | `--input-file` / `--input-dir`, `--output-dir`, `--model`, `--endpoint`, `--prompt-file` | vLLM offline batch or server verdict JSON |
 | | `scripts/verify/moss.sh` | `--input-file` / `--input-dir`, `--output-dir` | MOSS-Audio verdict JSON |
 | | `scripts/verify/minicpm.sh` | `--input-file` / `--input-dir`, `--output-dir` | MiniCPM-o verdict JSON |
 | | `scripts/verify/kimi.sh` | `--input-file` / `--input-dir`, `--output-dir` | Kimi-Audio verdict JSON |
 | | `scripts/verify/vibevoice.sh` | `--input-file` / `--input-dir`, `--output-dir`, `--min-secondary-speech-s` | VibeVoice-ASR speaker count verdict JSON |
+| | `scripts/verify/evaluate_verifier.py` | `--predictions-dir`, `--reference-dir`, `--output-file` | Accuracy, defect recall, FRR, and latency JSON |
 | **Mix & Eval** | `scripts/mix/mix.py` | `--speech`, `--music`, `--smr-db`, `--seed`, `--output-dir` | Mixture, stem references, mix metadata |
 | | `scripts/evaluate/separation.py` | `--input-file`, `--reference-file`, `--mixture-file`, `--output-file` | SI-SDR and SDR metrics JSON |
 | | `scripts/evaluate/diarization.py` | `--input-manifest`, `--reference-manifest`, `--duration`, `--output-file` | DER, JER, Confusion metrics JSON |

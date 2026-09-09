@@ -4,15 +4,15 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-
 import base64
 import json
 import logging
 import os
+import random
 import threading
 import time
+import urllib.error
 import urllib.request
-from pathlib import Path
 from typing import Any
 
 from _gemini_pricing import (
@@ -24,6 +24,7 @@ from _gemini_pricing import (
     normalize_gemini_usage,
 )
 from _audio import (
+    DEFAULT_ACOUSTIC_PROMPT,
     extract_json_payload,
 )
 
@@ -38,12 +39,13 @@ class GeminiVerifier:
     cost logging. Thinking tokens are billed as output when present.
     """
 
-
     def __init__(
         self,
         model: str = "gemini-3.8-flash",
         api_key: str | None = None,
         reasoning_effort: str = "medium",
+        max_retries: int = 5,
+        base_backoff_s: float = 2.0,
         **kwargs: Any,
     ) -> None:
         del kwargs  # accept factory extras without failing
@@ -54,6 +56,8 @@ class GeminiVerifier:
                 "GEMINI_API_KEY environment variable or parameter is required for GeminiVerifier."
             )
         self.reasoning_effort = reasoning_effort
+        self.max_retries = max_retries
+        self.base_backoff_s = base_backoff_s
         self._lock = threading.Lock()
         self._usage_totals = empty_usage_totals()
         self._cost_totals = empty_cost_totals()
@@ -124,17 +128,46 @@ class GeminiVerifier:
                 "thinkingLevel": self.reasoning_effort.upper()
             }
 
+        req_body = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
             url,
-            data=json.dumps(payload).encode("utf-8"),
+            data=req_body,
             headers={"Content-Type": "application/json"},
             method="POST",
         )
 
         t0 = time.time()
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            res = json.loads(resp.read().decode("utf-8"))
+        res = None
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    res = json.loads(resp.read().decode("utf-8"))
+                    break
+            except urllib.error.HTTPError as exc:
+                err_msg = exc.read().decode("utf-8", errors="replace")
+                if exc.code in (429, 503) and attempt < self.max_retries:
+                    sleep_s = (self.base_backoff_s * (2 ** (attempt - 1))) + random.uniform(0.1, 1.0)
+                    logger.warning(
+                        "Gemini HTTP %d (%s). Retrying in %.2fs (attempt %d/%d)...",
+                        exc.code, exc.reason, sleep_s, attempt, self.max_retries
+                    )
+                    time.sleep(sleep_s)
+                    continue
+                raise RuntimeError(f"Gemini API HTTP {exc.code} error: {err_msg}") from exc
+            except (urllib.error.URLError, TimeoutError) as exc:
+                if attempt < self.max_retries:
+                    sleep_s = (self.base_backoff_s * (2 ** (attempt - 1))) + random.uniform(0.1, 0.5)
+                    logger.warning(
+                        "Gemini network timeout/error: %s. Retrying in %.2fs (attempt %d/%d)...",
+                        exc, sleep_s, attempt, self.max_retries
+                    )
+                    time.sleep(sleep_s)
+                    continue
+                raise RuntimeError(f"Gemini API connection error: {exc}") from exc
+
         latency = round(time.time() - t0, 3)
+        if not res:
+            raise RuntimeError("Gemini API call failed to return a response.")
 
         candidates = res.get("candidates", [])
         if not candidates:
@@ -153,6 +186,7 @@ class GeminiVerifier:
         parsed["_cost"] = cost
         parsed["_model"] = self.model
         parsed["_reasoning_effort"] = self.reasoning_effort
+        parsed["_engine"] = "gemini"
         if res.get("modelVersion"):
             parsed["_model_version"] = res["modelVersion"]
 
@@ -164,7 +198,7 @@ class GeminiVerifier:
         cost_usd = float(cost["total_usd"]) if cost else None
         if cost_usd is None:
             logger.info(
-                "Gemini %s usage prompt=%d out=%d think=%d (no price card) running=$%.6f",
+                "Gemini %s usage prompt=%d out=%d think=%d running=$%.6f",
                 audio_path.name,
                 usage.get("prompt_tokens", 0),
                 usage.get("output_tokens", 0),
@@ -188,24 +222,33 @@ class GeminiVerifier:
 def main() -> int:
     import argparse
     import contextlib
-    from _audio import DEFAULT_ACOUSTIC_PROMPT
     from _common.files import batch, destinations, identity, parser, read_json, request, write_json
+
     p = parser('Verify audio with gemini; writes verdicts without filtering audio.', 'verify', 'gemini')
-    p.add_argument('--prompt-file', type=Path)
-    p.add_argument('--model', type=str, default='gemini-3.8-flash')
-    p.add_argument('--reasoning-effort', type=str, default='medium')
+    p.add_argument('--prompt-file', type=Path, help='Path to prompt text file')
+    p.add_argument('--model', type=str, default='gemini-3.8-flash', help='Gemini model (e.g. gemini-3.8-flash, gemini-3.5-flash-lite)')
+    p.add_argument('--reasoning-effort', type=str, default='medium', choices=('low', 'medium', 'high', 'none'))
     args = p.parse_args()
+
     pairs = destinations(args, '_gemini', '.json')
     parameters = {key: getattr(args, key) for key in ('model', 'reasoning_effort')}
-    prompt = args.prompt_file.read_text(encoding='utf-8') if args.prompt_file else DEFAULT_ACOUSTIC_PROMPT
+
+    if args.prompt_file and args.prompt_file.is_file():
+        prompt = args.prompt_file.read_text(encoding='utf-8').strip()
+    elif Path('prompts/acoustic_defect.txt').is_file():
+        prompt = Path('prompts/acoustic_defect.txt').read_text(encoding='utf-8').strip()
+    else:
+        prompt = DEFAULT_ACOUSTIC_PROMPT
+
     with contextlib.redirect_stdout(sys.stderr):
         verifier = GeminiVerifier(**parameters)
     parameters['prompt'] = prompt
-    # Record environment-derived model and endpoint values, never API credentials.
+
     for key in ('model', 'model_id', 'endpoint', 'gguf_variant', 'device'):
         if hasattr(verifier, key) and isinstance(getattr(verifier, key), (str, int, float, bool, type(None))):
             parameters[key] = getattr(verifier, key)
-    def process(src, dest):
+
+    def process(src: Path, dest: Path) -> None:
         wanted = request(identity(src), 'verify', parameters, 'gemini')
         if dest.exists() and not args.overwrite:
             old = read_json(dest)
@@ -216,6 +259,7 @@ def main() -> int:
         if not isinstance(verdict, dict) or verdict.get('decision') not in {'pass', 'reject'}:
             raise ValueError('Verifier did not return a pass/reject decision')
         write_json(dest, {**wanted, 'verdict': verdict})
+
     return batch(pairs, process)
 
 

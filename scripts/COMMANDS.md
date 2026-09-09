@@ -35,6 +35,7 @@ uv pip install --python .venv-verify/bin/python -r scripts/requirements-verify.t
 | `speaker/{score,purity}.sh` | `.venv-pyannote` | `DIARIZATION_PYTHON` |
 | `purity/align.sh` | `.venv-audio` | `ALIGN_PYTHON` |
 | `verify/{hf,endpoint,unsloth,gemini}.sh` | `.venv-verify` | `VERIFIER_PYTHON` |
+| `verify/vllm.sh` | `.venv-vllm` | `VLLM_PYTHON` |
 | `verify/moss.sh` | `.venv-moss` | `VERIFIER_PYTHON` |
 | `verify/minicpm.sh` | `.venv-minicpmo` | `VERIFIER_PYTHON` |
 | `verify/kimi.sh` | `.venv-kimi` | `VERIFIER_PYTHON` |
@@ -152,15 +153,25 @@ uv run python scripts/purity/segment.py --input-manifest .data/aligned.json --wo
 ### Audio verification
 
 ```bash
-# Gemma 4 / HF direct-audio verifier
-bash scripts/verify/hf.sh --input-dir .data/clips --output-dir .data/verdicts
+# Gemini direct-audio verifier (3.8 Flash, 3.5 Flash-Lite) with custom prompt
+bash scripts/verify/gemini.sh --input-dir .data/clips --output-dir .data/verdicts/gemini \
+  --model gemini-3.8-flash --reasoning-effort medium --prompt-file prompts/acoustic_defect.txt
 
-# Endpoint / Unsloth verifiers
-bash scripts/verify/endpoint.sh --input-dir .data/clips --output-dir .data/verdicts
-bash scripts/verify/unsloth.sh --input-dir .data/clips --output-dir .data/verdicts
+# Gemma 4 / HF direct-audio verifier (E2B, E4B, 12B) with custom prompt
+bash scripts/verify/hf.sh --input-dir .data/clips --output-dir .data/verdicts/hf \
+  --model-id google/gemma-4-E2B-it --prompt-file prompts/acoustic_defect.txt
 
-# Gemini direct-audio verifier
-bash scripts/verify/gemini.sh --input-dir .data/clips --output-dir .data/verdicts
+# Gemma 4 via vLLM (Offline batch or Server mode)
+bash scripts/verify/vllm.sh --input-dir .data/clips --output-dir .data/verdicts/vllm \
+  --model google/gemma-4-E2B-it --prompt-file prompts/acoustic_defect.txt
+
+# Unsloth / GGUF direct-audio verifier
+bash scripts/verify/unsloth.sh --input-dir .data/clips --output-dir .data/verdicts/unsloth \
+  --model unsloth/gemma-4-12b-it-GGUF --gguf-variant UD-Q6_K_XL --prompt-file prompts/acoustic_defect.txt
+
+# Generic OpenAI-compatible endpoint
+bash scripts/verify/endpoint.sh --input-dir .data/clips --output-dir .data/verdicts/endpoint \
+  --endpoint http://localhost:8000/v1/chat/completions --prompt-file prompts/acoustic_defect.txt
 
 # Multimodal audio verifiers (MOSS, MiniCPM-o, Kimi)
 bash scripts/verify/moss.sh --input-dir .data/clips --output-dir .data/verdicts
@@ -169,6 +180,12 @@ bash scripts/verify/kimi.sh --input-dir .data/clips --output-dir .data/verdicts
 
 # VibeVoice-ASR speaker count purity verifier
 bash scripts/verify/vibevoice.sh --input-dir .data/clips --output-dir .data/verdicts
+
+# Benchmark and evaluate verifier predictions against Gemini teacher reference
+uv run python scripts/verify/evaluate_verifier.py \
+  --predictions-dir .data/verdicts/vllm \
+  --reference-dir .data/verdicts/gemini \
+  --output-file .data/evaluate/vllm_vs_gemini.json
 ```
 
 ### Mixing and evaluation
