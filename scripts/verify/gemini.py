@@ -31,6 +31,32 @@ from _audio import (
 logger = logging.getLogger("verifier.gemini")
 
 
+def _load_repo_env() -> None:
+    """Load environment variables from .env in the repository root if available."""
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+    except Exception:
+        pass
+    env_file = Path(__file__).resolve().parents[2] / ".env"
+    if env_file.is_file():
+        try:
+            for line in env_file.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, val = line.split("=", 1)
+                    key = key.strip()
+                    val = val.strip().strip("'\"")
+                    if key and key not in os.environ:
+                        os.environ[key] = val
+        except Exception:
+            pass
+
+
+_load_repo_env()
+
+
 class GeminiVerifier:
     """Verifier querying Google Gemini multimodal audio API.
 
@@ -53,7 +79,7 @@ class GeminiVerifier:
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         if not self.api_key:
             raise ValueError(
-                "GEMINI_API_KEY environment variable or parameter is required for GeminiVerifier."
+                "GEMINI_API_KEY environment variable, .env setting, or --api-key parameter is required for GeminiVerifier."
             )
         self.reasoning_effort = reasoning_effort
         self.max_retries = max_retries
@@ -62,10 +88,18 @@ class GeminiVerifier:
         self._usage_totals = empty_usage_totals()
         self._cost_totals = empty_cost_totals()
         self._cost_totals["model"] = model
+        self._session = None
+        try:
+            import requests
+
+            self._session = requests.Session()
+        except ImportError:
+            self._session = None
         logger.info(
-            "Initialized GeminiVerifier with model '%s' (reasoning_effort=%s).",
+            "Initialized GeminiVerifier with model '%s' (reasoning_effort=%s, session_transport=%s).",
             model,
             reasoning_effort,
+            "requests" if self._session is not None else "urllib",
         )
 
     def get_cost_summary(self) -> dict[str, Any]:
@@ -128,42 +162,97 @@ class GeminiVerifier:
                 "thinkingLevel": self.reasoning_effort.upper()
             }
 
-        req_body = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
-            url,
-            data=req_body,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-
         t0 = time.time()
         res = None
         for attempt in range(1, self.max_retries + 1):
-            try:
-                with urllib.request.urlopen(req, timeout=120) as resp:
-                    res = json.loads(resp.read().decode("utf-8"))
+            if self._session is not None:
+                try:
+                    resp = self._session.post(
+                        url,
+                        json=payload,
+                        headers={"Content-Type": "application/json"},
+                        timeout=120,
+                    )
+                    if resp.status_code in (429, 500, 502, 503, 504) and attempt < self.max_retries:
+                        sleep_s = (self.base_backoff_s * (2 ** (attempt - 1))) + random.uniform(0.1, 1.0)
+                        logger.warning(
+                            "Gemini HTTP %d (%s). Retrying in %.2fs (attempt %d/%d)...",
+                            resp.status_code,
+                            resp.reason,
+                            sleep_s,
+                            attempt,
+                            self.max_retries,
+                        )
+                        time.sleep(sleep_s)
+                        continue
+                    if not resp.ok:
+                        raise RuntimeError(f"Gemini API HTTP {resp.status_code} error: {resp.text}")
+                    res = resp.json()
                     break
-            except urllib.error.HTTPError as exc:
-                err_msg = exc.read().decode("utf-8", errors="replace")
-                if exc.code in (429, 503) and attempt < self.max_retries:
-                    sleep_s = (self.base_backoff_s * (2 ** (attempt - 1))) + random.uniform(0.1, 1.0)
-                    logger.warning(
-                        "Gemini HTTP %d (%s). Retrying in %.2fs (attempt %d/%d)...",
-                        exc.code, exc.reason, sleep_s, attempt, self.max_retries
-                    )
-                    time.sleep(sleep_s)
-                    continue
-                raise RuntimeError(f"Gemini API HTTP {exc.code} error: {err_msg}") from exc
-            except (urllib.error.URLError, TimeoutError) as exc:
-                if attempt < self.max_retries:
-                    sleep_s = (self.base_backoff_s * (2 ** (attempt - 1))) + random.uniform(0.1, 0.5)
-                    logger.warning(
-                        "Gemini network timeout/error: %s. Retrying in %.2fs (attempt %d/%d)...",
-                        exc, sleep_s, attempt, self.max_retries
-                    )
-                    time.sleep(sleep_s)
-                    continue
-                raise RuntimeError(f"Gemini API connection error: {exc}") from exc
+                except Exception as exc:
+                    if isinstance(exc, RuntimeError):
+                        raise
+                    err_type = type(exc).__name__
+                    if "InvalidSchema" in err_type and "SOCKS" in str(exc):
+                        raise RuntimeError(
+                            f"SOCKS proxy is configured but PySocks is missing: {exc}. "
+                            "Install with: uv pip install pysocks"
+                        ) from exc
+                    if attempt < self.max_retries:
+                        sleep_s = (self.base_backoff_s * (2 ** (attempt - 1))) + random.uniform(0.1, 0.5)
+                        logger.warning(
+                            "Gemini network timeout/error: %s. Retrying in %.2fs (attempt %d/%d)...",
+                            exc,
+                            sleep_s,
+                            attempt,
+                            self.max_retries,
+                        )
+                        time.sleep(sleep_s)
+                        continue
+                    raise RuntimeError(f"Gemini API connection error: {exc}") from exc
+            else:
+                # Fallback to urllib.request
+                # Always create a new Request per attempt to prevent urllib from mutating
+                # req.type into 'socks5h' across retries.
+                req_body = json.dumps(payload).encode("utf-8")
+                req = urllib.request.Request(
+                    url,
+                    data=req_body,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                try:
+                    with urllib.request.urlopen(req, timeout=120) as resp:
+                        res = json.loads(resp.read().decode("utf-8"))
+                        break
+                except urllib.error.HTTPError as exc:
+                    err_msg = exc.read().decode("utf-8", errors="replace")
+                    if exc.code in (429, 500, 502, 503, 504) and attempt < self.max_retries:
+                        sleep_s = (self.base_backoff_s * (2 ** (attempt - 1))) + random.uniform(0.1, 1.0)
+                        logger.warning(
+                            "Gemini HTTP %d (%s). Retrying in %.2fs (attempt %d/%d)...",
+                            exc.code,
+                            exc.reason,
+                            sleep_s,
+                            attempt,
+                            self.max_retries,
+                        )
+                        time.sleep(sleep_s)
+                        continue
+                    raise RuntimeError(f"Gemini API HTTP {exc.code} error: {err_msg}") from exc
+                except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                    if attempt < self.max_retries:
+                        sleep_s = (self.base_backoff_s * (2 ** (attempt - 1))) + random.uniform(0.1, 0.5)
+                        logger.warning(
+                            "Gemini network timeout/error: %s. Retrying in %.2fs (attempt %d/%d)...",
+                            exc,
+                            sleep_s,
+                            attempt,
+                            self.max_retries,
+                        )
+                        time.sleep(sleep_s)
+                        continue
+                    raise RuntimeError(f"Gemini API connection error: {exc}") from exc
 
         latency = round(time.time() - t0, 3)
         if not res:
@@ -228,10 +317,15 @@ def main() -> int:
     p.add_argument('--prompt-file', type=Path, help='Path to prompt text file')
     p.add_argument('--model', type=str, default='gemini-3.8-flash', help='Gemini model (e.g. gemini-3.8-flash, gemini-3.5-flash-lite)')
     p.add_argument('--reasoning-effort', type=str, default='medium', choices=('low', 'medium', 'high', 'none'))
+    p.add_argument('--api-key', type=str, default=None, help='Gemini API key (defaults to GEMINI_API_KEY env var or .env)')
     args = p.parse_args()
 
     pairs = destinations(args, '_gemini', '.json')
-    parameters = {key: getattr(args, key) for key in ('model', 'reasoning_effort')}
+    init_kwargs = {
+        'model': args.model,
+        'reasoning_effort': args.reasoning_effort,
+        'api_key': args.api_key,
+    }
 
     if args.prompt_file and args.prompt_file.is_file():
         prompt = args.prompt_file.read_text(encoding='utf-8').strip()
@@ -241,8 +335,13 @@ def main() -> int:
         prompt = DEFAULT_ACOUSTIC_PROMPT
 
     with contextlib.redirect_stdout(sys.stderr):
-        verifier = GeminiVerifier(**parameters)
-    parameters['prompt'] = prompt
+        verifier = GeminiVerifier(**init_kwargs)
+
+    parameters = {
+        'model': verifier.model,
+        'reasoning_effort': verifier.reasoning_effort,
+        'prompt': prompt,
+    }
 
     for key in ('model', 'model_id', 'endpoint', 'gguf_variant', 'device'):
         if hasattr(verifier, key) and isinstance(getattr(verifier, key), (str, int, float, bool, type(None))):
