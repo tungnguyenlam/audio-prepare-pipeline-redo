@@ -2,6 +2,15 @@
 
 ## Current handoff — 2026-09-08
 
+- **Latest measured prompt result (2026-09-09):** Gemini 3.5 Flash-Lite V2
+  defect-first prompt reached 206/288 (71.5%) agreement against Gemini 3.8
+  Flash MEDIUM, with 74 false passes and eight false rejects. Full artifacts and
+  diagnosis: `.data/tts_strategy/gold_benchmark_20260908/prompt_tuning/REPORT.md`.
+- **Latest experiment direction:** [E2B plan and scaffold](E2B_VERIFIER_EXPERIMENT.md).
+  Preserve the 288-clip benchmark and reserve its source recordings; use separate
+  development audio. Reasons are optional and omitted from synthetic targets.
+  Only the scaffold is implemented; generation and audio-adaptation runs remain
+  pending. Historical benchmark exposure below still applies.
 - Strategy: [TTS_PRODUCTION_STRATEGY.md](TTS_PRODUCTION_STRATEGY.md).
 - Active phase: 1 evidence is in place; Phase 2 lock is a competitor-conflict gate,
   not a clip repairer.
@@ -476,6 +485,36 @@ Also: `--check-audio-only`, `--materialize-audio`, `--limit`, `--offset`,
 
 Reports also at
 `.data/distillation/reports/gemini35_flash_lite_medium_vs_gold_benchmark_20260908.{md,json,csv}`.
+
+### 13. Gemini 3.5 Flash-Lite prompt tuning on the 288-clip gold
+
+Three prompt variants were run over all 288 clips against the accepted Gemini
+3.8 Flash MEDIUM `tts-v1` reference. Prompts and complete per-sample JSON/CSV/
+Markdown artifacts are saved under
+`.data/tts_strategy/gold_benchmark_20260908/prompt_tuning/`; the consolidated
+diagnosis is `prompt_tuning/REPORT.md`.
+
+| Prompt | Agreement | TP / TN | False pass / false reject | F1 | Thinking tokens | Cost |
+|---|---:|---:|---:|---:|---:|---:|
+| Original V0 | 182/288 (63.2%) | 147 / 35 | 94 / 12 | 73.5% | not recorded | not recorded |
+| V1 rubric alignment | 176/288 (61.1%) | 158 / 18 | 111 / 1 | 73.8% | 748 | $0.1748823 |
+| **V2 defect-first (selected)** | **206/288 (71.5%)** | **151 / 55** | **74 / 8** | **78.6%** | **39,831** | **$0.2009490** |
+| V3 Vietnamese defect-first | 173/288 (60.1%) | 155 / 18 | 111 / 4 | 72.9% | 915 | $0.1388146 |
+
+The original three-category prompt does not match the teacher's nine independent
+dimensions and encourages Flash-Lite's generic overall-cleanliness shortcut.
+V1 showed that adding a long checklist alone makes the pass bias worse. V2's
+short ordered sweeps require a defect search before pass and improved agreement
+by 24 clips (+8.3 percentage points), reducing leaks by 20 and false rejects by
+four. V3 showed that the Vietnamese translation does not trigger the same
+behavior in this model. V2 used 39,831 thinking tokens versus fewer than 1,000
+for either V1 or V3, despite identical MEDIUM reasoning configuration.
+
+V2 defect recall remains limited: music 28/61, secondary speaker 19/37, clipped
+end 12/29, sound effect 11/16, reverberation 6/17, overlap 5/8, excessive noise
+1/3, and clipped start 2/13. All eight V2 false rejects claimed music. The tuned
+prompt is materially better than V0 but still not teacher-grade, especially for
+quiet music and exact word-edge clipping.
 
 ## Continuation rules
 

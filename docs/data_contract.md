@@ -1,58 +1,171 @@
-# Data Contract (Master Gateway)
+# Data & File Contract (Master Gateway)
 
-Boundary/segmentation audits may include `action="reject"`. Word-lock rejection
-records include `error` describing missing word evidence or a conflict with safe
-bounds. Segmentation rejection records include `reason`, `speaker_id`, parent
-start/end, and rejected start/end. Accepted `supported_word_gap` split records
-include `word_gap_start_s` and `word_gap_end_s`. Rejected remainders are absent
-from output turns; consumers must not interpret every audit as an accepted clip.
+[← Docs Index](README.md) | [CLI Contract Gateway →](api_contract.md) | [Command Cookbook →](../scripts/COMMANDS.md)
 
-[← Docs Index](README.md) | [API Contract Gateway →](api_contract.md) | [Full Schema Reference →](07_data_contracts.md)
+All public pipeline data is file-backed. Objects in memory are not passed across
+commands. Commands communicate exclusively through WAV files, sibling JSON sidecars,
+and segment manifests.
 
----
+## 1. Audio Sidecar Contract (`recording.json`)
 
-This document outlines the core field-level contracts, serialized schemas, and persistence models across the pipeline. For exhaustive class definitions and JSON examples, see [**07. Data Contracts & Serialization Schemas**](07_data_contracts.md).
+Commands producing single audio files (`youtube.py`, `convert.py`, `cut.py`,
+`htdemucs.py`, `bs_roformer.py`, `mel_roformer.py`, `mvsep_mdx23.py`) write a
+sibling `.json` file (`recording.wav` -> `recording.json`):
 
-```mermaid
-flowchart TD
-    YT["YouTube URL"] --> CRAWL["YtCrawler.download()"]
-    CRAWL --> AUDIO["Audio (File-backed dataclass)"]
-    AUDIO --> SEP["BaseSeparator.separate()"]
-    SEP --> STEM["Audio (Vocal / Stem)"]
-    STEM --> DIAR["BaseDiarizer.diarize()"]
-    DIAR --> DIAR_RES["DiarizationResult (Schema 2.0)"]
-    STEM & DIAR_RES --> ZERO["run_zero_contamination_pipeline()"]
-    ZERO --> ZERO_RES["ZeroContaminationResult"]
-    
-    AUDIO -. metadata sidecar .-> JSON["{stem}.json"]
-    DIAR_RES -. save / load .-> RES_JSON[".data/diarization/results/*.json"]
+```json
+{
+  "schema_version": 1,
+  "source": {
+    "path": "/absolute/path/to/source.wav",
+    "sha256": "abcdef...",
+    "video_id": "optional_yt_id",
+    "title": "optional_yt_title",
+    "origin": {}
+  },
+  "operation": "separate",
+  "model": "htdemucs_ft",
+  "parameters": {
+    "sample_rate": 44100,
+    "channels": 1,
+    "stem": "vocals",
+    "device": "cpu"
+  },
+  "output": {
+    "sample_rate": 44100,
+    "channels": 1,
+    "frames": 220500,
+    "duration_s": 5.0,
+    "format": "wav",
+    "sha256": "123456..."
+  }
+}
 ```
 
----
+## 2. Diarization Manifest Contract (`segments.json`)
 
-## 📑 Master Schema Index
+Diarization engines produce a directory containing `segments.json` and turn WAV clips:
 
-| Schema / Class | Defined In | Primary Role |
-|---|---|---|
-| [**`Audio`**](01_audio_and_ingestion.md#1-the-audio-dataclass) | `src/utils/AudioClass.py` | File-backed audio representation preserving identity (`source_id`, channel metadata, sampling rates) across all derived files. |
-| [**`DiarizationResult`**](07_data_contracts.md#2-diarization-schemas-schema-20) | `src/diarization/schemas.py` | Universal schema 2.0 diarization result containing `Speaker` and `SpeakerTurn` records, validation rules, and atomic persistence. |
-| [**`SpeakerTurn`**](07_data_contracts.md#speakerturn) | `src/diarization/schemas.py` | Granular speech interval with `start_s`, `end_s`, `speaker_id`, confidence, and overlap evidence. |
-| [**`SpeakerProfile`**](07_data_contracts.md#4-speaker-profile-schema-speakerprofile) | `src/diarization/SpeakerVerifier.py` | Globally reusable known-speaker enrollment identity anchored by reference audio clips (`profile.json` `schema_version="2.0"`, `clips` filename list). |
-| [**`SpeakerPurityResult`**](07_data_contracts.md#speakerpurityresult-embedding-purity) | `src/diarization/schemas.py` | Acoustic embedding sliding-window purity verification decision. |
-| [**`VibeVoicePurityResult`**](07_data_contracts.md#vibevoicepurityresult-foundation-asr-purity) | `src/diarization/VibeVoicePurityVerifier.py` | Autoregressive ASR single- vs multi-speaker verification decision. |
-| [**`OverlapVerificationResult`**](07_data_contracts.md#overlapverificationresult-multimodal-llm-purity) | `src/diarization/OverlapVerifier.py` | Direct-audio speaker-purity and word-boundary result with failure evidence and optional Gemini usage/cost. |
-| [**`ZeroContaminationResult`**](04_zero_contamination_diarization.md#5-result-schema-zerocontaminationresult) | `src/diarization/zero_contamination.py` | High-precision single-speaker harvesting result with full audit trail and attrition funnel stats. |
-| [**`AudioMixResult`**](05_benchmark_and_mixing.md#2-benchmark-dataclasses) | `src/benchmark/separation/schemas.py` | Benchmark mixture container pairing clean speech, background music, and calibrated mixture. |
-| [**`AudioItem`**](07_data_contracts.md#7-pipeline-audioitem-schema) | `src/web_pipeline/dataset_manager.py` | Batch pipeline dataset registry record with system and custom tags. |
+```text
+example_htdemucs_ft/
+  segments.json
+  example_htdemucs_ft_sortformer_spk00_000012340-000018920_0001.wav
+```
 
----
+### Manifest Schema:
 
-## 🏛️ Invariants & Persistence Rules
+```json
+{
+  "schema_version": 1,
+  "source": {
+    "path": "/absolute/path/to/example.wav",
+    "sha256": "abcdef..."
+  },
+  "timestamp_origin": "diarized_input",
+  "model": "sortformer",
+  "parameters": {
+    "sample_rate": 44100,
+    "channels": 1
+  },
+  "turns": [
+    {
+      "speaker_id": "spk00",
+      "start_s": 12.34,
+      "end_s": 18.92,
+      "start_sample": 544194,
+      "end_sample": 834372,
+      "overlap": false,
+      "overlap_with": [],
+      "clip": "example_sortformer_spk00_000012340-000018920_0001.wav",
+      "clip_sha256": "fedcba...",
+      "clip_frames": 290178
+    }
+  ],
+  "speaker_ids": ["spk00"],
+  "source_sample_rate": 44100,
+  "complete": true
+}
+```
 
-1. **File-Backed State:** Memory waveforms are never persisted across public interfaces. File paths are repository-relative (e.g. `.data/mvsep_mdx23/out/...`) to support cross-machine rsync portability.
-2. **Atomic Writes:** All durable JSON files (`DiarizationResult.save()`, annotations, and sidecars) write to a temporary file before an atomic POSIX rename, preventing corruption from unexpected interruptions.
-3. **Identity Preservation:** Transformations preserve `source_id`, `title`, and `native_sample_rate` from the initial ingest.
-4. **Sidecar Conventions:** Companion `{stem}.json` sidecars live directly adjacent to audio files to maintain metadata persistence.
-5. **Runtime Data Root:** All dynamic downloads, stems, cuts, and results are written under `.data/` (gitignored).
+- Sample intervals are half-open (`[start_sample, end_sample)`).
+- Timestamps in filenames are millisecond labels for display; the manifest records precise sample indices.
+- Clip paths are relative to `segments.json`.
+- `complete: true` is written atomically last.
 
-👉 *For full JSON schemas, property tables, and synchronization specs, see [**07. Data Contracts & Serialization Schemas**](07_data_contracts.md).*
+## 3. Purity Manifest Contract
+
+Purity stages (`consensus.py`, `cleanup.py`, `collar.py`, `snap.py`, `align.py`, `segment.py`)
+consume an input manifest and write a new output manifest. When boundaries are altered,
+previous clip references are invalidated (`clips_valid: false`). `scripts/audio/export_segments.py`
+renders the updated clips into a specified directory.
+
+## 4. Speaker Profile Contract (`profile.json`)
+
+Enrolled speakers live under `.data/speaker_profiles/<name>/`:
+
+```text
+.data/speaker_profiles/khanh_vy/
+  profile.json
+  clips/
+    clip_00.wav
+    clip_01.wav
+```
+
+### Profile Schema:
+
+```json
+{
+  "schema_version": "2.0",
+  "name": "khanh_vy",
+  "created_at": "2026-09-09T00:00:00Z",
+  "updated_at": "2026-09-09T00:00:00Z",
+  "clips": [
+    "clip_00.wav",
+    "clip_01.wav"
+  ],
+  "channel_id": null,
+  "channel_name": null,
+  "channel_url": null
+}
+```
+
+## 5. Verification Verdict Contract
+
+Verifier commands (`hf.sh`, `gemini.sh`, `vibevoice.sh`, etc.) produce a JSON file for each analyzed audio file:
+
+```json
+{
+  "schema_version": 1,
+  "source": {
+    "path": "/path/to/clip.wav",
+    "sha256": "..."
+  },
+  "operation": "verify",
+  "model": "google/gemma-4-E2B-it",
+  "parameters": {
+    "device": "cuda:0"
+  },
+  "verdict": {
+    "decision": "pass",
+    "reason": "single_speaker_clean",
+    "confidence": 0.95,
+    "_latency_s": 0.32
+  }
+}
+```
+
+## 6. Evaluation Metrics Contract
+
+Evaluation commands output metrics JSON with complete source provenance:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "separation_metrics",
+  "source": [...],
+  "parameters": {"sample_rate": 44100},
+  "metrics": {
+    "si_sdr_db": 14.82,
+    "sdr_db": 15.11
+  }
+}
+```

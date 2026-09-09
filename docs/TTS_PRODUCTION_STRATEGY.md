@@ -17,6 +17,11 @@ source-disjoint evaluation remain necessary. Production inference stays local.
 
 ## Resume here
 
+For the current verifier work, the [E2B experiment plan](E2B_VERIFIER_EXPERIMENT.md)
+supersedes the next-action sequence below: diagnose on separate development
+sources, preserve the 288-clip benchmark for final evaluation, and omit optional
+reasons from synthetic training targets. The scaffold does not start model runs.
+
 Read this document, [execution log](TTS_STRATEGY_EXECUTION.md), and
 [Phase 1 brief](TTS_PHASE1.md), then inspect `git status` and recent commits.
 Continue the first unfinished, unblocked task. Update the execution log before

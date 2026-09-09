@@ -1,0 +1,9 @@
+# HF/Gemma and HTTP verifier environment (.venv-verify).
+numpy>=2.4.6
+soundfile>=0.14.0
+librosa>=0.11.0
+torch>=2.13.0
+torchaudio>=2.11.0
+transformers>=4.48.0
+accelerate>=1.14.0
+peft>=0.14.0

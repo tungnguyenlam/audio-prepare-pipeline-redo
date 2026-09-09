@@ -1,0 +1,6 @@
+# Lightweight standalone-command environment; no model dependencies.
+soundfile>=0.14.0
+numpy>=2.4.6
+librosa>=0.11.0
+matplotlib>=3.11.1
+yt-dlp>=2026.8.4.234419.dev0

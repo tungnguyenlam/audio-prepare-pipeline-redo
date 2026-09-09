@@ -1,0 +1,6 @@
+# Install explicitly into .venv-pyannote.
+numpy>=2.4.6
+soundfile>=0.14.0
+torch>=2.13.0
+torchaudio>=2.11.0
+pyannote.audio
