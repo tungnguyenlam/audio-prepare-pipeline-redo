@@ -1,0 +1,80 @@
+"""Shared artifact contract for freeform audio-model experiments."""
+
+from __future__ import annotations
+
+import os
+import tempfile
+from pathlib import Path
+from typing import Any, Callable
+
+from _common.files import batch, digest, identity, read_json, request, write_json
+
+
+def read_prompt(path: Path, label: str = "Prompt") -> str:
+    if not path.is_file():
+        raise ValueError(f"{label} file not found: {path}")
+    return path.read_text(encoding="utf-8")
+
+
+def write_text(path: Path, value: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(
+        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as stream:
+            stream.write(value)
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
+def run_freeform(
+    *,
+    args: Any,
+    pairs: list[tuple[Path, Path]],
+    backend: str,
+    parameters: dict[str, Any],
+    generate: Callable[[Path], dict[str, Any]],
+) -> int:
+    """Persist unparsed text and the model/provider details returned by generate."""
+
+    def process(source: Path, destination: Path) -> None:
+        if destination.suffix.lower() == ".json":
+            raise ValueError(
+                "Freeform output must not use .json; that suffix is reserved for metadata"
+            )
+        metadata_path = destination.with_suffix(".json")
+        wanted = request(identity(source), "explore_audio_model", parameters, backend)
+        if destination.exists() or metadata_path.exists():
+            if not args.overwrite and destination.is_file() and metadata_path.is_file():
+                old = read_json(metadata_path)
+                output = old.get("output", {})
+                if all(old.get(key) == value for key, value in wanted.items()) and output.get(
+                    "sha256"
+                ) == digest(destination):
+                    return
+            if not args.overwrite:
+                raise ValueError(f"Conflicting output: {destination}; use --overwrite")
+
+        result = generate(source)
+        text = result.get("text")
+        if not isinstance(text, str):
+            raise TypeError("Freeform generator must return text as a string")
+        response = {key: value for key, value in result.items() if key != "text"}
+        write_text(destination, text)
+        write_json(
+            metadata_path,
+            {
+                **wanted,
+                "response": response,
+                "output": {
+                    "path": str(destination),
+                    "format": "utf-8 text",
+                    "bytes": destination.stat().st_size,
+                    "sha256": digest(destination),
+                },
+            },
+        )
+
+    return batch(pairs, process)

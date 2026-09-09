@@ -154,24 +154,37 @@ class EndpointVerifier:
             timeout_s=self.timeout_s,
         )
 
-    def verify(self, audio_path: Path, prompt: str) -> dict[str, Any]:
+    def generate(
+        self,
+        audio_path: Path,
+        prompt: str,
+        *,
+        system_prompt: str | None = None,
+        audio_position: str = "before",
+    ) -> dict[str, Any]:
         with open(audio_path, "rb") as f:
             audio_b64 = base64.b64encode(f.read()).decode("ascii")
 
+        audio_part = {
+            "type": "input_audio",
+            "input_audio": {
+                "data": audio_b64,
+                "format": audio_path.suffix.lstrip(".").lower() or "wav",
+            },
+        }
+        prompt_part = {"type": "text", "text": prompt}
+        content = (
+            [audio_part, prompt_part]
+            if audio_position == "before"
+            else [prompt_part, audio_part]
+        )
+        messages: list[dict[str, Any]] = []
+        if system_prompt is not None:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": content})
         payload = {
             "model": self.model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "input_audio",
-                            "input_audio": {"data": audio_b64, "format": "wav"},
-                        },
-                        {"type": "text", "text": prompt},
-                    ],
-                }
-            ],
+            "messages": messages,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
         }
@@ -188,22 +201,37 @@ class EndpointVerifier:
         raw_content = msg.get("content")
         reasoning = msg.get("reasoning_content") or ""
 
-        # Handle thinking / reasoning models (e.g. MOSS-Audio-8B-Thinking)
-        target_text = ""
-        if isinstance(raw_content, str) and raw_content.strip():
-            target_text = raw_content.strip()
-        elif isinstance(reasoning, str) and reasoning.strip():
+        text = raw_content if isinstance(raw_content, str) else ""
+        if isinstance(raw_content, list):
+            text = "".join(
+                part.get("text", "")
+                for part in raw_content
+                if isinstance(part, dict) and isinstance(part.get("text", ""), str)
+            )
+        if not text and isinstance(reasoning, str):
+            text = reasoning
+        return {
+            "text": text,
+            "reasoning": reasoning,
+            "latency_s": latency,
+            "provider_body": res,
+        }
+
+    def verify(self, audio_path: Path, prompt: str) -> dict[str, Any]:
+        generated = self.generate(audio_path, prompt)
+        text = generated["text"]
+        reasoning = generated["reasoning"]
+        target_text = text.strip() if isinstance(text, str) else ""
+        if not target_text and isinstance(reasoning, str):
             target_text = reasoning.strip()
-        elif isinstance(raw_content, list):
-            # Content may be a list of text parts
-            parts = [p.get("text", "") for p in raw_content if isinstance(p, dict)]
-            target_text = "".join(parts).strip()
 
         if not target_text:
-            raise RuntimeError(f"Endpoint returned empty content and reasoning: {msg}")
+            raise RuntimeError(
+                f"Endpoint returned empty content and reasoning: {generated['provider_body']}"
+            )
 
         parsed = extract_json_payload(target_text)
-        parsed["_latency_s"] = latency
+        parsed["_latency_s"] = generated["latency_s"]
         if reasoning:
             parsed["_reasoning"] = reasoning
         return parsed
