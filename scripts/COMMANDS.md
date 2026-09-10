@@ -151,11 +151,14 @@ Relative paths below are relative to your current working directory.
 # Single video download (mono WAV, 48 kHz default)
 bash scripts/download/youtube.sh --url 'https://www.youtube.com/watch?v=VIDEO' --output-dir .data/downloads
 
-# Playlist download
+# Playlist download (supports playlist URL or watch URL containing &list=...)
 bash scripts/download/playlist.sh --url 'https://www.youtube.com/playlist?list=PLAYLIST' --output-dir .data/downloads
 
-# Channel download
-bash scripts/download/channel.sh --url 'https://www.youtube.com/@CHANNEL/videos' --output-dir .data/downloads
+# Playlist download with item limit (e.g. download only first 5 items)
+bash scripts/download/playlist.sh --url 'https://www.youtube.com/watch?v=VIDEO&list=PLAYLIST' --limit 5
+
+# Channel download (supply /videos URL; optionally limit item count)
+bash scripts/download/channel.sh --url 'https://www.youtube.com/@CHANNEL/videos' --limit 10 --output-dir .data/downloads
 ```
 
 ### Audio utilities

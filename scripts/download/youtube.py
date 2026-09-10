@@ -20,6 +20,9 @@ def arguments(description: str, bulk: bool = False) -> LoggingArgumentParser:
                    help='Output directory (default: dynamic per audio family under .data/download/<family>)')
     if not bulk:
         p.add_argument('--output-file', type=Path, help='Explicit destination WAV file path (requires single video download)')
+    else:
+        p.add_argument('--limit', '--max-items', dest='limit', type=positive_int, default=None,
+                       help='Maximum number of videos to download from the playlist or channel')
     p.add_argument('--work-dir', type=Path, default=ROOT / '.data/download/work', help='Working directory for temporary files')
     p.add_argument('--cookie-file', type=Path, help='Optional cookies.txt file for yt-dlp authentication')
     p.add_argument('--overwrite', action='store_true', help='Overwrite existing output files and sidecars')
@@ -35,7 +38,7 @@ def download(url: str, args) -> Path:
     if args.cookie_file:
         options['cookiefile'] = str(args.cookie_file.resolve())
     progress('METADATA', f'Fetching info for {url}')
-    with YoutubeDL(options) as ydl:
+    with YoutubeDL({**options, 'extract_flat': 'in_playlist'}) as ydl:
         info = ydl.extract_info(url, download=False)
     if not info or info.get('_type') in {'playlist', 'multi_video'}:
         raise ValueError('Expected a single video URL; use playlist.py or channel.py for bulk downloads')

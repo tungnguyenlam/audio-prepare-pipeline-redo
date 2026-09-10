@@ -3,10 +3,23 @@ from __future__ import annotations
 
 import contextlib
 import sys
+import urllib.parse
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _common.files import progress
 from youtube import arguments, download
+
+
+def normalize_playlist_url(url: str) -> str:
+    """If a video URL contains a playlist parameter (list=...), infer the playlist URL."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        query = urllib.parse.parse_qs(parsed.query)
+        if 'list' in query and query['list']:
+            return f'https://www.youtube.com/playlist?list={query["list"][0]}'
+    except Exception:
+        pass
+    return url
 
 
 def main(description: str = __doc__) -> int:
@@ -15,13 +28,22 @@ def main(description: str = __doc__) -> int:
     options = {'extract_flat': 'in_playlist', 'quiet': True, 'ignoreerrors': True}
     if args.cookie_file:
         options['cookiefile'] = str(args.cookie_file.resolve())
+    if args.limit is not None:
+        options['playlistend'] = args.limit
+    target_url = normalize_playlist_url(args.url)
+    if target_url != args.url:
+        progress('INFER', f'Inferred playlist URL: {target_url}')
     with contextlib.redirect_stdout(sys.stderr), YoutubeDL(options) as ydl:
-        listing = ydl.extract_info(args.url, download=False)
+        listing = ydl.extract_info(target_url, download=False)
         if not listing or 'entries' not in listing:
             raise ValueError('URL did not resolve to a playlist or channel')
-        entries = list(listing['entries'])
+        raw_entries = [e for e in listing['entries'] if e is not None]
+    entries = raw_entries[:args.limit] if args.limit is not None else raw_entries
     total = len(entries)
-    progress('PLAYLIST', f'Found {total} items to process')
+    if args.limit is not None and len(raw_entries) != total:
+        progress('PLAYLIST', f'Found {len(raw_entries)} items; limited to first {total}')
+    else:
+        progress('PLAYLIST', f'Found {total} items to process')
     indexed_entries = list(enumerate(entries, 1))
     batches = [indexed_entries[i:i + args.batch_size] for i in range(0, len(indexed_entries), args.batch_size)]
     import threading

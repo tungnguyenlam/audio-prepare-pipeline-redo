@@ -36,8 +36,8 @@ flowchart TD
 | Category | Command / Launcher | Key Arguments | Outputs |
 |---|---|---|---|
 | **Download** | `scripts/download/youtube.py` | `--url`, `--output-dir`, `--output-file`, `--sample-rate`, `--cookie-file` | Mono WAV (48 kHz default) + sibling `.json` |
-| | `scripts/download/playlist.py` | `--url`, `--output-dir`, `--sample-rate` | Batch WAVs + `.json` sidecars |
-| | `scripts/download/channel.py` | `--url`, `--output-dir`, `--sample-rate` | Batch WAVs + `.json` sidecars |
+| | `scripts/download/playlist.py` | `--url`, `--output-dir`, `--sample-rate`, `--limit` | Batch WAVs + `.json` sidecars |
+| | `scripts/download/channel.py` | `--url`, `--output-dir`, `--sample-rate`, `--limit` | Batch WAVs + `.json` sidecars |
 | **Separation** | `scripts/separate/htdemucs.sh` | `--input-file` / `--input-dir`, `--output-dir`, `--stem`, `--shifts`, `--overlap` | Separated WAV + sibling `.json` |
 | | `scripts/separate/htdemucs_ft.sh` | `--input-file` / `--input-dir`, `--output-dir`, `--stem` | Fine-tuned Demucs separated WAV |
 | | `scripts/separate/bs_roformer.sh` | `--input-file` / `--input-dir`, `--output-dir`, `--stem`, `--model` | RoFormer separated WAV |
