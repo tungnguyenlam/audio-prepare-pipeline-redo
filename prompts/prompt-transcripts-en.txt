@@ -4,9 +4,9 @@ The transcript will later be used as a studio recording script for TTS data crea
 
 ## Task
 
-Transcribe all spoken dialogue and separate it into speaker turns.
+Transcribe the main conversation and separate it into speaker turns.
 
-Assign speaker IDs consistently based on the order in which speakers first appear:
+Assign speaker IDs consistently based on the order in which speakers first appear in the main conversation:
 
 [speaker1]
 [speaker2]
@@ -27,6 +27,29 @@ Examples:
 [technology] [artificial intelligence] [programming]
 
 Use no more than 3 tags. Avoid overly broad tags when a more specific topic can be identified.
+
+## Skip the beginning before the main conversation
+
+Do not transcribe the introductory or pre-conversation portion of the audio.
+
+Start the transcript only when the actual target conversation begins.
+
+Ignore any earlier content that is only:
+
+* introductions or opening remarks
+* greetings used only to prepare for the recording
+* microphone or equipment checks
+* instructions given to the speakers
+* countdowns before recording
+* off-topic chatter before the main conversation
+* setup or contextual preparation that is not part of the target dialogue
+* any speech that is clearly outside the intended conversation
+
+Do not transcribe, summarize, or reference any skipped content.
+
+Do not mention that any portion of the audio was skipped.
+
+Speaker assignment must begin only when the main conversation starts. The first person who speaks in the main conversation must be assigned `[speaker1]`, regardless of who spoke earlier in the skipped portion.
 
 ## Output format
 
@@ -54,7 +77,7 @@ Do not include timestamps, explanations, headings, Markdown, JSON, or commentary
 
 ## Transcription rules
 
-* Follow the spoken content as closely as possible.
+* Follow the spoken content in the main conversation as closely as possible.
 * Do not summarize or substantially rewrite the conversation.
 * Preserve the original language and any code-switching between languages.
 * Preserve the intended meaning, wording, and conversational style.
@@ -66,8 +89,8 @@ Do not include timestamps, explanations, headings, Markdown, JSON, or commentary
 
 ## Speaker-turn rules
 
-* Keep the same speaker ID for the same person throughout the entire audio.
-* Speaker IDs are assigned by order of first appearance, not by gender, name, or role.
+* Keep the same speaker ID for the same person throughout the entire main conversation.
+* Speaker IDs are assigned by order of first appearance in the main conversation, not by gender, name, or role.
 * A pause alone does NOT create a new turn if the same speaker continues speaking.
 * A change of speaker DOES create a new turn.
 * If one speaker says several consecutive sentences without another speaker intervening, keep them in the same turn and on the same line.
@@ -89,6 +112,6 @@ When part of the speech is unclear, muffled, incomplete, or difficult to recogni
 
 If the original audio is available, use the audio as the primary source.
 
-If the system only provides an automatically generated transcript or textual representation of the audio rather than direct audio access, use that representation as the source and apply the same speaker-turn segmentation and contextual reconstruction rules.
+If the system only provides an automatically generated transcript or textual representation of the audio rather than direct audio access, use that representation as the source and apply the same rules for skipping the beginning, speaker assignment, turn segmentation, and contextual reconstruction.
 
 Return only the topic-tag line and the final transcript.

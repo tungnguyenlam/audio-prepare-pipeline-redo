@@ -4,9 +4,9 @@ Transcript này sẽ được sử dụng làm kịch bản thu âm trong studio
 
 ## Nhiệm vụ
 
-Chép lại toàn bộ lời thoại và tách theo từng lượt nói của từng người.
+Chép lại toàn bộ phần hội thoại chính và tách theo từng lượt nói của từng người.
 
-Gán speaker nhất quán theo thứ tự xuất hiện lần đầu:
+Gán speaker nhất quán theo thứ tự xuất hiện lần đầu trong phần hội thoại chính:
 
 [speaker1]
 [speaker2]
@@ -25,6 +25,29 @@ Tag nên thể hiện nội dung hoặc bối cảnh chính của cuộc nói ch
 [công nghệ] [trí tuệ nhân tạo] [lập trình]
 
 Không tạo quá 3 tag. Không sử dụng tag quá chung chung nếu có thể chọn một chủ đề cụ thể hơn.
+
+## Bỏ qua phần đầu trước hội thoại chính
+
+Không transcribe phần mở đầu hoặc phần trước khi cuộc hội thoại chính bắt đầu.
+
+Chỉ bắt đầu transcript khi nội dung hội thoại mục tiêu thực sự bắt đầu.
+
+Bỏ qua các nội dung xuất hiện trước đó nếu chúng chỉ là:
+
+* lời giới thiệu hoặc lời mở đầu
+* lời chào dùng để chuẩn bị cho buổi ghi âm
+* kiểm tra microphone hoặc thiết bị
+* hướng dẫn dành cho người nói
+* đếm ngược trước khi bắt đầu
+* trao đổi ngoài lề trước cuộc hội thoại
+* nội dung chuẩn bị hoặc thiết lập bối cảnh không thuộc phần hội thoại cần thu
+* bất kỳ lời nói nào rõ ràng không thuộc cuộc hội thoại mục tiêu
+
+Không transcribe, tóm tắt hoặc nhắc lại phần đã bỏ qua.
+
+Không thêm ghi chú rằng một phần audio đã bị bỏ qua.
+
+Việc gán speaker chỉ bắt đầu từ phần hội thoại chính. Người đầu tiên nói trong phần hội thoại chính phải được gán là `[speaker1]`, bất kể trước đó trong phần bị bỏ qua đã có ai nói.
 
 ## Định dạng đầu ra
 
@@ -50,7 +73,7 @@ Ngoài dòng tag và các dòng transcript, không trả về timestamp, giải 
 
 ## Quy tắc transcription
 
-* Bám sát nội dung được nói trong audio nhất có thể.
+* Bám sát nội dung được nói trong phần hội thoại chính nhất có thể.
 * Không tóm tắt hoặc viết lại đáng kể nội dung hội thoại.
 * Giữ nguyên ngôn ngữ gốc và các đoạn code-switch giữa nhiều ngôn ngữ nếu có.
 * Giữ đúng ý nghĩa, cách diễn đạt và phong cách hội thoại của người nói.
@@ -62,8 +85,8 @@ Ngoài dòng tag và các dòng transcript, không trả về timestamp, giải 
 
 ## Quy tắc tách lượt thoại
 
-* Giữ cùng một speaker ID cho cùng một người trong toàn bộ audio.
-* Speaker ID được gán theo thứ tự xuất hiện lần đầu, không dựa trên giới tính, tên hoặc vai trò.
+* Giữ cùng một speaker ID cho cùng một người trong toàn bộ phần hội thoại chính.
+* Speaker ID được gán theo thứ tự xuất hiện lần đầu trong phần hội thoại chính, không dựa trên giới tính, tên hoặc vai trò.
 * Một khoảng dừng không tạo ra lượt thoại mới nếu vẫn là cùng một người tiếp tục nói.
 * Khi người nói thay đổi thì phải tạo một lượt thoại mới.
 * Nếu một người nói nhiều câu liên tiếp mà không có người khác xen vào, giữ toàn bộ phần đó trong cùng một lượt thoại và cùng một dòng.
@@ -85,6 +108,6 @@ Khi một phần lời nói bị mờ, nhỏ, không hoàn chỉnh hoặc khó n
 
 Nếu hệ thống có thể truy cập audio gốc, hãy sử dụng audio làm nguồn chính.
 
-Nếu hệ thống chỉ cung cấp bản transcript tự động hoặc biểu diễn văn bản được tạo từ audio thay vì audio trực tiếp, hãy sử dụng phần đó làm nguồn và áp dụng cùng các quy tắc tách speaker, tách lượt thoại và phục dựng theo ngữ cảnh.
+Nếu hệ thống chỉ cung cấp bản transcript tự động hoặc biểu diễn văn bản được tạo từ audio thay vì audio trực tiếp, hãy sử dụng phần đó làm nguồn và áp dụng cùng các quy tắc bỏ qua phần mở đầu, tách speaker, tách lượt thoại và phục dựng theo ngữ cảnh.
 
 Chỉ trả về dòng tag và transcript cuối cùng.
