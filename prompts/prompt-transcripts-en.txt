@@ -1,0 +1,94 @@
+You are creating a turn-based dialogue transcript from the provided audio.
+
+The transcript will later be used as a studio recording script for TTS data creation. The goal is to produce a natural, coherent transcript that closely follows the original conversation and is easy for speakers to record.
+
+## Task
+
+Transcribe all spoken dialogue and separate it into speaker turns.
+
+Assign speaker IDs consistently based on the order in which speakers first appear:
+
+[speaker1]
+[speaker2]
+[speaker3]
+...
+
+Start a new turn whenever the active speaker changes.
+
+In addition to the transcript, identify **1 to 3 short topic tags** that describe the main subject or context of the conversation.
+
+The tags should reflect the actual topic of the conversation as specifically as possible.
+
+Examples:
+
+[travel] [hotel booking]
+[work] [job interview]
+[family]
+[technology] [artificial intelligence] [programming]
+
+Use no more than 3 tags. Avoid overly broad tags when a more specific topic can be identified.
+
+## Output format
+
+The first line must contain 1 to 3 topic tags:
+
+[tag1] [tag2] [tag3]
+
+Then output the transcript, with exactly one speaker turn per line:
+
+[speaker1] Spoken text for this turn.
+[speaker2] Spoken text for this turn.
+[speaker1] Next spoken turn.
+
+Example:
+
+[travel] [hotel booking]
+
+[speaker1] I'm thinking about going to Da Nang this weekend. Do you know any good hotels?
+[speaker2] I stayed at one near My Khe Beach last time. It was pretty good.
+[speaker1] How much was it per night?
+
+Do not output anything other than the topic-tag line and the transcript.
+
+Do not include timestamps, explanations, headings, Markdown, JSON, or commentary.
+
+## Transcription rules
+
+* Follow the spoken content as closely as possible.
+* Do not summarize or substantially rewrite the conversation.
+* Preserve the original language and any code-switching between languages.
+* Preserve the intended meaning, wording, and conversational style.
+* Use natural punctuation and capitalization so the transcript is easy to read and record.
+* Preserve names, numbers, abbreviations, acronyms, and technical terms as accurately as possible.
+* Do not translate content unless the speaker themselves provides a translation.
+* Ignore non-speech sounds such as background noise, music, coughing, breathing, or microphone noise.
+* Do not add sound-event tags such as [laugh], [music], or [noise].
+
+## Speaker-turn rules
+
+* Keep the same speaker ID for the same person throughout the entire audio.
+* Speaker IDs are assigned by order of first appearance, not by gender, name, or role.
+* A pause alone does NOT create a new turn if the same speaker continues speaking.
+* A change of speaker DOES create a new turn.
+* If one speaker says several consecutive sentences without another speaker intervening, keep them in the same turn and on the same line.
+* Short responses or backchannels from another speaker, such as "yeah", "uh-huh", "right", "mm-hmm", or similar expressions, count as separate turns when clearly present.
+* If speakers overlap, reconstruct the most natural and reasonable conversational turn order based on the content.
+
+## Unclear speech
+
+When part of the speech is unclear, muffled, incomplete, or difficult to recognize:
+
+* Use the surrounding context to infer the most likely intended wording.
+* Prefer a natural and coherent reconstruction instead of inserting markers such as [inaudible].
+* You may fill in or reconstruct a short unclear portion when necessary.
+* The reconstructed wording should be plausible given the surrounding context, meaning, and speaking style.
+* Do not mention that any reconstruction or inference occurred.
+* Do not invent entirely new information that is unsupported by the surrounding conversation.
+
+## Input priority
+
+If the original audio is available, use the audio as the primary source.
+
+If the system only provides an automatically generated transcript or textual representation of the audio rather than direct audio access, use that representation as the source and apply the same speaker-turn segmentation and contextual reconstruction rules.
+
+Return only the topic-tag line and the final transcript.

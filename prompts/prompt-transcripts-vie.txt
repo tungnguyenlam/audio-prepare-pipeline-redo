@@ -1,0 +1,90 @@
+Bạn đang tạo transcript hội thoại theo từng lượt nói từ file audio được cung cấp.
+
+Transcript này sẽ được sử dụng làm kịch bản thu âm trong studio để tạo dữ liệu TTS. Mục tiêu là tạo ra transcript tự nhiên, mạch lạc, bám sát nội dung hội thoại gốc và dễ cho người đọc thu âm lại.
+
+## Nhiệm vụ
+
+Chép lại toàn bộ lời thoại và tách theo từng lượt nói của từng người.
+
+Gán speaker nhất quán theo thứ tự xuất hiện lần đầu:
+
+[speaker1]
+[speaker2]
+[speaker3]
+...
+
+Mỗi khi người nói thay đổi thì bắt đầu một lượt thoại mới.
+
+Ngoài transcript, hãy xác định từ **1 đến 3 tag ngắn gọn** mô tả chủ đề chính của cuộc hội thoại.
+
+Tag nên thể hiện nội dung hoặc bối cảnh chính của cuộc nói chuyện, ví dụ:
+
+[du lịch] [đặt phòng khách sạn]
+[công việc] [phỏng vấn]
+[gia đình]
+[công nghệ] [trí tuệ nhân tạo] [lập trình]
+
+Không tạo quá 3 tag. Không sử dụng tag quá chung chung nếu có thể chọn một chủ đề cụ thể hơn.
+
+## Định dạng đầu ra
+
+Dòng đầu tiên phải chứa từ 1 đến 3 tag chủ đề:
+
+[tag1] [tag2] [tag3]
+
+Sau đó là transcript, mỗi lượt thoại nằm trên đúng một dòng:
+
+[speaker1] Nội dung lời thoại.
+[speaker2] Nội dung lời thoại.
+[speaker1] Lượt thoại tiếp theo.
+
+Ví dụ:
+
+[du lịch] [đặt phòng khách sạn]
+
+[speaker1] Cuối tuần này mình định đi Đà Nẵng, cậu biết khách sạn nào ổn không?
+[speaker2] Mình ở một khách sạn gần biển Mỹ Khê lần trước, khá ổn đấy.
+[speaker1] Giá khoảng bao nhiêu một đêm?
+
+Ngoài dòng tag và các dòng transcript, không trả về timestamp, giải thích, tiêu đề, Markdown, JSON hoặc bất kỳ phần bình luận nào khác.
+
+## Quy tắc transcription
+
+* Bám sát nội dung được nói trong audio nhất có thể.
+* Không tóm tắt hoặc viết lại đáng kể nội dung hội thoại.
+* Giữ nguyên ngôn ngữ gốc và các đoạn code-switch giữa nhiều ngôn ngữ nếu có.
+* Giữ đúng ý nghĩa, cách diễn đạt và phong cách hội thoại của người nói.
+* Sử dụng dấu câu và viết hoa hợp lý để transcript dễ đọc và dễ thu âm.
+* Giữ chính xác tên riêng, số, chữ viết tắt, acronym và thuật ngữ chuyên môn nếu có thể xác định được.
+* Không dịch nội dung sang ngôn ngữ khác trừ khi chính người nói thực hiện việc dịch.
+* Bỏ qua các âm thanh không phải lời nói như tiếng ồn nền, nhạc, ho, thở hoặc nhiễu microphone.
+* Không thêm các tag âm thanh như [laugh], [music], [noise].
+
+## Quy tắc tách lượt thoại
+
+* Giữ cùng một speaker ID cho cùng một người trong toàn bộ audio.
+* Speaker ID được gán theo thứ tự xuất hiện lần đầu, không dựa trên giới tính, tên hoặc vai trò.
+* Một khoảng dừng không tạo ra lượt thoại mới nếu vẫn là cùng một người tiếp tục nói.
+* Khi người nói thay đổi thì phải tạo một lượt thoại mới.
+* Nếu một người nói nhiều câu liên tiếp mà không có người khác xen vào, giữ toàn bộ phần đó trong cùng một lượt thoại và cùng một dòng.
+* Các phản hồi ngắn như "ừ", "ừm", "đúng", "vâng", "uh-huh", "yeah" của người khác được tính là một lượt thoại riêng nếu nghe thấy rõ.
+* Nếu có nói chồng lên nhau, hãy sắp xếp lại thành thứ tự lượt thoại tự nhiên và hợp lý nhất dựa trên nội dung hội thoại.
+
+## Phần lời nói không rõ
+
+Khi một phần lời nói bị mờ, nhỏ, không hoàn chỉnh hoặc khó nhận diện:
+
+* Sử dụng ngữ cảnh trước và sau để suy đoán nội dung có khả năng cao nhất.
+* Ưu tiên tạo ra câu tự nhiên và mạch lạc thay vì chèn các ký hiệu như [inaudible].
+* Có thể tự điền hoặc phục dựng một đoạn ngắn bị không rõ khi cần thiết.
+* Phần được phục dựng phải hợp lý với ngữ cảnh, ý nghĩa và cách nói của người nói.
+* Không cần ghi chú rằng nội dung đó đã được suy đoán hoặc phục dựng.
+* Không tự tạo thêm thông tin hoàn toàn mới nếu không có cơ sở từ nội dung hội thoại xung quanh.
+
+## Ưu tiên nguồn đầu vào
+
+Nếu hệ thống có thể truy cập audio gốc, hãy sử dụng audio làm nguồn chính.
+
+Nếu hệ thống chỉ cung cấp bản transcript tự động hoặc biểu diễn văn bản được tạo từ audio thay vì audio trực tiếp, hãy sử dụng phần đó làm nguồn và áp dụng cùng các quy tắc tách speaker, tách lượt thoại và phục dựng theo ngữ cảnh.
+
+Chỉ trả về dòng tag và transcript cuối cùng.
