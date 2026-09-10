@@ -12,8 +12,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-import torch
-
 from _audio import (
     extract_json_payload,
     load_audio_waveform,
@@ -83,6 +81,8 @@ class MossAudioVerifier:
         adapter_path: str | None = None,
         hf_token: str | None = None,
     ) -> None:
+        import torch
+
         MossAudioModel, MossAudioProcessor = _import_moss_classes()
 
         dtype_map = {
@@ -148,6 +148,7 @@ class MossAudioVerifier:
         audio_input_mask = inputs["input_ids"] == self.processor.audio_token_id
         inputs["audio_input_mask"] = audio_input_mask
 
+        import torch
         with torch.no_grad():
             generated_ids = self.model.generate(
                 **inputs,
@@ -174,12 +175,12 @@ def main() -> int:
     from _cli import load_prompt, resolved_parameters, run_verifier
     from _common.files import destinations, parser
     p = parser('Verify audio with moss; writes verdicts without filtering audio.', 'verify', 'moss')
-    p.add_argument('--prompt-file', type=Path)
-    p.add_argument('--model-id', type=str, default='OpenMOSS-Team/MOSS-Audio-8B-Thinking')
-    p.add_argument('--device', type=str, default='auto')
-    p.add_argument('--trust-remote-code', action=argparse.BooleanOptionalAction, default=True)
-    p.add_argument('--torch-dtype', type=str, default='bfloat16')
-    p.add_argument('--adapter-path', type=str, default=None)
+    p.add_argument('--prompt-file', type=Path, help='Optional path to text prompt file (defaults to acoustic defect prompt)')
+    p.add_argument('--model-id', type=str, default='OpenMOSS-Team/MOSS-Audio-8B-Thinking', help='MOSS-Audio model ID or local directory')
+    p.add_argument('--device', type=str, default='auto', help='Inference device ("auto", "cpu", or "cuda:N")')
+    p.add_argument('--trust-remote-code', action=argparse.BooleanOptionalAction, default=True, help='Allow executing custom code from Hugging Face model repository')
+    p.add_argument('--torch-dtype', type=str, default='bfloat16', help='PyTorch weights dtype ("bfloat16", "float16", or "float32")')
+    p.add_argument('--adapter-path', type=str, default=None, help='Optional LoRA adapter directory')
     args = p.parse_args()
     pairs = destinations(args, '_moss', '.json')
     parameters = {key: getattr(args, key) for key in ('model_id', 'device', 'trust_remote_code', 'torch_dtype', 'adapter_path')}

@@ -199,10 +199,14 @@ def apply_context_aware_collar(turns: Sequence[dict], *, collar_s: float=DEFAULT
 def main() -> int:
     p = arguments(__doc__)
     p.add_argument('--context-aware', action='store_true', help='Use asymmetric handoff-aware collar adjustment')
-    p.add_argument('--collar-s', type=float, default=DEFAULT_COLLAR_EROSION_S)
-    p.add_argument('--min-duration-s', type=float, default=DEFAULT_MIN_TURN_DURATION_S)
-    p.add_argument('--transition-exclusion-s', type=float, default=DEFAULT_TRANSITION_EXCLUSION_S)
+    p.add_argument('--collar-s', type=float, default=DEFAULT_COLLAR_EROSION_S, help='Inward margin shaved from start and end of every turn in seconds')
+    p.add_argument('--min-duration-s', type=float, default=DEFAULT_MIN_TURN_DURATION_S, help='Minimum surviving turn duration in seconds required')
+    p.add_argument('--transition-exclusion-s', type=float, default=DEFAULT_TRANSITION_EXCLUSION_S, help='Speaker transition gap exclusion threshold in seconds')
     args = p.parse_args()
+    if args.concurrency < 1:
+        p.error('--concurrency must be at least 1')
+    if args.batch_size < 1:
+        p.error('--batch-size must be at least 1')
     values = {key: getattr(args, key) for key in ('collar_s', 'min_duration_s', 'transition_exclusion_s')}
     if any(not math.isfinite(v) or v < 0 for v in values.values()):
         p.error('Collar settings must be finite and nonnegative')

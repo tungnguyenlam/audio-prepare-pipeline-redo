@@ -14,20 +14,43 @@ from _common.files import LoggingArgumentParser, completed, digest, identity, pr
 
 def main() -> int:
     p = LoggingArgumentParser(description=__doc__)
-    p.add_argument('--input-manifest', type=Path, required=True)
-    p.add_argument('--output-file', type=Path, required=True)
-    p.add_argument('--overwrite', action='store_true')
+    p.add_argument('--input-manifest', type=Path, required=True, help='Path to input dataset manifest JSON')
+    p.add_argument('--output-file', type=Path, required=True, help='Output ZIP archive destination path')
+    p.add_argument('--overwrite', action='store_true', help='Overwrite existing output ZIP archive and sidecars')
+    p.add_argument('--concurrency', type=int, default=1, help='Number of concurrent workers for checking file hashes. Set > 1 to enable concurrent execution')
+    p.add_argument('--batch-size', type=int, default=1, help='Batch size of entries to verify per worker task')
     args = p.parse_args()
+    if args.concurrency < 1:
+        p.error('--concurrency must be at least 1')
+    if args.batch_size < 1:
+        p.error('--batch-size must be at least 1')
     destination = args.output_file.resolve()
     sidecar = destination.with_suffix('.json')
     manifest = read_json(args.input_manifest)
-    files = []
-    for entry in manifest['entries']:
+
+    def _verify_item(entry):
         path = Path(entry['path'])
-        path = path.resolve() if path.is_absolute() else (args.input_manifest.parent / path).resolve()
-        if entry.get('sha256') and digest(path) != entry['sha256']:
-            p.error(f'Indexed audio has changed: {path}; re-index before bundling')
-        files.append(path)
+        resolved = path.resolve() if path.is_absolute() else (args.input_manifest.parent / path).resolve()
+        if entry.get('sha256') and digest(resolved) != entry['sha256']:
+            raise ValueError(f'Indexed audio has changed: {resolved}; re-index before bundling')
+        return resolved
+
+    def _verify_batch(batch_items):
+        return [_verify_item(e) for e in batch_items]
+
+    batches = [manifest['entries'][i:i + args.batch_size] for i in range(0, len(manifest['entries']), args.batch_size)]
+    files = []
+    try:
+        if args.concurrency > 1 and len(batches) > 1:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=min(args.concurrency, len(batches))) as pool:
+                for b_files in pool.map(_verify_batch, batches):
+                    files.extend(b_files)
+        else:
+            for b in batches:
+                files.extend(_verify_batch(b))
+    except ValueError as exc:
+        p.error(str(exc))
     if {destination, sidecar} & {args.input_manifest.resolve(), *files} or destination == sidecar:
         p.error('Output and sidecar must differ from every input')
     metadata = request(identity(args.input_manifest), 'dataset_bundle', {'sources': [identity(path) for path in files]})

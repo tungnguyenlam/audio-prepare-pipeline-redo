@@ -20,14 +20,22 @@ from _common.segments import export, manifest_complete
 
 def main() -> int:
     p = parser(__doc__, 'diarize', 'pyannote_community1', segments=True)
-    p.add_argument('--model', default='pyannote/speaker-diarization-community-1')
-    p.add_argument('--device', default='auto')
-    p.add_argument('--batch-size', type=positive_int, default=1)
-    p.add_argument('--num-speakers', type=positive_int)
-    p.add_argument('--min-speakers', type=positive_int)
-    p.add_argument('--max-speakers', type=positive_int)
-    p.add_argument('--sample-rate', type=positive_int)
-    p.add_argument('--channels', type=int, choices=(1, 2), default=1)
+    p.add_argument('--model', default='pyannote/speaker-diarization-community-1',
+                   help='Pyannote pretrained model name or HF hub ID (default: pyannote/speaker-diarization-community-1)')
+    p.add_argument('--device', default='auto',
+                   help='Execution device (e.g. auto, cpu, cuda) (default: auto)')
+    p.add_argument('--batch-size', type=positive_int, default=1,
+                   help='Internal embedding and segmentation batch size (default: 1)')
+    p.add_argument('--num-speakers', type=positive_int, default=None,
+                   help='Exact known number of speakers if known in advance (default: None)')
+    p.add_argument('--min-speakers', type=positive_int, default=None,
+                   help='Minimum expected number of speakers (default: None)')
+    p.add_argument('--max-speakers', type=positive_int, default=None,
+                   help='Maximum expected number of speakers (default: None)')
+    p.add_argument('--sample-rate', type=positive_int, default=None,
+                   help='Output sample rate in Hz for exported turn clips (default: preserve source)')
+    p.add_argument('--channels', type=int, choices=(1, 2), default=1,
+                   help='Output channel layout for clips (1=mono, 2=stereo) (default: 1)')
     p.add_argument('--min-duration-s', type=float, default=2.0, help='Minimum turn duration in seconds to keep and export (default: 2.0)')
     p.add_argument('--max-duration-s', type=float, default=15.0, help='Maximum turn duration in seconds to keep and export (default: 15.0)')
     args = p.parse_args()
@@ -78,8 +86,8 @@ def main() -> int:
             if segment.end > segment.start:
                 turns.append({'speaker_id': labels[label], 'start_s': float(segment.start), 'end_s': float(segment.end)})
         export({**wanted, 'speaker_ids': list(labels.values()), 'turns': turns}, src, dest, args.work_dir, rate, args.channels,
-               args.min_duration_s, args.max_duration_s)
-    return batch(pairs, process)
+               args.min_duration_s, args.max_duration_s, concurrency=args.concurrency, batch_size=args.batch_size)
+    return batch(pairs, process, concurrency=args.concurrency, batch_size=args.batch_size)
 
 
 if __name__ == '__main__':

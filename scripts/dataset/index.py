@@ -10,8 +10,8 @@ from _common.files import ROOT, identity, inputs, parser, probe, progress, read_
 
 def main() -> int:
     p = parser(__doc__, 'dataset', segments=True)
-    p.add_argument('--output-manifest', type=Path)
-    p.add_argument('--tag', action='append', default=[])
+    p.add_argument('--output-manifest', type=Path, help='Explicit destination path for output manifest JSON')
+    p.add_argument('--tag', action='append', default=[], help='Tag to associate with indexed entries in manifest (repeatable)')
     args = p.parse_args()
     sources = inputs(args)
     destination = (args.output_manifest or args.output_dir / 'manifest.json').resolve()
@@ -19,17 +19,34 @@ def main() -> int:
         p.error('Cannot overwrite an input')
     total = len(sources)
     progress('INDEX_START', f'Indexing {total} audio files')
+
+    def _index_item(src, relative):
+        return {'path': str(src.resolve()), 'relative_path': str(relative),
+                **identity(src), **probe(src), 'tags': sorted(set(args.tag))}
+
+    def _index_batch(batch_items):
+        b_entries = []
+        b_failures = []
+        for src, relative in batch_items:
+            try:
+                b_entries.append(_index_item(src, relative))
+            except Exception as exc:
+                b_failures.append({'path': str(src), 'error': str(exc)})
+        return b_entries, b_failures
+
+    batches = [sources[i:i + args.batch_size] for i in range(0, total, args.batch_size)]
     entries, failures = [], []
-    step = max(1, total // 10)
-    for idx, (src, relative) in enumerate(sources, 1):
-        try:
-            entries.append({'path': str(src.resolve()), 'relative_path': str(relative),
-                            **identity(src), **probe(src), 'tags': sorted(set(args.tag))})
-            if idx == 1 or idx == total or idx % step == 0:
-                progress('INDEX_FILE', f'{relative}', current=idx, total=total)
-        except Exception as exc:
-            failures.append({'path': str(src), 'error': str(exc)})
-            progress('INDEX_FAIL', f'{src}: {exc}', current=idx, total=total)
+    if args.concurrency > 1 and len(batches) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(args.concurrency, len(batches))) as pool:
+            for b_entries, b_failures in pool.map(_index_batch, batches):
+                entries.extend(b_entries)
+                failures.extend(b_failures)
+    else:
+        for b in batches:
+            b_entries, b_failures = _index_batch(b)
+            entries.extend(b_entries)
+            failures.extend(b_failures)
     manifest = {'schema_version': 1, 'operation': 'index', 'entries': entries, 'failures': failures,
                 'complete': not failures}
     if destination.exists() and not args.overwrite:

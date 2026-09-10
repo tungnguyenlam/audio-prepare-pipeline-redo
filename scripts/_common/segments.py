@@ -55,8 +55,13 @@ def manifest_complete(path: Path, wanted: dict, overwrite: bool) -> bool:
 
 
 def export(manifest: dict, source: Path, destination: Path, work_dir: Path, sample_rate: int | None = None, channels: int = 1,
-           min_duration_s: float | None = None, max_duration_s: float | None = None) -> None:
+           min_duration_s: float | None = None, max_duration_s: float | None = None,
+           *, concurrency: int = 1, batch_size: int = 1) -> None:
+    import concurrent.futures
+    import shutil
     import soundfile as sf
+    import threading
+
     info = probe(source)
     turns = normalize_turns(manifest['turns'], source)
     params = manifest.get('parameters', {})
@@ -69,7 +74,7 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
     if max_duration_s is not None:
         turns = [t for t in turns if (t['end_s'] - t['start_s']) <= max_duration_s]
     turns_count = len(turns)
-    progress('EXPORT', f'Exporting {turns_count} clip(s) from {source.name}')
+    progress('EXPORT', f'Exporting {turns_count} clip(s) from {source.name} (concurrency={concurrency}, batch_size={batch_size})')
     output = {**manifest, 'timestamp_origin': 'diarized_input', 'source_sample_rate': info['sample_rate'],
               'sample_rate': sample_rate or info['sample_rate'], 'channels': channels, 'turns': turns,
               'speaker_ids': sorted({t['speaker_id'] for t in turns}), 'complete': False}
@@ -78,12 +83,19 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
     write_json(destination, output)
     work_dir.mkdir(parents=True, exist_ok=True)
     step = max(1, turns_count // 10)
+    lock = threading.Lock()
+
     with tempfile.TemporaryDirectory(dir=work_dir) as directory, sf.SoundFile(source) as audio:
         work = Path(directory)
+        # Read slice data from soundfile under audio lock
+        turn_data = []
         for i, turn in enumerate(turns, 1):
             audio.seek(turn['start_sample'])
             data = audio.read(turn['end_sample'] - turn['start_sample'], dtype='float32', always_2d=True)
-            raw, staged = work / 'raw.wav', work / 'clip.wav'
+            turn_data.append((i, turn, data))
+
+        def render_clip(i: int, turn: dict, data) -> None:
+            raw, staged = work / f'raw_{i}.wav', work / f'clip_{i}.wav'
             sf.write(raw, data, info['sample_rate'], subtype='FLOAT')
             convert(raw, staged, output['sample_rate'], channels)
             name = (f"{safe_name(source.stem)}_{safe_name(str(manifest.get('model') or 'segments'))}_"
@@ -93,7 +105,6 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
             if clip.resolve() == source.resolve():
                 raise FileContractError('Clip would overwrite source')
             # Same-filesystem atomic publication, even when work_dir is elsewhere.
-            import shutil
             fd, temporary = tempfile.mkstemp(dir=clip.parent, suffix='.wav')
             os.close(fd)
             try:
@@ -101,9 +112,25 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
                 os.replace(temporary, clip)
             finally:
                 Path(temporary).unlink(missing_ok=True)
-            turn.update(clip=name, clip_sha256=digest(clip), clip_frames=probe(clip)['frames'])
-            if i == 1 or i == turns_count or i % step == 0:
-                progress('EXPORT_CLIP', f'{name}', current=i, total=turns_count)
+            clip_frames = probe(clip)['frames']
+            clip_digest = digest(clip)
+            with lock:
+                turn.update(clip=name, clip_sha256=clip_digest, clip_frames=clip_frames)
+                if i == 1 or i == turns_count or i % step == 0:
+                    progress('EXPORT_CLIP', f'{name}', current=i, total=turns_count)
+
+        batches = [turn_data[k:k + max(1, batch_size)] for k in range(0, len(turn_data), max(1, batch_size))]
+        if concurrency <= 1:
+            for batch_chunk in batches:
+                for i, turn, data in batch_chunk:
+                    render_clip(i, turn, data)
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
+                for batch_chunk in batches:
+                    futures = [pool.submit(render_clip, i, turn, data) for i, turn, data in batch_chunk]
+                    for fut in concurrent.futures.as_completed(futures):
+                        fut.result()
+
     output['complete'] = True
     write_json(destination, output)
     progress('EXPORT_COMPLETE', f'Exported {turns_count} clips to {destination.parent.name}')

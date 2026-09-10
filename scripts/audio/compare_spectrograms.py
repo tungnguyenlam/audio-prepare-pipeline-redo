@@ -11,13 +11,20 @@ from _common.files import batch, completed, destinations, identity, parser, posi
 
 def main() -> int:
     p = parser(__doc__, 'compare_spectrograms')
-    p.add_argument('--reference-file', type=Path, required=True)
-    p.add_argument('--sample-rate', type=positive_int, default=16000)
-    p.add_argument('--n-mels', type=positive_int, default=128)
-    p.add_argument('--hop-length', type=positive_int, default=512)
-    p.add_argument('--fmax', type=float)
-    p.add_argument('--top-db', type=float, default=80.0)
-    p.add_argument('--ref', type=float, default=1.0)
+    p.add_argument('--reference-file', type=Path, required=True,
+                   help='Path to reference audio file to compare against')
+    p.add_argument('--sample-rate', type=positive_int, default=16000,
+                   help='Sample rate in Hz for spectrogram analysis (default: 16000)')
+    p.add_argument('--n-mels', type=positive_int, default=128,
+                   help='Number of Mel frequency filter banks (default: 128)')
+    p.add_argument('--hop-length', type=positive_int, default=512,
+                   help='Hop length in audio samples between STFT frames (default: 512)')
+    p.add_argument('--fmax', type=float, default=None,
+                   help='Highest frequency in Hz displayed on mel scale (default: Nyquist)')
+    p.add_argument('--top-db', type=float, default=80.0,
+                   help='Threshold decibel range below peak to display (default: 80.0)')
+    p.add_argument('--ref', type=float, default=1.0,
+                   help='Reference power level for decibel conversion (default: 1.0)')
     args = p.parse_args()
     pairs = destinations(args, '', '.png')
     reference = args.reference_file.resolve()
@@ -67,7 +74,7 @@ def main() -> int:
                 publish(staged, dest, metadata, audio=False)
         finally:
             plt.close(figure)
-    return batch(pairs, process)
+    return batch(pairs, process, concurrency=args.concurrency, batch_size=args.batch_size)
 
 
 if __name__ == '__main__':

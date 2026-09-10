@@ -11,8 +11,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-import torch
-
 from _audio import (
     extract_json_payload,
 )
@@ -30,6 +28,8 @@ class KimiAudioVerifier:
         adapter_path: str | None = None,
         **kwargs: Any,
     ) -> None:
+        import torch
+
         if adapter_path:
             raise ValueError("Kimi inference does not support --adapter-path")
         self.model_id = model_id
@@ -88,10 +88,10 @@ def main() -> int:
     from _cli import load_prompt, resolved_parameters, run_verifier
     from _common.files import destinations, parser
     p = parser('Verify audio with kimi; writes verdicts without filtering audio.', 'verify', 'kimi')
-    p.add_argument('--prompt-file', type=Path)
-    p.add_argument('--model-id', type=str, default='moonshotai/Kimi-Audio-7B-Instruct')
-    p.add_argument('--device', type=str, default='auto')
-    p.add_argument('--adapter-path', type=str, default=None)
+    p.add_argument('--prompt-file', type=Path, help='Optional path to text prompt file (defaults to acoustic defect prompt)')
+    p.add_argument('--model-id', type=str, default='moonshotai/Kimi-Audio-7B-Instruct', help='Kimi-Audio model ID or local directory')
+    p.add_argument('--device', type=str, default='auto', help='Inference device ("auto", "cpu", or "cuda:N")')
+    p.add_argument('--adapter-path', type=str, default=None, help='Optional LoRA adapter path')
     args = p.parse_args()
     pairs = destinations(args, '_kimi', '.json')
     parameters = {key: getattr(args, key) for key in ('model_id', 'device', 'adapter_path')}

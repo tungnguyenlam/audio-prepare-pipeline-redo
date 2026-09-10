@@ -91,11 +91,15 @@ def clean_speaker_turns(turns: Sequence[dict], *, min_turn_duration_s: float=DEF
 
 def main() -> int:
     p = arguments(__doc__)
-    p.add_argument('--min-turn-duration-s', type=float, default=DEFAULT_MIN_TURN_DURATION_S)
-    p.add_argument('--merge-same-speaker-gap-s', type=float, default=DEFAULT_MERGE_SAME_SPEAKER_GAP_S)
-    p.add_argument('--boundary-collar-s', type=float, default=DEFAULT_BOUNDARY_COLLAR_S)
-    p.add_argument('--jitter-max-duration-s', type=float, default=DEFAULT_JITTER_MAX_DURATION_S)
+    p.add_argument('--min-turn-duration-s', type=float, default=DEFAULT_MIN_TURN_DURATION_S, help='Minimum duration in seconds for surviving cleaned turns')
+    p.add_argument('--merge-same-speaker-gap-s', type=float, default=DEFAULT_MERGE_SAME_SPEAKER_GAP_S, help='Maximum gap in seconds between same-speaker turns to merge')
+    p.add_argument('--boundary-collar-s', type=float, default=DEFAULT_BOUNDARY_COLLAR_S, help='Collar margin in seconds shaved from each side of close speaker boundaries')
+    p.add_argument('--jitter-max-duration-s', type=float, default=DEFAULT_JITTER_MAX_DURATION_S, help='Maximum turn duration in seconds for A-B-A jitter relabeling (0 to disable)')
     args = p.parse_args()
+    if args.concurrency < 1:
+        p.error('--concurrency must be at least 1')
+    if args.batch_size < 1:
+        p.error('--batch-size must be at least 1')
     manifest, source = load(args)
     values = {key: getattr(args, key) for key in ('min_turn_duration_s', 'merge_same_speaker_gap_s', 'boundary_collar_s', 'jitter_max_duration_s')}
     turns = clean_speaker_turns(manifest['turns'], **values)

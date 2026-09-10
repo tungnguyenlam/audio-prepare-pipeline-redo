@@ -438,19 +438,18 @@ def batch_concurrent(
 
 def main() -> int:
     from _cli import load_prompt, resolved_parameters, verdict_processor
-    from _common.files import destinations, parser, positive_int
+    from _common.files import batch, destinations, parser, positive_int
 
     p = parser('Verify audio with gemini; writes verdicts without filtering audio.', 'verify', 'gemini')
     p.add_argument('--prompt-file', type=Path, help='Path to prompt text file')
     p.add_argument('--model', type=str, default='gemini-3.8-flash', help='Gemini model (e.g. gemini-3.8-flash, gemini-3.5-flash-lite)')
-    p.add_argument('--reasoning-effort', type=str, default='medium', choices=('low', 'medium', 'high', 'none'))
-    p.add_argument('--concurrency', type=positive_int, default=1, help='Number of concurrent API requests (default: 1)')
-    p.add_argument('--max-tokens', type=positive_int, default=2048, help='Maximum output tokens (default: 2048)')
-    p.add_argument('--temperature', type=float, default=0.0, help='Sampling temperature (default: 0.0)')
+    p.add_argument('--reasoning-effort', type=str, default='medium', choices=('low', 'medium', 'high', 'none'), help='Reasoning effort level for models supporting thinking')
+    p.add_argument('--max-tokens', type=positive_int, default=2048, help='Maximum output tokens')
+    p.add_argument('--temperature', type=float, default=0.0, help='Sampling temperature')
     p.add_argument('--top-p', type=float, default=None, help='Nucleus sampling top_p (optional)')
     p.add_argument('--top-k', type=positive_int, default=None, help='Top-k sampling (optional)')
-    p.add_argument('--timeout-s', type=float, default=120.0, help='Timeout in seconds per API request (default: 120.0)')
-    p.add_argument('--max-retries', type=positive_int, default=5, help='Maximum retry attempts per request (default: 5)')
+    p.add_argument('--timeout-s', type=float, default=120.0, help='Timeout in seconds per API request')
+    p.add_argument('--max-retries', type=positive_int, default=5, help='Maximum retry attempts per request')
     args = p.parse_args()
 
     pairs = destinations(args, '_gemini', '.json')
@@ -489,7 +488,7 @@ def main() -> int:
         verify=lambda source: verifier.verify(source, prompt),
     )
 
-    res = batch_concurrent(pairs, process, concurrency=args.concurrency)
+    res = batch(pairs, process, concurrency=args.concurrency, batch_size=args.batch_size)
     cost_summary = verifier.get_cost_summary()
     logger.info(
         "Session summary: %d input tokens, %d output tokens, %d think tokens | Total cost: $%.6f",

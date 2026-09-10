@@ -145,18 +145,30 @@ def _build_env(device: str) -> dict[str, str]:
 
 def main() -> int:
     p = parser(__doc__, 'separate', 'mvsep_mdx23')
-    p.add_argument('--device', default='auto')
-    p.add_argument('--stem', default='vocals', choices=sorted(_STEM_OUTPUT_IDS.keys()))
-    p.add_argument('--sample-rate', type=positive_int, help='output sample rate in Hz (default: preserve source)')
-    p.add_argument('--channels', type=int, choices=(1, 2), default=1)
-    p.add_argument('--overlap-large', type=float, default=0.25)
-    p.add_argument('--overlap-small', type=float, default=0.25)
-    p.add_argument('--single-onnx', action=argparse.BooleanOptionalAction, default=True)
-    p.add_argument('--large-gpu', action=argparse.BooleanOptionalAction, default=False)
-    p.add_argument('--use-kim-model-1', action=argparse.BooleanOptionalAction, default=False)
-    p.add_argument('--chunk-size', type=int, default=None)
-    p.add_argument('--max-segment-seconds', type=float, default=600.0)
-    p.add_argument('--repo-dir', type=Path, default=None)
+    p.add_argument('--device', default='auto',
+                   help='Compute device (e.g. auto, cpu, cuda, cuda:0) (default: auto)')
+    p.add_argument('--stem', default='vocals', choices=sorted(_STEM_OUTPUT_IDS.keys()),
+                   help='Target stem to separate and export (default: vocals)')
+    p.add_argument('--sample-rate', type=positive_int, default=None,
+                   help='Output sample rate in Hz (default: preserve source)')
+    p.add_argument('--channels', type=int, choices=(1, 2), default=1,
+                   help='Output channel layout (1=mono, 2=stereo) (default: 1)')
+    p.add_argument('--overlap-large', type=float, default=0.25,
+                   help='Overlap fraction for large sub-band models (default: 0.25)')
+    p.add_argument('--overlap-small', type=float, default=0.25,
+                   help='Overlap fraction for small sub-band models (default: 0.25)')
+    p.add_argument('--single-onnx', action=argparse.BooleanOptionalAction, default=True,
+                   help='Use single ONNX runtime session for speed (default: True)')
+    p.add_argument('--large-gpu', action=argparse.BooleanOptionalAction, default=False,
+                   help='Enable large GPU VRAM optimizations (default: False)')
+    p.add_argument('--use-kim-model-1', action=argparse.BooleanOptionalAction, default=False,
+                   help='Use Kim model 1 checkpoint variant (default: False)')
+    p.add_argument('--chunk-size', type=int, default=None,
+                   help='Audio processing chunk size in samples (optional; default: None)')
+    p.add_argument('--max-segment-seconds', type=float, default=600.0,
+                   help='Maximum segment duration in seconds before splitting (default: 600.0)')
+    p.add_argument('--repo-dir', type=Path, default=None,
+                   help='Path to MVSEP upstream repository directory (default: .data/mvsep_mdx23/repo)')
     args = p.parse_args()
 
     repo_dir = args.repo_dir or (ROOT / '.data' / 'mvsep_mdx23' / 'repo')
@@ -231,7 +243,7 @@ def main() -> int:
             convert(merged, final_out, rate, args.channels)
             publish(final_out, dest, metadata)
 
-    return batch(pairs, process)
+    return batch(pairs, process, concurrency=args.concurrency, batch_size=args.batch_size)
 
 
 if __name__ == '__main__':

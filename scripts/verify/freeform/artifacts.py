@@ -37,12 +37,12 @@ def add_prompt_arguments(
     command: argparse.ArgumentParser, *, top_p: bool = False
 ) -> None:
     """Add options shared by every free-form generation backend."""
-    command.add_argument("--prompt-file", type=Path, required=True)
-    command.add_argument("--system-prompt-file", type=Path)
-    command.add_argument("--max-tokens", type=positive_int, default=4096)
-    command.add_argument("--temperature", type=float, default=0.0)
+    command.add_argument("--prompt-file", type=Path, required=True, help="Path to text prompt file to send to model")
+    command.add_argument("--system-prompt-file", type=Path, help="Optional system instruction prompt file")
+    command.add_argument("--max-tokens", type=positive_int, default=4096, help="Maximum number of tokens to generate")
+    command.add_argument("--temperature", type=float, default=0.0, help="Sampling temperature")
     if top_p:
-        command.add_argument("--top-p", type=float)
+        command.add_argument("--top-p", type=float, help="Nucleus sampling top-p probability threshold")
 
 
 def load_prompts(args: Any) -> tuple[str, str | None]:
@@ -116,4 +116,9 @@ def run_freeform(
             },
         )
 
-    return batch(pairs, process)
+    return batch(
+        pairs,
+        process,
+        concurrency=getattr(args, 'concurrency', 1),
+        batch_size=getattr(args, 'batch_size', 1),
+    )

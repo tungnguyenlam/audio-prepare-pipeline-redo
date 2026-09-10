@@ -28,19 +28,20 @@ def main() -> int:
         "freeform-hf",
     )
     add_prompt_arguments(command, top_p=True)
-    command.add_argument("--model-id", default="google/gemma-4-E2B-it")
-    command.add_argument("--device", default="auto")
-    command.add_argument("--adapter-path")
+    command.add_argument("--model-id", default="google/gemma-4-E2B-it", help="Hugging Face model repository ID")
+    command.add_argument("--device", default="auto", help='Inference device ("auto", "cpu", "cuda", or "hip")')
+    command.add_argument("--adapter-path", help="Optional LoRA adapter checkpoint directory")
     command.add_argument(
-        "--trust-remote-code", action=argparse.BooleanOptionalAction, default=True
+        "--trust-remote-code", action=argparse.BooleanOptionalAction, default=True, help="Allow executing custom code from Hugging Face model repository"
     )
     command.add_argument(
         "--torch-dtype",
         choices=("bfloat16", "float16", "float32"),
         default="bfloat16",
+        help="PyTorch weights dtype",
     )
-    command.add_argument("--load-in-4bit", action="store_true")
-    command.add_argument("--load-in-8bit", action="store_true")
+    command.add_argument("--load-in-4bit", action="store_true", help="Load model in 4-bit NF4 with bitsandbytes")
+    command.add_argument("--load-in-8bit", action="store_true", help="Load model in 8-bit with bitsandbytes")
     args = command.parse_args()
 
     prompt, system_prompt = load_prompts(args)

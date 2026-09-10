@@ -26,15 +26,16 @@ def main() -> int:
         "freeform-gemini",
     )
     add_prompt_arguments(command, top_p=True)
-    command.add_argument("--model", default="gemini-3.8-flash")
+    command.add_argument("--model", default="gemini-3.8-flash", help="Gemini model name")
     command.add_argument(
         "--reasoning-effort",
         choices=("none", "low", "medium", "high"),
         default="medium",
+        help="Reasoning effort level for models supporting thinking",
     )
-    command.add_argument("--top-k", type=positive_int)
-    command.add_argument("--timeout-s", type=float, default=120.0)
-    command.add_argument("--max-retries", type=positive_int, default=5)
+    command.add_argument("--top-k", type=positive_int, help="Top-k sampling parameter")
+    command.add_argument("--timeout-s", type=float, default=120.0, help="Request timeout in seconds")
+    command.add_argument("--max-retries", type=positive_int, default=5, help="Maximum retry attempts per request")
     args = command.parse_args()
 
     prompt, system_prompt = load_prompts(args)

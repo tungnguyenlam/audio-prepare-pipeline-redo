@@ -14,16 +14,22 @@ from _common.files import LoggingArgumentParser, ROOT, progress, safe_name
 
 def main() -> int:
     p = LoggingArgumentParser(description=__doc__)
-    p.add_argument('--name', required=True, help='Speaker profile name')
-    p.add_argument('--clip', dest='clips', action='append', default=[], type=Path, help='Reference clip file (repeatable)')
+    p.add_argument('--name', required=True, help='Target speaker profile name')
+    p.add_argument('--clip', dest='clips', action='append', default=[], type=Path, help='Reference WAV clip file (repeatable)')
     p.add_argument('--clip-dir', type=Path, help='Directory of reference WAV clips')
     p.add_argument('--profiles-dir', type=Path, default=ROOT / '.data' / 'speaker_profiles', help='Root profiles directory')
-    p.add_argument('--overwrite', action='store_true', help='Replace existing profile')
-    p.add_argument('--add', action='store_true', help='Append clips to existing profile')
-    p.add_argument('--channel-id', help='Optional source channel ID')
-    p.add_argument('--channel-name', help='Optional source channel name')
-    p.add_argument('--channel-url', help='Optional source channel URL')
+    p.add_argument('--overwrite', action='store_true', help='Replace existing profile completely')
+    p.add_argument('--add', action='store_true', help='Append reference clips to existing profile')
+    p.add_argument('--channel-id', help='Optional source channel ID for provenance')
+    p.add_argument('--channel-name', help='Optional source channel name for provenance')
+    p.add_argument('--channel-url', help='Optional source channel URL for provenance')
+    p.add_argument('--concurrency', type=int, default=1, help='Number of concurrent workers for copying clips. Set > 1 to enable concurrent execution')
+    p.add_argument('--batch-size', type=int, default=1, help='Number of clips to batch per copying task')
     args = p.parse_args()
+    if args.concurrency < 1:
+        p.error('--concurrency must be at least 1')
+    if args.batch_size < 1:
+        p.error('--batch-size must be at least 1')
 
     clip_paths: list[Path] = list(args.clips)
     if args.clip_dir:
@@ -60,6 +66,7 @@ def main() -> int:
     clips_dir.mkdir(parents=True, exist_ok=True)
     new_clip_names = list(existing_clips)
 
+    copy_tasks = []
     idx = len(existing_clips)
     for src_clip in clip_paths:
         suffix = src_clip.suffix or '.wav'
@@ -67,9 +74,22 @@ def main() -> int:
         while (clips_dir / dest_name).exists():
             idx += 1
             dest_name = f'clip_{idx:02d}{suffix}'
-        shutil.copy2(src_clip, clips_dir / dest_name)
+        copy_tasks.append((src_clip, clips_dir / dest_name))
         new_clip_names.append(dest_name)
         idx += 1
+
+    def _copy_batch(batch_items):
+        for src, dst in batch_items:
+            shutil.copy2(src, dst)
+
+    batches = [copy_tasks[i:i + args.batch_size] for i in range(0, len(copy_tasks), args.batch_size)]
+    if args.concurrency > 1 and len(batches) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(args.concurrency, len(batches))) as pool:
+            list(pool.map(_copy_batch, batches))
+    else:
+        for b in batches:
+            _copy_batch(b)
 
     manifest = {
         'schema_version': '2.0',

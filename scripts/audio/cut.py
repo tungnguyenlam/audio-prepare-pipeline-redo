@@ -13,8 +13,10 @@ def main() -> int:
     p = parser(__doc__, 'cut')
     p.add_argument('--start', type=float, required=True, help='Start seconds relative to input')
     p.add_argument('--end', type=float, required=True, help='End seconds relative to input')
-    p.add_argument('--sample-rate', type=positive_int)
-    p.add_argument('--channels', type=int, choices=(1, 2), default=1)
+    p.add_argument('--sample-rate', type=positive_int, default=None,
+                   help='Target audio sample rate in Hz (default: preserve source)')
+    p.add_argument('--channels', type=int, choices=(1, 2), default=1,
+                   help='Target audio channel layout (1=mono, 2=stereo) (default: 1)')
     args = p.parse_args()
     if not math.isfinite(args.start) or not math.isfinite(args.end) or not 0 <= args.start < args.end:
         p.error('Require finite 0 <= start < end')
@@ -32,7 +34,7 @@ def main() -> int:
             staged = Path(work) / 'output.wav'
             convert(src, staged, rate, args.channels, start=args.start, end=args.end)
             publish(staged, dest, metadata)
-    return batch(pairs, process)
+    return batch(pairs, process, concurrency=args.concurrency, batch_size=args.batch_size)
 
 
 if __name__ == '__main__':

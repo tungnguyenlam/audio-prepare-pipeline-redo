@@ -14,15 +14,17 @@ from _common.files import (LoggingArgumentParser, ROOT, completed, convert,
 
 def arguments(description: str, bulk: bool = False) -> LoggingArgumentParser:
     p = LoggingArgumentParser(description=description)
-    p.add_argument('--url', required=True)
-    p.add_argument('--sample-rate', type=positive_int, default=48000)
+    p.add_argument('--url', required=True, help='YouTube video, playlist, or channel URL')
+    p.add_argument('--sample-rate', type=positive_int, default=48000, help='Target sample rate in Hz for converted WAV')
     p.add_argument('--output-dir', type=Path, default=None,
                    help='Output directory (default: dynamic per audio family under .data/download/<family>)')
     if not bulk:
-        p.add_argument('--output-file', type=Path)
-    p.add_argument('--work-dir', type=Path, default=ROOT / '.data/download/work')
-    p.add_argument('--cookie-file', type=Path)
-    p.add_argument('--overwrite', action='store_true')
+        p.add_argument('--output-file', type=Path, help='Explicit destination WAV file path (requires single video download)')
+    p.add_argument('--work-dir', type=Path, default=ROOT / '.data/download/work', help='Working directory for temporary files')
+    p.add_argument('--cookie-file', type=Path, help='Optional cookies.txt file for yt-dlp authentication')
+    p.add_argument('--overwrite', action='store_true', help='Overwrite existing output files and sidecars')
+    p.add_argument('--concurrency', type=positive_int, default=1, help='Number of concurrent workers for downloads. Set > 1 to enable concurrent execution')
+    p.add_argument('--batch-size', type=positive_int, default=1, help='Number of items to batch per worker task')
     p.set_defaults(_operation='download', _default_base=ROOT / '.data/download')
     return p
 

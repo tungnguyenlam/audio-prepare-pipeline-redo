@@ -7,26 +7,34 @@ from typing import Any, Iterable
 
 
 
-def _normalized_turns(turns: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    normalized = []
-    for turn in turns:
-        if isinstance(turn, dict):
-            speaker_id = str(turn.get("speaker_id") or "").strip()
-            try:
-                start_s = float(turn.get("start_s"))
-                end_s = float(turn.get("end_s"))
-            except (TypeError, ValueError) as exc:
-                raise ValueError("Every turn requires numeric start_s and end_s") from exc
-        else:
-            raise TypeError("turns must contain JSON objects")
-        if not speaker_id:
-            raise ValueError("Every turn requires a non-empty speaker_id")
-        if not isfinite(start_s) or not isfinite(end_s) or start_s < 0 or end_s <= start_s:
-            raise ValueError("Every turn must have finite timestamps with 0 <= start_s < end_s")
-        normalized.append(
-            {"speaker_id": speaker_id, "start_s": start_s, "end_s": end_s}
-        )
-    return normalized
+from concurrent.futures import ThreadPoolExecutor
+
+
+def _normalize_single_turn(turn: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(turn, dict):
+        speaker_id = str(turn.get("speaker_id") or "").strip()
+        try:
+            start_s = float(turn.get("start_s"))
+            end_s = float(turn.get("end_s"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Every turn requires numeric start_s and end_s") from exc
+    else:
+        raise TypeError("turns must contain JSON objects")
+    if not speaker_id:
+        raise ValueError("Every turn requires a non-empty speaker_id")
+    if not isfinite(start_s) or not isfinite(end_s) or start_s < 0 or end_s <= start_s:
+        raise ValueError("Every turn must have finite timestamps with 0 <= start_s < end_s")
+    return {"speaker_id": speaker_id, "start_s": start_s, "end_s": end_s}
+
+
+def _normalized_turns(turns: Iterable[dict[str, Any]], *, batch_size: int = 1, concurrency: int = 1) -> list[dict[str, Any]]:
+    turn_list = list(turns)
+    if concurrency > 1 and len(turn_list) > batch_size:
+        batches = [turn_list[i:i + batch_size] for i in range(0, len(turn_list), batch_size)]
+        with ThreadPoolExecutor(max_workers=min(concurrency, len(batches))) as ex:
+            results = ex.map(lambda chunk: [_normalize_single_turn(t) for t in chunk], batches)
+            return [t for chunk_res in results for t in chunk_res]
+    return [_normalize_single_turn(t) for t in turn_list]
 
 
 def _maximum_weight_assignment(
@@ -109,6 +117,8 @@ def evaluate_diarization(
     duration_s: float,
     collar_s: float = 0.0,
     skip_overlap: bool = False,
+    concurrency: int = 1,
+    batch_size: int = 1,
 ) -> dict[str, Any]:
     """Evaluate hypothesis turns against a manually annotated reference.
 
@@ -123,6 +133,8 @@ def evaluate_diarization(
         duration_s: Duration of the shared source audio.
         collar_s: Forgiveness excluded on each side of every reference boundary.
         skip_overlap: Exclude regions with multiple active reference speakers.
+        concurrency: Number of worker threads for parallel turn normalization.
+        batch_size: Batch size for chunked turn processing.
 
     Returns:
         JSON-compatible evaluation metrics and speaker mapping.
@@ -142,8 +154,8 @@ def evaluate_diarization(
     if not isfinite(collar_s) or collar_s < 0:
         raise ValueError("collar_s must be finite and non-negative")
 
-    reference = _normalized_turns(reference_turns)
-    hypothesis = _normalized_turns(hypothesis_turns)
+    reference = _normalized_turns(reference_turns, batch_size=batch_size, concurrency=concurrency)
+    hypothesis = _normalized_turns(hypothesis_turns, batch_size=batch_size, concurrency=concurrency)
     if not reference:
         raise ValueError("reference_turns must contain at least one annotated turn")
     if any(turn["end_s"] > duration_s + 0.05 for turn in reference + hypothesis):
@@ -302,22 +314,25 @@ def main() -> int:
     from pathlib import Path
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from _common.files import LoggingArgumentParser, identity, progress, read_json, write_json
+    from _common.files import LoggingArgumentParser, identity, positive_int, progress, read_json, write_json
     p = LoggingArgumentParser(description=__doc__)
-    p.add_argument('--reference-manifest', type=Path, required=True)
-    p.add_argument('--input-manifest', type=Path, required=True)
-    p.add_argument('--duration', type=float, required=True)
-    p.add_argument('--collar', type=float, default=0.0)
-    p.add_argument('--skip-overlap', action='store_true')
-    p.add_argument('--output-file', type=Path, required=True)
-    p.add_argument('--overwrite', action='store_true')
+    p.add_argument('--reference-manifest', type=Path, required=True, help='Path to reference segments.json containing ground-truth turns')
+    p.add_argument('--input-manifest', type=Path, required=True, help='Path to hypothesis segments.json containing model-predicted turns')
+    p.add_argument('--duration', type=float, required=True, help='Total duration of audio in seconds for DER evaluation')
+    p.add_argument('--collar', type=float, default=0.0, help='Forgiveness collar in seconds around reference boundaries (default: 0.0)')
+    p.add_argument('--skip-overlap', action='store_true', help='Exclude overlapping speech regions from evaluation')
+    p.add_argument('--output-file', type=Path, required=True, help='Output JSON file path for evaluation metrics')
+    p.add_argument('--overwrite', action='store_true', help='Overwrite existing output file if present')
+    p.add_argument('--concurrency', type=positive_int, default=1, help='Number of worker threads for parallel manifest loading and turn normalization (default: 1)')
+    p.add_argument('--batch-size', type=positive_int, default=1, help='Batch size for chunked turn processing (default: 1)')
     args = p.parse_args()
     dest = args.output_file.resolve()
     if dest in {args.reference_manifest.resolve(), args.input_manifest.resolve()}:
         p.error('Output cannot overwrite an input')
     metadata = {'operation': 'diarization_metrics', 'reference': identity(args.reference_manifest),
                 'source': identity(args.input_manifest), 'parameters': {'duration_s': args.duration,
-                'collar_s': args.collar, 'skip_overlap': args.skip_overlap}}
+                'collar_s': args.collar, 'skip_overlap': args.skip_overlap,
+                'concurrency': args.concurrency, 'batch_size': args.batch_size}}
     if dest.exists() and not args.overwrite:
         old = read_json(dest)
         if all(old.get(k) == v for k, v in metadata.items()) and 'metrics' in old:
@@ -325,11 +340,24 @@ def main() -> int:
             return 0
         p.error('Conflicting output; use --overwrite')
     progress('EVAL_DIAR', f'Evaluating DER: {args.input_manifest.name} vs {args.reference_manifest.name} (collar={args.collar}s)')
-    metrics = evaluate_diarization(read_json(args.reference_manifest)['turns'],
-                                   read_json(args.input_manifest)['turns'], duration_s=args.duration,
-                                   collar_s=args.collar, skip_overlap=args.skip_overlap)
+    if args.concurrency > 1:
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            fut_ref = ex.submit(read_json, args.reference_manifest)
+            fut_hyp = ex.submit(read_json, args.input_manifest)
+            ref_data = fut_ref.result()
+            hyp_data = fut_hyp.result()
+    else:
+        ref_data = read_json(args.reference_manifest)
+        hyp_data = read_json(args.input_manifest)
+    metrics = evaluate_diarization(ref_data['turns'], hyp_data['turns'], duration_s=args.duration,
+                                   collar_s=args.collar, skip_overlap=args.skip_overlap,
+                                   concurrency=args.concurrency, batch_size=args.batch_size)
     write_json(dest, {**metadata, 'metrics': metrics})
-    progress('EVAL_DIAR_DONE', f'DER: {metrics["der"] * 100:.2f}%, Miss: {metrics["miss"] * 100:.2f}%, FA: {metrics["false_alarm"] * 100:.2f}%, Conf: {metrics["speaker_confusion"] * 100:.2f}% -> {dest.name}')
+    der_val = metrics.get('der_pct', metrics.get('der', 0.0) * 100)
+    miss_val = metrics.get('missed_speech_s', metrics.get('miss', 0.0) * 100)
+    fa_val = metrics.get('false_alarm_s', metrics.get('false_alarm', 0.0) * 100)
+    conf_val = metrics.get('speaker_confusion_s', metrics.get('speaker_confusion', 0.0) * 100)
+    progress('EVAL_DIAR_DONE', f'DER: {der_val:.2f}%, Miss: {miss_val:.2f}s, FA: {fa_val:.2f}s, Conf: {conf_val:.2f}s -> {dest.name}')
     print(dest)
     return 0
 

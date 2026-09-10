@@ -78,17 +78,25 @@ def embed_audio_interval(inference, path: Path, start_s: float | None = None, en
 
 def main() -> int:
     p = LoggingArgumentParser(description=__doc__)
-    p.add_argument('--input-manifest', type=Path, required=True, help='Diarization segments.json')
+    p.add_argument('--input-manifest', type=Path, required=True, help='Path to diarization segments.json manifest')
     p.add_argument('--output-manifest', type=Path, help='Scored output manifest (default: dynamic per family under .data/speaker/score/<family>/segments.json)')
-    p.add_argument('--profile', required=True, help='Enrolled speaker profile name or directory')
+    p.add_argument('--profile', required=True, help='Enrolled speaker profile name or directory containing profile.json')
     p.add_argument('--profiles-dir', type=Path, default=ROOT / '.data' / 'speaker_profiles', help='Profiles root directory')
     p.add_argument('--model-id', default=DEFAULT_EMBEDDING_MODEL_ID, help='Pyannote embedding model ID')
-    p.add_argument('--device', default='auto')
+    p.add_argument('--device', default='auto', help='Inference device ("auto", "cpu", "cuda", or "hip")')
     p.add_argument('--input-file', type=Path, help='Optional source audio file override')
-    p.add_argument('--overwrite', action='store_true')
+    p.add_argument('--overwrite', action='store_true', help='Overwrite existing scored output manifest')
+    p.add_argument('--concurrency', type=int, default=1, help='Number of concurrent workers for scoring turns. Set > 1 to enable concurrent execution')
+    p.add_argument('--batch-size', type=int, default=1, help='Number of turns to batch per scoring task')
     args = p.parse_args()
+    if args.concurrency < 1:
+        p.error('--concurrency must be at least 1')
+    if args.batch_size < 1:
+        p.error('--batch-size must be at least 1')
 
     import numpy as np
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
 
     manifest = read_json(args.input_manifest)
     source = source_path(manifest, args.input_manifest, args.input_file)
@@ -115,14 +123,15 @@ def main() -> int:
 
     total_turns = len(turns)
     progress('SCORE', f'Scoring {total_turns} turns against profile centroid')
-    scored_turns = []
-    step = max(1, total_turns // 10)
-    for i, turn in enumerate(turns, 1):
+    model_lock = threading.Lock()
+
+    def _score_turn(turn):
         dur = turn['end_s'] - turn['start_s']
         sim = -1.0
         if dur >= MIN_EMBEDDING_DURATION_S:
             try:
-                vec = embed_audio_interval(inference, source, turn['start_s'], turn['end_s'])
+                with model_lock:
+                    vec = embed_audio_interval(inference, source, turn['start_s'], turn['end_s'])
                 sim = float(np.clip(np.dot(centroid, vec), -1.0, 1.0))
             except Exception:
                 sim = -1.0
@@ -130,13 +139,24 @@ def main() -> int:
             other['speaker_id'] != turn['speaker_id'] and other['start_s'] < turn['end_s'] and other['end_s'] > turn['start_s']
             for other in turns
         )
-        scored_turns.append({
+        return {
             **turn,
             'similarity': round(sim, 4),
             'overlaps_other_speaker': overlaps_other,
-        })
-        if i == 1 or i == total_turns or i % step == 0:
-            progress('SCORE_TURN', f'{dur:.2f}s (sim={sim:.3f})', current=i, total=total_turns)
+        }
+
+    def _score_batch(turn_batch):
+        return [_score_turn(t) for t in turn_batch]
+
+    batches = [turns[i:i + args.batch_size] for i in range(0, total_turns, args.batch_size)]
+    scored_turns = []
+    if args.concurrency > 1 and len(batches) > 1:
+        with ThreadPoolExecutor(max_workers=min(args.concurrency, len(batches))) as pool:
+            for res in pool.map(_score_batch, batches):
+                scored_turns.extend(res)
+    else:
+        for b in batches:
+            scored_turns.extend(_score_batch(b))
 
     dest = args.output_manifest.resolve() if args.output_manifest is not None else (ROOT / '.data/speaker/score' / infer_audio_family(args.input_manifest) / 'segments.json').resolve()
     metadata = {

@@ -39,21 +39,25 @@ def load_mono_waveform(path: str | Path, target_sr: int = 48000) -> np.ndarray:
     return mono
 
 
+from concurrent.futures import ThreadPoolExecutor
+
 def main() -> int:
     p = LoggingArgumentParser(description=__doc__)
-    p.add_argument('--input-file', type=Path, required=True)
-    p.add_argument('--reference-file', type=Path, required=True)
-    p.add_argument('--mixture-file', type=Path)
-    p.add_argument('--sample-rate', type=positive_int, default=48000)
-    p.add_argument('--output-file', type=Path, required=True)
-    p.add_argument('--overwrite', action='store_true')
+    p.add_argument('--input-file', type=Path, required=True, help='Path to separated estimate audio file')
+    p.add_argument('--reference-file', type=Path, required=True, help='Path to ground-truth reference audio file')
+    p.add_argument('--mixture-file', type=Path, help='Optional path to mixture audio file to compute SI-SDR improvement (SI-SDRi)')
+    p.add_argument('--sample-rate', type=positive_int, default=48000, help='Audio sample rate for evaluation (default: 48000)')
+    p.add_argument('--output-file', type=Path, required=True, help='Output JSON file path for evaluation metrics')
+    p.add_argument('--overwrite', action='store_true', help='Overwrite existing output file if present')
+    p.add_argument('--concurrency', type=positive_int, default=1, help='Number of worker threads for parallel audio decoding (default: 1)')
+    p.add_argument('--batch-size', type=positive_int, default=1, help='Batch size in seconds for chunk-level evaluation analysis (default: 1)')
     args = p.parse_args()
     paths = [args.input_file, args.reference_file] + ([args.mixture_file] if args.mixture_file else [])
     dest = args.output_file.resolve()
     if dest in {path.resolve() for path in paths}:
         p.error('Cannot overwrite an input')
     metadata = {'operation': 'separation_metrics', 'source': [identity(path) for path in paths],
-                'parameters': {'sample_rate': args.sample_rate}}
+                'parameters': {'sample_rate': args.sample_rate, 'concurrency': args.concurrency, 'batch_size': args.batch_size}}
     if dest.exists() and not args.overwrite:
         old = read_json(dest)
         if all(old.get(k) == v for k, v in metadata.items()) and 'metrics' in old:
@@ -61,12 +65,28 @@ def main() -> int:
             return 0
         p.error('Conflicting output; use --overwrite')
     progress('EVAL_SEP', f'Evaluating SI-SDR: {args.input_file.name} vs {args.reference_file.name}')
-    estimate, reference = [load_mono_waveform(path, args.sample_rate) for path in paths[:2]]
+    if args.concurrency > 1:
+        with ThreadPoolExecutor(max_workers=min(args.concurrency, len(paths))) as ex:
+            waveforms = list(ex.map(lambda p: load_mono_waveform(p, args.sample_rate), paths))
+    else:
+        waveforms = [load_mono_waveform(path, args.sample_rate) for path in paths]
+    estimate, reference = waveforms[:2]
     if not len(estimate) or not len(reference):
         p.error('Inputs must contain audio')
     metrics = {'si_sdr_db': si_sdr_db(estimate, reference), 'scored_samples': min(len(estimate), len(reference))}
+    if args.batch_size > 1 and min(len(estimate), len(reference)) > args.batch_size * args.sample_rate:
+        chunk_samples = args.batch_size * args.sample_rate
+        chunk_scores = []
+        for i in range(0, min(len(estimate), len(reference)), chunk_samples):
+            e_sub = estimate[i:i + chunk_samples]
+            r_sub = reference[i:i + chunk_samples]
+            if len(e_sub) > 0 and len(r_sub) > 0:
+                chunk_scores.append(si_sdr_db(e_sub, r_sub))
+        if chunk_scores:
+            metrics['chunk_si_sdr_db'] = [round(s, 2) for s in chunk_scores]
+            metrics['chunk_si_sdr_mean_db'] = round(float(np.mean(chunk_scores)), 2)
     if args.mixture_file:
-        mixture = load_mono_waveform(args.mixture_file, args.sample_rate)
+        mixture = waveforms[2]
         metrics['mixture_si_sdr_db'] = si_sdr_db(mixture, reference)
         metrics['si_sdri_db'] = metrics['si_sdr_db'] - metrics['mixture_si_sdr_db']
     write_json(dest, {**metadata, 'metrics': metrics})

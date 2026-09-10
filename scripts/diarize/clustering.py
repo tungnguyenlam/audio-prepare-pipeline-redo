@@ -393,21 +393,36 @@ class _Clustering:
 
 def main() -> int:
     p = parser('Standalone clustering diarization.', 'diarize', 'clustering', segments=True)
-    p.add_argument('--device', default='auto')
-    p.add_argument('--num-speakers', type=positive_int)
-    p.add_argument('--batch-size', type=positive_int, default=64)
-    p.add_argument('--sample-rate', type=positive_int)
-    p.add_argument('--channels', type=int, choices=(1, 2), default=1)
-    p.add_argument('--vad-model', type=str, default=DEFAULT_VAD_MODEL)
-    p.add_argument('--speaker-model', type=str, default=DEFAULT_SPEAKER_MODEL)
-    p.add_argument('--max-num-speakers', type=positive_int, default=8)
-    p.add_argument('--num-workers', type=int, default=0)
-    p.add_argument('--vad-onset', type=float, default=0.5)
-    p.add_argument('--vad-offset', type=float, default=0.3)
-    p.add_argument('--vad-pad-onset-s', type=float, default=0.2)
-    p.add_argument('--vad-pad-offset-s', type=float, default=0.2)
-    p.add_argument('--vad-min-duration-on-s', type=float, default=0.5)
-    p.add_argument('--vad-min-duration-off-s', type=float, default=0.5)
+    p.add_argument('--device', default='auto',
+                   help='Compute device for model inference (e.g. auto, cpu, cuda) (default: auto)')
+    p.add_argument('--num-speakers', type=positive_int, default=None,
+                   help='Exact known number of speakers (default: None)')
+    p.add_argument('--batch-size', type=positive_int, default=64,
+                   help='VAD and speaker embedding extraction batch size (default: 64)')
+    p.add_argument('--sample-rate', type=positive_int, default=None,
+                   help='Output sample rate in Hz for exported turn clips (default: preserve source)')
+    p.add_argument('--channels', type=int, choices=(1, 2), default=1,
+                   help='Output channel layout for clips (1=mono, 2=stereo) (default: 1)')
+    p.add_argument('--vad-model', type=str, default=DEFAULT_VAD_MODEL,
+                   help='VAD model checkpoint name (default: %(default)s)')
+    p.add_argument('--speaker-model', type=str, default=DEFAULT_SPEAKER_MODEL,
+                   help='Speaker embedding model checkpoint name (default: %(default)s)')
+    p.add_argument('--max-num-speakers', type=positive_int, default=8,
+                   help='Maximum estimated speaker count upper bound (default: 8)')
+    p.add_argument('--num-workers', type=int, default=0,
+                   help='Dataloader worker subprocesses count (default: 0)')
+    p.add_argument('--vad-onset', type=float, default=0.5,
+                   help='VAD onset probability threshold for active speech (default: 0.5)')
+    p.add_argument('--vad-offset', type=float, default=0.3,
+                   help='VAD offset probability threshold for speech offset (default: 0.3)')
+    p.add_argument('--vad-pad-onset-s', type=float, default=0.2,
+                   help='Padding in seconds prepended to speech segments (default: 0.2)')
+    p.add_argument('--vad-pad-offset-s', type=float, default=0.2,
+                   help='Padding in seconds appended to speech segments (default: 0.2)')
+    p.add_argument('--vad-min-duration-on-s', type=float, default=0.5,
+                   help='Minimum speech segment duration in seconds to keep (default: 0.5)')
+    p.add_argument('--vad-min-duration-off-s', type=float, default=0.5,
+                   help='Minimum silence duration in seconds to split turns (default: 0.5)')
     p.add_argument('--min-duration-s', type=float, default=2.0, help='Minimum turn duration in seconds to keep and export (default: 2.0)')
     p.add_argument('--max-duration-s', type=float, default=15.0, help='Maximum turn duration in seconds to keep and export (default: 15.0)')
     safe_parent = lambda rel: Path(*[safe_name(p) for p in rel.parent.parts]) if rel.parent.parts else Path('.')
@@ -434,9 +449,10 @@ def main() -> int:
             return
         turns = model.diarize(src)
         export({**wanted, 'speaker_ids': sorted({t['speaker_id'] for t in turns}), 'turns': turns},
-               src, dest, args.work_dir, rate, args.channels, args.min_duration_s, args.max_duration_s)
+               src, dest, args.work_dir, rate, args.channels, args.min_duration_s, args.max_duration_s,
+               concurrency=args.concurrency, batch_size=args.batch_size)
     try:
-        return batch(pairs, process)
+        return batch(pairs, process, concurrency=args.concurrency, batch_size=args.batch_size)
     finally:
         with contextlib.redirect_stdout(sys.stderr):
             model._unload()

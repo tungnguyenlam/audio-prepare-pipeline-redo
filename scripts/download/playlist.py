@@ -22,23 +22,47 @@ def main(description: str = __doc__) -> int:
         entries = list(listing['entries'])
     total = len(entries)
     progress('PLAYLIST', f'Found {total} items to process')
-    failed = 0
-    for idx, entry in enumerate(entries, 1):
-        try:
-            if not entry:
-                raise ValueError('Unavailable playlist entry')
-            title = entry.get('title') or entry.get('id') or 'video'
-            url = entry.get('webpage_url') or entry.get('url')
-            if not url or not url.startswith('http'):
-                url = 'https://www.youtube.com/watch?v=' + entry['id']
+    indexed_entries = list(enumerate(entries, 1))
+    batches = [indexed_entries[i:i + args.batch_size] for i in range(0, len(indexed_entries), args.batch_size)]
+    import threading
+    lock = threading.Lock()
+
+    def _process_item(idx, entry):
+        if not entry:
+            raise ValueError('Unavailable playlist entry')
+        title = entry.get('title') or entry.get('id') or 'video'
+        url = entry.get('webpage_url') or entry.get('url')
+        if not url or not url.startswith('http'):
+            url = 'https://www.youtube.com/watch?v=' + entry['id']
+        with lock:
             progress('ITEM_START', f'{title}', current=idx, total=total)
-            with contextlib.redirect_stdout(sys.stderr):
-                dest = download(url, args)
+        with contextlib.redirect_stdout(sys.stderr):
+            dest = download(url, args)
+        with lock:
             progress('ITEM_DONE', f'{dest.name}', current=idx, total=total)
             print(dest, flush=True)
-        except Exception as exc:
-            failed += 1
-            progress('ITEM_FAIL', f'{exc}', current=idx, total=total)
+
+    def _process_batch(batch_items):
+        batch_failed = 0
+        for idx, entry in batch_items:
+            try:
+                _process_item(idx, entry)
+            except Exception as exc:
+                batch_failed += 1
+                with lock:
+                    progress('ITEM_FAIL', f'{exc}', current=idx, total=total)
+        return batch_failed
+
+    failed = 0
+    if args.concurrency > 1 and len(batches) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(args.concurrency, len(batches))) as pool:
+            for b_failed in pool.map(_process_batch, batches):
+                failed += b_failed
+    else:
+        for b in batches:
+            failed += _process_batch(b)
+
     progress('PLAYLIST_COMPLETE', f'{total - failed} succeeded; {failed} failed')
     return int(failed > 0)
 

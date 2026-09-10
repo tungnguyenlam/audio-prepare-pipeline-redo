@@ -11,8 +11,10 @@ from _common.files import batch, completed, destinations, identity, parser, posi
 
 def main() -> int:
     p = parser(__doc__, 'compare_waveforms')
-    p.add_argument('--reference-file', type=Path, required=True)
-    p.add_argument('--sample-rate', type=positive_int, default=16000)
+    p.add_argument('--reference-file', type=Path, required=True,
+                   help='Path to reference audio file to compare against')
+    p.add_argument('--sample-rate', type=positive_int, default=16000,
+                   help='Sample rate in Hz for waveform analysis (default: 16000)')
     args = p.parse_args()
     pairs = destinations(args, '', '.png')
     reference = args.reference_file.resolve()
@@ -55,7 +57,7 @@ def main() -> int:
                 publish(staged, dest, metadata, audio=False)
         finally:
             plt.close(figure)
-    return batch(pairs, process)
+    return batch(pairs, process, concurrency=args.concurrency, batch_size=args.batch_size)
 
 
 if __name__ == '__main__':

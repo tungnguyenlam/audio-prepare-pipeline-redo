@@ -52,8 +52,26 @@ def log_config(title: str, args: argparse.Namespace | dict) -> None:
     print('\n'.join(lines), file=sys.stderr, flush=True)
 
 
+import concurrent.futures
+import threading
+
+class HelpFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter):
+    """Help formatter that includes argument defaults and preserves raw descriptions."""
+    def _get_help_string(self, action: argparse.Action) -> str:
+        help_str = action.help or ''
+        if '%(default)' not in help_str and 'default:' not in help_str.lower():
+            if action.default is not argparse.SUPPRESS:
+                defaulting_nargs = [argparse.OPTIONAL, argparse.ZERO_OR_MORE]
+                if action.option_strings or action.nargs in defaulting_nargs:
+                    help_str += ' (default: %(default)s)'
+        return help_str
+
+
 class LoggingArgumentParser(argparse.ArgumentParser):
     """ArgumentParser that logs parsed arguments to stderr upon successful parsing."""
+    def __init__(self, *args, formatter_class=HelpFormatter, conflict_handler='resolve', **kwargs):
+        super().__init__(*args, formatter_class=formatter_class, conflict_handler=conflict_handler, **kwargs)
+
     def parse_args(self, args=None, namespace=None):
         ns = super().parse_args(args=args, namespace=namespace)
         log_config(self.prog or (sys.argv[0] if sys.argv else 'command'), ns)
@@ -170,17 +188,26 @@ def resolve_output_dir(args: argparse.Namespace, src: Path) -> Path:
 
 def parser(description: str, operation: str, model: str | None = None, *, segments: bool = False) -> LoggingArgumentParser:
     p = LoggingArgumentParser(description=description)
-    p.add_argument('--input-file', type=Path)
-    p.add_argument('--input-dir', type=Path)
+    p.add_argument('--input-file', type=Path, default=None,
+                   help='Path to a single input audio file (default: None)')
+    p.add_argument('--input-dir', type=Path, default=None,
+                   help='Path to directory of input audio files (default: None)')
     if not segments:
-        p.add_argument('--output-file', type=Path)
+        p.add_argument('--output-file', type=Path, default=None,
+                       help='Explicit destination path (requires --input-file; default: None)')
     base = ROOT / '.data' / operation
     if model:
         base /= model
     p.add_argument('--output-dir', type=Path, default=None,
                    help='Output directory (default: dynamic per audio family under .data/<operation>/<model>/<family>)')
-    p.add_argument('--work-dir', type=Path, default=base / 'work')
-    p.add_argument('--overwrite', action='store_true')
+    p.add_argument('--work-dir', type=Path, default=base / 'work',
+                   help='Working directory for intermediate/temporary files (default: .data/<operation>[/<model>]/work)')
+    p.add_argument('--overwrite', action='store_true', default=False,
+                   help='Overwrite existing output files and invalidate cached sidecars (default: False)')
+    p.add_argument('--concurrency', type=positive_int, default=1,
+                   help='Number of concurrent workers for parallel item processing. Set > 1 to enable concurrent execution (default: 1)')
+    p.add_argument('--batch-size', type=positive_int, default=1,
+                   help='Number of items grouped and processed per batch chunk. Controls batch submission granularity (default: 1)')
     p.set_defaults(_operation=operation, _model=model, _default_base=base)
     return p
 
@@ -375,27 +402,66 @@ def convert(src: Path, dest: Path, sample_rate: int, channels: int, *, start: fl
     subprocess.run(cmd, check=True, stdout=sys.stderr)
 
 
-def batch(pairs: list[tuple[Path, Path]], process) -> int:
+def batch(pairs: list[tuple[Path, Path]], process, *, concurrency: int = 1, batch_size: int = 1) -> int:
     total = len(pairs)
     if total == 0:
         progress('BATCH', '0 items to process')
         return 0
+    if concurrency < 1:
+        concurrency = 1
+    if batch_size < 1:
+        batch_size = 1
+
     failed = 0
     t_start = time.perf_counter()
-    progress('BATCH', f'Starting batch processing of {total} item(s)')
-    for idx, (src, dest) in enumerate(pairs, 1):
+    progress('BATCH', f'Starting batch processing of {total} item(s) (concurrency={concurrency}, batch_size={batch_size})')
+    batches = [pairs[i:i + batch_size] for i in range(0, total, batch_size)]
+    completed = 0
+    lock = threading.Lock()
+
+    def run_item(item_idx: int, src: Path, dest: Path) -> tuple[bool, Path, str]:
         item_start = time.perf_counter()
-        progress('ITEM_START', f'{src.name} -> {dest.name}', current=idx, total=total)
+        with lock:
+            progress('ITEM_START', f'{src.name} -> {dest.name}', current=item_idx, total=total)
         try:
             with contextlib.redirect_stdout(sys.stderr):
                 process(src, dest)
             elapsed = time.perf_counter() - item_start
-            progress('ITEM_DONE', f'{src.name}', current=idx, total=total, elapsed_s=elapsed)
-            print(dest, flush=True)
+            return True, dest, f'{src.name} ({elapsed:.2f}s)'
         except Exception as exc:
             elapsed = time.perf_counter() - item_start
-            failed += 1
-            progress('ITEM_FAIL', f'{src.name}: {exc}', current=idx, total=total, elapsed_s=elapsed)
+            return False, dest, f'{src.name}: {exc} ({elapsed:.2f}s)'
+
+    if concurrency <= 1:
+        for batch_chunk in batches:
+            for src, dest in batch_chunk:
+                completed += 1
+                success, out_dest, msg = run_item(completed, src, dest)
+                if success:
+                    progress('ITEM_DONE', msg, current=completed, total=total)
+                    print(out_dest, flush=True)
+                else:
+                    failed += 1
+                    progress('ITEM_FAIL', msg, current=completed, total=total)
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
+            for batch_chunk in batches:
+                futures = []
+                for src, dest in batch_chunk:
+                    with lock:
+                        completed += 1
+                        cur_idx = completed
+                    futures.append(pool.submit(run_item, cur_idx, src, dest))
+                for future in concurrent.futures.as_completed(futures):
+                    success, out_dest, msg = future.result()
+                    with lock:
+                        if success:
+                            progress('ITEM_DONE', msg, current=completed, total=total)
+                            print(out_dest, flush=True)
+                        else:
+                            failed += 1
+                            progress('ITEM_FAIL', msg, current=completed, total=total)
+
     total_elapsed = time.perf_counter() - t_start
     progress('BATCH_COMPLETE', f'{total - failed} succeeded; {failed} failed', elapsed_s=total_elapsed)
     return int(failed > 0)

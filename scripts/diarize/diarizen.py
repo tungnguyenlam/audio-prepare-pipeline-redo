@@ -19,19 +19,19 @@ from _common.segments import export, manifest_complete
 
 def main() -> int:
     p = parser(__doc__, 'diarize', 'diarizen', segments=True)
-    p.add_argument('--model', default='BUT-FIT/diarizen-wavlm-large-s80-md-v2')
-    p.add_argument('--device', default='auto')
-    p.add_argument('--batch-size', type=positive_int, default=1)
-    p.add_argument('--num-speakers', type=positive_int)
-    p.add_argument('--min-speakers', type=positive_int)
-    p.add_argument('--max-speakers', type=positive_int)
-    p.add_argument('--sample-rate', type=positive_int)
-    p.add_argument('--channels', type=int, choices=(1, 2), default=1)
-    p.add_argument('--min-duration-s', type=float, default=2.0, help='Minimum turn duration in seconds to keep and export (default: 2.0)')
-    p.add_argument('--max-duration-s', type=float, default=15.0, help='Maximum turn duration in seconds to keep and export (default: 15.0)')
-    p.add_argument('--segmentation-step', type=float, default=0.1, help='Segmentation shifting ratio step (default: 0.1)')
-    p.add_argument('--binarize-onset', type=float, default=0.5, help='Binarize onset threshold (default: 0.5)')
-    p.add_argument('--binarize-offset', type=float, default=0.5, help='Binarize offset threshold (default: 0.5)')
+    p.add_argument('--model', default='BUT-FIT/diarizen-wavlm-large-s80-md-v2', help='HuggingFace model repository or local checkpoint directory')
+    p.add_argument('--device', default='auto', help='Inference device ("auto", "cpu", "cuda", or "hip")')
+    p.add_argument('--batch-size', type=positive_int, default=1, help='Inference batch size for segmentation and embedding models')
+    p.add_argument('--num-speakers', type=positive_int, help='Exact number of speakers if known in advance')
+    p.add_argument('--min-speakers', type=positive_int, help='Minimum speaker cluster count')
+    p.add_argument('--max-speakers', type=positive_int, help='Maximum speaker cluster count')
+    p.add_argument('--sample-rate', type=positive_int, help='Output target sample rate in Hz (defaults to source sample rate)')
+    p.add_argument('--channels', type=int, choices=(1, 2), default=1, help='Output audio channel count (1=mono, 2=stereo)')
+    p.add_argument('--min-duration-s', type=float, default=2.0, help='Minimum turn duration in seconds to keep and export')
+    p.add_argument('--max-duration-s', type=float, default=15.0, help='Maximum turn duration in seconds to keep and export')
+    p.add_argument('--segmentation-step', type=float, default=0.1, help='Segmentation shifting ratio step')
+    p.add_argument('--binarize-onset', type=float, default=0.5, help='Binarize onset threshold')
+    p.add_argument('--binarize-offset', type=float, default=0.5, help='Binarize offset threshold')
     args = p.parse_args()
     if args.min_duration_s is not None and (not math.isfinite(args.min_duration_s) or args.min_duration_s < 0):
         p.error('--min-duration-s must be finite and non-negative')
@@ -237,8 +237,8 @@ def main() -> int:
             if segment.end > segment.start:
                 turns.append({'speaker_id': labels[label], 'start_s': float(segment.start), 'end_s': float(segment.end)})
         export({**wanted, 'speaker_ids': list(labels.values()), 'turns': turns}, src, dest, args.work_dir, rate, args.channels,
-               args.min_duration_s, args.max_duration_s)
-    return batch(pairs, process)
+               args.min_duration_s, args.max_duration_s, concurrency=args.concurrency, batch_size=args.batch_size)
+    return batch(pairs, process, concurrency=args.concurrency, batch_size=args.batch_size)
 
 
 if __name__ == '__main__':

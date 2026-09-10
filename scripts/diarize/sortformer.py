@@ -1111,29 +1111,50 @@ class _Sortformer:
 
 def main() -> int:
     p = parser('Sortformer diarization with long-audio window stitching.', 'diarize', 'sortformer', segments=True)
-    p.add_argument('--model-id', default=DEFAULT_MODEL_ID)
-    p.add_argument('--revision', default=DEFAULT_MODEL_REVISION)
-    p.add_argument('--model-filename', default=DEFAULT_MODEL_FILENAME)
-    p.add_argument('--checkpoint-path', type=Path)
-    p.add_argument('--device', default='auto')
-    p.add_argument('--batch-size', type=positive_int, default=1)
-    p.add_argument('--window-duration-s', type=float, default=360.0)
-    p.add_argument('--overlap-duration-s', type=float, default=60.0)
-    p.add_argument('--oom-retry-window-s', type=float, default=180.0)
-    p.add_argument('--embedding-model-id', default='titanet_large')
-    p.add_argument('--enable-speaker-similarity', action=argparse.BooleanOptionalAction, default=True)
-    p.add_argument('--embedding-similarity-threshold', type=float, default=0.70)
-    p.add_argument('--overlap-match-threshold', type=float, default=0.35)
-    p.add_argument('--onset', type=float, default=DEFAULT_ONSET)
-    p.add_argument('--offset', type=float, default=DEFAULT_OFFSET)
-    p.add_argument('--pad-onset-s', type=float, default=DEFAULT_PAD_ONSET_S)
-    p.add_argument('--pad-offset-s', type=float, default=DEFAULT_PAD_OFFSET_S)
-    p.add_argument('--min-duration-on-s', type=float, default=0.10)
-    p.add_argument('--min-duration-off-s', type=float, default=0.15)
+    p.add_argument('--model-id', default=DEFAULT_MODEL_ID,
+                   help='NeMo / HuggingFace model ID for Sortformer (default: %(default)s)')
+    p.add_argument('--revision', default=DEFAULT_MODEL_REVISION,
+                   help='HuggingFace model revision branch/tag (default: %(default)s)')
+    p.add_argument('--model-filename', default=DEFAULT_MODEL_FILENAME,
+                   help='Target .nemo model checkpoint filename (default: %(default)s)')
+    p.add_argument('--checkpoint-path', type=Path, default=None,
+                   help='Explicit local path to .nemo checkpoint file (default: None)')
+    p.add_argument('--device', default='auto',
+                   help='Execution device (e.g. auto, cpu, cuda) (default: auto)')
+    p.add_argument('--batch-size', type=positive_int, default=1,
+                   help='Model inference batch size for Sortformer and clip chunking (default: 1)')
+    p.add_argument('--window-duration-s', type=float, default=360.0,
+                   help='Sliding window duration in seconds for long audio chunking (default: 360.0)')
+    p.add_argument('--overlap-duration-s', type=float, default=60.0,
+                   help='Overlap duration in seconds between consecutive windows (default: 60.0)')
+    p.add_argument('--oom-retry-window-s', type=float, default=180.0,
+                   help='Reduced window duration in seconds to retry on CUDA OOM (default: 180.0)')
+    p.add_argument('--embedding-model-id', default='titanet_large',
+                   help='Speaker embedding model ID for stitching window turns (default: titanet_large)')
+    p.add_argument('--enable-speaker-similarity', action=argparse.BooleanOptionalAction, default=True,
+                   help='Use speaker embedding similarity to stitch across windows (default: True)')
+    p.add_argument('--embedding-similarity-threshold', type=float, default=0.70,
+                   help='Cosine similarity threshold for cross-window speaker matching (default: 0.70)')
+    p.add_argument('--overlap-match-threshold', type=float, default=0.35,
+                   help='Turn overlap threshold for matching speakers in overlap region (default: 0.35)')
+    p.add_argument('--onset', type=float, default=DEFAULT_ONSET,
+                   help='Binarization onset probability threshold for active speech (default: 0.50)')
+    p.add_argument('--offset', type=float, default=DEFAULT_OFFSET,
+                   help='Binarization offset probability threshold for speech offset (default: 0.40)')
+    p.add_argument('--pad-onset-s', type=float, default=DEFAULT_PAD_ONSET_S,
+                   help='Padding in seconds prepended before turn onset (default: 0.05)')
+    p.add_argument('--pad-offset-s', type=float, default=DEFAULT_PAD_OFFSET_S,
+                   help='Padding in seconds appended after turn offset (default: 0.05)')
+    p.add_argument('--min-duration-on-s', type=float, default=0.10,
+                   help='Minimum speech activation duration in seconds to keep (default: 0.10)')
+    p.add_argument('--min-duration-off-s', type=float, default=0.15,
+                   help='Minimum non-speech duration in seconds to trigger turn split (default: 0.15)')
     p.add_argument('--min-duration-s', type=float, default=2.0, help='Minimum turn duration in seconds to keep and export (default: 2.0)')
     p.add_argument('--max-duration-s', type=float, default=15.0, help='Maximum turn duration in seconds to keep and export (default: 15.0)')
-    p.add_argument('--sample-rate', type=positive_int)
-    p.add_argument('--channels', type=int, choices=(1, 2), default=1)
+    p.add_argument('--sample-rate', type=positive_int, default=None,
+                   help='Output sample rate in Hz for exported turn clips (default: preserve source)')
+    p.add_argument('--channels', type=int, choices=(1, 2), default=1,
+                   help='Output channel layout for clips (1=mono, 2=stereo) (default: 1)')
     args = p.parse_args()
     if args.min_duration_s is not None and (not math.isfinite(args.min_duration_s) or args.min_duration_s < 0):
         p.error('--min-duration-s must be finite and non-negative')
@@ -1162,9 +1183,10 @@ def main() -> int:
             return
         turns = model.diarize(src)
         export({**wanted, 'speaker_ids': sorted({t['speaker_id'] for t in turns}), 'turns': turns},
-               src, dest, args.work_dir, rate, args.channels, args.min_duration_s, args.max_duration_s)
+               src, dest, args.work_dir, rate, args.channels, args.min_duration_s, args.max_duration_s,
+               concurrency=args.concurrency, batch_size=args.batch_size)
     try:
-        return batch(pairs, process)
+        return batch(pairs, process, concurrency=args.concurrency, batch_size=args.batch_size)
     finally:
         with contextlib.redirect_stdout(sys.stderr):
             model._unload()

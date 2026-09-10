@@ -99,10 +99,10 @@ class VibeVoiceVerifier:
 
 def main() -> int:
     p = parser('Verify audio with VibeVoice-ASR speaker counts; writes verdicts without filtering audio.', 'verify', 'vibevoice')
-    p.add_argument('--model-id', default=DEFAULT_VIBEVOICE_MODEL_ID)
-    p.add_argument('--device', default='auto')
-    p.add_argument('--max-new-tokens', type=int, default=DEFAULT_MAX_NEW_TOKENS)
-    p.add_argument('--min-secondary-speech-s', type=float, default=DEFAULT_MIN_SECONDARY_SPEECH_S)
+    p.add_argument('--model-id', default=DEFAULT_VIBEVOICE_MODEL_ID, help='VibeVoice model ID on Hugging Face or local checkpoint directory')
+    p.add_argument('--device', default='auto', help='Inference device ("auto", "cpu", "cuda", or "hip")')
+    p.add_argument('--max-new-tokens', type=int, default=DEFAULT_MAX_NEW_TOKENS, help='Maximum number of tokens to generate')
+    p.add_argument('--min-secondary-speech-s', type=float, default=DEFAULT_MIN_SECONDARY_SPEECH_S, help='Minimum duration in seconds of secondary speaker speech to trigger rejection')
     args = p.parse_args()
 
     pairs = destinations(args, '_vibevoice', '.json')

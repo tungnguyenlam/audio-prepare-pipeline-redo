@@ -55,7 +55,7 @@ def _copy_turn_meta(src: dict, dst: dict, policy: str='smart_segmentation') -> N
             dst[attr] = src[attr]
     dst['_boundary_policy'] = policy
 
-def smart_segment_speaker_turns(audio: Path, turns: Sequence[dict], *, max_duration_s: float=DEFAULT_TARGET_MAX_DURATION_S, min_duration_s: float=DEFAULT_TARGET_MIN_DURATION_S, min_pause_s: float=DEFAULT_MIN_SPLIT_PAUSE_S, words: list[dict[str, Any]] | None=None, frame_len_ms: float=DEFAULT_ENERGY_FRAME_LEN_MS, hop_len_ms: float=DEFAULT_ENERGY_HOP_LEN_MS, search_window_s: float=DEFAULT_ENERGY_SEARCH_WINDOW_S) -> tuple[list[dict], list[dict[str, Any]]]:
+def smart_segment_speaker_turns(audio: Path, turns: Sequence[dict], *, max_duration_s: float=DEFAULT_TARGET_MAX_DURATION_S, min_duration_s: float=DEFAULT_TARGET_MIN_DURATION_S, min_pause_s: float=DEFAULT_MIN_SPLIT_PAUSE_S, words: list[dict[str, Any]] | None=None, frame_len_ms: float=DEFAULT_ENERGY_FRAME_LEN_MS, hop_len_ms: float=DEFAULT_ENERGY_HOP_LEN_MS, search_window_s: float=DEFAULT_ENERGY_SEARCH_WINDOW_S, concurrency: int = 1, batch_size: int = 1) -> tuple[list[dict], list[dict[str, Any]]]:
     """Split at supported word gaps; reject remainders without a safe split.
 
     ASR timing is evidence, not proof of acoustic completeness. Newly introduced
@@ -72,6 +72,8 @@ def smart_segment_speaker_turns(audio: Path, turns: Sequence[dict], *, max_durat
         frame_len_ms: RMS analysis frame length.
         hop_len_ms: RMS analysis hop.
         search_window_s: Acoustic search radius, constrained inside the word gap.
+        concurrency: Concurrent worker threads for processing turns.
+        batch_size: Turn batch chunk size per worker task.
 
     Returns:
         Accepted children and audits for splits and rejected remainders.
@@ -97,9 +99,10 @@ def smart_segment_speaker_turns(audio: Path, turns: Sequence[dict], *, max_durat
         waveform = waveform.mean(axis=1)
     frame_samples = max(1, int(round(frame_len_ms * sr / 1000)))
     hop_samples = max(1, int(round(hop_len_ms * sr / 1000)))
-    accepted: list[dict] = []
-    audits: list[dict[str, Any]] = []
-    for turn in turns:
+
+    def _segment_turn(turn: dict) -> tuple[list[dict], list[dict[str, Any]]]:
+        t_accepted: list[dict] = []
+        t_audits: list[dict[str, Any]] = []
         current = turn['start_s']
         turn_words = [w for w in valid_words if float(w['end']) > turn['start_s'] and float(w['start']) < turn['end_s']]
         while current < turn['end_s']:
@@ -135,31 +138,60 @@ def smart_segment_speaker_turns(audio: Path, turns: Sequence[dict], *, max_durat
                     _, cut, gap_start, gap_end = max(candidates)
                     method = 'supported_word_gap'
             if reason:
-                audits.append({'action': 'reject', 'reason': reason, 'speaker_id': turn['speaker_id'], 'parent_start_s': turn['start_s'], 'parent_end_s': turn['end_s'], 'rejected_start_s': current, 'rejected_end_s': turn['end_s']})
+                t_audits.append({'action': 'reject', 'reason': reason, 'speaker_id': turn['speaker_id'], 'parent_start_s': turn['start_s'], 'parent_end_s': turn['end_s'], 'rejected_start_s': current, 'rejected_end_s': turn['end_s']})
                 break
             child = dict(speaker_id=turn['speaker_id'], start_s=current, end_s=cut, confidence=turn['confidence'])
             _copy_turn_meta(turn, child, policy='smart_segmentation')
             child['_words'] = [w for w in turn_words if float(w['start']) >= current and float(w['end']) <= cut]
             child['_transcript'] = ' '.join((str(w.get('text', '')).strip() for w in child['_words'])) or None
-            accepted.append(child)
+            t_accepted.append(child)
             audit = {'action': 'split' if method == 'supported_word_gap' else 'split_tail', 'method': method, 'speaker_id': turn['speaker_id'], 'parent_start_s': turn['start_s'], 'parent_end_s': turn['end_s'], 'child_start_s': current, 'child_end_s': cut, 'child_duration_s': child['end_s'] - child['start_s'], 'transcript': child['_transcript']}
             if method == 'supported_word_gap':
                 audit.update(word_gap_start_s=gap_start, word_gap_end_s=gap_end)
-            audits.append(audit)
+            t_audits.append(audit)
             current = cut
+        return t_accepted, t_audits
+
+    def _segment_batch(batch_turns: list[dict]) -> tuple[list[dict], list[dict[str, Any]]]:
+        b_acc: list[dict] = []
+        b_aud: list[dict[str, Any]] = []
+        for t in batch_turns:
+            a, d = _segment_turn(t)
+            b_acc.extend(a)
+            b_aud.extend(d)
+        return b_acc, b_aud
+
+    batches = [list(turns)[i:i + batch_size] for i in range(0, len(turns), batch_size)]
+    accepted: list[dict] = []
+    audits: list[dict[str, Any]] = []
+    if concurrency > 1 and len(batches) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(concurrency, len(batches))) as pool:
+            for b_acc, b_aud in pool.map(_segment_batch, batches):
+                accepted.extend(b_acc)
+                audits.extend(b_aud)
+    else:
+        for b in batches:
+            b_acc, b_aud = _segment_batch(b)
+            accepted.extend(b_acc)
+            audits.extend(b_aud)
     return (accepted, audits)
 
 def main() -> int:
     p = arguments(__doc__)
-    p.add_argument('--words-file', type=Path, help='JSON object with a words array; no ASR runs implicitly')
-    p.add_argument('--max-duration-s', type=float, default=DEFAULT_TARGET_MAX_DURATION_S)
-    p.add_argument('--min-duration-s', type=float, default=DEFAULT_TARGET_MIN_DURATION_S)
-    p.add_argument('--min-pause-s', type=float, default=DEFAULT_MIN_SPLIT_PAUSE_S)
+    p.add_argument('--words-file', type=Path, help='JSON file with a words array; no ASR runs implicitly')
+    p.add_argument('--max-duration-s', type=float, default=DEFAULT_TARGET_MAX_DURATION_S, help='Maximum target duration in seconds for segmented turns')
+    p.add_argument('--min-duration-s', type=float, default=DEFAULT_TARGET_MIN_DURATION_S, help='Minimum target duration in seconds for segmented turns')
+    p.add_argument('--min-pause-s', type=float, default=DEFAULT_MIN_SPLIT_PAUSE_S, help='Minimum pause gap in seconds between words required for splitting')
     args = p.parse_args()
+    if args.concurrency < 1:
+        p.error('--concurrency must be at least 1')
+    if args.batch_size < 1:
+        p.error('--batch-size must be at least 1')
     manifest, source = load(args)
     values = {key: getattr(args, key) for key in ('max_duration_s', 'min_duration_s', 'min_pause_s')}
     words = read_json(args.words_file)['words'] if args.words_file else None
-    turns, audits = smart_segment_speaker_turns(source, manifest['turns'], words=words, **values)
+    turns, audits = smart_segment_speaker_turns(source, manifest['turns'], words=words, concurrency=args.concurrency, batch_size=args.batch_size, **values)
     save(args, manifest, source, turns, 'segment', {**values, 'words_file': identity(args.words_file) if args.words_file else None}, audits=audits)
     return 0
 

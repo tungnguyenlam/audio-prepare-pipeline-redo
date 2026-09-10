@@ -129,8 +129,12 @@ def compute_consensus_turns(primary_turns: Sequence[dict], secondary_turns: Sequ
 
 def main() -> int:
     p = arguments(__doc__)
-    p.add_argument('--secondary-manifest', type=Path, required=True)
+    p.add_argument('--secondary-manifest', type=Path, required=True, help='Secondary diarization segments.json manifest to intersect with primary')
     args = p.parse_args()
+    if args.concurrency < 1:
+        p.error('--concurrency must be at least 1')
+    if args.batch_size < 1:
+        p.error('--batch-size must be at least 1')
     manifest, source = load(args)
     secondary = read_json(args.secondary_manifest)
     from _common.segments import source_path

@@ -11,13 +11,20 @@ from _common.files import batch, completed, convert, destinations, identity, par
 
 def main() -> int:
     p = parser(__doc__, 'separate', 'mel_roformer')
-    p.add_argument('--model', default='melband-roformer-kim-vocals')
-    p.add_argument('--device', default='auto')
-    p.add_argument('--backend')
-    p.add_argument('--stem', default='vocals')
-    p.add_argument('--model-sample-rate', type=positive_int, default=44100)
-    p.add_argument('--sample-rate', type=positive_int, help='output sample rate in Hz (default: preserve source)')
-    p.add_argument('--channels', type=int, choices=(1, 2), default=1)
+    p.add_argument('--model', default='melband-roformer-kim-vocals',
+                   help='Mel-Band RoFormer model checkpoint name (default: melband-roformer-kim-vocals)')
+    p.add_argument('--device', default='auto',
+                   help='Compute device for model inference (e.g. auto, cpu, cuda) (default: auto)')
+    p.add_argument('--backend', default=None,
+                   help='Inference backend engine (optional; default: None)')
+    p.add_argument('--stem', default='vocals',
+                   help='Target stem to separate and export (default: vocals)')
+    p.add_argument('--model-sample-rate', type=positive_int, default=44100,
+                   help='Internal sample rate expected by model checkpoint (default: 44100)')
+    p.add_argument('--sample-rate', type=positive_int, default=None,
+                   help='Output sample rate in Hz (default: preserve source)')
+    p.add_argument('--channels', type=int, choices=(1, 2), default=1,
+                   help='Output channel layout (1=mono, 2=stereo) (default: 1)')
     args = p.parse_args()
     pairs = destinations(args, '_mel_roformer')
     from mel_band_roformer import MelBandRoformerSession
@@ -48,7 +55,7 @@ def main() -> int:
             convert(selected, staged, rate, args.channels)
             publish(staged, dest, metadata)
     try:
-        return batch(pairs, process)
+        return batch(pairs, process, concurrency=args.concurrency, batch_size=args.batch_size)
     finally:
         with contextlib.redirect_stdout(sys.stderr):
             session.close()

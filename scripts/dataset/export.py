@@ -14,11 +14,17 @@ from _common.files import LoggingArgumentParser, completed, digest, identity, pr
 
 def main() -> int:
     p = LoggingArgumentParser(description=__doc__)
-    p.add_argument('--input-manifest', type=Path, required=True)
-    p.add_argument('--output-file', type=Path, required=True)
-    p.add_argument('--format', choices=('jsonl', 'csv'), required=True)
-    p.add_argument('--overwrite', action='store_true')
+    p.add_argument('--input-manifest', type=Path, required=True, help='Path to input dataset manifest JSON')
+    p.add_argument('--output-file', type=Path, required=True, help='Output JSONL or CSV export file')
+    p.add_argument('--format', choices=('jsonl', 'csv'), required=True, help='Export format choice ("jsonl" or "csv")')
+    p.add_argument('--overwrite', action='store_true', help='Overwrite existing output file and sidecars')
+    p.add_argument('--concurrency', type=int, default=1, help='Number of concurrent workers for formatting entries. Set > 1 to enable concurrent execution')
+    p.add_argument('--batch-size', type=int, default=1, help='Number of entries to format per batch chunk')
     args = p.parse_args()
+    if args.concurrency < 1:
+        p.error('--concurrency must be at least 1')
+    if args.batch_size < 1:
+        p.error('--batch-size must be at least 1')
     destination = args.output_file.resolve()
     sidecar = destination.with_suffix('.json')
     if args.input_manifest.resolve() in {destination, sidecar} or destination == sidecar:
@@ -36,13 +42,35 @@ def main() -> int:
     try:
         with os.fdopen(fd, 'w', encoding='utf-8', newline='') as stream:
             if args.format == 'jsonl':
-                for entry in entries:
-                    stream.write(json.dumps(entry, ensure_ascii=False) + '\n')
+                def _fmt_jsonl_batch(batch_items):
+                    return ''.join(json.dumps(entry, ensure_ascii=False) + '\n' for entry in batch_items)
+
+                batches = [entries[i:i + args.batch_size] for i in range(0, len(entries), args.batch_size)]
+                if args.concurrency > 1 and len(batches) > 1:
+                    from concurrent.futures import ThreadPoolExecutor
+                    with ThreadPoolExecutor(max_workers=min(args.concurrency, len(batches))) as pool:
+                        for chunk in pool.map(_fmt_jsonl_batch, batches):
+                            stream.write(chunk)
+                else:
+                    for b in batches:
+                        stream.write(_fmt_jsonl_batch(b))
             else:
                 fields = sorted({key for entry in entries for key in entry})
                 writer = csv.DictWriter(stream, fieldnames=fields)
                 writer.writeheader()
-                writer.writerows({k: json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else v for k, v in entry.items()} for entry in entries)
+
+                def _fmt_csv_batch(batch_items):
+                    return [{k: json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else v for k, v in entry.items()} for entry in batch_items]
+
+                batches = [entries[i:i + args.batch_size] for i in range(0, len(entries), args.batch_size)]
+                if args.concurrency > 1 and len(batches) > 1:
+                    from concurrent.futures import ThreadPoolExecutor
+                    with ThreadPoolExecutor(max_workers=min(args.concurrency, len(batches))) as pool:
+                        for chunk in pool.map(_fmt_csv_batch, batches):
+                            writer.writerows(chunk)
+                else:
+                    for b in batches:
+                        writer.writerows(_fmt_csv_batch(b))
         write_json(sidecar, {**metadata, 'output': {}})
         os.replace(temporary, destination)
         write_json(sidecar, {**metadata, 'output': {'sha256': digest(destination), 'rows': len(entries)}})

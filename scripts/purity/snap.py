@@ -46,7 +46,7 @@ def _find_local_valley(waveform: np.ndarray, center_sample: int, *, search_sampl
         best_sample = max(0, best_sample - 20) + zc_indices[0]
     return best_sample
 
-def snap_boundaries_to_acoustic_valleys(audio: Path, turns: Sequence[dict], *, search_window_s: float=DEFAULT_ENERGY_SEARCH_WINDOW_S, energy_floor_db: float=DEFAULT_ENERGY_VALLEY_FLOOR_DB, frame_len_ms: float=DEFAULT_ENERGY_FRAME_LEN_MS, hop_len_ms: float=DEFAULT_ENERGY_HOP_LEN_MS, competitor_intervals_by_speaker: dict[str, list[tuple[float, float]]] | None=None) -> tuple[list[dict], list[dict[str, Any]]]:
+def snap_boundaries_to_acoustic_valleys(audio: Path, turns: Sequence[dict], *, search_window_s: float=DEFAULT_ENERGY_SEARCH_WINDOW_S, energy_floor_db: float=DEFAULT_ENERGY_VALLEY_FLOOR_DB, frame_len_ms: float=DEFAULT_ENERGY_FRAME_LEN_MS, hop_len_ms: float=DEFAULT_ENERGY_HOP_LEN_MS, competitor_intervals_by_speaker: dict[str, list[tuple[float, float]]] | None=None, concurrency: int = 1, batch_size: int = 1) -> tuple[list[dict], list[dict[str, Any]]]:
     """Snap turn boundaries to local short-time energy (RMS) silence valleys.
 
     Prevents slicing through voiced phonemes, vowels, or coda consonants by walking
@@ -61,12 +61,11 @@ def snap_boundaries_to_acoustic_valleys(audio: Path, turns: Sequence[dict], *, s
     frame_samples = max(1, int(round(frame_len_ms * sr / 1000.0)))
     hop_samples = max(1, int(round(hop_len_ms * sr / 1000.0)))
     search_samples = int(round(search_window_s * sr))
-    snapped: list[dict] = []
-    audits: list[dict[str, Any]] = []
 
     def find_local_valley(center_sample: int) -> int:
         return _find_local_valley(waveform, center_sample, search_samples=search_samples, frame_samples=frame_samples, hop_samples=hop_samples)
-    for turn in turns:
+
+    def _snap_single_turn(turn: dict) -> tuple[dict, dict[str, Any]]:
         start_samp = int(round(turn['start_s'] * sr))
         end_samp = int(round(turn['end_s'] * sr))
         new_start_samp = find_local_valley(start_samp)
@@ -110,25 +109,46 @@ def snap_boundaries_to_acoustic_valleys(audio: Path, turns: Sequence[dict], *, s
                 refined_turn['_consensus_start_s'] = turn['_consensus_start_s']
             if '_consensus_end_s' in turn:
                 refined_turn['_consensus_end_s'] = turn['_consensus_end_s']
-            snapped.append(refined_turn)
-            audits.append({'raw_start_s': raw_start, 'raw_end_s': raw_end, 'original_start_s': orig_start, 'original_end_s': orig_end, 'start_s': new_start_s, 'end_s': new_end_s, 'delta_start_ms': delta_start, 'delta_end_ms': delta_end, 'policy': 'acoustic_energy_valley', 'tail_rescued': tail_rescued, 'transcript': turn.get('_transcript', None)})
+            audit = {'raw_start_s': raw_start, 'raw_end_s': raw_end, 'original_start_s': orig_start, 'original_end_s': orig_end, 'start_s': new_start_s, 'end_s': new_end_s, 'delta_start_ms': delta_start, 'delta_end_ms': delta_end, 'policy': 'acoustic_energy_valley', 'tail_rescued': tail_rescued, 'transcript': turn.get('_transcript', None)}
+            return refined_turn, audit
         else:
-            snapped.append(turn)
-            audits.append({'raw_start_s': raw_start, 'raw_end_s': raw_end, 'original_start_s': orig_start, 'original_end_s': orig_end, 'start_s': turn['start_s'], 'end_s': turn['end_s'], 'delta_start_ms': turn.get('_delta_start_ms', 0.0), 'delta_end_ms': turn.get('_delta_end_ms', 0.0), 'policy': turn.get('_boundary_policy', 'standard'), 'tail_rescued': turn.get('_tail_rescued', False), 'transcript': turn.get('_transcript', None)})
+            audit = {'raw_start_s': raw_start, 'raw_end_s': raw_end, 'original_start_s': orig_start, 'original_end_s': orig_end, 'start_s': turn['start_s'], 'end_s': turn['end_s'], 'delta_start_ms': turn.get('_delta_start_ms', 0.0), 'delta_end_ms': turn.get('_delta_end_ms', 0.0), 'policy': turn.get('_boundary_policy', 'standard'), 'tail_rescued': turn.get('_tail_rescued', False), 'transcript': turn.get('_transcript', None)}
+            return turn, audit
+
+    def _snap_batch(turn_batch: list[dict]) -> list[tuple[dict, dict[str, Any]]]:
+        return [_snap_single_turn(t) for t in turn_batch]
+
+    batches = [list(turns)[i:i + batch_size] for i in range(0, len(turns), batch_size)]
+    results: list[tuple[dict, dict[str, Any]]] = []
+    if concurrency > 1 and len(batches) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(concurrency, len(batches))) as pool:
+            for b_res in pool.map(_snap_batch, batches):
+                results.extend(b_res)
+    else:
+        for b in batches:
+            results.extend(_snap_batch(b))
+
+    snapped = [r[0] for r in results]
+    audits = [r[1] for r in results]
     return (snapped, audits)
 
 def main() -> int:
     p = arguments(__doc__)
-    p.add_argument('--search-window-s', type=float, default=DEFAULT_ENERGY_SEARCH_WINDOW_S)
-    p.add_argument('--energy-floor-db', type=float, default=DEFAULT_ENERGY_VALLEY_FLOOR_DB)
-    p.add_argument('--frame-len-ms', type=float, default=DEFAULT_ENERGY_FRAME_LEN_MS)
-    p.add_argument('--hop-len-ms', type=float, default=DEFAULT_ENERGY_HOP_LEN_MS)
+    p.add_argument('--search-window-s', type=float, default=DEFAULT_ENERGY_SEARCH_WINDOW_S, help='Search window radius in seconds around turn boundaries')
+    p.add_argument('--energy-floor-db', type=float, default=DEFAULT_ENERGY_VALLEY_FLOOR_DB, help='RMS energy floor in decibels for acoustic valley detection')
+    p.add_argument('--frame-len-ms', type=float, default=DEFAULT_ENERGY_FRAME_LEN_MS, help='RMS analysis frame length in milliseconds')
+    p.add_argument('--hop-len-ms', type=float, default=DEFAULT_ENERGY_HOP_LEN_MS, help='RMS analysis hop length in milliseconds')
     args = p.parse_args()
+    if args.concurrency < 1:
+        p.error('--concurrency must be at least 1')
+    if args.batch_size < 1:
+        p.error('--batch-size must be at least 1')
     values = {key: getattr(args, key) for key in ('search_window_s', 'energy_floor_db', 'frame_len_ms', 'hop_len_ms')}
     if any(not math.isfinite(v) or (k != 'energy_floor_db' and v <= 0) for k, v in values.items()):
         p.error('Require finite settings and positive search/frame/hop sizes')
     manifest, source = load(args)
-    turns, audits = snap_boundaries_to_acoustic_valleys(source, manifest['turns'], **values)
+    turns, audits = snap_boundaries_to_acoustic_valleys(source, manifest['turns'], concurrency=args.concurrency, batch_size=args.batch_size, **values)
     save(args, manifest, source, turns, 'snap', values, audits=audits)
     return 0
 

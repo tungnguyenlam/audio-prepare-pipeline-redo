@@ -51,20 +51,28 @@ def main() -> int:
     p = LoggingArgumentParser(description=__doc__)
     p.add_argument('--input-manifest', type=Path, required=True, help='Manifest containing candidate turns')
     p.add_argument('--output-manifest', type=Path, help='Purity verification output manifest (default: dynamic per family under .data/speaker/purity/<family>/segments.json)')
-    p.add_argument('--profile', required=True, help='Enrolled speaker profile name or dir')
-    p.add_argument('--profiles-dir', type=Path, default=ROOT / '.data' / 'speaker_profiles')
-    p.add_argument('--similarity-threshold', type=float, default=0.6)
-    p.add_argument('--min-candidate-duration-s', type=float, default=1.5)
-    p.add_argument('--max-overlap-duration-s', type=float, default=0.05)
-    p.add_argument('--window-duration-s', type=float, default=2.0)
-    p.add_argument('--window-hop-s', type=float, default=0.75)
-    p.add_argument('--model-id', default=DEFAULT_EMBEDDING_MODEL_ID)
-    p.add_argument('--device', default='auto')
-    p.add_argument('--input-file', type=Path)
-    p.add_argument('--overwrite', action='store_true')
+    p.add_argument('--profile', required=True, help='Enrolled speaker profile name or directory containing profile.json')
+    p.add_argument('--profiles-dir', type=Path, default=ROOT / '.data' / 'speaker_profiles', help='Root profiles directory')
+    p.add_argument('--similarity-threshold', type=float, default=0.6, help='Minimum similarity threshold against profile centroid')
+    p.add_argument('--min-candidate-duration-s', type=float, default=1.5, help='Minimum turn duration in seconds to consider pure')
+    p.add_argument('--max-overlap-duration-s', type=float, default=0.05, help='Maximum permissible overlap duration in seconds with other speakers')
+    p.add_argument('--window-duration-s', type=float, default=2.0, help='Sliding identity verification window duration in seconds')
+    p.add_argument('--window-hop-s', type=float, default=0.75, help='Sliding identity verification window hop in seconds')
+    p.add_argument('--model-id', default=DEFAULT_EMBEDDING_MODEL_ID, help='Pyannote embedding model ID')
+    p.add_argument('--device', default='auto', help='Inference device ("auto", "cpu", "cuda", or "hip")')
+    p.add_argument('--input-file', type=Path, help='Optional source audio override')
+    p.add_argument('--overwrite', action='store_true', help='Overwrite existing purity output manifest')
+    p.add_argument('--concurrency', type=int, default=1, help='Number of concurrent workers for verifying turns. Set > 1 to enable concurrent execution')
+    p.add_argument('--batch-size', type=int, default=1, help='Number of turns to batch per purity task')
     args = p.parse_args()
+    if args.concurrency < 1:
+        p.error('--concurrency must be at least 1')
+    if args.batch_size < 1:
+        p.error('--batch-size must be at least 1')
 
     import numpy as np
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
 
     manifest = read_json(args.input_manifest)
     source = source_path(manifest, args.input_manifest, args.input_file)
@@ -90,10 +98,9 @@ def main() -> int:
 
     total_turns = len(turns)
     progress('PURITY_START', f'Checking purity for {total_turns} turns against profile {profile_name!r}')
-    verified_turns = []
-    pass_count, reject_count = 0, 0
-    step = max(1, total_turns // 10)
-    for i, turn in enumerate(turns, 1):
+    model_lock = threading.Lock()
+
+    def _verify_turn(turn):
         dur = turn['end_s'] - turn['start_s']
         spk = turn['speaker_id']
         overlap_dur = other_speaker_overlap_duration(turns, spk, turn['start_s'], turn['end_s'])
@@ -112,7 +119,8 @@ def main() -> int:
             min_sim = 1.0
             for w_start, w_end in windows:
                 try:
-                    vec = embed_audio_interval(inference, source, w_start, w_end)
+                    with model_lock:
+                        vec = embed_audio_interval(inference, source, w_start, w_end)
                     sim = float(np.clip(np.dot(centroid, vec), -1.0, 1.0))
                 except Exception:
                     sim = -1.0
@@ -122,19 +130,28 @@ def main() -> int:
                     reason = f"window_similarity_{sim:.3f}_below_threshold"
                     break
 
-        if decision == "pass":
-            pass_count += 1
-        else:
-            reject_count += 1
-
-        verified_turns.append({
+        return {
             **turn,
             'purity_decision': decision,
             'purity_reason': reason,
             'other_speaker_overlap_s': round(overlap_dur, 3),
-        })
-        if i == 1 or i == total_turns or i % step == 0:
-            progress('PURITY_TURN', f'{decision} ({reason})', current=i, total=total_turns)
+        }
+
+    def _verify_batch(turn_batch):
+        return [_verify_turn(t) for t in turn_batch]
+
+    batches = [turns[i:i + args.batch_size] for i in range(0, total_turns, args.batch_size)]
+    verified_turns = []
+    if args.concurrency > 1 and len(batches) > 1:
+        with ThreadPoolExecutor(max_workers=min(args.concurrency, len(batches))) as pool:
+            for res in pool.map(_verify_batch, batches):
+                verified_turns.extend(res)
+    else:
+        for b in batches:
+            verified_turns.extend(_verify_batch(b))
+
+    pass_count = sum(1 for t in verified_turns if t['purity_decision'] == 'pass')
+    reject_count = len(verified_turns) - pass_count
 
     dest = args.output_manifest.resolve() if args.output_manifest is not None else (ROOT / '.data/speaker/purity' / infer_audio_family(args.input_manifest) / 'segments.json').resolve()
     metadata = {

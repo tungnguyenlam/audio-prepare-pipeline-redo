@@ -28,10 +28,10 @@ def main() -> int:
     )
     add_prompt_arguments(command)
     command.add_argument(
-        "--endpoint", default="http://localhost:8000/v1/chat/completions"
+        "--endpoint", default="http://localhost:8000/v1/chat/completions", help="OpenAI-compatible chat completions endpoint URL"
     )
-    command.add_argument("--model", default="default")
-    command.add_argument("--timeout-s", type=float, default=120.0)
+    command.add_argument("--model", default="default", help="Model name to request from endpoint")
+    command.add_argument("--timeout-s", type=float, default=120.0, help="Request timeout in seconds")
     args = command.parse_args()
 
     prompt, system_prompt = load_prompts(args)

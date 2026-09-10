@@ -240,12 +240,12 @@ def main() -> int:
     from _cli import load_prompt, resolved_parameters, run_verifier
     from _common.files import destinations, parser
     p = parser('Verify audio with endpoint; writes verdicts without filtering audio.', 'verify', 'endpoint')
-    p.add_argument('--prompt-file', type=Path)
-    p.add_argument('--endpoint', type=str, default='http://localhost:8000/v1/chat/completions')
-    p.add_argument('--model', type=str, default='default')
-    p.add_argument('--timeout-s', type=float, default=120.0)
-    p.add_argument('--temperature', type=float, default=0.0)
-    p.add_argument('--max-tokens', type=int, default=1024)
+    p.add_argument('--prompt-file', type=Path, help='Optional path to text prompt file (defaults to acoustic defect prompt)')
+    p.add_argument('--endpoint', type=str, default='http://localhost:8000/v1/chat/completions', help='OpenAI-compatible chat completions endpoint URL')
+    p.add_argument('--model', type=str, default='default', help='Target model name to request from endpoint')
+    p.add_argument('--timeout-s', type=float, default=120.0, help='Request timeout in seconds')
+    p.add_argument('--temperature', type=float, default=0.0, help='Sampling temperature')
+    p.add_argument('--max-tokens', type=int, default=1024, help='Maximum tokens to generate')
     args = p.parse_args()
     pairs = destinations(args, '_endpoint', '.json')
     parameters = {key: getattr(args, key) for key in ('endpoint', 'model', 'timeout_s', 'temperature', 'max_tokens')}

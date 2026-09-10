@@ -74,4 +74,6 @@ def run_verifier(
             parameters=parameters,
             verify=verify,
         ),
+        concurrency=getattr(args, 'concurrency', 1),
+        batch_size=getattr(args, 'batch_size', 1),
     )

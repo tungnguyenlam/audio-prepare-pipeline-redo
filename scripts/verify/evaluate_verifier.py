@@ -17,8 +17,14 @@ def main() -> int:
     p.add_argument("--reference-dir", type=Path, required=True, help="Directory containing reference verdict JSON files")
     p.add_argument("--output-file", type=Path, required=True, help="Path to write evaluation results JSON")
     p.add_argument("--title", type=str, default="Verifier Evaluation", help="Optional report title")
-    p.add_argument("--overwrite", action="store_true")
+    p.add_argument("--overwrite", action="store_true", help="Overwrite existing evaluation results JSON")
+    p.add_argument("--concurrency", type=int, default=1, help="Number of concurrent workers for loading verdict files")
+    p.add_argument("--batch-size", type=int, default=1, help="Batch size of verdict files to read per worker task")
     args = p.parse_args()
+    if args.concurrency < 1:
+        p.error("--concurrency must be at least 1")
+    if args.batch_size < 1:
+        p.error("--batch-size must be at least 1")
 
     dest = args.output_file.resolve()
     if dest.exists() and not args.overwrite:
@@ -34,15 +40,30 @@ def main() -> int:
         p.error(f"No matching audio keys between {args.predictions_dir} and {args.reference_dir}")
 
     progress('EVAL_START', f'Evaluating {len(matched_keys)} matched predictions vs references')
+
+    def _load_pair(key: str) -> tuple[str, dict, dict]:
+        return key, read_json(pred_files[key]), read_json(ref_files[key])
+
+    def _load_batch(batch_keys: list[str]) -> list[tuple[str, dict, dict]]:
+        return [_load_pair(k) for k in batch_keys]
+
+    batches = [matched_keys[i:i + args.batch_size] for i in range(0, len(matched_keys), args.batch_size)]
+    records: list[tuple[str, dict, dict]] = []
+    if args.concurrency > 1 and len(batches) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(args.concurrency, len(batches))) as pool:
+            for b_records in pool.map(_load_batch, batches):
+                records.extend(b_records)
+    else:
+        for b in batches:
+            records.extend(_load_batch(b))
+
     tp, fp, tn, fn = 0, 0, 0, 0
     # Positive = reject (defect caught); Negative = pass (clean)
     reasons_breakdown: dict[str, dict[str, int]] = {}
     latencies = []
 
-    for key in matched_keys:
-        pred_data = read_json(pred_files[key])
-        ref_data = read_json(ref_files[key])
-
+    for key, pred_data, ref_data in records:
         pred_v = pred_data.get("verdict", {})
         ref_v = ref_data.get("verdict", {})
 

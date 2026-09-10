@@ -436,16 +436,26 @@ class _ThreeDSpeaker:
 
 def main() -> int:
     p = parser('Standalone threed_speaker diarization.', 'diarize', 'threed_speaker', segments=True)
-    p.add_argument('--device', default='auto')
-    p.add_argument('--num-speakers', type=positive_int)
-    p.add_argument('--batch-size', type=positive_int, default=64)
-    p.add_argument('--sample-rate', type=positive_int)
-    p.add_argument('--channels', type=int, choices=(1, 2), default=1)
-    p.add_argument('--chunk-duration-s', type=float, default=DEFAULT_CHUNK_DURATION_S)
-    p.add_argument('--chunk-step-s', type=float, default=DEFAULT_CHUNK_STEP_S)
-    p.add_argument('--model-cache-dir', type=Path, default=None)
-    p.add_argument('--speakerlab-root', type=Path, default=None)
-    p.add_argument('--include-overlap', action=argparse.BooleanOptionalAction, default=False)
+    p.add_argument('--device', default='auto',
+                   help='Compute device for model inference (e.g. auto, cpu, cuda) (default: auto)')
+    p.add_argument('--num-speakers', type=positive_int, default=None,
+                   help='Exact known number of speakers (default: None)')
+    p.add_argument('--batch-size', type=positive_int, default=64,
+                   help='Embedding and overlap segmentation batch size (default: 64)')
+    p.add_argument('--sample-rate', type=positive_int, default=None,
+                   help='Output sample rate in Hz for exported turn clips (default: preserve source)')
+    p.add_argument('--channels', type=int, choices=(1, 2), default=1,
+                   help='Output channel layout for clips (1=mono, 2=stereo) (default: 1)')
+    p.add_argument('--chunk-duration-s', type=float, default=DEFAULT_CHUNK_DURATION_S,
+                   help='Audio chunk window length in seconds (default: 1.5)')
+    p.add_argument('--chunk-step-s', type=float, default=DEFAULT_CHUNK_STEP_S,
+                   help='Audio chunk step hop in seconds (default: 0.75)')
+    p.add_argument('--model-cache-dir', type=Path, default=None,
+                   help='Directory to cache downloaded 3D-Speaker model checkpoints (default: None)')
+    p.add_argument('--speakerlab-root', type=Path, default=None,
+                   help='Root directory for 3D-Speaker SpeakerLab submodule (default: None)')
+    p.add_argument('--include-overlap', action=argparse.BooleanOptionalAction, default=False,
+                   help='Include overlapping speaker segments (default: False)')
     p.add_argument('--min-duration-s', type=float, default=2.0, help='Minimum turn duration in seconds to keep and export (default: 2.0)')
     p.add_argument('--max-duration-s', type=float, default=15.0, help='Maximum turn duration in seconds to keep and export (default: 15.0)')
     args = p.parse_args()
@@ -474,9 +484,10 @@ def main() -> int:
             return
         turns = model.diarize(src)
         export({**wanted, 'speaker_ids': sorted({t['speaker_id'] for t in turns}), 'turns': turns},
-               src, dest, args.work_dir, rate, args.channels, args.min_duration_s, args.max_duration_s)
+               src, dest, args.work_dir, rate, args.channels, args.min_duration_s, args.max_duration_s,
+               concurrency=args.concurrency, batch_size=args.batch_size)
     try:
-        return batch(pairs, process)
+        return batch(pairs, process, concurrency=args.concurrency, batch_size=args.batch_size)
     finally:
         with contextlib.redirect_stdout(sys.stderr):
             model._unload()

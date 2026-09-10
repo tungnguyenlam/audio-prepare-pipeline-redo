@@ -11,8 +11,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-import torch
-
 from _audio import (
     extract_json_payload,
     load_audio_waveform,
@@ -33,6 +31,8 @@ class MiniCPMVerifier:
         adapter_path: str | None = None,
         hf_token: str | None = None,
     ) -> None:
+        import torch
+
         dtype_map = {
             "bfloat16": torch.bfloat16,
             "float16": torch.float16,
@@ -154,12 +154,12 @@ def main() -> int:
     from _cli import load_prompt, resolved_parameters, run_verifier
     from _common.files import destinations, parser
     p = parser('Verify audio with minicpm; writes verdicts without filtering audio.', 'verify', 'minicpm')
-    p.add_argument('--prompt-file', type=Path)
-    p.add_argument('--model-id', type=str, default='openbmb/MiniCPM-o-4_5')
-    p.add_argument('--device', type=str, default='auto')
-    p.add_argument('--trust-remote-code', action=argparse.BooleanOptionalAction, default=True)
-    p.add_argument('--torch-dtype', type=str, default='bfloat16')
-    p.add_argument('--adapter-path', type=str, default=None)
+    p.add_argument('--prompt-file', type=Path, help='Optional path to text prompt file (defaults to acoustic defect prompt)')
+    p.add_argument('--model-id', type=str, default='openbmb/MiniCPM-o-4_5', help='MiniCPM-o model ID or local directory')
+    p.add_argument('--device', type=str, default='auto', help='Inference device ("auto", "cpu", or "cuda:N")')
+    p.add_argument('--trust-remote-code', action=argparse.BooleanOptionalAction, default=True, help='Allow loading custom model code from Hugging Face')
+    p.add_argument('--torch-dtype', type=str, default='bfloat16', help='PyTorch weights dtype ("bfloat16", "float16", or "float32")')
+    p.add_argument('--adapter-path', type=str, default=None, help='Optional LoRA adapter directory')
     args = p.parse_args()
     pairs = destinations(args, '_minicpm', '.json')
     parameters = {key: getattr(args, key) for key in ('model_id', 'device', 'trust_remote_code', 'torch_dtype', 'adapter_path')}

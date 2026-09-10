@@ -26,7 +26,8 @@ flowchart TD
 - **Precedence:** `--input-file` takes precedence over `--input-dir`. For single-output commands, `--output-file` takes precedence over `--output-dir` and is the exact destination.
 - **Mutual Exclusion:** Providing directory input with `--output-file` is rejected.
 - **Path Resolution & Audio Families:** Relative paths resolve against the caller's working directory. Default output directories are dynamic per audio family under `.data/<operation>/[<model>/]<family>/` (e.g. `.data/download/<family>/`, `.data/separate/<model>/<family>/`, `.data/diarize/<model>/<family>/`). Downloaded audio filenames follow `<id>_<title10>-<sample_rate>.wav` to anchor audio family identity across all downstream steps. Explicit `--output-dir` or `--output-file` overrides defaults.
-- **Sequential Execution:** Directory batches are snapshotted before processing and executed sequentially. A model is loaded once per command invocation.
+- **Sequential & Concurrent Execution:** By default, commands execute sequentially (`--concurrency 1`, `--batch-size 1`). Every command accepts `--concurrency` and `--batch-size` options with real functional effects: multi-threaded audio loading, concurrent clip exports, parallel dataset operations, and concurrent verifier requests. A model is loaded once per command invocation.
+- **Concurrency & Batching Control:** All commands support `--concurrency` (worker threads) and `--batch-size` (batch chunk granularity) with default values shown in `-h` / `--help` on both `.sh` and `.py` entrypoints.
 - **Configuration & Live Progress:** Every command immediately logs its complete parsed configuration to stderr upon launch and streams real-time progress updates with timestamps, stage labels, item percentages, and elapsed times.
 - **Idempotency & Overwrite:** Existing outputs with matching metadata and intact hashes are skipped. Overwriting inputs in place is disallowed. Conflicting outputs require `--overwrite`.
 

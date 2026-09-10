@@ -366,9 +366,17 @@ uv run python scripts/dataset/bundle.py --input-manifest .data/filtered.json --o
   and dots inside stems/directories are converted to `-`, Unicode diacritics are
   transliterated to ASCII (e.g. Vietnamese `đ/Đ` -> `d/D`), and special characters
   are stripped to prevent shell argument-splitting and path issues.
-- Files are processed sequentially. A model is loaded once per invocation.
+- Files are processed sequentially by default (`--concurrency 1`, `--batch-size 1`).
+  When `--concurrency > 1` is specified, commands execute concurrent operations
+  (multi-threaded audio processing, clip slicing, manifest operations, download batches,
+  and API verifier requests) using thread pools with atomic staging writes.
+  A model is loaded once per invocation; thread safety locks serialize model
+  inference where necessary while parallelizing audio decoding, slicing, and metadata writing.
   Individual failures do not stop later files. Batch summaries go to stderr;
   successful output paths go to stdout; any file failure yields nonzero status.
+- Every command supports `--concurrency` and `--batch-size`. Default values are
+  clearly documented and printed in the help output of both `bash script.sh -h` and
+  `python script.py -h`.
 - Outputs cannot overwrite audio inputs in place. Matching source/settings and intact
   output hashes allow skips. Missing or damaged output with matching metadata
   is retried. Unrecognized/conflicting destinations require `--overwrite`.

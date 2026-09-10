@@ -4,9 +4,10 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import numpy as np
+if TYPE_CHECKING:
+    import numpy as np
 
 logger = logging.getLogger("verifier")
 
@@ -97,6 +98,7 @@ def extract_json_payload(text: str) -> dict[str, Any]:
 
 def load_audio_waveform(audio_path: str | Path, target_sr: int = 16000) -> np.ndarray:
     """Load audio file as mono float32 numpy array resampled to target_sr."""
+    import numpy as np
     path_str = str(audio_path)
     audio_data = None
     try:
