@@ -1,829 +1,382 @@
-"""Compare audio verifiers globally or locally per diarization folder.
+"""Compare saved verifier runs against an explicitly selected reference.
 
-Evaluates candidate verifiers against a reference teacher (default: Gemini 3.8
-Flash Medium), provides per-criterion breakdown (e.g. clipped words, music bleed,
-secondary speakers), generates visual plots, and exports detailed conflict cases.
+Each input is one run: either a flat clip directory or a tree of audio families.
+No model is loaded. Metrics describe agreement with the reference, not ground truth.
 """
-
 from __future__ import annotations
 
 import argparse
-from collections import Counter, defaultdict
+from collections import Counter
 import csv
-import json
+from datetime import datetime, timezone
+import hashlib
+import math
 import os
 from pathlib import Path
 import re
+from statistics import median
 import sys
 from typing import Any
 
-SCRIPTS_DIR = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(SCRIPTS_DIR))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _common.files import ROOT, progress, read_json, write_json
+from agent.verifier._verdicts import FAILURE_CODES, _known_prompts, _validate_verdict
 
-from _common.files import (  # noqa: E402
-    LoggingArgumentParser,
-    ROOT,
-    progress,
-    read_json,
-    safe_name,
-    write_json,
-)
-
-FAILURE_CODES = (
-    "clipped_word_start",
-    "clipped_word_end",
-    "secondary_speaker",
-    "overlapping_speech",
-    "music_bleed",
-    "noisy_reverberant",
-    "distorted",
-)
-
-SHORT_NAMES = {
-    "clipped_word_start": "clip_start",
-    "clipped_word_end": "clip_end",
-    "secondary_speaker": "2nd_spk",
-    "overlapping_speech": "overlap",
-    "music_bleed": "music",
-    "noisy_reverberant": "noise",
-    "distorted": "distort",
-}
-
-BACKEND_CLEAN_RE = re.compile(
-    r"_(gemini|hf|vllm|unsloth|endpoint|minicpm|kimi|moss|vibevoice)$",
-    re.IGNORECASE,
+BACKEND_SUFFIX = re.compile(r"_(gemini|hf|vllm|unsloth|endpoint|minicpm|kimi|moss|vibevoice)$")
+SKIP_DIRS = {"comparisons", "work", "plot", "plots", "experiments", "__pycache__"}
+PAIR_FIELDS = (
+    "candidate", "family", "key", "status", "ref_decision", "cand_decision",
+    "ref_codes", "cand_codes", "missed_codes", "overcalled_codes",
+    "ref_reason", "cand_reason", "reference_file", "candidate_file", "audio_path",
 )
 
 
-def clean_audio_key(stem: str) -> str:
-    """Normalize file stem by stripping backend suffixes."""
-    return BACKEND_CLEAN_RE.sub("", stem)
+def load_run(directory: Path) -> tuple[dict[tuple[str, str], dict[str, Any]], dict[str, Any]]:
+    """Read one run, retaining invalid artifacts for coverage accounting."""
+    if not directory.is_dir():
+        raise ValueError(f"Input directory does not exist: {directory}")
+    records = {}
+    ignored = 0
+    known_prompts = _known_prompts()
 
+    def walk_error(error: OSError) -> None:
+        raise error
 
-def extract_verdict(data: dict[str, Any], file_path: Path) -> dict[str, Any]:
-    """Normalize loaded JSON data into a uniform verdict dictionary."""
-    verdict = data.get("verdict") if isinstance(data.get("verdict"), dict) else data
-    result = dict(verdict)
-
-    # Resolve audio path
-    audio_path = None
-    if isinstance(data.get("source"), dict):
-        audio_path = data["source"].get("path")
-    if not audio_path:
-        audio_path = result.get("audio_path")
-    if not audio_path:
-        # Check if sibling audio file exists
-        stem_clean = clean_audio_key(file_path.stem)
-        for ext in (".wav", ".mp3", ".flac", ".ogg", ".m4a"):
-            sibling = file_path.with_name(f"{stem_clean}{ext}")
-            if sibling.is_file():
-                audio_path = str(sibling)
-                break
-    result["_resolved_audio_path"] = audio_path or clean_audio_key(file_path.stem)
-
-    # Extract failure codes
-    raw_codes = result.get("failure_codes")
-    codes: set[str] = set()
-    if isinstance(raw_codes, list):
-        codes.update(c for c in raw_codes if isinstance(c, str) and c in FAILURE_CODES)
-
-    # Fallback to dimension indicators
-    sp = result.get("speaker_purity")
-    if sp in ("secondary_speaker", "overlapping_speech"):
-        codes.add(sp)
-    wc = result.get("word_completeness")
-    if wc in ("clipped_word_start", "clipped_word_end"):
-        codes.add(wc)
-    aq = result.get("audio_quality")
-    if aq in ("music_bleed", "noisy_reverberant", "distorted"):
-        codes.add(aq)
-
-    result["_normalized_codes"] = sorted(codes)
-    result["_decision"] = result.get("decision", "uncertain")
-    result["_reason"] = result.get("reason") or ""
-    return result
-
-
-def discover_verifier_runs(base_dir: Path) -> dict[str, dict[str, Path]]:
-    """Discover all family folders and verifier backends under base_dir.
-
-    Returns:
-        mapping of family_name -> {backend_label: directory_path}
-    """
-    runs: dict[str, dict[str, Path]] = defaultdict(dict)
-    if not base_dir.is_dir():
-        return runs
-
-    for root_str, dirs, files in os.walk(base_dir):
-        # Skip internal or output directories
-        p = Path(root_str)
-        if any(part in ("comparisons", "work", "plot", "plots") or part.startswith(".") for part in p.parts):
-            continue
-
-        json_files = [f for f in files if f.endswith(".json")]
-        if not json_files:
-            continue
-
-        rel_parts = p.relative_to(base_dir).parts
-        if not rel_parts:
-            continue
-
-        # Pattern 1: gemini/<model>/<effort>/<family>
-        if rel_parts[0] == "gemini" and len(rel_parts) >= 4:
-            model = rel_parts[1]
-            effort = rel_parts[2]
-            family = rel_parts[3]
-            backend_label = f"gemini/{model}/{effort}"
-            runs[family][backend_label] = p
-        # Pattern 2: <backend>/<family>
-        elif len(rel_parts) >= 2:
-            backend_label = rel_parts[0]
-            family = rel_parts[1]
-            runs[family][backend_label] = p
-        elif len(rel_parts) == 1:
-            # Flat family or backend
-            runs[rel_parts[0]][rel_parts[0]] = p
-
-    return runs
-
-
-def evaluate_pair(
-    ref_records: dict[str, dict[str, Any]],
-    cand_records: dict[str, dict[str, Any]],
-    cand_name: str,
-    family_name: str,
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Compute benchmark metrics and conflict details between reference and candidate."""
-    matched_keys = sorted(set(ref_records.keys()) & set(cand_records.keys()))
-    tp, fp, tn, fn = 0, 0, 0, 0
-    latencies: list[float] = []
-
-    # Per-criterion stats: {code: {"ref": count, "caught": count, "missed": count, "overcalled": count}}
-    code_stats = {
-        code: {"ref": 0, "caught": 0, "missed": 0, "overcalled": 0}
-        for code in FAILURE_CODES
+    for root, dirs, files in os.walk(directory, onerror=walk_error):
+        # Prune children only: .data in the selected root must never hide inputs.
+        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS and not d.startswith('.'))
+        parent = Path(root)
+        family = parent.relative_to(directory).as_posix()
+        for name in sorted(files):
+            path = parent / name
+            if path.suffix.lower() != '.json' or name.startswith('.'):
+                continue
+            error = None
+            try:
+                data = read_json(path)
+            except (OSError, ValueError):
+                data = {}
+                error = 'invalid_json'
+            if error is None and not (
+                data.get('operation') == 'verify' or 'verdict' in data or 'decision' in data
+                or ('status' in data and 'source' in data)
+            ):
+                ignored += 1
+                continue
+            verdict = data.get('verdict', data)
+            parameters = data.get('parameters')
+            parameters = parameters if isinstance(parameters, dict) else {}
+            if error is None:
+                if data.get('status') not in (None, 'success'):
+                    error = 'verifier_failed'
+                else:
+                    try:
+                        _, error = _validate_verdict(
+                            verdict, parameters.get('prompt'), str(data.get('model', '')), known_prompts
+                        )
+                    except (TypeError, ValueError):
+                        error = 'invalid_schema'
+            verdict = verdict if isinstance(verdict, dict) else {}
+            source = data.get('source')
+            source = source if isinstance(source, dict) else {}
+            key = BACKEND_SUFFIX.sub('', path.stem)
+            identity = (family, key)
+            if identity in records:
+                raise ValueError(
+                    f"Duplicate clip {family}/{key}: {records[identity]['file']} and {path}. "
+                    'Select one backend/model/effort per input directory.'
+                )
+            raw_codes = verdict.get('failure_codes')
+            codes = {c for c in raw_codes if isinstance(c, str) and c in FAILURE_CODES} if isinstance(raw_codes, list) else set()
+            for field in ('speaker_purity', 'word_completeness', 'audio_quality'):
+                value = verdict.get(field)
+                if isinstance(value, str) and value in FAILURE_CODES:
+                    codes.add(value)
+            for boundary, code in (('boundary_start', 'clipped_word_start'), ('boundary_end', 'clipped_word_end')):
+                if verdict.get(boundary) == 'clipped':
+                    codes.add(code)
+            records[identity] = {
+                'file': str(path), 'error': error,
+                'decision': verdict.get('decision') if error is None else None,
+                'codes': sorted(codes), 'reason': str(verdict.get('reason') or ''),
+                'audio_path': source.get('path') or verdict.get('audio_path') or '',
+                'sha256': source.get('sha256'), 'latency_s': verdict.get('_latency_s'),
+            }
+    if not records:
+        raise ValueError(f'No verifier artifacts in {directory} (ignored {ignored} unrelated JSON files)')
+    return records, {
+        'directory': str(directory), 'artifacts': len(records),
+        'valid': sum(r['error'] is None for r in records.values()),
+        'invalid': sum(r['error'] is not None for r in records.values()),
+        'ignored_json': ignored,
+        'errors': dict(Counter(r['error'] for r in records.values() if r['error'])),
     }
 
-    conflicts: list[dict[str, Any]] = []
 
-    for key in matched_keys:
-        ref_v = ref_records[key]
-        cand_v = cand_records[key]
+def normalize_families(records: dict, directory: Path, flat_family: str | None = None) -> dict:
+    """A flat directory names its family; two flat inputs share the reference name."""
+    normalized = {}
+    for (family, key), value in records.items():
+        family = (flat_family or directory.name) if family == '.' else family
+        identity = (family, key)
+        if identity in normalized:
+            raise ValueError(f'Ambiguous flat/nested family key {family}/{key} in {directory}')
+        normalized[identity] = value
+    return normalized
 
-        ref_dec = ref_v["_decision"]
-        cand_dec = cand_v["_decision"]
 
-        ref_codes = set(ref_v["_normalized_codes"])
-        cand_codes = set(cand_v["_normalized_codes"])
+def ratio(numerator: int, denominator: int) -> float | None:
+    return round(numerator / denominator, 6) if denominator else None
 
-        if "_latency_s" in cand_v and cand_v["_latency_s"] is not None:
-            with contextlib_suppress():
-                latencies.append(float(cand_v["_latency_s"]))
 
-        # Count reference occurrences
-        for code in ref_codes:
-            code_stats[code]["ref"] += 1
-
-        # Decision-level confusion matrix
-        # Defect = Positive (reject), Clean = Negative (pass)
-        if ref_dec == "reject":
-            if cand_dec == "reject":
-                tp += 1
-                # Both reject: check code coverage
-                for code in ref_codes:
-                    if code in cand_codes:
-                        code_stats[code]["caught"] += 1
-                    else:
-                        code_stats[code]["missed"] += 1
-                for code in cand_codes:
-                    if code not in ref_codes:
-                        code_stats[code]["overcalled"] += 1
-
-                # If codes differ, record as code_mismatch conflict
-                if ref_codes != cand_codes:
-                    conflicts.append({
-                        "key": key,
-                        "audio_path": cand_v.get("_resolved_audio_path") or ref_v.get("_resolved_audio_path") or key,
-                        "family": family_name,
-                        "candidate": cand_name,
-                        "conflict_type": "code_mismatch",
-                        "ref_decision": ref_dec,
-                        "cand_decision": cand_dec,
-                        "ref_codes": ";".join(sorted(ref_codes)),
-                        "cand_codes": ";".join(sorted(cand_codes)),
-                        "missed_codes": ";".join(sorted(ref_codes - cand_codes)),
-                        "overcalled_codes": ";".join(sorted(cand_codes - ref_codes)),
-                        "ref_reason": ref_v["_reason"],
-                        "cand_reason": cand_v["_reason"],
-                    })
-            else:
-                fn += 1  # Bad Accept (missed defect)
-                for code in ref_codes:
-                    code_stats[code]["missed"] += 1
-
-                conflicts.append({
-                    "key": key,
-                    "audio_path": cand_v.get("_resolved_audio_path") or ref_v.get("_resolved_audio_path") or key,
-                    "family": family_name,
-                    "candidate": cand_name,
-                    "conflict_type": "bad_accept",
-                    "ref_decision": ref_dec,
-                    "cand_decision": cand_dec,
-                    "ref_codes": ";".join(sorted(ref_codes)),
-                    "cand_codes": ";".join(sorted(cand_codes)),
-                    "missed_codes": ";".join(sorted(ref_codes)),
-                    "overcalled_codes": "",
-                    "ref_reason": ref_v["_reason"],
-                    "cand_reason": cand_v["_reason"],
-                })
-        elif ref_dec == "pass":
-            if cand_dec == "pass":
-                tn += 1
-            else:
-                fp += 1  # False Reject (over-rejection / lost yield)
-                for code in cand_codes:
-                    code_stats[code]["overcalled"] += 1
-
-                conflicts.append({
-                    "key": key,
-                    "audio_path": cand_v.get("_resolved_audio_path") or ref_v.get("_resolved_audio_path") or key,
-                    "family": family_name,
-                    "candidate": cand_name,
-                    "conflict_type": "false_reject",
-                    "ref_decision": ref_dec,
-                    "cand_decision": cand_dec,
-                    "ref_codes": "",
-                    "cand_codes": ";".join(sorted(cand_codes)),
-                    "missed_codes": "",
-                    "overcalled_codes": ";".join(sorted(cand_codes)),
-                    "ref_reason": ref_v["_reason"],
-                    "cand_reason": cand_v["_reason"],
-                })
-
-    total = len(matched_keys)
-    accuracy = (tp + tn) / total if total > 0 else 0.0
-    reject_precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-    reject_recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-    reject_f1 = (2 * reject_precision * reject_recall) / (reject_precision + reject_recall) if (reject_precision + reject_recall) > 0 else 0.0
-    false_rejection_rate = fp / (fp + tn) if (fp + tn) > 0 else 0.0
-    cand_pass_rate = (tn + fn) / total if total > 0 else 0.0
-    ref_pass_rate = (tn + fp) / total if total > 0 else 0.0
-
+def summarize(rows: list[dict], candidate: str, family: str) -> dict:
+    matched = [r for r in rows if r['status'] in {'agree', 'bad_accept', 'false_reject', 'code_mismatch'}]
+    counts = Counter(r['status'] for r in rows)
+    tp = sum(r['ref_decision'] == r['cand_decision'] == 'reject' for r in matched)
+    tn = sum(r['ref_decision'] == r['cand_decision'] == 'pass' for r in matched)
+    fn, fp = counts['bad_accept'], counts['false_reject']
+    precision, recall = ratio(tp, tp + fp), ratio(tp, tp + fn)
+    latencies = []
+    for row in matched:
+        try:
+            latency = float(row['_latency_s'])
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(latency) and latency >= 0:
+            latencies.append(latency)
     latencies.sort()
-    p50_latency = latencies[len(latencies) // 2] if latencies else 0.0
-    p95_latency = latencies[int(len(latencies) * 0.95)] if latencies else 0.0
-    mean_latency = sum(latencies) / len(latencies) if latencies else 0.0
-
-    criterion_metrics = {}
-    for code, s in code_stats.items():
-        ref_c = s["ref"]
-        caught = s["caught"]
-        missed = s["missed"]
-        overcalled = s["overcalled"]
-        recall = (caught / ref_c) if ref_c > 0 else 1.0
-        criterion_metrics[code] = {
-            "ref_count": ref_c,
-            "caught": caught,
-            "missed": missed,
-            "overcalled": overcalled,
-            "recall": round(recall, 4),
+    criteria = {}
+    for code in FAILURE_CODES:
+        ref_count = sum(code in r['ref_codes'].split(';') for r in matched)
+        caught = sum(code in r['ref_codes'].split(';') and code in r['cand_codes'].split(';') and r['cand_decision'] == 'reject' for r in matched)
+        overcalled = sum(code in r['cand_codes'].split(';') and code not in r['ref_codes'].split(';') for r in matched)
+        criteria[code] = {
+            'ref_count': ref_count, 'caught': caught, 'missed': ref_count - caught,
+            'overcalled': overcalled, 'recall': ratio(caught, ref_count),
         }
-
-    summary = {
-        "candidate": cand_name,
-        "family": family_name,
-        "matched_clips": total,
-        "overall": {
-            "accuracy": round(accuracy, 4),
-            "defect_recall": round(reject_recall, 4),
-            "false_rejection_rate": round(false_rejection_rate, 4),
-            "reject_precision": round(reject_precision, 4),
-            "reject_f1": round(reject_f1, 4),
-            "cand_pass_rate": round(cand_pass_rate, 4),
-            "ref_pass_rate": round(ref_pass_rate, 4),
+    ref_valid = sum(r['ref_decision'] in ('pass', 'reject') for r in rows)
+    return {
+        'candidate': candidate, 'family': family, 'matched_clips': len(matched),
+        'reference_valid': ref_valid, 'coverage': ratio(len(matched), ref_valid),
+        'counts': dict(counts),
+        'overall': {
+            'accuracy': ratio(tp + tn, len(matched)), 'defect_recall': recall,
+            'false_rejection_rate': ratio(fp, fp + tn), 'reject_precision': precision,
+            'reject_f1': ratio(2 * tp, 2 * tp + fp + fn),
         },
-        "confusion_matrix": {
-            "true_rejects_caught": tp,
-            "bad_accepts_missed": fn,
-            "true_passes_kept": tn,
-            "false_rejects_dropped": fp,
+        'confusion_matrix': {
+            'true_rejects_caught': tp, 'bad_accepts_missed': fn,
+            'true_passes_kept': tn, 'false_rejects_dropped': fp,
         },
-        "latency": {
-            "mean_s": round(mean_latency, 3),
-            "p50_s": round(p50_latency, 3),
-            "p95_s": round(p95_latency, 3),
+        'latency': {
+            'samples': len(latencies),
+            'p50_s': round(median(latencies), 3) if latencies else None,
+            'p95_s': round(latencies[math.ceil(len(latencies) * .95) - 1], 3) if latencies else None,
         },
-        "per_criterion": criterion_metrics,
-        "conflict_counts": {
-            "total": len(conflicts),
-            "bad_accepts": sum(1 for c in conflicts if c["conflict_type"] == "bad_accept"),
-            "false_rejects": sum(1 for c in conflicts if c["conflict_type"] == "false_reject"),
-            "code_mismatch": sum(1 for c in conflicts if c["conflict_type"] == "code_mismatch"),
-        },
+        'per_criterion': criteria,
     }
 
-    return summary, conflicts
+
+def compare_records(reference: dict, candidate: dict, label: str) -> list[dict]:
+    rows = []
+    for (family, key), ref in sorted(reference.items()):
+        cand = candidate.get((family, key))
+        if ref['error']:
+            status = 'invalid_reference'
+        elif cand is None:
+            status = 'missing_candidate'
+        elif cand['error']:
+            status = 'invalid_candidate'
+        elif ref['sha256'] and cand['sha256'] and ref['sha256'] != cand['sha256']:
+            status = 'audio_mismatch'
+        elif ref['decision'] != cand['decision']:
+            status = 'bad_accept' if cand['decision'] == 'pass' else 'false_reject'
+        elif ref['codes'] != cand['codes']:
+            status = 'code_mismatch'
+        else:
+            status = 'agree'
+        cand = cand or {}
+        ref_codes, cand_codes = set(ref['codes']), set(cand.get('codes', []))
+        rows.append({
+            'candidate': label, 'family': family, 'key': key, 'status': status,
+            'ref_decision': ref['decision'], 'cand_decision': cand.get('decision'),
+            'ref_codes': ';'.join(sorted(ref_codes)), 'cand_codes': ';'.join(sorted(cand_codes)),
+            'missed_codes': ';'.join(sorted(ref_codes if status == 'bad_accept' else ref_codes - cand_codes)),
+            'overcalled_codes': ';'.join(sorted(cand_codes - ref_codes)),
+            'ref_reason': ref['error'] or ref['reason'],
+            'cand_reason': cand.get('error') or cand.get('reason', ''),
+            'reference_file': ref['file'], 'candidate_file': cand.get('file', ''),
+            'audio_path': ref['audio_path'] or cand.get('audio_path', ''),
+            '_latency_s': cand.get('latency_s'),
+        })
+    return rows
 
 
-class contextlib_suppress:
-    """Lightweight exception suppressor."""
-    def __enter__(self) -> None:
-        pass
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> bool:
-        return True
+def write_csv(path: Path, rows: list[dict]) -> None:
+    with path.open('w', encoding='utf-8', newline='') as stream:
+        writer = csv.DictWriter(stream, fieldnames=PAIR_FIELDS, extrasaction='ignore')
+        writer.writeheader()
+        writer.writerows(rows)
 
 
-def render_comparison_plots(
-    summaries: list[dict[str, Any]],
-    output_dir: Path,
-) -> list[Path]:
-    """Generate visual comparison plots."""
-    if not summaries:
-        return []
+def percent(value: float | None) -> str:
+    return 'N/A' if value is None else f'{value * 100:.1f}%'
 
+
+def markdown_cell(value: Any) -> str:
+    return str(value or '').replace('|', '\\|').replace('\n', ' ').replace('\r', ' ')
+
+
+def render_plots(summaries: list[dict], directory: Path) -> list[str]:
     try:
         import matplotlib
-        matplotlib.use("Agg")
+        matplotlib.use('Agg')
         import matplotlib.pyplot as plt
-        import numpy as np
     except ImportError:
+        progress('WARN', 'matplotlib unavailable; CSV/JSON/Markdown reports are still generated')
         return []
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    generated_plots = []
-
-    # 1. Per-Criterion Recall Comparison Plot
-    # Shows Defect Recall for each failure code across all candidates
-    fig, ax = plt.subplots(figsize=(12, 6))
-    x = np.arange(len(FAILURE_CODES))
-    num_cands = len(summaries)
-    bar_width = 0.8 / max(1, num_cands)
-
-    palette = ["#3b82f6", "#10b981", "#f59e0b", "#ec4899", "#8b5cf6", "#06b6d4"]
-
-    for i, s in enumerate(summaries):
-        cand_name = s["candidate"]
-        recalls = [
-            s["per_criterion"][code]["recall"] * 100
-            for code in FAILURE_CODES
-        ]
-        color = palette[i % len(palette)]
-        offset = (i - (num_cands - 1) / 2) * bar_width
-        bars = ax.bar(x + offset, recalls, bar_width, label=cand_name, color=color, alpha=0.85)
-        for bar in bars:
-            h = bar.get_height()
-            if h > 0:
-                ax.text(
-                    bar.get_x() + bar.get_width() / 2,
-                    h + 1.0,
-                    f"{h:.0f}%",
-                    ha="center",
-                    va="bottom",
-                    fontsize=8,
-                    rotation=0,
-                )
-
-    ax.set_ylabel("Defect Recall (%)", fontsize=11, fontweight="bold")
-    ax.set_title("Defect Recall per Acoustic Criterion vs Reference Teacher", fontsize=13, fontweight="bold")
-    ax.set_xticks(x)
-    ax.set_xticklabels(FAILURE_CODES, rotation=25, ha="right", fontsize=10)
-    ax.set_ylim(0, 115)
-    ax.grid(True, axis="y", linestyle="--", alpha=0.4)
-    ax.legend(loc="upper right", frameon=True)
-    plt.tight_layout()
-    p1 = output_dir / "defect_recall_per_criterion.png"
-    fig.savefig(p1, dpi=180)
-    plt.close(fig)
-    generated_plots.append(p1)
-
-    # 2. Caught vs Missed Defects Breakdown (for the primary or all candidates)
-    # Stacked bar chart of Caught vs Missed counts per defect
-    for s in summaries:
-        cand_name = safe_name(s["candidate"])
-        fig, ax = plt.subplots(figsize=(11, 5))
-        codes_rev = list(reversed(FAILURE_CODES))
-        caught = [s["per_criterion"][c]["caught"] for c in codes_rev]
-        missed = [s["per_criterion"][c]["missed"] for c in codes_rev]
-        ref_counts = [s["per_criterion"][c]["ref_count"] for c in codes_rev]
-
-        y = np.arange(len(codes_rev))
-        h = 0.55
-
-        bars_c = ax.barh(y, caught, h, label="Caught (Bắt trúng)", color="#22c55e", alpha=0.9)
-        bars_m = ax.barh(y, missed, h, left=caught, label="Missed (Bắt thiếu / Lọt)", color="#ef4444", alpha=0.9)
-
-        for idx, (c_val, m_val, total) in enumerate(zip(caught, missed, ref_counts)):
-            if total > 0:
-                label_text = f" {total} total (missed {m_val})"
-                ax.text(total + 0.5, idx, label_text, va="center", fontsize=9, fontweight="bold")
-
-        ax.set_yticks(y)
-        ax.set_yticklabels(codes_rev, fontsize=10)
-        ax.set_xlabel("Number of Clips with Defect", fontsize=11, fontweight="bold")
-        ax.set_title(f"Defect Detection: {s['candidate']} vs Teacher", fontsize=12, fontweight="bold")
-        ax.grid(True, axis="x", linestyle="--", alpha=0.4)
-        ax.legend(loc="lower right", frameon=True)
-        plt.tight_layout()
-        p2 = output_dir / f"defects_caught_vs_missed_{cand_name}.png"
-        fig.savefig(p2, dpi=180)
+    directory.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for index, summary in enumerate(summaries, 1):
+        fig, ax = plt.subplots(figsize=(10, 5))
+        caught = [summary['per_criterion'][c]['caught'] for c in FAILURE_CODES]
+        missed = [summary['per_criterion'][c]['missed'] for c in FAILURE_CODES]
+        ax.barh(FAILURE_CODES, caught, label='Caught', color='#22c55e')
+        ax.barh(FAILURE_CODES, missed, left=caught, label='Missed', color='#ef4444')
+        ax.set_title(f"{summary['candidate']} — {summary['matched_clips']} matched clips")
+        ax.set_xlabel('Reference defects on matched valid clips (zero means no observations)')
+        ax.legend()
+        fig.tight_layout()
+        path = directory / f'candidate_{index}_defects.png'
+        fig.savefig(path, dpi=160)
         plt.close(fig)
-        generated_plots.append(p2)
-
-    # 3. Overall Tradeoff Plot (Yield vs Bad Accepts vs False Rejection)
-    fig, ax = plt.subplots(figsize=(10, 5))
-    cands = [s["candidate"] for s in summaries]
-    y_pos = np.arange(len(cands))
-    bar_h = 0.25
-
-    recalls = [s["overall"]["defect_recall"] * 100 for s in summaries]
-    false_rejects = [s["overall"]["false_rejection_rate"] * 100 for s in summaries]
-    bad_accepts = [
-        (s["confusion_matrix"]["bad_accepts_missed"] / max(1, s["matched_clips"])) * 100
-        for s in summaries
-    ]
-
-    ax.barh(y_pos - bar_h, recalls, bar_h, label="Defect Recall % (Higher better)", color="#10b981")
-    ax.barh(y_pos, false_rejects, bar_h, label="False Rejection % (Lost clean yield)", color="#f59e0b")
-    ax.barh(y_pos + bar_h, bad_accepts, bar_h, label="Bad Accepts % of Total (Bad audio leak)", color="#ef4444")
-
-    ax.set_yticks(y_pos)
-    ax.set_yticklabels(cands, fontsize=10, fontweight="bold")
-    ax.set_xlabel("Percentage (%)", fontsize=11, fontweight="bold")
-    ax.set_title("Verifier Tradeoffs: Recall vs Yield Loss vs Audio Leak", fontsize=12, fontweight="bold")
-    ax.set_xlim(0, 105)
-    ax.grid(True, axis="x", linestyle="--", alpha=0.4)
-    ax.legend(loc="upper right", frameon=True)
-    plt.tight_layout()
-    p3 = output_dir / "tradeoffs_overview.png"
-    fig.savefig(p3, dpi=180)
-    plt.close(fig)
-    generated_plots.append(p3)
-
-    return generated_plots
-
-
-def export_conflicts_csv(conflicts: list[dict[str, Any]], output_file: Path) -> None:
-    """Export conflict records to a tabular CSV file."""
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-    fields = [
-        "key",
-        "family",
-        "candidate",
-        "conflict_type",
-        "missed_codes",
-        "overcalled_codes",
-        "ref_decision",
-        "cand_decision",
-        "ref_codes",
-        "cand_codes",
-        "audio_path",
-        "ref_reason",
-        "cand_reason",
-    ]
-    with output_file.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fields)
-        writer.writeheader()
-        for row in conflicts:
-            writer.writerow({k: row.get(k, "") for k in fields})
-
-
-def export_conflicts_markdown(
-    conflicts: list[dict[str, Any]],
-    output_file: Path,
-    title: str,
-) -> None:
-    """Export clean human-readable conflict report with clickable links."""
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-
-    bad_accepts = [c for c in conflicts if c["conflict_type"] == "bad_accept"]
-    false_rejects = [c for c in conflicts if c["conflict_type"] == "false_reject"]
-    mismatches = [c for c in conflicts if c["conflict_type"] == "code_mismatch"]
-
-    lines = [
-        f"# Conflict Cases Report: {title}",
-        "",
-        f"Total conflict clips: **{len(conflicts)}** "
-        f"({len(bad_accepts)} bad accepts, {len(false_rejects)} false rejects, {len(mismatches)} code mismatches).",
-        "",
-        "---",
-        "",
-        "## 1. 🚨 Bad Accepts (Bỏ sót lỗi - Nguy cơ lọt rác TTS)",
-        "> Reference Teacher báo `REJECT` (clip có khuyết tật âm học), nhưng Candidate báo `PASS`.",
-        "",
-    ]
-
-    if not bad_accepts:
-        lines.append("*Không có trường hợp nào!*")
-        lines.append("")
-    else:
-        lines.extend([
-            "| Audio Clip | Model | Bắt thiếu lỗi | Reference Reason (Teacher) | Candidate Reason |",
-            "| :--- | :---: | :---: | :--- | :--- |",
-        ])
-        for c in bad_accepts:
-            audio_p = c["audio_path"]
-            link = f"[{c['key']}](file://{audio_p})" if audio_p.startswith("/") else c["key"]
-            missed = f"`{c['missed_codes']}`" if c["missed_codes"] else "*unspecified*"
-            ref_r = c["ref_reason"].replace("|", "\\|").replace("\n", " ")
-            cand_r = c["cand_reason"].replace("|", "\\|").replace("\n", " ")
-            lines.append(f"| {link} | {c['candidate']} | {missed} | {ref_r} | {cand_r} |")
-        lines.append("")
-
-    lines.extend([
-        "---",
-        "",
-        "## 2. ⚠️ False Rejects (Phạt oan - Làm hụt Yield dữ liệu sạch)",
-        "> Reference Teacher báo `PASS` (clip sạch đạt chuẩn), nhưng Candidate lại báo `REJECT`.",
-        "",
-    ])
-
-    if not false_rejects:
-        lines.append("*Không có trường hợp nào!*")
-        lines.append("")
-    else:
-        lines.extend([
-            "| Audio Clip | Model | Bắt oan lỗi | Reference Reason (Teacher) | Candidate Reason |",
-            "| :--- | :---: | :---: | :--- | :--- |",
-        ])
-        for c in false_rejects:
-            audio_p = c["audio_path"]
-            link = f"[{c['key']}](file://{audio_p})" if audio_p.startswith("/") else c["key"]
-            over = f"`{c['overcalled_codes']}`" if c["overcalled_codes"] else "*unspecified*"
-            ref_r = c["ref_reason"].replace("|", "\\|").replace("\n", " ")
-            cand_r = c["cand_reason"].replace("|", "\\|").replace("\n", " ")
-            lines.append(f"| {link} | {c['candidate']} | {over} | {ref_r} | {cand_r} |")
-        lines.append("")
-
-    lines.extend([
-        "---",
-        "",
-        "## 3. 🔄 Code Mismatches (Cả hai đều Reject nhưng lệch mã lỗi)",
-        "> Cả hai bên đều đồng thuận loại clip, nhưng gán nhãn acoustic defect khác nhau.",
-        "",
-    ])
-
-    if not mismatches:
-        lines.append("*Không có trường hợp nào!*")
-        lines.append("")
-    else:
-        lines.extend([
-            "| Audio Clip | Model | Teacher Codes | Candidate Codes | Teacher Reason | Candidate Reason |",
-            "| :--- | :---: | :---: | :---: | :--- | :--- |",
-        ])
-        for c in mismatches:
-            audio_p = c["audio_path"]
-            link = f"[{c['key']}](file://{audio_p})" if audio_p.startswith("/") else c["key"]
-            ref_c = f"`{c['ref_codes']}`"
-            cand_c = f"`{c['cand_codes']}`"
-            ref_r = c["ref_reason"].replace("|", "\\|").replace("\n", " ")
-            cand_r = c["cand_reason"].replace("|", "\\|").replace("\n", " ")
-            lines.append(f"| {link} | {c['candidate']} | {ref_c} | {cand_c} | {ref_r} | {cand_r} |")
-        lines.append("")
-
-    output_file.write_text("\n".join(lines), encoding="utf-8")
-
-
-def load_verdicts_from_dir(directory: Path) -> dict[str, dict[str, Any]]:
-    """Load all verdict JSON files in directory into a dict mapped by clean audio key."""
-    result = {}
-    if not directory.is_dir():
-        return result
-    for f in sorted(directory.glob("*.json")):
-        key = clean_audio_key(f.stem)
-        try:
-            data = read_json(f)
-            result[key] = extract_verdict(data, f)
-        except Exception:
-            continue
-    return result
+        paths.append(str(path))
+    return paths
 
 
 def main() -> int:
-    p = LoggingArgumentParser(
-        description="Benchmark and compare audio verifiers globally or locally per diarization folder."
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='Examples:\n'
+        '  compare.sh --reference-dir .data/verdicts/medium/video --candidates-dir .data/verdicts/low\n'
+        '  compare.sh --reference-dir .data/verdicts/medium --candidates-dir .data/verdicts/low '
+        '--candidates-dir .data/verdicts/hf\n\n'
+        'Choose one backend/model/effort per input. Both flat folders and family trees are read recursively.\n'
+        'The old implicit Gemini reference, positional folder, and --base-dir discovery have been removed.',
     )
-    p.add_argument(
-        "folder",
-        nargs="?",
-        default=None,
-        help="Optional local family/folder name (e.g. 'khanhvy', 'example'). Default: compare all.",
-    )
-    p.add_argument(
-        "--reference-dir",
-        type=Path,
-        default=None,
-        help="Explicit reference teacher directory (default: .data/agent/verifier/gemini/gemini-3-8-flash/medium[/<folder>])",
-    )
-    p.add_argument(
-        "--candidates-dir",
-        type=Path,
-        action="append",
-        default=None,
-        help="Explicit candidate verifier directory (can specify multiple times)",
-    )
-    p.add_argument(
-        "--base-dir",
-        type=Path,
-        default=ROOT / ".data" / "agent" / "verifier",
-        help="Base root directory containing verifier runs (default: .data/agent/verifier)",
-    )
-    p.add_argument(
-        "--output-dir",
-        type=Path,
-        default=None,
-        help="Output directory for reports, plots, and conflict files (default: .data/agent/verifier/comparisons/<folder_or_global>)",
-    )
-    p.add_argument(
-        "--title",
-        type=str,
-        default=None,
-        help="Report title",
-    )
-    args = p.parse_args()
+    parser.add_argument('--reference-dir', type=Path, required=True, help='Reference run or one audio-family directory')
+    parser.add_argument('--candidates-dir', '--candidate-dir', dest='candidates_dir', type=Path, action='append', required=True, help='Candidate run or family; repeat for multiple candidates')
+    parser.add_argument('--output-dir', type=Path, help='Exact report destination; default: .data/agent/verifier/comparisons/<timestamp>-<selection-hash>')
+    parser.add_argument('--title', help='Report title')
+    parser.add_argument('--no-plots', action='store_true', help='Write tables and reports without matplotlib')
+    args = parser.parse_args()
+    reference_dir = args.reference_dir.expanduser().resolve()
+    candidate_dirs = [p.expanduser().resolve() for p in args.candidates_dir]
+    if len(set(candidate_dirs)) != len(candidate_dirs):
+        parser.error('A candidate directory was supplied more than once')
+    for directory in candidate_dirs:
+        if directory == reference_dir or directory in reference_dir.parents or reference_dir in directory.parents:
+            parser.error(f'Reference and candidate directories must not overlap: {directory}')
+    for index, directory in enumerate(candidate_dirs):
+        if any(directory in other.parents or other in directory.parents for other in candidate_dirs[:index]):
+            parser.error(f'Candidate directories must not overlap: {directory}')
+    signature = hashlib.sha256('\n'.join(map(str, [reference_dir, *candidate_dirs])).encode()).hexdigest()[:8]
+    stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+    output_dir = args.output_dir.expanduser().resolve() if args.output_dir else ROOT / '.data/agent/verifier/comparisons' / f'{stamp}-{signature}'
+    for directory in [reference_dir, *candidate_dirs]:
+        if output_dir == directory or output_dir in directory.parents or directory in output_dir.parents:
+            parser.error(f'Output directory must be outside input trees: {output_dir}')
+    if output_dir.exists() and (not output_dir.is_dir() or any(output_dir.iterdir())):
+        parser.error(f'Output destination is not an empty directory: {output_dir}; choose a new --output-dir')
 
-    base_dir = args.base_dir.resolve()
-    target_folder = args.folder.strip() if args.folder else None
+    try:
+        raw_reference, reference_info = load_run(reference_dir)
+        reference_flat = all(family == '.' for family, _ in raw_reference)
+        reference = normalize_families(raw_reference, reference_dir)
+        families = sorted({family for family, _ in reference})
+        if not reference_info['valid']:
+            raise ValueError(f'No valid reference verdicts in {reference_dir}: {reference_info["errors"]}')
+        progress('REFERENCE', f'{reference_dir}: {reference_info["valid"]} valid, {reference_info["invalid"]} invalid, {len(families)} families')
+        all_rows, summaries, per_family, inputs = [], [], [], []
+        common_parent = Path(os.path.commonpath([str(p.parent) for p in candidate_dirs]))
+        for directory in candidate_dirs:
+            label = directory.relative_to(common_parent).as_posix()
+            raw_candidate, info = load_run(directory)
+            flat_family = reference_dir.name if reference_flat and all(f == '.' for f, _ in raw_candidate) else None
+            candidate = normalize_families(raw_candidate, directory, flat_family)
+            rows = compare_records(reference, candidate, label)
+            summary = summarize(rows, label, 'all')
+            info['label'] = label
+            info['extra_clips'] = len(candidate.keys() - reference.keys())
+            info['outside_reference_families'] = sorted({f for f, _ in candidate} - set(families))
+            info['unmatched_artifacts'] = [
+                {'family': f, 'key': k, 'file': candidate[(f, k)]['file']}
+                for f, k in sorted(candidate.keys() - reference.keys())
+            ]
+            progress('CANDIDATE', f'{directory}: {summary["matched_clips"]}/{summary["reference_valid"]} matched valid; '
+                     f'{info["invalid"]} invalid artifacts; {info["extra_clips"]} extra clips; statuses={summary["counts"]}')
+            if not summary['matched_clips']:
+                raise ValueError(
+                    f'No valid matching clips for {directory}. Reference families: {families[:8]}; '
+                    f'candidate families: {sorted({f for f, _ in candidate})[:8]}; '
+                    f'statuses: {summary["counts"]}. Select one run root or the corresponding family folder; '
+                    'clip stems must match after removing the backend suffix.'
+                )
+            inputs.append(info)
+            summaries.append(summary)
+            all_rows.extend(rows)
+            per_family.extend(summarize([r for r in rows if r['family'] == family], label, family) for family in families)
+    except (OSError, ValueError) as error:
+        parser.error(str(error))
 
-    # Discover runs
-    discovered = discover_verifier_runs(base_dir)
-
-    all_summaries: list[dict[str, Any]] = []
-    all_conflicts: list[dict[str, Any]] = []
-
-    # Identify families to evaluate
-    if target_folder:
-        matched_families = [f for f in discovered if f == target_folder or target_folder in f]
-        if not matched_families and not args.reference_dir:
-            # Check if target_folder exists directly under base_dir
-            candidate_p = base_dir / target_folder
-            if candidate_p.is_dir():
-                matched_families = [target_folder]
-            else:
-                p.error(f"Folder '{target_folder}' not found in {base_dir}. Available folders: {list(discovered.keys())}")
-        families = matched_families or [target_folder]
-    else:
-        families = sorted(discovered.keys())
-        if not families and not args.reference_dir:
-            p.error(f"No verifier runs discovered under {base_dir}")
-
-    dest_folder_name = target_folder or "global"
-    output_dir = args.output_dir.resolve() if args.output_dir else base_dir / "comparisons" / dest_folder_name
+    # All candidates must have valid pairs before any report directory is created.
     output_dir.mkdir(parents=True, exist_ok=True)
-    plots_dir = output_dir / "plots"
-
-    report_title = args.title or f"Verifier Comparison ({dest_folder_name})"
-    progress("COMPARE_START", f"Starting comparison for '{dest_folder_name}' across {len(families)} families")
-
-    # Global aggregation accumulators
-    global_ref_records: dict[str, dict[str, Any]] = {}
-    global_cand_records: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
-
-    for family in families:
-        fam_runs = discovered.get(family, {})
-
-        # Determine reference directory
-        if args.reference_dir:
-            ref_dir = args.reference_dir.resolve()
-        else:
-            # Default reference: Gemini 3.8 Flash Medium
-            ref_dir = (
-                fam_runs.get("gemini/gemini-3-8-flash/medium")
-                or fam_runs.get("gemini/gemini-3.8-flash/medium")
-                or base_dir / "gemini" / "gemini-3-8-flash" / "medium" / family
-            )
-
-        ref_records = load_verdicts_from_dir(ref_dir)
-        if not ref_records and target_folder:
-            progress("WARN", f"Reference directory has no verdicts: {ref_dir}")
-            continue
-
-        # Add to global reference
-        for k, v in ref_records.items():
-            global_ref_records[f"{family}::{k}"] = v
-
-        # Determine candidate directories
-        cand_dirs: dict[str, Path] = {}
-        if args.candidates_dir:
-            for cd in args.candidates_dir:
-                cd_path = cd.resolve()
-                cand_dirs[cd_path.name] = cd_path
-        else:
-            for b_name, b_path in fam_runs.items():
-                if "gemini-3-8-flash/medium" in b_name or "gemini-3.8-flash/medium" in b_name:
-                    continue  # Skip self comparison
-                cand_dirs[b_name] = b_path
-
-        # Evaluate each candidate in this family
-        for cand_name, c_path in cand_dirs.items():
-            c_records = load_verdicts_from_dir(c_path)
-            if not c_records:
-                continue
-
-            for k, v in c_records.items():
-                global_cand_records[cand_name][f"{family}::{k}"] = v
-
-            summary, conflicts = evaluate_pair(ref_records, c_records, cand_name, family)
-            if summary["matched_clips"] > 0:
-                all_summaries.append(summary)
-                all_conflicts.extend(conflicts)
-
-    # If in global mode or multiple families, also compute Global Aggregation
-    if len(families) > 1 and global_ref_records:
-        global_summaries = []
-        for cand_name, c_dict in global_cand_records.items():
-            g_summary, _ = evaluate_pair(global_ref_records, c_dict, cand_name, "global_all")
-            if g_summary["matched_clips"] > 0:
-                global_summaries.append(g_summary)
-
-    # Render plots
-    # If target_folder or single family, plot its summaries. If global, plot global aggregated.
-    plots_to_render = global_summaries if (len(families) > 1 and 'global_summaries' in locals() and global_summaries) else all_summaries
-    generated_plots = render_comparison_plots(plots_to_render, plots_dir)
-
-    # Export conflicts CSV & Markdown
-    conflicts_csv_file = output_dir / "conflicts.csv"
-    conflicts_md_file = output_dir / "conflicts.md"
-    export_conflicts_csv(all_conflicts, conflicts_csv_file)
-    export_conflicts_markdown(all_conflicts, conflicts_md_file, report_title)
-
-    # Export summary JSON
-    summary_json_file = output_dir / "summary.json"
-    write_json(
-        summary_json_file,
-        {
-            "title": report_title,
-            "target": dest_folder_name,
-            "families": families,
-            "plots": [str(p) for p in generated_plots],
-            "conflicts_csv": str(conflicts_csv_file),
-            "conflicts_md": str(conflicts_md_file),
-            "summaries": all_summaries,
-            "global_summaries": global_summaries if 'global_summaries' in locals() else [],
-        },
-    )
-
-    # Print clean readable report to terminal
-    print(f"\n{'=' * 80}", file=sys.stderr)
-    print(f"  {report_title.upper()}", file=sys.stderr)
-    print(f"{'=' * 80}", file=sys.stderr)
-    print(f"Reference Teacher: gemini-3.8-flash (medium)", file=sys.stderr)
-    print(f"Output Directory:  {output_dir}", file=sys.stderr)
-    print(f"Conflicts CSV:     {conflicts_csv_file}", file=sys.stderr)
-    print(f"Conflicts Report:  {conflicts_md_file}", file=sys.stderr)
-    if generated_plots:
-        print(f"Plots Generated:   {len(generated_plots)} files in {plots_dir}/", file=sys.stderr)
-    print(f"{'-' * 80}", file=sys.stderr)
-
-    # 1. Main Leaderboard Table
-    print(f"\n[1] OVERALL LEADERBOARD", file=sys.stderr)
-    header = f"{'Verifier':<20} | {'Matched':<9} | {'Recall':<8} | {'False Rej':<9} | {'Acc':<6} | {'Bad Accepts':<12} | {'p50 Lat':<8}"
-    print(header, file=sys.stderr)
-    print("-" * len(header), file=sys.stderr)
-
-    display_summaries = plots_to_render
-    for s in display_summaries:
-        ov = s["overall"]
-        cm = s["confusion_matrix"]
-        lat = s["latency"]
-        line = (
-            f"{s['candidate']:<20} | "
-            f"{s['matched_clips']:<9} | "
-            f"{ov['defect_recall'] * 100:>6.1f}% | "
-            f"{ov['false_rejection_rate'] * 100:>7.1f}% | "
-            f"{ov['accuracy'] * 100:>5.1f}% | "
-            f"{cm['bad_accepts_missed']:>5}/{cm['true_rejects_caught'] + cm['bad_accepts_missed']:<5} | "
-            f"{lat['p50_s']:>6.2f}s"
-        )
-        print(line, file=sys.stderr)
-
-    # 2. Per-Criterion Breakdown Table (Crucial for TTS Defects like clipped words)
-    print(f"\n[2] DEFECT BREAKDOWN: CAUGHT vs MISSED (Lẹm chữ, lẫn giọng, nhạc nền)", file=sys.stderr)
-    crit_header = f"{'Verifier':<20} | " + " | ".join(f"{SHORT_NAMES.get(c, c):^10}" for c in FAILURE_CODES)
-    print(crit_header, file=sys.stderr)
-    print("-" * len(crit_header), file=sys.stderr)
-
-    for s in display_summaries:
-        row_items = []
-        for code in FAILURE_CODES:
-            st = s["per_criterion"][code]
-            total_ref = st["ref_count"]
-            if total_ref == 0:
-                row_items.append(f"{'-':^10}")
-            else:
-                val_str = f"{st['caught']}/{total_ref}"
-                row_items.append(f"{val_str:^10}")
-        print(f"{s['candidate']:<20} | " + " | ".join(row_items), file=sys.stderr)
-
-    print(f"\n[3] CONFLICT CASES SUMMARY", file=sys.stderr)
-    print(f"- Bad Accepts (Bỏ sót lỗi nguy hiểm): {sum(1 for c in all_conflicts if c['conflict_type'] == 'bad_accept')} clips", file=sys.stderr)
-    print(f"- False Rejects (Phạt oan giảm yield):  {sum(1 for c in all_conflicts if c['conflict_type'] == 'false_reject')} clips", file=sys.stderr)
-    print(f"- Code Mismatch (Lệch loại khuyết tật): {sum(1 for c in all_conflicts if c['conflict_type'] == 'code_mismatch')} clips", file=sys.stderr)
-    print(f"👉 To view individual clips and acoustic reasons, open:\n   {conflicts_md_file}\n", file=sys.stderr)
-
-    progress("COMPARE_DONE", f"Results written to {output_dir}")
+    title = args.title or f'Verifier comparison: {reference_dir.name}'
+    conflicts = [r for r in all_rows if r['status'] in {'bad_accept', 'false_reject', 'code_mismatch'}]
+    write_csv(output_dir / 'pairs.csv', all_rows)
+    write_csv(output_dir / 'conflicts.csv', conflicts)
+    report = [f'# {title}', '', f'Reference: `{reference_dir}`', '',
+              'Metrics measure agreement with this reference, not human ground truth. Only valid, matched clips are scored.',
+              'Coverage = scored pairs / valid reference clips. Missing or failed results are excluded from decision metrics.',
+              'Each candidate uses its own matched subset; compare coverage before comparing scores. N/A means no observations.', '',
+              '| Candidate | Matched / reference valid | Coverage | Defect recall | False rejection | Agreement | Bad accepts |',
+              '| --- | ---: | ---: | ---: | ---: | ---: | ---: |']
+    for summary in summaries:
+        metrics = summary['overall']
+        report.append(f"| {markdown_cell(summary['candidate'])} | {summary['matched_clips']} / {summary['reference_valid']} | "
+                      f"{percent(summary['coverage'])} | {percent(metrics['defect_recall'])} | "
+                      f"{percent(metrics['false_rejection_rate'])} | {percent(metrics['accuracy'])} | "
+                      f"{summary['confusion_matrix']['bad_accepts_missed']} |")
+    report.extend(['', 'Per-family metrics, input inventories, error counts and unmatched candidate paths are in `summary.json`.',
+                   'Every reference clip appears once per candidate in `pairs.csv`, including missing/invalid/hash-mismatched pairs.',
+                   'Defect codes are compared only when present; a speaker-only verifier does not measure every acoustic criterion.', ''])
+    (output_dir / 'report.md').write_text('\n'.join(report), encoding='utf-8')
+    conflict_report = [f'# Conflicts: {title}', '', f'Reference: `{reference_dir}`', '',
+                       'These are disagreements with the reference. Review the audio before treating them as model errors.', '',
+                       '| Candidate | Family / clip | Type | Reference reason | Candidate reason | Audio |',
+                       '| --- | --- | --- | --- | --- | --- |']
+    for row in conflicts:
+        audio_path = Path(row['audio_path']) if row['audio_path'] else None
+        audio = f'[audio]({audio_path.as_uri()})' if audio_path and audio_path.is_absolute() else markdown_cell(row['audio_path'])
+        conflict_report.append('| ' + ' | '.join([
+            markdown_cell(row['candidate']), markdown_cell(f"{row['family']}/{row['key']}"),
+            row['status'], markdown_cell(row['ref_reason']), markdown_cell(row['cand_reason']), audio,
+        ]) + ' |')
+    if not conflicts:
+        conflict_report.extend(['', 'No disagreements among the matched valid clips. See pairs.csv for coverage gaps.'])
+    (output_dir / 'conflicts.md').write_text('\n'.join(conflict_report) + '\n', encoding='utf-8')
+    plots = [] if args.no_plots else render_plots(summaries, output_dir / 'plots')
+    write_json(output_dir / 'summary.json', {
+        'schema_version': 2, 'title': title, 'reference': reference_info, 'candidates': inputs,
+        'families': families, 'summaries': per_family, 'global_summaries': summaries,
+        'plots': plots, 'pairs_csv': str(output_dir / 'pairs.csv'),
+        'conflicts_csv': str(output_dir / 'conflicts.csv'), 'conflicts_md': str(output_dir / 'conflicts.md'),
+    })
+    print('\n'.join(report[2:]), file=sys.stderr)
+    progress('COMPARE_DONE', f'Reports: {output_dir}')
     print(output_dir)
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     raise SystemExit(main())

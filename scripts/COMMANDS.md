@@ -316,6 +316,13 @@ bash scripts/agent/verifier/kimi.sh --input-dir .data/clips --output-dir .data/v
 # VibeVoice-ASR speaker count purity verifier
 bash scripts/agent/verifier/vibevoice.sh --input-dir .data/clips --output-dir .data/verdicts
 
+# Compare saved runs; a leaf reference also matches families beneath a candidate root.
+bash scripts/agent/verifier/compare.sh \
+  --reference-dir .data/agent/verifier/gemini/gemini-3-8-flash/medium/example \
+  --candidates-dir .data/agent/verifier/gemini/gemini-3-8-flash/low
+# Repeat --candidates-dir for multiple runs; --no-plots writes JSON/CSV/Markdown only.
+# No implicit teacher or global discovery. No valid matches exits with an error.
+
 # Analyze verifier coverage and decisions for diarized turns. Writes CSVs and PNGs under .data/verdicts/gemini/plot/.
 bash scripts/agent/verifier/analyze.sh \
   --verdict-dir .data/verdicts/gemini \

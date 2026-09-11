@@ -78,6 +78,7 @@ flowchart TD
 | | `scripts/agent/verifier/kimi.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir` | Kimi-Audio response `.txt` plus verdict JSON |
 | | `scripts/agent/verifier/vibevoice.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir`, `--min-secondary-speech-s` | Serialized decoded response `.txt` plus speaker-count verdict JSON |
 | | `scripts/agent/verifier/evaluate_verifier.py` | `--predictions-dir`, `--reference-dir`, `--output-file` | Accuracy, defect recall, FRR, and latency JSON |
+| | `scripts/agent/verifier/compare.sh` | Required `--reference-dir`, repeatable `--candidates-dir`; optional `--output-dir`, `--title`, `--no-plots` | Offline comparison of flat directories or family trees; `summary.json`, `report.md`, `pairs.csv`, conflict CSV/Markdown and optional defect plots; zero valid matches is an error |
 | | `scripts/agent/verifier/analyze.sh` | `--verdict-dir`, repeatable `--input-manifest` and/or `--manifest-dir`, optional `--output-dir` | `all_samples.csv`, `successful_samples.csv`, analysis JSON, and PNG plots under `<verdict-dir>/plot/` by default |
 | | `scripts/agent/verifier/scaffold_experiment.py` | `--name`, `--concurrency`, `--batch-size` | Empty verifier-development workspace under `.data/agent/verifier/experiments/` |
 | **Mix & Eval** | `scripts/mix/mix.py` | `--speech`, `--music`, `--smr-db`, `--seed`, `--output-dir` | Mixture, stem references, mix metadata |

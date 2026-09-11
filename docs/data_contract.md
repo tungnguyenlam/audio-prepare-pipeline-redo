@@ -247,6 +247,39 @@ partial report instead of aborting analysis. `analysis.json` records coverage,
 decision and duration summaries, prompt/backend/model groups, stable failure
 codes, CSV digests, and plot paths.
 
+### Verifier comparison artifacts
+
+`compare.sh --reference-dir REF --candidates-dir CAND` compares saved JSON
+artifacts recursively, with one run per candidate argument. It supports all verifier
+backend suffixes and legacy verdict-only JSON. See
+[the comparator guide](../scripts/agent/verifier/README.md#compare-saved-verifier-runs)
+for directory matching and migration from implicit global discovery.
+
+The default destination is a fresh directory under
+`.data/agent/verifier/comparisons/<UTC-timestamp>-<selection-hash>/`.
+`summary.json` has `schema_version: 2`, `reference` and `candidates` inventories,
+`families`, per-family `summaries`, and aggregate `global_summaries`. Each summary
+records `matched_clips`, `reference_valid`, `coverage`, status `counts`, `overall`
+metrics, `confusion_matrix`, `latency` (including sample count) and `per_criterion`.
+Zero-denominator rates and unavailable latency are JSON `null`.
+
+`pairs.csv` has one row per reference clip per candidate, with `candidate`,
+`family`, `key`, `status`, decisions, defect codes, reasons, JSON paths and audio
+path. Status is one of `agree`, `bad_accept`, `false_reject`, `code_mismatch`,
+`invalid_reference`, `missing_candidate`, `invalid_candidate`, or `audio_mismatch`.
+Only the first four enter decision metrics. When both source hashes are recorded,
+different hashes exclude a pair. Candidate-only keys and their paths are listed
+in each candidate inventory's `unmatched_artifacts`, with `extra_clips` counts.
+
+`conflicts.csv` shares the pair columns and includes the three disagreement
+statuses. `conflicts.md` adds readable reasons and audio links; `report.md` gives
+aggregate metrics and caveats. Optional `plots/candidate_<index>_defects.png`
+shows observed caught/missed counts in candidate argument order. Comparisons do
+not require audio or response TXT files to be present. Reference and candidates
+must be disjoint; output must be outside their trees and new or empty. Every
+candidate must have at least one valid pair before report creation. Missing or
+invalid results reduce coverage and are not interpreted as model rejects.
+
 ## 8. Evaluation Metrics Contract
 
 Evaluation commands output metrics JSON with complete source provenance:
