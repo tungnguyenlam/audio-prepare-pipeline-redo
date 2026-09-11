@@ -397,6 +397,40 @@ def _case_categories(row: dict[str, str]) -> list[tuple[str, str]]:
     return codes
 
 
+def _markdown_relpath(path_str: str, base_dir: Path) -> str:
+    if not path_str:
+        return ""
+    try:
+        p = Path(path_str)
+        base = base_dir.resolve()
+        if p.is_absolute():
+            target_p = p.resolve() if p.exists() else None
+            if target_p is None:
+                for anchor in (".data", base.name):
+                    if anchor in p.parts:
+                        idx = p.parts.index(anchor)
+                        subpath = Path(*p.parts[idx:])
+                        curr = base
+                        while curr != curr.parent:
+                            if (curr / subpath).exists() or (curr / anchor).exists():
+                                target_p = (curr / subpath).resolve()
+                                break
+                            curr = curr.parent
+                        if target_p:
+                            break
+            if target_p is None:
+                target_p = p
+            try:
+                rel = os.path.relpath(target_p, base)
+            except ValueError:
+                rel = str(target_p)
+        else:
+            rel = str(p)
+        return Path(rel).as_posix()
+    except Exception:
+        return path_str
+
+
 def _write_error_reports(all_csv: Path, output_dir: Path, verdict_dir: Path) -> dict[str, Any]:
     """Read the canonical CSV to produce model-specific counts and reviewable cases."""
     rows = _read_csv(all_csv)
@@ -416,8 +450,12 @@ def _write_error_reports(all_csv: Path, output_dir: Path, verdict_dir: Path) -> 
     def link(value: str, label: str) -> str:
         if not value:
             return ""
-        path = Path(value)
-        return f"[{label}]({path.as_uri()})" if path.is_absolute() else cell(value)
+        target = _markdown_relpath(value, output_dir)
+        if not target:
+            return cell(label)
+        if any(c in target for c in (" ", "(", ")")):
+            return f"[{cell(label)}](<{target}>)"
+        return f"[{cell(label)}]({target})"
 
     for key, group in groups.items():
         group_rows = group["rows"]
@@ -552,15 +590,48 @@ def _make_plots(
         fig, axes = plt.subplots(len(available), 1, figsize=(11, max(4, 3.2 * len(available))))
         if len(available) == 1:
             axes = [axes]
-        for ax, (column, title) in zip(axes, available):
+        non_defect_tags = {"pure", "complete", "studio_clean", "clean", "none"}
+        dim_canonical_order = {
+            "speaker_purity": ["pure", "secondary_speaker", "overlapping_speech", "tail_speaker_intrusion"],
+            "word_completeness": ["complete", "clipped_word_start", "clipped_word_end"],
+            "audio_quality": ["studio_clean", "music_bleed", "noisy_reverberant", "distorted"],
+            "boundary_start": ["clean", "clipped"],
+            "boundary_end": ["clean", "clipped"],
+        }
+        for i, (ax, (column, title)) in enumerate(zip(axes, available)):
             counts = Counter(row[column] for row in successful_rows if row[column])
-            labels = list(counts)
-            bars = ax.bar(labels, [counts[label] for label in labels], color="#3b82f6")
-            ax.bar_label(bars)
+            canonical = dim_canonical_order.get(column, [])
+
+            def _sort_key(label: str) -> tuple[int, int, str]:
+                norm = label.lower().strip().replace(" ", "_")
+                is_non_defect = 0 if norm in non_defect_tags else 1
+                order_idx = canonical.index(norm) if norm in canonical else 999
+                return (is_non_defect, order_idx, label)
+
+            labels = sorted(counts, key=_sort_key)
+            colors = [
+                "#22c55e" if lbl.lower().strip().replace(" ", "_") in non_defect_tags else "#ef4444"
+                for lbl in labels
+            ]
+            vals = [counts[label] for label in labels]
+            total_dim = sum(vals)
+            bars = ax.bar(labels, vals, color=colors)
+            bar_labels = [
+                f"{v} ({v / total_dim * 100:.1f}%)" if total_dim > 0 else str(v)
+                for v in vals
+            ]
+            ax.bar_label(bars, labels=bar_labels, padding=3)
             ax.set_title(title)
             ax.set_ylabel("Samples")
+            ax.margins(y=0.22)
             ax.tick_params(axis="x", rotation=15)
             ax.grid(True, axis="y", linestyle="--", alpha=0.4)
+            if i == 0:
+                legend_elements = [
+                    Patch(facecolor="#22c55e", label="Pass / Quality target"),
+                    Patch(facecolor="#ef4444", label="Defect / Failure tag"),
+                ]
+                ax.legend(handles=legend_elements, loc="upper right", framealpha=0.9)
         plots.append(_save_figure(plt, fig, output_dir / "dimensions.png"))
 
     speaker_rows = [row for row in all_rows if row["speaker_id"]]

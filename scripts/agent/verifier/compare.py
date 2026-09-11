@@ -227,6 +227,51 @@ def markdown_cell(value: Any) -> str:
     return str(value or '').replace('|', '\\|').replace('\n', ' ').replace('\r', ' ')
 
 
+def _markdown_relpath(path_str: str, base_dir: Path) -> str:
+    if not path_str:
+        return ""
+    try:
+        p = Path(path_str)
+        base = base_dir.resolve()
+        if p.is_absolute():
+            target_p = p.resolve() if p.exists() else None
+            if target_p is None:
+                for anchor in (".data", base.name):
+                    if anchor in p.parts:
+                        idx = p.parts.index(anchor)
+                        subpath = Path(*p.parts[idx:])
+                        curr = base
+                        while curr != curr.parent:
+                            if (curr / subpath).exists() or (curr / anchor).exists():
+                                target_p = (curr / subpath).resolve()
+                                break
+                            curr = curr.parent
+                        if target_p:
+                            break
+            if target_p is None:
+                target_p = p
+            try:
+                rel = os.path.relpath(target_p, base)
+            except ValueError:
+                rel = str(target_p)
+        else:
+            rel = str(p)
+        return Path(rel).as_posix()
+    except Exception:
+        return path_str
+
+
+def markdown_file_link(path_str: str | None, base_dir: Path, label: str) -> str:
+    if not path_str:
+        return ""
+    target = _markdown_relpath(path_str, base_dir)
+    if not target:
+        return markdown_cell(label)
+    if any(c in target for c in (" ", "(", ")")):
+        return f"[{markdown_cell(label)}](<{target}>)"
+    return f"[{markdown_cell(label)}]({target})"
+
+
 def render_plots(summaries: list[dict], directory: Path) -> list[str]:
     try:
         import matplotlib
@@ -356,8 +401,7 @@ def main() -> int:
                        '| Candidate | Family / clip | Type | Reference reason | Candidate reason | Audio |',
                        '| --- | --- | --- | --- | --- | --- |']
     for row in conflicts:
-        audio_path = Path(row['audio_path']) if row['audio_path'] else None
-        audio = f'[audio]({audio_path.as_uri()})' if audio_path and audio_path.is_absolute() else markdown_cell(row['audio_path'])
+        audio = markdown_file_link(row.get('audio_path'), output_dir, 'audio')
         conflict_report.append('| ' + ' | '.join([
             markdown_cell(row['candidate']), markdown_cell(f"{row['family']}/{row['key']}"),
             row['status'], markdown_cell(row['ref_reason']), markdown_cell(row['cand_reason']), audio,
