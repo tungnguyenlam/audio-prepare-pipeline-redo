@@ -8,7 +8,9 @@ such as `verifier/`.
 
 Available raw generation backends:
 
-- `gemini.sh`: Gemini native audio generation without a response schema.
+- `gemini.sh`: Gemini native audio generation without a response schema. It
+  uses the asynchronous provider Batch API by default; pass
+  `--inference-mode standard` for immediate synchronous requests.
 - `endpoint.sh`: OpenAI-compatible audio endpoints, including served vLLM and
   Unsloth models.
 - `hf.sh`: local Hugging Face audio models with optional LoRA adapters.
@@ -31,17 +33,19 @@ and text digest match. An incomplete or conflicting pair requires
 `--overwrite`.
 
 With no explicit output path, raw outputs are grouped by backend and inferred
-audio family:
+audio family. Gemini additionally separates each model and reasoning level so
+different configurations never share a default output directory:
 
 ```text
 .data/agent/<backend>/<family>/
+.data/agent/gemini/<model>/<reasoning-effort>/<family>/
 ```
 
 For example, a Gemini run may produce:
 
 ```text
-.data/agent/gemini/<family>/<stem>_gemini.txt
-.data/agent/gemini/<family>/<stem>_gemini.json
+.data/agent/gemini/gemini-3-8-flash/medium/<family>/<stem>_gemini.txt
+.data/agent/gemini/gemini-3-8-flash/medium/<family>/<stem>_gemini.json
 ```
 
 `--input-file --output-file result.txt` writes exactly `result.txt` and its
@@ -71,6 +75,15 @@ bash scripts/agent/hf.sh \
   --model-id google/gemma-4-E2B-it \
   --prompt-file .data/prompts/describe_audio.txt
 ```
+
+Gemini Batch jobs contain at most `--batch-size 100` requests by default and
+are split further to stay below the provider's 20 MB inline request limit. The
+command waits and polls for up to `--batch-timeout-s 86400`; submitted job
+state and returned responses are retained under the variant's
+`work/batch_jobs/` directory so an interrupted identical command can resume
+without submitting the same jobs again. `--overwrite` deliberately creates a
+fresh batch. Batch response artifacts record the job, request key, provider
+response ID, exact usage including cache hits, and a `paid_batch` cost estimate.
 
 Use `--system-prompt-file` to test system/user prompt separation. The user
 message places the prompt before the audio. `--top-p` and `--top-k` are exposed

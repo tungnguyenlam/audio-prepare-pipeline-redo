@@ -76,42 +76,8 @@ def verdict_processor(
             destination.with_suffix(".txt").unlink(missing_ok=True)
         write_json(destination, artifact)
 
-    def response_complete(destination: Path, artifact: dict[str, Any]) -> bool:
-        response = artifact.get("response")
-        if not isinstance(response, dict):
-            return False
-        if response.get("available") is False:
-            return True
-        path_value = response.get("path")
-        expected_sha = response.get("sha256")
-        if not isinstance(path_value, str) or not isinstance(expected_sha, str):
-            return False
-        response_path = Path(path_value)
-        if not response_path.is_absolute():
-            response_path = (destination.parent / response_path).resolve()
-        return response_path.is_file() and digest(response_path) == expected_sha
-
     def process(source: Path, destination: Path) -> None:
         wanted = request(identity(source), "verify", parameters, backend)
-        response_path = destination.with_suffix(".txt")
-        if (destination.exists() or response_path.exists()) and not args.overwrite:
-            if not destination.exists():
-                raise ValueError(
-                    f"Incomplete verifier output pair: {response_path}; use --overwrite"
-                )
-            old = read_json(destination)
-            matches = all(old.get(key) == value for key, value in wanted.items())
-            if matches and "verdict" in old:
-                if old.get("status") is None or (
-                    old.get("status") == "success" and response_complete(destination, old)
-                ):
-                    return
-            if matches and old.get("status") == "fail":
-                raise ValueError(
-                    f"Cached failed verifier artifact: {destination}; use --overwrite to retry"
-                )
-            raise ValueError(f"Conflicting output: {destination}; use --overwrite")
-
         try:
             verdict = verify(source)
         except VerifierResponseError as exc:
@@ -165,6 +131,12 @@ def run_verifier(
     parameters: dict[str, Any],
     verify: Callable[[Path], dict[str, Any]],
 ) -> int:
+    pairs = pending_verifier_pairs(
+        args=args,
+        pairs=pairs,
+        backend=backend,
+        parameters=parameters,
+    )
     return batch(
         pairs,
         verdict_processor(
@@ -176,3 +148,53 @@ def run_verifier(
         concurrency=getattr(args, 'concurrency', 1),
         batch_size=getattr(args, 'batch_size', 1),
     )
+
+
+def _response_complete(destination: Path, artifact: dict[str, Any]) -> bool:
+    response = artifact.get("response")
+    if not isinstance(response, dict):
+        return False
+    if response.get("available") is False:
+        return True
+    path_value = response.get("path")
+    expected_sha = response.get("sha256")
+    if not isinstance(path_value, str) or not isinstance(expected_sha, str):
+        return False
+    response_path = Path(path_value)
+    if not response_path.is_absolute():
+        response_path = (destination.parent / response_path).resolve()
+    return response_path.is_file() and digest(response_path) == expected_sha
+
+
+def pending_verifier_pairs(
+    *,
+    args: Any,
+    pairs: list[tuple[Path, Path]],
+    backend: str,
+    parameters: dict[str, Any],
+) -> list[tuple[Path, Path]]:
+    """Preflight verdict outputs so a paid batch only contains missing artifacts."""
+    pending = []
+    for source, destination in pairs:
+        wanted = request(identity(source), "verify", parameters, backend)
+        response_path = destination.with_suffix(".txt")
+        if (destination.exists() or response_path.exists()) and not args.overwrite:
+            if not destination.exists():
+                raise ValueError(
+                    f"Incomplete verifier output pair: {response_path}; use --overwrite"
+                )
+            old = read_json(destination)
+            matches = all(old.get(key) == value for key, value in wanted.items())
+            if matches and "verdict" in old:
+                if old.get("status") is None or (
+                    old.get("status") == "success"
+                    and _response_complete(destination, old)
+                ):
+                    continue
+            if matches and old.get("status") == "fail":
+                raise ValueError(
+                    f"Cached failed verifier artifact: {destination}; use --overwrite to retry"
+                )
+            raise ValueError(f"Conflicting output: {destination}; use --overwrite")
+        pending.append((source, destination))
+    return pending

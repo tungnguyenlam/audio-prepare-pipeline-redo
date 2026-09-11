@@ -147,14 +147,17 @@ Raw agent commands (`scripts/agent/{gemini,endpoint,hf}.sh`) produce two sibling
 files for every input. `<stem>_<backend>.txt` contains the exact unparsed model
 text. `<stem>_<backend>.json` records source identity, prompts, generation
 parameters, provider response details, and the text artifact path, byte count,
-and SHA-256 digest. The pair defaults under
-`.data/agent/<backend>/<family>/`; both files must exist for cache reuse.
+and SHA-256 digest. Non-Gemini pairs default under
+`.data/agent/<backend>/<family>/`; Gemini pairs default under
+`.data/agent/gemini/<model>/<reasoning-effort>/<family>/`. Both files must
+exist for artifact cache reuse.
 
 ## 6. Verification Verdict Contract
 
 Verifier commands under `scripts/agent/verifier/` produce a sibling response
-text and verdict JSON pair for each model response. Defaults live under
-`.data/agent/verifier/<backend>/<family>/`. The `.txt` file is the exact
+text and verdict JSON pair for each model response. Non-Gemini defaults live
+under `.data/agent/verifier/<backend>/<family>/`; Gemini separates variants at
+`.data/agent/verifier/gemini/<model>/<reasoning-effort>/<family>/`. The `.txt` file is the exact
 unparsed assistant response. The JSON records its path, byte count, and digest
 along with either `status: "success"` plus a verdict or `status: "fail"` plus a
 stable error stage/code. A request failure with no model response writes only
@@ -185,7 +188,12 @@ remains readable as a legacy result.
     "decision": "pass",
     "reason": "single_speaker_clean",
     "confidence": 0.95,
-    "_latency_s": 0.32
+    "_latency_s": 0.32,
+    "_inference_mode": "batch",
+    "_batch_job": "batches/123456",
+    "_response_id": "provider-response-id",
+    "_usage": {"prompt_tokens": 318, "cached_input_tokens": 0},
+    "_cost": {"pricing_tier": "paid_batch", "total_usd": 0.00042}
   }
 }
 ```

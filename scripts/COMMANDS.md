@@ -263,20 +263,25 @@ uv run python scripts/purity/segment.py --input-manifest .data/aligned.json --wo
 Raw agent commands preserve unparsed model text and a sibling JSON metadata
 sidecar. Their dynamic default is `.data/agent/<backend>/<family>/`. Hardened
 verifiers consume the same generation paths, validate pass/reject verdicts,
-and default to `.data/agent/verifier/<backend>/<family>/`. Every command accepts
+and default to `.data/agent/verifier/<backend>/<family>/`. Gemini is more
+specific: its defaults add `<model>/<reasoning-effort>/` after the `gemini`
+directory. Every command accepts
 `--input-file` or `--input-dir`; a single input may use an exact
 `--output-file`. Model prompts are placed before audio in multimodal messages.
 
 ```bash
-# Gemini direct-audio verifier (3.8 Flash, 3.5 Flash-Lite) with custom prompt and concurrency
-bash scripts/agent/verifier/gemini.sh --input-dir .data/clips --output-dir .data/verdicts/gemini \
+# Gemini direct-audio verifier; provider Batch API is the default
+bash scripts/agent/verifier/gemini.sh --input-dir .data/clips \
   --model gemini-3.8-flash --reasoning-effort medium --prompt-file prompts/acoustic_defect.txt \
-  --concurrency 4 --max-tokens 2048 --temperature 0.0
+  --batch-size 100 --max-tokens 2048 --temperature 0.0
 
 # Free-form Gemini audio experiment: preserve exact text plus response metadata
 bash scripts/agent/gemini.sh --input-dir .data/clips \
-  --output-dir .data/agent/gemini/baseline \
   --prompt-file .data/prompts/describe_audio.txt --temperature 0.2
+
+# Opt out of asynchronous Batch only when immediate responses are required
+bash scripts/agent/verifier/gemini.sh --input-file .data/clips/example.wav \
+  --inference-mode standard
 
 # The same freeform contract for an OpenAI-compatible endpoint or local HF model
 bash scripts/agent/endpoint.sh --input-dir .data/clips \

@@ -79,27 +79,16 @@ def run_agent(
 ) -> int:
     """Persist unparsed text and the model/provider details returned by generate."""
 
+    pairs = pending_agent_pairs(
+        args=args,
+        pairs=pairs,
+        backend=backend,
+        parameters=parameters,
+    )
+
     def process(source: Path, destination: Path) -> None:
-        if destination.suffix.lower() == ".json":
-            raise ValueError(
-                "Agent output must not use .json; that suffix is reserved for metadata"
-            )
         metadata_path = destination.with_suffix(".json")
         wanted = request(identity(source), "explore_audio_model", parameters, backend)
-        if destination.exists() or metadata_path.exists():
-            if not args.overwrite and destination.is_file() and metadata_path.is_file():
-                old = read_json(metadata_path)
-                output = old.get("output", {})
-                if all(old.get(key) == value for key, value in wanted.items()) and output.get(
-                    "sha256"
-                ) == digest(destination):
-                    return
-            if not args.overwrite:
-                raise ValueError(
-                    f"Incomplete or conflicting output pair: {destination}, "
-                    f"{metadata_path}; use --overwrite"
-                )
-
         result = generate(source)
         text = result.get("text")
         if not isinstance(text, str):
@@ -131,3 +120,36 @@ def run_agent(
         concurrency=getattr(args, 'concurrency', 1),
         batch_size=getattr(args, 'batch_size', 1),
     )
+
+
+def pending_agent_pairs(
+    *,
+    args: Any,
+    pairs: list[tuple[Path, Path]],
+    backend: str,
+    parameters: dict[str, Any],
+) -> list[tuple[Path, Path]]:
+    """Preflight raw outputs so a paid batch only contains missing artifacts."""
+    pending = []
+    for source, destination in pairs:
+        if destination.suffix.lower() == ".json":
+            raise ValueError(
+                "Agent output must not use .json; that suffix is reserved for metadata"
+            )
+        metadata_path = destination.with_suffix(".json")
+        wanted = request(identity(source), "explore_audio_model", parameters, backend)
+        if destination.exists() or metadata_path.exists():
+            if not args.overwrite and destination.is_file() and metadata_path.is_file():
+                old = read_json(metadata_path)
+                output = old.get("output", {})
+                if all(old.get(key) == value for key, value in wanted.items()) and output.get(
+                    "sha256"
+                ) == digest(destination):
+                    continue
+            if not args.overwrite:
+                raise ValueError(
+                    f"Incomplete or conflicting output pair: {destination}, "
+                    f"{metadata_path}; use --overwrite"
+                )
+        pending.append((source, destination))
+    return pending
