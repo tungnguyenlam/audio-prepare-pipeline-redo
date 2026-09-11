@@ -323,6 +323,10 @@ bash scripts/agent/verifier/compare.sh \
 # Repeat --candidates-dir for multiple runs; --no-plots writes JSON/CSV/Markdown only.
 # No implicit teacher or global discovery. No valid matches exits with an error.
 
+# Analyze one model run automatically: plots, report.md, error_cases.csv and error_stats.csv in INPUT/plot/.
+bash scripts/agent/verifier/analysis.sh --input-dir .data/agent/verifier/gemini/gemini-3-8-flash/low
+# Rerunning refreshes the default plot/ directory. An explicit manifest is optional.
+
 # Analyze verifier coverage and decisions for diarized turns. Writes CSVs and PNGs under .data/verdicts/gemini/plot/.
 bash scripts/agent/verifier/analyze.sh \
   --verdict-dir .data/verdicts/gemini \

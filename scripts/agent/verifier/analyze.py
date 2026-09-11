@@ -1,6 +1,7 @@
-"""Analyze per-clip verifier artifacts and plot diarization-turn outcomes."""
+"""Analyze a saved verifier run; write plots, statistics and error cases into INPUT/plot/."""
 from __future__ import annotations
 
+import argparse
 import csv
 import hashlib
 import json
@@ -17,8 +18,6 @@ SCRIPTS_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 from _common.files import (  # noqa: E402
-    LoggingArgumentParser,
-    ROOT,
     digest,
     infer_audio_family,
     positive_int,
@@ -87,6 +86,7 @@ CSV_FIELDS = (
     "reason",
     "parsed_response_json",
     "latency_s",
+    "confidence",
     "usage_json",
     "cost_json",
     *(f"failure_{code}" for code in FAILURE_CODES),
@@ -197,6 +197,8 @@ def _read_raw_response(artifact_path: Path, data: dict[str, Any]) -> tuple[str, 
     if not response_path.is_absolute():
         response_path = (artifact_path.parent / response_path).resolve()
     if not response_path.is_file():
+        response_path = artifact_path.with_suffix(".txt")
+    if not response_path.is_file():
         return "", response, "missing_raw_response"
     expected_sha = response.get("sha256")
     actual_sha = digest(response_path)
@@ -219,7 +221,7 @@ def _artifact_values(
     prompt = parameters.get("prompt")
     backend = str(data.get("model") or "")
     raw, response, raw_error = _read_raw_response(artifact_path, data)
-    verdict = data.get("verdict")
+    verdict = data.get("verdict", data)
     response_kind = response.get("kind", "")
     schema_profile = (
         known_prompts.get(prompt.strip(), "custom")
@@ -288,10 +290,17 @@ def _artifact_values(
                 "reason": verdict.get("reason", ""),
                 "parsed_response_json": _json_cell(verdict),
                 "latency_s": verdict.get("_latency_s", ""),
+                "confidence": verdict.get("confidence", ""),
                 "usage_json": _json_cell(verdict.get("_usage")),
                 "cost_json": _json_cell(verdict.get("_cost")),
             }
         )
+        for field in ("speaker_purity", "word_completeness", "audio_quality"):
+            if verdict.get(field) in FAILURE_CODES:
+                code_list = [*code_list, verdict[field]]
+        for boundary, code in (("boundary_start", "clipped_word_start"), ("boundary_end", "clipped_word_end")):
+            if verdict.get(boundary) == "clipped":
+                code_list = [*code_list, code]
         for code in FAILURE_CODES:
             values[f"failure_{code}"] = code in code_list
 
@@ -363,6 +372,115 @@ def _save_figure(plt: Any, fig: Any, path: Path) -> str:
     return str(path)
 
 
+def _model_groups(rows: list[dict[str, str]]) -> dict[str, dict[str, Any]]:
+    groups = {}
+    for row in rows:
+        settings = json.loads(row["verifier_parameters_json"] or "{}")
+        identity = [row["verifier_backend"], row["verifier_model"], settings]
+        key = hashlib.sha256(_json_cell(identity).encode()).hexdigest()[:10]
+        if key not in groups:
+            model = row["verifier_model"] or row["verifier_backend"] or "unidentified"
+            effort = settings.get("reasoning_effort") or settings.get("thinking_level")
+            variant = ", ".join(str(value) for value in (effort, settings.get("inference_mode")) if value)
+            label = f"{model} ({variant})" if variant else model
+            groups[key] = {"label": label, "backend": row["verifier_backend"], "parameters": settings, "rows": []}
+        groups[key]["rows"].append(row)
+    return groups
+
+
+def _case_categories(row: dict[str, str]) -> list[tuple[str, str]]:
+    if row["verifier_status"] != "success":
+        return [("processing", row["failure_code"] or row["verifier_status"] or "unknown")]
+    codes = [("acoustic", code) for code in FAILURE_CODES if row[f"failure_{code}"].lower() == "true"]
+    if row["final_verdict"] == "reject" and not codes:
+        return [("acoustic", "reject_without_defect_code")]
+    return codes
+
+
+def _write_error_reports(all_csv: Path, output_dir: Path, verdict_dir: Path) -> dict[str, Any]:
+    """Read the canonical CSV to produce model-specific counts and reviewable cases."""
+    rows = _read_csv(all_csv)
+    groups = _model_groups(rows)
+    cases, stats, model_stats = [], [], []
+    report = ["# Verifier analysis", "", f"Input: `{verdict_dir}`", "",
+              "Acoustic defects are labels reported by the model; they are not verified model mistakes.",
+              "Processing failures (generation, parsing, schema, missing responses) are counted separately.",
+              "Without a diarization manifest, coverage describes discovered artifacts only; absent inputs cannot be counted.",
+              "A clip may have several defect types and appear in several case rows.", "",
+              "## Model runs", "", "| Model / configuration ID | Samples | Pass | Reject | Invalid | Missing |",
+              "| --- | ---: | ---: | ---: | ---: | ---: |"]
+
+    def cell(value: Any) -> str:
+        return str(value or "").replace("|", "\\|").replace("\n", " ").replace("\r", " ")
+
+    def link(value: str, label: str) -> str:
+        if not value:
+            return ""
+        path = Path(value)
+        return f"[{label}]({path.as_uri()})" if path.is_absolute() else cell(value)
+
+    for key, group in groups.items():
+        group_rows = group["rows"]
+        total = len(group_rows)
+        counts = Counter(row["verifier_status"] for row in group_rows)
+        decisions = Counter(row["final_verdict"] for row in group_rows if row["verifier_status"] == "success")
+        model_stats.append({"id": key, "label": group["label"], "backend": group["backend"],
+                            "samples": total, "statuses": dict(counts), "decisions": dict(decisions)})
+        report.append(f"| {cell(group['label'])} / `{key}` | {total} | {decisions['pass']} | {decisions['reject']} | {counts['fail']} | {counts['missing']} |")
+        category_counts = Counter()
+        for row in group_rows:
+            for kind, category in _case_categories(row):
+                category_counts[(kind, category)] += 1
+                cases.append({"model_id": key, "model": group["label"], "kind": kind, "category": category,
+                              "family": row["family"], "audio_path": row["audio_path"],
+                              "verdict_file": row["verdict_file"], "decision": row["final_verdict"],
+                              "reason": row["reason"], "failure_stage": row["failure_stage"],
+                              "assistant_raw_response": row["assistant_raw_response"]})
+        for kind, category in sorted(set(category_counts) | {("acoustic", code) for code in FAILURE_CODES}):
+            count = category_counts[(kind, category)]
+            denominator = counts["success"] if kind == "acoustic" else total
+            stats.append({"model_id": key, "model": group["label"], "kind": kind, "category": category,
+                          "count": count, "denominator": denominator,
+                          "rate": round(count / denominator, 6) if denominator else None})
+    report.extend(["", "## Run parameters", ""])
+    parameter_fields = ("model", "model_id", "reasoning_effort", "thinking_level", "inference_mode", "max_tokens",
+                        "max_new_tokens", "temperature", "top_p", "device", "dtype", "min_secondary_speech_s")
+    for key, group in groups.items():
+        settings = {name: group["parameters"][name] for name in parameter_fields if name in group["parameters"]}
+        report.extend([f"### {cell(group['label'])} / {key}", "", "```json", json.dumps(settings, ensure_ascii=False, indent=2), "```", ""])
+    report.extend(["## Error statistics", "",
+                   "Acoustic rates use valid artifacts as denominator; processing rates use all artifacts in that model group.",
+                   "A zero count means no such label was observed, not proof that the model can assess that criterion.", "",
+                   "| Model / ID | Kind | Category | Count | Denominator | Rate |",
+                   "| --- | --- | --- | ---: | ---: | ---: |"])
+    for row in stats:
+        rate = f"{row['rate'] * 100:.1f}%" if row["rate"] is not None else "N/A"
+        report.append(f"| {cell(row['model'])} / {row['model_id']} | {row['kind']} | {row['category']} | {row['count']} | {row['denominator']} | {rate} |")
+    report.extend(["", "## Error cases", ""])
+    for kind, category in sorted({(row["kind"], row["category"]) for row in cases}):
+        selected = [row for row in cases if row["kind"] == kind and row["category"] == category]
+        report.extend([f"### {kind}: {cell(category)} ({len(selected)})", "",
+                       "| Model / ID | Family | Audio | Verdict JSON | Reason / stage |",
+                       "| --- | --- | --- | --- | --- |"])
+        for row in selected:
+            report.append(f"| {cell(row['model'])} / {row['model_id']} | {cell(row['family'])} | {link(row['audio_path'], 'audio')} | "
+                          f"{link(row['verdict_file'], Path(row['verdict_file']).name)} | {cell(row['reason'] or row['failure_stage'])} |")
+        report.append("")
+    if not cases:
+        report.append("No reported defects or processing failures in the discovered artifacts.")
+    case_fields = ("model_id", "model", "kind", "category", "family", "audio_path", "verdict_file", "decision", "reason", "failure_stage", "assistant_raw_response")
+    stat_fields = ("model_id", "model", "kind", "category", "count", "denominator", "rate")
+    for name, fields, records in (("error_cases.csv", case_fields, cases), ("error_stats.csv", stat_fields, stats)):
+        with (output_dir / name).open("w", encoding="utf-8", newline="") as stream:
+            writer = csv.DictWriter(stream, fieldnames=fields)
+            writer.writeheader()
+            writer.writerows(records)
+    (output_dir / "report.md").write_text("\n".join(report) + "\n", encoding="utf-8")
+    return {"model_stats": model_stats, "error_stats": stats,
+            "error_cases_csv": str(output_dir / "error_cases.csv"), "error_stats_csv": str(output_dir / "error_stats.csv"),
+            "report_md": str(output_dir / "report.md")}
+
+
 def _make_plots(
     all_csv: Path, successful_csv: Path, output_dir: Path
 ) -> list[str]:
@@ -375,6 +493,7 @@ def _make_plots(
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.patches import Patch
+    from matplotlib.ticker import MaxNLocator
 
     plots = []
     status_order = ("success", "fail", "missing")
@@ -417,6 +536,7 @@ def _make_plots(
     ax.bar_label(bars)
     ax.set_xlabel("Valid samples")
     ax.set_title("Detected failure codes")
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
     ax.grid(True, axis="x", linestyle="--", alpha=0.4)
     plots.append(_save_figure(plt, fig, output_dir / "defects.png"))
 
@@ -461,6 +581,53 @@ def _make_plots(
         ax.legend()
         ax.grid(True, axis="y", linestyle="--", alpha=0.4)
         plots.append(_save_figure(plt, fig, output_dir / "by_speaker.png"))
+
+    # Measurement distributions reflect only fields actually present in valid verdicts.
+    measurements = []
+    for column, label in (("latency_s", "Latency (s)"), ("confidence", "Confidence"),
+                          ("num_speakers", "Speaker count"), ("secondary_speech_s", "Secondary speech (s)")):
+        values = []
+        for row in successful_rows:
+            try:
+                value = float(row[column])
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(value):
+                values.append(value)
+        if values:
+            measurements.append((label, values))
+    if measurements:
+        fig, axes = plt.subplots(len(measurements), 1, squeeze=False, figsize=(10, 3 * len(measurements)))
+        for ax, (label, values) in zip(axes[:, 0], measurements):
+            ax.hist(values, bins=min(30, max(1, len(set(values)))), color="#3b82f6", edgecolor="white")
+            ax.set_xlabel(label)
+            ax.set_ylabel("Valid samples")
+        plots.append(_save_figure(plt, fig, output_dir / "measurements.png"))
+
+    error_counts = Counter(row["failure_code"] or row["verifier_status"] for row in all_rows if row["verifier_status"] != "success")
+    if error_counts:
+        fig, ax = plt.subplots(figsize=(11, max(4, len(error_counts) * .4)))
+        bars = ax.barh(list(error_counts), list(error_counts.values()), color="#f97316")
+        ax.bar_label(bars)
+        ax.set_title("Processing failures and missing artifacts")
+        ax.set_xlabel("Samples")
+        plots.append(_save_figure(plt, fig, output_dir / "processing_errors.png"))
+
+    groups = _model_groups(all_rows)
+    if len(groups) > 1:
+        labels = [f"{group['label']} / {key}" for key, group in groups.items()]
+        fig, ax = plt.subplots(figsize=(12, max(4, len(labels) * .6)))
+        left = [0] * len(labels)
+        for status, decision, color in (("success", "pass", "#22c55e"), ("success", "reject", "#ef4444"),
+                                         ("fail", "", "#f97316"), ("missing", "", "#9ca3af")):
+            values = [sum(row["verifier_status"] == status and (not decision or row["final_verdict"] == decision)
+                          for row in group["rows"]) for group in groups.values()]
+            ax.barh(labels, values, left=left, label=decision or status, color=color)
+            left = [a + b for a, b in zip(left, values)]
+        ax.set_xlabel("Samples")
+        ax.set_title("Decisions and processing status by model configuration")
+        ax.legend()
+        plots.append(_save_figure(plt, fig, output_dir / "by_model.png"))
 
     timeline_groups: dict[str, list[dict[str, str]]] = defaultdict(list)
     for row in all_rows:
@@ -583,38 +750,55 @@ def _summary_from_csv(
 
 
 def main() -> int:
-    parser = LoggingArgumentParser(description=__doc__)
-    parser.add_argument("--verdict-dir", type=Path, required=True, help="Directory containing verifier JSON artifacts")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--input-dir", "--verdict-dir", dest="verdict_dir", type=Path, required=True, help="Saved model/effort run or one family; recursively read verifier JSON artifacts")
     parser.add_argument("--input-manifest", type=Path, action="append", default=[], help="Diarization segments.json to join (repeatable)")
     parser.add_argument("--manifest-dir", type=Path, help="Directory searched recursively for diarization segments.json files")
-    parser.add_argument("--output-dir", type=Path, help="Analysis directory (default: <verdict-dir>/plot)")
-    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing analysis artifacts")
+    parser.add_argument("--output-dir", type=Path, help="Analysis directory (default: <input-dir>/plot; regenerated on each run)")
+    parser.add_argument("--overwrite", action="store_true", help="Allow refreshing a nonempty custom --output-dir (default plot/ refreshes automatically)")
     parser.add_argument("--concurrency", type=positive_int, default=1, help="Number of worker threads for JSON loading")
     parser.add_argument("--batch-size", type=positive_int, default=1, help="Number of JSON files loaded per worker task")
     args = parser.parse_args()
 
-    verdict_dir = args.verdict_dir.resolve()
+    verdict_dir = args.verdict_dir.expanduser().resolve()
     if not verdict_dir.is_dir():
         parser.error(f"Verdict directory not found: {verdict_dir}")
-    output_dir = (args.output_dir or verdict_dir / "plot").resolve()
-    if output_dir == verdict_dir:
-        parser.error("Output directory must differ from the verdict directory")
-    if output_dir.exists() and any(output_dir.iterdir()) and not args.overwrite:
+    output_dir = (args.output_dir or verdict_dir / "plot").expanduser().resolve()
+    if output_dir == verdict_dir or output_dir in verdict_dir.parents:
+        parser.error("Output directory must not be the input directory or its ancestor")
+    if output_dir.exists() and not output_dir.is_dir():
+        parser.error(f"Output path is not a directory: {output_dir}")
+    if args.output_dir and output_dir.exists() and any(output_dir.iterdir()) and not args.overwrite:
         parser.error(f"Analysis directory is not empty: {output_dir}; use --overwrite")
-    output_dir.mkdir(parents=True, exist_ok=True)
+    previous_plots = []
+    previous_summary = output_dir / "analysis.json"
+    if previous_summary.is_file():
+        try:
+            previous = read_json(previous_summary)
+            if previous.get("operation") == "analyze_verifier":
+                previous_plots = previous.get("outputs", {}).get("plots", [])
+        except (OSError, ValueError):
+            pass
+    progress("ANALYZE_START", f"{verdict_dir} -> {output_dir}")
+    json_files = []
 
-    output_is_nested = output_dir.is_relative_to(verdict_dir)
-    json_files = sorted(
-        path
-        for path in verdict_dir.rglob("*.json")
-        if not (output_is_nested and path.resolve().is_relative_to(output_dir))
-    )
+    def walk_error(error: OSError) -> None:
+        parser.error(str(error))
+
+    for root, dirs, files in os.walk(verdict_dir, onerror=walk_error):
+        dirs[:] = sorted(
+            name for name in dirs
+            if name not in {"plot", "plots", "work", "comparisons", "experiments", "__pycache__"}
+            and not name.startswith(".") and (Path(root) / name).resolve() != output_dir
+        )
+        json_files.extend(Path(root) / name for name in sorted(files) if name.endswith(".json") and not name.startswith("."))
     progress("ANALYZE_LOAD", f"Loading {len(json_files)} verifier JSON candidate(s)")
     loaded = _parallel_load(json_files, args.concurrency, args.batch_size)
     verifier_artifacts = [
         item
         for item in loaded
         if item[1] is None or item[1].get("operation") == "verify"
+        or "verdict" in item[1] or "decision" in item[1]
     ]
 
     manifest_paths = [path.resolve() for path in args.input_manifest]
@@ -745,14 +929,22 @@ def main() -> int:
     )
     successful_rows = [row for row in rows if row.get("verifier_status") == "success"]
 
+    output_dir.mkdir(parents=True, exist_ok=True)
     all_csv = output_dir / "all_samples.csv"
     successful_csv = output_dir / "successful_samples.csv"
     _write_csv(all_csv, rows)
     _write_csv(successful_csv, successful_rows)
     progress("ANALYZE_CSV", f"Wrote {len(rows)} total and {len(successful_rows)} successful row(s)")
 
+    progress("ANALYZE_PLOTS", "Rendering coverage, decisions, defects and available measurements")
     plots = _make_plots(all_csv, successful_csv, output_dir)
     summary = _summary_from_csv(all_csv, successful_csv, plots, verdict_dir)
+    details = _write_error_reports(all_csv, output_dir, verdict_dir)
+    summary.update(details)
+    for previous_plot in previous_plots:
+        path = Path(previous_plot)
+        if path.parent == output_dir and path.suffix == ".png" and str(path) not in plots:
+            path.unlink(missing_ok=True)
     summary_path = output_dir / "analysis.json"
     write_json(summary_path, summary)
     progress(
@@ -760,6 +952,7 @@ def main() -> int:
         f"{summary['coverage']['valid']} valid, {summary['coverage']['invalid']} invalid, "
         f"{summary['coverage']['missing']} missing -> {output_dir}",
     )
+    progress("ANALYZE_REPORT", f"{summary['decisions']['pass']} pass, {summary['decisions']['reject']} reject; {output_dir / 'report.md'}")
     print(output_dir)
     return 0
 

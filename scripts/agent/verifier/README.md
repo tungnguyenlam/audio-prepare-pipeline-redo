@@ -11,9 +11,10 @@ Face, Unsloth, vLLM, MOSS-Audio, MiniCPM-o, Kimi-Audio, and VibeVoice-ASR.
 `compare.sh` compares saved candidate runs against an explicitly selected reference,
 reports matching coverage and acoustic defect disagreements, and exports tables and plots.
 It runs offline and does not call any models.
-`analyze.py` joins a verifier directory to diarization manifests, tolerates
+`analysis.sh --input-dir DIR` (also available as `analyze.sh --verdict-dir DIR`) joins a verifier directory to diarization manifests, tolerates
 individual invalid or missing responses, exports two flat CSV tables, and
-renders coverage, decision, defect, dimension, speaker, and timeline plots.
+renders coverage, decision, defect, dimension, measurement, speaker, and timeline plots.
+It also writes readable error cases and per-category statistics inside `DIR/plot/`.
 `scaffold_experiment.py` creates local workspaces for verifier behavior
 development under `.data/agent/verifier/experiments/`.
 
@@ -68,6 +69,55 @@ are never silently counted as model rejects.
 
 Every command remains standalone; this directory does not orchestrate agent
 exploration, verification, or any other pipeline stage.
+
+## Analyze one model run
+
+```bash
+# One model + reasoning effort, across every family beneath that directory:
+bash scripts/agent/verifier/analysis.sh \
+  --input-dir .data/agent/verifier/gemini/gemini-3-8-flash/low
+
+# One video only:
+bash scripts/agent/verifier/analysis.sh \
+  --input-dir .data/agent/verifier/gemini/gemini-3-8-flash/low/UuQgxxfU_Hc_VLOG-Lan-d
+
+# Other backends use the same interface:
+bash scripts/agent/verifier/analysis.sh --input-dir .data/agent/verifier/hf
+```
+
+No reference model or extra flags are required. Choose the saved model/effort
+folder you want to inspect. The command reads artifacts recursively and saves
+its results in `<input-dir>/plot/`. Repeating the command refreshes generated
+reports and removes obsolete PNGs recorded by the previous analysis. Other files
+are retained. `--output-dir` is optional; refreshing a nonempty custom destination
+requires `--overwrite`. The existing `analyze.sh` and `--verdict-dir` remain aliases
+for the same implementation.
+
+Open `plot/report.md` first. It includes model identity and configuration, pass/
+reject/invalid/missing counts, error statistics and cases grouped by category with
+links to audio and verdict JSON. `error_cases.csv` includes the exact raw response
+for each case; a clip with multiple defects has multiple rows. `error_stats.csv`
+contains category counts, denominators and rates for each model configuration.
+Acoustic rates use valid artifacts; processing-error rates use all artifacts in
+that model group. `reject_without_defect_code` retains rejected clips from models
+that do not emit acoustic codes. Detected defects are model labels, not measured
+false accepts/rejects against a reference; use `compare.sh` for that comparison.
+
+Plots include `coverage.png`, `decisions.png`, `defects.png`, and, when relevant,
+`dimensions.png`, `measurements.png` (latency, confidence, speaker count, secondary
+speech), `processing_errors.png`, `by_speaker.png`, and `timeline*.png`. Figures
+summarize the supplied directory. If it contains several configurations, the
+report/CSV statistics separate them and `by_model.png` shows their status counts;
+select one variant directory for figures specific to that variant. `analysis.json`
+also contains `model_stats`, `error_stats`, report paths and the current plot list.
+
+The analyzer automatically finds diarization manifests beside recorded source
+audio when accessible. Without a manifest, it can still analyze verdicts and raw
+responses, but cannot count inputs that never produced artifacts or show their
+speaker timeline/duration. Supply `--input-manifest` when source paths have moved.
+A copied sibling `.txt` is used when its recorded path no longer exists, and its
+hash is checked when supplied. Legacy verdict-only JSON is accepted. Runtime
+`work/`, plots and other internal directories are excluded from artifact scanning.
 
 ## Compare saved verifier runs
 

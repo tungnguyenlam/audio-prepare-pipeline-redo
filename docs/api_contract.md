@@ -79,7 +79,7 @@ flowchart TD
 | | `scripts/agent/verifier/vibevoice.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir`, `--min-secondary-speech-s` | Serialized decoded response `.txt` plus speaker-count verdict JSON |
 | | `scripts/agent/verifier/evaluate_verifier.py` | `--predictions-dir`, `--reference-dir`, `--output-file` | Accuracy, defect recall, FRR, and latency JSON |
 | | `scripts/agent/verifier/compare.sh` | Required `--reference-dir`, repeatable `--candidates-dir`; optional `--output-dir`, `--title`, `--no-plots` | Offline comparison of flat directories or family trees; `summary.json`, `report.md`, `pairs.csv`, conflict CSV/Markdown and optional defect plots; zero valid matches is an error |
-| | `scripts/agent/verifier/analyze.sh` | `--verdict-dir`, repeatable `--input-manifest` and/or `--manifest-dir`, optional `--output-dir` | `all_samples.csv`, `successful_samples.csv`, analysis JSON, and PNG plots under `<verdict-dir>/plot/` by default |
+| | `scripts/agent/verifier/analysis.sh` (alias: `analyze.sh`) | Required `--input-dir` (alias: `--verdict-dir`); optional manifests and `--output-dir` | Auto-refresh `<input-dir>/plot/`: sample CSVs, `error_cases.csv`, `error_stats.csv`, `report.md`, analysis JSON and available PNG plots |
 | | `scripts/agent/verifier/scaffold_experiment.py` | `--name`, `--concurrency`, `--batch-size` | Empty verifier-development workspace under `.data/agent/verifier/experiments/` |
 | **Mix & Eval** | `scripts/mix/mix.py` | `--speech`, `--music`, `--smr-db`, `--seed`, `--output-dir` | Mixture, stem references, mix metadata |
 | | `scripts/evaluate/separation.py` | `--input-file`, `--reference-file`, `--mixture-file`, `--output-file` | SI-SDR and SDR metrics JSON |
