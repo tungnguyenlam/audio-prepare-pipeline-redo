@@ -58,7 +58,8 @@ A Python 3.13 audio-prepare pipeline: ingest YouTube (or local files), separate 
 | `scripts/diarize/` | Speaker diarization commands and launchers (`sortformer`, `pyannote`, `clustering`, `threed_speaker`, `diarizen`) |
 | `scripts/speaker/` | Target speaker enrollment, turn scoring, threshold filtering, and candidate purity verification |
 | `scripts/purity/` | Purity refinement pipeline stages (`consensus`, `cleanup`, `collar`, `snap`, `align`, `segment`) |
-| `scripts/verify/` | Candidate audio verifiers plus `freeform/` prompt-and-format experiments that preserve raw model responses |
+| `scripts/agent/` | Free-form audio-model behavior development with raw response artifacts; hardened behaviors live in subfolders |
+| `scripts/agent/verifier/` | Candidate audio verifiers that harden shared agent generation into validated pass/reject verdicts |
 | `scripts/audio/` | Core audio utilities (`info`, `convert`, `cut`, `export_segments`, `compare_waveforms`, `compare_spectrograms`) |
 | `scripts/mix/` | Calibrated speech + music mixing with controlled SMR |
 | `scripts/evaluate/` | Separation SI-SDR metrics, diarization DER metrics, Gantt timeline and comparison plots |

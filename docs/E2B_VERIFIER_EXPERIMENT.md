@@ -77,10 +77,11 @@ from teacher agreement alone without representative sampling and stated limits.
 ## Scaffold and usage
 
 ```bash
-uv run --no-sync python scripts/scaffold_verifier_experiment.py --name e2b_acoustic_v1
+uv run --no-sync python scripts/agent/verifier/scaffold_experiment.py --name e2b_acoustic_v1
 ```
 
-Creates a fresh `.data/verifier_experiments/<name>/`; refuses an existing target.
+Creates a fresh `.data/agent/verifier/experiments/<name>/`; refuses an existing
+target.
 Only creates directories, empty manifests and planning templates. It does not
 read or modify benchmark data, load a model, call an API, or chain pipeline steps.
 

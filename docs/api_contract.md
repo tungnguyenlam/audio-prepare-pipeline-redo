@@ -17,7 +17,9 @@ flowchart TD
     PURITY -->|"Refined segments.json"| CLEAN_MANIFEST["Clean Manifest"]
     CLEAN_MANIFEST --> EXPORT["audio/export_segments.py"]
     EXPORT -->|"Rendered clips"| CLIPS["Final Audio Clips"]
-    CLIPS --> VERIFY["verify/{hf,gemini,vibevoice,...}.sh"]
+    CLIPS --> EXPLORE["agent/{hf,gemini,endpoint}.sh"]
+    EXPLORE -->|"raw .txt + metadata .json"| OBSERVATIONS["Behavior Observations"]
+    CLIPS --> VERIFY["agent/verifier/{hf,gemini,vibevoice,...}.sh"]
     VERIFY -->|"verdict JSON"| VERDICTS["Verified Verdicts"]
 ```
 
@@ -65,17 +67,18 @@ flowchart TD
 | | `scripts/purity/snap.py` | `--input-manifest`, `--output-manifest` | Acoustic boundary-snapped `segments.json` |
 | | `scripts/purity/align.sh` | `--input-manifest`, `--output-manifest`, `--words-file` | Word-locked `segments.json` |
 | | `scripts/purity/segment.py` | `--input-manifest`, `--words-file`, `--output-manifest` | Duration-bounded `segments.json` |
-| **Verification** | `scripts/verify/hf.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir`, `--prompt-file` | Verdict JSON with decision and reason |
-| | `scripts/verify/gemini.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir`, `--model`, `--concurrency`, `--max-tokens`, `--temperature`, `--prompt-file` | Gemini direct-audio verdict JSON |
-| | `scripts/verify/freeform/{gemini,endpoint,hf}.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir`, `--prompt-file`, model/backend options | Unparsed model text plus a JSON sidecar containing response details; experimental, not a verdict |
-| | `scripts/verify/endpoint.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir`, `--endpoint` | OpenAI-compatible endpoint verdict JSON |
-| | `scripts/verify/unsloth.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir`, `--endpoint` | Unsloth chat endpoint verdict JSON |
-| | `scripts/verify/vllm.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir`, `--model`, `--endpoint`, `--prompt-file` | vLLM offline batch or server verdict JSON |
-| | `scripts/verify/moss.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir` | MOSS-Audio verdict JSON |
-| | `scripts/verify/minicpm.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir` | MiniCPM-o verdict JSON |
-| | `scripts/verify/kimi.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir` | Kimi-Audio verdict JSON |
-| | `scripts/verify/vibevoice.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir`, `--min-secondary-speech-s` | VibeVoice-ASR speaker count verdict JSON |
-| | `scripts/verify/evaluate_verifier.py` | `--predictions-dir`, `--reference-dir`, `--output-file` | Accuracy, defect recall, FRR, and latency JSON |
+| **Agent Exploration** | `scripts/agent/{gemini,endpoint,hf}.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir`, required `--prompt-file`, model/backend options | Exact unparsed model `.txt` plus sibling response metadata `.json`; defaults to `.data/agent/<backend>/<family>/` |
+| **Verification** | `scripts/agent/verifier/hf.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir`, `--prompt-file` | Verdict JSON with decision and reason |
+| | `scripts/agent/verifier/gemini.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir`, `--model`, `--concurrency`, `--max-tokens`, `--temperature`, `--prompt-file` | Gemini direct-audio verdict JSON |
+| | `scripts/agent/verifier/endpoint.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir`, `--endpoint` | OpenAI-compatible endpoint verdict JSON |
+| | `scripts/agent/verifier/unsloth.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir`, `--endpoint` | Unsloth chat endpoint verdict JSON |
+| | `scripts/agent/verifier/vllm.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir`, `--model`, `--endpoint`, `--prompt-file` | vLLM offline batch or server verdict JSON |
+| | `scripts/agent/verifier/moss.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir` | MOSS-Audio verdict JSON |
+| | `scripts/agent/verifier/minicpm.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir` | MiniCPM-o verdict JSON |
+| | `scripts/agent/verifier/kimi.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir` | Kimi-Audio verdict JSON |
+| | `scripts/agent/verifier/vibevoice.sh` | `--input-file` / `--input-dir`, `--output-file` / `--output-dir`, `--min-secondary-speech-s` | VibeVoice-ASR speaker count verdict JSON |
+| | `scripts/agent/verifier/evaluate_verifier.py` | `--predictions-dir`, `--reference-dir`, `--output-file` | Accuracy, defect recall, FRR, and latency JSON |
+| | `scripts/agent/verifier/scaffold_experiment.py` | `--name`, `--concurrency`, `--batch-size` | Empty verifier-development workspace under `.data/agent/verifier/experiments/` |
 | **Mix & Eval** | `scripts/mix/mix.py` | `--speech`, `--music`, `--smr-db`, `--seed`, `--output-dir` | Mixture, stem references, mix metadata |
 | | `scripts/evaluate/separation.py` | `--input-file`, `--reference-file`, `--mixture-file`, `--output-file` | SI-SDR and SDR metrics JSON |
 | | `scripts/evaluate/diarization.py` | `--input-manifest`, `--reference-manifest`, `--duration`, `--output-file` | DER, JER, Confusion metrics JSON |

@@ -16,7 +16,8 @@ Audio files ingested via download or pipeline inception establish a canonical **
   - Separation: `.data/separate/<model>/<family>/`
   - Diarization: `.data/diarize/<model>/<family>/segments.json` (and turn clips)
   - Speaker / Purity: `.data/<operation>/<stage>/<family>/segments.json`
-  - Verification: `.data/verify/<model>/<family>/`
+  - Agent exploration: `.data/agent/<backend>/<family>/`
+  - Hardened verification: `.data/agent/verifier/<backend>/<family>/`
 
 ## 1. Audio Sidecar Contract (`recording.json`)
 
@@ -140,9 +141,20 @@ Enrolled speakers live under `.data/speaker_profiles/<name>/`:
 }
 ```
 
-## 5. Verification Verdict Contract
+## 5. Agent Response Pair Contract
 
-Verifier commands (`hf.sh`, `gemini.sh`, `vibevoice.sh`, etc.) produce a JSON file for each analyzed audio file:
+Raw agent commands (`scripts/agent/{gemini,endpoint,hf}.sh`) produce two sibling
+files for every input. `<stem>_<backend>.txt` contains the exact unparsed model
+text. `<stem>_<backend>.json` records source identity, prompts, generation
+parameters, provider response details, and the text artifact path, byte count,
+and SHA-256 digest. The pair defaults under
+`.data/agent/<backend>/<family>/`; both files must exist for cache reuse.
+
+## 6. Verification Verdict Contract
+
+Verifier commands under `scripts/agent/verifier/` produce one verdict JSON file
+for each analyzed audio file. Defaults live under
+`.data/agent/verifier/<backend>/<family>/`.
 
 ```json
 {
@@ -165,7 +177,7 @@ Verifier commands (`hf.sh`, `gemini.sh`, `vibevoice.sh`, etc.) produce a JSON fi
 }
 ```
 
-## 6. Evaluation Metrics Contract
+## 7. Evaluation Metrics Contract
 
 Evaluation commands output metrics JSON with complete source provenance:
 

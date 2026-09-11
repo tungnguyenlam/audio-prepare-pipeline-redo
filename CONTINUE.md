@@ -24,7 +24,7 @@ The migration to standalone audio-processing commands is complete. All 10 comman
 4. **Audio Utilities:** `scripts/audio/{info,convert,cut,export_segments,compare_waveforms,compare_spectrograms}.py`
 5. **Speaker Operations:** `scripts/speaker/{enroll,score,filter,purity}.py`, `scripts/speaker/{score,purity}.sh`
 6. **Purity Stages:** `scripts/purity/{consensus,cleanup,collar,snap,align,segment}.py`, `scripts/purity/align.sh`
-7. **Verification:** `scripts/verify/{hf,gemini,endpoint,unsloth,moss,minicpm,kimi,vibevoice}.sh`
+7. **Agent Behaviors:** raw generation at `scripts/agent/{hf,gemini,endpoint}.sh`; hardened verification at `scripts/agent/verifier/{hf,gemini,endpoint,unsloth,vllm,moss,minicpm,kimi,vibevoice}.sh`
 8. **Mixing:** `scripts/mix/mix.py`
 9. **Evaluation & Plotting:** `scripts/evaluate/{separation,diarization,plot_diarization,plot_metrics}.py`
 10. **Dataset Utilities:** `scripts/dataset/{index,filter,export,bundle}.py`

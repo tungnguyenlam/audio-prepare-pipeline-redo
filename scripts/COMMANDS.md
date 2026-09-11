@@ -123,7 +123,7 @@ uv pip install --python .venvs/kimi/bin/python -r envs/requirements-kimi.txt
 
 | Launchers | Default environment | Interpreter override |
 |---|---|---|
-| `download/*.sh`, `audio/*.sh`, `dataset/*.sh`, `evaluate/*.sh`, `mix/mix.sh`, `speaker/{enroll,filter}.sh`, `purity/{consensus,cleanup,collar,snap,segment}.sh`, `verify/evaluate_verifier.sh`, `scaffold_verifier_experiment.sh` | `.venvs/audio` (fallbacks: `.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
+| `download/*.sh`, `audio/*.sh`, `dataset/*.sh`, `evaluate/*.sh`, `mix/mix.sh`, `speaker/{enroll,filter}.sh`, `purity/{consensus,cleanup,collar,snap,segment}.sh`, `agent/verifier/{evaluate_verifier,scaffold_experiment}.sh` | `.venvs/audio` (fallbacks: `.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
 | `separate/{htdemucs,htdemucs_ft,bs_roformer,mel_roformer,mvsep_mdx23}.sh` | `.venvs/separation` (fallback: `.venvs/main`) | `SEPARATION_PYTHON` |
 | `diarize/{pyannote,pyannote_31,pyannote_community1}.sh` | `.venvs/pyannote` (fallback: `.venvs/main`) | `DIARIZATION_PYTHON` |
 | `diarize/{sortformer,clustering}.sh` | `.venvs/sortformer` | `DIARIZATION_PYTHON` |
@@ -131,12 +131,12 @@ uv pip install --python .venvs/kimi/bin/python -r envs/requirements-kimi.txt
 | `diarize/diarizen.sh` | `.venvs/diarizen` | `DIARIZATION_PYTHON` |
 | `speaker/{score,purity}.sh` | `.venvs/pyannote` (fallback: `.venvs/main`) | `DIARIZATION_PYTHON` |
 | `purity/align.sh` | `.venvs/align` (fallback: `.venvs/main`) | `ALIGN_PYTHON` |
-| `verify/{hf,endpoint,unsloth,gemini}.sh` | `.venvs/verify` (fallback: `.venvs/main`) | `VERIFIER_PYTHON` |
-| `verify/vllm.sh` | `.venvs/vllm` | `VLLM_PYTHON` |
-| `verify/moss.sh` | `.venvs/moss` | `VERIFIER_PYTHON` |
-| `verify/minicpm.sh` | `.venvs/minicpmo` | `VERIFIER_PYTHON` |
-| `verify/kimi.sh` | `.venvs/kimi` | `VERIFIER_PYTHON` |
-| `verify/vibevoice.sh` | `.venvs/vibevoice` | `VERIFIER_PYTHON` |
+| `agent/{hf,endpoint,gemini}.sh`, `agent/verifier/{hf,endpoint,unsloth,gemini}.sh` | `.venvs/verify` (fallback: `.venvs/main`) | `VERIFIER_PYTHON` |
+| `agent/verifier/vllm.sh` | `.venvs/vllm` | `VLLM_PYTHON` |
+| `agent/verifier/moss.sh` | `.venvs/moss` | `VERIFIER_PYTHON` |
+| `agent/verifier/minicpm.sh` | `.venvs/minicpmo` | `VERIFIER_PYTHON` |
+| `agent/verifier/kimi.sh` | `.venvs/kimi` | `VERIFIER_PYTHON` |
+| `agent/verifier/vibevoice.sh` | `.venvs/vibevoice` | `VERIFIER_PYTHON` |
 
 ## Command cookbook
 
@@ -258,60 +258,61 @@ bash scripts/purity/align.sh --input-manifest .data/snapped.json --output-manife
 uv run python scripts/purity/segment.py --input-manifest .data/aligned.json --words-file .data/words.json --output-manifest .data/short.json
 ```
 
-### Audio verification
+### Agent behavior development and audio verification
 
-Every verifier accepts `--input-file` or `--input-dir`. Pair a single input
-with either an exact `--output-file` or a derived path under `--output-dir`;
-if `--output-dir` is omitted, outputs default dynamically per audio family
-(`.data/verify/<model>/<family>/`). Model prompts are placed before audio
-in multimodal messages.
+Raw agent commands preserve unparsed model text and a sibling JSON metadata
+sidecar. Their dynamic default is `.data/agent/<backend>/<family>/`. Hardened
+verifiers consume the same generation paths, validate pass/reject verdicts,
+and default to `.data/agent/verifier/<backend>/<family>/`. Every command accepts
+`--input-file` or `--input-dir`; a single input may use an exact
+`--output-file`. Model prompts are placed before audio in multimodal messages.
 
 ```bash
 # Gemini direct-audio verifier (3.8 Flash, 3.5 Flash-Lite) with custom prompt and concurrency
-bash scripts/verify/gemini.sh --input-dir .data/clips --output-dir .data/verdicts/gemini \
+bash scripts/agent/verifier/gemini.sh --input-dir .data/clips --output-dir .data/verdicts/gemini \
   --model gemini-3.8-flash --reasoning-effort medium --prompt-file prompts/acoustic_defect.txt \
   --concurrency 4 --max-tokens 2048 --temperature 0.0
 
-# Freeform Gemini audio experiment: preserve arbitrary text plus the full API response
-bash scripts/verify/freeform/gemini.sh --input-dir .data/clips \
-  --output-dir .data/verify/freeform-gemini/baseline \
+# Free-form Gemini audio experiment: preserve exact text plus response metadata
+bash scripts/agent/gemini.sh --input-dir .data/clips \
+  --output-dir .data/agent/gemini/baseline \
   --prompt-file .data/prompts/describe_audio.txt --temperature 0.2
 
 # The same freeform contract for an OpenAI-compatible endpoint or local HF model
-bash scripts/verify/freeform/endpoint.sh --input-dir .data/clips \
-  --output-dir .data/verify/freeform-endpoint/baseline \
+bash scripts/agent/endpoint.sh --input-dir .data/clips \
+  --output-dir .data/agent/endpoint/baseline \
   --endpoint http://localhost:8000/v1/chat/completions --model google/gemma-4-E2B-it \
   --prompt-file .data/prompts/describe_audio.txt
-bash scripts/verify/freeform/hf.sh --input-dir .data/clips \
-  --output-dir .data/verify/freeform-hf/baseline --model-id google/gemma-4-E2B-it \
+bash scripts/agent/hf.sh --input-dir .data/clips \
+  --output-dir .data/agent/hf/baseline --model-id google/gemma-4-E2B-it \
   --prompt-file .data/prompts/describe_audio.txt
 
 # Gemma 4 / HF direct-audio verifier (E2B, E4B, 12B) with custom prompt
-bash scripts/verify/hf.sh --input-dir .data/clips --output-dir .data/verdicts/hf \
+bash scripts/agent/verifier/hf.sh --input-dir .data/clips --output-dir .data/verdicts/hf \
   --model-id google/gemma-4-E2B-it --prompt-file prompts/acoustic_defect.txt
 
 # Gemma 4 via vLLM (Offline batch or Server mode)
-bash scripts/verify/vllm.sh --input-dir .data/clips --output-dir .data/verdicts/vllm \
+bash scripts/agent/verifier/vllm.sh --input-dir .data/clips --output-dir .data/verdicts/vllm \
   --model google/gemma-4-E2B-it --prompt-file prompts/acoustic_defect.txt
 
 # Unsloth / GGUF direct-audio verifier
-bash scripts/verify/unsloth.sh --input-dir .data/clips --output-dir .data/verdicts/unsloth \
+bash scripts/agent/verifier/unsloth.sh --input-dir .data/clips --output-dir .data/verdicts/unsloth \
   --model unsloth/gemma-4-12b-it-GGUF --gguf-variant UD-Q6_K_XL --prompt-file prompts/acoustic_defect.txt
 
 # Generic OpenAI-compatible endpoint
-bash scripts/verify/endpoint.sh --input-dir .data/clips --output-dir .data/verdicts/endpoint \
+bash scripts/agent/verifier/endpoint.sh --input-dir .data/clips --output-dir .data/verdicts/endpoint \
   --endpoint http://localhost:8000/v1/chat/completions --prompt-file prompts/acoustic_defect.txt
 
 # Multimodal audio verifiers (MOSS, MiniCPM-o, Kimi)
-bash scripts/verify/moss.sh --input-dir .data/clips --output-dir .data/verdicts
-bash scripts/verify/minicpm.sh --input-dir .data/clips --output-dir .data/verdicts
-bash scripts/verify/kimi.sh --input-dir .data/clips --output-dir .data/verdicts
+bash scripts/agent/verifier/moss.sh --input-dir .data/clips --output-dir .data/verdicts
+bash scripts/agent/verifier/minicpm.sh --input-dir .data/clips --output-dir .data/verdicts
+bash scripts/agent/verifier/kimi.sh --input-dir .data/clips --output-dir .data/verdicts
 
 # VibeVoice-ASR speaker count purity verifier
-bash scripts/verify/vibevoice.sh --input-dir .data/clips --output-dir .data/verdicts
+bash scripts/agent/verifier/vibevoice.sh --input-dir .data/clips --output-dir .data/verdicts
 
 # Benchmark and evaluate verifier predictions against Gemini teacher reference
-uv run python scripts/verify/evaluate_verifier.py \
+uv run python scripts/agent/verifier/evaluate_verifier.py \
   --predictions-dir .data/verdicts/vllm \
   --reference-dir .data/verdicts/gemini \
   --output-file .data/evaluate/vllm_vs_gemini.json
