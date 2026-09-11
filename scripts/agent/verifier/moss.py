@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import Any
 
 from _audio import (
-    extract_json_payload,
     load_audio_waveform,
+    parse_verifier_response,
 )
 
 logger = logging.getLogger("verifier.moss_audio")
@@ -162,10 +162,10 @@ class MossAudioVerifier:
         output_text = self.processor.decode(
             generated_ids[0, input_len:],
             skip_special_tokens=True,
-        ).strip()
+        )
 
         latency = round(time.time() - t0, 3)
-        parsed = extract_json_payload(output_text)
+        parsed = parse_verifier_response(output_text)
         parsed["_latency_s"] = latency
         return parsed
 

@@ -12,7 +12,7 @@ SCRIPTS_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(SCRIPTS_DIR))
 sys.path.insert(0, str(AGENT_DIR))
 
-from _audio import extract_json_payload  # noqa: E402
+from _audio import parse_verifier_response  # noqa: E402
 from _cli import load_prompt, resolved_parameters, run_verifier  # noqa: E402
 from _common.files import destinations, parser  # noqa: E402
 from endpoint import EndpointAgent, send_http_request  # noqa: E402,F401
@@ -25,15 +25,11 @@ class EndpointVerifier(EndpointAgent):
         generated = self.generate(audio_path, prompt)
         text = generated["text"]
         reasoning = generated["reasoning"]
-        target_text = text.strip() if isinstance(text, str) else ""
-        if not target_text and isinstance(reasoning, str):
-            target_text = reasoning.strip()
-        if not target_text:
-            raise RuntimeError(
-                f"Endpoint returned empty content and reasoning: {generated['provider_body']}"
-            )
+        target_text = text if isinstance(text, str) else ""
+        if not target_text.strip() and isinstance(reasoning, str):
+            target_text = reasoning
 
-        parsed = extract_json_payload(target_text)
+        parsed = parse_verifier_response(target_text)
         parsed["_latency_s"] = generated["latency_s"]
         if reasoning:
             parsed["_reasoning"] = reasoning

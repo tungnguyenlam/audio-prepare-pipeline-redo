@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import gc
+import json
 import logging
 import os
 from pathlib import Path
@@ -92,8 +93,25 @@ class VibeVoiceVerifier:
             output_ids = self.model.generate(**inputs, max_new_tokens=self.max_new_tokens, do_sample=False, num_beams=1)
         generated_ids = output_ids[:, inputs["input_ids"].shape[1]:]
         parsed = self.processor.decode(generated_ids, return_format="parsed")
-        segments = _normalize_segments(_unwrap_parsed(parsed))
+        transcription = _unwrap_parsed(parsed)
+        segments = _normalize_segments(transcription)
         verdict = classify_segments(segments, min_secondary_speech_s)
+        try:
+            raw_response = json.dumps(
+                transcription,
+                ensure_ascii=False,
+                default=lambda value: (
+                    value.model_dump()
+                    if hasattr(value, "model_dump")
+                    else vars(value)
+                    if hasattr(value, "__dict__")
+                    else str(value)
+                ),
+            )
+        except (TypeError, ValueError):
+            raw_response = str(transcription)
+        verdict["_raw_response"] = raw_response
+        verdict["_response_kind"] = "structured"
         verdict["_latency_s"] = round(time.time() - t0, 3)
         return verdict
 

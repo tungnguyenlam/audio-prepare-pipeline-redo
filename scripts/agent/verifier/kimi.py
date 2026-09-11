@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from _audio import (
-    extract_json_payload,
+    parse_verifier_response,
 )
 
 logger = logging.getLogger("verifier.kimi_audio")
@@ -79,7 +79,7 @@ class KimiAudioVerifier:
             raise
 
         latency = round(time.time() - t0, 3)
-        parsed = extract_json_payload(output_text)
+        parsed = parse_verifier_response(output_text)
         parsed["_latency_s"] = latency
         return parsed
 

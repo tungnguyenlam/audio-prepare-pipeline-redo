@@ -13,7 +13,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _audio import extract_json_payload, load_audio_waveform
+from _audio import load_audio_waveform, parse_verifier_response
 from _cli import load_prompt, run_verifier
 from _common.files import destinations, parser
 from scripts.agent.verifier.endpoint import EndpointVerifier
@@ -105,7 +105,7 @@ class VLLMOfflineVerifier:
             raise RuntimeError("vLLM offline generation produced no outputs")
 
         output_text = outputs[0].outputs[0].text
-        parsed = extract_json_payload(output_text)
+        parsed = parse_verifier_response(output_text)
         parsed["_latency_s"] = latency
         parsed["_engine"] = "vllm_offline"
         parsed["_model"] = self.model_id

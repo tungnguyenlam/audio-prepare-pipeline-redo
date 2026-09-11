@@ -11,6 +11,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("verifier")
 
+
+class VerifierResponseError(ValueError):
+    """A model returned text that cannot become a verifier verdict."""
+
+    def __init__(self, code: str, raw_response: str) -> None:
+        super().__init__(code)
+        self.code = code
+        self.raw_response = raw_response
+
+
 DEFAULT_ACOUSTIC_PROMPT = """Listen to the supplied audio directly. Do not transcribe it.
 Evaluate three strict acoustic dimensions required for clean Text-to-Speech (TTS) training:
 
@@ -96,6 +106,21 @@ def extract_json_payload(text: str) -> dict[str, Any]:
     raise ValueError(f"No valid JSON object could be extracted from: {text[:200]}")
 
 
+def parse_verifier_response(text: str) -> dict[str, Any]:
+    """Parse model text while retaining the exact response for artifact writing."""
+    if not isinstance(text, str):
+        text = str(text)
+    try:
+        parsed = extract_json_payload(text)
+    except Exception as exc:
+        raise VerifierResponseError("invalid_json", text) from exc
+    if not isinstance(parsed, dict):
+        raise VerifierResponseError("json_not_object", text)
+    parsed["_raw_response"] = text
+    parsed["_response_kind"] = "text"
+    return parsed
+
+
 def load_audio_waveform(audio_path: str | Path, target_sr: int = 16000) -> np.ndarray:
     """Load audio file as mono float32 numpy array resampled to target_sr."""
     import numpy as np
@@ -127,5 +152,3 @@ def load_audio_waveform(audio_path: str | Path, target_sr: int = 16000) -> np.nd
         audio_data = np.asarray(audio_data, dtype=np.float32)
 
     return audio_data
-
-

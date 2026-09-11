@@ -123,7 +123,7 @@ uv pip install --python .venvs/kimi/bin/python -r envs/requirements-kimi.txt
 
 | Launchers | Default environment | Interpreter override |
 |---|---|---|
-| `download/*.sh`, `audio/*.sh`, `dataset/*.sh`, `evaluate/*.sh`, `mix/mix.sh`, `speaker/{enroll,filter}.sh`, `purity/{consensus,cleanup,collar,snap,segment}.sh`, `agent/verifier/{evaluate_verifier,scaffold_experiment}.sh` | `.venvs/audio` (fallbacks: `.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
+| `download/*.sh`, `audio/*.sh`, `dataset/*.sh`, `evaluate/*.sh`, `mix/mix.sh`, `speaker/{enroll,filter}.sh`, `purity/{consensus,cleanup,collar,snap,segment}.sh`, `agent/verifier/{analyze,evaluate_verifier,scaffold_experiment}.sh` | `.venvs/audio` (fallbacks: `.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
 | `separate/{htdemucs,htdemucs_ft,bs_roformer,mel_roformer,mvsep_mdx23}.sh` | `.venvs/separation` (fallback: `.venvs/main`) | `SEPARATION_PYTHON` |
 | `diarize/{pyannote,pyannote_31,pyannote_community1}.sh` | `.venvs/pyannote` (fallback: `.venvs/main`) | `DIARIZATION_PYTHON` |
 | `diarize/{sortformer,clustering}.sh` | `.venvs/sortformer` | `DIARIZATION_PYTHON` |
@@ -310,6 +310,11 @@ bash scripts/agent/verifier/kimi.sh --input-dir .data/clips --output-dir .data/v
 
 # VibeVoice-ASR speaker count purity verifier
 bash scripts/agent/verifier/vibevoice.sh --input-dir .data/clips --output-dir .data/verdicts
+
+# Analyze verifier coverage and decisions for diarized turns. Writes CSVs and PNGs under .data/verdicts/gemini/plot/.
+bash scripts/agent/verifier/analyze.sh \
+  --verdict-dir .data/verdicts/gemini \
+  --input-manifest .data/diarize/sortformer/example/segments.json
 
 # Benchmark and evaluate verifier predictions against Gemini teacher reference
 uv run python scripts/agent/verifier/evaluate_verifier.py \

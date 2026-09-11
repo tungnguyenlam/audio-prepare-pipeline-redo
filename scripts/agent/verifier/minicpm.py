@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Any
 
 from _audio import (
-    extract_json_payload,
     load_audio_waveform,
+    parse_verifier_response,
 )
 
 logger = logging.getLogger("verifier.minicpm")
@@ -144,7 +144,7 @@ class MiniCPMVerifier:
             output_text = str(res)
 
         latency = round(time.time() - t0, 3)
-        parsed = extract_json_payload(output_text)
+        parsed = parse_verifier_response(output_text)
         parsed["_latency_s"] = latency
         return parsed
 

@@ -13,7 +13,7 @@ SCRIPTS_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(SCRIPTS_DIR))
 sys.path.insert(0, str(AGENT_DIR))
 
-from _audio import extract_json_payload  # noqa: E402
+from _audio import parse_verifier_response  # noqa: E402
 from _cli import load_prompt, resolved_parameters, run_verifier  # noqa: E402
 from _common.files import destinations, parser  # noqa: E402
 from hf import HFAgent  # noqa: E402
@@ -24,7 +24,7 @@ class DefaultHFVerifier(HFAgent):
 
     def verify(self, audio_path: Path, prompt: str) -> dict[str, Any]:
         generated = self.generate(audio_path, prompt)
-        parsed = extract_json_payload(generated["text"].strip())
+        parsed = parse_verifier_response(generated["text"])
         parsed["_latency_s"] = generated["latency_s"]
         parsed["_engine"] = "huggingface"
         parsed["_model"] = self.model_id

@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from _audio import extract_json_payload
+from _audio import parse_verifier_response
 from scripts.agent.verifier.endpoint import (
     EndpointVerifier,
     send_http_request,
@@ -398,17 +398,14 @@ class UnslothVerifier(EndpointVerifier):
 
         target_text = ""
         if isinstance(raw_content, str) and raw_content.strip():
-            target_text = raw_content.strip()
+            target_text = raw_content
         elif isinstance(reasoning, str) and reasoning.strip():
-            target_text = reasoning.strip()
+            target_text = reasoning
         elif isinstance(raw_content, list):
             parts = [p.get("text", "") for p in raw_content if isinstance(p, dict)]
-            target_text = "".join(parts).strip()
+            target_text = "".join(parts)
 
-        if not target_text:
-            raise RuntimeError(f"Unsloth endpoint returned empty content and reasoning: {msg}")
-
-        parsed = extract_json_payload(target_text)
+        parsed = parse_verifier_response(target_text)
         parsed["_latency_s"] = latency
         parsed["_engine"] = "unsloth"
         if reasoning:

@@ -13,7 +13,7 @@ SCRIPTS_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(SCRIPTS_DIR))
 sys.path.insert(0, str(AGENT_DIR))
 
-from _audio import extract_json_payload  # noqa: E402
+from _audio import parse_verifier_response  # noqa: E402
 from _cli import load_prompt, resolved_parameters, verdict_processor  # noqa: E402
 from _common.files import batch, destinations, parser, positive_int  # noqa: E402
 from gemini import GeminiAgent  # noqa: E402
@@ -26,10 +26,8 @@ class GeminiVerifier(GeminiAgent):
 
     def verify(self, audio_path: Path, prompt: str) -> dict[str, Any]:
         generated = self.generate(audio_path, prompt, json_response=True)
-        raw_text = generated["text"].strip()
-        if not raw_text:
-            raise RuntimeError(f"No text returned from Gemini API: {generated['provider_body']}")
-        parsed = extract_json_payload(raw_text)
+        raw_text = generated["text"]
+        parsed = parse_verifier_response(raw_text)
         parsed["_latency_s"] = generated["latency_s"]
         parsed["_usage"] = generated["usage"]
         parsed["_cost"] = generated["cost"]
