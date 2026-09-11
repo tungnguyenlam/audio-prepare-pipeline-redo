@@ -37,6 +37,10 @@ BATCH_TERMINAL_STATES = {
     "JOB_STATE_FAILED",
     "JOB_STATE_CANCELLED",
     "JOB_STATE_EXPIRED",
+    "BATCH_STATE_SUCCEEDED",
+    "BATCH_STATE_FAILED",
+    "BATCH_STATE_CANCELLED",
+    "BATCH_STATE_EXPIRED",
 }
 MIME_TYPES = {
     ".aac": "audio/aac",
@@ -424,8 +428,8 @@ class GeminiAgent:
         if state:
             return str(state)
         if job.get("done") is True:
-            return "JOB_STATE_FAILED" if job.get("error") else "JOB_STATE_SUCCEEDED"
-        return "JOB_STATE_UNSPECIFIED"
+            return "BATCH_STATE_FAILED" if job.get("error") else "BATCH_STATE_SUCCEEDED"
+        return "BATCH_STATE_UNSPECIFIED"
 
     @staticmethod
     def _batch_resource(job: dict[str, Any]) -> dict[str, Any]:
@@ -663,7 +667,7 @@ class GeminiAgent:
                 job = final_jobs[job_name]
                 state = self._batch_state(job)
                 keys = [str(key) for key in group.get("request_keys", [])]
-                if state != "JOB_STATE_SUCCEEDED":
+                if state not in ("JOB_STATE_SUCCEEDED", "BATCH_STATE_SUCCEEDED"):
                     failed_jobs.append(job_name)
                     error = self._batch_resource(job).get("error") or job.get("error") or {"state": state}
                     for key in keys:
