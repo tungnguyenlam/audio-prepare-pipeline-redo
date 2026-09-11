@@ -76,7 +76,7 @@ bash scripts/agent/hf.sh \
   --prompt-file .data/prompts/describe_audio.txt
 ```
 
-Gemini Batch jobs contain at most `--batch-size 100` requests by default and
+Gemini Batch jobs contain at most `--batch-size 10` requests by default and
 are split further to stay below the provider's 20 MB inline request limit. The
 command waits and polls for up to `--batch-timeout-s 86400`; submitted job
 state and returned responses are retained under the variant's

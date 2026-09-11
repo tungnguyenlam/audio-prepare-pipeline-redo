@@ -750,7 +750,7 @@ def main() -> int:
     command.add_argument(
         "--batch-size",
         type=positive_int,
-        default=100,
+        default=10,
         help="Maximum requests per Gemini Batch job (also capped below 20 MB)",
     )
     command.add_argument("--batch-poll-interval-s", type=positive_float, default=10.0, help="Seconds between Batch status polls")

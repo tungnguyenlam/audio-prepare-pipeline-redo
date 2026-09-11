@@ -273,7 +273,7 @@ directory. Every command accepts
 # Gemini direct-audio verifier; provider Batch API is the default
 bash scripts/agent/verifier/gemini.sh --input-dir .data/clips \
   --model gemini-3.8-flash --reasoning-effort medium --prompt-file prompts/acoustic_defect.txt \
-  --batch-size 100 --max-tokens 2048 --temperature 0.0
+  --batch-size 10 --max-tokens 2048 --temperature 0.0
 
 # Free-form Gemini audio experiment: preserve exact text plus response metadata
 bash scripts/agent/gemini.sh --input-dir .data/clips \
