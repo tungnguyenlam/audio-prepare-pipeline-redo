@@ -26,13 +26,22 @@ from _common.files import (  # noqa: E402
     safe_name,
     write_json,
 )
-from agent.verifier._verdicts import FAILURE_CODES, _known_prompts, _validate_verdict
+from agent.verifier._verdicts import (
+    ACOUSTIC_FAILURE_CODES,
+    ELIGIBILITY_FAILURE_CODES,
+    FAILURE_CODES,
+    _known_prompts,
+    _validate_verdict,
+)
 
 
 CSV_FIELDS = (
     "audio_path",
     "final_verdict",
     "assistant_raw_response",
+    "transcript",
+    "transcript_chars",
+    "transcript_words",
     "verifier_status",
     "failure_stage",
     "failure_code",
@@ -275,6 +284,8 @@ def _artifact_values(
     if isinstance(verdict, dict):
         codes = verdict.get("failure_codes")
         code_list = codes if isinstance(codes, list) else []
+        transcript = verdict.get("transcript")
+        transcript = transcript if isinstance(transcript, str) else ""
         values.update(
             {
                 "parsed_decision": verdict.get("decision", ""),
@@ -288,6 +299,9 @@ def _artifact_values(
                 "dominant_speaker_id": verdict.get("dominant_speaker_id", ""),
                 "failure_codes_json": _json_cell(codes),
                 "reason": verdict.get("reason", ""),
+                "transcript": transcript,
+                "transcript_chars": len(transcript),
+                "transcript_words": len(transcript.split()),
                 "parsed_response_json": _json_cell(verdict),
                 "latency_s": verdict.get("_latency_s", ""),
                 "confidence": verdict.get("confidence", ""),
@@ -391,7 +405,10 @@ def _model_groups(rows: list[dict[str, str]]) -> dict[str, dict[str, Any]]:
 def _case_categories(row: dict[str, str]) -> list[tuple[str, str]]:
     if row["verifier_status"] != "success":
         return [("processing", row["failure_code"] or row["verifier_status"] or "unknown")]
-    codes = [("acoustic", code) for code in FAILURE_CODES if row[f"failure_{code}"].lower() == "true"]
+    codes = [
+        *(('acoustic', code) for code in ACOUSTIC_FAILURE_CODES if row[f"failure_{code}"].lower() == "true"),
+        *(('eligibility', code) for code in ELIGIBILITY_FAILURE_CODES if row[f"failure_{code}"].lower() == "true"),
+    ]
     if row["final_verdict"] == "reject" and not codes:
         return [("acoustic", "reject_without_defect_code")]
     return codes
@@ -437,12 +454,12 @@ def _write_error_reports(all_csv: Path, output_dir: Path, verdict_dir: Path) -> 
     groups = _model_groups(rows)
     cases, stats, model_stats = [], [], []
     report = ["# Verifier analysis", "", f"Input: `{verdict_dir}`", "",
-              "Acoustic defects are labels reported by the model; they are not verified model mistakes.",
+              "Acoustic defects and eligibility failures are labels reported by the model; they are not verified model mistakes.",
               "Processing failures (generation, parsing, schema, missing responses) are counted separately.",
               "Without a diarization manifest, coverage describes discovered artifacts only; absent inputs cannot be counted.",
               "A clip may have several defect types and appear in several case rows.", "",
-              "## Model runs", "", "| Model / configuration ID | Samples | Pass | Reject | Invalid | Missing |",
-              "| --- | ---: | ---: | ---: | ---: | ---: |"]
+              "## Model runs", "", "| Model / configuration ID | Samples | Pass | Reject | Transcripts | Invalid | Missing |",
+              "| --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
 
     def cell(value: Any) -> str:
         return str(value or "").replace("|", "\\|").replace("\n", " ").replace("\r", " ")
@@ -462,9 +479,16 @@ def _write_error_reports(all_csv: Path, output_dir: Path, verdict_dir: Path) -> 
         total = len(group_rows)
         counts = Counter(row["verifier_status"] for row in group_rows)
         decisions = Counter(row["final_verdict"] for row in group_rows if row["verifier_status"] == "success")
+        transcripts = sum(
+            row["verifier_status"] == "success"
+            and row["final_verdict"] == "pass"
+            and bool(row["transcript"].strip())
+            for row in group_rows
+        )
         model_stats.append({"id": key, "label": group["label"], "backend": group["backend"],
-                            "samples": total, "statuses": dict(counts), "decisions": dict(decisions)})
-        report.append(f"| {cell(group['label'])} / `{key}` | {total} | {decisions['pass']} | {decisions['reject']} | {counts['fail']} | {counts['missing']} |")
+                            "samples": total, "statuses": dict(counts), "decisions": dict(decisions),
+                            "transcripts": transcripts})
+        report.append(f"| {cell(group['label'])} / `{key}` | {total} | {decisions['pass']} | {decisions['reject']} | {transcripts} | {counts['fail']} | {counts['missing']} |")
         category_counts = Counter()
         for row in group_rows:
             for kind, category in _case_categories(row):
@@ -473,10 +497,15 @@ def _write_error_reports(all_csv: Path, output_dir: Path, verdict_dir: Path) -> 
                               "family": row["family"], "audio_path": row["audio_path"],
                               "verdict_file": row["verdict_file"], "decision": row["final_verdict"],
                               "reason": row["reason"], "failure_stage": row["failure_stage"],
+                              "transcript": row["transcript"],
                               "assistant_raw_response": row["assistant_raw_response"]})
-        for kind, category in sorted(set(category_counts) | {("acoustic", code) for code in FAILURE_CODES}):
+        known_categories = {
+            *(("acoustic", code) for code in ACOUSTIC_FAILURE_CODES),
+            *(("eligibility", code) for code in ELIGIBILITY_FAILURE_CODES),
+        }
+        for kind, category in sorted(set(category_counts) | known_categories):
             count = category_counts[(kind, category)]
-            denominator = counts["success"] if kind == "acoustic" else total
+            denominator = total if kind == "processing" else counts["success"]
             stats.append({"model_id": key, "model": group["label"], "kind": kind, "category": category,
                           "count": count, "denominator": denominator,
                           "rate": round(count / denominator, 6) if denominator else None})
@@ -506,7 +535,7 @@ def _write_error_reports(all_csv: Path, output_dir: Path, verdict_dir: Path) -> 
         report.append("")
     if not cases:
         report.append("No reported defects or processing failures in the discovered artifacts.")
-    case_fields = ("model_id", "model", "kind", "category", "family", "audio_path", "verdict_file", "decision", "reason", "failure_stage", "assistant_raw_response")
+    case_fields = ("model_id", "model", "kind", "category", "family", "audio_path", "verdict_file", "decision", "reason", "transcript", "failure_stage", "assistant_raw_response")
     stat_fields = ("model_id", "model", "kind", "category", "count", "denominator", "rate")
     for name, fields, records in (("error_cases.csv", case_fields, cases), ("error_stats.csv", stat_fields, stats)):
         with (output_dir / name).open("w", encoding="utf-8", newline="") as stream:
@@ -564,6 +593,57 @@ def _make_plots(
     for ax in axes:
         ax.grid(True, axis="y", linestyle="--", alpha=0.4)
     plots.append(_save_figure(plt, fig, output_dir / "decisions.png"))
+
+    transcript_rows = [row for row in all_rows if row["schema_profile"] == "acoustic_defect_v3"]
+    if transcript_rows:
+        transcript_schema_errors = {"missing_transcript", "unexpected_transcript", "transcript_not_last"}
+        transcript_counts = Counter(
+            "pass_with_transcript"
+            if row["verifier_status"] == "success" and row["final_verdict"] == "pass"
+            else "reject_without_transcript"
+            if row["verifier_status"] == "success" and row["final_verdict"] == "reject"
+            else "transcript_schema_failure"
+            if row["failure_code"] in transcript_schema_errors
+            else "other_failure"
+            for row in transcript_rows
+        )
+        transcript_order = (
+            "pass_with_transcript",
+            "reject_without_transcript",
+            "transcript_schema_failure",
+            "other_failure",
+        )
+        lengths = [
+            int(row["transcript_chars"])
+            for row in transcript_rows
+            if row["verifier_status"] == "success"
+            and row["final_verdict"] == "pass"
+            and row["transcript_chars"]
+        ]
+        fig, axes = plt.subplots(1, 2 if lengths else 1, figsize=(12 if lengths else 8, 5))
+        if not lengths:
+            axes = [axes]
+        bars = axes[0].bar(
+            transcript_order,
+            [transcript_counts[label] for label in transcript_order],
+            color=("#22c55e", "#64748b", "#ef4444", "#f97316"),
+        )
+        axes[0].bar_label(bars)
+        axes[0].set_title("Acoustic v3 transcript contract")
+        axes[0].set_ylabel("Samples")
+        axes[0].tick_params(axis="x", rotation=15)
+        axes[0].grid(True, axis="y", linestyle="--", alpha=0.4)
+        if lengths:
+            axes[1].hist(
+                lengths,
+                bins=min(30, max(1, len(set(lengths)))),
+                color="#3b82f6",
+                edgecolor="white",
+            )
+            axes[1].set_title("Pass transcript lengths")
+            axes[1].set_xlabel("Characters")
+            axes[1].set_ylabel("Transcripts")
+        plots.append(_save_figure(plt, fig, output_dir / "transcripts.png"))
 
     defect_counts = {
         code: sum(row[f"failure_{code}"].lower() == "true" for row in successful_rows)
@@ -769,6 +849,15 @@ def _summary_from_csv(
         decision: round(sum(_number(row["duration_s"]) for row in successful_coverage_rows if row["final_verdict"] == decision), 6)
         for decision in ("pass", "reject")
     }
+    transcript_profile_rows = [
+        row for row in coverage_rows if row["schema_profile"] == "acoustic_defect_v3"
+    ]
+    valid_transcript_rows = [
+        row for row in transcript_profile_rows if row["verifier_status"] == "success"
+    ]
+    transcript_pass_rows = [
+        row for row in valid_transcript_rows if row["final_verdict"] == "pass"
+    ]
     prompt_groups = sorted(
         {
             (row["verifier_backend"], row["verifier_model"], row["prompt_sha256"], row["schema_profile"])
@@ -776,7 +865,7 @@ def _summary_from_csv(
         }
     )
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "operation": "analyze_verifier",
         "status": "partial" if statuses.get("fail", 0) or statuses.get("missing", 0) or any(row["sample_scope"] == "orphan" for row in all_rows) else "complete",
         "source": {"verdict_dir": str(verdict_dir)},
@@ -797,6 +886,20 @@ def _summary_from_csv(
         "duration_s": {
             "by_status": duration_by_status,
             "by_decision": duration_by_decision,
+        },
+        "transcripts": {
+            "profile_rows": len(transcript_profile_rows),
+            "valid_pass_with_transcript": sum(bool(row["transcript"].strip()) for row in transcript_pass_rows),
+            "valid_reject_without_transcript": sum(
+                row["final_verdict"] == "reject" and not row["transcript"].strip()
+                for row in valid_transcript_rows
+            ),
+            "characters": sum(int(row["transcript_chars"] or 0) for row in transcript_pass_rows),
+            "words": sum(int(row["transcript_words"] or 0) for row in transcript_pass_rows),
+            "schema_failures": sum(
+                row["failure_code"] in {"missing_transcript", "unexpected_transcript", "transcript_not_last"}
+                for row in transcript_profile_rows
+            ),
         },
         "prompt_groups": [
             {"backend": backend, "model": model, "prompt_sha256": prompt_sha, "schema_profile": profile}

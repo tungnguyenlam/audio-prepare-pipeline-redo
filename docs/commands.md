@@ -145,7 +145,7 @@ bash scripts/agent/gemini.sh   --input-dir .data/clips --prompt-file prompts/vi-
 bash scripts/agent/endpoint.sh --input-dir .data/clips --endpoint http://localhost:8000/v1/chat/completions --model google/gemma-4-E2B-it --prompt-file p.txt
 bash scripts/agent/hf.sh       --input-dir .data/clips --model-id google/gemma-4-E2B-it --prompt-file p.txt
 
-# Hardened verifiers (default prompt: prompts/acoustic_defect.txt)
+# Hardened verifiers (default prompt: prompts/acoustic_defect-3.txt)
 bash scripts/agent/verifier/gemini.sh   --input-dir .data/clips --model gemini-3.8-flash --reasoning-effort medium
 bash scripts/agent/verifier/gemini.sh   --input-file clip.wav --inference-mode standard      # skip Batch API
 bash scripts/agent/verifier/hf.sh       --input-dir .data/clips --model-id google/gemma-4-E2B-it

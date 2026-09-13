@@ -45,7 +45,7 @@ def main() -> int:
         "agent/verifier",
         "endpoint",
     )
-    command.add_argument("--prompt-file", type=Path, help="Optional prompt file; defaults to acoustic defect prompt")
+    command.add_argument("--prompt-file", type=Path, help="Prompt file (default: prompts/acoustic_defect-3.txt)")
     command.add_argument("--endpoint", default="http://localhost:8000/v1/chat/completions", help="Chat completions endpoint URL")
     command.add_argument("--model", default="default", help="Model name to request")
     command.add_argument("--timeout-s", type=float, default=120.0, help="Request timeout in seconds")

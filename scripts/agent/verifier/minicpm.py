@@ -155,7 +155,7 @@ def main() -> int:
     from _cli import load_prompt, resolved_parameters, run_verifier
     from _common.files import destinations, parser
     p = parser('Verify audio with minicpm; writes verdicts without filtering audio.', 'agent/verifier', 'minicpm')
-    p.add_argument('--prompt-file', type=Path, help='Optional path to text prompt file (defaults to acoustic defect prompt)')
+    p.add_argument('--prompt-file', type=Path, help='Prompt text file (default: prompts/acoustic_defect-3.txt)')
     p.add_argument('--model-id', type=str, default='openbmb/MiniCPM-o-4_5', help='MiniCPM-o model ID or local directory')
     p.add_argument('--device', type=str, default='auto', help='Inference device ("auto", "cpu", or "cuda:N")')
     p.add_argument('--trust-remote-code', action=argparse.BooleanOptionalAction, default=True, help='Allow loading custom model code from Hugging Face')

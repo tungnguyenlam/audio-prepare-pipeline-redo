@@ -421,7 +421,7 @@ def main() -> int:
     from _cli import load_prompt, resolved_parameters, run_verifier
     from _common.files import destinations, parser
     p = parser('Verify audio with unsloth; writes verdicts without filtering audio.', 'agent/verifier', 'unsloth')
-    p.add_argument('--prompt-file', type=Path, help='Optional path to text prompt file (defaults to acoustic defect prompt)')
+    p.add_argument('--prompt-file', type=Path, help='Prompt text file (default: prompts/acoustic_defect-3.txt)')
     p.add_argument('--endpoint', type=str, default=None, help='Unsloth API chat completions endpoint URL')
     p.add_argument('--model', type=str, default=None, help='Model identifier to request from Unsloth server')
     p.add_argument('--gguf-variant', type=str, default=None, help='Specific GGUF quantization variant (e.g. Q8_0, UD-Q6_K_XL)')

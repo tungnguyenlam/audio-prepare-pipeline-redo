@@ -5,9 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable
 
-from _audio import DEFAULT_ACOUSTIC_PROMPT, VerifierResponseError
+from _audio import VerifierResponseError
 from _common.files import ROOT, batch, digest, identity, read_json, request, write_json
 from artifacts import write_text
+from agent.verifier._verdicts import _known_prompts, _validate_verdict
 
 
 def load_prompt(prompt_file: Path | None) -> str:
@@ -17,10 +18,10 @@ def load_prompt(prompt_file: Path | None) -> str:
             raise ValueError(f"Prompt file not found: {prompt_file}")
         return prompt_file.read_text(encoding="utf-8").strip()
 
-    default_file = ROOT / "prompts" / "acoustic_defect.txt"
-    if default_file.is_file():
-        return default_file.read_text(encoding="utf-8").strip()
-    return DEFAULT_ACOUSTIC_PROMPT
+    default_file = ROOT / "prompts" / "acoustic_defect-3.txt"
+    if not default_file.is_file():
+        raise ValueError(f"Default prompt file not found: {default_file}")
+    return default_file.read_text(encoding="utf-8").strip()
 
 
 def resolved_parameters(parameters: dict[str, Any], verifier: Any) -> dict[str, Any]:
@@ -42,6 +43,8 @@ def verdict_processor(
     verify: Callable[[Path], dict[str, Any]],
 ) -> Callable[[Path, Path], None]:
     """Build the common resumable verifier artifact writer."""
+    known_prompts = _known_prompts()
+    prompt = parameters.get("prompt")
 
     def publish_response(destination: Path, raw_response: str, kind: str) -> dict[str, Any]:
         response_path = destination.with_suffix(".txt")
@@ -100,16 +103,17 @@ def verdict_processor(
 
         raw_response = verdict.pop("_raw_response", None) if isinstance(verdict, dict) else None
         response_kind = verdict.pop("_response_kind", "text") if isinstance(verdict, dict) else "text"
-        if not isinstance(verdict, dict) or verdict.get("decision") not in {"pass", "reject"}:
+        _, schema_error = _validate_verdict(verdict, prompt, backend, known_prompts)
+        if schema_error is not None:
             publish_failure(
                 destination,
                 wanted,
                 stage="schema",
-                code="invalid_decision",
+                code=schema_error,
                 raw_response=raw_response if isinstance(raw_response, str) else None,
                 response_kind=str(response_kind),
             )
-            raise ValueError("Verifier did not return a pass/reject decision")
+            raise ValueError(schema_error)
         response = (
             publish_response(destination, raw_response, str(response_kind))
             if isinstance(raw_response, str)
@@ -174,6 +178,8 @@ def pending_verifier_pairs(
     parameters: dict[str, Any],
 ) -> list[tuple[Path, Path]]:
     """Preflight verdict outputs so a paid batch only contains missing artifacts."""
+    known_prompts = _known_prompts()
+    prompt = parameters.get("prompt")
     pending = []
     for source, destination in pairs:
         wanted = request(identity(source), "verify", parameters, backend)
@@ -186,10 +192,13 @@ def pending_verifier_pairs(
             old = read_json(destination)
             matches = all(old.get(key) == value for key, value in wanted.items())
             if matches and "verdict" in old:
-                if old.get("status") is None or (
-                    old.get("status") == "success"
-                    and _response_complete(destination, old)
-                ):
+                _, schema_error = _validate_verdict(
+                    old.get("verdict"), prompt, backend, known_prompts
+                )
+                response_complete = old.get("status") is None or (
+                    old.get("status") == "success" and _response_complete(destination, old)
+                )
+                if schema_error is None and response_complete:
                     continue
             if matches and old.get("status") == "fail":
                 raise ValueError(

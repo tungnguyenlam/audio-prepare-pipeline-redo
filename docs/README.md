@@ -22,7 +22,7 @@ flowchart LR
     PUR -->|"revised segments.json"| EXP["audio/export_segments.py"]
     EXP -->|"clips"| AG["agent/ · agent/verifier/"]
     EXP --> DS["dataset/"]
-    AG -->|".txt + verdict .json"| AN["verifier/analysis.sh · compare.sh"]
+    AG -->|".txt + verdict/transcript .json"| AN["verifier/analysis.sh · compare.sh"]
 ```
 
 Coding-agent rules live in [`AGENTS.md`](../AGENTS.md) at the repository root.

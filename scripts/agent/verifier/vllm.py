@@ -114,7 +114,7 @@ class VLLMOfflineVerifier:
 
 def main() -> int:
     p = parser("Verify audio with vLLM; writes verdicts without filtering audio.", "agent/verifier", "vllm")
-    p.add_argument("--prompt-file", type=Path, help="Path to custom prompt text file")
+    p.add_argument("--prompt-file", type=Path, help="Prompt text file (default: prompts/acoustic_defect-3.txt)")
     p.add_argument("--model", type=str, default=DEFAULT_MODEL_ID, help="Hugging Face model ID")
     p.add_argument("--endpoint", type=str, default=None, help="vLLM server endpoint URL (runs in server mode if set)")
     p.add_argument("--dtype", type=str, default="bfloat16", choices=("bfloat16", "float16", "auto"), help='Model weights precision ("bfloat16", "float16", or "auto")')

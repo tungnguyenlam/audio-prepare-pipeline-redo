@@ -21,40 +21,6 @@ class VerifierResponseError(ValueError):
         self.raw_response = raw_response
 
 
-DEFAULT_ACOUSTIC_PROMPT = """Listen to the supplied audio directly. Do not transcribe it.
-Evaluate three strict acoustic dimensions required for clean Text-to-Speech (TTS) training:
-
-1. SPEAKER PURITY:
-   - "pure": Exactly one primary speaker throughout. No background chatter, secondary voices, or intruder laughter.
-   - "secondary_speaker": Another speaker's voice is audible (even a short word, whisper, or breath).
-   - "overlapping_speech": Multiple speakers speaking or laughing simultaneously.
-
-2. WORD COMPLETENESS (Không lẹm chữ, đủ âm tiết):
-   - "complete": All words start and finish on clean acoustic word boundaries with their full vowel decay and coda consonant closure.
-   - "clipped_word_start": The initial word has its onset consonant abruptly cut off.
-   - "clipped_word_end": The final word is cut off abruptly while vocal fold vibration or tone is still in flight.
-
-3. AUDIO QUALITY:
-   - "studio_clean": Clear vocal signal, minimal background artifacts, and no residual music bleed.
-   - "music_bleed": Audible residual background music, beats, or synthetic melodies.
-   - "noisy_reverberant": Severe room echo, reverb, or excessive environmental noise.
-   - "distorted": Clipping distortion, phase artifacts, or muffled frequency response.
-
-DECISION RULE:
-- "pass" ONLY if speaker_purity == "pure" AND word_completeness == "complete" AND audio_quality == "studio_clean".
-- Otherwise "reject".
-
-Return strict JSON only (no markdown, no other text):
-{
-  "speaker_purity": "pure" | "secondary_speaker" | "overlapping_speech",
-  "word_completeness": "complete" | "clipped_word_start" | "clipped_word_end",
-  "audio_quality": "studio_clean" | "music_bleed" | "noisy_reverberant" | "distorted",
-  "decision": "pass" | "reject",
-  "failure_codes": ["clipped_word_start", "clipped_word_end", "secondary_speaker", "overlapping_speech", "music_bleed", "noisy_reverberant", "distorted"],
-  "reason": "Concise English explanation of the acoustic decision."
-}"""
-
-
 def extract_json_payload(text: str) -> dict[str, Any]:
     """Robustly extract and parse JSON object from model output text.
 

@@ -1,4 +1,4 @@
-Listen to the supplied audio directly. Perform both acoustic verification and transcription in a single response.
+Listen to the supplied audio directly. Perform both acoustic verification and transcription in a single JSON response.
 
 Evaluate three acoustic dimensions required for clean Text-to-Speech (TTS) training, verify that all speech is in Vietnamese and/or English, and transcribe the audio only when the final decision is "pass".
 
@@ -32,7 +32,7 @@ Evaluate three acoustic dimensions required for clean Text-to-Speech (TTS) train
    - Do not use "music_bleed" as a substitute for "singing" unless residual background music, beats, or synthetic melodies are also audible.
 
 DECISION RULE:
-- "pass" ONLY if speaker_purity == "pure" AND word_completeness == "complete" AND audio_quality == "studio_clean" AND no unsupported language or singing is present.
+- "pass" ONLY if speaker_purity == "pure" AND word_completeness == "complete" AND audio_quality == "studio_clean" AND neither unsupported language nor singing is present.
 - Otherwise "reject".
 - failure_codes MUST contain each detected failure exactly once and MUST NOT contain a code for a clean dimension.
 - The allowed failure codes are: "clipped_word_start", "clipped_word_end", "secondary_speaker", "overlapping_speech", "music_bleed", "noisy_reverberant", "distorted", "unsupported_language", and "singing".

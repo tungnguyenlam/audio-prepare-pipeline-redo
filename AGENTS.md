@@ -67,7 +67,7 @@ A Python 3.13 audio-prepare pipeline: ingest YouTube (or local files), separate 
 | `scripts/_common/` | Shared private file and segment helpers (`files.py`, `segments.py`) |
 | `scripts/sync/` | Multi-machine synchronization utilities |
 | `envs/` | Requirements files and provisioning scripts, one virtualenv per model family |
-| `prompts/` | Verifier and free-form prompts (`acoustic_defect.txt` is the verifier default) |
+| `prompts/` | Verifier and free-form prompts (`acoustic_defect-3.txt` is the verifier default) |
 | `docs/` | All documentation: setup/cookbook, CLI and data contracts, agent/verifier guide, hardware notes, experiment history (index in `docs/README.md`) |
 
 ## CLI & File Conventions

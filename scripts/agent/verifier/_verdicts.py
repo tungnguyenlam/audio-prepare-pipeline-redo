@@ -1,11 +1,11 @@
-"""Shared verdict schema checks for offline verifier analysis and comparison."""
+"""Shared verdict schema checks for runtime writing, analysis, and comparison."""
 from __future__ import annotations
 
 from typing import Any
 
 from _common.files import ROOT
 
-FAILURE_CODES = (
+ACOUSTIC_FAILURE_CODES = (
     "clipped_word_start",
     "clipped_word_end",
     "secondary_speaker",
@@ -14,14 +14,20 @@ FAILURE_CODES = (
     "noisy_reverberant",
     "distorted",
 )
+ELIGIBILITY_FAILURE_CODES = ("unsupported_language", "singing")
+FAILURE_CODES = (*ACOUSTIC_FAILURE_CODES, *ELIGIBILITY_FAILURE_CODES)
 
 
 def _known_prompts() -> dict[str, str]:
     result = {}
-    for name in ("acoustic_defect", "speaker_purity", "word_boundary"):
-        path = ROOT / "prompts" / f"{name}.txt"
+    for filename, profile in (
+        ("acoustic_defect-3.txt", "acoustic_defect_v3"),
+        ("speaker_purity.txt", "speaker_purity_v1"),
+        ("word_boundary.txt", "word_boundary_v1"),
+    ):
+        path = ROOT / "prompts" / filename
         if path.is_file():
-            result[path.read_text(encoding="utf-8").strip()] = f"{name}_v1"
+            result[path.read_text(encoding="utf-8").strip()] = profile
     return result
 
 
@@ -38,7 +44,7 @@ def _validate_verdict(
     if not isinstance(prompt, str) and backend == "vibevoice":
         profile = "vibevoice_v1"
 
-    if profile == "acoustic_defect_v1":
+    if profile == "acoustic_defect_v3":
         speaker = verdict.get("speaker_purity")
         boundary = verdict.get("word_completeness")
         quality = verdict.get("audio_quality")
@@ -51,16 +57,28 @@ def _validate_verdict(
             return profile, "invalid_audio_quality"
         if not isinstance(codes, list) or any(code not in FAILURE_CODES for code in codes):
             return profile, "invalid_failure_codes"
-        expected_codes = {
+        expected_acoustic_codes = {
             value
             for value in (speaker, boundary, quality)
             if value not in {"pure", "complete", "studio_clean"}
         }
-        if len(codes) != len(set(codes)) or set(codes) != expected_codes:
+        actual_codes = set(codes)
+        eligibility_codes = actual_codes.intersection(ELIGIBILITY_FAILURE_CODES)
+        expected_codes = expected_acoustic_codes | eligibility_codes
+        if len(codes) != len(actual_codes) or actual_codes != expected_codes:
             return profile, "inconsistent_failure_codes"
         expected_decision = "pass" if not expected_codes else "reject"
         if decision != expected_decision:
             return profile, "inconsistent_decision"
+        if decision == "pass":
+            transcript = verdict.get("transcript")
+            if not isinstance(transcript, str) or not transcript.strip():
+                return profile, "missing_transcript"
+            public_fields = [key for key in verdict if not key.startswith("_")]
+            if not public_fields or public_fields[-1] != "transcript":
+                return profile, "transcript_not_last"
+        elif "transcript" in verdict:
+            return profile, "unexpected_transcript"
     elif profile == "speaker_purity_v1":
         speaker = verdict.get("speaker_purity")
         if speaker not in {"pure", "secondary_speaker", "overlapping_speech"}:

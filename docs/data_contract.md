@@ -121,15 +121,15 @@ either a validated `verdict` or an `error`:
   "schema_version": 1,
   "source": {"path": "/abs/clip.wav", "sha256": "…"},
   "operation": "verify",
-  "model": "google/gemma-4-E2B-it",
-  "parameters": {"device": "cuda:0", "prompt": "…"},
+  "model": "hf",
+  "parameters": {"model_id": "google/gemma-4-E2B-it", "device": "cuda:0", "prompt": "…"},
   "status": "success",
   "response": {"path": "/abs/clip_hf.txt", "format": "utf-8 text", "kind": "text", "bytes": 194, "sha256": "…"},
   "verdict": {
-    "decision": "reject",
     "speaker_purity": "pure",
     "word_completeness": "clipped_word_end",
     "audio_quality": "studio_clean",
+    "decision": "reject",
     "failure_codes": ["clipped_word_end"],
     "reason": "…",
     "_latency_s": 0.32, "_inference_mode": "batch", "_batch_job": "batches/123",
@@ -137,6 +137,12 @@ either a validated `verdict` or an `error`:
   }
 }
 ```
+
+For a pass, the public verdict fields use the same order and end with a nonempty
+`"transcript": "…"`. Reject verdicts omit `transcript` entirely. Runtime schema
+errors include `missing_transcript`, `unexpected_transcript`, and
+`transcript_not_last`; the exact raw model response remains in the sibling text
+artifact for diagnosis.
 
 Failure: `"status": "fail"`, `"error": {"stage": "generation|parse|schema", "code": "…"}`;
 a request failure with no model text writes only the JSON. Legacy verdict-only
@@ -146,7 +152,7 @@ Validation profile is selected by the prompt text (`scripts/agent/verifier/_verd
 
 | Profile | Selected when prompt equals | Required fields and consistency |
 |---|---|---|
-| `acoustic_defect_v1` | `prompts/acoustic_defect.txt` | `speaker_purity` ∈ pure/secondary_speaker/overlapping_speech; `word_completeness` ∈ complete/clipped_word_start/clipped_word_end; `audio_quality` ∈ studio_clean/music_bleed/noisy_reverberant/distorted; `failure_codes` = exactly the non-clean values; `decision` = pass iff no codes |
+| `acoustic_defect_v3` | `prompts/acoustic_defect-3.txt` (default) | Three acoustic dimensions as below; `failure_codes` contains exactly their non-clean values plus optional `unsupported_language` / `singing`; `decision` = pass iff no codes; pass requires a nonempty final `transcript`; reject forbids the field |
 | `speaker_purity_v1` | `prompts/speaker_purity.txt` | `speaker_purity`; pass iff `pure` |
 | `word_boundary_v1` | `prompts/word_boundary.txt` | `boundary_start`, `boundary_end` ∈ clean/clipped; pass iff both clean |
 | `vibevoice_v1` | VibeVoice backend (no prompt) | `decision` ∈ pass/reject/uncertain, `num_speakers`, `secondary_speech_s`, `dominant_speaker_id`; `uncertain` is excluded from pass/reject metrics |
@@ -156,32 +162,34 @@ Validation profile is selected by the prompt text (`scripts/agent/verifier/_verd
 
 ```text
 plot/
-  analysis.json           coverage, decisions, durations, model/prompt groups, failure codes, model_stats, error_stats, CSV digests, plot list
+  analysis.json           schema_version 2; coverage, decisions, transcripts, durations, model/prompt groups, failure codes, model_stats, error_stats, CSV digests, plot list
   all_samples.csv         every expected turn (from manifests) + every artifact, even unmatched/invalid
   successful_samples.csv  subset with a schema-valid pass/reject
   report.md               model configuration, statistics, linked error cases
-  error_cases.csv         model_id, model, kind, category, family, audio_path, verdict_file, decision, reason, failure_stage, assistant_raw_response
+  error_cases.csv         model_id, model, kind, category, family, audio_path, verdict_file, decision, reason, transcript, failure_stage, assistant_raw_response
   error_stats.csv         model_id, model, kind, category, count, denominator, rate
-  coverage.png decisions.png defects.png
+  coverage.png decisions.png defects.png transcripts.png
   dimensions.png measurements.png processing_errors.png by_model.png by_speaker.png timeline*.png   (when applicable)
 ```
 
 Both CSVs share a column order beginning `audio_path, final_verdict,
-assistant_raw_response`; nested values remain in `*_json` columns. Invalid or
+assistant_raw_response, transcript, transcript_chars, transcript_words`; nested
+values remain in `*_json` columns. Invalid or
 missing results have a blank `final_verdict` and are never counted as rejects.
-`kind` separates `acoustic` labels from `processing` failures; acoustic rates use
-valid artifacts, processing rates use all artifacts of that model group. Rerunning
+`kind` separates `acoustic`, `eligibility`, and `processing` failures; label rates
+use valid artifacts, while processing rates use all artifacts of that model group. Rerunning
 refreshes `plot/` and deletes PNGs it previously recorded.
 
 ## 8. Verifier comparison (`compare.sh` → `.data/agent/verifier/comparisons/<utc>-<hash>/`)
 
 | File | Contents |
 |---|---|
-| `summary.json` | `schema_version: 2`; `reference` / `candidates` inventories (incl. `unmatched_artifacts`, `extra_clips`), `families`, per-family `summaries`, `global_summaries` with `matched_clips`, `reference_valid`, `coverage`, status `counts`, `overall`, `confusion_matrix`, `latency`, `per_criterion` |
-| `pairs.csv` | one row per reference clip per candidate: `candidate`, `family`, `key`, `status`, decisions, defect codes, reasons, JSON and audio paths |
+| `summary.json` | `schema_version: 3`; `reference` / `candidates` inventories (incl. `unmatched_artifacts`, `extra_clips`), `families`, per-family `summaries`, `global_summaries` with verifier and transcript metrics |
+| `pairs.csv` | one row per reference clip per candidate: verifier status/decisions/codes, schema profiles, transcript status/text, reasons, JSON and audio paths |
 | `conflicts.csv`, `conflicts.md` | rows with status `bad_accept`, `false_reject`, `code_mismatch` |
+| `transcript_differences.csv` | reference transcripts that differ from or are missing in the candidate |
 | `report.md` | aggregate metrics and caveats |
-| `plots/candidate_<i>_defects.png` | caught/missed defect counts (unless `--no-plots`) |
+| `plots/candidate_<i>_{defects,transcripts}.png` | defect recall and transcript comparison (when applicable, unless `--no-plots`) |
 
 `status` ∈ `agree`, `bad_accept`, `false_reject`, `code_mismatch`,
 `invalid_reference`, `missing_candidate`, `invalid_candidate`, `audio_mismatch`;

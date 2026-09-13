@@ -27,7 +27,9 @@ SKIP_DIRS = {"comparisons", "work", "plot", "plots", "experiments", "__pycache__
 PAIR_FIELDS = (
     "candidate", "family", "key", "status", "ref_decision", "cand_decision",
     "ref_codes", "cand_codes", "missed_codes", "overcalled_codes",
-    "ref_reason", "cand_reason", "reference_file", "candidate_file", "audio_path",
+    "ref_reason", "cand_reason", "ref_schema_profile", "cand_schema_profile",
+    "transcript_status", "ref_transcript", "cand_transcript",
+    "reference_file", "candidate_file", "audio_path",
 )
 
 
@@ -66,12 +68,13 @@ def load_run(directory: Path) -> tuple[dict[tuple[str, str], dict[str, Any]], di
             verdict = data.get('verdict', data)
             parameters = data.get('parameters')
             parameters = parameters if isinstance(parameters, dict) else {}
+            profile = 'unknown'
             if error is None:
                 if data.get('status') not in (None, 'success'):
                     error = 'verifier_failed'
                 else:
                     try:
-                        _, error = _validate_verdict(
+                        profile, error = _validate_verdict(
                             verdict, parameters.get('prompt'), str(data.get('model', '')), known_prompts
                         )
                     except (TypeError, ValueError):
@@ -79,6 +82,8 @@ def load_run(directory: Path) -> tuple[dict[tuple[str, str], dict[str, Any]], di
             verdict = verdict if isinstance(verdict, dict) else {}
             source = data.get('source')
             source = source if isinstance(source, dict) else {}
+            transcript = verdict.get('transcript')
+            transcript = transcript if isinstance(transcript, str) else ''
             key = BACKEND_SUFFIX.sub('', path.stem)
             identity = (family, key)
             if identity in records:
@@ -99,6 +104,7 @@ def load_run(directory: Path) -> tuple[dict[tuple[str, str], dict[str, Any]], di
                 'file': str(path), 'error': error,
                 'decision': verdict.get('decision') if error is None else None,
                 'codes': sorted(codes), 'reason': str(verdict.get('reason') or ''),
+                'schema_profile': profile, 'transcript': transcript,
                 'audio_path': source.get('path') or verdict.get('audio_path') or '',
                 'sha256': source.get('sha256'), 'latency_s': verdict.get('_latency_s'),
             }
@@ -155,6 +161,11 @@ def summarize(rows: list[dict], candidate: str, family: str) -> dict:
             'overcalled': overcalled, 'recall': ratio(caught, ref_count),
         }
     ref_valid = sum(r['ref_decision'] in ('pass', 'reject') for r in rows)
+    transcript_counts = Counter(r['transcript_status'] for r in rows)
+    reference_transcripts = sum(r['transcript_status'] != 'not_applicable' for r in rows)
+    candidate_transcripts = sum(bool(r['cand_transcript']) for r in rows)
+    covered_reference_transcripts = transcript_counts['exact_match'] + transcript_counts['different']
+    comparable_transcripts = transcript_counts['exact_match'] + transcript_counts['different']
     return {
         'candidate': candidate, 'family': family, 'matched_clips': len(matched),
         'reference_valid': ref_valid, 'coverage': ratio(len(matched), ref_valid),
@@ -172,6 +183,16 @@ def summarize(rows: list[dict], candidate: str, family: str) -> dict:
             'samples': len(latencies),
             'p50_s': round(median(latencies), 3) if latencies else None,
             'p95_s': round(latencies[math.ceil(len(latencies) * .95) - 1], 3) if latencies else None,
+        },
+        'transcripts': {
+            'reference_available': reference_transcripts,
+            'candidate_available': candidate_transcripts,
+            'candidate_on_reference': covered_reference_transcripts,
+            'coverage': ratio(covered_reference_transcripts, reference_transcripts),
+            'comparable': comparable_transcripts,
+            'exact_matches': transcript_counts['exact_match'],
+            'exact_match_rate': ratio(transcript_counts['exact_match'], comparable_transcripts),
+            'statuses': dict(transcript_counts),
         },
         'per_criterion': criteria,
     }
@@ -197,6 +218,16 @@ def compare_records(reference: dict, candidate: dict, label: str) -> list[dict]:
             status = 'agree'
         cand = cand or {}
         ref_codes, cand_codes = set(ref['codes']), set(cand.get('codes', []))
+        ref_transcript = ref.get('transcript', '')
+        cand_transcript = cand.get('transcript', '')
+        if ref.get('decision') != 'pass' or not ref_transcript:
+            transcript_status = 'not_applicable'
+        elif cand.get('decision') != 'pass' or not cand_transcript:
+            transcript_status = 'missing_candidate'
+        elif ref_transcript == cand_transcript:
+            transcript_status = 'exact_match'
+        else:
+            transcript_status = 'different'
         rows.append({
             'candidate': label, 'family': family, 'key': key, 'status': status,
             'ref_decision': ref['decision'], 'cand_decision': cand.get('decision'),
@@ -205,6 +236,11 @@ def compare_records(reference: dict, candidate: dict, label: str) -> list[dict]:
             'overcalled_codes': ';'.join(sorted(cand_codes - ref_codes)),
             'ref_reason': ref['error'] or ref['reason'],
             'cand_reason': cand.get('error') or cand.get('reason', ''),
+            'ref_schema_profile': ref.get('schema_profile', ''),
+            'cand_schema_profile': cand.get('schema_profile', ''),
+            'transcript_status': transcript_status,
+            'ref_transcript': ref_transcript,
+            'cand_transcript': cand_transcript,
             'reference_file': ref['file'], 'candidate_file': cand.get('file', ''),
             'audio_path': ref['audio_path'] or cand.get('audio_path', ''),
             '_latency_s': cand.get('latency_s'),
@@ -296,6 +332,21 @@ def render_plots(summaries: list[dict], directory: Path) -> list[str]:
         fig.savefig(path, dpi=160)
         plt.close(fig)
         paths.append(str(path))
+        transcripts = summary['transcripts']
+        if transcripts['reference_available']:
+            labels = ('exact_match', 'different', 'missing_candidate')
+            values = [transcripts['statuses'].get(label, 0) for label in labels]
+            fig, ax = plt.subplots(figsize=(9, 5))
+            bars = ax.bar(labels, values, color=('#22c55e', '#f59e0b', '#ef4444'))
+            ax.bar_label(bars)
+            ax.set_title(f"{summary['candidate']} — transcript comparison")
+            ax.set_ylabel('Reference transcripts')
+            ax.grid(True, axis='y', linestyle='--', alpha=0.4)
+            fig.tight_layout()
+            path = directory / f'candidate_{index}_transcripts.png'
+            fig.savefig(path, dpi=160)
+            plt.close(fig)
+            paths.append(str(path))
     return paths
 
 
@@ -378,22 +429,29 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     title = args.title or f'Verifier comparison: {reference_dir.name}'
     conflicts = [r for r in all_rows if r['status'] in {'bad_accept', 'false_reject', 'code_mismatch'}]
+    transcript_differences = [
+        r for r in all_rows if r['transcript_status'] in {'different', 'missing_candidate'}
+    ]
     write_csv(output_dir / 'pairs.csv', all_rows)
     write_csv(output_dir / 'conflicts.csv', conflicts)
+    write_csv(output_dir / 'transcript_differences.csv', transcript_differences)
     report = [f'# {title}', '', f'Reference: `{reference_dir}`', '',
               'Metrics measure agreement with this reference, not human ground truth. Only valid, matched clips are scored.',
               'Coverage = scored pairs / valid reference clips. Missing or failed results are excluded from decision metrics.',
               'Each candidate uses its own matched subset; compare coverage before comparing scores. N/A means no observations.', '',
-              '| Candidate | Matched / reference valid | Coverage | Defect recall | False rejection | Agreement | Bad accepts |',
-              '| --- | ---: | ---: | ---: | ---: | ---: | ---: |']
+              '| Candidate | Matched / reference valid | Coverage | Defect recall | False rejection | Agreement | Bad accepts | Transcript coverage | Exact transcript |',
+              '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |']
     for summary in summaries:
         metrics = summary['overall']
         report.append(f"| {markdown_cell(summary['candidate'])} | {summary['matched_clips']} / {summary['reference_valid']} | "
                       f"{percent(summary['coverage'])} | {percent(metrics['defect_recall'])} | "
                       f"{percent(metrics['false_rejection_rate'])} | {percent(metrics['accuracy'])} | "
-                      f"{summary['confusion_matrix']['bad_accepts_missed']} |")
+                      f"{summary['confusion_matrix']['bad_accepts_missed']} | "
+                      f"{percent(summary['transcripts']['coverage'])} | "
+                      f"{percent(summary['transcripts']['exact_match_rate'])} |")
     report.extend(['', 'Per-family metrics, input inventories, error counts and unmatched candidate paths are in `summary.json`.',
                    'Every reference clip appears once per candidate in `pairs.csv`, including missing/invalid/hash-mismatched pairs.',
+                   'Different or missing candidate transcripts are listed in `transcript_differences.csv` and do not alter verifier agreement.',
                    'Defect codes are compared only when present; a speaker-only verifier does not measure every acoustic criterion.', ''])
     (output_dir / 'report.md').write_text('\n'.join(report), encoding='utf-8')
     conflict_report = [f'# Conflicts: {title}', '', f'Reference: `{reference_dir}`', '',
@@ -411,10 +469,11 @@ def main() -> int:
     (output_dir / 'conflicts.md').write_text('\n'.join(conflict_report) + '\n', encoding='utf-8')
     plots = [] if args.no_plots else render_plots(summaries, output_dir / 'plots')
     write_json(output_dir / 'summary.json', {
-        'schema_version': 2, 'title': title, 'reference': reference_info, 'candidates': inputs,
+        'schema_version': 3, 'title': title, 'reference': reference_info, 'candidates': inputs,
         'families': families, 'summaries': per_family, 'global_summaries': summaries,
         'plots': plots, 'pairs_csv': str(output_dir / 'pairs.csv'),
         'conflicts_csv': str(output_dir / 'conflicts.csv'), 'conflicts_md': str(output_dir / 'conflicts.md'),
+        'transcript_differences_csv': str(output_dir / 'transcript_differences.csv'),
     })
     print('\n'.join(report[2:]), file=sys.stderr)
     progress('COMPARE_DONE', f'Reports: {output_dir}')

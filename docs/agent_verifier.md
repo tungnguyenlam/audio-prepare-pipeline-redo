@@ -38,23 +38,26 @@ schema. Neither directory orchestrates other pipeline stages.
 | `kimi` | `.venvs/kimi` | Kimi-Audio (Python 3.11 env) |
 | `vibevoice` | `.venvs/vibevoice` | VibeVoice-ASR speaker counting; `--min-secondary-speech-s` separates `reject` from `uncertain` |
 
-- `--prompt-file` defaults to `prompts/acoustic_defect.txt`. The prompt text selects
-  the validation profile (`acoustic_defect_v1`, `speaker_purity_v1`,
+- `--prompt-file` defaults to `prompts/acoustic_defect-3.txt`. The prompt text selects
+  the validation profile (`acoustic_defect_v3`, `speaker_purity_v1`,
   `word_boundary_v1`, or `custom`) — see
   [data contract §6](data_contract.md#6-verifier-verdict-scriptsagentverifier).
 - Generation, parse, or schema failure is recorded per input
   (`status: "fail"`, `error.stage`) and never stops later inputs.
-- Verifiers write verdicts only; they never move or delete audio.
+- Every verifier backend that accepts prompts uses the same runtime parser and
+  schema validator. Acoustic v3 pass responses require a nonempty transcript;
+  reject responses must omit it. Verifiers never move or delete audio.
+- `vibevoice` remains a prompt-free speaker-count verifier and therefore does not
+  run the acoustic v3 rubric or emit its transcript field.
 
-Prompts in `prompts/`: `acoustic_defect.txt` (3-dimension rubric, default),
-`acoustic_defect-2.txt`, `acoustic_defect_transcript.txt`, `speaker_purity.txt`,
-`word_boundary.txt`, plus free-form transcript/description prompts
-(`prompt-transcripts-*.txt`, `vi-prompt-alam*.txt`) intended for
-`scripts/agent/`. `acoustic_defect_transcript.txt` combines the second acoustic
-rubric with conditional Vietnamese/English transcription: pass verdicts end with
-a nonempty `transcript`, while reject verdicts omit that field. As a custom prompt,
-the current offline validator enforces its pass/reject `decision`; the complete
-acoustic, language, and conditional-transcript constraints remain prompt-enforced.
+Prompts in `prompts/`: `acoustic_defect-3.txt` is the active verifier default;
+`speaker_purity.txt` and `word_boundary.txt` are narrower verifier alternatives.
+Free-form transcript/description prompts (`prompt-transcripts-*.txt`,
+`vi-prompt-alam*.txt`) remain available for `scripts/agent/`.
+`acoustic_defect-3.txt` combines acoustic verification with conditional
+Vietnamese/English transcription. It accepts faint non-intrusive background noise,
+adds `unsupported_language` and `singing` eligibility failures, requires a nonempty
+final `transcript` field for pass, and forbids that field for reject.
 
 ## Offline tools (no model calls)
 
@@ -67,7 +70,9 @@ beside the recorded source audio (or given via `--input-manifest` /
 [data contract §7](data_contract.md#7-verifier-analysis-analysissh---input-dir-dir--dirplot).
 Start with `plot/report.md`. Point it at one model/effort directory for
 single-variant figures; a directory with several configurations still gets
-per-model statistics and `by_model.png`. Rerunning refreshes `plot/`; a nonempty
+per-model statistics and `by_model.png`. Acoustic v3 transcript text, character and
+word counts are exported to both sample CSVs and summarized in `analysis.json`;
+`transcripts.png` shows contract outcomes and pass transcript lengths. Rerunning refreshes `plot/`; a nonempty
 custom `--output-dir` needs `--overwrite`. Detected defects are model labels, not
 errors against a reference.
 
@@ -84,13 +89,16 @@ excluded from metrics. Output goes to a new directory under
 `.data/agent/verifier/comparisons/` (or an empty `--output-dir` outside all inputs);
 files are listed in [data contract §8](data_contract.md#8-verifier-comparison-comparesh--dataagentverifiercomparisonsutc-hash).
 Exit code 2 on missing inputs, no valid reference, duplicate keys, or a candidate
-with zero valid matches.
+with zero valid matches. `pairs.csv` preserves both transcripts and records whether
+they are exact, different, missing from the candidate, or not applicable. Transcript
+differences are also written separately without changing verifier agreement metrics.
 
 ### `evaluate_verifier.sh --predictions-dir P --reference-dir R --output-file F`
 
-Pairs verdict JSON files in two flat directories by clip stem (suffixes `_hf`,
-`_gemini`, `_vllm`, `_unsloth`, `_endpoint` stripped) and reports accuracy, reject
-precision/recall/F1, false-rejection rate and latency percentiles as JSON. Use
+Pairs verdict JSON files in two flat directories by clip stem (all verifier backend
+suffixes stripped), validates each artifact against its prompt profile, and reports
+accuracy, reject precision/recall/F1, false-rejection rate, latency percentiles and
+transcript exact-match counts as JSON. Use
 `compare.sh` for family trees, other backends, and defect-level disagreement.
 
 ### `scaffold_experiment.sh --name NAME`

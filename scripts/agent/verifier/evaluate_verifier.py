@@ -4,11 +4,31 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import re
 import sys
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from _common.files import LoggingArgumentParser, progress, read_json, write_json
+from agent.verifier._verdicts import _known_prompts, _validate_verdict
+
+
+BACKEND_SUFFIX = re.compile(r"_(gemini|hf|vllm|unsloth|endpoint|minicpm|kimi|moss|vibevoice)$")
+
+
+def _validated_verdict(data: dict[str, Any], known_prompts: dict[str, str]) -> tuple[dict[str, Any], str | None]:
+    verdict = data.get("verdict", data)
+    parameters = data.get("parameters")
+    parameters = parameters if isinstance(parameters, dict) else {}
+    if data.get("status") not in (None, "success"):
+        return {}, "verifier_failed"
+    _, error = _validate_verdict(
+        verdict,
+        parameters.get("prompt"),
+        str(data.get("model", "")),
+        known_prompts,
+    )
+    return (verdict if isinstance(verdict, dict) else {}), error
 
 
 def main() -> int:
@@ -30,9 +50,9 @@ def main() -> int:
     if dest.exists() and not args.overwrite:
         p.error(f"Destination exists: {dest}; use --overwrite")
 
-    pred_files = {f.stem.replace("_hf", "").replace("_gemini", "").replace("_vllm", "").replace("_unsloth", "").replace("_endpoint", ""): f
+    pred_files = {BACKEND_SUFFIX.sub("", f.stem): f
                   for f in args.predictions_dir.glob("*.json")}
-    ref_files = {f.stem.replace("_hf", "").replace("_gemini", "").replace("_vllm", "").replace("_unsloth", "").replace("_endpoint", ""): f
+    ref_files = {BACKEND_SUFFIX.sub("", f.stem): f
                  for f in args.reference_dir.glob("*.json")}
 
     matched_keys = sorted(set(pred_files.keys()) & set(ref_files.keys()))
@@ -62,10 +82,16 @@ def main() -> int:
     # Positive = reject (defect caught); Negative = pass (clean)
     reasons_breakdown: dict[str, dict[str, int]] = {}
     latencies = []
+    invalid_pairs = []
+    transcript_statuses: dict[str, int] = {}
+    known_prompts = _known_prompts()
 
     for key, pred_data, ref_data in records:
-        pred_v = pred_data.get("verdict", {})
-        ref_v = ref_data.get("verdict", {})
+        pred_v, pred_error = _validated_verdict(pred_data, known_prompts)
+        ref_v, ref_error = _validated_verdict(ref_data, known_prompts)
+        if pred_error or ref_error:
+            invalid_pairs.append({"key": key, "prediction_error": pred_error, "reference_error": ref_error})
+            continue
 
         pred_dec = pred_v.get("decision", "uncertain")
         ref_dec = ref_v.get("decision", "uncertain")
@@ -88,7 +114,19 @@ def main() -> int:
             else:
                 fp += 1  # False Reject (over-rejection)
 
-    total = len(matched_keys)
+        ref_transcript = ref_v.get("transcript")
+        pred_transcript = pred_v.get("transcript")
+        if isinstance(ref_transcript, str) and ref_transcript:
+            transcript_status = (
+                "missing_prediction"
+                if not isinstance(pred_transcript, str) or not pred_transcript
+                else "exact_match"
+                if pred_transcript == ref_transcript
+                else "different"
+            )
+            transcript_statuses[transcript_status] = transcript_statuses.get(transcript_status, 0) + 1
+
+    total = tp + fp + tn + fn
     accuracy = (tp + tn) / total if total > 0 else 0.0
     reject_precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
     reject_recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
@@ -100,8 +138,11 @@ def main() -> int:
     p95_latency = latencies[int(len(latencies) * 0.95)] if latencies else 0.0
 
     summary = {
+        "schema_version": 1,
         "title": args.title,
-        "total_clips": total,
+        "matched_clips": len(matched_keys),
+        "evaluated_clips": total,
+        "invalid_pairs": invalid_pairs,
         "metrics": {
             "accuracy": round(accuracy, 4),
             "reject_precision": round(reject_precision, 4),
@@ -120,6 +161,13 @@ def main() -> int:
             "p50_s": round(p50_latency, 3),
             "p95_s": round(p95_latency, 3),
         },
+        "transcripts": {
+            "reference_available": sum(transcript_statuses.values()),
+            "statuses": transcript_statuses,
+            "exact_match_rate": round(
+                transcript_statuses.get("exact_match", 0) / sum(transcript_statuses.values()), 4
+            ) if transcript_statuses else None,
+        },
         "reasons_breakdown": reasons_breakdown,
         "predictions_dir": str(args.predictions_dir),
         "reference_dir": str(args.reference_dir),
@@ -133,7 +181,7 @@ def main() -> int:
     # Print clean readable report to stderr
     report = [
         f"\n=== {args.title} ===",
-        f"Evaluated: {total} matched clips",
+        f"Evaluated: {total}/{len(matched_keys)} matched clips ({len(invalid_pairs)} invalid pairs excluded)",
         f"Accuracy:                 {accuracy * 100:.2f}%",
         f"Defect Recall (Caught):   {reject_recall * 100:.2f}% ({tp}/{tp + fn})",
         f"Bad Accepts (Missed):     {fn}/{tp + fn}",

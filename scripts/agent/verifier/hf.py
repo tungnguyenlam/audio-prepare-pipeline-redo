@@ -37,7 +37,7 @@ def main() -> int:
         "agent/verifier",
         "hf",
     )
-    command.add_argument("--prompt-file", type=Path, help="Optional prompt file; defaults to acoustic defect prompt")
+    command.add_argument("--prompt-file", type=Path, help="Prompt file (default: prompts/acoustic_defect-3.txt)")
     command.add_argument("--model-id", default="google/gemma-4-E2B-it", help="Hugging Face model repository ID")
     command.add_argument("--device", default="auto", help='Inference device ("auto", "cpu", "cuda", or "hip")')
     command.add_argument("--adapter-path", help="Optional LoRA adapter checkpoint directory")

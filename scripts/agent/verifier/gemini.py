@@ -90,7 +90,7 @@ def main() -> int:
         "agent/verifier",
         "gemini",
     )
-    command.add_argument("--prompt-file", type=Path, help="Path to prompt text file")
+    command.add_argument("--prompt-file", type=Path, help="Prompt text file (default: prompts/acoustic_defect-3.txt)")
     command.add_argument("--model", default="gemini-3.8-flash", help="Gemini model name")
     command.add_argument(
         "--reasoning-effort",

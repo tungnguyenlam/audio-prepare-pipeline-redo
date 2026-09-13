@@ -71,10 +71,10 @@ Key flags only; run `-h` for the full list. All commands also accept
 | Agent | `agent/gemini` | `--prompt-file` (required), `--system-prompt-file`, `--model` (gemini-3.8-flash), `--reasoning-effort` (medium), `--inference-mode` (batch), `--max-tokens`, `--temperature`, `--top-p/-k`, `--batch-timeout-s` | `<stem>_gemini.txt` + `.json` |
 | | `agent/endpoint` | `--prompt-file`, `--endpoint`, `--model`, `--timeout-s`, `--max-tokens`, `--temperature` | `<stem>_endpoint.txt` + `.json` |
 | | `agent/hf` | `--prompt-file`, `--model-id`, `--device`, `--adapter-path`, `--load-in-4bit/-8bit` | `<stem>_hf.txt` + `.json` |
-| Verifier | `agent/verifier/gemini` | as `agent/gemini`; `--prompt-file` optional (default `prompts/acoustic_defect.txt`) | `.txt` + verdict `.json` |
-| | `agent/verifier/hf`, `endpoint`, `unsloth`, `vllm`, `moss`, `minicpm`, `kimi` | `--prompt-file` (optional) plus backend options (`--model-id`/`--model`, `--endpoint`, `--device`, `--adapter-path`, `--gguf-variant`, `--dtype`, …) | `.txt` + verdict `.json` |
+| Verifier | `agent/verifier/gemini` | as `agent/gemini`; `--prompt-file` optional (default `prompts/acoustic_defect-3.txt`) | `.txt` + verdict/transcript `.json` |
+| | `agent/verifier/hf`, `endpoint`, `unsloth`, `vllm`, `moss`, `minicpm`, `kimi` | `--prompt-file` (optional) plus backend options (`--model-id`/`--model`, `--endpoint`, `--device`, `--adapter-path`, `--gguf-variant`, `--dtype`, …) | `.txt` + verdict/transcript `.json` |
 | | `agent/verifier/vibevoice` | `--model-id`, `--device`, `--max-new-tokens`, `--min-secondary-speech-s` | `.txt` + speaker-count verdict `.json` |
-| | `agent/verifier/analysis` (`analyze` alias) | `--input-dir` (`--verdict-dir` alias), `--input-manifest`, `--manifest-dir`, `--output-dir` | `<input-dir>/plot/` |
+| | `agent/verifier/analysis` (`analyze` alias) | `--input-dir` (`--verdict-dir` alias), `--input-manifest`, `--manifest-dir`, `--output-dir` | `<input-dir>/plot/` with transcript CSV/statistics |
 | | `agent/verifier/compare` | `--reference-dir`, `--candidates-dir` (repeatable), `--output-dir`, `--title`, `--no-plots` | comparison directory |
 | | `agent/verifier/evaluate_verifier` | `--predictions-dir`, `--reference-dir`, `--output-file`, `--title` | accuracy / reject recall / F1 / FRR / latency JSON |
 | | `agent/verifier/scaffold_experiment` | `--name` | `.data/agent/verifier/experiments/<name>/` |
