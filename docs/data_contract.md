@@ -1,320 +1,203 @@
-# Data & File Contract (Master Gateway)
+# Data and file contract
 
-[← Docs Index](README.md) | [CLI Contract Gateway →](api_contract.md) | [Command Cookbook →](../scripts/COMMANDS.md)
+[← Index](README.md) · [CLI contract](cli_contract.md) · [Cookbook](commands.md)
 
-All public pipeline data is file-backed. Objects in memory are not passed across
-commands. Commands communicate exclusively through WAV files, sibling JSON sidecars,
-and segment manifests.
+Commands exchange data only through WAV files, sibling JSON sidecars, and JSON
+manifests. Every JSON artifact is written atomically (temp file + rename).
 
-## 0. Audio Family & Standard Naming Contract
+## 1. Audio sidecar (`recording.wav` → `recording.json`)
 
-Audio files ingested via download or pipeline inception establish a canonical **Audio Family**:
-- **Downloaded audio filename:** `{video_id}_{safe_title_10}-{sample_rate}.wav` (e.g. `dQw4w9WgXcQ_Never-Gonn-48000.wav`)
-- **Audio Family Key:** `{video_id}_{safe_title_10}`
-- **Dynamic per-family output routing:** Downstream pipeline stages infer this family key from the input filename or its sibling `.json` sidecar, dynamically directing default outputs into `.data/<operation>/[<model>/]<family>/`:
-  - Download: `.data/download/<family>/`
-  - Separation: `.data/separate/<model>/<family>/`
-  - Diarization: `.data/diarize/<model>/<family>/segments.json` (and turn clips)
-  - Speaker / Purity: `.data/<operation>/<stage>/<family>/segments.json`
-  - Agent exploration: `.data/agent/<backend>/<family>/`
-  - Hardened verification: `.data/agent/verifier/<backend>/<family>/`
-
-## 1. Audio Sidecar Contract (`recording.json`)
-
-Commands producing single audio files (`youtube.py`, `convert.py`, `cut.py`,
-`htdemucs.py`, `bs_roformer.py`, `mel_roformer.py`, `mvsep_mdx23.py`) write a
-sibling `.json` file (`recording.wav` -> `recording.json`):
+Written by `download/*`, `audio/{convert,cut}`, `separate/*` (and, with a
+non-audio `output`, by `compare_*`, `evaluate/*`, `mix`). An incomplete record
+(`"output": {}`) is installed before the audio and replaced afterwards, so an
+interrupted write is recognizable and retried.
 
 ```json
 {
   "schema_version": 1,
-  "source": {
-    "path": "/absolute/path/to/source.wav",
-    "sha256": "abcdef...",
-    "video_id": "optional_yt_id",
-    "title": "optional_yt_title",
-    "origin": {}
-  },
+  "source": {"path": "/abs/source.wav", "sha256": "…", "origin": {"video_id": "…", "title": "…", "url": "…"}},
   "operation": "separate",
   "model": "htdemucs_ft",
-  "parameters": {
-    "sample_rate": 48000,
-    "channels": 1,
-    "stem": "vocals",
-    "device": "cpu"
-  },
-  "output": {
-    "sample_rate": 48000,
-    "channels": 1,
-    "frames": 240000,
-    "duration_s": 5.0,
-    "format": "wav",
-    "sha256": "123456..."
-  }
+  "parameters": {"stem": "vocals", "device": "cpu", "sample_rate": 48000, "channels": 1},
+  "output": {"sample_rate": 48000, "channels": 1, "frames": 240000, "duration_s": 5.0, "format": "WAV", "sha256": "…"}
 }
 ```
 
-## 2. Diarization Manifest Contract (`segments.json`)
+- Download sources carry `video_id`, `title`, `url` directly in `source`.
+- Local sources carry absolute `path` + `sha256`; when a verified prior sidecar
+  exists its `source` is copied into `source.origin` (this is how the audio family
+  propagates).
+- Skip / retry / conflict decisions compare `source`, `operation`, `model`,
+  `parameters` and the output hash (see [CLI contract](cli_contract.md)).
 
-Diarization engines produce a directory containing `segments.json` and turn WAV clips:
+## 2. Diarization manifest (`<stem>/segments.json`)
 
 ```text
-example_htdemucs_ft/
+<output-dir>/<safe stem>/
   segments.json
-  example_htdemucs_ft_sortformer_spk00_000012340-000018920_0001.wav
+  <stem>_<model>_<speaker>_<start_ms:09d>-<end_ms:09d>_<index:04d>.wav
 ```
-
-### Manifest Schema:
 
 ```json
 {
   "schema_version": 1,
-  "source": {
-    "path": "/absolute/path/to/example.wav",
-    "sha256": "abcdef..."
-  },
-  "timestamp_origin": "diarized_input",
+  "source": {"path": "/abs/input.wav", "sha256": "…"},
+  "operation": "diarize",
   "model": "sortformer",
-  "parameters": {
-    "sample_rate": 48000,
-    "channels": 1
-  },
-  "turns": [
-    {
-      "speaker_id": "spk00",
-      "start_s": 12.34,
-      "end_s": 18.92,
-      "start_sample": 544194,
-      "end_sample": 834372,
-      "overlap": false,
-      "overlap_with": [],
-      "clip": "example_sortformer_spk00_000012340-000018920_0001.wav",
-      "clip_sha256": "fedcba...",
-      "clip_frames": 290178
-    }
-  ],
-  "speaker_ids": ["spk00"],
+  "parameters": {"device": "cuda:0", "min_duration_s": 2.0, "max_duration_s": 15.0, "…": "…"},
+  "timestamp_origin": "diarized_input",
   "source_sample_rate": 48000,
+  "sample_rate": 48000,
+  "channels": 1,
+  "speaker_ids": ["spk00", "spk01"],
+  "turns": [
+    {"speaker_id": "spk00", "start_s": 12.34, "end_s": 18.92,
+     "start_sample": 592320, "end_sample": 908160,
+     "overlap": false, "overlap_with": [],
+     "clip": "input_sortformer_spk00_000012340-000018920_0001.wav",
+     "clip_sha256": "…", "clip_frames": 315840}
+  ],
   "complete": true
 }
 ```
 
-- Sample intervals are half-open (`[start_sample, end_sample)`).
-- Timestamps in filenames are millisecond labels for display; the manifest records precise sample indices.
-- Clip paths are relative to `segments.json`.
-- `complete: true` is written atomically last.
+- `model` is one of `sortformer`, `pyannote_community1`, `pyannote_31`,
+  `clustering`, `threed_speaker`, `diarizen`.
+- Sample intervals are half-open and expressed at `source_sample_rate`; `start_s`
+  / `end_s` are derived from them. Millisecond labels in filenames are display only.
+- `overlap_with` holds zero-based indices into `turns`. Turns are sorted by start.
+- Clip paths are relative to the manifest. An empty `turns` array means no speech
+  survived the duration filter. `complete: true` is written last; a manifest is
+  reused only when every clip exists with a matching `clip_sha256`.
+- `audio/export_segments.py` re-renders any manifest with this shape and rewrites
+  it (with fresh `clip*` fields) in the chosen output directory.
 
-## 3. Purity Manifest Contract
+## 3. Purity and speaker manifests
 
-Purity stages (`consensus.py`, `cleanup.py`, `collar.py`, `snap.py`, `align.py`, `segment.py`)
-consume an input manifest and write a new output manifest. When boundaries are altered,
-previous clip references are invalidated (`clips_valid: false`). `scripts/audio/export_segments.py`
-renders the updated clips into a specified directory.
+`purity/{consensus,cleanup,collar,snap,align,segment}` and
+`speaker/{score,filter,purity}` read a manifest and write a new one (defaults:
+`.data/purity/<stage>/<family>/segments.json`, `.data/speaker/<stage>/<family>/segments.json`).
+They keep the diarization shape with these differences:
 
-## 4. Speaker Profile Contract (`profile.json`)
+- `operation` names the stage (`consensus`, `cleanup`, `collar`, …); `model` is
+  inherited; `parameters` gains `input_manifest` identity plus the stage flags.
+- Boundaries are re-normalized against the source audio; `clip`, `clip_sha256`,
+  `clip_frames` are dropped and `clips_valid: false` is set. Render clips with
+  `audio/export_segments.py`.
+- Each turn keeps `confidence` (may be `null`) and any stage-specific fields
+  (e.g. similarity scores from `speaker/score`, decisions from `speaker/purity`).
 
-Enrolled speakers live under `.data/speaker_profiles/<name>/`:
-
-```text
-.data/speaker_profiles/khanh_vy/
-  profile.json
-  clips/
-    clip_00.wav
-    clip_01.wav
-```
-
-### Profile Schema:
+## 4. Speaker profile (`.data/speaker_profiles/<slug>/profile.json`)
 
 ```json
-{
-  "schema_version": "2.0",
-  "name": "khanh_vy",
-  "created_at": "2026-09-09T00:00:00Z",
-  "updated_at": "2026-09-09T00:00:00Z",
-  "clips": [
-    "clip_00.wav",
-    "clip_01.wav"
-  ],
-  "channel_id": null,
-  "channel_name": null,
-  "channel_url": null
-}
+{"schema_version": "2.0", "name": "khanh_vy",
+ "created_at": "2026-09-09T00:00:00Z", "updated_at": "2026-09-09T00:00:00Z",
+ "clips": ["clip_00.wav", "clip_01.wav"],
+ "channel_id": null, "channel_name": null, "channel_url": null}
 ```
 
-## 5. Agent Response Pair Contract
+Reference clips are copied to `clips/clip_NN.wav`; `--add` appends, `--overwrite` replaces.
 
-Raw agent commands (`scripts/agent/{gemini,endpoint,hf}.sh`) produce two sibling
-files for every input. `<stem>_<backend>.txt` contains the exact unparsed model
-text. `<stem>_<backend>.json` records source identity, prompts, generation
-parameters, provider response details, and the text artifact path, byte count,
-and SHA-256 digest. Non-Gemini pairs default under
-`.data/agent/<backend>/<family>/`; Gemini pairs default under
-`.data/agent/gemini/<model>/<reasoning-effort>/<family>/`. Both files must
-exist for artifact cache reuse.
+## 5. Agent response pair (`scripts/agent/*`)
 
-## 6. Verification Verdict Contract
+Each input yields `<stem>_<backend>.txt` (exact model text, may be empty) and
+`<stem>_<backend>.json` (source identity, prompts, generation settings, provider
+response details, latency, usage/cost when available, and the text file's path,
+byte count and SHA-256). The text is written first. A cached pair is reused only
+when both files exist and metadata + text digest match. `.json` is reserved for
+metadata, so `--output-file result.json` is rejected.
 
-Verifier commands under `scripts/agent/verifier/` produce a sibling response
-text and verdict JSON pair for each model response. Non-Gemini defaults live
-under `.data/agent/verifier/<backend>/<family>/`; Gemini separates variants at
-`.data/agent/verifier/gemini/<model>/<reasoning-effort>/<family>/`. The `.txt` file is the exact
-unparsed assistant response. The JSON records its path, byte count, and digest
-along with either `status: "success"` plus a verdict or `status: "fail"` plus a
-stable error stage/code. A request failure with no model response writes only
-the failed JSON artifact. Older verdict JSON without `status` or `response`
-remains readable as a legacy result.
+Defaults: `.data/agent/<backend>/<family>/`;
+Gemini: `.data/agent/gemini/<model>/<reasoning-effort>/<family>/`.
+Gemini Batch state lives under the variant's `work/batch_jobs/` for resume.
+
+## 6. Verifier verdict (`scripts/agent/verifier/*`)
+
+Same pair layout under `.data/agent/verifier/…`. The JSON adds `status` and
+either a validated `verdict` or an `error`:
 
 ```json
 {
   "schema_version": 1,
-  "source": {
-    "path": "/path/to/clip.wav",
-    "sha256": "..."
-  },
+  "source": {"path": "/abs/clip.wav", "sha256": "…"},
   "operation": "verify",
   "model": "google/gemma-4-E2B-it",
-  "parameters": {
-    "device": "cuda:0"
-  },
+  "parameters": {"device": "cuda:0", "prompt": "…"},
   "status": "success",
-  "response": {
-    "path": "/path/to/clip_hf.txt",
-    "format": "utf-8 text",
-    "kind": "text",
-    "bytes": 194,
-    "sha256": "..."
-  },
+  "response": {"path": "/abs/clip_hf.txt", "format": "utf-8 text", "kind": "text", "bytes": 194, "sha256": "…"},
   "verdict": {
-    "decision": "pass",
-    "reason": "single_speaker_clean",
-    "confidence": 0.95,
-    "_latency_s": 0.32,
-    "_inference_mode": "batch",
-    "_batch_job": "batches/123456",
-    "_response_id": "provider-response-id",
-    "_usage": {"prompt_tokens": 318, "cached_input_tokens": 0},
-    "_cost": {"pricing_tier": "paid_batch", "total_usd": 0.00042}
+    "decision": "reject",
+    "speaker_purity": "pure",
+    "word_completeness": "clipped_word_end",
+    "audio_quality": "studio_clean",
+    "failure_codes": ["clipped_word_end"],
+    "reason": "…",
+    "_latency_s": 0.32, "_inference_mode": "batch", "_batch_job": "batches/123",
+    "_response_id": "…", "_usage": {"prompt_tokens": 318}, "_cost": {"pricing_tier": "paid_batch", "total_usd": 0.00042}
   }
 }
 ```
 
-Failed response example:
+Failure: `"status": "fail"`, `"error": {"stage": "generation|parse|schema", "code": "…"}`;
+a request failure with no model text writes only the JSON. Legacy verdict-only
+JSON (no `status`/`response`) is still readable by the analyzer and comparator.
 
-```json
-{
-  "schema_version": 1,
-  "source": {"path": "/path/to/clip.wav", "sha256": "..."},
-  "operation": "verify",
-  "model": "gemini",
-  "parameters": {"prompt": "..."},
-  "status": "fail",
-  "response": {"path": "/path/to/clip_gemini.txt", "sha256": "..."},
-  "error": {"stage": "parse", "code": "invalid_json"}
-}
-```
+Validation profile is selected by the prompt text (`scripts/agent/verifier/_verdicts.py`):
 
-## 7. Verifier Analysis Contract
+| Profile | Selected when prompt equals | Required fields and consistency |
+|---|---|---|
+| `acoustic_defect_v1` | `prompts/acoustic_defect.txt` | `speaker_purity` ∈ pure/secondary_speaker/overlapping_speech; `word_completeness` ∈ complete/clipped_word_start/clipped_word_end; `audio_quality` ∈ studio_clean/music_bleed/noisy_reverberant/distorted; `failure_codes` = exactly the non-clean values; `decision` = pass iff no codes |
+| `speaker_purity_v1` | `prompts/speaker_purity.txt` | `speaker_purity`; pass iff `pure` |
+| `word_boundary_v1` | `prompts/word_boundary.txt` | `boundary_start`, `boundary_end` ∈ clean/clipped; pass iff both clean |
+| `vibevoice_v1` | VibeVoice backend (no prompt) | `decision` ∈ pass/reject/uncertain, `num_speakers`, `secondary_speech_s`, `dominant_speaker_id`; `uncertain` is excluded from pass/reject metrics |
+| `custom` | any other prompt | only `decision` ∈ pass/reject |
 
-`scripts/agent/verifier/analysis.sh --input-dir DIR` reads verifier JSON artifacts
-and optional diarization manifests. `analyze.sh --verdict-dir DIR` remains an alias.
-Its default destination is `<input-dir>/plot/`, refreshed automatically on reruns:
+## 7. Verifier analysis (`analysis.sh --input-dir DIR` → `DIR/plot/`)
 
 ```text
 plot/
-  analysis.json
-  all_samples.csv
-  successful_samples.csv
-  report.md                  # model parameters, statistics and linked error cases
-  error_cases.csv            # one clip/category row, with raw response
-  error_stats.csv            # counts/rates by model configuration and category
-  coverage.png
-  decisions.png
-  defects.png
-  dimensions.png              # when dimension columns are available
-  measurements.png            # available latency/confidence/speaker measurements
-  processing_errors.png       # when processing failures or missing artifacts exist
-  by_model.png                # when multiple model configurations are discovered
-  by_speaker.png              # when a diarization manifest is available
-  timeline.png                # one or more, when turn timestamps are available
+  analysis.json           coverage, decisions, durations, model/prompt groups, failure codes, model_stats, error_stats, CSV digests, plot list
+  all_samples.csv         every expected turn (from manifests) + every artifact, even unmatched/invalid
+  successful_samples.csv  subset with a schema-valid pass/reject
+  report.md               model configuration, statistics, linked error cases
+  error_cases.csv         model_id, model, kind, category, family, audio_path, verdict_file, decision, reason, failure_stage, assistant_raw_response
+  error_stats.csv         model_id, model, kind, category, count, denominator, rate
+  coverage.png decisions.png defects.png
+  dimensions.png measurements.png processing_errors.png by_model.png by_speaker.png timeline*.png   (when applicable)
 ```
 
-`all_samples.csv` contains every expected diarization turn and any unmatched
-verifier artifact. `successful_samples.csv` is the subset with a schema-valid
-`pass` or `reject` result; "successful" describes verification completion, not
-acceptance. Both files use the same column order, beginning with `audio_path`,
-`final_verdict`, and `assistant_raw_response`. Known verdict fields, scalar
-status flags, timing/provenance fields, and one column per standard failure code
-are promoted for direct dataframe use. Nested or custom values remain lossless
-in `*_json` columns. Invalid and missing results have a blank final verdict and
-are never counted as rejects.
+Both CSVs share a column order beginning `audio_path, final_verdict,
+assistant_raw_response`; nested values remain in `*_json` columns. Invalid or
+missing results have a blank `final_verdict` and are never counted as rejects.
+`kind` separates `acoustic` labels from `processing` failures; acoustic rates use
+valid artifacts, processing rates use all artifacts of that model group. Rerunning
+refreshes `plot/` and deletes PNGs it previously recorded.
 
-Plots are generated by reading these two CSV files back from disk. Individual
-malformed, schema-invalid, unmatched, or missing verifier results produce a
-partial report instead of aborting analysis. `analysis.json` records coverage,
-decision and duration summaries, prompt/backend/model groups, stable failure
-codes, CSV digests, and plot paths. It also contains `model_stats`, `error_stats`,
-`error_cases_csv`, `error_stats_csv`, and `report_md`. `error_cases.csv` has
-`model_id`, `model`, `kind`, `category`, `family`, `audio_path`, `verdict_file`,
-`decision`, `reason`, `failure_stage`, and `assistant_raw_response`.
-`error_stats.csv` has `model_id`, `model`, `kind`, `category`, `count`,
-`denominator`, and `rate` (`null` in JSON / blank CSV for zero denominator).
-`kind` separates `acoustic` model labels from `processing` failures. Acoustic
-rates use valid artifacts in the model group; processing rates use all its
-artifacts. Multiple defect labels can count one clip in multiple categories.
-Rejects without acoustic labels use `reject_without_defect_code`.
+## 8. Verifier comparison (`compare.sh` → `.data/agent/verifier/comparisons/<utc>-<hash>/`)
 
-Figures summarize the supplied directory; error statistics are grouped by backend,
-model and recorded configuration. Pick one model/effort directory to analyze that
-variant alone. Without an available manifest, expected coverage excludes inputs
-that never produced any artifact. Legacy verdict-only JSON and copied sibling raw
-response files are supported. Work directories and generated plots are not inputs.
+| File | Contents |
+|---|---|
+| `summary.json` | `schema_version: 2`; `reference` / `candidates` inventories (incl. `unmatched_artifacts`, `extra_clips`), `families`, per-family `summaries`, `global_summaries` with `matched_clips`, `reference_valid`, `coverage`, status `counts`, `overall`, `confusion_matrix`, `latency`, `per_criterion` |
+| `pairs.csv` | one row per reference clip per candidate: `candidate`, `family`, `key`, `status`, decisions, defect codes, reasons, JSON and audio paths |
+| `conflicts.csv`, `conflicts.md` | rows with status `bad_accept`, `false_reject`, `code_mismatch` |
+| `report.md` | aggregate metrics and caveats |
+| `plots/candidate_<i>_defects.png` | caught/missed defect counts (unless `--no-plots`) |
 
-### Verifier comparison artifacts
+`status` ∈ `agree`, `bad_accept`, `false_reject`, `code_mismatch`,
+`invalid_reference`, `missing_candidate`, `invalid_candidate`, `audio_mismatch`;
+only the first four enter metrics. Zero denominators are `null`.
 
-`compare.sh --reference-dir REF --candidates-dir CAND` compares saved JSON
-artifacts recursively, with one run per candidate argument. It supports all verifier
-backend suffixes and legacy verdict-only JSON. See
-[the comparator guide](../scripts/agent/verifier/README.md#compare-saved-verifier-runs)
-for directory matching and migration from implicit global discovery.
-
-The default destination is a fresh directory under
-`.data/agent/verifier/comparisons/<UTC-timestamp>-<selection-hash>/`.
-`summary.json` has `schema_version: 2`, `reference` and `candidates` inventories,
-`families`, per-family `summaries`, and aggregate `global_summaries`. Each summary
-records `matched_clips`, `reference_valid`, `coverage`, status `counts`, `overall`
-metrics, `confusion_matrix`, `latency` (including sample count) and `per_criterion`.
-Zero-denominator rates and unavailable latency are JSON `null`.
-
-`pairs.csv` has one row per reference clip per candidate, with `candidate`,
-`family`, `key`, `status`, decisions, defect codes, reasons, JSON paths and audio
-path. Status is one of `agree`, `bad_accept`, `false_reject`, `code_mismatch`,
-`invalid_reference`, `missing_candidate`, `invalid_candidate`, or `audio_mismatch`.
-Only the first four enter decision metrics. When both source hashes are recorded,
-different hashes exclude a pair. Candidate-only keys and their paths are listed
-in each candidate inventory's `unmatched_artifacts`, with `extra_clips` counts.
-
-`conflicts.csv` shares the pair columns and includes the three disagreement
-statuses. `conflicts.md` adds readable reasons and audio links; `report.md` gives
-aggregate metrics and caveats. Optional `plots/candidate_<index>_defects.png`
-shows observed caught/missed counts in candidate argument order. Comparisons do
-not require audio or response TXT files to be present. Reference and candidates
-must be disjoint; output must be outside their trees and new or empty. Every
-candidate must have at least one valid pair before report creation. Missing or
-invalid results reduce coverage and are not interpreted as model rejects.
-
-## 8. Evaluation Metrics Contract
-
-Evaluation commands output metrics JSON with complete source provenance:
+## 9. Evaluation metrics
 
 ```json
-{
-  "schema_version": 1,
-  "operation": "separation_metrics",
-  "source": [...],
-  "parameters": {"sample_rate": 48000},
-  "metrics": {
-    "si_sdr_db": 14.82,
-    "sdr_db": 15.11
-  }
-}
+{"schema_version": 1, "operation": "separation_metrics", "source": {"…": "…"}, "parameters": {"…": "…"},
+ "metrics": {"si_sdr_db": 14.82, "scored_samples": 4800000, "mixture_si_sdr_db": 3.1, "si_sdri_db": 11.72}}
 ```
+
+`evaluate/diarization` (`operation: "diarization_metrics"`) metrics: `der_pct`, `jer_pct`, `missed_speech_s`,
+`false_alarm_s`, `speaker_confusion_s`, `correct_speaker_s`, `reference_speaker_s`,
+`hypothesis_speaker_s`, `scored_audio_s`, `collar_s`, `skip_overlap`,
+`speaker_mapping` (Hungarian assignment).
+
+`mix/mix` writes `mixture.wav`, `speech_reference.wav`, `music_reference.wav`
+plus sidecars into `--output-dir`.

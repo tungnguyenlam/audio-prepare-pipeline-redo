@@ -1,0 +1,96 @@
+# Agent generation and hardened verifiers
+
+[← Index](README.md) · [Data contract §5–8](data_contract.md#5-agent-response-pair-scriptsagent) · [Cookbook](commands.md#agent-generation-and-verification)
+
+`scripts/agent/` sends a user-owned prompt plus one audio clip to an audio-capable
+model and preserves the unparsed answer. `scripts/agent/verifier/` reuses the same
+generation clients, requests JSON, parses it, and enforces a pass/reject verdict
+schema. Neither directory orchestrates other pipeline stages.
+
+## Raw generation (`scripts/agent/{gemini,endpoint,hf}.sh`)
+
+| Backend | Transport | Notes |
+|---|---|---|
+| `gemini` | Google Gemini API | Batch API by default (`--inference-mode batch`, ≤ `--batch-size 10` requests per job, split further under the 20 MB inline limit, polled up to `--batch-timeout-s 86400`); `--inference-mode standard` for synchronous calls. Default `--model gemini-3.8-flash --reasoning-effort medium` (`none/low/medium/high` → `thinkingLevel`). Needs `GEMINI_API_KEY`. |
+| `endpoint` | OpenAI-compatible `/v1/chat/completions` | Served vLLM, Unsloth, etc. Optional `OPENAI_API_KEY`. |
+| `hf` | Local `transformers` model | `--model-id`, `--adapter-path` (LoRA), `--load-in-4bit/-8bit`, `--device`. |
+
+- `--prompt-file` is required; `--system-prompt-file` is optional. The user message
+  places the prompt before the audio.
+- Output is the pair `<stem>_<backend>.txt` + `.json` described in the
+  [data contract](data_contract.md#5-agent-response-pair-scriptsagent). No parsing
+  is applied: the text may be prose, JSON, XML, a transcript, or anything the prompt
+  asked for.
+- Interrupted Gemini Batch runs resume from `work/batch_jobs/` when re-invoked with
+  identical arguments; `--overwrite` submits a fresh job.
+
+## Hardened verifiers (`scripts/agent/verifier/*.sh`)
+
+| Backend | Environment | Model / options |
+|---|---|---|
+| `gemini` | `.venvs/verify` | as above; adds `_usage`, `_cost` (`paid_batch` / `paid_standard`) |
+| `hf` | `.venvs/verify` | Gemma 4 E2B / E4B / 12B or any HF audio LLM, optional LoRA adapter |
+| `endpoint` | `.venvs/verify` | any OpenAI-compatible server |
+| `unsloth` | `.venvs/verify` | Unsloth Studio (`--model`, `--gguf-variant`, `--payload-mode`, `UNSLOTH_*` env) |
+| `vllm` | `.venvs/vllm` | offline vLLM engine (`--dtype`, `--tensor-parallel-size`, …) or `--endpoint` server |
+| `moss` | `.venvs/moss` | MOSS-Audio (`--model-id`, `--torch-dtype`, `--trust-remote-code`) |
+| `minicpm` | `.venvs/minicpmo` | MiniCPM-o (Python 3.11 env) |
+| `kimi` | `.venvs/kimi` | Kimi-Audio (Python 3.11 env) |
+| `vibevoice` | `.venvs/vibevoice` | VibeVoice-ASR speaker counting; `--min-secondary-speech-s` separates `reject` from `uncertain` |
+
+- `--prompt-file` defaults to `prompts/acoustic_defect.txt`. The prompt text selects
+  the validation profile (`acoustic_defect_v1`, `speaker_purity_v1`,
+  `word_boundary_v1`, or `custom`) — see
+  [data contract §6](data_contract.md#6-verifier-verdict-scriptsagentverifier).
+- Generation, parse, or schema failure is recorded per input
+  (`status: "fail"`, `error.stage`) and never stops later inputs.
+- Verifiers write verdicts only; they never move or delete audio.
+
+Prompts in `prompts/`: `acoustic_defect.txt` (3-dimension rubric, default),
+`acoustic_defect-2.txt`, `speaker_purity.txt`, `word_boundary.txt`, plus
+free-form transcript/description prompts (`prompt-transcripts-*.txt`,
+`vi-prompt-alam*.txt`) intended for `scripts/agent/`.
+
+## Offline tools (no model calls)
+
+### `analysis.sh --input-dir DIR` (alias `analyze.sh --verdict-dir DIR`)
+
+Reads every verifier JSON under `DIR` recursively (skipping `work/`, `plot*/`,
+`comparisons/`, `experiments/`, hidden dirs), joins diarization manifests found
+beside the recorded source audio (or given via `--input-manifest` /
+`--manifest-dir`), and writes `DIR/plot/` — see
+[data contract §7](data_contract.md#7-verifier-analysis-analysissh---input-dir-dir--dirplot).
+Start with `plot/report.md`. Point it at one model/effort directory for
+single-variant figures; a directory with several configurations still gets
+per-model statistics and `by_model.png`. Rerunning refreshes `plot/`; a nonempty
+custom `--output-dir` needs `--overwrite`. Detected defects are model labels, not
+errors against a reference.
+
+### `compare.sh --reference-dir REF --candidates-dir CAND [...]`
+
+Compares saved runs. Each `--candidates-dir` is one candidate; the reference is
+whatever you choose, not an implied teacher. Inputs may be a flat directory of
+verdict JSON or a run root with family subdirectories; a flat reference matches the
+same family name under a candidate root (`medium/example` ↔ `low` finds
+`low/example`). Clip keys are filename stems minus the backend suffix; recorded
+source SHA-256 values must agree when both exist. Only reference clips define
+scope; failed, uncertain, invalid, missing or hash-mismatched pairs are reported but
+excluded from metrics. Output goes to a new directory under
+`.data/agent/verifier/comparisons/` (or an empty `--output-dir` outside all inputs);
+files are listed in [data contract §8](data_contract.md#8-verifier-comparison-comparesh--dataagentverifiercomparisonsutc-hash).
+Exit code 2 on missing inputs, no valid reference, duplicate keys, or a candidate
+with zero valid matches.
+
+### `evaluate_verifier.sh --predictions-dir P --reference-dir R --output-file F`
+
+Pairs verdict JSON files in two flat directories by clip stem (suffixes `_hf`,
+`_gemini`, `_vllm`, `_unsloth`, `_endpoint` stripped) and reports accuracy, reject
+precision/recall/F1, false-rejection rate and latency percentiles as JSON. Use
+`compare.sh` for family trees, other backends, and defect-level disagreement.
+
+### `scaffold_experiment.sh --name NAME`
+
+Creates an empty verifier-development workspace
+`.data/agent/verifier/experiments/NAME/` (`experiment.json`, `templates.json`,
+`manifests/*.jsonl`, `audio/`, `reports/`, `checkpoints/`). It refuses an existing
+target and performs no model or data operations.

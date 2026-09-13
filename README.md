@@ -1,85 +1,65 @@
 # Audio Prepare Pipeline
 
-Standalone, file-backed audio processing commands for YouTube ingestion, stem
-separation, speaker diarization, speaker purity verification, and dataset curation.
+Standalone, file-backed commands (Python 3.13) for building Vietnamese speech
+datasets: download YouTube audio, separate vocal stems, diarize speakers, refine
+turn boundaries, verify clip purity with audio LLMs, and curate manifests.
 
-Each command performs one operation, accepts paths and flags, and writes file
-artifacts consumed by downstream commands. There is no implicit orchestration,
-background worker, or hidden queue.
+Each command does one thing, takes paths and flags, and writes files the next
+command reads. There is no orchestrator, background worker, or shared in-memory
+state — callers compose commands through `.data/` paths and JSON manifests.
 
 ## Quick start
 
 ```bash
-# Setup lightweight execution environment
-./envs/setup_worker_envs.sh audio
-# or manually:
-# uv venv --python 3.13 .venvs/audio
-# uv pip install --python .venvs/audio/bin/python -r envs/requirements-audio.txt
-
-# Inspect an audio file
-uv run python scripts/audio/info.py --input-file .data/source.wav
-
-# Download a video as mono WAV (48 kHz default)
-uv run python scripts/download/youtube.py --url 'https://www.youtube.com/watch?v=VIDEO' --output-dir .data/downloads
+./envs/setup_worker_envs.sh audio                       # lightweight env (.venvs/audio)
+bash scripts/download/youtube.sh --url 'https://www.youtube.com/watch?v=VIDEO'
+bash scripts/audio/info.sh --input-file .data/download/<family>/<file>.wav
 ```
 
-For detailed setup of model environments (Demucs, RoFormer, Pyannote, Sortformer,
-NeMo, 3D-Speaker, DiariZen, verifiers), see [Standalone Commands Reference](scripts/COMMANDS.md).
+Model environments (Demucs/RoFormer, Pyannote, Sortformer, 3D-Speaker, DiariZen,
+verifiers) are provisioned per target with the same script; see
+[docs/commands.md](docs/commands.md).
 
 ## Command groups
 
-| Group | Key commands | Launchers / Scripts |
-|---|---|---|
-| **Download** | Single video, playlist, channel | `scripts/download/{youtube,playlist,channel}.py` |
-| **Separation** | HTDemucs, HTDemucs FT, BS-RoFormer, Mel-RoFormer, MVSEP-MDX23 | `scripts/separate/{htdemucs,htdemucs_ft,bs_roformer,mel_roformer,mvsep_mdx23}.sh` |
-| **Diarization** | Pyannote 3.1 & Community-1, Sortformer, NeMo Clustering, 3D-Speaker, DiariZen | `scripts/diarize/{pyannote_31,pyannote_community1,sortformer,clustering,threed_speaker,diarizen}.sh` |
-| **Audio tools** | Metadata info, format conversion, cutting, segment clip export, waveform & spectrogram comparer plots | `scripts/audio/{info,convert,cut,export_segments,compare_waveforms,compare_spectrograms}.py` |
-| **Speaker ops** | Reference profile enrollment, turn scoring, threshold filtering, candidate sliding-window purity verification | `scripts/speaker/{enroll,score,filter,purity}.py` |
-| **Purity stages** | Diarizer consensus, turn cleanup, collar adjustment, acoustic boundary snapping, word alignment, duration segmentation | `scripts/purity/{consensus,cleanup,collar,snap,align,segment}.py` |
-| **Agent behaviors** | Raw Gemini, endpoint, and Hugging Face behavior development; hardened audio verification across all verifier backends | `scripts/agent/{gemini,endpoint,hf}.sh`, `scripts/agent/verifier/{hf,endpoint,unsloth,vllm,gemini,moss,minicpm,kimi,vibevoice}.sh` |
-| **Mix & eval** | SMR-controlled speech+music mixing, SI-SDR separation metrics, DER diarization metrics, Gantt & metrics plots | `scripts/mix/mix.py`, `scripts/evaluate/{separation,diarization,plot_diarization,plot_metrics}.py` |
-| **Dataset tools** | File-based directory indexing, duration/tag filtering, JSONL/CSV manifest export, ZIP bundling | `scripts/dataset/{index,filter,export,bundle}.py` |
+| Group | Commands |
+|---|---|
+| `scripts/download/` | `youtube`, `playlist`, `channel` |
+| `scripts/separate/` | `htdemucs`, `htdemucs_ft`, `bs_roformer`, `mel_roformer`, `mvsep_mdx23` |
+| `scripts/diarize/` | `sortformer`, `pyannote_community1`, `pyannote_31`, `clustering`, `threed_speaker`, `diarizen` |
+| `scripts/audio/` | `info`, `convert`, `cut`, `export_segments`, `compare_waveforms`, `compare_spectrograms` |
+| `scripts/speaker/` | `enroll`, `score`, `filter`, `purity` |
+| `scripts/purity/` | `consensus`, `cleanup`, `collar`, `snap`, `align`, `segment` |
+| `scripts/agent/` | raw audio-LLM generation: `gemini`, `endpoint`, `hf` |
+| `scripts/agent/verifier/` | pass/reject verifiers `gemini`, `hf`, `endpoint`, `unsloth`, `vllm`, `moss`, `minicpm`, `kimi`, `vibevoice`; offline `analysis`, `compare`, `evaluate_verifier`, `scaffold_experiment` |
+| `scripts/mix/`, `scripts/evaluate/` | `mix`; `separation`, `diarization`, `plot_diarization`, `plot_metrics` |
+| `scripts/dataset/` | `index`, `filter`, `export`, `bundle` |
+| `scripts/sync/` | rsync code/data to the model server and auxiliary hosts |
 
-## Typical operational workflow
+Every `.py` has a same-name `.sh` launcher that selects the right virtualenv.
 
-Commands compose through standard filesystem paths and manifest JSON files:
+## Typical flow
 
 ```bash
-# 1. Download YouTube source
-uv run python scripts/download/youtube.py \
-  --url "https://www.youtube.com/watch?v=EXAMPLE" \
-  --output-dir .data/downloads
-
-# 2. Separate vocal stem
-bash scripts/separate/htdemucs_ft.sh \
-  --input-file .data/downloads/example-48000.wav \
-  --output-dir .data/separated
-
-# 3. Diarize speaker turns (generates <stem>/segments.json + WAV clips)
-bash scripts/diarize/sortformer.sh \
-  --input-file .data/separated/example-48000_htdemucs_ft.wav \
-  --output-dir .data/turns
-
-# 4. Refine purity through independent stages
-uv run python scripts/purity/cleanup.py \
-  --input-manifest .data/turns/example-48000_htdemucs_ft/segments.json \
-  --output-manifest .data/purity/cleaned.json
-
-uv run python scripts/purity/collar.py \
-  --input-manifest .data/purity/cleaned.json \
-  --output-manifest .data/purity/collared.json
-
-# 5. Render finalized clips
-uv run python scripts/audio/export_segments.py \
-  --input-manifest .data/purity/collared.json \
-  --output-dir .data/clips/final
+bash scripts/download/youtube.sh     --url 'https://www.youtube.com/watch?v=VIDEO' --output-dir .data/dl
+bash scripts/separate/htdemucs_ft.sh --input-dir .data/dl --output-dir .data/sep
+bash scripts/diarize/sortformer.sh   --input-dir .data/sep --output-dir .data/turns      # <stem>/segments.json + clips
+bash scripts/purity/cleanup.sh       --input-manifest .data/turns/<stem>/segments.json --output-manifest .data/p/cleaned.json
+bash scripts/purity/collar.sh        --input-manifest .data/p/cleaned.json --output-manifest .data/p/collared.json
+bash scripts/audio/export_segments.sh --input-manifest .data/p/collared.json --output-dir .data/clips
+bash scripts/agent/verifier/gemini.sh --input-dir .data/clips                              # verdict JSON per clip
+bash scripts/agent/verifier/analysis.sh --input-dir .data/agent/verifier/gemini/gemini-3-8-flash/medium
 ```
 
-## CLI and file contracts
+## Conventions
 
-- `--input-file` takes precedence over `--input-dir`.
-- For single-output commands, `--output-file` is the exact destination path.
-- Diarizers output `<input-stem>/segments.json` plus turn clips.
-- Audio-producing commands write sibling JSON metadata (`.wav` → `.json`).
-- Manifest-editing purity stages output updated manifests; `export_segments.py` renders the resulting audio clips.
-- See [`docs/api_contract.md`](docs/api_contract.md) for full CLI parameters and [`docs/data_contract.md`](docs/data_contract.md) for JSON schemas.
+- `--input-file` beats `--input-dir`; `--output-file` is an exact destination for single outputs.
+- Audio outputs get a sibling `.json` sidecar; diarizers write `<stem>/segments.json` plus clips;
+  purity stages write new manifests and `export_segments` renders them.
+- Progress on stderr, output paths on stdout, runtime artifacts under `.data/` (gitignored).
+
+## Documentation
+
+[docs/README.md](docs/README.md) indexes the setup guide, CLI and data contracts,
+agent/verifier guide, hardware notes, and experiment history. Agent rules for this
+repo are in [AGENTS.md](AGENTS.md).

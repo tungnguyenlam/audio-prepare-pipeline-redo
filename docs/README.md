@@ -1,38 +1,28 @@
-# Documentation Index & Architecture Map
+# Documentation index
 
-Welcome to the **audio-prepare-pipeline-redo** documentation. This repository
-provides standalone, file-backed commands for downloading, separating, diarizing,
-verifying, mixing, and preparing audio datasets for speech models.
+Standalone, file-backed audio commands: download → separate → diarize → refine
+purity → export clips → verify with audio LLMs → curate datasets. Every command
+is an independent CLI under `scripts/`; there is no orchestrator, queue, or
+shared in-memory state.
 
----
-
-## Active production strategy
-
-For the current E2B fine-tuning experiment, start with the
-[saved plan and scaffold](E2B_VERIFIER_EXPERIMENT.md). The 288-clip benchmark
-is frozen for final evaluation; development uses separate sources. Synthetic
-model targets omit the optional `reason` field.
-
-For the next engineering and experiment work, start with
-[Local Vietnamese TTS production strategy](TTS_PRODUCTION_STRATEGY.md) and
-[execution and continuation log](TTS_STRATEGY_EXECUTION.md).
-
-## 🧭 System Architecture & Contracts
-
-The architecture is built entirely on independent CLI commands and file contracts:
-
-- [**Command Cookbook & Reference**](../scripts/COMMANDS.md): Full CLI usage and launcher table.
-- [**CLI Contract Gateway**](api_contract.md): Command parameters, flags, and execution semantics.
-- [**Data & File Contract Gateway**](data_contract.md): File schemas, sidecar JSON, and manifest structures.
-- [**Hardware Compatibility**](09_amd_gpu_compatibility.md): Hardware execution breakdown across AMD ROCm and NVIDIA CUDA.
-- [**Diarization Benchmark Paper Reference**](bench-paper-diarize.md): Published benchmark comparisons (DER) across diarization backends.
+| Document | Read it for |
+|---|---|
+| [commands.md](commands.md) | Environment setup, launcher → venv table, copy-paste command cookbook |
+| [cli_contract.md](cli_contract.md) | Global CLI rules and the per-command flag/output matrix |
+| [data_contract.md](data_contract.md) | JSON schemas: audio sidecar, `segments.json`, purity manifests, speaker profile, agent/verdict artifacts, analysis and comparison outputs |
+| [agent_verifier.md](agent_verifier.md) | Raw audio-model generation (`scripts/agent/`) and hardened verifiers, analysis, comparison (`scripts/agent/verifier/`) |
+| [hardware.md](hardware.md) | AMD ROCm / NVIDIA CUDA notes, environment provisioning, known GPU pitfalls |
+| [experiments.md](experiments.md) | Historical findings and governing decisions (teacher model, benchmark, verifier results, public DER tables) |
 
 ```mermaid
 flowchart LR
-    DOWNLOAD["Download (YouTube/Local)"] --> SEP["Separation (HTDemucs/RoFormer/MVSEP)"]
-    SEP --> DIAR["Diarization (Sortformer/Pyannote/...)"]
-    DIAR --> PURITY["Purity Refinement (Consensus/Collar/Align)"]
-    PURITY --> EXPORT["Segment Rendering (WAV clips)"]
-    EXPORT --> VERIFY["Audio Verification (Gemma 4/VibeVoice/Gemini)"]
-    EXPORT --> DATASET["Dataset Utilities (Index/Filter/Bundle)"]
+    DL["download/"] -->|"WAV + .json"| SEP["separate/"]
+    SEP -->|"stem WAV + .json"| DIA["diarize/"]
+    DIA -->|"segments.json + clips"| PUR["purity/ · speaker/"]
+    PUR -->|"revised segments.json"| EXP["audio/export_segments.py"]
+    EXP -->|"clips"| AG["agent/ · agent/verifier/"]
+    EXP --> DS["dataset/"]
+    AG -->|".txt + verdict .json"| AN["verifier/analysis.sh · compare.sh"]
 ```
+
+Coding-agent rules live in [`AGENTS.md`](../AGENTS.md) at the repository root.
