@@ -14,18 +14,28 @@ from pathlib import Path
 from typing import Any, Callable
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SCRIPTS_DIR))
 sys.path.insert(0, str(REPO_ROOT))
 
-from scripts._common.files import (  # noqa: E402
-    batch,
-    digest,
-    identity,
-    positive_int,
-    progress,
-    read_json,
-    request,
-    write_json,
-)
+try:
+    from _common.files import (  # noqa: E402
+        batch,
+        digest,
+        positive_int,
+        read_json,
+        request,
+        write_json,
+    )
+except ImportError:
+    from scripts._common.files import (  # noqa: E402
+        batch,
+        digest,
+        positive_int,
+        read_json,
+        request,
+        write_json,
+    )
 
 
 def read_prompt(path: Path, label: str = "Prompt") -> str:
@@ -34,122 +44,104 @@ def read_prompt(path: Path, label: str = "Prompt") -> str:
     return path.read_text(encoding="utf-8")
 
 
+def write_text(path: Path, text: str) -> None:
+    """Safely write text to destination via an atomic temporary file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", delete=False, dir=path.parent, encoding="utf-8") as tf:
+        tf.write(text)
+        tmp_txt = Path(tf.name)
+    tmp_txt.replace(path)
+
+
 def add_prompt_arguments(
     command: argparse.ArgumentParser, *, top_p: bool = False
 ) -> None:
     """Add options shared by every free-form generation backend."""
-    command.add_argument("--prompt-file", type=Path, required=True, help="Path to text prompt file to send to model")
-    command.add_argument("--system-prompt-file", type=Path, help="Optional system instruction prompt file")
-    command.add_argument("--max-tokens", type=positive_int, default=4096, help="Maximum number of tokens to generate")
-    command.add_argument("--temperature", type=float, default=0.0, help="Sampling temperature")
+    command.add_argument(
+        "--prompt-file",
+        required=True,
+        type=Path,
+        help="Path to text prompt file to send to model",
+    )
+    command.add_argument(
+        "--system-prompt-file",
+        type=Path,
+        help="Optional system instruction prompt file",
+    )
+    command.add_argument(
+        "--max-tokens",
+        type=positive_int,
+        default=4096,
+        help="Maximum number of tokens to generate",
+    )
+    command.add_argument(
+        "--temperature",
+        type=float,
+        default=0.0,
+        help="Sampling temperature",
+    )
     if top_p:
-        command.add_argument("--top-p", type=float, help="Nucleus sampling top-p probability threshold")
+        command.add_argument(
+            "--top-p",
+            type=float,
+            default=None,
+            help="Nucleus sampling top-p probability threshold",
+        )
 
 
-def load_prompts(args: Any) -> tuple[str, str | None]:
-    prompt = read_prompt(args.prompt_file)
+def load_prompts(args: argparse.Namespace) -> tuple[str, str | None]:
+    """Read prompt and optional system prompt from user files."""
+    prompt = read_prompt(args.prompt_file, label="Prompt")
     system_prompt = (
-        read_prompt(args.system_prompt_file, "System prompt")
-        if args.system_prompt_file is not None
+        read_prompt(args.system_prompt_file, label="System prompt")
+        if args.system_prompt_file
         else None
     )
     return prompt, system_prompt
 
 
-def write_text(path: Path, value: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(
-        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
-    )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="") as stream:
-            stream.write(value)
-        os.replace(temporary, path)
-    finally:
-        Path(temporary).unlink(missing_ok=True)
-
-
 def run_agent(
-    *,
-    args: Any,
+    args: argparse.Namespace,
     pairs: list[tuple[Path, Path]],
-    backend: str,
     parameters: dict[str, Any],
-    generate: Callable[[Path], dict[str, Any]],
+    runner: Callable[[Path], dict[str, Any]],
+    logger: Any,
 ) -> int:
-    """Persist unparsed text and the model/provider details returned by generate."""
+    """Run generation across pairs using the standard batch pipeline."""
+    operation = "explore_audio_model"
+    model = getattr(args, "model", None) or "hf"
 
-    pairs = pending_agent_pairs(
-        args=args,
-        pairs=pairs,
-        backend=backend,
-        parameters=parameters,
-    )
+    def process_item(src: Path, dst: Path) -> None:
+        res = runner(src)
 
-    def process(source: Path, destination: Path) -> None:
-        metadata_path = destination.with_suffix(".json")
-        wanted = request(identity(source), "explore_audio_model", parameters, backend)
-        result = generate(source)
-        text = result.get("text")
-        if not isinstance(text, str):
-            raise TypeError("Freeform generator must return text as a string")
-        response = {key: value for key, value in result.items() if key != "text"}
-        write_text(destination, text)
-        write_json(
-            metadata_path,
-            {
-                **wanted,
-                "response": response,
-                "output": {
-                    "path": str(destination),
-                    "format": "utf-8 text",
-                    "bytes": destination.stat().st_size,
-                    "sha256": digest(destination),
-                },
+        write_text(dst, res["text"])
+
+        sidecar_path = dst.with_suffix(".json")
+        sidecar_payload = {
+            "schema_version": 1,
+            "source": {
+                "path": str(src.resolve()),
+                "sha256": digest(src),
             },
-        )
-        if not destination.is_file() or not metadata_path.is_file():
-            raise RuntimeError(
-                f"Agent output pair was not created: {destination}, {metadata_path}"
-            )
-        progress("ARTIFACTS", f"{destination} + {metadata_path}")
+            "operation": operation,
+            "model": model,
+            "parameters": parameters,
+            "response": {
+                "latency_s": res.get("latency_s", 0.0),
+                "provider_body": res.get("provider_body", {}),
+            },
+            "output": {
+                "path": str(dst.resolve()),
+                "format": "utf-8 text",
+                "bytes": dst.stat().st_size,
+                "sha256": digest(dst),
+            },
+        }
+        write_json(sidecar_path, sidecar_payload)
 
     return batch(
         pairs,
-        process,
-        concurrency=getattr(args, 'concurrency', 1),
-        batch_size=getattr(args, 'batch_size', 1),
+        process_item,
+        concurrency=args.concurrency,
+        batch_size=args.batch_size,
     )
-
-
-def pending_agent_pairs(
-    *,
-    args: Any,
-    pairs: list[tuple[Path, Path]],
-    backend: str,
-    parameters: dict[str, Any],
-) -> list[tuple[Path, Path]]:
-    """Preflight raw outputs so a paid batch only contains missing artifacts."""
-    pending = []
-    for source, destination in pairs:
-        if destination.suffix.lower() == ".json":
-            raise ValueError(
-                "Agent output must not use .json; that suffix is reserved for metadata"
-            )
-        metadata_path = destination.with_suffix(".json")
-        wanted = request(identity(source), "explore_audio_model", parameters, backend)
-        if destination.exists() or metadata_path.exists():
-            if not args.overwrite and destination.is_file() and metadata_path.is_file():
-                old = read_json(metadata_path)
-                output = old.get("output", {})
-                if all(old.get(key) == value for key, value in wanted.items()) and output.get(
-                    "sha256"
-                ) == digest(destination):
-                    continue
-            if not args.overwrite:
-                raise ValueError(
-                    f"Incomplete or conflicting output pair: {destination}, "
-                    f"{metadata_path}; use --overwrite"
-                )
-        pending.append((source, destination))
-    return pending

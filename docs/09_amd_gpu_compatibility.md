@@ -48,7 +48,8 @@ This document details hardware compatibility, benchmark test results, and execut
 | **Clustering Diarizer** (`ClusteringDiarizer.py`) | NeMo MarbleNet + TitaNet | ⚠️ **Isolated** | ✅ Supported | Requires `.venv-sortformer` worker environment | Worker script delegates to dedicated NeMo sub-environment. |
 | **Sortformer Diarizer** (`SortformerDiarizer.py`) | NeMo Transformer | ⚠️ **Isolated** | ✅ Supported | Requires `.venv-sortformer` worker environment | Worker script delegates to dedicated Sortformer sub-environment. |
 | **3D-Speaker Diarizer** (`ThreeDSpeakerDiarizer.py`) | ModelScope CAM++ / ERes2Net | ⚠️ **Isolated** | ✅ Supported | Requires `.venv-3dspeaker` worker environment | Worker script delegates to dedicated 3D-Speaker sub-environment. |
-| **DiariZen Diarizer** (`DiariZenDiarizer.py`) | BUT WavLM + VBx | ⚠️ **Isolated** | ✅ Supported | Requires `.venv-diarizen` worker environment (Python 3.10) | Runs on CPU fallback for RDNA 4 architectures. |
+| **DiariZen Diarizer** (`diarizen.py` / `diarizen.sh`) | BUT WavLM + VBx | ✅ **Yes** | ✅ Supported | **PASS** (9.5s on 90s audio track) | Neural segmentation & WeSpeaker embeddings run on AMD GPU (`cuda:0`); VBx/AHC clustering executes on CPU host. |
+| **HF Agent & Verifier** (`scripts/agent/hf.sh`, `scripts/agent/verifier/hf.sh`) | Multimodal LLM (Gemma 4 2B/E2B-it) | ✅ **Yes** | ✅ Supported | **PASS** (8.58s on 90s audio track) | Native bfloat16 multimodal inference on AMD GPU (`cuda:0` / `--device hip`); automatic device normalization and SDPA stability guards. |
 | **VibeVoice-ASR Verifier** (`VibeVoicePurityVerifier.py`) | Microsoft VibeVoice-ASR | ⚠️ **Isolated** | ✅ Supported | Requires `.venv-vibevoice` worker environment | Uses bfloat16 SDPA attention on ROCm GPU. |
 
 ---

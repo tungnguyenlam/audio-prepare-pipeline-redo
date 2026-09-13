@@ -284,6 +284,10 @@ setup_verify() {
 
     echo "📦 Installing verifier requirements..."
     uv pip install --python "${venv_dir}/bin/python" -r "$REPO_ROOT/envs/requirements-verify.txt"
+    if [ "$HAS_AMD_GPU" -eq 1 ]; then
+        echo "⚡ Installing CPU torchvision for Gemma multimodal processor on ROCm..."
+        uv pip install --python "${venv_dir}/bin/python" "torchvision==0.28.0+cpu" --index-url https://download.pytorch.org/whl/cpu >/dev/null 2>&1 || true
+    fi
 
     echo "⚙️ Re-verifying hardware acceleration..."
     reconcile_py313_hardware "$venv_dir"
@@ -468,37 +472,58 @@ setup_diarizen() {
 
     local py_bin="${venv_dir}/bin/python"
 
-    local index_url="https://download.pytorch.org/whl/cpu"
-    if [ "$HAS_NVIDIA_GPU" -eq 1 ]; then
-        index_url="https://download.pytorch.org/whl/cu121"
-    fi
-
-    echo "⚡ Installing PyTorch 2.1.1 stack into ${venv_dir}..."
-    uv pip install --python "$py_bin" \
-        torch==2.1.1 torchvision==0.16.1 torchaudio==2.1.1 \
-        --index-url "$index_url"
-
-    echo "📦 Installing DiariZen requirements..."
-    uv pip install --python "$py_bin" --extra-index-url "$index_url" -r "$REPO_ROOT/envs/requirements-diarizen.txt"
-
     if [ "$HAS_AMD_GPU" -eq 1 ]; then
+        echo "⚡ Installing AMD ROCm PyTorch wheels into ${venv_dir}..."
+        uv pip install --python "$py_bin"           --extra-index-url https://stable.repo.amd.com/rocm/core/whl-next/           --extra-index-url https://stable.repo.amd.com/rocm/pytorch/whl-next/           --index-strategy unsafe-best-match           "torch==2.13.0+rocm10.0.0"           "torchaudio==2.11.0.2+rocm10.0.0"           "triton==3.8.0+git4cff872c.rocm10.0.0"           "rocm==10.0.0"           "rocm-sdk-core==10.0.0"           "rocm-sdk-libraries==10.0.0"           "rocm-sdk-device-gfx1200==10.0.0"           "amd-torch-device-gfx1200==2.13.0+rocm10.0.0"
+
+        echo "📦 Installing DiariZen requirements..."
+        uv pip install --python "$py_bin" -r "$REPO_ROOT/envs/requirements-diarizen.txt"
+
         if "$py_bin" -c "import importlib.util; exit(0 if importlib.util.find_spec('torchcodec') else 1)" 2>/dev/null; then
-            echo "🧹 Removing torchcodec from ${venv_dir}..."
+            echo "🧹 Removing torchcodec from ${venv_dir}... (incompatible with ROCm)"
             uv pip uninstall --python "$py_bin" torchcodec >/dev/null 2>&1 || true
         fi
+        if "$py_bin" -c "import importlib.util; exit(0 if importlib.util.find_spec('torchvision') else 1)" 2>/dev/null; then
+            uv pip uninstall --python "$py_bin" torchvision >/dev/null 2>&1 || true
+        fi
+    elif [ "$HAS_NVIDIA_GPU" -eq 1 ]; then
+        local index_url
+        index_url=$(get_cuda_wheel_index)
+        [ -z "$index_url" ] && index_url="https://download.pytorch.org/whl/cu121"
+        echo "⚡ Installing NVIDIA CUDA PyTorch stack into ${venv_dir}..."
+        uv pip install --python "$py_bin"             "torch>=2.1.1,<2.5.0" "torchvision" "torchaudio"             --index-url "$index_url"
+
+        echo "📦 Installing DiariZen requirements..."
+        uv pip install --python "$py_bin" --extra-index-url "$index_url" -r "$REPO_ROOT/envs/requirements-diarizen.txt"
+    else
+        echo "⚡ Installing CPU PyTorch stack into ${venv_dir}..."
+        uv pip install --python "$py_bin"             "torch>=2.1.1" "torchvision" "torchaudio"             --index-url https://download.pytorch.org/whl/cpu
+
+        echo "📦 Installing DiariZen requirements..."
+        uv pip install --python "$py_bin" --extra-index-url https://download.pytorch.org/whl/cpu -r "$REPO_ROOT/envs/requirements-diarizen.txt"
     fi
 
     echo "✅ Verifying DiariZen installation..."
-    "${venv_dir}/bin/python" -c "
+    "$py_bin" -c "
+import torchaudio
+if not hasattr(torchaudio, 'AudioMetaData'):
+    class AudioMetaData:
+        def __init__(self, sample_rate: int, num_frames: int, num_channels: int, bits_per_sample: int, encoding: str):
+            self.sample_rate = sample_rate
+            self.num_frames = num_frames
+            self.num_channels = num_channels
+            self.bits_per_sample = bits_per_sample
+            self.encoding = encoding
+    torchaudio.AudioMetaData = AudioMetaData
 import torch, psutil, accelerate
 from diarizen.pipelines.inference import DiariZenPipeline
-dev_type = 'ROCm/HIP' if getattr(torch.version, 'hip', None) else ('CUDA' if torch.cuda.is_available() else 'CPU')
+dev_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'None'
+dev_type = f'ROCm/HIP: {dev_name}' if getattr(torch.version, 'hip', None) and torch.cuda.is_available() else (f'CUDA: {dev_name}' if torch.cuda.is_available() else 'CPU')
 print(f'   -> Torch: {torch.__version__} ({dev_type})')
 print('   -> DiariZenPipeline: successfully loaded')
 "
     echo "🎉 ${venv_dir} ready!"
 }
-
 setup_minicpmo() {
     bash "$REPO_ROOT/envs/setup_minicpmo_env.sh" "$@"
 }

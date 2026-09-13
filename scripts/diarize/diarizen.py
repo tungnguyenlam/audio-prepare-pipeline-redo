@@ -52,14 +52,56 @@ def main() -> int:
     if args.work_dir == p.get_default('work_dir'):
         args.work_dir = args.work_dir.parent.parent / 'diarizen' / args.work_dir.name
     pairs = manifest_destinations(args)
+
     import os
     import tempfile
     from io import BytesIO
     import numpy as np
     from scipy.ndimage import median_filter
+    import soundfile as sf
     import toml
     import torch
     import torchaudio
+
+    # Compatibility shim: Pyannote/DiariZen relies on AudioMetaData in torchaudio,
+    # which was moved/removed in newer torchaudio and ROCm builds.
+    if not hasattr(torchaudio, 'AudioMetaData'):
+        class AudioMetaData:
+            def __init__(self, sample_rate: int, num_frames: int, num_channels: int, bits_per_sample: int, encoding: str):
+                self.sample_rate = sample_rate
+                self.num_frames = num_frames
+                self.num_channels = num_channels
+                self.bits_per_sample = bits_per_sample
+                self.encoding = encoding
+        torchaudio.AudioMetaData = AudioMetaData
+
+    # Compatibility shim: torchaudio.load defaults to torchcodec on newer versions,
+    # which is unavailable on AMD ROCm. Fall back to soundfile seamlessly.
+    _orig_torchaudio_load = getattr(torchaudio, 'load', None)
+    def _safe_torchaudio_load(uri, *args, **kwargs):
+        try:
+            if _orig_torchaudio_load is not None:
+                return _orig_torchaudio_load(uri, *args, **kwargs)
+        except (ImportError, RuntimeError, AttributeError):
+            pass
+        data, sr = sf.read(uri, dtype='float32', always_2d=True)
+        return torch.from_numpy(data.T.copy()), sr
+    torchaudio.load = _safe_torchaudio_load
+
+    # Compatibility shim: PyTorch >= 2.6 defaults weights_only=True, which breaks
+    # loading legacy DiariZen & WeSpeaker Lightning checkpoints containing TorchVersion.
+    import torch.serialization
+    if hasattr(torch.serialization, 'add_safe_globals') and hasattr(torch, 'torch_version'):
+        try:
+            torch.serialization.add_safe_globals([torch.torch_version.TorchVersion])
+        except Exception:
+            pass
+    _orig_torch_load = torch.load
+    def _safe_torch_load(*args, **kwargs):
+        kwargs['weights_only'] = False
+        return _orig_torch_load(*args, **kwargs)
+    torch.load = _safe_torch_load
+
     from pyannote.audio.utils.signal import Binarize
     from pyannote.database.protocol.protocol import ProtocolFile
     from diarizen.pipelines.inference import DiariZenPipeline as _UpstreamDiariZenPipeline
@@ -138,8 +180,12 @@ def main() -> int:
             )
             in_wav = in_wav if not isinstance(in_wav, ProtocolFile) else in_wav['audio']
 
-            waveform, sample_rate = torchaudio.load(in_wav)
-            waveform = torch.unsqueeze(waveform[0], 0)  # force to use the SDM data
+            if isinstance(in_wav, (str, Path)):
+                data, sample_rate = sf.read(in_wav, dtype='float32', always_2d=True)
+                waveform = torch.from_numpy(data[:, 0:1].T.copy())
+            else:
+                waveform, sample_rate = torchaudio.load(in_wav)
+                waveform = torch.unsqueeze(waveform[0], 0)  # force to use the SDM data
             segmentations = self.get_segmentations({'waveform': waveform, 'sample_rate': sample_rate}, soft=False)
 
             if self.apply_median_filtering:
@@ -186,7 +232,16 @@ def main() -> int:
                     f.write(result.to_rttm())
             return result
 
-    device = args.device if args.device != 'auto' else ('cuda' if torch.cuda.is_available() else 'cpu')
+    target_device = (args.device or 'auto').lower()
+    if target_device == 'auto':
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    elif target_device.startswith('hip'):
+        # PyTorch ROCm surfaces AMD GPU execution via the 'cuda' interface
+        suffix = target_device[3:]
+        device = f'cuda{suffix}' if suffix else 'cuda'
+    else:
+        device = target_device
+
     config_parse = {
         'inference': {
             'args': {
@@ -213,10 +268,10 @@ def main() -> int:
     kwargs = {key: getattr(args, key) for key in ('num_speakers', 'min_speakers', 'max_speakers') if getattr(args, key) is not None}
     def process(src, dest):
         rate = args.sample_rate or probe(src)['sample_rate']
-        wanted = request(identity(src), 'diarize', {**kwargs, 'device': device, 'batch_size': args.batch_size,
-                         'sample_rate': rate, 'channels': args.channels, 'checkpoint': args.model,
-                         'min_duration_s': args.min_duration_s, 'max_duration_s': args.max_duration_s,
-                         'segmentation_step': args.segmentation_step, 'binarize_onset': args.binarize_onset,
+        wanted = request(identity(src), 'diarize', {**kwargs, 'device': device, 'batch_size': args.batch_size,\
+                         'sample_rate': rate, 'channels': args.channels, 'checkpoint': args.model,\
+                         'min_duration_s': args.min_duration_s, 'max_duration_s': args.max_duration_s,\
+                         'segmentation_step': args.segmentation_step, 'binarize_onset': args.binarize_onset,\
                          'binarize_offset': args.binarize_offset}, 'diarizen')
         if manifest_complete(dest, wanted, args.overwrite):
             return
@@ -236,7 +291,7 @@ def main() -> int:
                 labels[label] = f'spk{len(labels):02d}'
             if segment.end > segment.start:
                 turns.append({'speaker_id': labels[label], 'start_s': float(segment.start), 'end_s': float(segment.end)})
-        export({**wanted, 'speaker_ids': list(labels.values()), 'turns': turns}, src, dest, args.work_dir, rate, args.channels,
+        export({**wanted, 'speaker_ids': list(labels.values()), 'turns': turns}, src, dest, args.work_dir, rate, args.channels,\
                args.min_duration_s, args.max_duration_s, concurrency=args.concurrency, batch_size=args.batch_size)
     return batch(pairs, process, concurrency=args.concurrency, batch_size=args.batch_size)
 

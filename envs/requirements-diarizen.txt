@@ -1,9 +1,10 @@
-# DiariZen requires Python 3.10 and an older Torch/Pyannote stack. Keep it in
-# .venv-diarizen rather than changing the primary uv environment.
+# DiariZen requires Python 3.10 and is provisioned in .venvs/diarizen.
+# PyTorch stack (ROCm for AMD, CUDA for NVIDIA, or CPU) is provisioned
+# by setup_worker_envs.sh prior to installing requirements.
 numpy==1.26.4
-torch==2.1.1
-torchaudio==2.1.1
-torchvision==0.16.1
+torch>=2.1.1
+torchaudio>=2.1.1
+soundfile>=0.12.1
 scipy>=1.11,<1.14
 toml>=0.10.2
 huggingface-hub==0.36.2
