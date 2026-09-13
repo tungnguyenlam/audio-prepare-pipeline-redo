@@ -46,7 +46,7 @@ A Python 3.13 audio-prepare pipeline: ingest YouTube (or local files), separate 
 
 - `tungnl5@VF-TUNGNL5-L` is the primary development machine equipped with an **AMD Radeon RX 9060 XT (16 GB VRAM, ROCm 10.0 / HIP)**.
 - `vsf@vsf-242` (`10.148.21.12`) is the model server for running NVIDIA GPU separation and diarization queues.
-- `loi` (`loinh8@10.148.1.176`) is an auxiliary compute node.
+- `loi` (`loinh8@10.148.1.176`) and `anhnct@10.148.21.113` are auxiliary compute nodes.
 - Synchronize source code and runtime data across machines using the dedicated utilities under `scripts/sync/` (`*_server.sh`, `*_loi.sh`, `*_anhnct.sh`). Keep credentials and runtime artifacts machine-local.
 
 ## Layout
@@ -66,7 +66,9 @@ A Python 3.13 audio-prepare pipeline: ingest YouTube (or local files), separate 
 | `scripts/dataset/` | File-based directory indexing, manifest filtering, JSONL/CSV export, and ZIP bundling |
 | `scripts/_common/` | Shared private file and segment helpers (`files.py`, `segments.py`) |
 | `scripts/sync/` | Multi-machine synchronization utilities |
-| `docs/` | System architecture, CLI and file contracts, strategy documentation |
+| `envs/` | Requirements files and provisioning scripts, one virtualenv per model family |
+| `prompts/` | Verifier and free-form prompts (`acoustic_defect.txt` is the verifier default) |
+| `docs/` | All documentation: setup/cookbook, CLI and data contracts, agent/verifier guide, hardware notes, experiment history (index in `docs/README.md`) |
 
 ## CLI & File Conventions
 
@@ -76,10 +78,10 @@ A Python 3.13 audio-prepare pipeline: ingest YouTube (or local files), separate 
 - Audio-producing commands write sibling `.json` metadata sidecars (`recording.wav` → `recording.json`).
 - Diarization commands write `<stem>/segments.json` plus turn clips.
 - Commands log progress to stderr and emit successful output paths to stdout.
-- Model commands have bash launchers (`.sh`) that select their isolated Python environment and forward arguments unchanged.
+- Every command has a same-name bash launcher (`.sh`) that selects its Python environment (see `docs/commands.md`) and forwards arguments unchanged.
 
 ## Out of scope unless asked
 
-- Tests under `tests/` (existing pytest is not a license to add more).
+- Adding tests (there is no `tests/` directory; do not create one unasked).
 - Installing the project as a package, new orchestration entrypoints, or CI.
 - Committing credentials, cookies, or downloaded media.
