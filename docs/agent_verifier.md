@@ -51,6 +51,8 @@ schema. Neither directory orchestrates other pipeline stages.
   run the acoustic v3 rubric or emit its transcript field.
 
 Prompts in `prompts/`: `acoustic_defect-3.txt` is the active verifier default;
+`acoustic_defect.txt` and `acoustic_defect-2.txt` are retained unchanged as
+deprecated, reference-only revisions and are not registered validation profiles.
 `speaker_purity.txt` and `word_boundary.txt` are narrower verifier alternatives.
 Free-form transcript/description prompts (`prompt-transcripts-*.txt`,
 `vi-prompt-alam*.txt`) remain available for `scripts/agent/`.
