@@ -5,12 +5,13 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 print_usage() {
-    echo "Usage: $0 [all|core|workers|separation|pyannote|verify|align|audio|sortformer|3dspeaker|vibevoice|diarizen|minicpmo|kimi|status] [--force]"
+    echo "Usage: $0 [all|core|workers|main|separation|pyannote|verify|align|audio|sortformer|3dspeaker|vibevoice|diarizen|minicpmo|kimi|status] [--force]"
     echo ""
     echo "Device-agnostic environment provisioner for audio processing models."
     echo ""
     echo "Core Pipeline Targets:"
     echo "  core         Provision all core environments (audio, separation, pyannote, verify, align)"
+    echo "  main         Reconcile hardware acceleration for main environment (.venvs/main)"
     echo "  separation   Demucs, BS-RoFormer, Mel-RoFormer (.venvs/separation, Python 3.13)"
     echo "  pyannote     Pyannote 3.1 & Community-1 diarization/scoring (.venvs/pyannote, Python 3.13)"
     echo "  verify       HF, Whisper, Gemma verifiers (.venvs/verify, Python 3.13)"
@@ -166,6 +167,32 @@ reconcile_py313_hardware() {
     fi
 }
 
+setup_main() {
+    local venv_dir=".venvs/main"
+    echo ""
+    echo "========================================================"
+    echo "  Reconciling Main environment (${venv_dir})"
+    echo "========================================================"
+
+    if [ ! -d "$venv_dir" ]; then
+        echo "📦 Creating Python 3.13 virtual environment ${venv_dir} via uv..."
+        uv venv --python 3.13 "$venv_dir"
+        uv sync
+    fi
+
+    echo "⚙️ Configuring hardware acceleration..."
+    reconcile_py313_hardware "$venv_dir"
+    ln -sfn "$venv_dir" ".venv"
+
+    echo "✅ Verifying Main installation..."
+    "${venv_dir}/bin/python" -c "
+import torch
+dev_type = 'ROCm/HIP: ' + torch.cuda.get_device_name(0) if getattr(torch.version, 'hip', None) and torch.cuda.is_available() else ('CUDA: ' + torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')
+print(f'   -> Torch: {torch.__version__} ({dev_type})')
+"
+    echo "🎉 ${venv_dir} reconciled!"
+}
+
 setup_audio() {
     local venv_dir=".venvs/audio"
     echo ""
@@ -185,6 +212,7 @@ setup_audio() {
 
     echo "📦 Installing audio requirements..."
     uv pip install --python "${venv_dir}/bin/python" -r "$REPO_ROOT/envs/requirements-audio.txt"
+    ln -sfn "$venv_dir" ".venv-audio"
     echo "🎉 ${venv_dir} ready!"
 }
 
@@ -217,11 +245,12 @@ setup_separation() {
     echo "✅ Verifying Separation installation..."
     "${venv_dir}/bin/python" -c "
 import torch
-dev_type = 'ROCm/HIP' if getattr(torch.version, 'hip', None) else ('CUDA: ' + torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')
+dev_type = 'ROCm/HIP: ' + torch.cuda.get_device_name(0) if getattr(torch.version, 'hip', None) and torch.cuda.is_available() else ('CUDA: ' + torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')
 print(f'   -> Torch: {torch.__version__} ({dev_type})')
 import demucs, mel_band_roformer, bs_roformer
 print('   -> Demucs, MelBandRoformer, BSRoformer: successfully loaded')
 "
+    ln -sfn "$venv_dir" ".venv-separation"
     echo "🎉 ${venv_dir} ready!"
 }
 
@@ -238,7 +267,7 @@ setup_pyannote() {
     fi
 
     if [ ! -d "$venv_dir" ]; then
-        echo "📦 Creating Python 3.13 virtual environment ${venv_dir}..."
+        echo "📦 Creating Python 3.13 virtual environment ${venv_dir}......"
         uv venv --python 3.13 "$venv_dir"
     fi
 
@@ -254,11 +283,12 @@ setup_pyannote() {
     echo "✅ Verifying Pyannote installation..."
     "${venv_dir}/bin/python" -c "
 import torch
-dev_type = 'ROCm/HIP' if getattr(torch.version, 'hip', None) else ('CUDA: ' + torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')
+dev_type = 'ROCm/HIP: ' + torch.cuda.get_device_name(0) if getattr(torch.version, 'hip', None) and torch.cuda.is_available() else ('CUDA: ' + torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')
 print(f'   -> Torch: {torch.__version__} ({dev_type})')
 import pyannote.audio
 print('   -> Pyannote Audio: successfully loaded')
 "
+    ln -sfn "$venv_dir" ".venv-pyannote"
     echo "🎉 ${venv_dir} ready!"
 }
 
@@ -295,11 +325,12 @@ setup_verify() {
     echo "✅ Verifying Verifier installation..."
     "${venv_dir}/bin/python" -c "
 import torch
-dev_type = 'ROCm/HIP' if getattr(torch.version, 'hip', None) else ('CUDA: ' + torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')
+dev_type = 'ROCm/HIP: ' + torch.cuda.get_device_name(0) if getattr(torch.version, 'hip', None) and torch.cuda.is_available() else ('CUDA: ' + torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')
 print(f'   -> Torch: {torch.__version__} ({dev_type})')
 import transformers, peft, accelerate
 print('   -> Transformers, PEFT, Accelerate: successfully loaded')
 "
+    ln -sfn "$venv_dir" ".venv-verify"
     echo "🎉 ${venv_dir} ready!"
 }
 
@@ -332,11 +363,12 @@ setup_align() {
     echo "✅ Verifying Alignment installation..."
     "${venv_dir}/bin/python" -c "
 import torch
-dev_type = 'ROCm/HIP' if getattr(torch.version, 'hip', None) else ('CUDA: ' + torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')
+dev_type = 'ROCm/HIP: ' + torch.cuda.get_device_name(0) if getattr(torch.version, 'hip', None) and torch.cuda.is_available() else ('CUDA: ' + torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')
 print(f'   -> Torch: {torch.__version__} ({dev_type})')
 import whisper_timestamped
 print('   -> Whisper-timestamped: successfully loaded')
 "
+    ln -sfn "$venv_dir" ".venv-align"
     echo "🎉 ${venv_dir} ready!"
 }
 
@@ -369,11 +401,12 @@ setup_sortformer() {
     echo "✅ Verifying Sortformer installation..."
     "${venv_dir}/bin/python" -c "
 import torch
-dev_type = 'ROCm/HIP' if getattr(torch.version, 'hip', None) else ('CUDA: ' + torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')
+dev_type = 'ROCm/HIP: ' + torch.cuda.get_device_name(0) if getattr(torch.version, 'hip', None) and torch.cuda.is_available() else ('CUDA: ' + torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')
 print(f'   -> Torch: {torch.__version__} ({dev_type})')
 import nemo.collections.asr.models as nemo_asr
 print('   -> NeMo ASR collection: successfully loaded')
 "
+    ln -sfn "$venv_dir" ".venv-sortformer"
     echo "🎉 ${venv_dir} ready!"
 }
 
@@ -406,11 +439,12 @@ setup_3dspeaker() {
     echo "✅ Verifying 3D-Speaker installation..."
     "${venv_dir}/bin/python" -c "
 import torch
-dev_type = 'ROCm/HIP' if getattr(torch.version, 'hip', None) else ('CUDA: ' + torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')
+dev_type = 'ROCm/HIP: ' + torch.cuda.get_device_name(0) if getattr(torch.version, 'hip', None) and torch.cuda.is_available() else ('CUDA: ' + torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')
 print(f'   -> Torch: {torch.__version__} ({dev_type})')
 import modelscope
 print(f'   -> ModelScope: {modelscope.__version__} successfully loaded')
 "
+    ln -sfn "$venv_dir" ".venv-3dspeaker"
     echo "🎉 ${venv_dir} ready!"
 }
 
@@ -443,11 +477,12 @@ setup_vibevoice() {
     echo "✅ Verifying VibeVoice installation..."
     "${venv_dir}/bin/python" -c "
 import torch
-dev_type = 'ROCm/HIP' if getattr(torch.version, 'hip', None) else ('CUDA: ' + torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')
+dev_type = 'ROCm/HIP: ' + torch.cuda.get_device_name(0) if getattr(torch.version, 'hip', None) and torch.cuda.is_available() else ('CUDA: ' + torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')
 print(f'   -> Torch: {torch.__version__} ({dev_type})')
 import transformers
 print(f'   -> Transformers: {transformers.__version__} successfully loaded')
 "
+    ln -sfn "$venv_dir" ".venv-vibevoice"
     echo "🎉 ${venv_dir} ready!"
 }
 
@@ -474,7 +509,18 @@ setup_diarizen() {
 
     if [ "$HAS_AMD_GPU" -eq 1 ]; then
         echo "⚡ Installing AMD ROCm PyTorch wheels into ${venv_dir}..."
-        uv pip install --python "$py_bin"           --extra-index-url https://stable.repo.amd.com/rocm/core/whl-next/           --extra-index-url https://stable.repo.amd.com/rocm/pytorch/whl-next/           --index-strategy unsafe-best-match           "torch==2.13.0+rocm10.0.0"           "torchaudio==2.11.0.2+rocm10.0.0"           "triton==3.8.0+git4cff872c.rocm10.0.0"           "rocm==10.0.0"           "rocm-sdk-core==10.0.0"           "rocm-sdk-libraries==10.0.0"           "rocm-sdk-device-gfx1200==10.0.0"           "amd-torch-device-gfx1200==2.13.0+rocm10.0.0"
+        uv pip install --python "$py_bin" \
+          --extra-index-url https://stable.repo.amd.com/rocm/core/whl-next/ \
+          --extra-index-url https://stable.repo.amd.com/rocm/pytorch/whl-next/ \
+          --index-strategy unsafe-best-match \
+          "torch==2.13.0+rocm10.0.0" \
+          "torchaudio==2.11.0.2+rocm10.0.0" \
+          "triton==3.8.0+git4cff872c.rocm10.0.0" \
+          "rocm==10.0.0" \
+          "rocm-sdk-core==10.0.0" \
+          "rocm-sdk-libraries==10.0.0" \
+          "rocm-sdk-device-gfx1200==10.0.0" \
+          "amd-torch-device-gfx1200==2.13.0+rocm10.0.0"
 
         echo "📦 Installing DiariZen requirements..."
         uv pip install --python "$py_bin" -r "$REPO_ROOT/envs/requirements-diarizen.txt"
@@ -491,13 +537,17 @@ setup_diarizen() {
         index_url=$(get_cuda_wheel_index)
         [ -z "$index_url" ] && index_url="https://download.pytorch.org/whl/cu121"
         echo "⚡ Installing NVIDIA CUDA PyTorch stack into ${venv_dir}..."
-        uv pip install --python "$py_bin"             "torch>=2.1.1,<2.5.0" "torchvision" "torchaudio"             --index-url "$index_url"
+        uv pip install --python "$py_bin" \
+            "torch>=2.1.1,<2.5.0" "torchvision" "torchaudio" \
+            --index-url "$index_url"
 
         echo "📦 Installing DiariZen requirements..."
         uv pip install --python "$py_bin" --extra-index-url "$index_url" -r "$REPO_ROOT/envs/requirements-diarizen.txt"
     else
         echo "⚡ Installing CPU PyTorch stack into ${venv_dir}..."
-        uv pip install --python "$py_bin"             "torch>=2.1.1" "torchvision" "torchaudio"             --index-url https://download.pytorch.org/whl/cpu
+        uv pip install --python "$py_bin" \
+            "torch>=2.1.1" "torchvision" "torchaudio" \
+            --index-url https://download.pytorch.org/whl/cpu
 
         echo "📦 Installing DiariZen requirements..."
         uv pip install --python "$py_bin" --extra-index-url https://download.pytorch.org/whl/cpu -r "$REPO_ROOT/envs/requirements-diarizen.txt"
@@ -522,14 +572,18 @@ dev_type = f'ROCm/HIP: {dev_name}' if getattr(torch.version, 'hip', None) and to
 print(f'   -> Torch: {torch.__version__} ({dev_type})')
 print('   -> DiariZenPipeline: successfully loaded')
 "
+    ln -sfn "$venv_dir" ".venv-diarizen"
     echo "🎉 ${venv_dir} ready!"
 }
+
 setup_minicpmo() {
     bash "$REPO_ROOT/envs/setup_minicpmo_env.sh" "$@"
+    ln -sfn ".venvs/minicpmo" ".venv-minicpmo"
 }
 
 setup_kimi() {
     bash "$REPO_ROOT/envs/setup_kimi_env.sh" "$@"
+    ln -sfn ".venvs/kimi" ".venv-kimi"
 }
 
 setup_core() {
@@ -595,6 +649,9 @@ print(f'Python {pyver} | Torch {tver} [{dev}] | {codec}')
 }
 
 case "$TARGET" in
+    main)
+        setup_main
+        ;;
     audio)
         setup_audio
         ;;
