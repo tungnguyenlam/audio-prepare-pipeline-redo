@@ -47,9 +47,14 @@ schema. Neither directory orchestrates other pipeline stages.
 - Verifiers write verdicts only; they never move or delete audio.
 
 Prompts in `prompts/`: `acoustic_defect.txt` (3-dimension rubric, default),
-`acoustic_defect-2.txt`, `speaker_purity.txt`, `word_boundary.txt`, plus
-free-form transcript/description prompts (`prompt-transcripts-*.txt`,
-`vi-prompt-alam*.txt`) intended for `scripts/agent/`.
+`acoustic_defect-2.txt`, `acoustic_defect_transcript.txt`, `speaker_purity.txt`,
+`word_boundary.txt`, plus free-form transcript/description prompts
+(`prompt-transcripts-*.txt`, `vi-prompt-alam*.txt`) intended for
+`scripts/agent/`. `acoustic_defect_transcript.txt` combines the second acoustic
+rubric with conditional Vietnamese/English transcription: pass verdicts end with
+a nonempty `transcript`, while reject verdicts omit that field. As a custom prompt,
+the current offline validator enforces its pass/reject `decision`; the complete
+acoustic, language, and conditional-transcript constraints remain prompt-enforced.
 
 ## Offline tools (no model calls)
 

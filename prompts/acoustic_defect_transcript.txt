@@ -1,0 +1,162 @@
+Listen to the supplied audio directly. Perform both acoustic verification and transcription in a single response.
+
+Evaluate three acoustic dimensions required for clean Text-to-Speech (TTS) training, verify that all speech is in Vietnamese and/or English, and transcribe the audio only when the final decision is "pass".
+
+1. SPEAKER PURITY:
+   - "pure": Exactly one primary speaker throughout. No background chatter, secondary voices, or intruder laughter.
+   - "secondary_speaker": Another speaker's voice is audible (even a short word, whisper, or breath).
+   - "overlapping_speech": Multiple speakers speaking or laughing simultaneously.
+
+2. WORD COMPLETENESS (Không lẹm chữ, đủ âm tiết):
+   - "complete": All words start and finish on clean acoustic word boundaries. The final word/syllable has its full acoustic envelope (attack, sustain, and natural release/decay), even if the utterance ends mid-sentence or on a pause.
+   - "clipped_word_start": The initial word has its onset consonant abruptly cut off mid-phoneme.
+   - "clipped_word_end": The final word has its vowel or coda consonant sliced off prematurely by an abrupt digital cut/truncation (unnatural hard cutoff or missing syllable component).
+
+   CRITICAL CLARIFICATION FOR WORD COMPLETENESS:
+   - Do NOT penalize syntactic or grammatical incompleteness (e.g., trailing off, mid-thought pauses, or continuation pitch). As long as the last uttered syllable reached its natural acoustic decay without being abruptly sliced in half, classify it as "complete".
+
+3. AUDIO QUALITY:
+   - "studio_clean": Clear vocal signal with no residual music bleed. Faint, steady, low-level room tone, hiss, fan noise, or environmental ambience is acceptable when it does not mask speech, compete with the voice, fluctuate prominently, or noticeably reduce TTS usability.
+   - "music_bleed": Audible residual background music, beats, or synthetic melodies.
+   - "noisy_reverberant": Severe room echo, reverb, or excessive environmental noise that clearly masks speech, competes with the voice, fluctuates prominently, or reduces TTS usability. Do NOT use this label for faint, steady, non-intrusive background noise that meets the "studio_clean" definition above.
+   - "distorted": Clipping distortion, phase artifacts, or muffled frequency response.
+
+4. LANGUAGE ELIGIBILITY:
+   - Vietnamese speech is allowed.
+   - English speech is allowed.
+   - Speech that mixes Vietnamese and English is allowed.
+   - If any speech is in a language other than Vietnamese or English, add "unsupported_language" to failure_codes and return "reject".
+
+5. SINGING:
+   - If the audio contains singing, add "singing" to failure_codes and return "reject".
+   - Do not use "music_bleed" as a substitute for "singing" unless residual background music, beats, or synthetic melodies are also audible.
+
+DECISION RULE:
+- "pass" ONLY if speaker_purity == "pure" AND word_completeness == "complete" AND audio_quality == "studio_clean" AND no unsupported language or singing is present.
+- Otherwise "reject".
+- failure_codes MUST contain each detected failure exactly once and MUST NOT contain a code for a clean dimension.
+- The allowed failure codes are: "clipped_word_start", "clipped_word_end", "secondary_speaker", "overlapping_speech", "music_bleed", "noisy_reverberant", "distorted", "unsupported_language", and "singing".
+- If the decision is "pass", failure_codes MUST be an empty array.
+
+TRANSCRIPTION RULES:
+
+Apply every rule below while listening and preparing the result. Only include the final "transcript" field in the JSON response when the decision is "pass".
+
+Chuyển lời nói thành văn bản chính xác theo đúng cách speaker thực tế phát âm.
+
+- Không sửa grammar, không tự hoàn thành câu, không bỏ repetition hoặc filler.
+- Dấu câu cần chính xác, đúng với cả ngữ cảnh của câu và ngữ điệu (dấu hỏi chấm, chấm than...), ngắt nghỉ (dấu chấm, phẩy...) của speaker.
+- Dùng dấu "*" thay cho dấu "." nếu khoảng nghỉ đó dài hơn dấu chấm bình thường, và dấu "~" thay dấu "," nếu khoảng nghỉ đó ngắn hơn dấu phẩy bình thường.
+- Phiên âm theo đúng cách speaker đọc, không tự sửa về pronunciation chuẩn.
+- Nếu từ đầu/cuối audio bị cắt một phần nhưng vẫn nhận ra được, đặt từ đó trong "<>".
+- Giữ filler/vocalization và các âm thanh đặc biệt khó phiên âm dưới dạng "<ờm>", "<uh>", "<ah>", "<à>", "<á>", "<uhm>", v.v.
+
+QUY TẮC CHUẨN HÓA VÀ PHIÊN ÂM:
+
+Chuẩn hóa/phiên âm các từ Out-of-Vocab thành cách đọc theo các âm tiết trong từ điển tiếng Việt và âm gió/phụ âm đặc biệt (nếu có).
+
+1. FORMAT CHUNG:
+   - TẤT CẢ các từ viết tắt, số, ngày tháng, thời gian, ký hiệu, chuỗi ký tự đặc biệt và từ tiếng nước ngoài phải được biểu diễn dưới dạng "[written_form][spoken_form]".
+   - written_form là từ hoặc chuỗi gốc ở dạng viết và phải nằm trong cặp ngoặc vuông thứ nhất.
+   - spoken_form là đúng cách speaker thực tế phát âm và phải nằm trong cặp ngoặc vuông thứ hai.
+   - Ví dụ:
+     - UBND -> [UBND][ủy_ban_nhân_dân]
+     - 20/10 -> [20/10][hai_mươi_tháng_mười]
+     - 9:15 -> [9:15][chín_giờ_mười_lăm]
+     - Hello -> [Hello][hê-lô]
+   - LƯU Ý: phải phiên âm theo đúng cách đọc của speaker.
+
+2. QUY TẮC CHUẨN HÓA:
+   - Với từ viết tắt, số, ngày tháng, thời gian, ký hiệu và chuỗi ký tự đặc biệt, dùng dấu "_" để liên kết các âm tiết trong spoken_form.
+   - Ví dụ:
+     - [UBND][ủy_ban_nhân_dân]
+     - [20/10][hai_mươi_tháng_mười]
+     - [9:15][chín_giờ_mười_lăm]
+
+3. QUY TẮC PHIÊN ÂM TỪ TIẾNG NƯỚC NGOÀI:
+   - TẤT CẢ các từ tiếng nước ngoài cần giữ written form và thêm cách speaker thực tế phát âm bằng âm tiếng Việt và âm gió/phụ âm đặc biệt (nếu có) trong spoken_form.
+   - Dùng dấu "-" để liên kết các âm tiết trong spoken_form của từ tiếng nước ngoài.
+   - Tách âm gió/phụ âm: Phải thể hiện rõ các âm gió/phụ âm nếu speaker phát âm riêng.
+   - Phiên âm âm gió/phụ âm dưới dạng đặc biệt để phân biệt với các âm tiếng Việt: "s", "x", "sh", "ph", "ch", "g", "v", "c", "p", "b", "đ", "th", "t", "d", "k", v.v.
+   - Cần phân biệt rõ ký tự đơn "c" là âm gió/phụ âm (âm bật nhanh) trong tiếng Anh, còn "cờ" là một âm tiết đầy đủ trong tiếng Việt (đọc tròn vành rõ chữ).
+   - Tách phụ âm đầu: Nếu từ có cụm phụ âm như cr, pr, br, v.v. và được phát âm rời, phải dùng dấu "-" để tách chúng ra thành âm gió (ký tự đơn) và âm tiết tiếng Việt.
+     - Đúng: [Cristiano][c-rít-x-ti-a-nô], [pro][p-rô], [Brazil][b-ra-xin].
+     - Sai: [Cristiano][crít-x-ti-a-nô], [pro][prô], [Brazil][bra-xin].
+   - Chỉ tách nếu đó là âm gió; không được tách chữ cái trong một âm tiếng Việt ra.
+     - Đúng: [Bitcoin][bít-coi].
+     - Sai: [Bitcoin][bít-c-oi], do "coi" là một âm tiếng Việt chuẩn và "c" không phải âm gió trong trường hợp này.
+   - Phiên âm theo đúng cách đọc của speaker chứ không phải theo cách đọc chuẩn. Nếu cách đọc chuẩn có âm gió/phụ âm nhưng speaker thực tế không phát âm âm đó, không được thêm âm đó vào spoken_form. Người Việt thường chỉ phát âm được một số âm gió/phụ âm cơ bản.
+
+4. QUY TẮC CHUNG CHO VIỆC CHUẨN HÓA VÀ PHIÊN ÂM:
+   - KHÔNG gộp nhiều từ: Đảm bảo phiên âm/chuẩn hóa riêng cho TỪNG từ, ngăn cách bởi dấu cách. KHÔNG phiên âm/chuẩn hóa cho một cụm nhiều từ.
+     - Đúng: "Hello World" -> "[Hello][hê-lô] [World][gua]".
+     - Đúng: "UBND HCM" -> "[UBND][ủy_ban_nhân_dân] [HCM][hồ_chí_minh]".
+     - Sai: "Hello World" -> "[Hello World][hê-lô-gua]".
+     - Sai: "UBND HCM" -> "[UBND HCM][ủy_ban_nhân_dân_hồ_chí_minh]".
+   - KHÔNG được dùng những thứ sau trong spoken_form để chuẩn hóa/phiên âm:
+     - Chữ số hay ký tự đặc biệt.
+     - Âm không chuẩn tiếng Việt như "fiu-chờ", "ơ-way"; "fiu" và "way" là sai.
+     - Chữ cái đơn khi chữ cái đó không phải âm gió/phụ âm đặc biệt được speaker thực sự phát âm riêng. Mọi thành phần phiên âm còn lại phải là một âm tiết tiếng Việt đầy đủ.
+       - Đúng: en_ép_ti, bi_en_bi, vê_tê_vê.
+       - Sai: n_f_t, b_n_b, v_t_v.
+
+NON-VERBAL / SOUND EVENTS:
+
+Mọi âm thanh đáng chú ý phải được chèn trực tiếp vào transcript tại đúng vị trí thời gian mà nó xảy ra, dưới dạng "<event>".
+
+- Không dùng một danh sách tag cố định. Tự mô tả event ngắn gọn và chính xác dựa trên những gì thực sự nghe thấy.
+- Nếu event xảy ra giữa hai từ, đặt tag giữa hai từ đó.
+- Nếu event xảy ra trước hoặc sau speech, đặt tag ở đầu hoặc cuối transcript tương ứng.
+- Không chèn background ambience rất nhỏ hoặc âm thanh không đáng chú ý.
+- Ví dụ:
+  - "Tôi nghĩ là <laugh> cái này khá ổn."
+  - "Hôm nay <cough> mình sẽ thử lại."
+  - "Mình đang nói thì <door_slam> mọi người quay lại nhìn."
+  - "Đây là kết quả <short_click> cuối cùng."
+
+OUTPUT CONTRACT:
+
+Return exactly one valid JSON object. Do not return markdown, code fences, commentary, or any text outside the JSON object.
+
+The fields MUST appear in this order:
+1. "speaker_purity"
+2. "word_completeness"
+3. "audio_quality"
+4. "decision"
+5. "failure_codes"
+6. "reason"
+7. "transcript" only when decision == "pass"
+
+When decision == "reject":
+- Do NOT return the "transcript" field at all. Do not return it as an empty string and do not return it as null.
+- Return this schema:
+{
+  "speaker_purity": "pure" | "secondary_speaker" | "overlapping_speech",
+  "word_completeness": "complete" | "clipped_word_start" | "clipped_word_end",
+  "audio_quality": "studio_clean" | "music_bleed" | "noisy_reverberant" | "distorted",
+  "decision": "reject",
+  "failure_codes": ["one or more detected failure codes"],
+  "reason": "Concise English explanation of the acoustic or language decision."
+}
+
+When decision == "pass":
+- Return a non-empty "transcript" string as the final field.
+- Return this schema:
+{
+  "speaker_purity": "pure",
+  "word_completeness": "complete",
+  "audio_quality": "studio_clean",
+  "decision": "pass",
+  "failure_codes": [],
+  "reason": "Concise English explanation of the acoustic decision.",
+  "transcript": "Nội dung transcript theo đầy đủ quy tắc bên trên."
+}
+
+FINAL CHECK BEFORE RESPONDING:
+- Base every acoustic label, language decision, word, pronunciation, punctuation mark, filler, and sound event only on what is actually audible. Do not hallucinate.
+- Do not reject syntactic or grammatical incompleteness when the final spoken syllable has a natural acoustic decay.
+- Do not reject faint, steady, non-intrusive background noise that satisfies the "studio_clean" definition.
+- Reject speech in any language other than Vietnamese or English and include "unsupported_language" in failure_codes.
+- Reject singing and include "singing" in failure_codes.
+- If decision == "reject", omit "transcript" completely.
+- If decision == "pass", ensure "transcript" is non-empty and is the final JSON field.
