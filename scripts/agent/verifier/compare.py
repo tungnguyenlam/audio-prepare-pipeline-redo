@@ -113,12 +113,12 @@ def load_run(directory: Path) -> tuple[dict[tuple[str, str], dict[str, Any]], di
             }
     if not records:
         raise ValueError(f'No verifier artifacts in {directory} (ignored {ignored} unrelated JSON files)')
-    return records, {\
-        'directory': str(directory), 'artifacts': len(records),\
-        'valid': sum(r['error'] is None for r in records.values()),\
-        'invalid': sum(r['error'] is not None for r in records.values()),\
-        'ignored_json': ignored,\
-        'errors': dict(Counter(r['error'] for r in records.values() if r['error'])),\
+    return records, {
+        'directory': str(directory), 'artifacts': len(records),
+        'valid': sum(r['error'] is None for r in records.values()),
+        'invalid': sum(r['error'] is not None for r in records.values()),
+        'ignored_json': ignored,
+        'errors': dict(Counter(r['error'] for r in records.values() if r['error'])),
     }
 
 

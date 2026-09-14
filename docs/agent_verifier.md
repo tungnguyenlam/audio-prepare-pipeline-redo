@@ -61,15 +61,19 @@ deprecated, reference-only revisions and are not registered validation profiles.
 Free-form transcript/description prompts (`prompt-transcripts-*.txt`,
 `vi-prompt-alam*.txt`) remain available for `scripts/agent/`.
 `acoustic_defect-3.txt` combines acoustic verification with conditional
-Vietnamese/English transcription. It accepts faint non-intrusive background noise,
-adds `unsupported_language` and `singing` eligibility failures, requires a nonempty
-final `transcript` field for pass, and forbids that field for reject.
+Vietnamese/English transcription and an audible emotion/speaking-style label. It
+accepts faint non-intrusive background noise, adds `unsupported_language` and
+`singing` eligibility failures, requires nonempty `emotion` and final `transcript`
+fields for pass, and forbids the transcript field for reject.
 
 The HF backend requires a multimodal processor. Gemma 4 is detected from its model
 configuration and is loaded only through `AutoModelForMultimodalLM`; it does not
 fall back to a text-only loader. Messages, audio loading, tokenization, and feature
 construction run together through the processor's multimodal chat template. The
 verify environment requires `transformers>=5.10.1` for this API and model family.
+If a parsed HF pass omits `emotion` or `transcript`, the backend makes one targeted
+repair generation and records `_schema_retry` in the final verdict. Other parse or
+schema failures remain failures and retain their raw response for diagnosis.
 
 ## Offline tools (no model calls)
 
@@ -83,8 +87,10 @@ beside the recorded source audio (or given via `--input-manifest` /
 Start with `plot/report.md`. Point it at one model/effort directory for
 single-variant figures; a directory with several configurations still gets
 per-model statistics and `by_model.png`. Acoustic v3 transcript text, character and
-word counts are exported to both sample CSVs and summarized in `analysis.json`;
-`transcripts.png` shows contract outcomes and pass transcript lengths. Rerunning refreshes `plot/`; a nonempty
+word counts plus emotion labels are exported to both sample CSVs and summarized in
+`analysis.json`; `transcripts.png` shows contract outcomes and pass transcript
+lengths, while `emotions.png` and `emotions_by_speaker.png` show emotion counts and
+durations when available. Rerunning refreshes `plot/`; a nonempty
 custom `--output-dir` needs `--overwrite`. Detected defects are model labels, not
 errors against a reference.
 
@@ -101,16 +107,17 @@ excluded from metrics. Output goes to a new directory under
 `.data/agent/verifier/comparisons/` (or an empty `--output-dir` outside all inputs);
 files are listed in [data contract §8](data_contract.md#8-verifier-comparison-comparesh--dataagentverifiercomparisonsutc-hash).
 Exit code 2 on missing inputs, no valid reference, duplicate keys, or a candidate
-with zero valid matches. `pairs.csv` preserves both transcripts and records whether
-they are exact, different, missing from the candidate, or not applicable. Transcript
-differences are also written separately without changing verifier agreement metrics.
+with zero valid matches. `pairs.csv` preserves both transcripts and emotion labels
+and records their exact, different, missing-candidate, or not-applicable status.
+Transcript differences are also written separately; neither text nor emotion
+agreement changes verifier decision metrics.
 
 ### `evaluate_verifier.sh --predictions-dir P --reference-dir R --output-file F`
 
 Pairs verdict JSON files in two flat directories by clip stem (all verifier backend
 suffixes stripped), validates each artifact against its prompt profile, and reports
-accuracy, reject precision/recall/F1, false-rejection rate, latency percentiles and
-transcript exact-match counts as JSON. Use
+accuracy, reject precision/recall/F1, false-rejection rate, latency percentiles,
+transcript exact-match counts, and emotion exact-match counts as JSON. Use
 `compare.sh` for family trees, other backends, and defect-level disagreement.
 
 ### `scaffold_experiment.sh --name NAME`

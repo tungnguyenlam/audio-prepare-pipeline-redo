@@ -130,10 +130,10 @@ The fields MUST appear in this order:
 1. "speaker_purity"
 2. "word_completeness"
 3. "audio_quality"
-4. "decision"
-5. "failure_codes"
-6. "reason"
-7. "emotion" (required when decision == "pass", optional when decision == "reject")
+4. "emotion" (required when decision == "pass", optional when decision == "reject")
+5. "decision"
+6. "failure_codes"
+7. "reason"
 8. "transcript" only when decision == "pass"
 
 When decision == "reject":
@@ -144,10 +144,10 @@ When decision == "reject":
   "speaker_purity": "pure" | "secondary_speaker" | "overlapping_speech",
   "word_completeness": "complete" | "clipped_word_start" | "clipped_word_end",
   "audio_quality": "studio_clean" | "music_bleed" | "noisy_reverberant" | "distorted",
+  "emotion": "optional emotion/speaking style description",
   "decision": "reject",
   "failure_codes": ["one or more detected failure codes"],
-  "reason": "Concise English explanation of the acoustic or language decision.",
-  "emotion": "optional emotion/speaking style description"
+  "reason": "Concise English explanation of the acoustic or language decision."
 }
 
 When decision == "pass":
@@ -158,10 +158,10 @@ When decision == "pass":
   "speaker_purity": "pure",
   "word_completeness": "complete",
   "audio_quality": "studio_clean",
+  "emotion": "neutral",
   "decision": "pass",
   "failure_codes": [],
   "reason": "Concise English explanation of the acoustic decision.",
-  "emotion": "neutral",
   "transcript": "Nội dung transcript theo đầy đủ quy tắc bên trên."
 }
 

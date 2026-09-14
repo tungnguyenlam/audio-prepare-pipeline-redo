@@ -138,11 +138,12 @@ either a validated `verdict` or an `error`:
 }
 ```
 
-For a pass, the public verdict fields use the same order and end with a nonempty
-`"transcript": "…"`. Reject verdicts omit `transcript` entirely. Runtime schema
-errors include `missing_transcript`, `unexpected_transcript`, and
-`transcript_not_last`; the exact raw model response remains in the sibling text
-artifact for diagnosis.
+For a pass, the public verdict fields use the same order, include a nonempty
+`"emotion": "…"`, and end with a nonempty `"transcript": "…"`. Reject verdicts
+omit `transcript` entirely and may omit `emotion`. Runtime schema errors include
+`missing_emotion`, `invalid_emotion`, `missing_transcript`,
+`unexpected_transcript`, and `transcript_not_last`; the exact raw model response
+remains in the sibling text artifact for diagnosis.
 
 Failure records include a stable machine-readable code and an explanation:
 
@@ -171,7 +172,7 @@ Validation profile is selected by the prompt text (`scripts/agent/verifier/_verd
 
 | Profile | Selected when prompt equals | Required fields and consistency |
 |---|---|---|
-| `acoustic_defect_v3` | `prompts/acoustic_defect-3.txt` (default) | Three acoustic dimensions as below; `failure_codes` contains exactly their non-clean values plus optional `unsupported_language` / `singing`; `decision` = pass iff no codes; pass requires a nonempty final `transcript`; reject forbids the field |
+| `acoustic_defect_v3` | `prompts/acoustic_defect-3.txt` (default) | Three acoustic dimensions as below; `failure_codes` contains exactly their non-clean values plus optional `unsupported_language` / `singing`; `decision` = pass iff no codes; pass requires nonempty `emotion` and final `transcript`; reject forbids the transcript field |
 | `speaker_purity_v1` | `prompts/speaker_purity.txt` | `speaker_purity`; pass iff `pure` |
 | `word_boundary_v1` | `prompts/word_boundary.txt` | `boundary_start`, `boundary_end` ∈ clean/clipped; pass iff both clean |
 | `vibevoice_v1` | VibeVoice backend (no prompt) | `decision` ∈ pass/reject/uncertain, `num_speakers`, `secondary_speech_s`, `dominant_speaker_id`; `uncertain` is excluded from pass/reject metrics |
@@ -181,18 +182,18 @@ Validation profile is selected by the prompt text (`scripts/agent/verifier/_verd
 
 ```text
 plot/
-  analysis.json           schema_version 2; coverage, decisions, transcripts, durations, model/prompt groups, failure codes, model_stats, error_stats, CSV digests, plot list
+  analysis.json           schema_version 2; coverage, decisions, transcripts, emotions, durations, model/prompt groups, failure codes, model_stats, error_stats, CSV digests, plot list
   all_samples.csv         every expected turn (from manifests) + every artifact, even unmatched/invalid
   successful_samples.csv  subset with a schema-valid pass/reject
   report.md               model configuration, statistics, linked error cases
-  error_cases.csv         model_id, model, kind, category, family, audio_path, verdict_file, decision, reason, transcript, failure_stage, assistant_raw_response
+  error_cases.csv         model_id, model, kind, category, family, audio_path, verdict_file, decision, reason, emotion, transcript, failure_stage, assistant_raw_response
   error_stats.csv         model_id, model, kind, category, count, denominator, rate
-  coverage.png decisions.png defects.png transcripts.png
-  dimensions.png measurements.png processing_errors.png by_model.png by_speaker.png timeline*.png   (when applicable)
+  coverage.png decisions.png defects.png transcripts.png emotions.png
+  dimensions.png measurements.png processing_errors.png by_model.png by_speaker.png emotions_by_speaker.png timeline*.png   (when applicable)
 ```
 
 Both CSVs share a column order beginning `audio_path, final_verdict,
-assistant_raw_response, transcript, transcript_chars, transcript_words`; nested
+assistant_raw_response, transcript, transcript_chars, transcript_words, emotion`; nested
 values remain in `*_json` columns. Invalid or
 missing results have a blank `final_verdict` and are never counted as rejects.
 `kind` separates `acoustic`, `eligibility`, and `processing` failures; label rates
@@ -203,12 +204,12 @@ refreshes `plot/` and deletes PNGs it previously recorded.
 
 | File | Contents |
 |---|---|
-| `summary.json` | `schema_version: 3`; `reference` / `candidates` inventories (incl. `unmatched_artifacts`, `extra_clips`), `families`, per-family `summaries`, `global_summaries` with verifier and transcript metrics |
-| `pairs.csv` | one row per reference clip per candidate: verifier status/decisions/codes, schema profiles, transcript status/text, reasons, JSON and audio paths |
+| `summary.json` | `schema_version: 3`; `reference` / `candidates` inventories (incl. `unmatched_artifacts`, `extra_clips`), `families`, per-family `summaries`, `global_summaries` with verifier, transcript, and emotion metrics |
+| `pairs.csv` | one row per reference clip per candidate: verifier status/decisions/codes, schema profiles, transcript and emotion status/text, reasons, JSON and audio paths |
 | `conflicts.csv`, `conflicts.md` | rows with status `bad_accept`, `false_reject`, `code_mismatch` |
 | `transcript_differences.csv` | reference transcripts that differ from or are missing in the candidate |
 | `report.md` | aggregate metrics and caveats |
-| `plots/candidate_<i>_{defects,transcripts}.png` | defect recall and transcript comparison (when applicable, unless `--no-plots`) |
+| `plots/candidate_<i>_{defects,transcripts,emotions}.png` | defect recall, transcript comparison, and emotion agreement (when applicable, unless `--no-plots`) |
 
 `status` ∈ `agree`, `bad_accept`, `false_reject`, `code_mismatch`,
 `invalid_reference`, `missing_candidate`, `invalid_candidate`, `audio_mismatch`;

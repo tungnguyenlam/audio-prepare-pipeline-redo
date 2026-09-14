@@ -22,6 +22,15 @@ from hf import HFAgent  # noqa: E402
 class DefaultHFVerifier(HFAgent):
     """Hugging Face generation parsed as a pass/reject verdict."""
 
+    _PASS_REPAIR = """
+
+IMPORTANT PASS-RESPONSE REPAIR:
+Do not close a pass JSON object before its final "transcript" field. A pass is
+incomplete until you add a non-empty transcript using the words actually heard in
+the audio, and only then close the JSON object. Return the entire JSON verdict
+again, not just the missing field.
+""".strip()
+
     def verify(
         self, audio_path: Path, prompt: str, max_new_tokens: int
     ) -> dict[str, Any]:
@@ -30,8 +39,27 @@ class DefaultHFVerifier(HFAgent):
             prompt,
             max_new_tokens=max_new_tokens,
         )
+        latency_s = float(generated["latency_s"])
         parsed = parse_verifier_response(generated["text"])
-        parsed["_latency_s"] = generated["latency_s"]
+        missing_pass_fields = []
+        if parsed.get("decision") == "pass":
+            for field in ("emotion", "transcript"):
+                value = parsed.get(field)
+                if not isinstance(value, str) or not value.strip():
+                    missing_pass_fields.append(field)
+        if missing_pass_fields:
+            generated = self.generate(
+                audio_path,
+                f"{prompt}\n\n{self._PASS_REPAIR}",
+                max_new_tokens=max_new_tokens,
+            )
+            latency_s += float(generated["latency_s"])
+            parsed = parse_verifier_response(generated["text"])
+            parsed["_schema_retry"] = {
+                "count": 1,
+                "reason": "missing_" + "_and_".join(missing_pass_fields),
+            }
+        parsed["_latency_s"] = round(latency_s, 3)
         parsed["_engine"] = "huggingface"
         parsed["_model"] = self.model_id
         parsed["_model_class"] = self.model_class

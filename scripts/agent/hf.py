@@ -175,7 +175,7 @@ class HFAgent:
         self.model.eval()
 
     def generate(
-        self,\
+        self,
         audio_path: Path,
         prompt: str,
         *,
