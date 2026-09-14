@@ -78,7 +78,7 @@ def write_plots(
     progress('PLOT_DONE', f'Saved plot to {gantt.name}')
     _write_duration_histogram(plt, turns, duration_path, bin_width=bin_width)
     progress('PLOT_DONE', f'Saved plot to {duration_path.name}')
-    _write_cutoff_bars(plt, turns, cutoff_path)
+    _write_cutoff_bars(plt, turns, cutoff_path, bin_width=bin_width)
     progress('PLOT_DONE', f'Saved plot to {cutoff_path.name}')
     return [gantt, duration_path, cutoff_path]
 
@@ -154,10 +154,10 @@ def _write_duration_histogram(plt, turns: list[dict], dest: Path, *, bin_width: 
     _save(plt, fig, dest)
 
 
-def _write_cutoff_bars(plt, turns: list[dict], dest: Path) -> None:
+def _write_cutoff_bars(plt, turns: list[dict], dest: Path, *, bin_width: float = 0.25) -> None:
     durations = _turn_durations(turns)
-    fig, (ax_count, ax_dur) = plt.subplots(2, 1, figsize=(12, 7), sharex=True)
     if not durations:
+        fig, (ax_count, ax_dur) = plt.subplots(2, 1, figsize=(12, 7), sharex=True)
         for ax in (ax_count, ax_dur):
             ax.axis('off')
             ax.text(0.5, 0.5, 'No turns to plot', ha='center', va='center')
@@ -165,31 +165,48 @@ def _write_cutoff_bars(plt, turns: list[dict], dest: Path) -> None:
         _save(plt, fig, dest)
         return
 
+    step = bin_width if (math.isfinite(bin_width) and bin_width > 0) else 0.25
     n = len(durations)
     total_s = sum(durations)
-    last = math.floor(max(durations))
-    thresholds = list(range(0, last + 1))
+    num_steps = math.floor(max(durations) / step)
+    thresholds = [round(i * step, 4) for i in range(num_steps + 1)]
     remain_n = [sum(duration >= threshold for duration in durations) for threshold in thresholds]
     remain_s = [sum(duration for duration in durations if duration >= threshold) for threshold in thresholds]
 
-    count_bars = ax_count.bar(thresholds, remain_n, color='#3b82f6', width=0.8)
-    ax_count.bar_label(count_bars, labels=[f'{count} ({_pct(count, n)})' for count in remain_n], fontsize=8, padding=3)
+    fig_w = min(24.0, max(12.0, len(thresholds) * 0.3))
+    fig, (ax_count, ax_dur) = plt.subplots(2, 1, figsize=(fig_w, 7), sharex=True)
+
+    bar_w = 0.8 * step
+    rot = 90 if len(thresholds) > 15 else 0
+    fsize = 6 if len(thresholds) > 30 else (7 if len(thresholds) > 15 else 8)
+    headroom = 1.35 if rot == 90 else 1.22
+    step_factor = math.ceil(len(thresholds) / 50) if len(thresholds) > 60 else 1
+
+    count_labels = [f'{count} ({_pct(count, n)})' if (i % step_factor == 0) else '' for i, count in enumerate(remain_n)]
+    count_bars = ax_count.bar(thresholds, remain_n, color='#3b82f6', width=bar_w)
+    ax_count.bar_label(count_bars, labels=count_labels, fontsize=fsize, padding=3, rotation=rot)
     ax_count.set_ylabel('Remaining segments')
     ax_count.set_title('Remaining if dropping segments shorter than T')
-    ax_count.set_ylim(0, max(remain_n) * 1.22 if remain_n else 1)
+    ax_count.set_ylim(0, max(remain_n) * headroom if remain_n else 1)
     ax_count.grid(True, axis='y', linestyle='--', alpha=0.4)
 
-    duration_bars = ax_dur.bar(thresholds, remain_s, color='#22c55e', width=0.8)
+    dur_labels = [f'{seconds:.1f}s ({_pct(seconds, total_s)})' if (i % step_factor == 0) else '' for i, seconds in enumerate(remain_s)]
+    duration_bars = ax_dur.bar(thresholds, remain_s, color='#22c55e', width=bar_w)
     ax_dur.bar_label(
         duration_bars,
-        labels=[f'{seconds:.1f}s ({_pct(seconds, total_s)})' for seconds in remain_s],
-        fontsize=8,
+        labels=dur_labels,
+        fontsize=fsize,
         padding=3,
+        rotation=rot,
     )
     ax_dur.set_ylabel('Remaining audio (s)')
     ax_dur.set_xlabel('Keep segments ≥ T seconds')
-    ax_dur.set_ylim(0, max(remain_s) * 1.22 if remain_s else 1)
-    ax_dur.set_xticks(thresholds)
+    ax_dur.set_ylim(0, max(remain_s) * headroom if remain_s else 1)
+
+    tick_indices = list(range(0, len(thresholds), step_factor))
+    ax_dur.set_xticks([thresholds[i] for i in tick_indices])
+    if len(thresholds) > 15:
+        ax_dur.tick_params(axis='x', rotation=45 if len(tick_indices) <= 35 else 90, labelsize=fsize)
     ax_dur.grid(True, axis='y', linestyle='--', alpha=0.4)
     _save(plt, fig, dest)
 
