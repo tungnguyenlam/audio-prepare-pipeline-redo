@@ -84,6 +84,7 @@ def main() -> int:
     latencies = []
     invalid_pairs = []
     transcript_statuses: dict[str, int] = {}
+    emotion_statuses: dict[str, int] = {}
     known_prompts = _known_prompts()
 
     for key, pred_data, ref_data in records:
@@ -126,6 +127,20 @@ def main() -> int:
             )
             transcript_statuses[transcript_status] = transcript_statuses.get(transcript_status, 0) + 1
 
+        ref_emotion = ref_v.get("emotion")
+        pred_emotion = pred_v.get("emotion")
+        if isinstance(ref_emotion, str) and ref_emotion.strip():
+            ref_e = ref_emotion.strip().lower()
+            pred_e = pred_emotion.strip().lower() if isinstance(pred_emotion, str) else ""
+            emotion_status = (
+                "missing_prediction"
+                if not pred_e
+                else "exact_match"
+                if pred_e == ref_e
+                else "different"
+            )
+            emotion_statuses[emotion_status] = emotion_statuses.get(emotion_status, 0) + 1
+
     total = tp + fp + tn + fn
     accuracy = (tp + tn) / total if total > 0 else 0.0
     reject_precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
@@ -167,6 +182,13 @@ def main() -> int:
             "exact_match_rate": round(
                 transcript_statuses.get("exact_match", 0) / sum(transcript_statuses.values()), 4
             ) if transcript_statuses else None,
+        },
+        "emotions": {
+            "reference_available": sum(emotion_statuses.values()),
+            "statuses": emotion_statuses,
+            "exact_match_rate": round(
+                emotion_statuses.get("exact_match", 0) / sum(emotion_statuses.values()), 4
+            ) if emotion_statuses else None,
         },
         "reasons_breakdown": reasons_breakdown,
         "predictions_dir": str(args.predictions_dir),

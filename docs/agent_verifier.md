@@ -13,7 +13,7 @@ schema. Neither directory orchestrates other pipeline stages.
 |---|---|---|
 | `gemini` | Google Gemini API | Batch API by default (`--inference-mode batch`, ≤ `--batch-size 10` requests per job, split further under the 20 MB inline limit, polled up to `--batch-timeout-s 86400`); `--inference-mode standard` for synchronous calls. Default `--model gemini-3.8-flash --reasoning-effort medium` (`none/low/medium/high` → `thinkingLevel`). Needs `GEMINI_API_KEY`. |
 | `endpoint` | OpenAI-compatible `/v1/chat/completions` | Served vLLM, Unsloth, etc. Optional `OPENAI_API_KEY`. |
-| `hf` | Local `transformers` model | `--model-id`, `--adapter-path` (LoRA), `--load-in-4bit/-8bit`, `--device`. |
+| `hf` | Local `transformers` model | Multimodal `AutoProcessor` / `AutoModelForMultimodalLM` path for Gemma 4; `--model-id`, `--adapter-path` (LoRA), `--load-in-4bit/-8bit`, `--device`. |
 
 - `--prompt-file` is required; `--system-prompt-file` is optional. The user message
   places the prompt before the audio.
@@ -29,7 +29,7 @@ schema. Neither directory orchestrates other pipeline stages.
 | Backend | Environment | Model / options |
 |---|---|---|
 | `gemini` | `.venvs/verify` | as above; adds `_usage`, `_cost` (`paid_batch` / `paid_standard`) |
-| `hf` | `.venvs/verify` | Gemma 4 E2B / E4B / 12B or any HF audio LLM, optional LoRA adapter |
+| `hf` | `.venvs/verify` | Gemma 4 E2B / E4B / 12B or any HF audio LLM, optional LoRA adapter; `--max-new-tokens 1024` by default |
 | `endpoint` | `.venvs/verify` | any OpenAI-compatible server |
 | `unsloth` | `.venvs/verify` | Unsloth Studio (`--model`, `--gguf-variant`, `--payload-mode`, `UNSLOTH_*` env) |
 | `vllm` | `.venvs/vllm` | offline vLLM engine (`--dtype`, `--tensor-parallel-size`, …) or `--endpoint` server |
@@ -44,6 +44,10 @@ schema. Neither directory orchestrates other pipeline stages.
   [data contract §6](data_contract.md#6-verifier-verdict-scriptsagentverifier).
 - Generation, parse, or schema failure is recorded per input
   (`status: "fail"`, `error.stage`) and never stops later inputs.
+- Failure JSON records a stable `error.code`, explanatory `error.message`, and a
+  safe exception class for generation failures. Schema failures also retain the
+  parsed-but-invalid object as `invalid_verdict`; exact model text remains in the
+  sibling `.txt` response artifact.
 - Every verifier backend that accepts prompts uses the same runtime parser and
   schema validator. Acoustic v3 pass responses require a nonempty transcript;
   reject responses must omit it. Verifiers never move or delete audio.
@@ -60,6 +64,12 @@ Free-form transcript/description prompts (`prompt-transcripts-*.txt`,
 Vietnamese/English transcription. It accepts faint non-intrusive background noise,
 adds `unsupported_language` and `singing` eligibility failures, requires a nonempty
 final `transcript` field for pass, and forbids that field for reject.
+
+The HF backend requires a multimodal processor. Gemma 4 is detected from its model
+configuration and is loaded only through `AutoModelForMultimodalLM`; it does not
+fall back to a text-only loader. Messages, audio loading, tokenization, and feature
+construction run together through the processor's multimodal chat template. The
+verify environment requires `transformers>=5.10.1` for this API and model family.
 
 ## Offline tools (no model calls)
 

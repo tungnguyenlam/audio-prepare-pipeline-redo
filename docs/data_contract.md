@@ -144,9 +144,28 @@ errors include `missing_transcript`, `unexpected_transcript`, and
 `transcript_not_last`; the exact raw model response remains in the sibling text
 artifact for diagnosis.
 
-Failure: `"status": "fail"`, `"error": {"stage": "generation|parse|schema", "code": "…"}`;
-a request failure with no model text writes only the JSON. Legacy verdict-only
-JSON (no `status`/`response`) is still readable by the analyzer and comparator.
+Failure records include a stable machine-readable code and an explanation:
+
+```json
+{
+  "status": "fail",
+  "error": {
+    "stage": "generation|parse|schema",
+    "code": "missing_transcript",
+    "message": "The model returned 'pass' without a non-empty transcript."
+  },
+  "response": {"path": "/abs/clip_hf.txt", "format": "utf-8 text", "kind": "text", "bytes": 194, "sha256": "…"},
+  "invalid_verdict": {"decision": "pass", "failure_codes": []}
+}
+```
+
+Generation errors additionally include the safe exception class as
+`error.exception_type`; arbitrary exception text is not persisted because it may
+contain credentials. Parse and schema failures preserve exact model text in the
+sibling response file, and schema failures preserve the parsed object as
+`invalid_verdict`. A generation failure with no model text writes only the JSON.
+Legacy verdict-only JSON (no `status`/`response`) remains readable by the analyzer
+and comparator.
 
 Validation profile is selected by the prompt text (`scripts/agent/verifier/_verdicts.py`):
 

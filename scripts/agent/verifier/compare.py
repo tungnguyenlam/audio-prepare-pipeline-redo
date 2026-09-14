@@ -29,6 +29,7 @@ PAIR_FIELDS = (
     "ref_codes", "cand_codes", "missed_codes", "overcalled_codes",
     "ref_reason", "cand_reason", "ref_schema_profile", "cand_schema_profile",
     "transcript_status", "ref_transcript", "cand_transcript",
+    "emotion_status", "ref_emotion", "cand_emotion",
     "reference_file", "candidate_file", "audio_path",
 )
 
@@ -84,6 +85,8 @@ def load_run(directory: Path) -> tuple[dict[tuple[str, str], dict[str, Any]], di
             source = source if isinstance(source, dict) else {}
             transcript = verdict.get('transcript')
             transcript = transcript if isinstance(transcript, str) else ''
+            emotion = verdict.get('emotion')
+            emotion = emotion.strip() if isinstance(emotion, str) else ''
             key = BACKEND_SUFFIX.sub('', path.stem)
             identity = (family, key)
             if identity in records:
@@ -104,18 +107,18 @@ def load_run(directory: Path) -> tuple[dict[tuple[str, str], dict[str, Any]], di
                 'file': str(path), 'error': error,
                 'decision': verdict.get('decision') if error is None else None,
                 'codes': sorted(codes), 'reason': str(verdict.get('reason') or ''),
-                'schema_profile': profile, 'transcript': transcript,
+                'schema_profile': profile, 'transcript': transcript, 'emotion': emotion,
                 'audio_path': source.get('path') or verdict.get('audio_path') or '',
                 'sha256': source.get('sha256'), 'latency_s': verdict.get('_latency_s'),
             }
     if not records:
         raise ValueError(f'No verifier artifacts in {directory} (ignored {ignored} unrelated JSON files)')
-    return records, {
-        'directory': str(directory), 'artifacts': len(records),
-        'valid': sum(r['error'] is None for r in records.values()),
-        'invalid': sum(r['error'] is not None for r in records.values()),
-        'ignored_json': ignored,
-        'errors': dict(Counter(r['error'] for r in records.values() if r['error'])),
+    return records, {\
+        'directory': str(directory), 'artifacts': len(records),\
+        'valid': sum(r['error'] is None for r in records.values()),\
+        'invalid': sum(r['error'] is not None for r in records.values()),\
+        'ignored_json': ignored,\
+        'errors': dict(Counter(r['error'] for r in records.values() if r['error'])),\
     }
 
 
@@ -166,6 +169,13 @@ def summarize(rows: list[dict], candidate: str, family: str) -> dict:
     candidate_transcripts = sum(bool(r['cand_transcript']) for r in rows)
     covered_reference_transcripts = transcript_counts['exact_match'] + transcript_counts['different']
     comparable_transcripts = transcript_counts['exact_match'] + transcript_counts['different']
+
+    emotion_counts = Counter(r['emotion_status'] for r in rows)
+    reference_emotions = sum(r['emotion_status'] != 'not_applicable' for r in rows)
+    candidate_emotions = sum(bool(r['cand_emotion']) for r in rows)
+    covered_reference_emotions = emotion_counts['exact_match'] + emotion_counts['different']
+    comparable_emotions = emotion_counts['exact_match'] + emotion_counts['different']
+
     return {
         'candidate': candidate, 'family': family, 'matched_clips': len(matched),
         'reference_valid': ref_valid, 'coverage': ratio(len(matched), ref_valid),
@@ -193,6 +203,16 @@ def summarize(rows: list[dict], candidate: str, family: str) -> dict:
             'exact_matches': transcript_counts['exact_match'],
             'exact_match_rate': ratio(transcript_counts['exact_match'], comparable_transcripts),
             'statuses': dict(transcript_counts),
+        },
+        'emotions': {
+            'reference_available': reference_emotions,
+            'candidate_available': candidate_emotions,
+            'candidate_on_reference': covered_reference_emotions,
+            'coverage': ratio(covered_reference_emotions, reference_emotions),
+            'comparable': comparable_emotions,
+            'exact_matches': emotion_counts['exact_match'],
+            'exact_match_rate': ratio(emotion_counts['exact_match'], comparable_emotions),
+            'statuses': dict(emotion_counts),
         },
         'per_criterion': criteria,
     }
@@ -228,6 +248,18 @@ def compare_records(reference: dict, candidate: dict, label: str) -> list[dict]:
             transcript_status = 'exact_match'
         else:
             transcript_status = 'different'
+
+        ref_emotion = ref.get('emotion', '')
+        cand_emotion = cand.get('emotion', '')
+        if not ref_emotion:
+            emotion_status = 'not_applicable'
+        elif not cand_emotion:
+            emotion_status = 'missing_candidate'
+        elif ref_emotion.lower() == cand_emotion.lower():
+            emotion_status = 'exact_match'
+        else:
+            emotion_status = 'different'
+
         rows.append({
             'candidate': label, 'family': family, 'key': key, 'status': status,
             'ref_decision': ref['decision'], 'cand_decision': cand.get('decision'),
@@ -241,6 +273,9 @@ def compare_records(reference: dict, candidate: dict, label: str) -> list[dict]:
             'transcript_status': transcript_status,
             'ref_transcript': ref_transcript,
             'cand_transcript': cand_transcript,
+            'emotion_status': emotion_status,
+            'ref_emotion': ref_emotion,
+            'cand_emotion': cand_emotion,
             'reference_file': ref['file'], 'candidate_file': cand.get('file', ''),
             'audio_path': ref['audio_path'] or cand.get('audio_path', ''),
             '_latency_s': cand.get('latency_s'),
@@ -347,6 +382,21 @@ def render_plots(summaries: list[dict], directory: Path) -> list[str]:
             fig.savefig(path, dpi=160)
             plt.close(fig)
             paths.append(str(path))
+        emotions = summary.get('emotions', {})
+        if emotions.get('reference_available'):
+            labels = ('exact_match', 'different', 'missing_candidate')
+            values = [emotions['statuses'].get(label, 0) for label in labels]
+            fig, ax = plt.subplots(figsize=(9, 5))
+            bars = ax.bar(labels, values, color=('#22c55e', '#f59e0b', '#ef4444'))
+            ax.bar_label(bars)
+            ax.set_title(f"{summary['candidate']} — emotion agreement")
+            ax.set_ylabel('Reference emotions')
+            ax.grid(True, axis='y', linestyle='--', alpha=0.4)
+            fig.tight_layout()
+            path = directory / f'candidate_{index}_emotions.png'
+            fig.savefig(path, dpi=160)
+            plt.close(fig)
+            paths.append(str(path))
     return paths
 
 
@@ -439,8 +489,8 @@ def main() -> int:
               'Metrics measure agreement with this reference, not human ground truth. Only valid, matched clips are scored.',
               'Coverage = scored pairs / valid reference clips. Missing or failed results are excluded from decision metrics.',
               'Each candidate uses its own matched subset; compare coverage before comparing scores. N/A means no observations.', '',
-              '| Candidate | Matched / reference valid | Coverage | Defect recall | False rejection | Agreement | Bad accepts | Transcript coverage | Exact transcript |',
-              '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |']
+              '| Candidate | Matched / reference valid | Coverage | Defect recall | False rejection | Agreement | Bad accepts | Transcript coverage | Exact transcript | Emotion coverage | Exact emotion |',
+              '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |']
     for summary in summaries:
         metrics = summary['overall']
         report.append(f"| {markdown_cell(summary['candidate'])} | {summary['matched_clips']} / {summary['reference_valid']} | "
@@ -448,7 +498,9 @@ def main() -> int:
                       f"{percent(metrics['false_rejection_rate'])} | {percent(metrics['accuracy'])} | "
                       f"{summary['confusion_matrix']['bad_accepts_missed']} | "
                       f"{percent(summary['transcripts']['coverage'])} | "
-                      f"{percent(summary['transcripts']['exact_match_rate'])} |")
+                      f"{percent(summary['transcripts']['exact_match_rate'])} | "
+                      f"{percent(summary['emotions']['coverage'])} | "
+                      f"{percent(summary['emotions']['exact_match_rate'])} |")
     report.extend(['', 'Per-family metrics, input inventories, error counts and unmatched candidate paths are in `summary.json`.',
                    'Every reference clip appears once per candidate in `pairs.csv`, including missing/invalid/hash-mismatched pairs.',
                    'Different or missing candidate transcripts are listed in `transcript_differences.csv` and do not alter verifier agreement.',

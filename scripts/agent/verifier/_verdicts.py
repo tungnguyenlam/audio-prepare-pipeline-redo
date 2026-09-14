@@ -41,6 +41,10 @@ def _validate_verdict(
         return "unknown", "invalid_decision"
 
     profile = known_prompts.get(prompt.strip(), "custom") if isinstance(prompt, str) else "custom"
+    if profile == "custom" and isinstance(prompt, str) and prompt.strip().startswith(
+        "Listen to the supplied audio directly. Perform both acoustic verification and transcription"
+    ):
+        profile = "acoustic_defect_v3"
     if not isinstance(prompt, str) and backend == "vibevoice":
         profile = "vibevoice_v1"
 
@@ -49,12 +53,15 @@ def _validate_verdict(
         boundary = verdict.get("word_completeness")
         quality = verdict.get("audio_quality")
         codes = verdict.get("failure_codes")
+        emotion = verdict.get("emotion")
         if speaker not in {"pure", "secondary_speaker", "overlapping_speech"}:
             return profile, "invalid_speaker_purity"
         if boundary not in {"complete", "clipped_word_start", "clipped_word_end"}:
             return profile, "invalid_word_completeness"
         if quality not in {"studio_clean", "music_bleed", "noisy_reverberant", "distorted"}:
             return profile, "invalid_audio_quality"
+        if emotion is not None and (not isinstance(emotion, str) or not emotion.strip()):
+            return profile, "invalid_emotion"
         if not isinstance(codes, list) or any(code not in FAILURE_CODES for code in codes):
             return profile, "invalid_failure_codes"
         expected_acoustic_codes = {
@@ -74,6 +81,9 @@ def _validate_verdict(
             transcript = verdict.get("transcript")
             if not isinstance(transcript, str) or not transcript.strip():
                 return profile, "missing_transcript"
+            if isinstance(prompt, str) and "EMOTION / SPEAKING STYLE" in prompt:
+                if emotion is None or not isinstance(emotion, str) or not emotion.strip():
+                    return profile, "missing_emotion"
             public_fields = [key for key in verdict if not key.startswith("_")]
             if not public_fields or public_fields[-1] != "transcript":
                 return profile, "transcript_not_last"

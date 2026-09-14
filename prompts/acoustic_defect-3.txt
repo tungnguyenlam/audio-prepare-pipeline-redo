@@ -95,7 +95,7 @@ Chuẩn hóa/phiên âm các từ Out-of-Vocab thành cách đọc theo các âm
      - Sai: "UBND HCM" -> "[UBND HCM][ủy_ban_nhân_dân_hồ_chí_minh]".
    - KHÔNG được dùng những thứ sau trong spoken_form để chuẩn hóa/phiên âm:
      - Chữ số hay ký tự đặc biệt.
-     - Âm không chuẩn tiếng Việt như "fiu-chờ", "ơ-way"; "fiu" và "way" là sai.
+     - Âm không chuẩn tiếng Việt như "fiu-chờ", "ơi-way"; "fiu" và "way" là sai.
      - Chữ cái đơn khi chữ cái đó không phải âm gió/phụ âm đặc biệt được speaker thực sự phát âm riêng. Mọi thành phần phiên âm còn lại phải là một âm tiết tiếng Việt đầy đủ.
        - Đúng: en_ép_ti, bi_en_bi, vê_tê_vê.
        - Sai: n_f_t, b_n_b, v_t_v.
@@ -114,6 +114,14 @@ Mọi âm thanh đáng chú ý phải được chèn trực tiếp vào transcri
   - "Mình đang nói thì <door_slam> mọi người quay lại nhìn."
   - "Đây là kết quả <short_click> cuối cùng."
 
+EMOTION / SPEAKING STYLE:
+
+Mô tả ngắn gọn emotion hoặc speaking style nổi bật của speaker dựa trên audio (ví dụ: "neutral", "happy", "sad", "angry", "excited", "whispering", "calm", "tired", v.v.).
+
+- Không dùng danh sách emotion cố định.
+- Không suy luận từ nội dung câu từ; chỉ dựa vào prosody, pitch, energy, rhythm và voice quality thực tế.
+- Nếu không có đặc điểm gì nổi bật hoặc giọng đọc bình thường, trả "neutral".
+
 OUTPUT CONTRACT:
 
 Return exactly one valid JSON object. Do not return markdown, code fences, commentary, or any text outside the JSON object.
@@ -125,10 +133,12 @@ The fields MUST appear in this order:
 4. "decision"
 5. "failure_codes"
 6. "reason"
-7. "transcript" only when decision == "pass"
+7. "emotion" (required when decision == "pass", optional when decision == "reject")
+8. "transcript" only when decision == "pass"
 
 When decision == "reject":
 - Do NOT return the "transcript" field at all. Do not return it as an empty string and do not return it as null.
+- The "emotion" field is optional.
 - Return this schema:
 {
   "speaker_purity": "pure" | "secondary_speaker" | "overlapping_speech",
@@ -136,11 +146,13 @@ When decision == "reject":
   "audio_quality": "studio_clean" | "music_bleed" | "noisy_reverberant" | "distorted",
   "decision": "reject",
   "failure_codes": ["one or more detected failure codes"],
-  "reason": "Concise English explanation of the acoustic or language decision."
+  "reason": "Concise English explanation of the acoustic or language decision.",
+  "emotion": "optional emotion/speaking style description"
 }
 
 When decision == "pass":
 - Return a non-empty "transcript" string as the final field.
+- Return an accurate "emotion" string right before "transcript".
 - Return this schema:
 {
   "speaker_purity": "pure",
@@ -149,14 +161,16 @@ When decision == "pass":
   "decision": "pass",
   "failure_codes": [],
   "reason": "Concise English explanation of the acoustic decision.",
+  "emotion": "neutral",
   "transcript": "Nội dung transcript theo đầy đủ quy tắc bên trên."
 }
 
 FINAL CHECK BEFORE RESPONDING:
-- Base every acoustic label, language decision, word, pronunciation, punctuation mark, filler, and sound event only on what is actually audible. Do not hallucinate.
+- Base every acoustic label, language decision, word, pronunciation, punctuation mark, filler, sound event, and emotion only on what is actually audible. Do not hallucinate.
 - Do not reject syntactic or grammatical incompleteness when the final spoken syllable has a natural acoustic decay.
 - Do not reject faint, steady, non-intrusive background noise that satisfies the "studio_clean" definition.
 - Reject speech in any language other than Vietnamese or English and include "unsupported_language" in failure_codes.
 - Reject singing and include "singing" in failure_codes.
 - If decision == "reject", omit "transcript" completely.
-- If decision == "pass", ensure "transcript" is non-empty and is the final JSON field.
+- If decision == "pass", ensure "emotion" is provided and "transcript" is non-empty and is the final JSON field.
+- A "pass" response without a non-empty final "transcript" field is invalid. Check that the field is present before ending the response.

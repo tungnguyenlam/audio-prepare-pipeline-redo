@@ -42,6 +42,7 @@ CSV_FIELDS = (
     "transcript",
     "transcript_chars",
     "transcript_words",
+    "emotion",
     "verifier_status",
     "failure_stage",
     "failure_code",
@@ -267,6 +268,7 @@ def _artifact_values(
 
     if data.get("status") == "fail":
         error = data.get("error") if isinstance(data.get("error"), dict) else {}
+        invalid_verdict = data.get("invalid_verdict") if isinstance(data.get("invalid_verdict"), dict) else {}
         values.update(
             {
                 "verifier_status": "fail",
@@ -277,6 +279,9 @@ def _artifact_values(
                 "is_pass": False,
                 "is_reject": False,
                 "is_missing": False,
+                "emotion": str(invalid_verdict.get("emotion") or "").strip() if invalid_verdict else "",
+                "reason": str(invalid_verdict.get("reason") or "").strip() if invalid_verdict else "",
+                "transcript": str(invalid_verdict.get("transcript") or "").strip() if invalid_verdict else "",
             }
         )
         return values
@@ -286,6 +291,8 @@ def _artifact_values(
         code_list = codes if isinstance(codes, list) else []
         transcript = verdict.get("transcript")
         transcript = transcript if isinstance(transcript, str) else ""
+        emotion = verdict.get("emotion")
+        emotion = emotion.strip() if isinstance(emotion, str) else ""
         values.update(
             {
                 "parsed_decision": verdict.get("decision", ""),
@@ -299,6 +306,7 @@ def _artifact_values(
                 "dominant_speaker_id": verdict.get("dominant_speaker_id", ""),
                 "failure_codes_json": _json_cell(codes),
                 "reason": verdict.get("reason", ""),
+                "emotion": emotion,
                 "transcript": transcript,
                 "transcript_chars": len(transcript),
                 "transcript_words": len(transcript.split()),
@@ -496,7 +504,8 @@ def _write_error_reports(all_csv: Path, output_dir: Path, verdict_dir: Path) -> 
                 cases.append({"model_id": key, "model": group["label"], "kind": kind, "category": category,
                               "family": row["family"], "audio_path": row["audio_path"],
                               "verdict_file": row["verdict_file"], "decision": row["final_verdict"],
-                              "reason": row["reason"], "failure_stage": row["failure_stage"],
+                              "reason": row["reason"], "emotion": row.get("emotion", ""),
+                              "failure_stage": row["failure_stage"],
                               "transcript": row["transcript"],
                               "assistant_raw_response": row["assistant_raw_response"]})
         known_categories = {
@@ -523,6 +532,25 @@ def _write_error_reports(all_csv: Path, output_dir: Path, verdict_dir: Path) -> 
     for row in stats:
         rate = f"{row['rate'] * 100:.1f}%" if row["rate"] is not None else "N/A"
         report.append(f"| {cell(row['model'])} / {row['model_id']} | {row['kind']} | {row['category']} | {row['count']} | {row['denominator']} | {rate} |")
+
+    successful_rows = [row for row in rows if row.get("verifier_status") == "success"]
+    emotion_rows = [row for row in successful_rows if row.get("emotion")]
+    if emotion_rows:
+        report.extend([
+            "",
+            "## Emotion distribution",
+            "",
+            "| Emotion | Pass samples | Reject samples | Total samples | Pass duration (s) | Total duration (s) |",
+            "| --- | ---: | ---: | ---: | ---: | ---: |",
+        ])
+        all_emotions = Counter(row["emotion"].strip().lower() for row in emotion_rows if row["emotion"].strip())
+        for e, total_count in all_emotions.most_common():
+            p_cnt = sum(row["final_verdict"] == "pass" and row["emotion"].strip().lower() == e for row in emotion_rows)
+            r_cnt = sum(row["final_verdict"] == "reject" and row["emotion"].strip().lower() == e for row in emotion_rows)
+            p_dur = sum(_number(row["duration_s"]) for row in emotion_rows if row["final_verdict"] == "pass" and row["emotion"].strip().lower() == e)
+            tot_dur = sum(_number(row["duration_s"]) for row in emotion_rows if row["emotion"].strip().lower() == e)
+            report.append(f"| {cell(e)} | {p_cnt} | {r_cnt} | {total_count} | {p_dur:.1f} | {tot_dur:.1f} |")
+
     report.extend(["", "## Error cases", ""])
     for kind, category in sorted({(row["kind"], row["category"]) for row in cases}):
         selected = [row for row in cases if row["kind"] == kind and row["category"] == category]
@@ -535,7 +563,7 @@ def _write_error_reports(all_csv: Path, output_dir: Path, verdict_dir: Path) -> 
         report.append("")
     if not cases:
         report.append("No reported defects or processing failures in the discovered artifacts.")
-    case_fields = ("model_id", "model", "kind", "category", "family", "audio_path", "verdict_file", "decision", "reason", "transcript", "failure_stage", "assistant_raw_response")
+    case_fields = ("model_id", "model", "kind", "category", "family", "audio_path", "verdict_file", "decision", "reason", "emotion", "transcript", "failure_stage", "assistant_raw_response")
     stat_fields = ("model_id", "model", "kind", "category", "count", "denominator", "rate")
     for name, fields, records in (("error_cases.csv", case_fields, cases), ("error_stats.csv", stat_fields, stats)):
         with (output_dir / name).open("w", encoding="utf-8", newline="") as stream:
@@ -714,6 +742,87 @@ def _make_plots(
                 ax.legend(handles=legend_elements, loc="upper right", framealpha=0.9)
         plots.append(_save_figure(plt, fig, output_dir / "dimensions.png"))
 
+    emotion_rows = [row for row in successful_rows if row.get("emotion")]
+    if emotion_rows:
+        all_emotions = Counter(row["emotion"].strip().lower() for row in emotion_rows if row["emotion"].strip())
+        top_emotions = [e for e, _ in all_emotions.most_common(12)]
+        has_other = len(all_emotions) > 12
+        display_emotions = [*top_emotions, "other"] if has_other else top_emotions
+
+        def get_display_emotion(raw: str) -> str:
+            val = raw.strip().lower()
+            return val if val in top_emotions else ("other" if has_other else val)
+
+        pass_counts = Counter(get_display_emotion(row["emotion"]) for row in emotion_rows if row["final_verdict"] == "pass")
+        reject_counts = Counter(get_display_emotion(row["emotion"]) for row in emotion_rows if row["final_verdict"] == "reject")
+
+        pass_durations = {
+            e: sum(_number(row["duration_s"]) for row in emotion_rows if get_display_emotion(row["emotion"]) == e and row["final_verdict"] == "pass")
+            for e in display_emotions
+        }
+        reject_durations = {
+            e: sum(_number(row["duration_s"]) for row in emotion_rows if get_display_emotion(row["emotion"]) == e and row["final_verdict"] == "reject")
+            for e in display_emotions
+        }
+
+        fig, axes = plt.subplots(1, 2, figsize=(max(11, len(display_emotions) * 0.9), 5))
+        p_counts = [pass_counts[e] for e in display_emotions]
+        r_counts = [reject_counts[e] for e in display_emotions]
+        axes[0].bar(display_emotions, p_counts, label="pass", color="#22c55e")
+        axes[0].bar(display_emotions, r_counts, bottom=p_counts, label="reject", color="#ef4444")
+        total_counts = [p + r for p, r in zip(p_counts, r_counts)]
+        total_all = sum(total_counts)
+        for idx, tot in enumerate(total_counts):
+            if tot > 0:
+                pct = f"{tot / total_all * 100:.1f}%" if total_all > 0 else "0%"
+                axes[0].text(idx, tot, f"{tot}\n({pct})", ha="center", va="bottom", fontsize=8)
+        axes[0].set_title("Emotion distribution by sample count")
+        axes[0].set_ylabel("Samples")
+        axes[0].tick_params(axis="x", rotation=25)
+        axes[0].legend(loc="upper right")
+        axes[0].grid(True, axis="y", linestyle="--", alpha=0.4)
+        axes[0].margins(y=0.2)
+
+        p_durs = [pass_durations[e] for e in display_emotions]
+        r_durs = [reject_durations[e] for e in display_emotions]
+        axes[1].bar(display_emotions, p_durs, label="pass", color="#22c55e")
+        axes[1].bar(display_emotions, r_durs, bottom=p_durs, label="reject", color="#ef4444")
+        total_durs = [p + r for p, r in zip(p_durs, r_durs)]
+        for idx, tot in enumerate(total_durs):
+            if tot > 0:
+                axes[1].text(idx, tot, f"{tot:.1f}s", ha="center", va="bottom", fontsize=8)
+        axes[1].set_title("Emotion distribution by audio duration")
+        axes[1].set_ylabel("Duration (seconds)")
+        axes[1].tick_params(axis="x", rotation=25)
+        axes[1].legend(loc="upper right")
+        axes[1].grid(True, axis="y", linestyle="--", alpha=0.4)
+        axes[1].margins(y=0.2)
+
+        fig.tight_layout()
+        plots.append(_save_figure(plt, fig, output_dir / "emotions.png"))
+
+        speaker_emotion_rows = [row for row in emotion_rows if row.get("speaker_id")]
+        speakers = sorted({row["speaker_id"] for row in speaker_emotion_rows})
+        if len(speakers) > 1:
+            fig, ax = plt.subplots(figsize=(max(9, len(speakers) * 1.2), 5))
+            bottoms = [0.0] * len(speakers)
+            cmap = plt.get_cmap("tab10", max(1, len(display_emotions)))
+            for e_idx, e in enumerate(display_emotions):
+                values = [
+                    sum(_number(row["duration_s"]) for row in speaker_emotion_rows if row["speaker_id"] == spk and get_display_emotion(row["emotion"]) == e)
+                    for spk in speakers
+                ]
+                if any(v > 0 for v in values):
+                    ax.bar(speakers, values, bottom=bottoms, label=e, color=cmap(e_idx % 10))
+                    bottoms = [b + v for b, v in zip(bottoms, values)]
+            ax.set_ylabel("Duration (seconds)")
+            ax.set_title("Emotion duration by diarized speaker")
+            ax.tick_params(axis="x", rotation=30)
+            ax.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
+            ax.grid(True, axis="y", linestyle="--", alpha=0.4)
+            fig.tight_layout()
+            plots.append(_save_figure(plt, fig, output_dir / "emotions_by_speaker.png"))
+
     speaker_rows = [row for row in all_rows if row["speaker_id"]]
     if speaker_rows:
         speakers = sorted({row["speaker_id"] for row in speaker_rows})
@@ -864,6 +973,17 @@ def _summary_from_csv(
             for row in successful_rows
         }
     )
+    emotion_rows = [row for row in successful_coverage_rows if row.get("emotion")]
+    emotions_summary = {
+        "total_labeled": len(emotion_rows),
+        "counts": dict(Counter(row["emotion"].strip().lower() for row in emotion_rows if row["emotion"].strip())),
+        "pass_counts": dict(Counter(row["emotion"].strip().lower() for row in emotion_rows if row["final_verdict"] == "pass" and row["emotion"].strip())),
+        "reject_counts": dict(Counter(row["emotion"].strip().lower() for row in emotion_rows if row["final_verdict"] == "reject" and row["emotion"].strip())),
+        "duration_s": {
+            e: round(sum(_number(row["duration_s"]) for row in emotion_rows if row["emotion"].strip().lower() == e), 6)
+            for e in sorted({row["emotion"].strip().lower() for row in emotion_rows if row["emotion"].strip()})
+        },
+    }
     return {
         "schema_version": 2,
         "operation": "analyze_verifier",
@@ -901,6 +1021,7 @@ def _summary_from_csv(
                 for row in transcript_profile_rows
             ),
         },
+        "emotions": emotions_summary,
         "prompt_groups": [
             {"backend": backend, "model": model, "prompt_sha256": prompt_sha, "schema_profile": profile}
             for backend, model, prompt_sha, profile in prompt_groups

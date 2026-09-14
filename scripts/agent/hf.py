@@ -73,17 +73,26 @@ class HFAgent:
         dev_desc = torch.cuda.get_device_name(0) if (self.device.startswith("cuda") and torch.cuda.is_available()) else "CPU"
         logger.info("Initializing HFAgent '%s' on %s [%s: %s] (dtype=%s)...", model_id, self.device, hw_type, dev_desc, torch_dtype)
 
-        from transformers import AutoProcessor, AutoModelForCausalLM, AutoModel
-        try:
-            from transformers import Gemma4ForConditionalGeneration
-        except ImportError:
-            Gemma4ForConditionalGeneration = None
+        from transformers import (
+            AutoConfig,
+            AutoModel,
+            AutoModelForCausalLM,
+            AutoModelForImageTextToText,
+            AutoModelForMultimodalLM,
+            AutoProcessor,
+        )
 
-        try:
-            self.processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=trust_remote_code, token=self.hf_token)
-        except Exception:
-            from transformers import AutoTokenizer
-            self.processor = AutoTokenizer.from_pretrained(model_id, trust_remote_code=trust_remote_code, token=self.hf_token)
+        config = AutoConfig.from_pretrained(
+            model_id,
+            trust_remote_code=trust_remote_code,
+            token=self.hf_token,
+        )
+        self.processor = AutoProcessor.from_pretrained(
+            model_id,
+            trust_remote_code=trust_remote_code,
+            token=self.hf_token,
+        )
+        self.processor_class = type(self.processor).__name__
 
         quant_kwargs: dict[str, Any] = {}
         if load_in_4bit or load_in_8bit:
@@ -103,15 +112,17 @@ class HFAgent:
                 raise RuntimeError("bitsandbytes required for --load-in-4bit / --load-in-8bit") from exc
 
         self.model = None
-        candidate_classes = []
-        if "gemma-4" in model_id.lower() and Gemma4ForConditionalGeneration is not None:
-            candidate_classes.append(Gemma4ForConditionalGeneration)
-        try:
-            from transformers import AutoModelForImageTextToText
-            candidate_classes.append(AutoModelForImageTextToText)
-        except Exception:
-            pass
-        candidate_classes.extend([AutoModelForCausalLM, AutoModel])
+        if getattr(config, "model_type", None) == "gemma4":
+            # Gemma 4 audio must use the multimodal conditional-generation model.
+            # Do not hide a failed multimodal load behind a text-model fallback.
+            candidate_classes = [AutoModelForMultimodalLM]
+        else:
+            candidate_classes = [
+                AutoModelForMultimodalLM,
+                AutoModelForImageTextToText,
+                AutoModelForCausalLM,
+                AutoModel,
+            ]
 
         load_errors: list[str] = []
         for cls in candidate_classes:
@@ -139,17 +150,22 @@ class HFAgent:
                     logger.info("Successfully loaded model using %s", cls.__name__)
                     break
                 except Exception as e:
-                    load_errors.append(f"{cls.__name__}: {e}")
-                    logger.debug("Failed loading with %s: %s", cls.__name__, e)
+                    load_errors.append(f"{cls.__name__}: {type(e).__name__}")
+                    logger.debug(
+                        "Failed loading with %s (%s)", cls.__name__, type(e).__name__
+                    )
                     continue
             except Exception as e:
-                load_errors.append(f"{cls.__name__}: {e}")
-                logger.debug("Failed loading with %s: %s", cls.__name__, e)
+                load_errors.append(f"{cls.__name__}: {type(e).__name__}")
+                logger.debug(
+                    "Failed loading with %s (%s)", cls.__name__, type(e).__name__
+                )
                 continue
 
         if self.model is None:
             err_detail = " | ".join(load_errors)
             raise RuntimeError(f"Could not load model '{model_id}' with any supported model class. Errors: {err_detail}")
+        self.model_class = type(self.model).__name__
 
         if adapter_path:
             from peft import PeftModel
@@ -180,13 +196,14 @@ class HFAgent:
                 {"role": "system", "content": [{"type": "text", "text": system_prompt}]}
             )
         messages.append({"role": "user", "content": content})
-        if hasattr(self.processor, "apply_chat_template"):
-            text = self.processor.apply_chat_template(messages, add_generation_prompt=True)
-            inputs = self.processor(text=text, audio=audio_data, return_tensors="pt", sampling_rate=16000)
-        else:
-            inputs = self.processor(text=prompt, audio=audio_data, return_tensors="pt", sampling_rate=16000)
-
-        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        inputs = self.processor.apply_chat_template(
+            messages,
+            tokenize=True,
+            return_dict=True,
+            return_tensors="pt",
+            add_generation_prompt=True,
+        )
+        inputs = inputs.to(self.device)
 
         use_cuda = self.device.startswith("cuda")
         autocast_ctx = (
