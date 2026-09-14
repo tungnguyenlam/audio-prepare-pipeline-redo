@@ -1,6 +1,7 @@
 """Plain JSON segment manifests and sample-accurate clip export."""
 from __future__ import annotations
 
+from decimal import Decimal
 import math
 import os
 from pathlib import Path
@@ -9,10 +10,16 @@ from _common.files import FileContractError, convert, digest, probe, progress, r
 
 
 def source_path(manifest: dict, manifest_path: Path, override: Path | None = None) -> Path:
-    if override:
+    if override is not None:
         return override.resolve()
     path = Path(manifest['source']['path'])
-    return path if path.is_absolute() else (manifest_path.parent / path).resolve()
+    path = (path if path.is_absolute() else manifest_path.parent / path).resolve()
+    expected = manifest['source'].get('sha256')
+    if not expected:
+        raise FileContractError('Manifest has no source SHA-256; supply --input-file explicitly on the same timeline')
+    if digest(path) != expected:
+        raise FileContractError(f'Source audio differs from the manifest: {path}; restore the original or supply --input-file explicitly on the same timeline')
+    return path
 
 
 def normalize_turns(turns: list[dict], source: Path) -> list[dict]:
@@ -37,8 +44,10 @@ def normalize_turns(turns: list[dict], source: Path) -> list[dict]:
 
 
 def manifest_complete(path: Path, wanted: dict, overwrite: bool) -> bool:
+    if overwrite:
+        return False
     if not path.exists():
-        if path.parent.exists() and any(path.parent.iterdir()) and not overwrite:
+        if path.parent.exists() and any(path.parent.iterdir()):
             raise FileContractError(f'Unrecognized output directory: {path.parent}; use --overwrite')
         return False
     try:
@@ -53,9 +62,7 @@ def manifest_complete(path: Path, wanted: dict, overwrite: bool) -> bool:
         return old.get('complete', False) and all(
             t.get('clip') and (path.parent / t['clip']).is_file()
             and digest(path.parent / t['clip']) == t.get('clip_sha256') for t in old.get('turns', []))
-    if not overwrite:
-        raise FileContractError(f'Conflicting manifest: {path}; use --overwrite')
-    return False
+    raise FileContractError(f'Conflicting manifest: {path}; use --overwrite')
 
 
 def export(manifest: dict, source: Path, destination: Path, work_dir: Path, sample_rate: int | None = None, channels: int = 1,
@@ -75,9 +82,11 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
     if max_duration_s is None:
         max_duration_s = params.get('max_duration_s', 15.0)
     if min_duration_s is not None:
-        turns = [t for t in turns if (t['end_s'] - t['start_s']) >= min_duration_s]
+        min_samples = math.ceil(Decimal(str(min_duration_s)) * info['sample_rate'])
+        turns = [t for t in turns if t['end_sample'] - t['start_sample'] >= min_samples]
     if max_duration_s is not None:
-        turns = [t for t in turns if (t['end_s'] - t['start_s']) <= max_duration_s]
+        max_samples = math.floor(Decimal(str(max_duration_s)) * info['sample_rate'])
+        turns = [t for t in turns if t['end_sample'] - t['start_sample'] <= max_samples]
     # overlap_with indices must refer to the surviving output turns.
     turns = normalize_turns(turns, source)
     turns_count = len(turns)
@@ -85,8 +94,32 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
     output = {**manifest, 'timestamp_origin': 'diarized_input', 'source_sample_rate': info['sample_rate'],
               'sample_rate': sample_rate or info['sample_rate'], 'channels': channels, 'turns': turns,
               'speaker_ids': sorted({t['speaker_id'] for t in turns}), 'complete': False}
+    for i, turn in enumerate(turns, 1):
+        turn['clip'] = (f"{safe_name(source.stem)}_{safe_name(str(manifest.get('model') or 'segments'))}_"
+                        f"{safe_name(turn['speaker_id'])}_{round(turn['start_s'] * 1000):09d}-"
+                        f"{round(turn['end_s'] * 1000):09d}_{i:04d}.wav")
+        if (destination.parent / turn['clip']).resolve() == source.resolve():
+            raise FileContractError('Clip would overwrite source')
     destination.parent.mkdir(parents=True, exist_ok=True)
-    # An interrupted export is recognizable and can be retried.
+    try:
+        old = read_json(destination)
+    except (ValueError, OSError):
+        old = {}
+    # Remove only clips owned by the previous export, while its inventory is
+    # still on disk. Planned names also make interrupted exports cleanable.
+    current_clips = {t['clip'] for t in turns}
+    if old.get('operation') in {'diarize', 'export_segments'}:
+        for turn in old.get('turns', []):
+            name = turn.get('clip')
+            if not isinstance(name, str) or name in current_clips:
+                continue
+            if Path(name).name != name or Path(name).suffix != '.wav':
+                continue
+            clip = destination.parent / name
+            if clip.resolve() == source.resolve():
+                raise FileContractError('Cannot remove source audio during clip cleanup')
+            clip.unlink(missing_ok=True)
+    # A retry recognizes the request and every clip this export may publish.
     write_json(destination, output)
     if manifest.get('operation') == 'diarize':
         raw_path = destination.with_name('segments.raw.json')
@@ -101,23 +134,17 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
 
     with tempfile.TemporaryDirectory(dir=work_dir) as directory, sf.SoundFile(source) as audio:
         work = Path(directory)
-        # Read slice data from soundfile under audio lock
-        turn_data = []
-        for i, turn in enumerate(turns, 1):
-            audio.seek(turn['start_sample'])
-            data = audio.read(turn['end_sample'] - turn['start_sample'], dtype='float32', always_2d=True)
-            turn_data.append((i, turn, data))
 
-        def render_clip(i: int, turn: dict, data) -> None:
+        def render_clip(i: int, turn: dict) -> None:
+            with lock:
+                audio.seek(turn['start_sample'])
+                data = audio.read(turn['end_sample'] - turn['start_sample'], dtype='float32', always_2d=True)
             raw, staged = work / f'raw_{i}.wav', work / f'clip_{i}.wav'
             sf.write(raw, data, info['sample_rate'], subtype='FLOAT')
+            del data
             convert(raw, staged, output['sample_rate'], channels)
-            name = (f"{safe_name(source.stem)}_{safe_name(str(manifest.get('model') or 'segments'))}_"
-                    f"{safe_name(turn['speaker_id'])}_{round(turn['start_s'] * 1000):09d}-"
-                    f"{round(turn['end_s'] * 1000):09d}_{i:04d}.wav")
+            name = turn['clip']
             clip = destination.parent / name
-            if clip.resolve() == source.resolve():
-                raise FileContractError('Clip would overwrite source')
             # Same-filesystem atomic publication, even when work_dir is elsewhere.
             fd, temporary = tempfile.mkstemp(dir=clip.parent, suffix='.wav')
             os.close(fd)
@@ -133,15 +160,14 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
                 if i == 1 or i == turns_count or i % step == 0:
                     progress('EXPORT_CLIP', f'{name}', current=i, total=turns_count)
 
-        batches = [turn_data[k:k + max(1, batch_size)] for k in range(0, len(turn_data), max(1, batch_size))]
         if concurrency <= 1:
-            for batch_chunk in batches:
-                for i, turn, data in batch_chunk:
-                    render_clip(i, turn, data)
+            for i, turn in enumerate(turns, 1):
+                render_clip(i, turn)
         else:
             with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
-                for batch_chunk in batches:
-                    futures = [pool.submit(render_clip, i, turn, data) for i, turn, data in batch_chunk]
+                for offset in range(0, turns_count, max(1, batch_size)):
+                    futures = [pool.submit(render_clip, i, turn) for i, turn in
+                               enumerate(turns[offset:offset + max(1, batch_size)], offset + 1)]
                     for fut in concurrent.futures.as_completed(futures):
                         fut.result()
 

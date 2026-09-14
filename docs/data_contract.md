@@ -69,10 +69,26 @@ interrupted write is recognizable and retried.
   `clustering`, `threed_speaker`, `diarizen`.
 - Sample intervals are half-open and expressed at `source_sample_rate`; `start_s`
   / `end_s` are derived from them. Millisecond labels in filenames are display only.
+- Export duration limits are inclusive and checked against integer source-sample
+  lengths. The minimum is rounded up to a whole sample and the maximum down,
+  using decimal seconds so exact limits are not lost to timestamp subtraction.
+- Commands resolving a manifest's source audio verify its recorded `source.sha256`
+  before using its turns. A missing or mismatched hash is an error. An explicit
+  `--input-file` override bypasses this check; the caller must preserve the original
+  timeline. Downstream manifests record the override's current identity.
 - `overlap_with` holds zero-based indices into `turns`. Turns are sorted by start.
 - Clip paths are relative to the manifest. An empty `turns` array means no speech
   survived the duration filter. `complete: true` is written last; a manifest is
   reused only when every clip exists with a matching `clip_sha256`.
+- `--overwrite` forces diarizers and `audio/export_segments` to rebuild even a
+  matching, complete output. Before replacing the old manifest, export removes
+  obsolete sibling WAVs referenced by that manifest. Unrelated files are retained.
+  The incomplete manifest lists all planned clip names, so retries can also clean
+  up clips from an interrupted export. Files already orphaned by older versions
+  cannot be attributed safely; use a fresh output directory in that case.
+- Export reads audio inside each rendering worker, keeping at most one clip's
+  waveform per active worker in memory. `--batch-size` limits submitted clips;
+  increasing it does not preload the batch's waveforms.
 - All diarization backends also write `segments.raw.json` before the export
   duration filter. It contains normalized backend turns, including short/long
   turns, with `duration_filter_applied: false`, `clips_valid: false`, and no clip

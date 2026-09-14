@@ -81,7 +81,8 @@ def main() -> int:
     p.add_argument('--input-manifest', type=Path, required=True, help='Input segments.raw.json manifest')
     p.add_argument('--output-manifest', type=Path,
                    help='Output manifest (default: .data/purity/merge/<family>/segments.json)')
-    p.add_argument('--input-file', type=Path, help='Optional source audio override on the same timeline')
+    p.add_argument('--input-file', type=Path,
+                   help='Source audio override on the same timeline; bypasses the recorded source hash')
     p.add_argument('--overwrite', action='store_true', help='Overwrite a conflicting output manifest')
     p.add_argument('--concurrency', type=int, default=1,
                    help='Shared CLI option; this ordered merge runs sequentially')

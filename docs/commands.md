@@ -143,6 +143,16 @@ No duration filter runs during merge; exported length includes the preserved
 pauses. A merged chain over 15 seconds is discarded at export, not split.
 See [the file contract](data_contract.md#silence-aware-merge) for audit fields.
 
+Merge and export verify the source audio against the input manifest's recorded
+SHA-256. If the source was replaced, restore it or explicitly select a waveform
+on the same timeline with `--input-file`.
+
+When changing merge settings, use `--overwrite` on merge and export to reuse their
+destinations. Export rebuilds even a matching cached result and removes obsolete
+clips listed in its previous manifest. For output folders that already contain
+untracked WAVs from older exports, choose a fresh `--output-dir`; unrelated files
+are preserved. Diarization `--overwrite` also forces inference to rerun.
+
 ### Target speaker
 
 ```bash

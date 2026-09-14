@@ -14,7 +14,7 @@ def main() -> int:
     p.add_argument('--input-manifest', type=Path, required=True,
                    help='Path to input segments.json manifest')
     p.add_argument('--input-file', type=Path, default=None,
-                   help='Optional source audio file override (default: None)')
+                   help='Source audio override on the same timeline; bypasses the recorded source hash (default: None)')
     p.add_argument('--output-dir', type=Path, default=None,
                    help='Output directory (default: dynamic per audio family under .data/audio/clips/<family>)')
     p.add_argument('--work-dir', type=Path, default=ROOT / '.data/export_segments/work',
@@ -28,7 +28,7 @@ def main() -> int:
     p.add_argument('--max-duration-s', type=float, default=15.0,
                    help='Maximum turn duration in seconds to keep and export (default: 15.0)')
     p.add_argument('--overwrite', action='store_true', default=False,
-                   help='Overwrite existing output clips and manifest (default: False)')
+                   help='Rebuild clips and manifest, removing obsolete clips tracked by the previous manifest (default: False)')
     p.add_argument('--concurrency', type=positive_int, default=1,
                    help='Number of concurrent workers for parallel clip rendering (default: 1)')
     p.add_argument('--batch-size', type=positive_int, default=1,

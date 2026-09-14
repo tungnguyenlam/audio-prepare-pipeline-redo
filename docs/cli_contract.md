@@ -27,11 +27,18 @@
   `.data/<operation>[/<model>]/work`.
 - **Idempotency.** A destination whose sidecar matches the request and whose output
   hash is intact is skipped; a matching but incomplete record is retried; anything
-  else needs `--overwrite`. Audio is never written in place.
+  else needs `--overwrite`. Diarizers and `audio/export_segments` explicitly rebuild
+  matching outputs when `--overwrite` is supplied, removing obsolete clips tracked
+  by the prior manifest. Audio is never written in place.
+- **Manifest sources.** Commands that read source audio from a segment manifest
+  require its current SHA-256 to match `source.sha256`. An explicit `--input-file`
+  override bypasses that check and must retain the original timeline.
 - **Concurrency.** Every command accepts `--concurrency` and `--batch-size`
   (default 1/1). Models load once per invocation; thread pools parallelize I/O and
   requests. Gemini commands default to the provider Batch API (`--inference-mode
-  batch`, ≤ 10 requests per job); `--inference-mode standard` is synchronous.
+  batch`, ≤ 10 requests per job); `--inference-mode standard` is synchronous. Clip
+  export reads at most one waveform per active rendering worker, up to the smaller
+  of `--concurrency` and `--batch-size` per export.
 - **Logging.** Parsed configuration and timestamped progress go to stderr;
   successful output paths go to stdout; any per-item failure yields a nonzero exit
   after the batch finishes. `-h` on `.sh` or `.py` prints every flag and default.
