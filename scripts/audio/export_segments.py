@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _common.files import LoggingArgumentParser, ROOT, identity, infer_audio_family, positive_int, read_json, request
-from _common.segments import export, manifest_complete, source_path
+from _common.segments import ensure_plots, export, manifest_complete, source_path
 
 
 def main() -> int:
@@ -53,6 +53,11 @@ def main() -> int:
     if not manifest_complete(destination, wanted, args.overwrite):
         export({**wanted, 'turns': manifest['turns']}, source, destination, args.work_dir, args.sample_rate, args.channels,
                args.min_duration_s, args.max_duration_s, concurrency=args.concurrency, batch_size=args.batch_size)
+        ensure_plots(destination, overwrite=True)
+    else:
+        # A prior export may predate automatic plots, or an interrupted plot
+        # render may have left only part of the sibling set behind.
+        ensure_plots(destination, overwrite=False)
     print(destination)
     return 0
 

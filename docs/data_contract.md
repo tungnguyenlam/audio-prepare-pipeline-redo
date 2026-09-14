@@ -89,7 +89,9 @@ interrupted write is recognizable and retried.
   overwrites them. `evaluate/plot_diarization` writes the same three figures
   beside `--output-file`.
 - `audio/export_segments.py` re-renders any manifest with this shape and rewrites
-  it (with fresh `clip*` fields) in the chosen output directory.
+  it (with fresh `clip*` fields) in the chosen output directory. It also writes
+  `timeline.png`, `timeline_duration.png`, and `timeline_cutoff.png` beside the
+  exported `segments.json`; these plots describe the post-filter turns.
 
 ## 3. Purity and speaker manifests
 

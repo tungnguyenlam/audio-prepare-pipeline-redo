@@ -56,7 +56,7 @@ Key flags only; run `-h` for the full list. All commands also accept
 | Audio | `audio/info` | `--input-file` \| `--input-dir` | JSON Lines on stdout |
 | | `audio/convert` | `--sample-rate`, `--channels` | WAV + `.json` |
 | | `audio/cut` | `--start`, `--end` (seconds), `--sample-rate`, `--channels` | `<stem>_cut.wav` + `.json` |
-| | `audio/export_segments` | `--input-manifest`, `--output-dir`, `--input-file` (source override), `--sample-rate`, `--channels`, `--min/--max-duration-s` | clips + updated `segments.json` |
+| | `audio/export_segments` | `--input-manifest`, `--output-dir`, `--input-file` (source override), `--sample-rate`, `--channels`, `--min/--max-duration-s` | clips + updated `segments.json` + three plots (default dir `.data/audio/clips/<family>`) |
 | | `audio/compare_waveforms`, `compare_spectrograms` | `--input-file` \| `--input-dir`, `--reference-file`, `--sample-rate` (16000); spectrograms add `--n-mels`, `--hop-length`, `--fmax`, `--top-db` | PNG + `.json` |
 | Speaker | `speaker/enroll` | `--name`, `--clip` (repeatable) \| `--clip-dir`, `--profiles-dir`, `--add`, `--channel-id/-name/-url` | `profile.json` + copied clips |
 | | `speaker/score` | `--input-manifest`, `--profile`, `--profiles-dir`, `--model-id`, `--device`, `--output-manifest` | scored `segments.json` |

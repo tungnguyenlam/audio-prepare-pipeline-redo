@@ -85,6 +85,8 @@ bash scripts/audio/info.sh    --input-file .data/source.wav                     
 bash scripts/audio/convert.sh --input-dir .data/input --output-dir .data/converted --sample-rate 48000 --channels 1
 bash scripts/audio/cut.sh     --input-file .data/source.wav --start 12.34 --end 18.92 --output-file .data/cut.wav
 bash scripts/audio/export_segments.sh --input-manifest .data/purity/collar/<family>/segments.json --output-dir .data/clips
+# default output (when --output-dir is omitted): .data/audio/clips/<family>/
+# export also writes timeline.png, timeline_duration.png, timeline_cutoff.png
 bash scripts/audio/compare_waveforms.sh    --input-file .data/a.wav --reference-file .data/b.wav --output-file .data/waveforms.png
 bash scripts/audio/compare_spectrograms.sh --input-file .data/a.wav --reference-file .data/b.wav --output-file .data/spectrograms.png
 ```
