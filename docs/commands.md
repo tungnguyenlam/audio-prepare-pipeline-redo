@@ -112,6 +112,7 @@ bash scripts/diarize/pyannote_31.sh         --input-file x.wav
 bash scripts/diarize/clustering.sh          --input-file x.wav
 bash scripts/diarize/threed_speaker.sh      --input-file x.wav --include-overlap
 bash scripts/diarize/diarizen.sh            --input-file x.wav --segmentation-step 0.05 --binarize-onset 0.5 --binarize-offset 0.6
+# each run also writes timeline.png, timeline_duration.png, timeline_cutoff.png next to segments.json
 ```
 
 ### Target speaker
@@ -171,6 +172,7 @@ bash scripts/mix/mix.sh --speech speech.wav --music music.wav --smr-db 6 --seed 
 bash scripts/evaluate/separation.sh  --input-file pred.wav --reference-file .data/mix/example/speech_reference.wav --mixture-file .data/mix/example/mixture.wav --output-file .data/metrics.json
 bash scripts/evaluate/diarization.sh --input-manifest pred/segments.json --reference-manifest ref/segments.json --duration 120 --collar 0.25 --output-file .data/der.json
 bash scripts/evaluate/plot_diarization.sh --input-manifest pred/segments.json --reference-manifest ref/segments.json --output-file .data/gantt.png
+# writes .data/gantt.png, .data/gantt_duration.png, .data/gantt_cutoff.png
 bash scripts/evaluate/plot_metrics.sh --metrics-file a.json --metrics-file b.json --output-file .data/metrics.png
 ```
 

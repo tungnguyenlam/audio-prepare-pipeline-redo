@@ -48,11 +48,11 @@ Key flags only; run `-h` for the full list. All commands also accept
 | Separate | `separate/htdemucs`, `htdemucs_ft` | `--stem` (vocals/instrumental/drums/bass/other), `--device`, `--sample-rate`, `--channels`, `--shifts`, `--overlap`, `--segment` | `<stem>_<model>.wav` + `.json` |
 | | `separate/bs_roformer`, `mel_roformer` | `--model`, `--backend`, `--device`, `--stem`, `--model-sample-rate`, `--sample-rate`, `--channels` | `<stem>_<model>.wav` + `.json` |
 | | `separate/mvsep_mdx23` | `--device`, `--stem`, `--overlap-large/-small`, `--single-onnx`, `--large-gpu`, `--use-kim-model-1`, `--chunk-size`, `--max-segment-seconds`, `--repo-dir` | `<stem>_mvsep_mdx23.wav` + `.json` |
-| Diarize | `diarize/sortformer` | `--model-id`, `--device`, `--window-duration-s`, `--overlap-duration-s`, `--onset/--offset`, `--enable-speaker-similarity`, `--min/--max-duration-s` (2/15) | `<stem>/segments.json` + clips |
-| | `diarize/pyannote_community1`, `pyannote_31` (`pyannote.sh` = community1) | `--num-speakers`, `--min/--max-speakers`, `--device`, `--min/--max-duration-s` | `<stem>/segments.json` + clips |
-| | `diarize/clustering` | `--num-speakers`, `--max-num-speakers`, `--vad-model`, `--speaker-model`, `--vad-*`, `--min/--max-duration-s` | `<stem>/segments.json` + clips |
-| | `diarize/threed_speaker` | `--num-speakers`, `--include-overlap`, `--chunk-duration-s`, `--chunk-step-s`, `--min/--max-duration-s` | `<stem>/segments.json` + clips |
-| | `diarize/diarizen` | `--model`, `--num/--min/--max-speakers`, `--segmentation-step`, `--binarize-onset/-offset`, `--min/--max-duration-s` | `<stem>/segments.json` + clips |
+| Diarize | `diarize/sortformer` | `--model-id`, `--device`, `--window-duration-s`, `--overlap-duration-s`, `--onset/--offset`, `--enable-speaker-similarity`, `--min/--max-duration-s` (2/15) | `<stem>/segments.json` + clips + `timeline*.png` |
+| | `diarize/pyannote_community1`, `pyannote_31` (`pyannote.sh` = community1) | `--num-speakers`, `--min/--max-speakers`, `--device`, `--min/--max-duration-s` | `<stem>/segments.json` + clips + `timeline*.png` |
+| | `diarize/clustering` | `--num-speakers`, `--max-num-speakers`, `--vad-model`, `--speaker-model`, `--vad-*`, `--min/--max-duration-s` | `<stem>/segments.json` + clips + `timeline*.png` |
+| | `diarize/threed_speaker` | `--num-speakers`, `--include-overlap`, `--chunk-duration-s`, `--chunk-step-s`, `--min/--max-duration-s` | `<stem>/segments.json` + clips + `timeline*.png` |
+| | `diarize/diarizen` | `--model`, `--num/--min/--max-speakers`, `--segmentation-step`, `--binarize-onset/-offset`, `--min/--max-duration-s` | `<stem>/segments.json` + clips + `timeline*.png` |
 | Audio | `audio/info` | `--input-file` \| `--input-dir` | JSON Lines on stdout |
 | | `audio/convert` | `--sample-rate`, `--channels` | WAV + `.json` |
 | | `audio/cut` | `--start`, `--end` (seconds), `--sample-rate`, `--channels` | `<stem>_cut.wav` + `.json` |
@@ -82,7 +82,7 @@ Key flags only; run `-h` for the full list. All commands also accept
 | Mix/eval | `mix/mix` | `--speech`, `--music`, `--smr-db`, `--seed`, `--sample-rate`, `--channels`, `--peak-ceiling-dbfs`, `--output-dir` | mixture, references, metadata |
 | | `evaluate/separation` | `--input-file`, `--reference-file`, `--mixture-file`, `--sample-rate`, `--output-file` | SI-SDR / SDR JSON |
 | | `evaluate/diarization` | `--input-manifest`, `--reference-manifest`, `--duration`, `--collar`, `--skip-overlap`, `--output-file` | DER / JER / confusion JSON |
-| | `evaluate/plot_diarization` | `--input-manifest`, `--reference-manifest`, `--title`, `--output-file` | Gantt PNG |
+| | `evaluate/plot_diarization` | `--input-manifest`, `--reference-manifest`, `--title`, `--output-file` | Gantt PNG plus sibling `_duration.png` and `_cutoff.png` |
 | | `evaluate/plot_metrics` | `--metrics-file` (repeatable), `--title`, `--output-file` | bar plot PNG |
 | Dataset | `dataset/index` | `--input-dir`, `--output-manifest`, `--tag` | manifest JSON |
 | | `dataset/filter` | `--input-manifest`, `--output-manifest`, `--tag`, `--exclude-tag`, `--min/--max-duration` | manifest JSON |

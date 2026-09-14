@@ -14,7 +14,7 @@ sys.modules.pop('diarizen', None)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from _common.files import batch, identity, inputs, manifest_destinations, parser, positive_int, probe, request, safe_name
-from _common.segments import export, manifest_complete
+from _common.segments import ensure_plots, export, manifest_complete
 
 
 def main() -> int:
@@ -274,6 +274,7 @@ def main() -> int:
                          'segmentation_step': args.segmentation_step, 'binarize_onset': args.binarize_onset,\
                          'binarize_offset': args.binarize_offset}, 'diarizen')
         if manifest_complete(dest, wanted, args.overwrite):
+            ensure_plots(dest, overwrite=False)
             return
         pipeline.min_speakers = exact or minimum or pipeline.min_speakers
         pipeline.max_speakers = exact or maximum or pipeline.max_speakers
@@ -293,6 +294,7 @@ def main() -> int:
                 turns.append({'speaker_id': labels[label], 'start_s': float(segment.start), 'end_s': float(segment.end)})
         export({**wanted, 'speaker_ids': list(labels.values()), 'turns': turns}, src, dest, args.work_dir, rate, args.channels,\
                args.min_duration_s, args.max_duration_s, concurrency=args.concurrency, batch_size=args.batch_size)
+        ensure_plots(dest, overwrite=True)
     return batch(pairs, process, concurrency=args.concurrency, batch_size=args.batch_size)
 
 

@@ -24,7 +24,7 @@ import argparse
 import contextlib
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _common.files import batch, convert, identity, inputs, manifest_destinations, parser, positive_int, probe, request, safe_name
-from _common.segments import export, manifest_complete
+from _common.segments import ensure_plots, export, manifest_complete
 
 logger = logging.getLogger(__name__)
 
@@ -446,11 +446,13 @@ def main() -> int:
         wanted = request(identity(src), 'diarize', {**parameters, 'sample_rate': rate, 'channels': args.channels,
                          'min_duration_s': args.min_duration_s, 'max_duration_s': args.max_duration_s}, 'clustering')
         if manifest_complete(dest, wanted, args.overwrite):
+            ensure_plots(dest, overwrite=False)
             return
         turns = model.diarize(src)
         export({**wanted, 'speaker_ids': sorted({t['speaker_id'] for t in turns}), 'turns': turns},
                src, dest, args.work_dir, rate, args.channels, args.min_duration_s, args.max_duration_s,
                concurrency=args.concurrency, batch_size=args.batch_size)
+        ensure_plots(dest, overwrite=True)
     try:
         return batch(pairs, process, concurrency=args.concurrency, batch_size=args.batch_size)
     finally:

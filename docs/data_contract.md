@@ -35,6 +35,9 @@ interrupted write is recognizable and retried.
 ```text
 <output-dir>/<safe stem>/
   segments.json
+  timeline.png
+  timeline_duration.png
+  timeline_cutoff.png
   <stem>_<model>_<speaker>_<start_ms:09d>-<end_ms:09d>_<index:04d>.wav
 ```
 
@@ -69,6 +72,12 @@ interrupted write is recognizable and retried.
 - Clip paths are relative to the manifest. An empty `turns` array means no speech
   survived the duration filter. `complete: true` is written last; a manifest is
   reused only when every clip exists with a matching `clip_sha256`.
+- Each diarize command also writes `timeline.png` (speaker Gantt),
+  `timeline_duration.png` (segment-length histogram), and `timeline_cutoff.png`
+  (remaining count/percent and remaining audio if segments shorter than T are
+  dropped). Missing plots are filled in on a skipped rerun; a new export
+  overwrites them. `evaluate/plot_diarization` writes the same three figures
+  beside `--output-file`.
 - `audio/export_segments.py` re-renders any manifest with this shape and rewrites
   it (with fresh `clip*` fields) in the chosen output directory.
 

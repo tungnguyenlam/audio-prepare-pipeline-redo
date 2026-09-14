@@ -134,3 +134,13 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
     output['complete'] = True
     write_json(destination, output)
     progress('EXPORT_COMPLETE', f'Exported {turns_count} clips to {destination.parent.name}')
+
+
+def ensure_plots(manifest_path: Path, *, overwrite: bool = False) -> None:
+    """Write timeline, duration, and cutoff plots next to a segments.json."""
+    from _common.diarize_plots import plot_segment_outputs, sibling_plot_paths
+    output = manifest_path.parent / 'timeline.png'
+    if not overwrite and all(path.exists() for path in sibling_plot_paths(output)):
+        return
+    progress('PLOT_START', f'Rendering diarization plots: {manifest_path.name}')
+    plot_segment_outputs(manifest_path, overwrite=overwrite)
