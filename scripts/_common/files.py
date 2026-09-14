@@ -265,9 +265,16 @@ def destinations(args: argparse.Namespace, suffix: str = '', extension: str = '.
 def manifest_destinations(args: argparse.Namespace, filename: str = 'segments.json') -> list[tuple[Path, Path]]:
     safe_parent = lambda rel: Path(*[safe_name(p) for p in rel.parent.parts]) if rel.parent.parts else Path('.')
     explicit_out = getattr(args, 'output_dir', None)
-    all_inputs = inputs(args)
     if explicit_out is not None:
-        pairs = [(src, (explicit_out.resolve() / safe_parent(rel) / safe_name(rel.stem) / filename).resolve())
+        out_root = explicit_out.resolve()
+    elif getattr(args, 'input_dir', None) is not None:
+        out_root = resolve_output_dir(args, args.input_dir)
+    else:
+        out_root = None
+
+    all_inputs = inputs(args)
+    if out_root is not None:
+        pairs = [(src, (out_root / safe_parent(rel) / safe_name(rel.stem) / filename).resolve())
                  for src, rel in all_inputs]
     else:
         families = [infer_audio_family(src) for src, _ in all_inputs]
