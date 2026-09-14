@@ -1,6 +1,7 @@
 """Plot speaker-turn timelines and duration summaries from a diarization manifest."""
 from __future__ import annotations
 
+import math
 from pathlib import Path
 import sys
 
@@ -16,10 +17,14 @@ def main() -> int:
     p.add_argument('--output-file', type=Path, required=True,
                    help='Gantt image path (.png, .svg, .pdf); duration and cutoff plots are written beside it')
     p.add_argument('--title', help='Custom plot title (default: auto-generated)')
+    p.add_argument('--bin-width', type=float, default=0.25, help='Bin width in seconds for segment duration histogram (default: 0.25)')
     p.add_argument('--overwrite', action='store_true', help='Overwrite existing output files if present')
     p.add_argument('--concurrency', type=positive_int, default=1, help='Number of worker threads for parallel manifest loading (default: 1)')
     p.add_argument('--batch-size', type=positive_int, default=1, help='Batch size for chunked turn processing during plotting (default: 1)')
     args = p.parse_args()
+
+    if not math.isfinite(args.bin_width) or args.bin_width <= 0:
+        p.error('--bin-width must be a positive number')
 
     dest = args.output_file.resolve()
     progress('PLOT_START', f'Rendering diarization plots: {args.input_manifest.name}')
@@ -32,6 +37,7 @@ def main() -> int:
             overwrite=args.overwrite,
             concurrency=args.concurrency,
             batch_size=args.batch_size,
+            bin_width=args.bin_width,
         )
     except FileExistsError as exc:
         p.error(str(exc))

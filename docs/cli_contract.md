@@ -82,7 +82,7 @@ Key flags only; run `-h` for the full list. All commands also accept
 | Mix/eval | `mix/mix` | `--speech`, `--music`, `--smr-db`, `--seed`, `--sample-rate`, `--channels`, `--peak-ceiling-dbfs`, `--output-dir` | mixture, references, metadata |
 | | `evaluate/separation` | `--input-file`, `--reference-file`, `--mixture-file`, `--sample-rate`, `--output-file` | SI-SDR / SDR JSON |
 | | `evaluate/diarization` | `--input-manifest`, `--reference-manifest`, `--duration`, `--collar`, `--skip-overlap`, `--output-file` | DER / JER / confusion JSON |
-| | `evaluate/plot_diarization` | `--input-manifest`, `--reference-manifest`, `--title`, `--output-file` | Gantt PNG plus sibling `_duration.png` and `_cutoff.png` |
+| | `evaluate/plot_diarization` | `--input-manifest`, `--reference-manifest`, `--title`, `--output-file`, `--bin-width` (0.25) | Gantt PNG plus sibling `_duration.png` and `_cutoff.png` |
 | | `evaluate/plot_metrics` | `--metrics-file` (repeatable), `--title`, `--output-file` | bar plot PNG |
 | Dataset | `dataset/index` | `--input-dir`, `--output-manifest`, `--tag` | manifest JSON |
 | | `dataset/filter` | `--input-manifest`, `--output-manifest`, `--tag`, `--exclude-tag`, `--min/--max-duration` | manifest JSON |

@@ -16,16 +16,16 @@ def sibling_plot_paths(gantt_file: Path) -> tuple[Path, Path, Path]:
     return gantt, gantt.with_name(f'{gantt.stem}_duration{gantt.suffix}'), gantt.with_name(f'{gantt.stem}_cutoff{gantt.suffix}')
 
 
-def plot_segment_outputs(manifest_path: Path, *, overwrite: bool = False) -> list[Path]:
+def plot_segment_outputs(manifest_path: Path, *, overwrite: bool = False, bin_width: float = 0.25) -> list[Path]:
     """Write timeline, duration histogram, and cutoff plots next to a segments.json."""
     output_file = Path(manifest_path).resolve().parent / 'timeline.png'
     paths = list(sibling_plot_paths(output_file))
     if not overwrite and all(path.exists() for path in paths):
         return paths
     try:
-        return write_plots(manifest_path, output_file, overwrite=True)
+        return write_plots(manifest_path, output_file, overwrite=True, bin_width=bin_width)
     except ImportError:
-        return _write_plots_via_audio_python(manifest_path, output_file)
+        return _write_plots_via_audio_python(manifest_path, output_file, bin_width=bin_width)
 
 
 def write_plots(
@@ -37,6 +37,7 @@ def write_plots(
     overwrite: bool = False,
     concurrency: int = 1,
     batch_size: int = 1,
+    bin_width: float = 0.25,
 ) -> list[Path]:
     dest = Path(output_file).resolve()
     gantt, duration_path, cutoff_path = sibling_plot_paths(dest)
@@ -75,7 +76,7 @@ def write_plots(
     dest.parent.mkdir(parents=True, exist_ok=True)
     _save(plt, fig, gantt)
     progress('PLOT_DONE', f'Saved plot to {gantt.name}')
-    _write_duration_histogram(plt, turns, duration_path)
+    _write_duration_histogram(plt, turns, duration_path, bin_width=bin_width)
     progress('PLOT_DONE', f'Saved plot to {duration_path.name}')
     _write_cutoff_bars(plt, turns, cutoff_path)
     progress('PLOT_DONE', f'Saved plot to {cutoff_path.name}')
@@ -119,7 +120,7 @@ def _plot_turns(ax, turns: list[dict], title: str, batch_size: int = 1):
     ax.grid(True, axis='x', linestyle='--', alpha=0.5)
 
 
-def _write_duration_histogram(plt, turns: list[dict], dest: Path) -> None:
+def _write_duration_histogram(plt, turns: list[dict], dest: Path, *, bin_width: float = 0.25) -> None:
     durations = _turn_durations(turns)
     fig, ax = plt.subplots(figsize=(10, 4))
     if not durations:
@@ -128,14 +129,26 @@ def _write_duration_histogram(plt, turns: list[dict], dest: Path) -> None:
         ax.set_title('Segment duration')
         _save(plt, fig, dest)
         return
-    unique = {round(duration, 2) for duration in durations}
-    bins = min(30, max(1, len(unique)))
+    step = bin_width if (math.isfinite(bin_width) and bin_width > 0) else 0.25
+    start = math.floor(min(durations) / step) * step
+    end = math.ceil(max(durations) / step) * step
+    if end <= start:
+        end = start + step
+    num_bins = max(1, round((end - start) / step))
+    bins = [round(start + i * step, 4) for i in range(num_bins + 1)]
     ax.hist(durations, bins=bins, color='#3b82f6', edgecolor='white')
+
+    mean_val = statistics.fmean(durations)
+    median_val = float(statistics.median(durations))
+    ax.axvline(mean_val, color='#ef4444', linestyle='--', linewidth=2, label=f'Mean: {mean_val:.2f}s')
+    ax.axvline(median_val, color='#10b981', linestyle='-.', linewidth=2, label=f'Median: {median_val:.2f}s')
+    ax.legend(loc='upper right', framealpha=0.85)
+
     ax.set_xlabel('Segment duration (s)')
     ax.set_ylabel('Count')
     ax.set_title(
-        f'Segment duration (n={len(durations)}, mean={statistics.fmean(durations):.2f}s, '
-        f'median={statistics.median(durations):.2f}s)'
+        f'Segment duration (n={len(durations)}, mean={mean_val:.2f}s, '
+        f'median={median_val:.2f}s)'
     )
     ax.grid(True, axis='y', linestyle='--', alpha=0.4)
     _save(plt, fig, dest)
@@ -221,9 +234,9 @@ def _audio_python() -> Path:
     )
 
 
-def _write_plots_via_audio_python(manifest_path: Path, output_file: Path) -> list[Path]:
+def _write_plots_via_audio_python(manifest_path: Path, output_file: Path, *, bin_width: float = 0.25) -> list[Path]:
     script = Path(__file__).resolve().parents[1] / 'evaluate' / 'plot_diarization.py'
     cmd = [str(_audio_python()), str(script), '--input-manifest', str(Path(manifest_path).resolve()),
-           '--output-file', str(Path(output_file).resolve()), '--overwrite']
+           '--output-file', str(Path(output_file).resolve()), '--bin-width', str(bin_width), '--overwrite']
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
     return list(sibling_plot_paths(output_file))
