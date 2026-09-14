@@ -127,8 +127,7 @@ def run_agent(
             "model": model,
             "parameters": parameters,
             "response": {
-                "latency_s": res.get("latency_s", 0.0),
-                "provider_body": res.get("provider_body", {}),
+                key: value for key, value in res.items() if key != "text"
             },
             "output": {
                 "path": str(dst.resolve()),
