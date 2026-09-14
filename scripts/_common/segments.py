@@ -77,6 +77,14 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
     turns = normalize_turns(manifest['turns'], source)
     raw_turns = turns
     params = manifest.get('parameters', {})
+    merge_details = {}
+    if manifest.get('operation') == 'diarize' and params.get('merge'):
+        from _common.merge import merge_turns
+        turns, audit = merge_turns(source, turns, **params['merge'])
+        statistics = {'input_turns': len(raw_turns), 'output_turns': len(turns),
+                      'merged_gaps': sum(item['reason'] == 'merged' for item in audit)}
+        merge_details = {'merge_applied': True, 'merge_statistics': statistics, 'merge_audit': audit}
+        progress('MERGE_COMPLETE', f"{len(raw_turns)} turns -> {len(turns)} turns; applying duration filter next")
     if min_duration_s is None:
         min_duration_s = params.get('min_duration_s', 2.0)
     if max_duration_s is None:
@@ -91,7 +99,7 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
     turns = normalize_turns(turns, source)
     turns_count = len(turns)
     progress('EXPORT', f'Exporting {turns_count} clip(s) from {source.name} (concurrency={concurrency}, batch_size={batch_size})')
-    output = {**manifest, 'timestamp_origin': 'diarized_input', 'source_sample_rate': info['sample_rate'],
+    output = {**manifest, **merge_details, 'timestamp_origin': 'diarized_input', 'source_sample_rate': info['sample_rate'],
               'sample_rate': sample_rate or info['sample_rate'], 'channels': channels, 'turns': turns,
               'speaker_ids': sorted({t['speaker_id'] for t in turns}), 'complete': False}
     for i, turn in enumerate(turns, 1):
@@ -126,7 +134,8 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
         write_json(raw_path, {**manifest, 'turns': raw_turns,
                    'speaker_ids': sorted({t['speaker_id'] for t in raw_turns}),
                    'timestamp_origin': 'diarized_input', 'source_sample_rate': info['sample_rate'],
-                   'duration_filter_applied': False, 'clips_valid': False, 'complete': True})
+                   'merge_applied': False, 'duration_filter_applied': False,
+                   'clips_valid': False, 'complete': True})
         output['raw_manifest_sha256'] = digest(raw_path)
     work_dir.mkdir(parents=True, exist_ok=True)
     step = max(1, turns_count // 10)

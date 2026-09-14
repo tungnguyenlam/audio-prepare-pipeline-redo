@@ -29,7 +29,7 @@ verifiers) are provisioned per target with the same script; see
 | `scripts/diarize/` | `sortformer`, `pyannote_community1`, `pyannote_31`, `clustering`, `threed_speaker`, `diarizen` |
 | `scripts/audio/` | `info`, `convert`, `cut`, `export_segments`, `compare_waveforms`, `compare_spectrograms` |
 | `scripts/speaker/` | `enroll`, `score`, `filter`, `purity` |
-| `scripts/purity/` | `consensus`, `cleanup`, `collar`, `snap`, `align`, `segment` |
+| `scripts/purity/` | `consensus`, `cleanup`, `merge`, `collar`, `snap`, `align`, `segment` |
 | `scripts/agent/` | raw audio-LLM generation: `gemini`, `endpoint`, `hf` |
 | `scripts/agent/verifier/` | pass/reject verifiers `gemini`, `hf`, `endpoint`, `unsloth`, `vllm`, `moss`, `minicpm`, `kimi`, `vibevoice`; offline `analysis`, `compare`, `evaluate_verifier`, `scaffold_experiment` |
 | `scripts/mix/`, `scripts/evaluate/` | `mix`; `separation`, `diarization`, `plot_diarization`, `plot_metrics` |
@@ -53,6 +53,11 @@ bash scripts/agent/verifier/analysis.sh --input-dir .data/agent/verifier/gemini/
 
 ## Conventions
 
+- Add `--merge --max-gap-s 1 --silence-threshold-dbfs -40` to any diarization
+  launcher to merge fragmented same-speaker turns across silence before duration
+  filtering. Its normal output directory contains the processed manifest, clips,
+  and plots, plus the original `segments.raw.json`; see the
+  [merge cookbook](docs/commands.md#merge-before-duration-filtering).
 - `--input-file` beats `--input-dir`; `--output-file` is an exact destination for single outputs.
 - Audio outputs get a sibling `.json` sidecar; diarizers write `<stem>/segments.json` plus clips;
   purity stages write new manifests and `export_segments` renders them.

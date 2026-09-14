@@ -14,7 +14,7 @@ environment variables; the shared parser logs parsed options.
 
 | Launchers | Default venv (fallbacks) | Override variable |
 |---|---|---|
-| `download/*.sh`, `audio/*.sh`, `dataset/*.sh`, `evaluate/*.sh`, `mix/mix.sh`, `speaker/{enroll,filter}.sh`, `purity/{consensus,cleanup,collar,snap,segment}.sh`, `agent/verifier/{analysis,analyze,compare,evaluate_verifier,scaffold_experiment}.sh` | `.venvs/audio` (`.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
+| `download/*.sh`, `audio/*.sh`, `dataset/*.sh`, `evaluate/*.sh`, `mix/mix.sh`, `speaker/{enroll,filter}.sh`, `purity/{consensus,cleanup,merge,collar,snap,segment}.sh`, `agent/verifier/{analysis,analyze,compare,evaluate_verifier,scaffold_experiment}.sh` | `.venvs/audio` (`.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
 | `separate/*.sh` | `.venvs/separation` (`.venv-separation`, `.venvs/main`, `.venv`) | `SEPARATION_PYTHON` |
 | `diarize/{pyannote,pyannote_31,pyannote_community1}.sh`, `speaker/{score,purity}.sh` | `.venvs/pyannote` (`.venv-pyannote`, `.venvs/main`, `.venv`) | `DIARIZATION_PYTHON` |
 | `diarize/{sortformer,clustering}.sh` | `.venvs/sortformer` (`.venv-sortformer`) | `DIARIZATION_PYTHON` |
@@ -120,9 +120,35 @@ bash scripts/diarize/diarizen.sh            --input-file x.wav --segmentation-st
 
 ### Merge before duration filtering
 
-All diarizers preserve `segments.raw.json` before the clip duration filter. Feed
-that file to merge so short turns are available. Rerun diarization for older
-outputs missing this file; filtered manifests cannot recover discarded turns.
+Add `--merge` to any diarization launcher to merge fragmented same-speaker turns
+and export the result in one invocation:
+
+```bash
+bash scripts/diarize/sortformer.sh \
+  --input-file .data/recording.wav --output-dir .data/turns \
+  --merge --max-gap-s 1.0 --silence-threshold-dbfs -40 \
+  --min-duration-s 2 --max-duration-s 15
+```
+
+The same flags work with `pyannote.sh`, `pyannote_31.sh`,
+`pyannote_community1.sh`, `clustering.sh`, `threed_speaker.sh`, and `diarizen.sh`,
+for both `--input-file` and `--input-dir`. Merge is off by default. With `--merge`,
+the defaults are `--max-gap-s 1`, `--silence-threshold-dbfs -40`, and
+`--frame-ms 20`; the tuning flags alone do not enable it.
+
+The example writes processed `segments.json`, merged clips that pass the duration
+filter, and three plots under `.data/turns/recording/`. Omit `--output-dir` to use
+the normal `.data/diarize/<model>/<family>/` default. `segments.raw.json` retains
+the original backend turns before merging and duration filtering. The processed
+manifest includes the merge audit and statistics. Merge settings are part of the
+cached request: enabling merge or changing its settings in an existing destination
+requires `--overwrite`, which reruns inference and rebuilds clips and plots.
+
+To process an existing raw manifest without rerunning the model, the standalone
+merge and export commands remain available. All diarizers preserve
+`segments.raw.json` before the clip duration filter; feed that file to merge so
+short turns are available. Rerun diarization for older outputs missing this file;
+filtered manifests cannot recover discarded turns.
 
 ```bash
 bash scripts/purity/merge.sh \
@@ -140,7 +166,9 @@ entire gap, with no other speaker intersecting the combined span. `-40` dBFS is
 a starting threshold to calibrate, not a universal silence level. Use
 `--input-file` to override the source waveform, keeping its original timeline.
 No duration filter runs during merge; exported length includes the preserved
-pauses. A merged chain over 15 seconds is discarded at export, not split.
+pauses. With `--merge`, diarization applies its duration limits after merging,
+using the same merge and clip export helpers as the standalone workflow.
+A merged chain over 15 seconds is discarded at export, not split.
 See [the file contract](data_contract.md#silence-aware-merge) for audit fields.
 
 Merge and export verify the source audio against the input manifest's recorded

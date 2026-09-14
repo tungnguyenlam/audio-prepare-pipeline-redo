@@ -14,6 +14,7 @@ sys.modules.pop('diarizen', None)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from _common.files import batch, identity, inputs, manifest_destinations, parser, positive_int, probe, request, safe_name
+from _common.merge import add_merge_arguments, merge_parameters
 from _common.segments import ensure_plots, export, manifest_complete
 
 
@@ -32,7 +33,11 @@ def main() -> int:
     p.add_argument('--segmentation-step', type=float, default=0.1, help='Segmentation shifting ratio step')
     p.add_argument('--binarize-onset', type=float, default=0.5, help='Binarize onset threshold')
     p.add_argument('--binarize-offset', type=float, default=0.5, help='Binarize offset threshold')
+    p.add_argument('--merge', action='store_true',
+                   help='Merge same-speaker turns across silence before duration filtering and clip export (default: False)')
+    add_merge_arguments(p)
     args = p.parse_args()
+    merge_options = merge_parameters(args, p)
     if args.min_duration_s is not None and (not math.isfinite(args.min_duration_s) or args.min_duration_s < 0):
         p.error('--min-duration-s must be finite and non-negative')
     if args.max_duration_s is not None and (not math.isfinite(args.max_duration_s) or args.max_duration_s <= 0):
@@ -268,7 +273,8 @@ def main() -> int:
     kwargs = {key: getattr(args, key) for key in ('num_speakers', 'min_speakers', 'max_speakers') if getattr(args, key) is not None}
     def process(src, dest):
         rate = args.sample_rate or probe(src)['sample_rate']
-        wanted = request(identity(src), 'diarize', {**kwargs, 'device': device, 'batch_size': args.batch_size,\
+        wanted = request(identity(src), 'diarize', {**({'merge': merge_options} if args.merge else {}),
+                         **kwargs, 'device': device, 'batch_size': args.batch_size,\
                          'sample_rate': rate, 'channels': args.channels, 'checkpoint': args.model,\
                          'min_duration_s': args.min_duration_s, 'max_duration_s': args.max_duration_s,\
                          'segmentation_step': args.segmentation_step, 'binarize_onset': args.binarize_onset,\

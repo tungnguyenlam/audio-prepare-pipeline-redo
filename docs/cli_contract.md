@@ -48,6 +48,14 @@
 Key flags only; run `-h` for the full list. All commands also accept
 `--overwrite`, `--concurrency`, `--batch-size`.
 
+All diarization backends also accept `--merge` (off by default), `--max-gap-s`
+(1), `--silence-threshold-dbfs` (-40), and `--frame-ms` (20). `--merge` applies
+silence-aware merging to raw turns before the duration filter and clip export;
+the tuning flags alone do not enable it. Final clips, `segments.json`, and plots
+use the usual output directory. `segments.raw.json` remains unmerged and
+unfiltered. Merge settings participate in cache matching; changing them on an
+existing output requires `--overwrite` and reruns inference.
+
 | Group | Command | Key flags | Output |
 |---|---|---|---|
 | Download | `download/youtube` | `--url` \| `--url-file`, `--output-file`, `--output-dir`, `--sample-rate` (48000), `--cookie-file` | mono WAV + `.json` |

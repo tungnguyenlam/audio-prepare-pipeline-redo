@@ -89,15 +89,25 @@ interrupted write is recognizable and retried.
 - Export reads audio inside each rendering worker, keeping at most one clip's
   waveform per active worker in memory. `--batch-size` limits submitted clips;
   increasing it does not preload the batch's waveforms.
-- All diarization backends also write `segments.raw.json` before the export
-  duration filter. It contains normalized backend turns, including short/long
-  turns, with `duration_filter_applied: false`, `clips_valid: false`, and no clip
+- All diarization backends also write `segments.raw.json` before optional merging
+  and the export duration filter. It contains normalized backend turns, including
+  short/long turns, with `merge_applied: false`, `duration_filter_applied: false`,
+  `clips_valid: false`, and no clip
   references. Model-internal segmentation/VAD rules still apply. Its parameters
-  retain the export request for provenance; duration limits have not been applied
-  to these raw turns. The filtered `segments.json` records `raw_manifest_sha256`.
+  retain the export request for provenance; neither merge nor duration limits
+  have been applied to these raw turns. The processed `segments.json` records
+  `raw_manifest_sha256`.
   Skip/resume requires that raw file and matching hash as well as valid clips.
   Rerunning an older output without the raw file reruns inference to recover it;
   filtered clips alone cannot recover discarded turns.
+- With `--merge`, `parameters.merge` stores `max_gap_s`,
+  `silence_threshold_dbfs`, and `frame_ms`. The final `segments.json` keeps
+  `operation: diarize` and adds `merge_applied: true`, `merge_statistics`, and
+  `merge_audit` (see [silence-aware merge](#silence-aware-merge)). Statistics
+  describe the merge before duration filtering; exported turn counts may be
+  smaller. Each surviving turn's `merge_source_indices` and the audit indices
+  refer to `segments.raw.json` turns. Plots describe the final exported turns.
+  Without `--merge`, `parameters.merge` is omitted and export behavior is unchanged.
 - Each diarize command also writes `timeline.png` (speaker Gantt),
   `timeline_duration.png` (segment-length histogram), and `timeline_cutoff.png`
   (remaining count/percent and remaining audio if segments shorter than T are
@@ -127,7 +137,9 @@ They keep the diarization shape with these differences:
 ### Silence-aware merge
 
 `purity/merge` reads raw diarization turns and the source waveform, and writes an
-unfiltered manifest. Same-speaker, nonoverlapping turns can merge across a gap
+unfiltered manifest. Diarizers with `--merge` reuse this same merge implementation
+before filtering and rendering clips in their normal output directory.
+Same-speaker, nonoverlapping turns can merge across a gap
 of 0–`max_gap_s` inclusive (default 1 second), only if no different speaker
 intersects the proposed union. All channels and all RMS frames in the gap must
 be at or below `silence_threshold_dbfs` (default -40 dBFS). Frames are 20 ms by
@@ -144,10 +156,13 @@ Merged turns drop clip-specific scores/transcripts; confidence is the minimum of
 component confidences when all are known, otherwise null. Overlap indices are
 recomputed and clip references invalidated.
 
-Merge applies no duration limit. Use `audio/export_segments` afterwards for
-inclusive 2–15 second filtering and sample-accurate extraction from the source.
-Duration includes silence. Chains over 15 seconds remain in the merge manifest
-but are rejected by this export filter; there is no automatic splitting.
+Merge applies no duration limit. Diarization with `--merge` then applies its
+inclusive duration limits (default 2–15 seconds) and sample-accurate extraction
+from the source. For standalone `purity/merge`, use `audio/export_segments`
+afterwards. Duration includes silence. Chains over 15 seconds are rejected by
+the default export filter; there is no automatic splitting. The standalone merge
+manifest retains these chains, while integrated diarization retains their original
+component turns in `segments.raw.json` and their merge decisions in the final audit.
 
 ## 4. Speaker profile (`.data/speaker_profiles/<slug>/profile.json`)
 
