@@ -48,11 +48,11 @@ Key flags only; run `-h` for the full list. All commands also accept
 | Separate | `separate/htdemucs`, `htdemucs_ft` | `--stem` (vocals/instrumental/drums/bass/other), `--device`, `--sample-rate`, `--channels`, `--shifts`, `--overlap`, `--segment` | `<stem>_<model>.wav` + `.json` |
 | | `separate/bs_roformer`, `mel_roformer` | `--model`, `--backend`, `--device`, `--stem`, `--model-sample-rate`, `--sample-rate`, `--channels` | `<stem>_<model>.wav` + `.json` |
 | | `separate/mvsep_mdx23` | `--device`, `--stem`, `--overlap-large/-small`, `--single-onnx`, `--large-gpu`, `--use-kim-model-1`, `--chunk-size`, `--max-segment-seconds`, `--repo-dir` | `<stem>_mvsep_mdx23.wav` + `.json` |
-| Diarize | `diarize/sortformer` | `--model-id`, `--device`, `--window-duration-s`, `--overlap-duration-s`, `--onset/--offset`, `--enable-speaker-similarity`, `--min/--max-duration-s` (2/15) | `<stem>/segments.json` + clips + `timeline*.png` |
-| | `diarize/pyannote_community1`, `pyannote_31` (`pyannote.sh` = community1) | `--num-speakers`, `--min/--max-speakers`, `--device`, `--min/--max-duration-s` | `<stem>/segments.json` + clips + `timeline*.png` |
-| | `diarize/clustering` | `--num-speakers`, `--max-num-speakers`, `--vad-model`, `--speaker-model`, `--vad-*`, `--min/--max-duration-s` | `<stem>/segments.json` + clips + `timeline*.png` |
-| | `diarize/threed_speaker` | `--num-speakers`, `--include-overlap`, `--chunk-duration-s`, `--chunk-step-s`, `--min/--max-duration-s` | `<stem>/segments.json` + clips + `timeline*.png` |
-| | `diarize/diarizen` | `--model`, `--num/--min/--max-speakers`, `--segmentation-step`, `--binarize-onset/-offset`, `--min/--max-duration-s` | `<stem>/segments.json` + clips + `timeline*.png` |
+| Diarize | `diarize/sortformer` | `--model-id`, `--device`, `--window-duration-s`, `--overlap-duration-s`, `--onset/--offset`, `--enable-speaker-similarity`, `--min/--max-duration-s` (2/15) | `<stem>/segments.json` + `segments.raw.json` + clips + `timeline*.png` |
+| | `diarize/pyannote_community1`, `pyannote_31` (`pyannote.sh` = community1) | `--num-speakers`, `--min/--max-speakers`, `--device`, `--min/--max-duration-s` | `<stem>/segments.json` + `segments.raw.json` + clips + `timeline*.png` |
+| | `diarize/clustering` | `--num-speakers`, `--max-num-speakers`, `--vad-model`, `--speaker-model`, `--vad-*`, `--min/--max-duration-s` | `<stem>/segments.json` + `segments.raw.json` + clips + `timeline*.png` |
+| | `diarize/threed_speaker` | `--num-speakers`, `--include-overlap`, `--chunk-duration-s`, `--chunk-step-s`, `--min/--max-duration-s` | `<stem>/segments.json` + `segments.raw.json` + clips + `timeline*.png` |
+| | `diarize/diarizen` | `--model`, `--num/--min/--max-speakers`, `--segmentation-step`, `--binarize-onset/-offset`, `--min/--max-duration-s` | `<stem>/segments.json` + `segments.raw.json` + clips + `timeline*.png` |
 | Audio | `audio/info` | `--input-file` \| `--input-dir` | JSON Lines on stdout |
 | | `audio/convert` | `--sample-rate`, `--channels` | WAV + `.json` |
 | | `audio/cut` | `--start`, `--end` (seconds), `--sample-rate`, `--channels` | `<stem>_cut.wav` + `.json` |
@@ -67,6 +67,7 @@ Key flags only; run `-h` for the full list. All commands also accept
 | | `purity/collar` | `--collar-s`, `--context-aware`, `--transition-exclusion-s`, `--min-duration-s` | `segments.json` |
 | | `purity/snap` | `--search-window-s`, `--energy-floor-db`, `--frame-len-ms`, `--hop-len-ms` | `segments.json` |
 | | `purity/align` | `--engine`, `--model`, `--language`, `--device`, `--endpoint`, `--words-file` | word-locked `segments.json` |
+| | `purity/merge` | `--input-manifest`, `--input-file`, `--output-manifest`, `--max-gap-s` (1), `--silence-threshold-dbfs` (-40), `--frame-ms` (20) | unfiltered `segments.json` + merge audit |
 | | `purity/segment` | `--words-file`, `--max/--min-duration-s`, `--min-pause-s` | duration-bounded `segments.json` |
 | Agent | `agent/gemini` | `--prompt-file` (required), `--system-prompt-file`, `--model` (gemini-3.8-flash), `--reasoning-effort` (medium), `--inference-mode` (batch), `--max-tokens`, `--temperature`, `--top-p/-k`, `--batch-timeout-s` | `<stem>_gemini.txt` + `.json` |
 | | `agent/endpoint` | `--prompt-file`, `--endpoint`, `--model`, `--timeout-s`, `--max-tokens`, `--temperature` | `<stem>_endpoint.txt` + `.json` |
@@ -88,3 +89,7 @@ Key flags only; run `-h` for the full list. All commands also accept
 | | `dataset/filter` | `--input-manifest`, `--output-manifest`, `--tag`, `--exclude-tag`, `--min/--max-duration` | manifest JSON |
 | | `dataset/export` | `--input-manifest`, `--output-file`, `--format` (jsonl/csv) | JSONL / CSV |
 | | `dataset/bundle` | `--input-manifest`, `--output-file` | ZIP |
+
+`purity/merge` processes turns in timeline order with bounded frame reads. It
+accepts the shared concurrency/batch flags but runs sequentially. Duration
+filtering belongs to the subsequent `audio/export_segments` invocation.

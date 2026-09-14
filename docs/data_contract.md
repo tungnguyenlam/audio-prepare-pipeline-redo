@@ -35,6 +35,7 @@ interrupted write is recognizable and retried.
 ```text
 <output-dir>/<safe stem>/
   segments.json
+  segments.raw.json
   timeline.png
   timeline_duration.png
   timeline_cutoff.png
@@ -72,6 +73,15 @@ interrupted write is recognizable and retried.
 - Clip paths are relative to the manifest. An empty `turns` array means no speech
   survived the duration filter. `complete: true` is written last; a manifest is
   reused only when every clip exists with a matching `clip_sha256`.
+- All diarization backends also write `segments.raw.json` before the export
+  duration filter. It contains normalized backend turns, including short/long
+  turns, with `duration_filter_applied: false`, `clips_valid: false`, and no clip
+  references. Model-internal segmentation/VAD rules still apply. Its parameters
+  retain the export request for provenance; duration limits have not been applied
+  to these raw turns. The filtered `segments.json` records `raw_manifest_sha256`.
+  Skip/resume requires that raw file and matching hash as well as valid clips.
+  Rerunning an older output without the raw file reruns inference to recover it;
+  filtered clips alone cannot recover discarded turns.
 - Each diarize command also writes `timeline.png` (speaker Gantt),
   `timeline_duration.png` (segment-length histogram), and `timeline_cutoff.png`
   (remaining count/percent and remaining audio if segments shorter than T are
@@ -83,7 +93,7 @@ interrupted write is recognizable and retried.
 
 ## 3. Purity and speaker manifests
 
-`purity/{consensus,cleanup,collar,snap,align,segment}` and
+`purity/{consensus,cleanup,merge,collar,snap,align,segment}` and
 `speaker/{score,filter,purity}` read a manifest and write a new one (defaults:
 `.data/purity/<stage>/<family>/segments.json`, `.data/speaker/<stage>/<family>/segments.json`).
 They keep the diarization shape with these differences:
@@ -95,6 +105,31 @@ They keep the diarization shape with these differences:
   `audio/export_segments.py`.
 - Each turn keeps `confidence` (may be `null`) and any stage-specific fields
   (e.g. similarity scores from `speaker/score`, decisions from `speaker/purity`).
+
+### Silence-aware merge
+
+`purity/merge` reads raw diarization turns and the source waveform, and writes an
+unfiltered manifest. Same-speaker, nonoverlapping turns can merge across a gap
+of 0–`max_gap_s` inclusive (default 1 second), only if no different speaker
+intersects the proposed union. All channels and all RMS frames in the gap must
+be at or below `silence_threshold_dbfs` (default -40 dBFS). Frames are 20 ms by
+default, including the final partial frame; a zero-length gap needs no acoustic
+check. Nonfinite audio blocks a merge. This is an energy-based silence criterion,
+not a speech classifier; tune the threshold on your recordings.
+
+Speaker labels and original outer boundaries remain unchanged. The merged span
+includes the intervening silence. `merge_source_indices` references the normalized,
+time-sorted input turns; `merge_audit` records candidate decisions, gaps, and the
+maximum per-channel frame RMS in dBFS (`null` when unmeasured or digitally silent).
+`merge_statistics` records input/output turn counts and the number of merged gaps.
+Merged turns drop clip-specific scores/transcripts; confidence is the minimum of
+component confidences when all are known, otherwise null. Overlap indices are
+recomputed and clip references invalidated.
+
+Merge applies no duration limit. Use `audio/export_segments` afterwards for
+inclusive 2–15 second filtering and sample-accurate extraction from the source.
+Duration includes silence. Chains over 15 seconds remain in the merge manifest
+but are rejected by this export filter; there is no automatic splitting.
 
 ## 4. Speaker profile (`.data/speaker_profiles/<slug>/profile.json`)
 

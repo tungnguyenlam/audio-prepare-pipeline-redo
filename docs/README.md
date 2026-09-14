@@ -18,7 +18,7 @@ shared in-memory state.
 flowchart LR
     DL["download/"] -->|"WAV + .json"| SEP["separate/"]
     SEP -->|"stem WAV + .json"| DIA["diarize/"]
-    DIA -->|"segments.json + clips + plots"| PUR["purity/ · speaker/"]
+    DIA -->|"segments.json + segments.raw.json + clips + plots"| PUR["purity/ · speaker/"]
     PUR -->|"revised segments.json"| EXP["audio/export_segments.py"]
     EXP -->|"clips"| AG["agent/ · agent/verifier/"]
     EXP --> DS["dataset/"]

@@ -26,7 +26,7 @@ def normalize_turns(turns: list[dict], source: Path) -> list[dict]:
         a, b = max(0, min(frames, round(start * rate))), max(0, min(frames, round(end * rate)))
         if b <= a:
             continue
-        clean = {k: v for k, v in turn.items() if k not in {'clip', 'clip_sha256', 'overlap', 'overlap_with', 'start_sample', 'end_sample'}}
+        clean = {k: v for k, v in turn.items() if k not in {'clip', 'clip_sha256', 'clip_frames', 'overlap', 'overlap_with', 'start_sample', 'end_sample'}}
         result.append({**clean, 'start_sample': a, 'end_sample': b, 'start_s': a / rate, 'end_s': b / rate})
     for i, turn in enumerate(result):
         overlaps = [j for j, other in enumerate(result) if j != i and
@@ -46,6 +46,10 @@ def manifest_complete(path: Path, wanted: dict, overwrite: bool) -> bool:
     except (ValueError, OSError):
         old = {}
     if all(old.get(k) == v for k, v in wanted.items()):
+        if wanted.get('operation') == 'diarize':
+            raw_path = path.with_name('segments.raw.json')
+            if not raw_path.is_file() or digest(raw_path) != old.get('raw_manifest_sha256'):
+                return False
         return old.get('complete', False) and all(
             t.get('clip') and (path.parent / t['clip']).is_file()
             and digest(path.parent / t['clip']) == t.get('clip_sha256') for t in old.get('turns', []))
@@ -64,6 +68,7 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
 
     info = probe(source)
     turns = normalize_turns(manifest['turns'], source)
+    raw_turns = turns
     params = manifest.get('parameters', {})
     if min_duration_s is None:
         min_duration_s = params.get('min_duration_s', 2.0)
@@ -73,6 +78,8 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
         turns = [t for t in turns if (t['end_s'] - t['start_s']) >= min_duration_s]
     if max_duration_s is not None:
         turns = [t for t in turns if (t['end_s'] - t['start_s']) <= max_duration_s]
+    # overlap_with indices must refer to the surviving output turns.
+    turns = normalize_turns(turns, source)
     turns_count = len(turns)
     progress('EXPORT', f'Exporting {turns_count} clip(s) from {source.name} (concurrency={concurrency}, batch_size={batch_size})')
     output = {**manifest, 'timestamp_origin': 'diarized_input', 'source_sample_rate': info['sample_rate'],
@@ -81,6 +88,13 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
     destination.parent.mkdir(parents=True, exist_ok=True)
     # An interrupted export is recognizable and can be retried.
     write_json(destination, output)
+    if manifest.get('operation') == 'diarize':
+        raw_path = destination.with_name('segments.raw.json')
+        write_json(raw_path, {**manifest, 'turns': raw_turns,
+                   'speaker_ids': sorted({t['speaker_id'] for t in raw_turns}),
+                   'timestamp_origin': 'diarized_input', 'source_sample_rate': info['sample_rate'],
+                   'duration_filter_applied': False, 'clips_valid': False, 'complete': True})
+        output['raw_manifest_sha256'] = digest(raw_path)
     work_dir.mkdir(parents=True, exist_ok=True)
     step = max(1, turns_count // 10)
     lock = threading.Lock()

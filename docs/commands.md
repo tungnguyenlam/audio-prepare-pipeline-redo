@@ -112,8 +112,34 @@ bash scripts/diarize/pyannote_31.sh         --input-file x.wav
 bash scripts/diarize/clustering.sh          --input-file x.wav
 bash scripts/diarize/threed_speaker.sh      --input-file x.wav --include-overlap
 bash scripts/diarize/diarizen.sh            --input-file x.wav --segmentation-step 0.05 --binarize-onset 0.5 --binarize-offset 0.6
+# each run preserves pre-filter turns in segments.raw.json
 # each run also writes timeline.png, timeline_duration.png, timeline_cutoff.png next to segments.json
 ```
+
+### Merge before duration filtering
+
+All diarizers preserve `segments.raw.json` before the clip duration filter. Feed
+that file to merge so short turns are available. Rerun diarization for older
+outputs missing this file; filtered manifests cannot recover discarded turns.
+
+```bash
+bash scripts/purity/merge.sh \
+  --input-manifest .data/turns/recording/segments.raw.json \
+  --output-manifest .data/purity/merge/recording/segments.json \
+  --max-gap-s 1.0 --silence-threshold-dbfs -40
+bash scripts/audio/export_segments.sh \
+  --input-manifest .data/purity/merge/recording/segments.json \
+  --output-dir .data/clips/recording \
+  --min-duration-s 2 --max-duration-s 15
+```
+
+Merge preserves speaker labels and requires silence in every channel across the
+entire gap, with no other speaker intersecting the combined span. `-40` dBFS is
+a starting threshold to calibrate, not a universal silence level. Use
+`--input-file` to override the source waveform, keeping its original timeline.
+No duration filter runs during merge; exported length includes the preserved
+pauses. A merged chain over 15 seconds is discarded at export, not split.
+See [the file contract](data_contract.md#silence-aware-merge) for audit fields.
 
 ### Target speaker
 
