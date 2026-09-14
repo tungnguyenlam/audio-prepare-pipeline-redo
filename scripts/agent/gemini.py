@@ -726,7 +726,7 @@ class GeminiAgent:
 
 
 def main() -> int:
-    from artifacts import add_prompt_arguments, load_prompts, pending_agent_pairs, run_agent
+    from artifacts import add_prompt_arguments, load_prompts, run_agent
     from _common.files import destinations, parser, positive_int
 
     command = parser(
@@ -786,12 +786,6 @@ def main() -> int:
     )
     pairs = destinations(args, "_gemini", ".txt")
     if args.inference_mode == "batch":
-        pairs = pending_agent_pairs(
-            args=args,
-            pairs=pairs,
-            backend="gemini",
-            parameters=parameters,
-        )
         generated = client.generate_batch(
             [source for source, _ in pairs],
             prompt,
@@ -814,9 +808,9 @@ def main() -> int:
     result = run_agent(
         args=args,
         pairs=pairs,
-        backend="gemini",
         parameters=parameters,
-        generate=generate,
+        runner=generate,
+        logger=logger,
     )
     cost_summary = client.get_cost_summary()
     logger.info(
