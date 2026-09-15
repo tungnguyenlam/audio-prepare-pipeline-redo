@@ -14,7 +14,7 @@ sys.modules.pop('diarizen', None)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from _common.files import batch, identity, inputs, manifest_destinations, parser, positive_int, probe, request, safe_name
-from _common.merge import add_merge_arguments, merge_parameters
+from _common.merge import add_diarization_merge_arguments, merge_parameters
 from _common.segments import ensure_plots, export, manifest_complete
 
 
@@ -33,11 +33,9 @@ def main() -> int:
     p.add_argument('--segmentation-step', type=float, default=0.1, help='Segmentation shifting ratio step')
     p.add_argument('--binarize-onset', type=float, default=0.5, help='Binarize onset threshold')
     p.add_argument('--binarize-offset', type=float, default=0.5, help='Binarize offset threshold')
-    p.add_argument('--merge', action='store_true',
-                   help='Merge same-speaker turns across silence before duration filtering and clip export (default: False)')
-    add_merge_arguments(p)
+    add_diarization_merge_arguments(p)
     args = p.parse_args()
-    merge_options = merge_parameters(args, p)
+    merge_options = {**merge_parameters(args, p), 'adjust_mean': args.adjust_mean}
     if args.min_duration_s is not None and (not math.isfinite(args.min_duration_s) or args.min_duration_s < 0):
         p.error('--min-duration-s must be finite and non-negative')
     if args.max_duration_s is not None and (not math.isfinite(args.max_duration_s) or args.max_duration_s <= 0):

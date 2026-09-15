@@ -158,8 +158,8 @@ bash scripts/diarize/diarizen.sh            --input-file x.wav --segmentation-st
 
 ### Merge before duration filtering
 
-Add `--merge` to any diarization launcher to merge fragmented same-speaker turns
-and export the result in one invocation:
+All diarization launchers merge fragmented same-speaker turns and adjust the
+mean clip duration by default, then export the result in one invocation:
 
 ```bash
 bash scripts/diarize/sortformer.sh \
@@ -168,19 +168,28 @@ bash scripts/diarize/sortformer.sh \
   --min-duration-s 1 --max-duration-s 15
 ```
 
+Use `--merge false` to disable merging or `--adjust-mean false` to keep the
+configured `--max-gap-s` unchanged. Boolean flags accept `true` or `false`; a
+bare `--merge` or `--adjust-mean` means `true`.
+
 The same flags work with `pyannote.sh`, `pyannote_31.sh`,
 `pyannote_community1.sh`, `clustering.sh`, `threed_speaker.sh`, and `diarizen.sh`,
-for both `--input-file` and `--input-dir`. Merge is off by default. With `--merge`,
-the defaults are `--max-gap-s 1`, `--silence-threshold-dbfs -40`, and
-`--frame-ms 20`; the tuning flags alone do not enable it.
+for both `--input-file` and `--input-dir`. Merge is on by default, with
+`--max-gap-s 1`, `--silence-threshold-dbfs -40`, and `--frame-ms 20`.
+Mean adjustment targets a 7–10 second mean per input video and changes
+`max_gap_s` by 0.1 seconds per retry. Because a larger maximum gap permits more
+merges, it increases the gap when the mean is below 7 seconds and decreases it
+when the mean is above 10 seconds. The adjustment is bounded by 100 retries and
+the available same-speaker gaps.
 
 The example writes processed `segments.json`, merged clips that pass the duration
 filter, and three plots under `.data/turns/recording/plot/`. Omit `--output-dir` to use
 the normal `.data/diarize/<model>/<family>/` default. `segments.raw.json` retains
 the original backend turns before merging and duration filtering. The processed
-manifest includes the merge audit and statistics. Merge settings are part of the
-cached request: enabling merge or changing its settings in an existing destination
-requires `--overwrite`, which reruns inference and rebuilds clips and plots.
+manifest includes the merge audit, statistics, and mean-adjustment attempts.
+Merge settings are part of the cached request: changing merge or mean-adjustment
+settings in an existing destination requires `--overwrite`, which reruns
+inference and rebuilds clips and plots.
 
 To process an existing raw manifest without rerunning the model, the standalone
 merge and export commands remain available. All diarizers preserve

@@ -126,14 +126,16 @@ interrupted write is recognizable and retried.
   Skip/resume requires that raw file and matching hash as well as valid clips.
   Rerunning an older output without the raw file reruns inference to recover it;
   filtered clips alone cannot recover discarded turns.
-- With `--merge`, `parameters.merge` stores `max_gap_s`,
-  `silence_threshold_dbfs`, and `frame_ms`. The final `segments.json` keeps
+- With merging enabled, `parameters.merge` stores `max_gap_s`,
+  `silence_threshold_dbfs`, `frame_ms`, and `adjust_mean`. The final `segments.json` keeps
   `operation: diarize` and adds `merge_applied: true`, `merge_statistics`, and
-  `merge_audit` (see [silence-aware merge](#silence-aware-merge)). Statistics
-  describe the merge before duration filtering; exported turn counts may be
-  smaller. Each surviving turn's `merge_source_indices` and the audit indices
+  `merge_audit` (see [silence-aware merge](#silence-aware-merge)). Mean adjustment
+  details are recorded in `merge_mean_adjustment`. Statistics describe the merge
+  before duration filtering; exported turn counts may be smaller. Each surviving
+  turn's `merge_source_indices` and the audit indices
   refer to `segments.raw.json` turns. Plots describe the final exported turns.
-  Without `--merge`, `parameters.merge` is omitted and export behavior is unchanged.
+  With `--merge false`, `parameters.merge` is omitted and export behavior is
+  unchanged.
 - Each diarize command also writes `plot/timeline.png` (speaker Gantt),
   `plot/timeline_duration.png` (segment-length histogram), and
   `plot/timeline_cutoff.png` (remaining count/percent and remaining audio if
@@ -165,7 +167,7 @@ They keep the diarization shape with these differences:
 ### Silence-aware merge
 
 `purity/merge` reads raw diarization turns and the source waveform, and writes an
-unfiltered manifest. Diarizers with `--merge` reuse this same merge implementation
+unfiltered manifest. Diarizers with merging enabled reuse this same implementation
 before filtering and rendering clips in their normal output directory.
 Same-speaker, nonoverlapping turns can merge across a gap
 of 0–`max_gap_s` inclusive (default 1 second), only if no different speaker
@@ -179,7 +181,8 @@ Speaker labels and original outer boundaries remain unchanged. The merged span
 includes the intervening silence. `merge_source_indices` references the normalized,
 time-sorted input turns; `merge_audit` records candidate decisions, gaps, and the
 maximum per-channel frame RMS in dBFS (`null` when unmeasured or digitally silent).
-`merge_statistics` records input/output turn counts and the number of merged gaps.
+`merge_statistics` records input/output turn counts, the number of merged gaps,
+maximum-duration rejections, and the final maximum gap used.
 Merged turns drop clip-specific scores/transcripts; confidence is the minimum of
 component confidences when all are known, otherwise null. Overlap indices are
 recomputed and clip references invalidated.
@@ -193,6 +196,14 @@ includes silence. For standalone `purity/merge`, use `audio/export_segments`
 afterwards; its merge manifest retains overlong chains, while integrated
 diarization retains original component turns in `segments.raw.json` and merge
 decisions (including duration rejections) in the final audit.
+
+When `adjust_mean` is enabled, integrated diarization measures the mean of the
+duration-filtered turns for each input video. It retries from the original raw
+turns, moving `max_gap_s` by 0.1 seconds toward the 7–10 second target, and
+records every attempt and its stop reason in `merge_mean_adjustment`. The final
+gap and mean are also included in the terminal progress output. A bare
+`--merge` or `--adjust-mean` enables the corresponding default-true option;
+pass `false` to disable it.
 
 ## 4. Speaker profile (`.data/speaker_profiles/<slug>/profile.json`)
 

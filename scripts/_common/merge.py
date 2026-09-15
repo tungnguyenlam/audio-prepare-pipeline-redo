@@ -5,6 +5,28 @@ import argparse
 import math
 from pathlib import Path
 
+MEAN_DURATION_MIN_S = 7.0
+MEAN_DURATION_MAX_S = 10.0
+MEAN_ADJUST_STEP_S = 0.1
+MEAN_ADJUST_MAX_ATTEMPTS = 100
+
+
+def parse_bool(value: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {'true', '1', 'yes', 'on'}:
+        return True
+    if normalized in {'false', '0', 'no', 'off'}:
+        return False
+    raise argparse.ArgumentTypeError(f'expected a boolean value, got {value!r}')
+
+
+def add_diarization_merge_arguments(p: argparse.ArgumentParser) -> None:
+    p.add_argument('--merge', nargs='?', const=True, default=True, type=parse_bool, metavar='BOOL',
+                   help='Merge same-speaker turns across silence before duration filtering (default: true; use --merge false to disable)')
+    p.add_argument('--adjust-mean', nargs='?', const=True, default=True, type=parse_bool, metavar='BOOL',
+                   help='Retry merging with 0.1-second gap adjustments to target a 7–10 second mean (default: true; use --adjust-mean false to disable)')
+    add_merge_arguments(p)
+
 
 def add_merge_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument('--max-gap-s', type=float, default=1.0,

@@ -53,10 +53,11 @@ bash scripts/agent/verifier/analysis.sh --input-dir .data/agent/verifier/gemini/
 
 ## Conventions
 
-- Add `--merge --max-gap-s 1 --silence-threshold-dbfs -40` to any diarization
-  launcher to merge fragmented same-speaker turns across silence before duration
-  filtering. Its normal output directory contains the processed manifest, clips,
-  and plots, plus the original `segments.raw.json`; see the
+- Diarization enables same-speaker merging and mean-duration adjustment by
+  default. It retries the merge gap in 0.1-second steps toward a 7–10 second
+  mean per input video; use `--merge false` or `--adjust-mean false` to disable
+  either behavior. Its normal output directory contains the processed manifest,
+  clips, and plots, plus the original `segments.raw.json`; see the
   [merge cookbook](docs/commands.md#merge-before-duration-filtering).
 - `--input-file` beats `--input-dir`; `--output-file` is an exact destination for single outputs.
 - Audio outputs get a sibling `.json` sidecar; diarizers write `<stem>/segments.json` plus clips

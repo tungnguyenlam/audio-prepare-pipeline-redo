@@ -24,7 +24,7 @@ import argparse
 import contextlib
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _common.files import batch, convert, identity, inputs, manifest_destinations, parser, positive_int, probe, request, safe_name
-from _common.merge import add_merge_arguments, merge_parameters
+from _common.merge import add_diarization_merge_arguments, merge_parameters
 from _common.segments import ensure_plots, export, manifest_complete
 
 logger = logging.getLogger(__name__)
@@ -427,11 +427,9 @@ def main() -> int:
     p.add_argument('--min-duration-s', type=float, default=1.0, help='Minimum turn duration in seconds to keep and export (default: 1.0)')
     p.add_argument('--max-duration-s', type=float, default=15.0, help='Maximum turn duration in seconds to keep and export (default: 15.0)')
     safe_parent = lambda rel: Path(*[safe_name(p) for p in rel.parent.parts]) if rel.parent.parts else Path('.')
-    p.add_argument('--merge', action='store_true',
-                   help='Merge same-speaker turns across silence before duration filtering and clip export (default: False)')
-    add_merge_arguments(p)
+    add_diarization_merge_arguments(p)
     args = p.parse_args()
-    merge_options = merge_parameters(args, p)
+    merge_options = {**merge_parameters(args, p), 'adjust_mean': args.adjust_mean}
     if args.min_duration_s is not None and (not math.isfinite(args.min_duration_s) or args.min_duration_s < 0):
         p.error('--min-duration-s must be finite and non-negative')
     if args.max_duration_s is not None and (not math.isfinite(args.max_duration_s) or args.max_duration_s <= 0):
