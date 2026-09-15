@@ -74,7 +74,7 @@ interrupted write is recognizable and retried.
   "source": {"path": "/abs/input.wav", "sha256": "…"},
   "operation": "diarize",
   "model": "sortformer",
-  "parameters": {"device": "cuda:0", "min_duration_s": 2.0, "max_duration_s": 15.0, "…": "…"},
+  "parameters": {"device": "cuda:0", "min_duration_s": 1.0, "max_duration_s": 15.0, "…": "…"},
   "timestamp_origin": "diarized_input",
   "source_sample_rate": 48000,
   "sample_rate": 48000,
@@ -185,7 +185,7 @@ component confidences when all are known, otherwise null. Overlap indices are
 recomputed and clip references invalidated.
 
 Merge applies no duration limit. Diarization with `--merge` then applies its
-inclusive duration limits (default 2–15 seconds) and sample-accurate extraction
+inclusive duration limits (default 1–15 seconds) and sample-accurate extraction
 from the source. For standalone `purity/merge`, use `audio/export_segments`
 afterwards. Duration includes silence. Chains over 15 seconds are rejected by
 the default export filter; there is no automatic splitting. The standalone merge

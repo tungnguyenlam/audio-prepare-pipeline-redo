@@ -23,8 +23,8 @@ def main() -> int:
                    help='Target audio sample rate in Hz (default: preserve source)')
     p.add_argument('--channels', type=int, choices=(1, 2), default=1,
                    help='Target audio channels (1=mono, 2=stereo) (default: 1)')
-    p.add_argument('--min-duration-s', type=float, default=2.0,
-                   help='Minimum turn duration in seconds to keep and export (default: 2.0)')
+    p.add_argument('--min-duration-s', type=float, default=1.0,
+                   help='Minimum turn duration in seconds to keep and export (default: 1.0)')
     p.add_argument('--max-duration-s', type=float, default=15.0,
                    help='Maximum turn duration in seconds to keep and export (default: 15.0)')
     p.add_argument('--overwrite', action='store_true', default=False,

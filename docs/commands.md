@@ -141,7 +141,7 @@ bash scripts/separate/mvsep_mdx23.sh --input-file .data/source.wav --stem vocals
 Outputs are named `<stem>_<model>.wav` (`_htdemucs`, `_htdemucs_ft`, `_bs_roformer`,
 `_mel_roformer`, `_mvsep_mdx23`) with a sibling `.json`.
 
-### Diarization (all default to 2–15 s clips)
+### Diarization (all default to 1–15 s clips)
 
 ```bash
 bash scripts/diarize/sortformer.sh          --input-dir .data/separated --output-dir .data/turns
@@ -165,7 +165,7 @@ and export the result in one invocation:
 bash scripts/diarize/sortformer.sh \
   --input-file .data/recording.wav --output-dir .data/turns \
   --merge --max-gap-s 1.0 --silence-threshold-dbfs -40 \
-  --min-duration-s 2 --max-duration-s 15
+  --min-duration-s 1 --max-duration-s 15
 ```
 
 The same flags work with `pyannote.sh`, `pyannote_31.sh`,
@@ -196,7 +196,7 @@ bash scripts/purity/merge.sh \
 bash scripts/audio/export_segments.sh \
   --input-manifest .data/purity/merge/recording/segments.json \
   --output-dir .data/clips/recording \
-  --min-duration-s 2 --max-duration-s 15
+  --min-duration-s 1 --max-duration-s 15
 ```
 
 Merge preserves speaker labels and requires silence in every channel across the

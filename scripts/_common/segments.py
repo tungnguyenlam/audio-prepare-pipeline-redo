@@ -86,7 +86,7 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
         merge_details = {'merge_applied': True, 'merge_statistics': statistics, 'merge_audit': audit}
         progress('MERGE_COMPLETE', f"{len(raw_turns)} turns -> {len(turns)} turns; applying duration filter next")
     if min_duration_s is None:
-        min_duration_s = params.get('min_duration_s', 2.0)
+        min_duration_s = params.get('min_duration_s', 1.0)
     if max_duration_s is None:
         max_duration_s = params.get('max_duration_s', 15.0)
     if min_duration_s is not None:

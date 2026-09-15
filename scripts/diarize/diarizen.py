@@ -28,7 +28,7 @@ def main() -> int:
     p.add_argument('--max-speakers', type=positive_int, help='Maximum speaker cluster count')
     p.add_argument('--sample-rate', type=positive_int, help='Output target sample rate in Hz (defaults to source sample rate)')
     p.add_argument('--channels', type=int, choices=(1, 2), default=1, help='Output audio channel count (1=mono, 2=stereo)')
-    p.add_argument('--min-duration-s', type=float, default=2.0, help='Minimum turn duration in seconds to keep and export')
+    p.add_argument('--min-duration-s', type=float, default=1.0, help='Minimum turn duration in seconds to keep and export (default: 1.0)')
     p.add_argument('--max-duration-s', type=float, default=15.0, help='Maximum turn duration in seconds to keep and export')
     p.add_argument('--segmentation-step', type=float, default=0.1, help='Segmentation shifting ratio step')
     p.add_argument('--binarize-onset', type=float, default=0.5, help='Binarize onset threshold')

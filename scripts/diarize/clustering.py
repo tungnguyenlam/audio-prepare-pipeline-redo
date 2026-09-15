@@ -424,7 +424,7 @@ def main() -> int:
                    help='Minimum speech segment duration in seconds to keep (default: 0.5)')
     p.add_argument('--vad-min-duration-off-s', type=float, default=0.5,
                    help='Minimum silence duration in seconds to split turns (default: 0.5)')
-    p.add_argument('--min-duration-s', type=float, default=2.0, help='Minimum turn duration in seconds to keep and export (default: 2.0)')
+    p.add_argument('--min-duration-s', type=float, default=1.0, help='Minimum turn duration in seconds to keep and export (default: 1.0)')
     p.add_argument('--max-duration-s', type=float, default=15.0, help='Maximum turn duration in seconds to keep and export (default: 15.0)')
     safe_parent = lambda rel: Path(*[safe_name(p) for p in rel.parent.parts]) if rel.parent.parts else Path('.')
     p.add_argument('--merge', action='store_true',

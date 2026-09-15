@@ -457,7 +457,7 @@ def main() -> int:
                    help='Root directory for 3D-Speaker SpeakerLab submodule (default: None)')
     p.add_argument('--include-overlap', action=argparse.BooleanOptionalAction, default=False,
                    help='Include overlapping speaker segments (default: False)')
-    p.add_argument('--min-duration-s', type=float, default=2.0, help='Minimum turn duration in seconds to keep and export (default: 2.0)')
+    p.add_argument('--min-duration-s', type=float, default=1.0, help='Minimum turn duration in seconds to keep and export (default: 1.0)')
     p.add_argument('--max-duration-s', type=float, default=15.0, help='Maximum turn duration in seconds to keep and export (default: 15.0)')
     p.add_argument('--merge', action='store_true',
                    help='Merge same-speaker turns across silence before duration filtering and clip export (default: False)')
