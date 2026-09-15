@@ -117,6 +117,8 @@ def _read_folder_records(
 
 
 def _plot_folder_turns(ax, records: list[tuple[str, list[dict]]], title: str, batch_size: int = 1) -> None:
+    import matplotlib.pyplot as plt
+
     speaker_keys = sorted({(label, turn['speaker_id']) for label, turns in records for turn in turns})
     cmap = plt.cm.tab20
     colors = {key: cmap(index % 20) for index, key in enumerate(speaker_keys)}
