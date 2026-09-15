@@ -13,7 +13,7 @@ import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _common.files import (LoggingArgumentParser, ROOT, completed, convert,
                            family_audio_name, family_name, positive_int,
-                           progress, publish, request)
+                           progress, publish, request, safe_name)
 
 
 _RATE_LIMIT_MARKERS = (
@@ -72,7 +72,7 @@ def add_download_arguments(p: LoggingArgumentParser) -> LoggingArgumentParser:
     """Add options shared by single-video, playlist, channel, and crawl commands."""
     p.add_argument('--sample-rate', type=positive_int, default=48000, help='Target sample rate in Hz for converted WAV')
     p.add_argument('--output-dir', type=Path, default=None,
-                   help='Output directory (default: dynamic per audio family under .data/download/<family>)')
+                   help='Output root; bulk playlist/channel downloads add a resolved collection-name subdirectory')
     p.add_argument('--work-dir', type=Path, default=ROOT / '.data/download/work', help='Working directory for temporary files')
     p.add_argument('--cookie-file', type=Path,
                    help='Optional cookies.txt for yt-dlp. Prefer a throwaway account; a personal login can be banned')
@@ -278,7 +278,8 @@ def _extract_media(url: str, args, info: dict, work: Path):
     return src
 
 
-def download(url: str, args, source_info: dict | None = None) -> Path:
+def download(url: str, args, source_info: dict | None = None,
+             *, output_group: str | None = None) -> Path:
     raise_if_rate_limited()
     info = source_info
     if info is None:
@@ -294,6 +295,9 @@ def download(url: str, args, source_info: dict | None = None) -> Path:
     filename = family_audio_name(video_id, title, args.sample_rate)
     if explicit is not None:
         dest = explicit.resolve()
+    elif output_group is not None:
+        base = args.output_dir.resolve() if args.output_dir is not None else ROOT / '.data/download'
+        dest = (base / safe_name(output_group, default='youtube') / filename).resolve()
     elif args.output_dir is not None:
         dest = (args.output_dir.resolve() / filename).resolve()
     else:

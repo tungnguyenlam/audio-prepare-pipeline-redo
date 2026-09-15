@@ -145,7 +145,7 @@ def _load_collection(path: Path, selected_names: list[str] | None) -> tuple[dict
     return data, sorted(sources, key=lambda item: item.get('priority', 1000))
 
 
-def _download_candidates(candidates: list[dict], args) -> int:
+def _download_candidates(candidates: list[dict], args, output_groups: dict[str, str]) -> int:
     total = len(candidates)
     lock = threading.Lock()
 
@@ -156,7 +156,8 @@ def _download_candidates(candidates: list[dict], args) -> int:
                 progress('ITEM_START', candidate['title'], current=index, total=total)
             source_info = {'id': candidate['video_id'], 'title': candidate['title'],
                            'webpage_url': candidate['url']}
-            dest = download(candidate['url'], args, source_info=source_info)
+            dest = download(candidate['url'], args, source_info=source_info,
+                            output_group=output_groups.get(candidate['video_id']))
             candidate['download'] = {'status': 'complete', 'path': str(dest)}
             with lock:
                 progress('ITEM_DONE', dest.name, current=index, total=total)
@@ -216,6 +217,7 @@ def main() -> int:
         duplicate_occurrences = 0
         truncated = False
         aborted: RateLimitAbort | None = None
+        output_groups: dict[str, str] = {}
         for source in sources:
             if args.max_items is not None and len(accepted) >= args.max_items:
                 truncated = True
@@ -223,11 +225,12 @@ def main() -> int:
             per_source_limit = source.get('max_items')
             progress('SOURCE', f'{source["name"]}: {source["url"]}')
             try:
-                target, raw_count, entries = list_entries(
+                target, raw_count, entries, output_group = list_entries(
                     source['url'], args, limit=per_source_limit)
                 source_result = {'name': source['name'], 'url': source['url'],
                                  'resolved_url': target, 'listed': raw_count,
-                                 'available': len(entries), 'status': 'complete'}
+                                 'available': len(entries), 'resolved_name': output_group,
+                                 'status': 'complete'}
                 source_results.append(source_result)
             except RateLimitAbort as exc:
                 discovery_failed += 1
@@ -261,6 +264,7 @@ def main() -> int:
                         accepted[video_id]['sources'].append(source_reference)
                     continue
                 accepted[video_id] = _candidate(entry, source)
+                output_groups[video_id] = output_group
                 if args.max_items is not None and len(accepted) >= args.max_items:
                     truncated = True
                     break
@@ -297,7 +301,7 @@ def main() -> int:
         download_failed = 0
         if aborted is None and not args.metadata_only and candidates:
             try:
-                download_failed = _download_candidates(candidates, args)
+                download_failed = _download_candidates(candidates, args, output_groups)
             except RateLimitAbort as exc:
                 aborted = exc
                 download_failed = sum(

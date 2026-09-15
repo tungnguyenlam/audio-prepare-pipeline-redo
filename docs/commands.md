@@ -18,8 +18,11 @@ environment variables; the shared parser logs parsed options.
   destination and requires a single input. Relative paths use the caller's working
   directory.
 - Downloads are named `<video_id>_<title10>-<sample_rate>.wav`. Other names are
-  sanitized to `[a-zA-Z0-9_-]`; default outputs live under
-  `.data/<operation>[/<model>]/<audio-family>/`.
+  sanitized to `[a-zA-Z0-9_-]`; single-video outputs live under
+  `.data/download/<audio-family>/`. Playlist and channel downloads resolve the
+  remote collection name and group files under
+  `.data/download/<playlist-or-channel>/` (or under
+  `<output-dir>/<playlist-or-channel>/` when `--output-dir` is supplied).
 - Audio outputs have an atomic sibling `.json` sidecar. Matching outputs with a
   valid hash are cached; conflicting outputs require `--overwrite`. Audio is never
   modified in place.
@@ -88,7 +91,8 @@ uv pip install --python .venvs/audio/bin/python -r envs/requirements-audio.txt
 ## Cookbook
 
 Paths are relative to the current working directory. Omit `--output-dir` to use
-the per-family defaults described above.
+the defaults described above. Bulk playlist/channel downloads always add their
+resolved, sanitized collection name below the output root.
 
 ### Download
 
@@ -122,6 +126,9 @@ accepted entries by YouTube video ID. The included `vi_en_codeswitch.json` sourc
 collection covers the Hana's Lexis, IELTS Thùy Anh, Đặng Trần Tùng, Nguyễn Huyền,
 YouPass, and IELTS cùng Daniel sources. Use repeatable `--source '<exact name>'`
 to restrict a run and `--max-items` to cap the accepted collection.
+Downloaded crawl items are grouped under each source's resolved playlist or
+channel name; the resolved name is also recorded in each completed source entry
+in the crawl manifest.
 
 Use `--metadata-only` first to inspect the default
 `.data/download/<collection>/crawl.json`; omit it to download 48 kHz mono WAVs

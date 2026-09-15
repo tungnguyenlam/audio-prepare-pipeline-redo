@@ -7,15 +7,18 @@ manifests. Every JSON artifact is written atomically (temp file + rename).
 
 ## Crawl manifest (`download/crawl`)
 
-The default destination is `.data/download/<collection>/crawl.json`. `videos`
+The default destination is `.data/download/<collection>/crawl.json`. Downloaded
+crawl audio is grouped under `.data/download/<resolved-source-name>/` (or under
+`<output-dir>/<resolved-source-name>/` when `--output-dir` is supplied). `videos`
 contains accepted unique YouTube videos in source-priority order; duplicate
 occurrences are represented by multiple objects in a video's `sources` array.
 `rejected` is an occurrence-level audit because the same video can be rejected by
 one source-specific filter and accepted through another source. Each accepted
 video has `download.status` equal to `pending`, `not_requested`, `complete`, or
 `failed`; completed items record the WAV path and failures record the error
-text. `sources` records per-source listing status, while `summary` exposes source,
-filter, truncation, and download counts.
+text. `sources` records per-source listing status and the resolved
+playlist/channel name, while `summary` exposes source, filter, truncation, and
+download counts.
 
 ```json
 {
@@ -24,7 +27,7 @@ filter, truncation, and download counts.
   "collection": "vi-en-natural-codeswitch",
   "filters": {"exclude_title_regex": ["podcast"], "exclude_live": true},
   "summary": {"accepted_unique": 42, "duplicate_occurrences": 7, "rejected_occurrences": 3, "metadata_only": true},
-  "sources": [{"name": "Example", "url": "https://www.youtube.com/@example/videos", "status": "complete"}],
+  "sources": [{"name": "Example", "url": "https://www.youtube.com/@example/videos", "resolved_name": "Example", "status": "complete"}],
   "videos": [{"video_id": "abcdefghijk", "title": "Example", "url": "https://www.youtube.com/watch?v=abcdefghijk", "sources": [], "download": {"status": "not_requested"}}],
   "rejected": [{"video_id": "lmnopqrstuv", "source": "Example", "reason": "title_matched_exclude_regex"}]
 }

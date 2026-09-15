@@ -24,7 +24,46 @@ def normalize_playlist_url(url: str) -> str:
     return url
 
 
-def list_entries(url: str, args, *, limit: int | None = None) -> tuple[str, int, list[dict]]:
+def _is_channel_target(url: str) -> bool:
+    parsed = urllib.parse.urlparse(url)
+    parts = [part for part in parsed.path.split('/') if part]
+    return bool(parts) and (
+        parts[0].startswith('@') or parts[0].startswith('UC')
+        or parts[0] in {'browse', 'c', 'channel', 'user'})
+
+
+def _first_text(info: dict, keys: tuple[str, ...]) -> str | None:
+    for key in keys:
+        value = info.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _fallback_name(url: str) -> str:
+    parsed = urllib.parse.urlparse(url)
+    query = urllib.parse.parse_qs(parsed.query)
+    if query.get('list'):
+        return f'playlist-{query["list"][0]}'
+    parts = [urllib.parse.unquote(part) for part in parsed.path.split('/') if part]
+    if parts:
+        if parts[0].startswith('@'):
+            return parts[0][1:]
+        if parts[0] in {'browse', 'c', 'channel', 'user'} and len(parts) > 1:
+            return parts[1].lstrip('@')
+    return 'youtube'
+
+
+def resolved_listing_name(listing: dict, url: str) -> str:
+    """Return the remote playlist/channel name used as the output group."""
+    if _is_channel_target(url):
+        name = _first_text(listing, ('channel', 'uploader', 'title'))
+    else:
+        name = _first_text(listing, ('title', 'playlist_title', 'channel', 'uploader'))
+    return name or _fallback_name(url)
+
+
+def list_entries(url: str, args, *, limit: int | None = None) -> tuple[str, int, list[dict], str]:
     """Resolve a playlist-like yt-dlp target without downloading its media."""
     from yt_dlp import YoutubeDL
     target_url = normalize_playlist_url(url)
@@ -48,7 +87,7 @@ def list_entries(url: str, args, *, limit: int | None = None) -> tuple[str, int,
     entries = [entry for entry in raw_entries if entry is not None]
     if limit is not None:
         entries = entries[:limit]
-    return target_url, len(raw_entries), entries
+    return target_url, len(raw_entries), entries, resolved_listing_name(listing, target_url)
 
 
 def entry_url(entry: dict) -> str:
@@ -63,7 +102,7 @@ def entry_url(entry: dict) -> str:
 def main(description: str = __doc__) -> int:
     args = arguments(description, bulk=True).parse_args()
     try:
-        target_url, raw_count, entries = list_entries(
+        target_url, raw_count, entries, output_group = list_entries(
             args.url, args, limit=args.limit)
     except RateLimitAbort as exc:
         progress('RATE_LIMITED', f'{exc}')
@@ -72,9 +111,9 @@ def main(description: str = __doc__) -> int:
         progress('INFER', f'Inferred playlist URL: {target_url}')
     total = len(entries)
     if args.limit is not None and raw_count != total:
-        progress('PLAYLIST', f'Found {raw_count} items; limited to first {total}')
+        progress('PLAYLIST', f'Found {raw_count} items; limited to first {total}; group: {output_group}')
     else:
-        progress('PLAYLIST', f'Found {total} items to process')
+        progress('PLAYLIST', f'Found {total} items to process; group: {output_group}')
     indexed_entries = list(enumerate(entries, 1))
     batches = [indexed_entries[i:i + args.batch_size] for i in range(0, len(indexed_entries), args.batch_size)]
     lock = threading.Lock()
@@ -91,7 +130,7 @@ def main(description: str = __doc__) -> int:
         with lock:
             progress('ITEM_START', f'{title}', current=idx, total=total)
         with contextlib.redirect_stdout(sys.stderr):
-            dest = download(url, args, source_info=entry)
+            dest = download(url, args, source_info=entry, output_group=output_group)
         with lock:
             succeeded += 1
             progress('ITEM_DONE', f'{dest.name}', current=idx, total=total)
