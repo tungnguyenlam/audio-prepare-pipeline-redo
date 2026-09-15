@@ -407,20 +407,20 @@ def ensure_family_plots(
     concurrency: int | None = None,
     batch_size: int | None = None,
 ) -> None:
-    """Render aggregate stage plots after a directory diarization run."""
+    """Render aggregate stage plots after a directory diarization run.
+
+    Groups completed manifests by their enclosing output folder
+    (`<collection>/<stem>/segments.json`), not inferred video IDs.
+    """
     if getattr(args, 'input_dir', None) is None or getattr(args, 'input_file', None) is not None:
         return
 
-    from _common.diarize_plots import write_family_plots
-    from _common.files import infer_audio_family, resolve_output_dir, safe_name
+    from _common.diarize_plots import FAMILY_PLOT_DIR, ensure_family_plot_link, write_family_plots
 
-    explicit_output = args.output_dir.resolve() if args.output_dir is not None else None
     groups: dict[Path, list[Path]] = {}
-    for source, destination in pairs:
-        family = infer_audio_family(source)
-        family_root = (explicit_output / safe_name(family)
-                       if explicit_output is not None else resolve_output_dir(args, source))
-        groups.setdefault(family_root, []).append(destination)
+    for _, destination in pairs:
+        # destination is <collection>/<clip_stem>/segments.json
+        groups.setdefault(destination.parent.parent, []).append(destination)
 
     for family_root, destinations in groups.items():
         manifests = [path for path in destinations if path.is_file()]
@@ -429,11 +429,12 @@ def ensure_family_plots(
         progress('FAMILY_PLOT_START', f'Rendering aggregate diarization plots for {family_root.name} ({len(manifests)} manifest(s))')
         paths = write_family_plots(
             manifests,
-            family_root / 'plot',
-            root_dir=family_root if explicit_output is None else explicit_output,
+            family_root / FAMILY_PLOT_DIR,
+            root_dir=family_root,
             overwrite=overwrite,
             concurrency=concurrency or getattr(args, 'concurrency', 1),
             batch_size=batch_size or getattr(args, 'batch_size', 1),
         )
+        ensure_family_plot_link(family_root)
         if paths:
             print(paths[0], flush=True)

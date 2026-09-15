@@ -11,6 +11,18 @@ import subprocess
 from _common.files import ROOT, progress, read_json
 
 PLOT_STAGES = ('before_merge', 'after_merge')
+FAMILY_PLOT_DIR = '_plot'
+
+
+def ensure_family_plot_link(family_root: Path) -> None:
+    """Point plot/ at _plot/ when the historical name is still unused."""
+    plot_link = Path(family_root) / 'plot'
+    if plot_link.exists() or plot_link.is_symlink():
+        return
+    try:
+        plot_link.symlink_to(FAMILY_PLOT_DIR, target_is_directory=True)
+    except OSError:
+        pass
 
 
 def sibling_plot_paths(gantt_file: Path) -> tuple[Path, Path, Path]:

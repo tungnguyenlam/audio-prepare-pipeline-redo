@@ -6,8 +6,17 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.diarize_plots import write_family_plots, write_plots
-from _common.files import LoggingArgumentParser, infer_audio_family, positive_int, progress, safe_name
+from _common.diarize_plots import (FAMILY_PLOT_DIR, ensure_family_plot_link,
+                                   write_family_plots, write_plots)
+from _common.files import LoggingArgumentParser, positive_int, progress
+
+
+def _collection_root(manifest: Path, input_dir: Path) -> Path:
+    """Group <collection>/<stem>/segments.json under the enclosing collection folder."""
+    candidate = manifest.parent.parent.resolve()
+    if candidate == input_dir or candidate.is_relative_to(input_dir):
+        return candidate
+    return input_dir
 
 
 def main() -> int:
@@ -20,7 +29,7 @@ def main() -> int:
     p.add_argument('--output-file', type=Path,
                    help='Single-manifest Gantt image path; duration and cutoff plots are written beside it')
     p.add_argument('--output-dir', type=Path,
-                   help='Output root for family aggregate plots (default: <input-dir>/plot for one family)')
+                   help='Output root for collection aggregate plots (default: <input-dir>/_plot for one collection)')
     p.add_argument('--title', help='Custom plot title (default: auto-generated)')
     p.add_argument('--bin-width', type=float, default=0.25, help='Bin width in seconds for segment duration histogram (default: 0.25)')
     p.add_argument('--overwrite', action='store_true', help='Overwrite existing output files if present')
@@ -49,33 +58,32 @@ def main() -> int:
         manifests = sorted(input_dir.rglob('segments.json'))
         if not manifests:
             p.error(f'No segments.json manifests found below: {input_dir}')
-        families: dict[str, list[Path]] = {}
+        groups: dict[Path, list[Path]] = {}
         for manifest in manifests:
-            family = safe_name(infer_audio_family(manifest))
-            families.setdefault(family, []).append(manifest)
+            groups.setdefault(_collection_root(manifest, input_dir), []).append(manifest)
 
-        output_root = args.output_dir.resolve() if args.output_dir is not None else input_dir
-        progress('PLOT_START', f'Rendering aggregate diarization plots for {len(manifests)} manifest(s) in {len(families)} famil(ies)')
+        output_root = args.output_dir.resolve() if args.output_dir is not None else None
+        progress('PLOT_START', f'Rendering aggregate diarization plots for {len(manifests)} manifest(s) in {len(groups)} collection(s)')
         paths: list[Path] = []
         try:
-            for family, family_manifests in families.items():
-                # A single family keeps the historical default <input-dir>/plot.
-                # An explicit output root always receives a family subdirectory;
-                # multiple families also need separate destinations by default.
-                if args.output_dir is None and len(families) == 1:
-                    family_root = output_root
+            for group_root, family_manifests in groups.items():
+                if output_root is None:
+                    dest_root = group_root
+                elif group_root == input_dir:
+                    dest_root = output_root
                 else:
-                    family_root = output_root / family
+                    dest_root = output_root / group_root.relative_to(input_dir)
                 paths.extend(write_family_plots(
                     family_manifests,
-                    family_root / 'plot',
-                    root_dir=input_dir,
+                    dest_root / FAMILY_PLOT_DIR,
+                    root_dir=group_root,
                     title=args.title,
                     overwrite=args.overwrite,
                     concurrency=args.concurrency,
                     batch_size=args.batch_size,
                     bin_width=args.bin_width,
                 ))
+                ensure_family_plot_link(dest_root)
         except (FileExistsError, ValueError) as exc:
             p.error(str(exc))
         if not paths:

@@ -159,15 +159,18 @@ interrupted write is recognizable and retried.
   histogram), and `timeline_cutoff.png` (remaining count/percent and remaining
   audio if segments shorter than T are dropped). Missing plots are filled in on a
   skipped rerun; a new export overwrites them. `evaluate/plot_diarization` groups
-  folder-mode manifests by inferred family and writes the same stage sets under
-  each family's `plot/` directory. For one family without an explicit output
-  root this is `<input-dir>/plot/`; with `--output-dir`, it is
-  `<output-dir>/<family>/plot/`.
-- When diarization receives `--input-dir`, it groups the completed manifests by
-  inferred audio family and writes the same aggregate stage sets under that
-  family's `plot/` directory. With the default output layout this is
-  `.data/s3-diarize/<model>/<family>/plot/`; with an explicit `--output-dir`, it is
-  `<output-dir>/<family>/plot/`.
+  folder-mode manifests by their enclosing collection folder
+  (`<collection>/<stem>/segments.json`) and writes the same stage sets under
+  that collection's `_plot/` directory. `plot/` is a directory symlink to `_plot/`
+  when that name is unused. For one collection without an explicit output root
+  this is `<input-dir>/_plot/`; with `--output-dir`, it is `<output-dir>/_plot/`
+  or `<output-dir>/<subdir>/_plot/` when `--input-dir` contains subdirectories.
+- When diarization receives `--input-dir`, it groups completed manifests by the
+  enclosing output folder (`destination.parent.parent`) and writes the same
+  aggregate stage sets under that folder's `_plot/` directory. With the default
+  output layout this is `.data/s3-diarize/<model>/<input-dir-name>/_plot/` for a
+  flat collection; nested input subdirectories each get their own `_plot/`.
+  With an explicit `--output-dir`, aggregates stay inside that output tree.
 - `audio/export_segments.py` re-renders any manifest with this shape and rewrites
   it (with fresh `clip*` fields) in the chosen output directory. It also writes
   `plot/timeline.png`, `plot/timeline_duration.png`, and
