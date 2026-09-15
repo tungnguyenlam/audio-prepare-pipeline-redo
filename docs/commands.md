@@ -10,7 +10,8 @@ existing interpreter, forward arguments unchanged, keep the caller's working
 directory, and never install dependencies. `ffmpeg`/`ffprobe` must be on `PATH`.
 `HF_HOME` defaults to `.data/huggingface`. Export secrets (`HF_TOKEN`,
 `GEMINI_API_KEY`, `OPENAI_API_KEY`, `UNSLOTH_API_KEY`, `VLLM_API_KEY`) as
-environment variables; the shared parser logs parsed options.
+environment variables; the shared parser logs parsed options without printing
+secret-valued options or long prompt contents.
 
 ## CLI and file rules
 
@@ -33,6 +34,13 @@ environment variables; the shared parser logs parsed options.
   rate-limited. Progress/configuration goes to stderr, successful artifact paths
   go to stdout, and any item failure makes the command exit nonzero after
   remaining items finish.
+- Every batch reports start, per-item start/completion, and final counts on
+  stderr. Agent commands add response length, latency, token usage, and item
+  cost when the provider reports it. Verifiers add the parsed decision or stable
+  failure stage/code. The final `TOTAL_COST` line reports cumulative estimated
+  USD cost for priced providers such as Gemini; local models and endpoints that
+  do not expose a rate card report pricing as unavailable. These logs never
+  replace the artifact paths written to stdout.
 - Run any launcher with `-h` for its authoritative flags and defaults. JSON schemas
   and artifact layouts are defined in [data_contract.md](data_contract.md).
 

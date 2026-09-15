@@ -24,6 +24,13 @@ schema. Neither directory orchestrates other pipeline stages.
 - Interrupted Gemini Batch runs resume from `work/batch_jobs/` when re-invoked with
   identical arguments; `--overwrite` submits a fresh job.
 
+All agent and verifier progress is written to stderr so stdout remains a clean
+stream of successful artifact paths. Each run logs its backend/model, item start
+and completion, latency, and response size or verifier decision. Token usage and
+per-item cost are included when returned by the provider. The final `TOTAL_COST`
+line reports the cumulative estimated USD cost and pricing tier; local models and
+endpoints without pricing metadata explicitly report cost as unavailable.
+
 ## Hardened verifiers (`scripts/agent/verifier/*.sh`)
 
 | Backend | Environment | Model / options |

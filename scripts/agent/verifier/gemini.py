@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import logging
 import sys
 from pathlib import Path
 from typing import Any
@@ -18,13 +17,10 @@ from _cli import (  # noqa: E402
     load_prompt,
     pending_verifier_pairs,
     resolved_parameters,
-    verdict_processor,
+    run_verifier,
 )
-from _common.files import batch, destinations, parser, positive_int  # noqa: E402
+from _common.files import destinations, parser, positive_int  # noqa: E402
 from gemini import GeminiAgent, configure_gemini_paths, positive_float  # noqa: E402
-
-logger = logging.getLogger("agent.verifier.gemini")
-
 
 class GeminiVerifier(GeminiAgent):
     """Gemini generation constrained and parsed as a pass/reject verdict."""
@@ -58,29 +54,6 @@ class GeminiVerifier(GeminiAgent):
         if provider_body.get("responseId"):
             parsed["_response_id"] = provider_body["responseId"]
 
-        with self._lock:
-            running = round(float(self._cost_totals.get("total_usd", 0.0)), 6)
-        cost = generated["cost"]
-        if cost:
-            logger.info(
-                "Gemini %s -> %s | tokens p/o/t=%d/%d/%d | cost=$%.6f | session=$%.6f",
-                audio_path.name,
-                parsed.get("decision", "?"),
-                generated["usage"].get("prompt_tokens", 0),
-                generated["usage"].get("output_tokens", 0),
-                generated["usage"].get("thinking_tokens", 0),
-                float(cost["total_usd"]),
-                running,
-            )
-        else:
-            logger.info(
-                "Gemini %s -> %s | tokens p/o/t=%d/%d/%d | unpriced",
-                audio_path.name,
-                parsed.get("decision", "?"),
-                generated["usage"].get("prompt_tokens", 0),
-                generated["usage"].get("output_tokens", 0),
-                generated["usage"].get("thinking_tokens", 0),
-            )
         return parsed
 
 
@@ -164,29 +137,14 @@ def main() -> int:
     else:
         verify = lambda source: verifier.verify(source, prompt)
 
-    process = verdict_processor(
+    return run_verifier(
         args=args,
+        pairs=pairs,
         backend="gemini",
         parameters=parameters,
         verify=verify,
+        cost_summary=verifier.get_cost_summary,
     )
-    result = batch(
-        pairs,
-        process,
-        concurrency=args.concurrency,
-        batch_size=args.batch_size,
-    )
-    cost_summary = verifier.get_cost_summary()
-    logger.info(
-        "Session summary: %d input tokens (%d cached), %d output tokens, %d think tokens | %s cost: $%.6f",
-        cost_summary["usage"].get("prompt_tokens", 0),
-        cost_summary["usage"].get("cached_input_tokens", 0),
-        cost_summary["usage"].get("output_tokens", 0),
-        cost_summary["usage"].get("thinking_tokens", 0),
-        cost_summary["cost"].get("pricing_tier") or args.inference_mode,
-        cost_summary["cost"].get("total_usd", 0.0),
-    )
-    return result
 
 
 if __name__ == "__main__":

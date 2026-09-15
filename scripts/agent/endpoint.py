@@ -16,6 +16,22 @@ from typing import Any
 logger = logging.getLogger("agent.endpoint")
 
 
+def safe_endpoint_url(url: str) -> str:
+    """Return an endpoint URL without credentials or query-string secrets."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        host = parsed.hostname or ''
+        if ':' in host and not host.startswith('['):
+            host = f'[{host}]'
+        netloc = host
+        if parsed.port is not None:
+            netloc += f':{parsed.port}'
+        query = '<redacted>' if parsed.query else ''
+        return urllib.parse.urlunparse((parsed.scheme, netloc, parsed.path, '', query, ''))
+    except (TypeError, ValueError):
+        return '<invalid endpoint>'
+
+
 def should_bypass_proxy(url: str) -> bool:
     """Check if the given URL host should bypass HTTP/SOCKS proxies.
 
@@ -85,7 +101,9 @@ def send_http_request(
 
         if isinstance(exc, requests.HTTPError) and exc.response is not None:
             err_msg = exc.response.text
-            raise RuntimeError(f"HTTP {exc.response.status_code} from {url}: {err_msg}") from exc
+            raise RuntimeError(
+                f"HTTP {exc.response.status_code} from {safe_endpoint_url(url)}: {err_msg}"
+            ) from exc
         raise
 
     # 2. Fallback to urllib.request
@@ -106,9 +124,9 @@ def send_http_request(
             return json.loads(body)
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"HTTP {exc.code} from {url}: {detail}") from exc
+        raise RuntimeError(f"HTTP {exc.code} from {safe_endpoint_url(url)}: {detail}") from exc
     except urllib.error.URLError as exc:
-        raise RuntimeError(f"Failed to connect to {url}: {exc.reason}") from exc
+        raise RuntimeError(f"Failed to connect to {safe_endpoint_url(url)}: {exc.reason}") from exc
 
 
 class EndpointAgent:
@@ -130,7 +148,7 @@ class EndpointAgent:
         self.timeout_s = timeout_s
         self.temperature = temperature
         self.max_tokens = max_tokens
-        logger.info("Initialized EndpointAgent targeting '%s' (model='%s').", endpoint, model)
+        logger.info("Initialized EndpointAgent targeting '%s' (model='%s').", safe_endpoint_url(endpoint), model)
 
     def _get_headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -199,12 +217,16 @@ class EndpointAgent:
             )
         if not text and isinstance(reasoning, str):
             text = reasoning
-        return {
+        result = {
             "text": text,
             "reasoning": reasoning,
             "latency_s": latency,
             "provider_body": res,
         }
+        usage = res.get("usage")
+        if isinstance(usage, dict):
+            result["usage"] = usage
+        return result
 
 
 def main() -> int:

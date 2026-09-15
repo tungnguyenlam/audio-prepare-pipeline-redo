@@ -231,6 +231,10 @@ class HFAgent:
         return {
             "text": output_text,
             "latency_s": latency,
+            "usage": {
+                "output_tokens": int(new_tokens.shape[-1]),
+                "total_tokens": int(new_tokens.shape[-1]),
+            },
             "provider_body": {
                 "generated_text": output_text,
                 "generated_token_count": int(new_tokens.shape[-1]),
@@ -318,9 +322,9 @@ def main() -> int:
         return run_agent(
             args=args,
             pairs=pairs,
+            backend="hf",
             parameters=parameters,
-            runner=runner,
-            logger=logger,
+            generate=runner,
         )
 
 

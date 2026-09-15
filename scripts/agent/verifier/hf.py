@@ -40,6 +40,7 @@ again, not just the missing field.
             max_new_tokens=max_new_tokens,
         )
         latency_s = float(generated["latency_s"])
+        usage = generated.get("usage")
         parsed = parse_verifier_response(generated["text"])
         missing_pass_fields = []
         if parsed.get("decision") == "pass":
@@ -54,12 +55,23 @@ again, not just the missing field.
                 max_new_tokens=max_new_tokens,
             )
             latency_s += float(generated["latency_s"])
+            retry_usage = generated.get("usage")
+            if isinstance(usage, dict) and isinstance(retry_usage, dict):
+                usage = {
+                    **usage,
+                    "output_tokens": int(usage.get("output_tokens", 0) or 0)
+                    + int(retry_usage.get("output_tokens", 0) or 0),
+                    "total_tokens": int(usage.get("total_tokens", 0) or 0)
+                    + int(retry_usage.get("total_tokens", 0) or 0),
+                }
             parsed = parse_verifier_response(generated["text"])
             parsed["_schema_retry"] = {
                 "count": 1,
                 "reason": "missing_" + "_and_".join(missing_pass_fields),
             }
         parsed["_latency_s"] = round(latency_s, 3)
+        if isinstance(usage, dict):
+            parsed["_usage"] = usage
         parsed["_engine"] = "huggingface"
         parsed["_model"] = self.model_id
         parsed["_model_class"] = self.model_class

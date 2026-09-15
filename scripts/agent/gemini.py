@@ -808,19 +808,10 @@ def main() -> int:
     result = run_agent(
         args=args,
         pairs=pairs,
+        backend="gemini",
         parameters=parameters,
-        runner=generate,
-        logger=logger,
-    )
-    cost_summary = client.get_cost_summary()
-    logger.info(
-        "Session summary: %d input tokens (%d cached), %d output tokens, %d think tokens | %s cost: $%.6f",
-        cost_summary["usage"].get("prompt_tokens", 0),
-        cost_summary["usage"].get("cached_input_tokens", 0),
-        cost_summary["usage"].get("output_tokens", 0),
-        cost_summary["usage"].get("thinking_tokens", 0),
-        cost_summary["cost"].get("pricing_tier") or args.inference_mode,
-        cost_summary["cost"].get("total_usd", 0.0),
+        generate=generate,
+        cost_summary=client.get_cost_summary,
     )
     return result
 

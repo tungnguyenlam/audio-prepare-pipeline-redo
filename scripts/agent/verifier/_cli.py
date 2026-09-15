@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from _audio import VerifierResponseError
-from _common.files import ROOT, batch, digest, identity, read_json, request, write_json
+from _common.files import ROOT, batch, digest, identity, progress, read_json, request, write_json
 from artifacts import write_text
 from agent.verifier._verdicts import _known_prompts, _validate_verdict
+from _reporting import item_detail, new_run_stats, record_result, report_cost_summary
 
 
 _ERROR_MESSAGES = {
@@ -122,6 +124,7 @@ def verdict_processor(
     backend: str,
     parameters: dict[str, Any],
     verify: Callable[[Path], dict[str, Any]],
+    stats: dict[str, Any],
 ) -> Callable[[Path, Path], None]:
     """Build the common resumable verifier artifact writer."""
     known_prompts = _known_prompts()
@@ -183,6 +186,8 @@ def verdict_processor(
                 code=exc.code,
                 raw_response=exc.raw_response,
             )
+            record_result(stats, None, success=False)
+            progress('VERIFIER_FAIL', f'{source.name}: stage=parse; code={exc.code}')
             raise ValueError(f"{exc.code}: {_error_message(exc.code)}") from exc
         except Exception as exc:
             code, message, exception_type = _generation_failure(exc)
@@ -193,6 +198,8 @@ def verdict_processor(
                 code=code,
                 exception_type=exception_type,
             )
+            record_result(stats, None, success=False)
+            progress('VERIFIER_FAIL', f'{source.name}: stage=generation; code={code}')
             raise ValueError(f"{code}: {message}") from exc
 
         raw_response = verdict.pop("_raw_response", None) if isinstance(verdict, dict) else None
@@ -208,6 +215,8 @@ def verdict_processor(
                 response_kind=str(response_kind),
                 invalid_verdict=verdict if isinstance(verdict, dict) else None,
             )
+            record_result(stats, verdict if isinstance(verdict, dict) else None, success=False)
+            progress('VERIFIER_FAIL', f'{source.name}: stage=schema; code={schema_error}')
             raise ValueError(f"{schema_error}: {_error_message(schema_error)}")
         response = (
             publish_response(destination, raw_response, str(response_kind))
@@ -217,6 +226,17 @@ def verdict_processor(
         write_json(
             destination,
             {**wanted, "status": "success", "response": response, "verdict": verdict},
+        )
+        decision = verdict.get('decision') if isinstance(verdict, dict) else None
+        running_total = record_result(
+            stats,
+            verdict if isinstance(verdict, dict) else None,
+            success=True,
+            decision=str(decision) if decision is not None else None,
+        )
+        progress(
+            'VERIFIER_RESULT',
+            f'{source.name}: decision={decision or "unknown"}; {item_detail(verdict, running_total_usd=running_total)}',
         )
 
     return process
@@ -229,24 +249,39 @@ def run_verifier(
     backend: str,
     parameters: dict[str, Any],
     verify: Callable[[Path], dict[str, Any]],
+    cost_summary: Callable[[], Mapping[str, Any]] | None = None,
 ) -> int:
-    pairs = pending_verifier_pairs(
-        args=args,
-        pairs=pairs,
-        backend=backend,
-        parameters=parameters,
-    )
-    return batch(
-        pairs,
-        verdict_processor(
+    stats = new_run_stats()
+    result = 1
+    try:
+        pairs = pending_verifier_pairs(
             args=args,
+            pairs=pairs,
             backend=backend,
             parameters=parameters,
-            verify=verify,
-        ),
-        concurrency=getattr(args, "concurrency", 1),
-        batch_size=getattr(args, "batch_size", 1),
-    )
+        )
+        stats['attempted'] = len(pairs)
+        model = parameters.get('model') or parameters.get('model_id') or backend
+        progress(
+            'VERIFIER_START',
+            f'backend={backend}; model={model}; items={len(pairs)}',
+        )
+        result = batch(
+            pairs,
+            verdict_processor(
+                args=args,
+                backend=backend,
+                parameters=parameters,
+                verify=verify,
+                stats=stats,
+            ),
+            concurrency=getattr(args, "concurrency", 1),
+            batch_size=getattr(args, "batch_size", 1),
+        )
+        return result
+    finally:
+        provider = cost_summary() if cost_summary is not None else None
+        report_cost_summary(f'verifier/{backend}', stats, provider)
 
 
 def _response_complete(destination: Path, artifact: dict[str, Any]) -> bool:

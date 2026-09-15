@@ -248,6 +248,9 @@ metadata, so `--output-file result.json` is rejected.
 Defaults: `.data/agent/<backend>/<family>/`;
 Gemini: `.data/agent/gemini/<model>/<reasoning-effort>/<family>/`.
 Gemini Batch state lives under the variant's `work/batch_jobs/` for resume.
+Runtime progress is written to stderr, including per-item latency and response
+size. Provider usage and cost remain in the sidecar when available; the final
+stderr `TOTAL_COST` line summarizes the invocation's cumulative estimated cost.
 
 ## 6. Verifier verdict (`scripts/agent/verifier/*`)
 
@@ -305,6 +308,10 @@ sibling response file, and schema failures preserve the parsed object as
 `invalid_verdict`. A generation failure with no model text writes only the JSON.
 Legacy verdict-only JSON (no `status`/`response`) remains readable by the analyzer
 and comparator.
+Verifier stderr includes each parsed decision or stable failure stage/code, plus
+latency and token usage when available. The final `TOTAL_COST` line reports the
+whole invocation; it says pricing is unavailable when the backend does not return
+rate information.
 
 Validation profile is selected by the prompt text (`scripts/agent/verifier/_verdicts.py`):
 

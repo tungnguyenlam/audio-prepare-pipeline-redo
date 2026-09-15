@@ -5,6 +5,7 @@ import argparse
 import contextlib
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import subprocess
@@ -13,6 +14,7 @@ import tempfile
 import time
 import unicodedata
 import re
+from urllib.parse import urlsplit, urlunsplit
 
 ROOT = Path(__file__).resolve().parents[2]
 os.environ.setdefault('HF_HOME', str(ROOT / '.data/huggingface'))
@@ -30,6 +32,39 @@ def positive_int(value: str) -> int:
     return result
 
 
+_SENSITIVE_CONFIG_KEYS = ('api_key', 'token', 'secret', 'password', 'cookie', 'authorization')
+
+
+def _display_config_value(key: str, value: object) -> object:
+    """Keep configuration logs useful without echoing secrets or huge text."""
+    lowered = key.lower()
+    if any(part in lowered for part in _SENSITIVE_CONFIG_KEYS):
+        return '<redacted>'
+    if isinstance(value, str) and ('endpoint' in lowered or lowered.endswith('url')):
+        try:
+            parsed = urlsplit(value)
+            if parsed.query:
+                return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, '<redacted>', ''))
+        except ValueError:
+            pass
+    if isinstance(value, str) and ('\n' in value or len(value) > 120):
+        return f'<{len(value)} characters>'
+    return value
+
+
+def configure_logging() -> None:
+    """Enable consistent command logging when the caller has not configured it."""
+    root = logging.getLogger()
+    if not root.handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            format='[%(asctime)s] %(levelname)s %(name)s: %(message)s',
+            datefmt='%H:%M:%S',
+            stream=sys.stderr,
+        )
+    root.setLevel(logging.INFO)
+
+
 def log_config(title: str, args: argparse.Namespace | dict) -> None:
     if getattr(args, 'quiet', False):
         return
@@ -42,7 +77,7 @@ def log_config(title: str, args: argparse.Namespace | dict) -> None:
     for k in sorted(items.keys()):
         if k.startswith('_'):
             continue
-        val = items[k]
+        val = _display_config_value(k, items[k])
         if k == 'sample_rate' and val is None:
             val = 'None (preserve source)'
         elif k == 'output_dir' and val is None:
@@ -74,6 +109,7 @@ class LoggingArgumentParser(argparse.ArgumentParser):
 
     def parse_args(self, args=None, namespace=None):
         ns = super().parse_args(args=args, namespace=namespace)
+        configure_logging()
         log_config(self.prog or (sys.argv[0] if sys.argv else 'command'), ns)
         return ns
 
@@ -93,6 +129,22 @@ def progress(action: str, detail: str = '', *, current: int | None = None, total
         items.append(f'({elapsed_s:.2f}s)')
     timestamp = time.strftime('%H:%M:%S')
     print(f'[{timestamp}] ' + ' : '.join(items), file=sys.stderr, flush=True)
+
+
+def _safe_exception_detail(exc: Exception) -> str:
+    """Remove configured credential values before an exception reaches stderr."""
+    detail = str(exc)
+    for env_name in (
+        'GEMINI_API_KEY',
+        'OPENAI_API_KEY',
+        'UNSLOTH_API_KEY',
+        'VLLM_API_KEY',
+        'HF_TOKEN',
+    ):
+        secret = os.getenv(env_name)
+        if secret:
+            detail = detail.replace(secret, '<redacted>')
+    return detail
 
 
 def safe_name(value: str, limit: int | None = None, default: str = 'audio') -> str:
@@ -424,6 +476,7 @@ def batch(pairs: list[tuple[Path, Path]], process, *, concurrency: int = 1, batc
     progress('BATCH', f'Starting batch processing of {total} item(s) (concurrency={concurrency}, batch_size={batch_size})')
     batches = [pairs[i:i + batch_size] for i in range(0, total, batch_size)]
     completed = 0
+    submitted = 0
     lock = threading.Lock()
 
     def run_item(item_idx: int, src: Path, dest: Path) -> tuple[bool, Path, str]:
@@ -437,13 +490,14 @@ def batch(pairs: list[tuple[Path, Path]], process, *, concurrency: int = 1, batc
             return True, dest, f'{src.name} ({elapsed:.2f}s)'
         except Exception as exc:
             elapsed = time.perf_counter() - item_start
-            return False, dest, f'{src.name}: {exc} ({elapsed:.2f}s)'
+            return False, dest, f'{src.name}: {_safe_exception_detail(exc)} ({elapsed:.2f}s)'
 
     if concurrency <= 1:
         for batch_chunk in batches:
             for src, dest in batch_chunk:
+                submitted += 1
+                success, out_dest, msg = run_item(submitted, src, dest)
                 completed += 1
-                success, out_dest, msg = run_item(completed, src, dest)
                 if success:
                     progress('ITEM_DONE', msg, current=completed, total=total)
                     print(out_dest, flush=True)
@@ -455,13 +509,13 @@ def batch(pairs: list[tuple[Path, Path]], process, *, concurrency: int = 1, batc
             for batch_chunk in batches:
                 futures = []
                 for src, dest in batch_chunk:
-                    with lock:
-                        completed += 1
-                        cur_idx = completed
+                    submitted += 1
+                    cur_idx = submitted
                     futures.append(pool.submit(run_item, cur_idx, src, dest))
                 for future in concurrent.futures.as_completed(futures):
                     success, out_dest, msg = future.result()
                     with lock:
+                        completed += 1
                         if success:
                             progress('ITEM_DONE', msg, current=completed, total=total)
                             print(out_dest, flush=True)

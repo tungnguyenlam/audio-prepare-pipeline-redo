@@ -7,11 +7,11 @@ directory also import the top-level ``scripts/_common`` namespace package.
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 import tempfile
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
@@ -23,8 +23,7 @@ try:
         batch,
         digest,
         positive_int,
-        read_json,
-        request,
+        progress,
         write_json,
     )
 except ImportError:
@@ -32,10 +31,11 @@ except ImportError:
         batch,
         digest,
         positive_int,
-        read_json,
-        request,
+        progress,
         write_json,
     )
+
+from _reporting import item_detail, new_run_stats, record_result, report_cost_summary
 
 
 def read_prompt(path: Path, label: str = "Prompt") -> str:
@@ -101,46 +101,75 @@ def load_prompts(args: argparse.Namespace) -> tuple[str, str | None]:
 
 
 def run_agent(
+    *,
     args: argparse.Namespace,
     pairs: list[tuple[Path, Path]],
+    backend: str,
     parameters: dict[str, Any],
-    runner: Callable[[Path], dict[str, Any]],
-    logger: Any,
+    generate: Callable[[Path], dict[str, Any]],
+    cost_summary: Callable[[], Mapping[str, Any]] | None = None,
 ) -> int:
-    """Run generation across pairs using the standard batch pipeline."""
+    """Run generation, persist raw responses, and report per-item/cumulative costs."""
     operation = "explore_audio_model"
-    model = getattr(args, "model", None) or "hf"
+    model = (
+        parameters.get("model")
+        or parameters.get("model_id")
+        or getattr(args, "model", None)
+        or backend
+    )
+    stats = new_run_stats()
+    stats['attempted'] = len(pairs)
+    progress(
+        'AGENT_START',
+        f'backend={backend}; model={model}; items={len(pairs)}',
+    )
 
     def process_item(src: Path, dst: Path) -> None:
-        res = runner(src)
+        try:
+            res = generate(src)
+            if not isinstance(res, dict) or not isinstance(res.get('text'), str):
+                raise TypeError('Agent generator must return a dict with string text')
 
-        write_text(dst, res["text"])
+            write_text(dst, res["text"])
 
-        sidecar_path = dst.with_suffix(".json")
-        sidecar_payload = {
-            "schema_version": 1,
-            "source": {
-                "path": str(src.resolve()),
-                "sha256": digest(src),
-            },
-            "operation": operation,
-            "model": model,
-            "parameters": parameters,
-            "response": {
-                key: value for key, value in res.items() if key != "text"
-            },
-            "output": {
-                "path": str(dst.resolve()),
-                "format": "utf-8 text",
-                "bytes": dst.stat().st_size,
-                "sha256": digest(dst),
-            },
-        }
-        write_json(sidecar_path, sidecar_payload)
+            sidecar_path = dst.with_suffix(".json")
+            sidecar_payload = {
+                "schema_version": 1,
+                "source": {
+                    "path": str(src.resolve()),
+                    "sha256": digest(src),
+                },
+                "operation": operation,
+                "model": model,
+                "parameters": parameters,
+                "response": {
+                    key: value for key, value in res.items() if key != "text"
+                },
+                "output": {
+                    "path": str(dst.resolve()),
+                    "format": "utf-8 text",
+                    "bytes": dst.stat().st_size,
+                    "sha256": digest(dst),
+                },
+            }
+            write_json(sidecar_path, sidecar_payload)
+            running_total = record_result(stats, res, success=True)
+            progress(
+                'AGENT_RESULT',
+                f'{src.name}: {item_detail(res, text_length=len(res["text"]), running_total_usd=running_total)}',
+            )
+        except Exception:
+            record_result(stats, None, success=False)
+            raise
 
-    return batch(
-        pairs,
-        process_item,
-        concurrency=args.concurrency,
-        batch_size=args.batch_size,
-    )
+    try:
+        result = batch(
+            pairs,
+            process_item,
+            concurrency=args.concurrency,
+            batch_size=args.batch_size,
+        )
+    finally:
+        provider = cost_summary() if cost_summary is not None else None
+        report_cost_summary(f'agent/{backend}', stats, provider)
+    return result
