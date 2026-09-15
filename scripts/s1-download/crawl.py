@@ -9,7 +9,7 @@ import threading
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _common.files import (FileContractError, LoggingArgumentParser, ROOT,
-                           positive_int, progress, read_json, safe_name,
+                           persist_path, positive_int, progress, read_json, safe_name,
                            write_json)
 from playlist import entry_url, list_entries
 from youtube import RateLimitAbort, add_download_arguments, download, raise_if_rate_limited
@@ -158,7 +158,7 @@ def _download_candidates(candidates: list[dict], args, output_groups: dict[str, 
                            'webpage_url': candidate['url']}
             dest = download(candidate['url'], args, source_info=source_info,
                             output_group=output_groups.get(candidate['video_id']))
-            candidate['download'] = {'status': 'complete', 'path': str(dest)}
+            candidate['download'] = {'status': 'complete', 'path': persist_path(dest)}
             with lock:
                 progress('ITEM_DONE', dest.name, current=index, total=total)
                 print(dest, flush=True)
@@ -279,7 +279,7 @@ def main() -> int:
             'operation': 'crawl',
             'collection': collection['collection'],
             'description': collection.get('description'),
-            'source_file': str(args.source_file.resolve()),
+            'source_file': persist_path(args.source_file),
             'filters': global_filters,
             'summary': {
                 'sources_selected': len(sources),

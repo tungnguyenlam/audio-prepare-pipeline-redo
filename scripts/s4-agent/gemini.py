@@ -18,7 +18,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from _common.files import ROOT, digest, safe_name, write_json  # noqa: E402
+from _common.files import ROOT, digest, persist_path, safe_name, write_json  # noqa: E402
 from _gemini_pricing import (  # noqa: E402
     accumulate_cost,
     accumulate_usage,
@@ -504,7 +504,7 @@ class GeminiAgent:
             )
             key_material = {
                 "index": index,
-                "path": str(source),
+                "path": persist_path(source),
                 "sha256": digest(source),
                 "model": self.model,
                 "reasoning_effort": self.reasoning_effort,

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from _audio import VerifierResponseError
-from _common.files import ROOT, batch, digest, identity, progress, read_json, request, write_json
+from _common.files import ROOT, batch, digest, identity, persist_path, progress, read_json, request, write_json
 from artifacts import write_text
 from _verdicts import _known_prompts, _validate_verdict
 from _reporting import item_detail, new_run_stats, record_result, report_cost_summary
@@ -134,7 +134,7 @@ def verdict_processor(
         response_path = destination.with_suffix(".txt")
         write_text(response_path, raw_response)
         return {
-            "path": str(response_path),
+            "path": persist_path(response_path),
             "format": "utf-8 text",
             "kind": kind,
             "bytes": response_path.stat().st_size,

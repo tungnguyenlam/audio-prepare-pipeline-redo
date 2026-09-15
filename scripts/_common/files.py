@@ -25,6 +25,40 @@ class FileContractError(ValueError):
     """An input or destination violates the command's file contract."""
 
 
+def persist_path(path: Path | str) -> str:
+    """Serialize a filesystem path for JSON/CSV: repo-relative when under ROOT."""
+    resolved = resolve_stored_path(path)
+    try:
+        return resolved.relative_to(ROOT.resolve()).as_posix()
+    except ValueError:
+        return str(resolved)
+
+
+def resolve_stored_path(path: Path | str, *, base: Path | None = None) -> Path:
+    """Resolve a persisted path: absolute as-is; relative against ROOT, then optional base."""
+    value = Path(path).expanduser()
+    if value.is_absolute():
+        return value.resolve()
+    rooted = (ROOT / value).resolve()
+    if base is None or rooted.exists():
+        return rooted
+    basing = (Path(base) / value).resolve()
+    if basing.exists():
+        return basing
+    return rooted
+
+
+def persist_source(source: dict) -> dict:
+    """Copy a source identity dict, rewriting nested path fields to persist_path form."""
+    out = dict(source)
+    if out.get('path'):
+        out['path'] = persist_path(out['path'])
+    origin = out.get('origin')
+    if isinstance(origin, dict):
+        out['origin'] = persist_source(origin)
+    return out
+
+
 def positive_int(value: str) -> int:
     result = int(value)
     if result <= 0:
@@ -386,13 +420,14 @@ def write_json(path: Path, value: dict) -> None:
 
 
 def identity(path: Path) -> dict:
-    result = {'path': str(path.resolve()), 'sha256': digest(path)}
-    sidecar = path.with_suffix('.json')
+    resolved = Path(path).resolve()
+    result = {'path': persist_path(resolved), 'sha256': digest(resolved)}
+    sidecar = resolved.with_suffix('.json')
     if sidecar.is_file():
         try:
             metadata = read_json(sidecar)
             if metadata.get('output', {}).get('sha256') == result['sha256']:
-                result['origin'] = metadata.get('source', {})
+                result['origin'] = persist_source(metadata.get('source', {}))
         except (ValueError, OSError):
             pass
     return result

@@ -19,7 +19,7 @@ import sys
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from _common.files import ROOT, progress, read_json, write_json
+from _common.files import ROOT, persist_path, progress, read_json, resolve_stored_path, write_json
 from _verdicts import FAILURE_CODES, _known_prompts, _validate_verdict
 
 BACKEND_SUFFIX = re.compile(r"_(gemini|hf|vllm|unsloth|endpoint|minicpm|kimi|moss|vibevoice)$")
@@ -108,13 +108,13 @@ def load_run(directory: Path) -> tuple[dict[tuple[str, str], dict[str, Any]], di
                 'decision': verdict.get('decision') if error is None else None,
                 'codes': sorted(codes), 'reason': str(verdict.get('reason') or ''),
                 'schema_profile': profile, 'transcript': transcript, 'emotion': emotion,
-                'audio_path': source.get('path') or verdict.get('audio_path') or '',
+                'audio_path': persist_path(source['path']) if source.get('path') else (verdict.get('audio_path') or ''),
                 'sha256': source.get('sha256'), 'latency_s': verdict.get('_latency_s'),
             }
     if not records:
         raise ValueError(f'No verifier artifacts in {directory} (ignored {ignored} unrelated JSON files)')
     return records, {
-        'directory': str(directory), 'artifacts': len(records),
+        'directory': persist_path(directory), 'artifacts': len(records),
         'valid': sum(r['error'] is None for r in records.values()),
         'invalid': sum(r['error'] is not None for r in records.values()),
         'ignored_json': ignored,
@@ -326,7 +326,11 @@ def _markdown_relpath(path_str: str, base_dir: Path) -> str:
             except ValueError:
                 rel = str(target_p)
         else:
-            rel = str(p)
+            target_p = resolve_stored_path(p)
+            try:
+                rel = os.path.relpath(target_p, base)
+            except ValueError:
+                rel = persist_path(target_p)
         return Path(rel).as_posix()
     except Exception:
         return path_str

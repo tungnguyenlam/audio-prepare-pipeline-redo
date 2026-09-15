@@ -22,6 +22,7 @@ try:
     from _common.files import (  # noqa: E402
         batch,
         digest,
+        persist_path,
         positive_int,
         progress,
         write_json,
@@ -30,6 +31,7 @@ except ImportError:
     from scripts._common.files import (  # noqa: E402
         batch,
         digest,
+        persist_path,
         positive_int,
         progress,
         write_json,
@@ -136,7 +138,7 @@ def run_agent(
             sidecar_payload = {
                 "schema_version": 1,
                 "source": {
-                    "path": str(src.resolve()),
+                    "path": persist_path(src),
                     "sha256": digest(src),
                 },
                 "operation": operation,
@@ -146,7 +148,7 @@ def run_agent(
                     key: value for key, value in res.items() if key != "text"
                 },
                 "output": {
-                    "path": str(dst.resolve()),
+                    "path": persist_path(dst),
                     "format": "utf-8 text",
                     "bytes": dst.stat().st_size,
                     "sha256": digest(dst),

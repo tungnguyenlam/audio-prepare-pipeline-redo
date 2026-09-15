@@ -43,7 +43,7 @@ interrupted write is recognizable and retried.
 ```json
 {
   "schema_version": 1,
-  "source": {"path": "/abs/source.wav", "sha256": "…", "origin": {"video_id": "…", "title": "…", "url": "…"}},
+  "source": {"path": ".data/s2-separate/htdemucs/<family>/source.wav", "sha256": "…", "origin": {"video_id": "…", "title": "…", "url": "…"}},
   "operation": "separate",
   "model": "htdemucs_ft",
   "parameters": {"stem": "vocals", "device": "cpu", "sample_rate": 48000, "channels": 1},
@@ -52,8 +52,10 @@ interrupted write is recognizable and retried.
 ```
 
 - Download sources carry `video_id`, `title`, `url` directly in `source`.
-- Local sources carry absolute `path` + `sha256`; when a verified prior sidecar
-  exists its `source` is copied into `source.origin` (this is how the audio family
+- Local sources carry `path` + `sha256`. Paths under the repository root are
+  stored **repo-relative** (POSIX, no leading `./`); paths outside the repo stay
+  absolute. Readers accept both forms. When a verified prior sidecar exists its
+  `source` is copied into `source.origin` (this is how the audio family
   propagates).
 - Skip / retry / conflict decisions compare `source`, `operation`, `model`,
   `parameters` and the output hash.
@@ -83,7 +85,7 @@ interrupted write is recognizable and retried.
 ```json
 {
   "schema_version": 1,
-  "source": {"path": "/abs/input.wav", "sha256": "…"},
+  "source": {"path": ".data/s2-separate/htdemucs/<family>/input.wav", "sha256": "…"},
   "operation": "diarize",
   "model": "sortformer",
   "parameters": {"device": "cuda:0", "min_duration_s": 1.0, "max_duration_s": 15.0, "…": "…"},
@@ -260,12 +262,12 @@ either a validated `verdict` or an `error`:
 ```json
 {
   "schema_version": 1,
-  "source": {"path": "/abs/clip.wav", "sha256": "…"},
+  "source": {"path": ".data/clips/<family>/clip.wav", "sha256": "…"},
   "operation": "verify",
   "model": "hf",
   "parameters": {"model_id": "google/gemma-4-E2B-it", "device": "cuda:0", "prompt": "…"},
   "status": "success",
-  "response": {"path": "/abs/clip_hf.txt", "format": "utf-8 text", "kind": "text", "bytes": 194, "sha256": "…"},
+  "response": {"path": ".data/s4-agent/verifier/hf/<family>/clip_hf.txt", "format": "utf-8 text", "kind": "text", "bytes": 194, "sha256": "…"},
   "verdict": {
     "speaker_purity": "pure",
     "word_completeness": "clipped_word_end",
@@ -296,7 +298,7 @@ Failure records include a stable machine-readable code and an explanation:
     "code": "missing_transcript",
     "message": "The model returned 'pass' without a non-empty transcript."
   },
-  "response": {"path": "/abs/clip_hf.txt", "format": "utf-8 text", "kind": "text", "bytes": 194, "sha256": "…"},
+  "response": {"path": ".data/s4-agent/verifier/hf/<family>/clip_hf.txt", "format": "utf-8 text", "kind": "text", "bytes": 194, "sha256": "…"},
   "invalid_verdict": {"decision": "pass", "failure_codes": []}
 }
 ```

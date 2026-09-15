@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import LoggingArgumentParser, identity, progress, read_json, write_json
+from _common.files import LoggingArgumentParser, identity, persist_path, progress, read_json, resolve_stored_path, write_json
 
 
 def main() -> int:
@@ -53,8 +53,8 @@ def main() -> int:
             if args.max_duration is not None and entry.get('duration_s', 0.0) > args.max_duration:
                 continue
             e_copy = dict(entry)
-            audio = Path(e_copy['path'])
-            e_copy['path'] = str(audio if audio.is_absolute() else (args.input_manifest.parent / audio).resolve())
+            audio = resolve_stored_path(e_copy['path'], base=args.input_manifest.parent)
+            e_copy['path'] = persist_path(audio)
             kept.append(e_copy)
         return kept
 

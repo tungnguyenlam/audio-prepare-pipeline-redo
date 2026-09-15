@@ -9,7 +9,7 @@ import sys
 import tempfile
 import zipfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import LoggingArgumentParser, completed, digest, identity, progress, read_json, request, safe_name, write_json
+from _common.files import LoggingArgumentParser, completed, digest, identity, progress, read_json, request, resolve_stored_path, safe_name, write_json
 
 
 def main() -> int:
@@ -29,8 +29,7 @@ def main() -> int:
     manifest = read_json(args.input_manifest)
 
     def _verify_item(entry):
-        path = Path(entry['path'])
-        resolved = path.resolve() if path.is_absolute() else (args.input_manifest.parent / path).resolve()
+        resolved = resolve_stored_path(entry['path'], base=args.input_manifest.parent)
         if entry.get('sha256') and digest(resolved) != entry['sha256']:
             raise ValueError(f'Indexed audio has changed: {resolved}; re-index before bundling')
         return resolved

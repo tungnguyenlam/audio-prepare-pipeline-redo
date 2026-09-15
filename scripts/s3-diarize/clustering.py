@@ -23,7 +23,7 @@ from typing import Any
 import argparse
 import contextlib
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import batch, convert, identity, inputs, manifest_destinations, parser, positive_int, probe, request, safe_name
+from _common.files import batch, convert, identity, inputs, manifest_destinations, parser, persist_path, positive_int, probe, request, safe_name
 from _common.merge import add_diarization_merge_arguments, merge_parameters
 from _common.segments import ensure_family_plots, ensure_plots, export, manifest_complete
 
@@ -443,7 +443,7 @@ def main() -> int:
         model = _Clustering(**parameters, work_dir=args.work_dir)
         model._load()
     parameters['device'] = str(model._target_device)
-    parameters = {key: str(value.resolve()) if isinstance(value, Path) else value for key, value in parameters.items()}
+    parameters = {key: persist_path(value) if isinstance(value, Path) else value for key, value in parameters.items()}
     def process(src, dest):
         rate = args.sample_rate or probe(src)['sample_rate']
         wanted = request(identity(src), 'diarize', {**({'merge': merge_options} if args.merge else {}),

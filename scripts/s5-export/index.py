@@ -5,7 +5,7 @@ import argparse
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import ROOT, identity, inputs, parser, probe, progress, read_json, write_json
+from _common.files import ROOT, identity, inputs, parser, persist_path, probe, progress, read_json, write_json
 
 
 def main() -> int:
@@ -21,7 +21,7 @@ def main() -> int:
     progress('INDEX_START', f'Indexing {total} audio files')
 
     def _index_item(src, relative):
-        return {'path': str(src.resolve()), 'relative_path': str(relative),
+        return {'relative_path': relative.as_posix() if isinstance(relative, Path) else str(relative),
                 **identity(src), **probe(src), 'tags': sorted(set(args.tag))}
 
     def _index_batch(batch_items):
@@ -31,7 +31,7 @@ def main() -> int:
             try:
                 b_entries.append(_index_item(src, relative))
             except Exception as exc:
-                b_failures.append({'path': str(src), 'error': str(exc)})
+                b_failures.append({'path': persist_path(src), 'error': str(exc)})
         return b_entries, b_failures
 
     batches = [sources[i:i + args.batch_size] for i in range(0, total, args.batch_size)]

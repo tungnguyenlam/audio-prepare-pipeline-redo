@@ -20,9 +20,11 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 from _common.files import (  # noqa: E402
     digest,
     infer_audio_family,
+    persist_path,
     positive_int,
     progress,
     read_json,
+    resolve_stored_path,
     safe_name,
     write_json,
 )
@@ -162,7 +164,7 @@ def _manifest_rows(manifest_path: Path) -> list[dict[str, Any]]:
         row = _empty_row()
         row.update(
             {
-                "audio_path": str(clip_path) if clip_path else "",
+                "audio_path": persist_path(clip_path) if clip_path else "",
                 "verifier_status": "missing",
                 "accepted": False,
                 "is_valid": False,
@@ -184,9 +186,9 @@ def _manifest_rows(manifest_path: Path) -> list[dict[str, Any]]:
                 "overlap_with_json": _json_cell(turn.get("overlap_with")),
                 "diarization_confidence": turn.get("confidence", ""),
                 "clip_sha256": turn.get("clip_sha256", ""),
-                "source_recording_path": source.get("path", ""),
+                "source_recording_path": persist_path(source["path"]) if source.get("path") else "",
                 "source_recording_sha256": source.get("sha256", ""),
-                "manifest_path": str(manifest_path.resolve()),
+                "manifest_path": persist_path(manifest_path),
                 "manifest_sha256": manifest_sha,
                 "diarizer_model": manifest.get("model", ""),
                 "diarizer_parameters_json": _json_cell(manifest.get("parameters")),
@@ -203,9 +205,7 @@ def _read_raw_response(artifact_path: Path, data: dict[str, Any]) -> tuple[str, 
     response_path_value = response.get("path")
     if not isinstance(response_path_value, str) or not response_path_value:
         return "", response, None
-    response_path = Path(response_path_value)
-    if not response_path.is_absolute():
-        response_path = (artifact_path.parent / response_path).resolve()
+    response_path = resolve_stored_path(response_path_value, base=artifact_path.parent)
     if not response_path.is_file():
         response_path = artifact_path.with_suffix(".txt")
     if not response_path.is_file():
@@ -216,7 +216,7 @@ def _read_raw_response(artifact_path: Path, data: dict[str, Any]) -> tuple[str, 
         return "", response, "raw_response_hash_mismatch"
     with response_path.open("r", encoding="utf-8", newline="") as stream:
         raw = stream.read()
-    response = {**response, "resolved_path": str(response_path), "actual_sha256": actual_sha}
+    response = {**response, "resolved_path": persist_path(response_path), "actual_sha256": actual_sha}
     return raw, response, None
 
 
@@ -243,12 +243,12 @@ def _artifact_values(
 
     values.update(
         {
-            "audio_path": source.get("path", ""),
+            "audio_path": persist_path(source["path"]) if source.get("path") else "",
             "assistant_raw_response": raw,
             "raw_response_available": bool(response.get("path")) and raw_error is None,
             "response_kind": response_kind,
             "clip_sha256": source.get("sha256", ""),
-            "verdict_file": str(artifact_path.resolve()),
+            "verdict_file": persist_path(artifact_path),
             "verdict_file_sha256": digest(artifact_path),
             "raw_response_file": response.get("resolved_path", response.get("path", "")),
             "raw_response_sha256": response.get("actual_sha256", response.get("sha256", "")),
@@ -450,7 +450,11 @@ def _markdown_relpath(path_str: str, base_dir: Path) -> str:
             except ValueError:
                 rel = str(target_p)
         else:
-            rel = str(p)
+            target_p = resolve_stored_path(p)
+            try:
+                rel = os.path.relpath(target_p, base)
+            except ValueError:
+                rel = persist_path(target_p)
         return Path(rel).as_posix()
     except Exception:
         return path_str
@@ -1037,8 +1041,8 @@ def _summary_from_csv(
             if row["verifier_status"] == "fail"
         ],
         "outputs": {
-            "all_samples_csv": {"path": str(all_csv), "sha256": digest(all_csv), "rows": len(all_rows)},
-            "successful_samples_csv": {"path": str(successful_csv), "sha256": digest(successful_csv), "rows": len(successful_rows)},
+            "all_samples_csv": {"path": persist_path(all_csv), "sha256": digest(all_csv), "rows": len(all_rows)},
+            "successful_samples_csv": {"path": persist_path(successful_csv), "sha256": digest(successful_csv), "rows": len(successful_rows)},
             "plots": plots,
         },
     }
@@ -1109,7 +1113,7 @@ def main() -> int:
             source = data.get("source")
             source_path = source.get("path") if isinstance(source, dict) else None
             if isinstance(source_path, str):
-                candidate = Path(source_path).resolve().parent / "segments.json"
+                candidate = resolve_stored_path(source_path).parent / "segments.json"
                 if candidate.is_file():
                     manifest_paths.append(candidate)
     manifest_paths = sorted(set(manifest_paths))
@@ -1122,7 +1126,7 @@ def main() -> int:
     expected_by_hash: dict[str, list[int]] = defaultdict(list)
     for index, row in enumerate(rows):
         if row["audio_path"]:
-            expected_by_path[str(Path(row["audio_path"]).resolve())].append(index)
+            expected_by_path[str(resolve_stored_path(row["audio_path"]))].append(index)
         if row["clip_sha256"]:
             expected_by_hash[str(row["clip_sha256"])].append(index)
 
@@ -1144,7 +1148,7 @@ def main() -> int:
                     "is_missing": False,
                     "raw_response_available": False,
                     "sample_scope": "orphan",
-                    "verdict_file": str(artifact_path.resolve()),
+                    "verdict_file": persist_path(artifact_path),
                 }
             )
             orphan_rows.append(row)
@@ -1157,7 +1161,7 @@ def main() -> int:
             values = _empty_row()
             values.update(
                 {
-                    "audio_path": source.get("path", ""),
+                    "audio_path": persist_path(source["path"]) if source.get("path") else "",
                     "clip_sha256": source.get("sha256", ""),
                     "verifier_status": "fail",
                     "failure_stage": "artifact",
@@ -1168,11 +1172,11 @@ def main() -> int:
                     "is_reject": False,
                     "is_missing": False,
                     "raw_response_available": False,
-                    "verdict_file": str(artifact_path.resolve()),
+                    "verdict_file": persist_path(artifact_path),
                 }
             )
         source_path = values["audio_path"]
-        candidates = expected_by_path.get(str(Path(source_path).resolve()), []) if source_path else []
+        candidates = expected_by_path.get(str(resolve_stored_path(source_path)), []) if source_path else []
         if not candidates and values["clip_sha256"]:
             candidates = expected_by_hash.get(str(values["clip_sha256"]), [])
         available = [index for index in candidates if index not in matched]
@@ -1206,7 +1210,7 @@ def main() -> int:
         else:
             values["sample_scope"] = "discovered"
             if source_path:
-                values["family"] = infer_audio_family(Path(source_path))
+                values["family"] = infer_audio_family(resolve_stored_path(source_path))
                 values["sample_id"] = values["clip_sha256"] or hashlib.sha256(source_path.encode("utf-8")).hexdigest()
             orphan_rows.append(values)
 

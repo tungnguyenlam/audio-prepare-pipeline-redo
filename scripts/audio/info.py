@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.files import inputs, parser, probe, progress
+from _common.files import inputs, parser, persist_path, probe, progress
 
 
 def main() -> int:
@@ -25,7 +25,7 @@ def main() -> int:
 
     def probe_item(item_idx: int, src: Path) -> tuple[bool, str, str]:
         try:
-            line = json.dumps({'path': str(src), **probe(src)})
+            line = json.dumps({'path': persist_path(src), **probe(src)})
             return True, line, src.name
         except Exception as exc:
             return False, '', f'{src.name}: {exc}'

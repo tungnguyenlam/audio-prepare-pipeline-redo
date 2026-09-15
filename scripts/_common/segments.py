@@ -6,7 +6,17 @@ import math
 import os
 from pathlib import Path
 import tempfile
-from _common.files import FileContractError, convert, digest, probe, progress, read_json, safe_name, write_json
+from _common.files import (
+    FileContractError,
+    convert,
+    digest,
+    probe,
+    progress,
+    read_json,
+    resolve_stored_path,
+    safe_name,
+    write_json,
+)
 from _common.merge import (MEAN_ADJUST_MAX_ATTEMPTS, MEAN_ADJUST_STEP_S,
                             MEAN_DURATION_MAX_S, MEAN_DURATION_MIN_S, merge_turns)
 
@@ -14,8 +24,7 @@ from _common.merge import (MEAN_ADJUST_MAX_ATTEMPTS, MEAN_ADJUST_STEP_S,
 def source_path(manifest: dict, manifest_path: Path, override: Path | None = None) -> Path:
     if override is not None:
         return override.resolve()
-    path = Path(manifest['source']['path'])
-    path = (path if path.is_absolute() else manifest_path.parent / path).resolve()
+    path = resolve_stored_path(manifest['source']['path'], base=manifest_path.parent)
     expected = manifest['source'].get('sha256')
     if not expected:
         raise FileContractError('Manifest has no source SHA-256; supply --input-file explicitly on the same timeline')
