@@ -38,7 +38,8 @@ environment variables; the shared parser logs parsed options.
 
 | Launchers | Default venv (fallbacks) | Override variable |
 |---|---|---|
-| `download/*.sh`, `audio/*.sh`, `dataset/*.sh`, `evaluate/*.sh`, `mix/mix.sh`, `speaker/{enroll,filter}.sh`, `purity/{consensus,cleanup,merge,collar,snap,segment}.sh`, `agent/verifier/{analysis,analyze,compare,evaluate_verifier,scaffold_experiment}.sh` | `.venvs/audio` (`.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
+| `download/*.sh` | `.venvs/download` (`.venv-download`) | `DOWNLOAD_PYTHON` |
+| `audio/*.sh`, `dataset/*.sh`, `evaluate/*.sh`, `mix/mix.sh`, `speaker/{enroll,filter}.sh`, `purity/{consensus,cleanup,merge,collar,snap,segment}.sh`, `agent/verifier/{analysis,analyze,compare,evaluate_verifier,scaffold_experiment}.sh` | `.venvs/audio` (`.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
 | `separate/*.sh` | `.venvs/separation` (`.venv-separation`, `.venvs/main`, `.venv`) | `SEPARATION_PYTHON` |
 | `diarize/{pyannote,pyannote_31,pyannote_community1}.sh`, `speaker/{score,purity}.sh` | `.venvs/pyannote` (`.venv-pyannote`, `.venvs/main`, `.venv`) | `DIARIZATION_PYTHON` |
 | `diarize/{sortformer,clustering}.sh` | `.venvs/sortformer` (`.venv-sortformer`) | `DIARIZATION_PYTHON` |
@@ -56,19 +57,22 @@ environment variables; the shared parser logs parsed options.
 
 `envs/setup_worker_envs.sh` detects AMD ROCm / NVIDIA CUDA / CPU and provisions
 one venv per requirements file under `envs/`. `scripts/setup_*.sh` are thin
-wrappers to the same scripts.
+wrappers to the same scripts. The `download` target is CPU-only and also
+provisions project-local JavaScript runtimes for yt-dlp.
 
 ```bash
 ./envs/setup_worker_envs.sh all        # core + workers
-./envs/setup_worker_envs.sh core       # audio, separation, pyannote, verify, align
+./envs/setup_worker_envs.sh core       # download, audio, separation, pyannote, verify, align
 ./envs/setup_worker_envs.sh workers    # sortformer, 3dspeaker, vibevoice, diarizen, minicpmo, kimi
+./envs/setup_worker_envs.sh download   # YouTube + JavaScript runtime environment
 ./envs/setup_worker_envs.sh <target>   # one env; add --force to recreate
 ./envs/setup_worker_envs.sh status     # health + accelerator report
 ```
 
 | Target | venv | Python | Contents |
 |---|---|---|---|
-| `audio` | `.venvs/audio` | 3.13 | download, audio tools, dataset, evaluate, mix, purity (non-ASR), analysis |
+| `download` | `.venvs/download` | 3.13 | current yt-dlp[default], Deno, Node/npm, Bun, QuickJS |
+| `audio` | `.venvs/audio` | 3.13 | audio tools, dataset, evaluate, mix, purity (non-ASR), analysis |
 | `separation` | `.venvs/separation` | 3.13 | Demucs, BS-RoFormer, Mel-RoFormer, MVSEP-MDX23 |
 | `pyannote` | `.venvs/pyannote` | 3.13 | Pyannote 3.1 / Community-1, speaker scoring and purity |
 | `verify` | `.venvs/verify` | 3.13 | Gemini, OpenAI-compatible endpoints, HF Gemma, Unsloth |
@@ -84,6 +88,8 @@ Manual equivalent (repeat per environment; pick the torch index for your driver,
 e.g. `--index-url https://download.pytorch.org/whl/cu128`):
 
 ```bash
+./scripts/setup_download_env.sh       # Python, current yt-dlp, and local JavaScript runtimes
+
 uv venv --python 3.13 .venvs/audio
 uv pip install --python .venvs/audio/bin/python -r envs/requirements-audio.txt
 ```
@@ -105,7 +111,12 @@ bash scripts/download/crawl.sh --source-file scripts/download/sources/vi_en_code
 bash scripts/download/crawl.sh --source-file scripts/download/sources/vi_en_codeswitch.json
 ```
 
-Download commands pace YouTube by default: 1.5s between metadata requests,
+Download commands use `.venvs/download` by default. Provisioning updates
+`yt-dlp[default]` and installs Deno, Node/npm, Bun, and QuickJS into that
+environment; Deno is available to yt-dlp automatically, while the other
+runtimes remain available for explicit yt-dlp runtime selection. Bun is pinned
+to the current yt-dlp-compatible 1.3.14 release. Download
+commands pace YouTube by default: 1.5s between metadata requests,
 5–15s of jitter before each media download, a 2M download cap, and serialized
 yt-dlp access even when `--concurrency` is raised (concurrency only parallelizes
 convert/publish). 429 and bot-check errors cool down for 5–40 minutes and retry

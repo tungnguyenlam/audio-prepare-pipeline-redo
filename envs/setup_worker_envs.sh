@@ -5,17 +5,18 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 print_usage() {
-    echo "Usage: $0 [all|core|workers|main|separation|pyannote|verify|align|audio|sortformer|3dspeaker|vibevoice|diarizen|minicpmo|kimi|status] [--force]"
+    echo "Usage: $0 [all|core|workers|main|download|audio|separation|pyannote|verify|align|sortformer|3dspeaker|vibevoice|diarizen|minicpmo|kimi|status] [--force]"
     echo ""
     echo "Device-agnostic environment provisioner for audio processing models."
     echo ""
     echo "Core Pipeline Targets:"
-    echo "  core         Provision all core environments (audio, separation, pyannote, verify, align)"
+    echo "  core         Provision all core environments (download, audio, separation, pyannote, verify, align)"
     echo "  main         Reconcile hardware acceleration for main environment (.venvs/main)"
     echo "  separation   Demucs, BS-RoFormer, Mel-RoFormer (.venvs/separation, Python 3.13)"
     echo "  pyannote     Pyannote 3.1 & Community-1 diarization/scoring (.venvs/pyannote, Python 3.13)"
     echo "  verify       HF, Whisper, Gemma verifiers (.venvs/verify, Python 3.13)"
     echo "  align        Whisper-timestamped alignment (.venvs/align, Python 3.13)"
+    echo "  download     YouTube downloader and JavaScript runtimes (.venvs/download, Python 3.13)"
     echo "  audio        Lightweight audio utilities (.venvs/audio, Python 3.13)"
     echo ""
     echo "Isolated Worker Targets:"
@@ -214,6 +215,14 @@ setup_audio() {
     uv pip install --python "${venv_dir}/bin/python" -r "$REPO_ROOT/envs/requirements-audio.txt"
     ln -sfn "$venv_dir" ".venv-audio"
     echo "🎉 ${venv_dir} ready!"
+}
+
+setup_download() {
+    local setup_args=()
+    if [ "$FORCE" -eq 1 ]; then
+        setup_args+=(--force)
+    fi
+    bash "$REPO_ROOT/envs/setup_download_env.sh" "${setup_args[@]}"
 }
 
 setup_separation() {
@@ -587,6 +596,7 @@ setup_kimi() {
 }
 
 setup_core() {
+    setup_download
     setup_audio
     setup_separation
     setup_pyannote
@@ -609,6 +619,7 @@ status_report() {
     echo "========================================================"
     local venvs=(
         ".venvs/main"
+        ".venvs/download"
         ".venvs/audio"
         ".venvs/separation"
         ".venvs/pyannote"
@@ -654,6 +665,9 @@ case "$TARGET" in
         ;;
     audio)
         setup_audio
+        ;;
+    download|youtube|yt-dlp)
+        setup_download
         ;;
     separation|separate|demucs|roformer)
         setup_separation

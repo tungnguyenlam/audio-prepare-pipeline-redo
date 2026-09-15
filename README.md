@@ -11,10 +11,16 @@ state — callers compose commands through `.data/` paths and JSON manifests.
 ## Quick start
 
 ```bash
-./envs/setup_worker_envs.sh audio                       # lightweight env (.venvs/audio)
+./envs/setup_worker_envs.sh download                   # YouTube env (.venvs/download)
 bash scripts/download/youtube.sh --url 'https://www.youtube.com/watch?v=VIDEO'
+./envs/setup_worker_envs.sh audio                       # lightweight downstream audio env
 bash scripts/audio/info.sh --input-file .data/download/<family>/<file>.wav
 ```
+
+The download target keeps the current `yt-dlp` (including its default EJS
+solver) and project-local JavaScript runtimes separate from the downstream
+audio tools. It installs Deno, Node/npm, Bun, and QuickJS under
+`.venvs/download`; runtime caches stay under `.data/download/`.
 
 Model environments (Demucs/RoFormer, Pyannote, Sortformer, 3D-Speaker, DiariZen,
 verifiers) are provisioned per target with the same script; see
