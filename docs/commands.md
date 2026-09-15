@@ -203,10 +203,15 @@ Merge preserves speaker labels and requires silence in every channel across the
 entire gap, with no other speaker intersecting the combined span. `-40` dBFS is
 a starting threshold to calibrate, not a universal silence level. Use
 `--input-file` to override the source waveform, keeping its original timeline.
-No duration filter runs during merge; exported length includes the preserved
-pauses. With `--merge`, diarization applies its duration limits after merging,
-using the same merge and clip export helpers as the standalone workflow.
-A merged chain over 15 seconds is discarded at export, not split.
+Standalone merge does not apply a duration filter; exported length includes the
+preserved pauses. With `--merge`, diarization applies its duration limits after
+merging, using the same merge and clip export helpers as the standalone workflow.
+The integrated merge also stops before adding a same-speaker turn if the
+resulting span would exceed `--max-duration-s`; the rejected turn starts a new
+merge chain. Any individual turn that is already over the limit is still
+discarded by the subsequent duration filter. Standalone `purity/merge` retains
+its unfiltered behavior, so its output can still contain overlong merged
+chains until `audio/export_segments` applies its duration filter.
 See [the file contract](data_contract.md#silence-aware-merge) for audit fields.
 
 Merge and export verify the source audio against the input manifest's recorded

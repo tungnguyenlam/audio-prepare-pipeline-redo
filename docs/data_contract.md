@@ -184,13 +184,15 @@ Merged turns drop clip-specific scores/transcripts; confidence is the minimum of
 component confidences when all are known, otherwise null. Overlap indices are
 recomputed and clip references invalidated.
 
-Merge applies no duration limit. Diarization with `--merge` then applies its
-inclusive duration limits (default 1–15 seconds) and sample-accurate extraction
-from the source. For standalone `purity/merge`, use `audio/export_segments`
-afterwards. Duration includes silence. Chains over 15 seconds are rejected by
-the default export filter; there is no automatic splitting. The standalone merge
-manifest retains these chains, while integrated diarization retains their original
-component turns in `segments.raw.json` and their merge decisions in the final audit.
+Standalone `purity/merge` applies no duration limit. Integrated diarization passes
+its inclusive maximum duration (default 15 seconds) into the merge: a candidate
+union that would exceed the limit is rejected before the acoustic silence check,
+and that candidate starts a new merge chain. The subsequent duration filter still
+removes individual overlong turns, and there is no automatic splitting. Duration
+includes silence. For standalone `purity/merge`, use `audio/export_segments`
+afterwards; its merge manifest retains overlong chains, while integrated
+diarization retains original component turns in `segments.raw.json` and merge
+decisions (including duration rejections) in the final audit.
 
 ## 4. Speaker profile (`.data/speaker_profiles/<slug>/profile.json`)
 

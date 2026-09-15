@@ -26,12 +26,15 @@ def merge_parameters(args: argparse.Namespace, p: argparse.ArgumentParser) -> di
 
 
 def merge_turns(source: Path, turns: list[dict], *, max_gap_s: float,
-                silence_threshold_dbfs: float, frame_ms: float) -> tuple[list[dict], list[dict]]:
+                silence_threshold_dbfs: float, frame_ms: float,
+                max_duration_samples: int | None = None) -> tuple[list[dict], list[dict]]:
     """Consume normalized turns in time order; preserve gaps and speaker labels.
 
     Silence requires every nonoverlapping frame (including the final partial
     frame), in every channel, to have RMS at or below the configured threshold.
     Touching turns have no gap to measure. Overlapping turns are not merged.
+    When provided, ``max_duration_samples`` prevents a merged span from
+    exceeding the export duration limit.
     """
     import numpy as np
     import soundfile as sf
@@ -60,6 +63,9 @@ def merge_turns(source: Path, turns: list[dict], *, max_gap_s: float,
                      other['start_sample'] < turn['end_sample'] and
                      other['end_sample'] > previous['start_sample'] for other in turns):
                 reason = 'competing_speaker'
+            elif (max_duration_samples is not None and
+                  turn['end_sample'] - previous['start_sample'] > max_duration_samples):
+                reason = 'max_duration_exceeded'
             else:
                 audio.seek(previous['end_sample'])
                 remaining = gap_samples

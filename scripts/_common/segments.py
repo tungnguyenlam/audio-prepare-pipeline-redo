@@ -77,23 +77,26 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
     turns = normalize_turns(manifest['turns'], source)
     raw_turns = turns
     params = manifest.get('parameters', {})
-    merge_details = {}
-    if manifest.get('operation') == 'diarize' and params.get('merge'):
-        from _common.merge import merge_turns
-        turns, audit = merge_turns(source, turns, **params['merge'])
-        statistics = {'input_turns': len(raw_turns), 'output_turns': len(turns),
-                      'merged_gaps': sum(item['reason'] == 'merged' for item in audit)}
-        merge_details = {'merge_applied': True, 'merge_statistics': statistics, 'merge_audit': audit}
-        progress('MERGE_COMPLETE', f"{len(raw_turns)} turns -> {len(turns)} turns; applying duration filter next")
     if min_duration_s is None:
         min_duration_s = params.get('min_duration_s', 1.0)
     if max_duration_s is None:
         max_duration_s = params.get('max_duration_s', 15.0)
+    max_samples = None
+    if max_duration_s is not None:
+        max_samples = math.floor(Decimal(str(max_duration_s)) * info['sample_rate'])
+    merge_details = {}
+    if manifest.get('operation') == 'diarize' and params.get('merge'):
+        from _common.merge import merge_turns
+        merge_config = {**params['merge'], 'max_duration_samples': max_samples}
+        turns, audit = merge_turns(source, turns, **merge_config)
+        statistics = {'input_turns': len(raw_turns), 'output_turns': len(turns),
+                      'merged_gaps': sum(item['reason'] == 'merged' for item in audit)}
+        merge_details = {'merge_applied': True, 'merge_statistics': statistics, 'merge_audit': audit}
+        progress('MERGE_COMPLETE', f"{len(raw_turns)} turns -> {len(turns)} turns; applying duration filter next")
     if min_duration_s is not None:
         min_samples = math.ceil(Decimal(str(min_duration_s)) * info['sample_rate'])
         turns = [t for t in turns if t['end_sample'] - t['start_sample'] >= min_samples]
     if max_duration_s is not None:
-        max_samples = math.floor(Decimal(str(max_duration_s)) * info['sample_rate'])
         turns = [t for t in turns if t['end_sample'] - t['start_sample'] <= max_samples]
     # overlap_with indices must refer to the surviving output turns.
     turns = normalize_turns(turns, source)
