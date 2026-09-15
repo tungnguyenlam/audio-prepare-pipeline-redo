@@ -24,7 +24,7 @@ from dataclasses import asdict
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _common.files import batch, convert, identity, inputs, manifest_destinations, parser, positive_int, probe, request, safe_name
 from _common.merge import add_diarization_merge_arguments, merge_parameters
-from _common.segments import ensure_plots, export, manifest_complete
+from _common.segments import ensure_family_plots, ensure_plots, export, manifest_complete
 
 
 @dataclass
@@ -1192,7 +1192,9 @@ def main() -> int:
                concurrency=args.concurrency, batch_size=args.batch_size)
         ensure_plots(dest, overwrite=True)
     try:
-        return batch(pairs, process, concurrency=args.concurrency, batch_size=args.batch_size)
+        result = batch(pairs, process, concurrency=args.concurrency, batch_size=args.batch_size)
+        ensure_family_plots(pairs, args, concurrency=args.concurrency, batch_size=args.batch_size)
+        return result
     finally:
         with contextlib.redirect_stdout(sys.stderr):
             model._unload()

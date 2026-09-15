@@ -186,9 +186,15 @@ bash scripts/diarize/clustering.sh          --input-file x.wav
 bash scripts/diarize/threed_speaker.sh      --input-file x.wav --include-overlap
 bash scripts/diarize/diarizen.sh            --input-file x.wav --segmentation-step 0.05 --binarize-onset 0.5 --binarize-offset 0.6
 # each run preserves pre-filter turns in segments.raw.json
-# each run also writes plot/timeline.png, plot/timeline_duration.png, plot/timeline_cutoff.png
-# under the output folder next to segments.json
+# each run also writes plot/before_merge/, plot/after_merge/, and plot/ with
+# timeline.png, timeline_duration.png, and timeline_cutoff.png in each folder
+# (before merge, after merge/before filtering, and after filtering respectively)
+# directory runs additionally write a family-level aggregate plot/ folder
 ```
+
+For a directory run, family aggregation is automatic. With the default output
+layout the aggregate is under `.data/diarize/<model>/<family>/plot/`; with an
+explicit output root it is under `<output-dir>/<family>/plot/`.
 
 ### Merge before duration filtering
 
@@ -216,8 +222,9 @@ merges, it increases the gap when the mean is below 7 seconds and decreases it
 when the mean is above 10 seconds. The adjustment is bounded by 100 retries and
 the available same-speaker gaps.
 
-The example writes processed `segments.json`, merged clips that pass the duration
-filter, and three plots under `.data/turns/recording/plot/`. Omit `--output-dir` to use
+The example writes processed `segments.json`, `segments.merged.json`, merged clips
+that pass the duration filter, and three stage plot sets under
+`.data/turns/recording/plot/`. Omit `--output-dir` to use
 the normal `.data/diarize/<model>/<family>/` default. `segments.raw.json` retains
 the original backend turns before merging and duration filtering. The processed
 manifest includes the merge audit, statistics, and mean-adjustment attempts.
@@ -228,8 +235,8 @@ inference and rebuilds clips and plots.
 To process an existing raw manifest without rerunning the model, the standalone
 merge and export commands remain available. All diarizers preserve
 `segments.raw.json` before the clip duration filter; feed that file to merge so
-short turns are available. Rerun diarization for older outputs missing this file;
-filtered manifests cannot recover discarded turns.
+short turns are available. Rerun diarization for older outputs missing either
+stage manifest; filtered manifests cannot recover discarded turns.
 
 ```bash
 bash scripts/purity/merge.sh \
@@ -332,11 +339,13 @@ bash scripts/evaluate/plot_metrics.sh --metrics-file a.json --metrics-file b.jso
 ```
 
 Folder mode recursively reads every `segments.json` below `--input-dir` and
-combines their final exported turns. `timeline_duration.png` is the pooled
-segment-duration histogram (with count, mean, and median); `timeline_cutoff.png`
-shows pooled remaining segment count and audio seconds for each minimum-duration
-cutoff. Point `--input-dir` at one family for that family, or at a model root to
-combine all its families.
+combines their raw, merged, and final turns. It writes the final aggregate plots
+under `<output-dir>/` and the pre-merge and after-merge aggregates under
+`<output-dir>/before_merge/` and `<output-dir>/after_merge/`. `timeline_duration.png`
+is the pooled segment-duration histogram (with count, mean, and median), and
+`timeline_cutoff.png` shows pooled remaining segment count and audio seconds for
+each minimum-duration cutoff. Point `--input-dir` at one family for that family,
+or at a model root to combine all its families.
 
 ### Dataset
 

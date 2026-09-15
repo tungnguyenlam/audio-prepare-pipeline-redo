@@ -63,11 +63,14 @@ bash scripts/agent/verifier/analysis.sh --input-dir .data/agent/verifier/gemini/
   default. It retries the merge gap in 0.1-second steps toward a 7–10 second
   mean per input video; use `--merge false` or `--adjust-mean false` to disable
   either behavior. Its normal output directory contains the processed manifest,
-  clips, and plots, plus the original `segments.raw.json`; see the
+  clips, plots, and the original `segments.raw.json` plus `segments.merged.json`;
+  see the
   [merge cookbook](docs/commands.md#merge-before-duration-filtering).
 - `--input-file` beats `--input-dir`; `--output-file` is an exact destination for single outputs.
 - Audio outputs get a sibling `.json` sidecar; diarizers write `<stem>/segments.json` plus clips
-  and `<stem>/plot/`; purity stages write new manifests and `export_segments` renders them.
+  and `<stem>/plot/` (including before-merge, after-merge, and post-filter plots);
+  directory diarization runs also write aggregate plots under each family’s `plot/`.
+  Purity stages write new manifests and `export_segments` renders them.
 - Progress on stderr, output paths on stdout, runtime artifacts under `.data/` (gitignored).
 
 ## Documentation

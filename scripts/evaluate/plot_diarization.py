@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.diarize_plots import write_folder_plots, write_plots
+from _common.diarize_plots import write_family_plots, write_plots
 from _common.files import LoggingArgumentParser, positive_int, progress
 
 
@@ -52,7 +52,7 @@ def main() -> int:
         output_dir = (args.output_dir or input_dir / 'plot').resolve()
         progress('PLOT_START', f'Rendering aggregate diarization plots for {len(manifests)} manifest(s)')
         try:
-            paths = write_folder_plots(
+            paths = write_family_plots(
                 manifests,
                 output_dir,
                 root_dir=input_dir,

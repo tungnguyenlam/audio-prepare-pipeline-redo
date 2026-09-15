@@ -61,6 +61,9 @@ def manifest_complete(path: Path, wanted: dict, overwrite: bool) -> bool:
             raw_path = path.with_name('segments.raw.json')
             if not raw_path.is_file() or digest(raw_path) != old.get('raw_manifest_sha256'):
                 return False
+            merged_path = path.with_name('segments.merged.json')
+            if not merged_path.is_file() or digest(merged_path) != old.get('merged_manifest_sha256'):
+                return False
         return old.get('complete', False) and all(
             t.get('clip') and (path.parent / t['clip']).is_file()
             and digest(path.parent / t['clip']) == t.get('clip_sha256') for t in old.get('turns', []))
@@ -124,6 +127,7 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
     info = probe(source)
     turns = normalize_turns(manifest['turns'], source)
     raw_turns = turns
+    merged_turns = raw_turns
     params = manifest.get('parameters', {})
     if min_duration_s is None:
         min_duration_s = params.get('min_duration_s', 1.0)
@@ -245,12 +249,16 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
                  f'{source.name}: final_max_gap={current_gap_s:.2f}s, '
                  f'{_merge_detail(mean_duration_s, len(turns), audit, len(filtered_turns))}, '
                  f'stop_reason={stop_reason}')
+        merged_turns = turns
         turns = filtered_turns
         merge_details = {'merge_applied': True, 'merge_statistics': merge_statistics,
                          'merge_audit': audit, 'merge_mean_adjustment': merge_mean_adjustment}
         progress('MERGE_COMPLETE', f'{source.name}: {len(raw_turns)} raw turns -> {len(turns)} valid clips; exporting')
     else:
-        turns = _filter_duration_turns(turns, min_samples, max_samples)
+        merged_turns = turns
+    # Keep the unfiltered merged stage available for plotting and provenance.
+    merged_turns = normalize_turns(merged_turns, source)
+    turns = _filter_duration_turns(merged_turns, min_samples, max_samples)
     # overlap_with indices must refer to the surviving output turns.
     turns = normalize_turns(turns, source)
     turns_count = len(turns)
@@ -337,15 +345,86 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
                         fut.result()
 
     output['complete'] = True
+    if manifest.get('operation') == 'diarize':
+        merged_path = destination.with_name('segments.merged.json')
+        merged_output = {
+            **manifest,
+            **merge_details,
+            'timestamp_origin': 'diarized_input',
+            'source_sample_rate': info['sample_rate'],
+            'merge_applied': bool(params.get('merge')),
+            'duration_filter_applied': False,
+            'clips_valid': False,
+            'turns': merged_turns,
+            'speaker_ids': sorted({t['speaker_id'] for t in merged_turns}),
+            'complete': True,
+        }
+        write_json(merged_path, merged_output)
+        output['merged_manifest_sha256'] = digest(merged_path)
     write_json(destination, output)
     progress('EXPORT_COMPLETE', f'Exported {turns_count} clips to {destination.parent.name}')
 
 
 def ensure_plots(manifest_path: Path, *, overwrite: bool = False) -> None:
-    """Write timeline, duration, and cutoff plots under a manifest's plot/."""
-    from _common.diarize_plots import manifest_plot_file, plot_segment_outputs, sibling_plot_paths
+    """Write stage plots and final timeline, duration, and cutoff plots."""
+    from _common.diarize_plots import (manifest_plot_file, plot_segment_outputs,
+                                       sibling_plot_paths, stage_plot_file, write_stage_plots)
+
+    stage_manifests = (
+        ('before_merge', manifest_path.with_name('segments.raw.json')),
+        ('after_merge', manifest_path.with_name('segments.merged.json')),
+    )
+    for stage, stage_manifest in stage_manifests:
+        if not stage_manifest.is_file():
+            continue
+        output = stage_plot_file(manifest_path, stage)
+        if not overwrite and all(path.exists() for path in sibling_plot_paths(output)):
+            continue
+        progress('PLOT_START', f'Rendering diarization plots: {stage} ({stage_manifest.name})')
+        write_stage_plots(stage_manifest, stage, overwrite=True)
+
     output = manifest_plot_file(manifest_path)
     if not overwrite and all(path.exists() for path in sibling_plot_paths(output)):
         return
     progress('PLOT_START', f'Rendering diarization plots: {manifest_path.name}')
     plot_segment_outputs(manifest_path, overwrite=overwrite)
+
+
+def ensure_family_plots(
+    pairs: list[tuple[Path, Path]],
+    args,
+    *,
+    overwrite: bool = True,
+    concurrency: int | None = None,
+    batch_size: int | None = None,
+) -> None:
+    """Render aggregate stage plots after a directory diarization run."""
+    if getattr(args, 'input_dir', None) is None or getattr(args, 'input_file', None) is not None:
+        return
+
+    from _common.diarize_plots import write_family_plots
+    from _common.files import infer_audio_family, resolve_output_dir, safe_name
+
+    explicit_output = args.output_dir.resolve() if args.output_dir is not None else None
+    groups: dict[Path, list[Path]] = {}
+    for source, destination in pairs:
+        family = infer_audio_family(source)
+        family_root = (explicit_output / safe_name(family)
+                       if explicit_output is not None else resolve_output_dir(args, source))
+        groups.setdefault(family_root, []).append(destination)
+
+    for family_root, destinations in groups.items():
+        manifests = [path for path in destinations if path.is_file()]
+        if not manifests:
+            continue
+        progress('FAMILY_PLOT_START', f'Rendering aggregate diarization plots for {family_root.name} ({len(manifests)} manifest(s))')
+        paths = write_family_plots(
+            manifests,
+            family_root / 'plot',
+            root_dir=family_root if explicit_output is None else explicit_output,
+            overwrite=overwrite,
+            concurrency=concurrency or getattr(args, 'concurrency', 1),
+            batch_size=batch_size or getattr(args, 'batch_size', 1),
+        )
+        if paths:
+            print(paths[0], flush=True)

@@ -10,6 +10,8 @@ import subprocess
 
 from _common.files import ROOT, progress, read_json
 
+PLOT_STAGES = ('before_merge', 'after_merge')
+
 
 def sibling_plot_paths(gantt_file: Path) -> tuple[Path, Path, Path]:
     gantt = gantt_file.resolve()
@@ -21,16 +23,46 @@ def manifest_plot_file(manifest_path: Path) -> Path:
     return Path(manifest_path).resolve().parent / 'plot' / 'timeline.png'
 
 
-def plot_segment_outputs(manifest_path: Path, *, overwrite: bool = False, bin_width: float = 0.25) -> list[Path]:
+def stage_plot_file(manifest_path: Path, stage: str) -> Path:
+    """Return the plot location for a pre-filter diarization stage."""
+    if stage not in PLOT_STAGES:
+        raise ValueError(f'Unknown diarization plot stage: {stage}')
+    return Path(manifest_path).resolve().parent / 'plot' / stage / 'timeline.png'
+
+
+def plot_segment_outputs(
+    manifest_path: Path,
+    *,
+    output_file: Path | None = None,
+    title: str | None = None,
+    overwrite: bool = False,
+    bin_width: float = 0.25,
+) -> list[Path]:
     """Write timeline, duration histogram, and cutoff plots under a manifest's plot/."""
-    output_file = manifest_plot_file(manifest_path)
+    output_file = Path(output_file).resolve() if output_file is not None else manifest_plot_file(manifest_path)
     paths = list(sibling_plot_paths(output_file))
     if not overwrite and all(path.exists() for path in paths):
         return paths
     try:
-        return write_plots(manifest_path, output_file, overwrite=True, bin_width=bin_width)
+        return write_plots(manifest_path, output_file, title=title, overwrite=True, bin_width=bin_width)
     except ImportError:
         return _write_plots_via_audio_python(manifest_path, output_file, bin_width=bin_width)
+
+
+def write_stage_plots(
+    manifest_path: Path,
+    stage: str,
+    *,
+    overwrite: bool = False,
+    bin_width: float = 0.25,
+) -> list[Path]:
+    """Write the three plots for a pre-filter manifest into its stage folder."""
+    return plot_segment_outputs(
+        manifest_path,
+        output_file=stage_plot_file(manifest_path, stage),
+        overwrite=overwrite,
+        bin_width=bin_width,
+    )
 
 
 def write_folder_plots(
@@ -88,6 +120,53 @@ def write_folder_plots(
     )
     progress('PLOT_DONE', f'Saved plot to {cutoff_path}')
     return [gantt, duration_path, cutoff_path]
+
+
+def write_family_plots(
+    manifest_paths: list[Path],
+    output_dir: Path,
+    *,
+    root_dir: Path | None = None,
+    title: str | None = None,
+    overwrite: bool = False,
+    concurrency: int = 1,
+    batch_size: int = 1,
+    bin_width: float = 0.25,
+) -> list[Path]:
+    """Write aggregate plots for raw, merged, and final family manifests."""
+    if not manifest_paths:
+        raise ValueError('No segments.json manifests found')
+
+    rendered: dict[str, list[Path]] = {}
+    stage_specs = (
+        ('before_merge', 'segments.raw.json', 'before merge'),
+        ('after_merge', 'segments.merged.json', 'after merge, before filtering'),
+        ('after_filtering', 'segments.json', 'after filtering'),
+    )
+    for stage, filename, label in stage_specs:
+        stage_manifests = [
+            path.with_name(filename)
+            for path in manifest_paths
+            if path.with_name(filename).is_file()
+        ]
+        if not stage_manifests:
+            continue
+        stage_output = Path(output_dir) if stage == 'after_filtering' else Path(output_dir) / stage
+        stage_title = f'{title} ({label})' if title else f'Family timeline ({label})'
+        rendered[stage] = write_folder_plots(
+            stage_manifests,
+            stage_output,
+            root_dir=root_dir,
+            title=stage_title,
+            overwrite=overwrite,
+            concurrency=concurrency,
+            batch_size=batch_size,
+            bin_width=bin_width,
+        )
+
+    # Keep the existing final timeline first for callers that print paths[0].
+    return (rendered.get('after_filtering', []) + rendered.get('before_merge', []) +
+            rendered.get('after_merge', []))
 
 
 def _read_folder_records(

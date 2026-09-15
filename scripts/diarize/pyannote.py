@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from _common.files import batch, identity, inputs, manifest_destinations, parser, positive_int, probe, request, safe_name
 from _common.merge import add_diarization_merge_arguments, merge_parameters
-from _common.segments import ensure_plots, export, manifest_complete
+from _common.segments import ensure_family_plots, ensure_plots, export, manifest_complete
 
 
 def main() -> int:
@@ -93,7 +93,9 @@ def main() -> int:
         export({**wanted, 'speaker_ids': list(labels.values()), 'turns': turns}, src, dest, args.work_dir, rate, args.channels,
                args.min_duration_s, args.max_duration_s, concurrency=args.concurrency, batch_size=args.batch_size)
         ensure_plots(dest, overwrite=True)
-    return batch(pairs, process, concurrency=args.concurrency, batch_size=args.batch_size)
+    result = batch(pairs, process, concurrency=args.concurrency, batch_size=args.batch_size)
+    ensure_family_plots(pairs, args, concurrency=args.concurrency, batch_size=args.batch_size)
+    return result
 
 
 if __name__ == '__main__':

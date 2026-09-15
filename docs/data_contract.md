@@ -64,7 +64,16 @@ interrupted write is recognizable and retried.
 <output-dir>/<safe stem>/
   segments.json
   segments.raw.json
+  segments.merged.json
   plot/
+    before_merge/
+      timeline.png
+      timeline_duration.png
+      timeline_cutoff.png
+    after_merge/
+      timeline.png
+      timeline_duration.png
+      timeline_cutoff.png
     timeline.png
     timeline_duration.png
     timeline_cutoff.png
@@ -125,27 +134,35 @@ interrupted write is recognizable and retried.
   references. Model-internal segmentation/VAD rules still apply. Its parameters
   retain the export request for provenance; neither merge nor duration limits
   have been applied to these raw turns. The processed `segments.json` records
-  `raw_manifest_sha256`.
-  Skip/resume requires that raw file and matching hash as well as valid clips.
-  Rerunning an older output without the raw file reruns inference to recover it;
-  filtered clips alone cannot recover discarded turns.
+  `raw_manifest_sha256` and `merged_manifest_sha256` for the two stage manifests.
+  Skip/resume requires both stage files and matching hashes as well as valid clips.
+  Rerunning an older output without either stage file reruns inference to recover
+  it; filtered clips alone cannot recover discarded turns.
 - With merging enabled, `parameters.merge` stores `max_gap_s`,
   `silence_threshold_dbfs`, `frame_ms`, and `adjust_mean`. The final `segments.json` keeps
   `operation: diarize` and adds `merge_applied: true`, `merge_statistics`, and
   `merge_audit` (see [silence-aware merge](#silence-aware-merge)). Mean adjustment
   details are recorded in `merge_mean_adjustment`. Statistics describe the merge
   before duration filtering; exported turn counts may be smaller. Each surviving
-  turn's `merge_source_indices` and the audit indices
-  refer to `segments.raw.json` turns. Plots describe the final exported turns.
+  turn's `merge_source_indices` and the audit indices refer to `segments.raw.json`
+  turns. `segments.merged.json` stores the selected merged turns before the duration
+  filter, with no clip references; it is used to make the after-merge plots
+  reproducible. With merging disabled, it is a copy of the normalized raw stage.
   With `--merge false`, `parameters.merge` is omitted and export behavior is
   unchanged.
-- Each diarize command also writes `plot/timeline.png` (speaker Gantt),
-  `plot/timeline_duration.png` (segment-length histogram), and
-  `plot/timeline_cutoff.png` (remaining count/percent and remaining audio if
-  segments shorter than T are dropped). Missing plots are filled in on a
-  skipped rerun; a new export overwrites them. `evaluate/plot_diarization`
-  writes the same three figures beside `--output-file` for single-manifest
-  mode, or under its aggregate `--output-dir` in folder mode.
+- Each diarize command writes three plot sets: `plot/before_merge/` reads
+  `segments.raw.json`, `plot/after_merge/` reads `segments.merged.json`, and the
+  existing `plot/` files read the final post-filter `segments.json`. Each set has
+  `timeline.png` (speaker Gantt), `timeline_duration.png` (segment-length
+  histogram), and `timeline_cutoff.png` (remaining count/percent and remaining
+  audio if segments shorter than T are dropped). Missing plots are filled in on a
+  skipped rerun; a new export overwrites them. `evaluate/plot_diarization` writes
+  the same stage sets under its aggregate `--output-dir` in folder mode.
+- When diarization receives `--input-dir`, it groups the completed manifests by
+  inferred audio family and writes the same aggregate stage sets under that
+  family's `plot/` directory. With the default output layout this is
+  `.data/diarize/<model>/<family>/plot/`; with an explicit `--output-dir`, it is
+  `<output-dir>/<family>/plot/`.
 - `audio/export_segments.py` re-renders any manifest with this shape and rewrites
   it (with fresh `clip*` fields) in the chosen output directory. It also writes
   `plot/timeline.png`, `plot/timeline_duration.png`, and
