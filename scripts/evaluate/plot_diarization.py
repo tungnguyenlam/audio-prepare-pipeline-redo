@@ -6,16 +6,21 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _common.diarize_plots import write_plots
+from _common.diarize_plots import write_folder_plots, write_plots
 from _common.files import LoggingArgumentParser, positive_int, progress
 
 
 def main() -> int:
     p = LoggingArgumentParser(description=__doc__)
-    p.add_argument('--input-manifest', type=Path, required=True, help='Path to input segments.json manifest')
+    inputs = p.add_mutually_exclusive_group(required=True)
+    inputs.add_argument('--input-manifest', type=Path, help='Path to one input segments.json manifest')
+    inputs.add_argument('--input-dir', type=Path,
+                        help='Directory recursively containing segments.json manifests to aggregate')
     p.add_argument('--reference-manifest', type=Path, help='Optional reference segments.json for comparison')
-    p.add_argument('--output-file', type=Path, required=True,
-                   help='Gantt image path (.png, .svg, .pdf); duration and cutoff plots are written beside it')
+    p.add_argument('--output-file', type=Path,
+                   help='Single-manifest Gantt image path; duration and cutoff plots are written beside it')
+    p.add_argument('--output-dir', type=Path,
+                   help='Folder for aggregate plots (default: <input-dir>/plot)')
     p.add_argument('--title', help='Custom plot title (default: auto-generated)')
     p.add_argument('--bin-width', type=float, default=0.25, help='Bin width in seconds for segment duration histogram (default: 0.25)')
     p.add_argument('--overwrite', action='store_true', help='Overwrite existing output files if present')
@@ -26,8 +31,42 @@ def main() -> int:
     if not math.isfinite(args.bin_width) or args.bin_width <= 0:
         p.error('--bin-width must be a positive number')
 
-    dest = args.output_file.resolve()
-    progress('PLOT_START', f'Rendering diarization plots: {args.input_manifest.name}')
+    if args.input_manifest is not None:
+        if args.output_file is None:
+            p.error('--output-file is required with --input-manifest')
+        if args.output_dir is not None:
+            p.error('--output-dir is only valid with --input-dir')
+        dest = args.output_file.resolve()
+        progress('PLOT_START', f'Rendering diarization plots: {args.input_manifest.name}')
+    else:
+        if args.output_file is not None:
+            p.error('--output-file is only valid with --input-manifest')
+        if args.reference_manifest is not None:
+            p.error('--reference-manifest is only valid with --input-manifest')
+        input_dir = args.input_dir.resolve()
+        if not input_dir.is_dir():
+            p.error(f'Input directory not found: {input_dir}')
+        manifests = sorted(input_dir.rglob('segments.json'))
+        if not manifests:
+            p.error(f'No segments.json manifests found below: {input_dir}')
+        output_dir = (args.output_dir or input_dir / 'plot').resolve()
+        progress('PLOT_START', f'Rendering aggregate diarization plots for {len(manifests)} manifest(s)')
+        try:
+            paths = write_folder_plots(
+                manifests,
+                output_dir,
+                root_dir=input_dir,
+                title=args.title,
+                overwrite=args.overwrite,
+                concurrency=args.concurrency,
+                batch_size=args.batch_size,
+                bin_width=args.bin_width,
+            )
+        except (FileExistsError, ValueError) as exc:
+            p.error(str(exc))
+        print(paths[0])
+        return 0
+
     try:
         paths = write_plots(
             args.input_manifest,

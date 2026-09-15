@@ -123,7 +123,7 @@ bash scripts/audio/convert.sh --input-dir .data/input --output-dir .data/convert
 bash scripts/audio/cut.sh     --input-file .data/source.wav --start 12.34 --end 18.92 --output-file .data/cut.wav
 bash scripts/audio/export_segments.sh --input-manifest .data/purity/collar/<family>/segments.json --output-dir .data/clips
 # default output (when --output-dir is omitted): .data/audio/clips/<family>/
-# export also writes timeline.png, timeline_duration.png, timeline_cutoff.png
+# export also writes plot/timeline.png, plot/timeline_duration.png, plot/timeline_cutoff.png
 bash scripts/audio/compare_waveforms.sh    --input-file .data/a.wav --reference-file .data/b.wav --output-file .data/waveforms.png
 bash scripts/audio/compare_spectrograms.sh --input-file .data/a.wav --reference-file .data/b.wav --output-file .data/spectrograms.png
 ```
@@ -152,7 +152,8 @@ bash scripts/diarize/clustering.sh          --input-file x.wav
 bash scripts/diarize/threed_speaker.sh      --input-file x.wav --include-overlap
 bash scripts/diarize/diarizen.sh            --input-file x.wav --segmentation-step 0.05 --binarize-onset 0.5 --binarize-offset 0.6
 # each run preserves pre-filter turns in segments.raw.json
-# each run also writes timeline.png, timeline_duration.png, timeline_cutoff.png next to segments.json
+# each run also writes plot/timeline.png, plot/timeline_duration.png, plot/timeline_cutoff.png
+# under the output folder next to segments.json
 ```
 
 ### Merge before duration filtering
@@ -174,7 +175,7 @@ the defaults are `--max-gap-s 1`, `--silence-threshold-dbfs -40`, and
 `--frame-ms 20`; the tuning flags alone do not enable it.
 
 The example writes processed `segments.json`, merged clips that pass the duration
-filter, and three plots under `.data/turns/recording/`. Omit `--output-dir` to use
+filter, and three plots under `.data/turns/recording/plot/`. Omit `--output-dir` to use
 the normal `.data/diarize/<model>/<family>/` default. `segments.raw.json` retains
 the original backend turns before merging and duration filtering. The processed
 manifest includes the merge audit and statistics. Merge settings are part of the
@@ -276,8 +277,18 @@ bash scripts/evaluate/separation.sh  --input-file pred.wav --reference-file .dat
 bash scripts/evaluate/diarization.sh --input-manifest pred/segments.json --reference-manifest ref/segments.json --duration 120 --collar 0.25 --output-file .data/der.json
 bash scripts/evaluate/plot_diarization.sh --input-manifest pred/segments.json --reference-manifest ref/segments.json --output-file .data/gantt.png
 # writes .data/gantt.png, .data/gantt_duration.png, .data/gantt_cutoff.png
+# aggregate every segments.json below a family (or model root):
+bash scripts/evaluate/plot_diarization.sh --input-dir .data/diarize/sortformer/<family> --overwrite
+# defaults to <input-dir>/plot/; use --output-dir to choose another folder
 bash scripts/evaluate/plot_metrics.sh --metrics-file a.json --metrics-file b.json --output-file .data/metrics.png
 ```
+
+Folder mode recursively reads every `segments.json` below `--input-dir` and
+combines their final exported turns. `timeline_duration.png` is the pooled
+segment-duration histogram (with count, mean, and median); `timeline_cutoff.png`
+shows pooled remaining segment count and audio seconds for each minimum-duration
+cutoff. Point `--input-dir` at one family for that family, or at a model root to
+combine all its families.
 
 ### Dataset
 

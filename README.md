@@ -59,8 +59,8 @@ bash scripts/agent/verifier/analysis.sh --input-dir .data/agent/verifier/gemini/
   and plots, plus the original `segments.raw.json`; see the
   [merge cookbook](docs/commands.md#merge-before-duration-filtering).
 - `--input-file` beats `--input-dir`; `--output-file` is an exact destination for single outputs.
-- Audio outputs get a sibling `.json` sidecar; diarizers write `<stem>/segments.json` plus clips;
-  purity stages write new manifests and `export_segments` renders them.
+- Audio outputs get a sibling `.json` sidecar; diarizers write `<stem>/segments.json` plus clips
+  and `<stem>/plot/`; purity stages write new manifests and `export_segments` renders them.
 - Progress on stderr, output paths on stdout, runtime artifacts under `.data/` (gitignored).
 
 ## Documentation

@@ -61,9 +61,10 @@ interrupted write is recognizable and retried.
 <output-dir>/<safe stem>/
   segments.json
   segments.raw.json
-  timeline.png
-  timeline_duration.png
-  timeline_cutoff.png
+  plot/
+    timeline.png
+    timeline_duration.png
+    timeline_cutoff.png
   <stem>_<model>_<speaker>_<start_ms:09d>-<end_ms:09d>_<index:04d>.wav
 ```
 
@@ -133,16 +134,18 @@ interrupted write is recognizable and retried.
   smaller. Each surviving turn's `merge_source_indices` and the audit indices
   refer to `segments.raw.json` turns. Plots describe the final exported turns.
   Without `--merge`, `parameters.merge` is omitted and export behavior is unchanged.
-- Each diarize command also writes `timeline.png` (speaker Gantt),
-  `timeline_duration.png` (segment-length histogram), and `timeline_cutoff.png`
-  (remaining count/percent and remaining audio if segments shorter than T are
-  dropped). Missing plots are filled in on a skipped rerun; a new export
-  overwrites them. `evaluate/plot_diarization` writes the same three figures
-  beside `--output-file`.
+- Each diarize command also writes `plot/timeline.png` (speaker Gantt),
+  `plot/timeline_duration.png` (segment-length histogram), and
+  `plot/timeline_cutoff.png` (remaining count/percent and remaining audio if
+  segments shorter than T are dropped). Missing plots are filled in on a
+  skipped rerun; a new export overwrites them. `evaluate/plot_diarization`
+  writes the same three figures beside `--output-file` for single-manifest
+  mode, or under its aggregate `--output-dir` in folder mode.
 - `audio/export_segments.py` re-renders any manifest with this shape and rewrites
   it (with fresh `clip*` fields) in the chosen output directory. It also writes
-  `timeline.png`, `timeline_duration.png`, and `timeline_cutoff.png` beside the
-  exported `segments.json`; these plots describe the post-filter turns.
+  `plot/timeline.png`, `plot/timeline_duration.png`, and
+  `plot/timeline_cutoff.png` beside the exported `segments.json`; these plots
+  describe the post-filter turns.
 
 ## 3. Purity and speaker manifests
 

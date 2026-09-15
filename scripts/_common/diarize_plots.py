@@ -16,9 +16,14 @@ def sibling_plot_paths(gantt_file: Path) -> tuple[Path, Path, Path]:
     return gantt, gantt.with_name(f'{gantt.stem}_duration{gantt.suffix}'), gantt.with_name(f'{gantt.stem}_cutoff{gantt.suffix}')
 
 
+def manifest_plot_file(manifest_path: Path) -> Path:
+    """Return the standard plot location for a segments.json manifest."""
+    return Path(manifest_path).resolve().parent / 'plot' / 'timeline.png'
+
+
 def plot_segment_outputs(manifest_path: Path, *, overwrite: bool = False, bin_width: float = 0.25) -> list[Path]:
-    """Write timeline, duration histogram, and cutoff plots next to a segments.json."""
-    output_file = Path(manifest_path).resolve().parent / 'timeline.png'
+    """Write timeline, duration histogram, and cutoff plots under a manifest's plot/."""
+    output_file = manifest_plot_file(manifest_path)
     paths = list(sibling_plot_paths(output_file))
     if not overwrite and all(path.exists() for path in paths):
         return paths
@@ -26,6 +31,119 @@ def plot_segment_outputs(manifest_path: Path, *, overwrite: bool = False, bin_wi
         return write_plots(manifest_path, output_file, overwrite=True, bin_width=bin_width)
     except ImportError:
         return _write_plots_via_audio_python(manifest_path, output_file, bin_width=bin_width)
+
+
+def write_folder_plots(
+    manifest_paths: list[Path],
+    output_dir: Path,
+    *,
+    root_dir: Path | None = None,
+    title: str | None = None,
+    overwrite: bool = False,
+    concurrency: int = 1,
+    batch_size: int = 1,
+    bin_width: float = 0.25,
+) -> list[Path]:
+    """Write aggregate plots for every segments.json below one folder."""
+    if not manifest_paths:
+        raise ValueError('No segments.json manifests found')
+
+    output_file = Path(output_dir).resolve() / 'timeline.png'
+    gantt, duration_path, cutoff_path = sibling_plot_paths(output_file)
+    existing = [path for path in (gantt, duration_path, cutoff_path) if path.exists()]
+    if existing and not overwrite:
+        raise FileExistsError(f'Destination exists: {existing[0]}; use --overwrite')
+
+    records = _read_folder_records(manifest_paths, root_dir=root_dir, concurrency=concurrency)
+    turns = [turn for _, record_turns in records for turn in record_turns]
+
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(14, max(4.0, 1.4 + 0.45 * len(records))))
+    _plot_folder_turns(ax, records, title or f'Family timeline ({len(records)} manifest(s))', batch_size=batch_size)
+    _save(plt, fig, gantt)
+    progress('PLOT_DONE', f'Saved plot to {gantt}')
+    durations = _turn_durations(turns)
+    duration_stats = (
+        f'n={len(durations)}, mean={statistics.fmean(durations):.2f}s, '
+        f'median={float(statistics.median(durations)):.2f}s'
+        if durations else 'no turns'
+    )
+    _write_duration_histogram(
+        plt,
+        turns,
+        duration_path,
+        bin_width=bin_width,
+        title=f'Segment duration across {len(records)} manifest(s) ({duration_stats})',
+    )
+    progress('PLOT_DONE', f'Saved plot to {duration_path}')
+    _write_cutoff_bars(
+        plt,
+        turns,
+        cutoff_path,
+        bin_width=bin_width,
+        title=f'Remaining across {len(records)} manifest(s) if dropping segments shorter than T',
+    )
+    progress('PLOT_DONE', f'Saved plot to {cutoff_path}')
+    return [gantt, duration_path, cutoff_path]
+
+
+def _read_folder_records(
+    manifest_paths: list[Path],
+    *,
+    root_dir: Path | None,
+    concurrency: int,
+) -> list[tuple[str, list[dict]]]:
+    root = root_dir.resolve() if root_dir is not None else None
+
+    def read_record(path: Path) -> tuple[str, list[dict]]:
+        data = read_json(path)
+        if root is not None:
+            try:
+                relative = path.resolve().parent.relative_to(root)
+                label = str(relative) if str(relative) != '.' else root.name
+            except ValueError:
+                label = str(path.parent)
+        else:
+            label = str(path.parent)
+        return label, data.get('turns', [])
+
+    if concurrency > 1:
+        with ThreadPoolExecutor(max_workers=concurrency) as executor:
+            return list(executor.map(read_record, manifest_paths))
+    return [read_record(path) for path in manifest_paths]
+
+
+def _plot_folder_turns(ax, records: list[tuple[str, list[dict]]], title: str, batch_size: int = 1) -> None:
+    speaker_keys = sorted({(label, turn['speaker_id']) for label, turns in records for turn in turns})
+    cmap = plt.cm.tab20
+    colors = {key: cmap(index % 20) for index, key in enumerate(speaker_keys)}
+    batch_size = max(1, batch_size)
+
+    for row, (label, turns) in enumerate(records):
+        for index in range(0, len(turns), batch_size):
+            for turn in turns[index:index + batch_size]:
+                duration = float(turn['end_s']) - float(turn['start_s'])
+                key = (label, turn['speaker_id'])
+                overlap = turn.get('overlap', False) or turn.get('overlaps_other_speaker', False)
+                ax.barh(
+                    y=row,
+                    width=duration,
+                    left=float(turn['start_s']),
+                    height=0.6,
+                    color=colors.get(key, '#3b82f6'),
+                    edgecolor='#ef4444' if overlap else 'none',
+                    linewidth=1.5 if overlap else 0,
+                    alpha=0.85,
+                )
+
+    ax.set_yticks(range(len(records)))
+    ax.set_yticklabels([label for label, _ in records])
+    ax.set_xlabel('Time (seconds)')
+    ax.set_title(title)
+    ax.grid(True, axis='x', linestyle='--', alpha=0.5)
 
 
 def write_plots(
@@ -120,13 +238,20 @@ def _plot_turns(ax, turns: list[dict], title: str, batch_size: int = 1):
     ax.grid(True, axis='x', linestyle='--', alpha=0.5)
 
 
-def _write_duration_histogram(plt, turns: list[dict], dest: Path, *, bin_width: float = 0.25) -> None:
+def _write_duration_histogram(
+    plt,
+    turns: list[dict],
+    dest: Path,
+    *,
+    bin_width: float = 0.25,
+    title: str | None = None,
+) -> None:
     durations = _turn_durations(turns)
     fig, ax = plt.subplots(figsize=(10, 4))
     if not durations:
         ax.axis('off')
         ax.text(0.5, 0.5, 'No turns to plot', ha='center', va='center')
-        ax.set_title('Segment duration')
+        ax.set_title(title or 'Segment duration')
         _save(plt, fig, dest)
         return
     step = bin_width if (math.isfinite(bin_width) and bin_width > 0) else 0.25
@@ -146,22 +271,29 @@ def _write_duration_histogram(plt, turns: list[dict], dest: Path, *, bin_width: 
 
     ax.set_xlabel('Segment duration (s)')
     ax.set_ylabel('Count')
-    ax.set_title(
+    ax.set_title(title or (
         f'Segment duration (n={len(durations)}, mean={mean_val:.2f}s, '
         f'median={median_val:.2f}s)'
-    )
+    ))
     ax.grid(True, axis='y', linestyle='--', alpha=0.4)
     _save(plt, fig, dest)
 
 
-def _write_cutoff_bars(plt, turns: list[dict], dest: Path, *, bin_width: float = 0.25) -> None:
+def _write_cutoff_bars(
+    plt,
+    turns: list[dict],
+    dest: Path,
+    *,
+    bin_width: float = 0.25,
+    title: str | None = None,
+) -> None:
     durations = _turn_durations(turns)
     if not durations:
         fig, (ax_count, ax_dur) = plt.subplots(2, 1, figsize=(12, 7), sharex=True)
         for ax in (ax_count, ax_dur):
             ax.axis('off')
             ax.text(0.5, 0.5, 'No turns to plot', ha='center', va='center')
-        ax_count.set_title('Remaining if dropping segments shorter than T')
+        ax_count.set_title(title or 'Remaining if dropping segments shorter than T')
         _save(plt, fig, dest)
         return
 
@@ -186,7 +318,7 @@ def _write_cutoff_bars(plt, turns: list[dict], dest: Path, *, bin_width: float =
     count_bars = ax_count.bar(thresholds, remain_n, color='#3b82f6', width=bar_w)
     ax_count.bar_label(count_bars, labels=count_labels, fontsize=fsize, padding=3, rotation=rot)
     ax_count.set_ylabel('Remaining segments')
-    ax_count.set_title('Remaining if dropping segments shorter than T')
+    ax_count.set_title(title or 'Remaining if dropping segments shorter than T')
     ax_count.set_ylim(0, max(remain_n) * headroom if remain_n else 1)
     ax_count.grid(True, axis='y', linestyle='--', alpha=0.4)
 
