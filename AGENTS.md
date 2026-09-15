@@ -40,13 +40,14 @@ audio-model verification, evaluation, mixing, and dataset export.
 
 | Path | Purpose |
 |---|---|
-| `scripts/download/`, `audio/`, `mix/` | ingest and deterministic audio operations |
-| `scripts/separate/` | HTDemucs, BS/Mel-RoFormer, MVSEP-MDX23 |
-| `scripts/diarize/` | Sortformer, Pyannote, clustering, 3D-Speaker, DiariZen |
+| `scripts/s1-download/`, `audio/`, `mix/` | ingest and deterministic audio operations |
+| `scripts/s2-separate/` | HTDemucs, BS/Mel-RoFormer, MVSEP-MDX23 |
+| `scripts/s3-diarize/` | Sortformer, Pyannote, clustering, 3D-Speaker, DiariZen |
 | `scripts/speaker/`, `purity/` | enrollment, scoring, filtering, boundary refinement |
-| `scripts/agent/` | free-form raw audio-model generation |
-| `scripts/agent/verifier/` | validated pass/reject behaviors using shared generation |
-| `scripts/evaluate/`, `dataset/` | metrics, plots, indexing, filtering, export, bundles |
+| `scripts/s4-agent/` | free-form raw audio-model generation |
+| `scripts/s4-agent/verifier/` | validated pass/reject behaviors using shared generation |
+| `scripts/evaluate/` | metrics and plots |
+| `scripts/s5-export/` | dataset indexing, filtering, export, bundles |
 | `scripts/_common/` | private shared file/segment behavior |
 | `scripts/sync/` | code/data synchronization between machines |
 | `envs/`, `prompts/`, `docs/` | environments, prompts, focused documentation |

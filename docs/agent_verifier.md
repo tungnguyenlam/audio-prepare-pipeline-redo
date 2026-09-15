@@ -2,12 +2,12 @@
 
 [← Overview](../README.md) · [Data contract §5–8](data_contract.md#5-agent-response-pair-scriptsagent) · [Cookbook](commands.md#agent-generation-and-verification)
 
-`scripts/agent/` sends a user-owned prompt plus one audio clip to an audio-capable
-model and preserves the unparsed answer. `scripts/agent/verifier/` reuses the same
+`scripts/s4-agent/` sends a user-owned prompt plus one audio clip to an audio-capable
+model and preserves the unparsed answer. `scripts/s4-agent/verifier/` reuses the same
 generation clients, requests JSON, parses it, and enforces a pass/reject verdict
 schema. Neither directory orchestrates other pipeline stages.
 
-## Raw generation (`scripts/agent/{gemini,endpoint,hf}.sh`)
+## Raw generation (`scripts/s4-agent/{gemini,endpoint,hf}.sh`)
 
 | Backend | Transport | Notes |
 |---|---|---|
@@ -31,7 +31,7 @@ per-item cost are included when returned by the provider. The final `TOTAL_COST`
 line reports the cumulative estimated USD cost and pricing tier; local models and
 endpoints without pricing metadata explicitly report cost as unavailable.
 
-## Hardened verifiers (`scripts/agent/verifier/*.sh`)
+## Hardened verifiers (`scripts/s4-agent/verifier/*.sh`)
 
 | Backend | Environment | Model / options |
 |---|---|---|
@@ -66,7 +66,7 @@ Prompts in `prompts/`: `acoustic_defect-3.txt` is the active verifier default;
 deprecated, reference-only revisions and are not registered validation profiles.
 `speaker_purity.txt` and `word_boundary.txt` are narrower verifier alternatives.
 Free-form transcript/description prompts (`prompt-transcripts-*.txt`,
-`vi-prompt-alam*.txt`) remain available for `scripts/agent/`.
+`vi-prompt-alam*.txt`) remain available for `scripts/s4-agent/`.
 `acoustic_defect-3.txt` combines acoustic verification with conditional
 Vietnamese/English transcription and an audible emotion/speaking-style label. It
 accepts faint non-intrusive background noise, adds `unsupported_language` and
@@ -111,7 +111,7 @@ same family name under a candidate root (`medium/example` ↔ `low` finds
 source SHA-256 values must agree when both exist. Only reference clips define
 scope; failed, uncertain, invalid, missing or hash-mismatched pairs are reported but
 excluded from metrics. Output goes to a new directory under
-`.data/agent/verifier/comparisons/` (or an empty `--output-dir` outside all inputs);
+`.data/s4-agent/verifier/comparisons/` (or an empty `--output-dir` outside all inputs);
 files are listed in [data contract §8](data_contract.md#8-verifier-comparison-comparesh--dataagentverifiercomparisonsutc-hash).
 Exit code 2 on missing inputs, no valid reference, duplicate keys, or a candidate
 with zero valid matches. `pairs.csv` preserves both transcripts and emotion labels
@@ -130,6 +130,6 @@ transcript exact-match counts, and emotion exact-match counts as JSON. Use
 ### `scaffold_experiment.sh --name NAME`
 
 Creates an empty verifier-development workspace
-`.data/agent/verifier/experiments/NAME/` (`experiment.json`, `templates.json`,
+`.data/s4-agent/verifier/experiments/NAME/` (`experiment.json`, `templates.json`,
 `manifests/*.jsonl`, `audio/`, `reports/`, `checkpoints/`). It refuses an existing
 target and performs no model or data operations.

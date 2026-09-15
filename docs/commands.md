@@ -20,9 +20,9 @@ secret-valued options or long prompt contents.
   directory.
 - Downloads are named `<video_id>_<title10>-<sample_rate>.wav`. Other names are
   sanitized to `[a-zA-Z0-9_-]`; single-video outputs live under
-  `.data/download/<audio-family>/`. Playlist and channel downloads resolve the
+  `.data/s1-download/<audio-family>/`. Playlist and channel downloads resolve the
   remote collection name and group files under
-  `.data/download/<playlist-or-channel>/` (or under
+  `.data/s1-download/<playlist-or-channel>/` (or under
   `<output-dir>/<playlist-or-channel>/` when `--output-dir` is supplied).
 - Audio outputs have an atomic sibling `.json` sidecar. Matching outputs with a
   valid hash are cached; conflicting outputs require `--overwrite`. Audio is never
@@ -46,20 +46,20 @@ secret-valued options or long prompt contents.
 
 | Launchers | Default venv (fallbacks) | Override variable |
 |---|---|---|
-| `download/*.sh` | `.venvs/download` (`.venv-download`) | `DOWNLOAD_PYTHON` |
-| `audio/*.sh`, `dataset/*.sh`, `evaluate/*.sh`, `mix/mix.sh`, `speaker/{enroll,filter}.sh`, `purity/{consensus,cleanup,merge,collar,snap,segment}.sh`, `agent/verifier/{analysis,analyze,compare,evaluate_verifier,scaffold_experiment}.sh` | `.venvs/audio` (`.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
-| `separate/*.sh` | `.venvs/separation` (`.venv-separation`, `.venvs/main`, `.venv`) | `SEPARATION_PYTHON` |
-| `diarize/{pyannote,pyannote_31,pyannote_community1}.sh`, `speaker/{score,purity}.sh` | `.venvs/pyannote` (`.venv-pyannote`, `.venvs/main`, `.venv`) | `DIARIZATION_PYTHON` |
-| `diarize/{sortformer,clustering}.sh` | `.venvs/sortformer` (`.venv-sortformer`) | `DIARIZATION_PYTHON` |
-| `diarize/threed_speaker.sh` | `.venvs/3dspeaker` (`.venv-3dspeaker`) | `DIARIZATION_PYTHON` |
-| `diarize/diarizen.sh` | `.venvs/diarizen` (`.venv-diarizen`) | `DIARIZATION_PYTHON` |
+| `s1-download/*.sh` | `.venvs/download` (`.venv-download`) | `DOWNLOAD_PYTHON` |
+| `audio/*.sh`, `s5-export/*.sh`, `evaluate/*.sh`, `mix/mix.sh`, `speaker/{enroll,filter}.sh`, `purity/{consensus,cleanup,merge,collar,snap,segment}.sh`, `s4-agent/verifier/{analysis,analyze,compare,evaluate_verifier,scaffold_experiment}.sh` | `.venvs/audio` (`.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
+| `s2-separate/*.sh` | `.venvs/separation` (`.venv-separation`, `.venvs/main`, `.venv`) | `SEPARATION_PYTHON` |
+| `s3-diarize/{pyannote,pyannote_31,pyannote_community1}.sh`, `speaker/{score,purity}.sh` | `.venvs/pyannote` (`.venv-pyannote`, `.venvs/main`, `.venv`) | `DIARIZATION_PYTHON` |
+| `s3-diarize/{sortformer,clustering}.sh` | `.venvs/sortformer` (`.venv-sortformer`) | `DIARIZATION_PYTHON` |
+| `s3-diarize/threed_speaker.sh` | `.venvs/3dspeaker` (`.venv-3dspeaker`) | `DIARIZATION_PYTHON` |
+| `s3-diarize/diarizen.sh` | `.venvs/diarizen` (`.venv-diarizen`) | `DIARIZATION_PYTHON` |
 | `purity/align.sh` | `.venvs/align` (`.venv-align`, `.venvs/main`, `.venv`) | `ALIGNMENT_PYTHON` |
-| `agent/{gemini,endpoint,hf}.sh`, `agent/verifier/{gemini,endpoint,hf,unsloth}.sh` | `.venvs/verify` (`.venv-verify`, `.venvs/main`, `.venv`) | `VERIFIER_PYTHON` |
-| `agent/verifier/vllm.sh` | `.venvs/vllm` (`.venv-vllm`, `.venvs/verify`, `.venvs/main`) | `VLLM_PYTHON`, then `VERIFIER_PYTHON` |
-| `agent/verifier/moss.sh` | `.venvs/moss` (`.venv-moss`, `.venvs/verify`, `.venvs/main`) | `VERIFIER_PYTHON` |
-| `agent/verifier/minicpm.sh` | `.venvs/minicpmo` (`.venv-minicpmo`) | `VERIFIER_PYTHON` |
-| `agent/verifier/kimi.sh` | `.venvs/kimi` (`.venv-kimi`) | `VERIFIER_PYTHON` |
-| `agent/verifier/vibevoice.sh` | `.venvs/vibevoice` (`.venv-vibevoice`) | `VERIFIER_PYTHON` |
+| `s4-agent/{gemini,endpoint,hf}.sh`, `s4-agent/verifier/{gemini,endpoint,hf,unsloth}.sh` | `.venvs/verify` (`.venv-verify`, `.venvs/main`, `.venv`) | `VERIFIER_PYTHON` |
+| `s4-agent/verifier/vllm.sh` | `.venvs/vllm` (`.venv-vllm`, `.venvs/verify`, `.venvs/main`) | `VLLM_PYTHON`, then `VERIFIER_PYTHON` |
+| `s4-agent/verifier/moss.sh` | `.venvs/moss` (`.venv-moss`, `.venvs/verify`, `.venvs/main`) | `VERIFIER_PYTHON` |
+| `s4-agent/verifier/minicpm.sh` | `.venvs/minicpmo` (`.venv-minicpmo`) | `VERIFIER_PYTHON` |
+| `s4-agent/verifier/kimi.sh` | `.venvs/kimi` (`.venv-kimi`) | `VERIFIER_PYTHON` |
+| `s4-agent/verifier/vibevoice.sh` | `.venvs/vibevoice` (`.venv-vibevoice`) | `VERIFIER_PYTHON` |
 
 ## Provisioning
 
@@ -80,7 +80,7 @@ provisions project-local JavaScript runtimes for yt-dlp.
 | Target | venv | Python | Contents |
 |---|---|---|---|
 | `download` | `.venvs/download` | 3.13 | current yt-dlp[default], Deno, Node/npm, Bun, QuickJS |
-| `audio` | `.venvs/audio` | 3.13 | audio tools, dataset, evaluate, mix, purity (non-ASR), analysis |
+| `audio` | `.venvs/audio` | 3.13 | audio tools, s5-export, evaluate, mix, purity (non-ASR), analysis |
 | `separation` | `.venvs/separation` | 3.13 | Demucs, BS-RoFormer, Mel-RoFormer, MVSEP-MDX23 |
 | `pyannote` | `.venvs/pyannote` | 3.13 | Pyannote 3.1 / Community-1, speaker scoring and purity |
 | `verify` | `.venvs/verify` | 3.13 | Gemini, OpenAI-compatible endpoints, HF Gemma, Unsloth |
@@ -111,12 +111,12 @@ resolved, sanitized collection name below the output root.
 ### Download
 
 ```bash
-bash scripts/download/youtube.sh  --url 'https://www.youtube.com/watch?v=VIDEO' --output-dir .data/downloads
-bash scripts/download/youtube.sh  --url-file urls.txt                                # one URL/ID per line
-bash scripts/download/playlist.sh --url 'https://www.youtube.com/playlist?list=PL' --limit 5
-bash scripts/download/channel.sh  --url 'https://www.youtube.com/@CHANNEL/videos' --limit 10
-bash scripts/download/crawl.sh --source-file scripts/download/sources/vi_en_codeswitch.json --metadata-only
-bash scripts/download/crawl.sh --source-file scripts/download/sources/vi_en_codeswitch.json
+bash scripts/s1-download/youtube.sh  --url 'https://www.youtube.com/watch?v=VIDEO' --output-dir .data/downloads
+bash scripts/s1-download/youtube.sh  --url-file urls.txt                                # one URL/ID per line
+bash scripts/s1-download/playlist.sh --url 'https://www.youtube.com/playlist?list=PL' --limit 5
+bash scripts/s1-download/channel.sh  --url 'https://www.youtube.com/@CHANNEL/videos' --limit 10
+bash scripts/s1-download/crawl.sh --source-file scripts/s1-download/sources/vi_en_codeswitch.json --metadata-only
+bash scripts/s1-download/crawl.sh --source-file scripts/s1-download/sources/vi_en_codeswitch.json
 ```
 
 Download commands use `.venvs/download` by default. Provisioning updates
@@ -150,7 +150,7 @@ channel name; the resolved name is also recorded in each completed source entry
 in the crawl manifest.
 
 Use `--metadata-only` first to inspect the default
-`.data/download/<collection>/crawl.json`; omit it to download 48 kHz mono WAVs
+`.data/s1-download/<collection>/crawl.json`; omit it to download 48 kHz mono WAVs
 through the same cache-aware path as `youtube`, `playlist`, and `channel`.
 Title metadata cannot establish natural code-switch density, single-speaker purity,
 or the absence of short music/effect inserts. Those properties require reviewing
@@ -173,11 +173,11 @@ bash scripts/audio/compare_spectrograms.sh --input-file .data/a.wav --reference-
 ### Stem separation
 
 ```bash
-bash scripts/separate/htdemucs_ft.sh --input-dir .data/downloads --output-dir .data/separated --stem vocals
-bash scripts/separate/htdemucs.sh    --input-file .data/source.wav --output-file .data/vocals.wav
-bash scripts/separate/bs_roformer.sh --input-file .data/source.wav --stem vocals
-bash scripts/separate/mel_roformer.sh --input-file .data/source.wav --stem vocals
-bash scripts/separate/mvsep_mdx23.sh --input-file .data/source.wav --stem vocals
+bash scripts/s2-separate/htdemucs_ft.sh --input-dir .data/downloads --output-dir .data/separated --stem vocals
+bash scripts/s2-separate/htdemucs.sh    --input-file .data/source.wav --output-file .data/vocals.wav
+bash scripts/s2-separate/bs_roformer.sh --input-file .data/source.wav --stem vocals
+bash scripts/s2-separate/mel_roformer.sh --input-file .data/source.wav --stem vocals
+bash scripts/s2-separate/mvsep_mdx23.sh --input-file .data/source.wav --stem vocals
 ```
 
 Outputs are named `<stem>_<model>.wav` (`_htdemucs`, `_htdemucs_ft`, `_bs_roformer`,
@@ -186,13 +186,13 @@ Outputs are named `<stem>_<model>.wav` (`_htdemucs`, `_htdemucs_ft`, `_bs_roform
 ### Diarization (all default to 1–15 s clips)
 
 ```bash
-bash scripts/diarize/sortformer.sh          --input-dir .data/separated --output-dir .data/turns
-bash scripts/diarize/sortformer.sh          --input-file x.wav --min-duration-s 1.0 --max-duration-s 30.0
-bash scripts/diarize/pyannote_community1.sh --input-file x.wav --num-speakers 2
-bash scripts/diarize/pyannote_31.sh         --input-file x.wav
-bash scripts/diarize/clustering.sh          --input-file x.wav
-bash scripts/diarize/threed_speaker.sh      --input-file x.wav --include-overlap
-bash scripts/diarize/diarizen.sh            --input-file x.wav --segmentation-step 0.05 --binarize-onset 0.5 --binarize-offset 0.6
+bash scripts/s3-diarize/sortformer.sh          --input-dir .data/separated --output-dir .data/turns
+bash scripts/s3-diarize/sortformer.sh          --input-file x.wav --min-duration-s 1.0 --max-duration-s 30.0
+bash scripts/s3-diarize/pyannote_community1.sh --input-file x.wav --num-speakers 2
+bash scripts/s3-diarize/pyannote_31.sh         --input-file x.wav
+bash scripts/s3-diarize/clustering.sh          --input-file x.wav
+bash scripts/s3-diarize/threed_speaker.sh      --input-file x.wav --include-overlap
+bash scripts/s3-diarize/diarizen.sh            --input-file x.wav --segmentation-step 0.05 --binarize-onset 0.5 --binarize-offset 0.6
 # each run preserves pre-filter turns in segments.raw.json
 # each run also writes plot/before_merge/, plot/after_merge/, and plot/ with
 # timeline.png, timeline_duration.png, and timeline_cutoff.png in each folder
@@ -201,7 +201,7 @@ bash scripts/diarize/diarizen.sh            --input-file x.wav --segmentation-st
 ```
 
 For a directory run, family aggregation is automatic. With the default output
-layout the aggregate is under `.data/diarize/<model>/<family>/plot/`; with an
+layout the aggregate is under `.data/s3-diarize/<model>/<family>/plot/`; with an
 explicit output root it is under `<output-dir>/<family>/plot/`.
 
 ### Merge before duration filtering
@@ -210,7 +210,7 @@ All diarization launchers merge fragmented same-speaker turns and adjust the
 mean clip duration by default, then export the result in one invocation:
 
 ```bash
-bash scripts/diarize/sortformer.sh \
+bash scripts/s3-diarize/sortformer.sh \
   --input-file .data/recording.wav --output-dir .data/turns \
   --merge --max-gap-s 1.0 --silence-threshold-dbfs -40 \
   --min-duration-s 1 --max-duration-s 15
@@ -233,7 +233,7 @@ the available same-speaker gaps.
 The example writes processed `segments.json`, `segments.merged.json`, merged clips
 that pass the duration filter, and three stage plot sets under
 `.data/turns/recording/plot/`. Omit `--output-dir` to use
-the normal `.data/diarize/<model>/<family>/` default. `segments.raw.json` retains
+the normal `.data/s3-diarize/<model>/<family>/` default. `segments.raw.json` retains
 the original backend turns before merging and duration filtering. The processed
 manifest includes the merge audit, statistics, and mean-adjustment attempts.
 Merge settings are part of the cached request: changing merge or mean-adjustment
@@ -309,27 +309,27 @@ See [agent_verifier.md](agent_verifier.md) for defaults and artifacts.
 
 ```bash
 # Raw generation (unparsed text + metadata sidecar)
-bash scripts/agent/gemini.sh   --input-dir .data/clips --prompt-file prompts/vi-prompt-alam.txt --temperature 0.2
-bash scripts/agent/endpoint.sh --input-dir .data/clips --endpoint http://localhost:8000/v1/chat/completions --model google/gemma-4-E2B-it --prompt-file p.txt
-bash scripts/agent/hf.sh       --input-dir .data/clips --model-id google/gemma-4-E2B-it --prompt-file p.txt
+bash scripts/s4-agent/gemini.sh   --input-dir .data/clips --prompt-file prompts/vi-prompt-alam.txt --temperature 0.2
+bash scripts/s4-agent/endpoint.sh --input-dir .data/clips --endpoint http://localhost:8000/v1/chat/completions --model google/gemma-4-E2B-it --prompt-file p.txt
+bash scripts/s4-agent/hf.sh       --input-dir .data/clips --model-id google/gemma-4-E2B-it --prompt-file p.txt
 
 # Hardened verifiers (default prompt: prompts/acoustic_defect-3.txt)
-bash scripts/agent/verifier/gemini.sh   --input-dir .data/clips --model gemini-3.8-flash --reasoning-effort medium
-bash scripts/agent/verifier/gemini.sh   --input-file clip.wav --inference-mode standard      # skip Batch API
-bash scripts/agent/verifier/hf.sh       --input-dir .data/clips --model-id google/gemma-4-E2B-it --max-new-tokens 1024
-bash scripts/agent/verifier/vllm.sh     --input-dir .data/clips --model google/gemma-4-E2B-it
-bash scripts/agent/verifier/unsloth.sh  --input-dir .data/clips --model unsloth/gemma-4-12b-it-GGUF --gguf-variant UD-Q6_K_XL
-bash scripts/agent/verifier/endpoint.sh --input-dir .data/clips --endpoint http://localhost:8000/v1/chat/completions
-bash scripts/agent/verifier/moss.sh     --input-dir .data/clips
-bash scripts/agent/verifier/minicpm.sh  --input-dir .data/clips
-bash scripts/agent/verifier/kimi.sh     --input-dir .data/clips
-bash scripts/agent/verifier/vibevoice.sh --input-dir .data/clips
+bash scripts/s4-agent/verifier/gemini.sh   --input-dir .data/clips --model gemini-3.8-flash --reasoning-effort medium
+bash scripts/s4-agent/verifier/gemini.sh   --input-file clip.wav --inference-mode standard      # skip Batch API
+bash scripts/s4-agent/verifier/hf.sh       --input-dir .data/clips --model-id google/gemma-4-E2B-it --max-new-tokens 1024
+bash scripts/s4-agent/verifier/vllm.sh     --input-dir .data/clips --model google/gemma-4-E2B-it
+bash scripts/s4-agent/verifier/unsloth.sh  --input-dir .data/clips --model unsloth/gemma-4-12b-it-GGUF --gguf-variant UD-Q6_K_XL
+bash scripts/s4-agent/verifier/endpoint.sh --input-dir .data/clips --endpoint http://localhost:8000/v1/chat/completions
+bash scripts/s4-agent/verifier/moss.sh     --input-dir .data/clips
+bash scripts/s4-agent/verifier/minicpm.sh  --input-dir .data/clips
+bash scripts/s4-agent/verifier/kimi.sh     --input-dir .data/clips
+bash scripts/s4-agent/verifier/vibevoice.sh --input-dir .data/clips
 
 # Offline analysis and comparison (no model calls)
-bash scripts/agent/verifier/analysis.sh --input-dir .data/agent/verifier/gemini/gemini-3-8-flash/low
-bash scripts/agent/verifier/compare.sh  --reference-dir .data/agent/verifier/gemini/gemini-3-8-flash/medium \
-                                        --candidates-dir .data/agent/verifier/gemini/gemini-3-8-flash/low
-bash scripts/agent/verifier/evaluate_verifier.sh --predictions-dir .data/verdicts/vllm --reference-dir .data/verdicts/gemini --output-file .data/eval.json
+bash scripts/s4-agent/verifier/analysis.sh --input-dir .data/s4-agent/verifier/gemini/gemini-3-8-flash/low
+bash scripts/s4-agent/verifier/compare.sh  --reference-dir .data/s4-agent/verifier/gemini/gemini-3-8-flash/medium \
+                                        --candidates-dir .data/s4-agent/verifier/gemini/gemini-3-8-flash/low
+bash scripts/s4-agent/verifier/evaluate_verifier.sh --predictions-dir .data/verdicts/vllm --reference-dir .data/verdicts/gemini --output-file .data/eval.json
 ```
 
 ### Mix and evaluate
@@ -341,7 +341,7 @@ bash scripts/evaluate/diarization.sh --input-manifest pred/segments.json --refer
 bash scripts/evaluate/plot_diarization.sh --input-manifest pred/segments.json --reference-manifest ref/segments.json --output-file .data/gantt.png
 # writes .data/gantt.png, .data/gantt_duration.png, .data/gantt_cutoff.png
 # aggregate every segments.json below a family (or model root):
-bash scripts/evaluate/plot_diarization.sh --input-dir .data/diarize/sortformer/<family> --overwrite
+bash scripts/evaluate/plot_diarization.sh --input-dir .data/s3-diarize/sortformer/<family> --overwrite
 # defaults to <input-dir>/plot/; use --output-dir to choose another folder
 bash scripts/evaluate/plot_metrics.sh --metrics-file a.json --metrics-file b.json --output-file .data/metrics.png
 ```
@@ -355,11 +355,11 @@ is the pooled segment-duration histogram (with count, mean, and median), and
 each minimum-duration cutoff. Point `--input-dir` at one family for that family,
 or at a model root to combine all its families.
 
-### Dataset
+### Dataset export (`s5-export`)
 
 ```bash
-bash scripts/dataset/index.sh  --input-dir .data/audio --output-manifest .data/manifest.json --tag raw
-bash scripts/dataset/filter.sh --input-manifest .data/manifest.json --output-manifest .data/filtered.json --min-duration 1.0 --max-duration 15.0
-bash scripts/dataset/export.sh --input-manifest .data/filtered.json --output-file .data/dataset.jsonl --format jsonl
-bash scripts/dataset/bundle.sh --input-manifest .data/filtered.json --output-file .data/bundle.zip
+bash scripts/s5-export/index.sh  --input-dir .data/audio --output-manifest .data/manifest.json --tag raw
+bash scripts/s5-export/filter.sh --input-manifest .data/manifest.json --output-manifest .data/filtered.json --min-duration 1.0 --max-duration 15.0
+bash scripts/s5-export/export.sh --input-manifest .data/filtered.json --output-file .data/dataset.jsonl --format jsonl
+bash scripts/s5-export/bundle.sh --input-manifest .data/filtered.json --output-file .data/bundle.zip
 ```

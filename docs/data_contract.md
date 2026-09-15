@@ -7,8 +7,8 @@ manifests. Every JSON artifact is written atomically (temp file + rename).
 
 ## Crawl manifest (`download/crawl`)
 
-The default destination is `.data/download/<collection>/crawl.json`. Downloaded
-crawl audio is grouped under `.data/download/<resolved-source-name>/` (or under
+The default destination is `.data/s1-download/<collection>/crawl.json`. Downloaded
+crawl audio is grouped under `.data/s1-download/<resolved-source-name>/` (or under
 `<output-dir>/<resolved-source-name>/` when `--output-dir` is supplied). `videos`
 contains accepted unique YouTube videos in source-priority order; duplicate
 occurrences are represented by multiple objects in a video's `sources` array.
@@ -161,7 +161,7 @@ interrupted write is recognizable and retried.
 - When diarization receives `--input-dir`, it groups the completed manifests by
   inferred audio family and writes the same aggregate stage sets under that
   family's `plot/` directory. With the default output layout this is
-  `.data/diarize/<model>/<family>/plot/`; with an explicit `--output-dir`, it is
+  `.data/s3-diarize/<model>/<family>/plot/`; with an explicit `--output-dir`, it is
   `<output-dir>/<family>/plot/`.
 - `audio/export_segments.py` re-renders any manifest with this shape and rewrites
   it (with fresh `clip*` fields) in the chosen output directory. It also writes
@@ -236,7 +236,7 @@ pass `false` to disable it.
 
 Reference clips are copied to `clips/clip_NN.wav`; `--add` appends, `--overwrite` replaces.
 
-## 5. Agent response pair (`scripts/agent/*`)
+## 5. Agent response pair (`scripts/s4-agent/*`)
 
 Each input yields `<stem>_<backend>.txt` (exact model text, may be empty) and
 `<stem>_<backend>.json` (source identity, prompts, generation settings, provider
@@ -245,16 +245,16 @@ byte count and SHA-256). The text is written first. A cached pair is reused only
 when both files exist and metadata + text digest match. `.json` is reserved for
 metadata, so `--output-file result.json` is rejected.
 
-Defaults: `.data/agent/<backend>/<family>/`;
-Gemini: `.data/agent/gemini/<model>/<reasoning-effort>/<family>/`.
+Defaults: `.data/s4-agent/<backend>/<family>/`;
+Gemini: `.data/s4-agent/gemini/<model>/<reasoning-effort>/<family>/`.
 Gemini Batch state lives under the variant's `work/batch_jobs/` for resume.
 Runtime progress is written to stderr, including per-item latency and response
 size. Provider usage and cost remain in the sidecar when available; the final
 stderr `TOTAL_COST` line summarizes the invocation's cumulative estimated cost.
 
-## 6. Verifier verdict (`scripts/agent/verifier/*`)
+## 6. Verifier verdict (`scripts/s4-agent/verifier/*`)
 
-Same pair layout under `.data/agent/verifier/…`. The JSON adds `status` and
+Same pair layout under `.data/s4-agent/verifier/…`. The JSON adds `status` and
 either a validated `verdict` or an `error`:
 
 ```json
@@ -313,7 +313,7 @@ latency and token usage when available. The final `TOTAL_COST` line reports the
 whole invocation; it says pricing is unavailable when the backend does not return
 rate information.
 
-Validation profile is selected by the prompt text (`scripts/agent/verifier/_verdicts.py`):
+Validation profile is selected by the prompt text (`scripts/s4-agent/verifier/_verdicts.py`):
 
 | Profile | Selected when prompt equals | Required fields and consistency |
 |---|---|---|
@@ -345,7 +345,7 @@ missing results have a blank `final_verdict` and are never counted as rejects.
 use valid artifacts, while processing rates use all artifacts of that model group. Rerunning
 refreshes `plot/` and deletes PNGs it previously recorded.
 
-## 8. Verifier comparison (`compare.sh` → `.data/agent/verifier/comparisons/<utc>-<hash>/`)
+## 8. Verifier comparison (`compare.sh` → `.data/s4-agent/verifier/comparisons/<utc>-<hash>/`)
 
 | File | Contents |
 |---|---|

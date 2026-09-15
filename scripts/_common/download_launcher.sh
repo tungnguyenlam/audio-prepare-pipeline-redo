@@ -24,6 +24,6 @@ fi
 # artifact root rather than the user's global cache.
 download_root="$(cd "$(dirname "$python_bin")/.." && pwd)"
 export PATH="$download_root/bin:$PATH"
-export DENO_DIR="${DENO_DIR:-$repo_root/.data/download/deno}"
+export DENO_DIR="${DENO_DIR:-$repo_root/.data/s1-download/deno}"
 
 exec "$python_bin" "$script" "$@"

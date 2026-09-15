@@ -7,7 +7,7 @@ cd "$REPO_ROOT"
 VENV_DIR="$REPO_ROOT/.venvs/download"
 RUNTIME_DIR="$VENV_DIR/.runtime"
 BIN_DIR="$VENV_DIR/bin"
-DENO_CACHE_DIR="$REPO_ROOT/.data/download/deno"
+DENO_CACHE_DIR="$REPO_ROOT/.data/s1-download/deno"
 PY="$VENV_DIR/bin/python"
 
 usage() {

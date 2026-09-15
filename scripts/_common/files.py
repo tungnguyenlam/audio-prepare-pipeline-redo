@@ -180,6 +180,16 @@ def family_audio_name(video_id: str, title: str, sample_rate: int | None = None,
     return f"{fam}{rate_suffix}{ext}"
 
 
+# Stage/output directory names that must never be mistaken for an audio family.
+# `s1-download` is exactly 11 characters and would otherwise match the YouTube-id
+# pattern below. Legacy names stay so pre-rename `.data/` trees remain valid inputs.
+_NON_FAMILY_DIRS = frozenset({
+    'out', 'work', 'verify', 'verifier',
+    's1-download', 's2-separate', 's3-diarize', 's4-agent', 's5-export',
+    'download', 'separate', 'diarize', 'agent', 'dataset',
+})
+
+
 def infer_audio_family(path: Path) -> str:
     """Infer the audio family identifier from an audio or manifest path."""
     json_path = path if path.suffix.lower() == '.json' else path.with_suffix('.json')
@@ -204,7 +214,7 @@ def infer_audio_family(path: Path) -> str:
 
     stem = path.stem
     if stem in {'segments', 'output', 'source', 'vocals', 'accompaniment', 'mixture'}:
-        if path.parent.name and path.parent.name not in {'out', 'work', 'download', 'separate', 'diarize', 'verify'}:
+        if path.parent.name and path.parent.name not in _NON_FAMILY_DIRS:
             return path.parent.name
 
     # Check for <id>_<title10> pattern (e.g. 11-char YT id, or id_title10-<sample_rate>)
@@ -216,7 +226,7 @@ def infer_audio_family(path: Path) -> str:
         return f"{m.group(1)}_{m.group(2)}"
 
     # Check for parent directory family pattern (e.g. 11-char YT id, or id_title10)
-    if path.parent.name and path.parent.name not in {'out', 'work', 'download', 'separate', 'diarize', 'verify', 'audio', '.'}:
+    if path.parent.name and path.parent.name not in _NON_FAMILY_DIRS | {'audio', '.'}:
         m_parent = re.match(r'^([a-zA-Z0-9_-]{11})(?:_([a-zA-Z0-9-]{1,10}))?(?:_.*)?$', path.parent.name)
         if m_parent:
             return f"{m_parent.group(1)}_{m_parent.group(2)}" if m_parent.group(2) else m_parent.group(1)

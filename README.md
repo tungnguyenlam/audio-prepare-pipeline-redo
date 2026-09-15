@@ -12,15 +12,15 @@ state — callers compose commands through `.data/` paths and JSON manifests.
 
 ```bash
 ./envs/setup_worker_envs.sh download                   # YouTube env (.venvs/download)
-bash scripts/download/youtube.sh --url 'https://www.youtube.com/watch?v=VIDEO'
+bash scripts/s1-download/youtube.sh --url 'https://www.youtube.com/watch?v=VIDEO'
 ./envs/setup_worker_envs.sh audio                       # lightweight downstream audio env
-bash scripts/audio/info.sh --input-file .data/download/<family>/<file>.wav
+bash scripts/audio/info.sh --input-file .data/s1-download/<family>/<file>.wav
 ```
 
 The download target keeps the current `yt-dlp` (including its default EJS
 solver) and project-local JavaScript runtimes separate from the downstream
 audio tools. It installs Deno, Node/npm, Bun, and QuickJS under
-`.venvs/download`; runtime caches stay under `.data/download/`.
+`.venvs/download`; runtime caches stay under `.data/s1-download/`.
 
 Model environments (Demucs/RoFormer, Pyannote, Sortformer, 3D-Speaker, DiariZen,
 verifiers) are provisioned per target with the same script; see
@@ -30,16 +30,16 @@ verifiers) are provisioned per target with the same script; see
 
 | Group | Commands |
 |---|---|
-| `scripts/download/` | `youtube`, `playlist`, `channel`, multi-source `crawl` |
-| `scripts/separate/` | `htdemucs`, `htdemucs_ft`, `bs_roformer`, `mel_roformer`, `mvsep_mdx23` |
-| `scripts/diarize/` | `sortformer`, `pyannote_community1`, `pyannote_31`, `clustering`, `threed_speaker`, `diarizen` |
+| `scripts/s1-download/` | `youtube`, `playlist`, `channel`, multi-source `crawl` |
+| `scripts/s2-separate/` | `htdemucs`, `htdemucs_ft`, `bs_roformer`, `mel_roformer`, `mvsep_mdx23` |
+| `scripts/s3-diarize/` | `sortformer`, `pyannote_community1`, `pyannote_31`, `clustering`, `threed_speaker`, `diarizen` |
 | `scripts/audio/` | `info`, `convert`, `cut`, `export_segments`, `compare_waveforms`, `compare_spectrograms` |
 | `scripts/speaker/` | `enroll`, `score`, `filter`, `purity` |
 | `scripts/purity/` | `consensus`, `cleanup`, `merge`, `collar`, `snap`, `align`, `segment` |
-| `scripts/agent/` | raw audio-LLM generation: `gemini`, `endpoint`, `hf` |
-| `scripts/agent/verifier/` | pass/reject verifiers `gemini`, `hf`, `endpoint`, `unsloth`, `vllm`, `moss`, `minicpm`, `kimi`, `vibevoice`; offline `analysis`, `compare`, `evaluate_verifier`, `scaffold_experiment` |
+| `scripts/s4-agent/` | raw audio-LLM generation: `gemini`, `endpoint`, `hf` |
+| `scripts/s4-agent/verifier/` | pass/reject verifiers `gemini`, `hf`, `endpoint`, `unsloth`, `vllm`, `moss`, `minicpm`, `kimi`, `vibevoice`; offline `analysis`, `compare`, `evaluate_verifier`, `scaffold_experiment` |
 | `scripts/mix/`, `scripts/evaluate/` | `mix`; `separation`, `diarization`, `plot_diarization`, `plot_metrics` |
-| `scripts/dataset/` | `index`, `filter`, `export`, `bundle` |
+| `scripts/s5-export/` | `index`, `filter`, `export`, `bundle` |
 | `scripts/sync/` | rsync code/data to the model server and auxiliary hosts |
 
 Every `.py` has a same-name `.sh` launcher that selects the right virtualenv.
@@ -47,14 +47,14 @@ Every `.py` has a same-name `.sh` launcher that selects the right virtualenv.
 ## Typical flow
 
 ```bash
-bash scripts/download/youtube.sh     --url 'https://www.youtube.com/watch?v=VIDEO' --output-dir .data/dl
-bash scripts/separate/htdemucs_ft.sh --input-dir .data/dl --output-dir .data/sep
-bash scripts/diarize/sortformer.sh   --input-dir .data/sep --output-dir .data/turns      # <stem>/segments.json + clips
+bash scripts/s1-download/youtube.sh     --url 'https://www.youtube.com/watch?v=VIDEO' --output-dir .data/dl
+bash scripts/s2-separate/htdemucs_ft.sh --input-dir .data/dl --output-dir .data/sep
+bash scripts/s3-diarize/sortformer.sh   --input-dir .data/sep --output-dir .data/turns      # <stem>/segments.json + clips
 bash scripts/purity/cleanup.sh       --input-manifest .data/turns/<stem>/segments.json --output-manifest .data/p/cleaned.json
 bash scripts/purity/collar.sh        --input-manifest .data/p/cleaned.json --output-manifest .data/p/collared.json
 bash scripts/audio/export_segments.sh --input-manifest .data/p/collared.json --output-dir .data/clips
-bash scripts/agent/verifier/gemini.sh --input-dir .data/clips                              # verdict JSON per clip
-bash scripts/agent/verifier/analysis.sh --input-dir .data/agent/verifier/gemini/gemini-3-8-flash/medium
+bash scripts/s4-agent/verifier/gemini.sh --input-dir .data/clips                              # verdict JSON per clip
+bash scripts/s4-agent/verifier/analysis.sh --input-dir .data/s4-agent/verifier/gemini/gemini-3-8-flash/medium
 ```
 
 ## Conventions
