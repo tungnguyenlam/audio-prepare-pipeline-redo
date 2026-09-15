@@ -25,9 +25,11 @@ environment variables; the shared parser logs parsed options.
   modified in place.
 - Commands consuming a segment manifest verify `source.sha256`; an explicit
   `--input-file` override must preserve the original timeline.
-- `--concurrency` and `--batch-size` default to 1. Progress/configuration goes to
-  stderr, successful artifact paths go to stdout, and any item failure makes the
-  command exit nonzero after remaining items finish.
+- `--concurrency` and `--batch-size` default to 1. Download commands serialize
+  YouTube HTTP regardless of `--concurrency` and abort a run that stays
+  rate-limited. Progress/configuration goes to stderr, successful artifact paths
+  go to stdout, and any item failure makes the command exit nonzero after
+  remaining items finish.
 - Run any launcher with `-h` for its authoritative flags and defaults. JSON schemas
   and artifact layouts are defined in [data_contract.md](data_contract.md).
 
@@ -96,8 +98,22 @@ bash scripts/download/youtube.sh  --url-file urls.txt                           
 bash scripts/download/playlist.sh --url 'https://www.youtube.com/playlist?list=PL' --limit 5
 bash scripts/download/channel.sh  --url 'https://www.youtube.com/@CHANNEL/videos' --limit 10
 bash scripts/download/crawl.sh --source-file scripts/download/sources/vi_en_codeswitch.json --metadata-only
-bash scripts/download/crawl.sh --source-file scripts/download/sources/vi_en_codeswitch.json --concurrency 2
+bash scripts/download/crawl.sh --source-file scripts/download/sources/vi_en_codeswitch.json
 ```
+
+Download commands pace YouTube by default: 1.5s between metadata requests,
+5–15s of jitter before each media download, a 2M download cap, and serialized
+yt-dlp access even when `--concurrency` is raised (concurrency only parallelizes
+convert/publish). 429 and bot-check errors cool down for 5–40 minutes and retry
+the item; three consecutive items that stay throttled abort the run so a block
+is not extended. Cached WAVs are skipped, so rerunning the same command resumes.
+Keep `--concurrency 1` for a large crawl. Prefer `--metadata-only` on `crawl`
+first, then download in a later session, and use `--max-items` / source
+`max_items` to spread work. `--cookie-file` is optional; a personal account can
+be banned under bulk crawling, so use a throwaway login only if a bot-check
+forces it. Override pacing with `--sleep-requests`, `--sleep-interval`,
+`--max-sleep-interval`, `--rate-limit 0`, `--throttle-retries`, and
+`--throttle-abort-after`.
 
 `crawl` accepts a JSON collection of named playlist URLs, channel tabs, and yt-dlp
 search targets. It evaluates global and source-specific title regexes, duration

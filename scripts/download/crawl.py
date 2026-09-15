@@ -12,7 +12,7 @@ from _common.files import (FileContractError, LoggingArgumentParser, ROOT,
                            positive_int, progress, read_json, safe_name,
                            write_json)
 from playlist import entry_url, list_entries
-from youtube import add_download_arguments, download
+from youtube import RateLimitAbort, add_download_arguments, download, raise_if_rate_limited
 
 
 def arguments() -> LoggingArgumentParser:
@@ -150,6 +150,7 @@ def _download_candidates(candidates: list[dict], args) -> int:
     lock = threading.Lock()
 
     def process(index: int, candidate: dict) -> int:
+        raise_if_rate_limited()
         try:
             with lock:
                 progress('ITEM_START', candidate['title'], current=index, total=total)
@@ -161,6 +162,11 @@ def _download_candidates(candidates: list[dict], args) -> int:
                 progress('ITEM_DONE', dest.name, current=index, total=total)
                 print(dest, flush=True)
             return 0
+        except RateLimitAbort as exc:
+            candidate['download'] = {'status': 'failed', 'error': str(exc)}
+            with lock:
+                progress('RATE_LIMITED', str(exc), current=index, total=total)
+            raise
         except Exception as exc:
             candidate['download'] = {'status': 'failed', 'error': str(exc)}
             with lock:
@@ -173,10 +179,19 @@ def _download_candidates(candidates: list[dict], args) -> int:
     def process_batch(items: list[tuple[int, dict]]) -> int:
         return sum(process(index, candidate) for index, candidate in items)
 
-    if args.concurrency > 1 and len(batches) > 1:
-        with ThreadPoolExecutor(max_workers=min(args.concurrency, len(batches))) as pool:
-            return sum(pool.map(process_batch, batches))
-    return sum(process_batch(items) for items in batches)
+    try:
+        if args.concurrency > 1 and len(batches) > 1:
+            with ThreadPoolExecutor(max_workers=min(args.concurrency, len(batches))) as pool:
+                return sum(pool.map(process_batch, batches))
+        return sum(process_batch(items) for items in batches)
+    except RateLimitAbort:
+        for candidate in candidates:
+            if candidate['download'].get('status') == 'pending':
+                candidate['download'] = {
+                    'status': 'failed',
+                    'error': 'YouTube rate limiting aborted this run; remaining items were skipped',
+                }
+        raise
 
 
 def main() -> int:
@@ -200,6 +215,7 @@ def main() -> int:
         discovery_failed = 0
         duplicate_occurrences = 0
         truncated = False
+        aborted: RateLimitAbort | None = None
         for source in sources:
             if args.max_items is not None and len(accepted) >= args.max_items:
                 truncated = True
@@ -208,11 +224,18 @@ def main() -> int:
             progress('SOURCE', f'{source["name"]}: {source["url"]}')
             try:
                 target, raw_count, entries = list_entries(
-                    source['url'], cookie_file=args.cookie_file, limit=per_source_limit)
+                    source['url'], args, limit=per_source_limit)
                 source_result = {'name': source['name'], 'url': source['url'],
                                  'resolved_url': target, 'listed': raw_count,
                                  'available': len(entries), 'status': 'complete'}
                 source_results.append(source_result)
+            except RateLimitAbort as exc:
+                discovery_failed += 1
+                source_results.append({'name': source['name'], 'url': source['url'],
+                                       'status': 'failed', 'error': str(exc)})
+                progress('RATE_LIMITED', f'{source["name"]}: {exc}')
+                aborted = exc
+                break
             except Exception as exc:
                 discovery_failed += 1
                 source_results.append({'name': source['name'], 'url': source['url'],
@@ -272,15 +295,21 @@ def main() -> int:
         write_json(manifest_path, manifest)
 
         download_failed = 0
-        if not args.metadata_only and candidates:
-            download_failed = _download_candidates(candidates, args)
+        if aborted is None and not args.metadata_only and candidates:
+            try:
+                download_failed = _download_candidates(candidates, args)
+            except RateLimitAbort as exc:
+                aborted = exc
+                download_failed = sum(
+                    1 for candidate in candidates if candidate['download'].get('status') == 'failed')
+                progress('RATE_LIMITED', str(exc))
             manifest['summary']['download_failures'] = download_failed
             write_json(manifest_path, manifest)
         print(manifest_path)
         progress('CRAWL_COMPLETE',
                  f'{len(candidates)} accepted; {len(rejected)} rejected occurrences; '
                  f'{discovery_failed} source failures; {download_failed} download failures')
-        return int(discovery_failed > 0 or download_failed > 0)
+        return int(discovery_failed > 0 or download_failed > 0 or aborted is not None)
     except (FileContractError, ValueError) as exc:
         progress('ERROR', str(exc))
         return 2

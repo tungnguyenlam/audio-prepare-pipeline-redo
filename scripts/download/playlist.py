@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import contextlib
 import sys
+import threading
 import urllib.parse
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _common.files import progress
-from youtube import arguments, download
+from youtube import (RateLimitAbort, arguments, download, raise_if_rate_limited,
+                     with_throttle_retry, ydl_options, youtube_session)
 
 
 def normalize_playlist_url(url: str) -> str:
@@ -22,20 +24,26 @@ def normalize_playlist_url(url: str) -> str:
     return url
 
 
-def list_entries(url: str, *, cookie_file: Path | None = None,
-                 limit: int | None = None) -> tuple[str, int, list[dict]]:
+def list_entries(url: str, args, *, limit: int | None = None) -> tuple[str, int, list[dict]]:
     """Resolve a playlist-like yt-dlp target without downloading its media."""
     from yt_dlp import YoutubeDL
-    options = {'extract_flat': 'in_playlist', 'quiet': True, 'ignoreerrors': True}
-    if cookie_file:
-        options['cookiefile'] = str(cookie_file.resolve())
-    if limit is not None:
-        options['playlistend'] = limit
     target_url = normalize_playlist_url(url)
-    with contextlib.redirect_stdout(sys.stderr), YoutubeDL(options) as ydl:
-        listing = ydl.extract_info(target_url, download=False)
-    if not listing or 'entries' not in listing:
-        raise ValueError('URL did not resolve to a playlist, channel tab, or search')
+
+    def _list():
+        options = ydl_options(args, extra={
+            'extract_flat': 'in_playlist',
+            'ignoreerrors': True,
+            'noplaylist': False,
+        })
+        if limit is not None:
+            options['playlistend'] = limit
+        with youtube_session(args), contextlib.redirect_stdout(sys.stderr), YoutubeDL(options) as ydl:
+            listing = ydl.extract_info(target_url, download=False)
+        if not listing or 'entries' not in listing:
+            raise ValueError('URL did not resolve to a playlist, channel tab, or search')
+        return listing
+
+    listing = with_throttle_retry(args, _list, label=target_url)
     raw_entries = list(listing['entries'])
     entries = [entry for entry in raw_entries if entry is not None]
     if limit is not None:
@@ -54,8 +62,12 @@ def entry_url(entry: dict) -> str:
 
 def main(description: str = __doc__) -> int:
     args = arguments(description, bulk=True).parse_args()
-    target_url, raw_count, entries = list_entries(
-        args.url, cookie_file=args.cookie_file, limit=args.limit)
+    try:
+        target_url, raw_count, entries = list_entries(
+            args.url, args, limit=args.limit)
+    except RateLimitAbort as exc:
+        progress('RATE_LIMITED', f'{exc}')
+        return 1
     if target_url != args.url:
         progress('INFER', f'Inferred playlist URL: {target_url}')
     total = len(entries)
@@ -65,10 +77,13 @@ def main(description: str = __doc__) -> int:
         progress('PLAYLIST', f'Found {total} items to process')
     indexed_entries = list(enumerate(entries, 1))
     batches = [indexed_entries[i:i + args.batch_size] for i in range(0, len(indexed_entries), args.batch_size)]
-    import threading
     lock = threading.Lock()
+    succeeded = 0
+    failed = 0
 
     def _process_item(idx, entry):
+        nonlocal succeeded
+        raise_if_rate_limited()
         if not entry:
             raise ValueError('Unavailable playlist entry')
         title = entry.get('title') or entry.get('id') or 'video'
@@ -78,32 +93,50 @@ def main(description: str = __doc__) -> int:
         with contextlib.redirect_stdout(sys.stderr):
             dest = download(url, args, source_info=entry)
         with lock:
+            succeeded += 1
             progress('ITEM_DONE', f'{dest.name}', current=idx, total=total)
             print(dest, flush=True)
 
     def _process_batch(batch_items):
+        nonlocal failed
         batch_failed = 0
         for idx, entry in batch_items:
             try:
                 _process_item(idx, entry)
+            except RateLimitAbort as exc:
+                batch_failed += 1
+                with lock:
+                    failed += 1
+                    progress('RATE_LIMITED', f'{exc}', current=idx, total=total)
+                raise
             except Exception as exc:
                 batch_failed += 1
                 with lock:
+                    failed += 1
                     progress('ITEM_FAIL', f'{exc}', current=idx, total=total)
         return batch_failed
 
-    failed = 0
-    if args.concurrency > 1 and len(batches) > 1:
-        from concurrent.futures import ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=min(args.concurrency, len(batches))) as pool:
-            for b_failed in pool.map(_process_batch, batches):
-                failed += b_failed
-    else:
-        for b in batches:
-            failed += _process_batch(b)
+    aborted = False
+    try:
+        if args.concurrency > 1 and len(batches) > 1:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=min(args.concurrency, len(batches))) as pool:
+                for _b_failed in pool.map(_process_batch, batches):
+                    pass
+        else:
+            for b in batches:
+                _process_batch(b)
+    except RateLimitAbort as exc:
+        aborted = True
+        progress('RATE_LIMITED', f'{exc}')
 
-    progress('PLAYLIST_COMPLETE', f'{total - failed} succeeded; {failed} failed')
-    return int(failed > 0)
+    skipped = total - succeeded - failed
+    if aborted:
+        progress('PLAYLIST_COMPLETE',
+                 f'{succeeded} succeeded; {failed} failed; {skipped} skipped after rate limit')
+    else:
+        progress('PLAYLIST_COMPLETE', f'{succeeded} succeeded; {failed} failed')
+    return int(failed > 0 or aborted)
 
 
 if __name__ == '__main__':
