@@ -1,87 +1,76 @@
-# AGENTS.md
+# Coding-agent instructions
 
-Instructions for coding agents working in this repository.
+## Non-negotiable rules
 
-## Hard rules
+- Do not write or run tests unless the user explicitly asks.
+- Commit and push after every completed task.
+- Keep every pipeline stage as an independent command. Never add orchestration
+  chaining crawl → separate → diarize → mix.
+- Put downloads, stems, cuts, plots, and other runtime artifacts under `.data/`
+  (gitignored). Never commit media files.
+- Update documentation affected by code changes. Delete or archive stale material
+  in the area being changed, but do not broaden focused work into unrelated docs.
+- Never log, persist, or echo credentials. Because parsed CLI options are logged,
+  secrets must come from environment variables unless explicitly redacted.
 
-- Do not write or run test cases unless the user explicitly instructed.
-- Commit and push changes after finishing each task.
-- Do not add orchestration that chains crawl → separate → diarize → mix. Callers compose the standalone commands.
-- Keep runtime artifacts out of git. Write downloads, stems, cuts, and plots under `.data/` (gitignored). Do not commit `.wav` / `.mp3` / similar media.
-- Update the documentation affected by every code change. Archive stale documents when working in their area, but do not expand an otherwise focused change into an unrelated documentation rewrite. Documentation must accurately reflect the current pipeline, APIs, models, and interfaces.
-- Never log, persist, or echo credentials. The shared argument parser logs parsed options, so secrets should come from environment variables unless the logging path explicitly redacts them.
+## Implementation and completion
 
-## Scope and completion discipline
+- Before editing, inspect the command, adjacent backends, shared helpers, launcher,
+  and documented file contract. Search for an existing inference, transport,
+  model-loading, retry, or artifact path before adding another implementation.
+- Honor the grammatical scope of requests about generic “models”, “backends”, or
+  capabilities: cover every relevant family or explicitly identify exceptions.
+- Keep raw model generation separate from task parsing/validation. Experiments and
+  verifiers must reuse production generation paths and retain unparsed responses.
+- Share a helper only when at least two current commands use the same stable
+  behavior. Keep provider payload construction inside its provider runner.
+- Prefer direct functions and simple data flow. Do not add speculative managers,
+  factories, registries, adapters, services, state layers, or compatibility shims.
+  Simplify root causes; remove dead code and unused dependencies. For behavior-
+  preserving refactors, prefer fewer lines and concepts.
+- Before completion, inspect the final diff, include every intended new file,
+  validate CLI/launcher wiring without invoking paid models, and state validations
+  omitted because tests were not requested.
 
-- Inspect the relevant command, its adjacent backends, shared helpers, launcher, and documented file contract before implementing. Do not declare completion based on the first matching file found.
-- Preserve the grammatical scope of the request. If the user asks about "models", "backends", or a generic capability, inventory the current backend families and either support all relevant families or explicitly state which are unsupported and why. Do not silently implement only one example backend.
-- Before adding a parallel implementation, search for an existing inference, transport, model-loading, file-contract, or retry path that can be reused. Do not copy a production request path into an experimental command merely to avoid a small refactor.
-- Keep raw model generation separate from task-specific parsing and validation. Production verifiers may parse a raw response into a verdict; prompt/format experiments must reuse the same generation path and preserve the unparsed response.
-- A shared helper is justified when at least two current commands use the same behavior. Keep provider-specific payload construction in the provider runner; share only stable artifact, file-contract, and transport behavior.
-- Before reporting completion, inspect the final diff, confirm new files are included, validate CLI/launcher wiring without invoking paid models, and state any validation intentionally omitted by these instructions.
+## Repository
 
-## Engineering ideology
+Python 3.13 standalone commands for preparing speech datasets: YouTube/local
+ingest, stem separation, diarization, target-speaker filtering, purity refinement,
+audio-model verification, evaluation, mixing, and dataset export.
 
-Complexity must justify itself. Existing complexity is not a reason to preserve it.
-
-- Prefer simple, direct implementations over architectural abstraction. Prefer deleting unnecessary code over adding new layers.
-- Do not introduce abstractions for hypothetical future reuse, and avoid speculative extensibility. Before adding a new abstraction, justify it with multiple real current usages.
-- Do not create managers, factories, registries, adapters, wrappers, services, generic frameworks, or extra state layers unless they solve a concrete current problem.
-- Prefer functions and straightforward classes over elaborate design patterns. A small amount of duplication is acceptable when it keeps code easier to understand.
-- Keep modules cohesive, but do not split code into tiny files merely for architectural purity.
-- Keep data flow obvious and traceable. Avoid storing the same state in multiple places; derived state should usually be computed rather than synchronized through effects or duplicated variables.
-- Do not fix complexity-induced bugs by adding more complexity. When debugging, simplify first and fix the root cause.
-- Remove dead code, stale compatibility layers, abandoned experiments, unused dependencies, and unused APIs. Git history is the archive; dead implementations do not need to remain in the active codebase.
-- Optimize primarily for one developer being able to open the code and understand the execution path quickly.
-- Backward compatibility is not automatically valuable for internal or unused APIs.
-- Avoid large test suites for trivial implementation details; test behavior where failure would actually matter (and only when the user asked for tests).
-- For refactors that leave functionality unchanged, prefer `deleted LOC > added LOC`.
-- If two designs satisfy the same requirement, choose the one with fewer concepts, fewer layers, fewer dependencies, and less state.
-
-## What this repo is
-
-A Python 3.13 audio-prepare pipeline: ingest YouTube (or local files), separate stems, diarize, verify speaker purity, evaluate separation and diarization, and prepare speech datasets. Every operation is an independent CLI command under `scripts/`.
-
-## Environment roles
-
-- `tungnl5@VF-TUNGNL5-L` is the primary development machine equipped with an **AMD Radeon RX 9060 XT (16 GB VRAM, ROCm 10.0 / HIP)**.
-- `vsf@vsf-242` (`10.148.21.12`) is the model server for running NVIDIA GPU separation and diarization queues.
-- `loi` (`loinh8@10.148.1.176`) and `anhnct@10.148.21.113` are auxiliary compute nodes.
-- Synchronize source code and runtime data across machines using the dedicated utilities under `scripts/sync/` (`*_server.sh`, `*_loi.sh`, `*_anhnct.sh`). Keep credentials and runtime artifacts machine-local.
-
-## Layout
-
-| Path | Role |
+| Path | Purpose |
 |---|---|
-| `scripts/download/` | YouTube single video, playlist, and channel download commands |
-| `scripts/separate/` | Stem separation commands and launchers (`htdemucs`, `bs_roformer`, `mel_roformer`, `mvsep_mdx23`) |
-| `scripts/diarize/` | Speaker diarization commands and launchers (`sortformer`, `pyannote`, `clustering`, `threed_speaker`, `diarizen`) |
-| `scripts/speaker/` | Target speaker enrollment, turn scoring, threshold filtering, and candidate purity verification |
-| `scripts/purity/` | Purity refinement pipeline stages (`consensus`, `cleanup`, `collar`, `snap`, `align`, `segment`) |
-| `scripts/agent/` | Free-form audio-model behavior development with raw response artifacts; hardened behaviors live in subfolders |
-| `scripts/agent/verifier/` | Candidate audio verifiers that harden shared agent generation into validated pass/reject verdicts |
-| `scripts/audio/` | Core audio utilities (`info`, `convert`, `cut`, `export_segments`, `compare_waveforms`, `compare_spectrograms`) |
-| `scripts/mix/` | Calibrated speech + music mixing with controlled SMR |
-| `scripts/evaluate/` | Separation SI-SDR metrics, diarization DER metrics, Gantt timeline and comparison plots |
-| `scripts/dataset/` | File-based directory indexing, manifest filtering, JSONL/CSV export, and ZIP bundling |
-| `scripts/_common/` | Shared private file and segment helpers (`files.py`, `segments.py`) |
-| `scripts/sync/` | Multi-machine synchronization utilities |
-| `envs/` | Requirements files and provisioning scripts, one virtualenv per model family |
-| `prompts/` | Verifier and free-form prompts (`acoustic_defect-3.txt` is the verifier default) |
-| `docs/` | All documentation: setup/cookbook, CLI and data contracts, agent/verifier guide, hardware notes, experiment history (index in `docs/README.md`) |
+| `scripts/download/`, `audio/`, `mix/` | ingest and deterministic audio operations |
+| `scripts/separate/` | HTDemucs, BS/Mel-RoFormer, MVSEP-MDX23 |
+| `scripts/diarize/` | Sortformer, Pyannote, clustering, 3D-Speaker, DiariZen |
+| `scripts/speaker/`, `purity/` | enrollment, scoring, filtering, boundary refinement |
+| `scripts/agent/` | free-form raw audio-model generation |
+| `scripts/agent/verifier/` | validated pass/reject behaviors using shared generation |
+| `scripts/evaluate/`, `dataset/` | metrics, plots, indexing, filtering, export, bundles |
+| `scripts/_common/` | private shared file/segment behavior |
+| `scripts/sync/` | code/data synchronization between machines |
+| `envs/`, `prompts/`, `docs/` | environments, prompts, focused documentation |
 
-## CLI & File Conventions
+## CLI and artifact contracts
 
-- Each command is standalone, accepts paths and flags, and writes file artifacts consumed downstream.
-- `--input-file` takes precedence over `--input-dir`.
-- For single-output operations, `--output-file` is the exact destination.
-- Audio-producing commands write sibling `.json` metadata sidecars (`recording.wav` → `recording.json`).
-- Diarization commands write `<stem>/segments.json` plus turn clips.
-- Commands log progress to stderr and emit successful output paths to stdout.
-- Every command has a same-name bash launcher (`.sh`) that selects its Python environment (see `docs/commands.md`) and forwards arguments unchanged.
+- Commands accept paths/flags and communicate through files; callers compose them.
+- `--input-file` takes precedence over `--input-dir`; `--output-file` is exact.
+- Audio commands write sibling JSON sidecars. Diarizers write
+  `<stem>/segments.json` plus clips.
+- Progress goes to stderr and successful artifact paths to stdout.
+- Every public Python command has a same-name Bash launcher selecting its virtual
+  environment and forwarding arguments unchanged. See `docs/commands.md`.
 
-## Out of scope unless asked
+## Machines
 
-- Adding tests (there is no `tests/` directory; do not create one unasked).
-- Installing the project as a package, new orchestration entrypoints, or CI.
-- Committing credentials, cookies, or downloaded media.
+- `tungnl5@VF-TUNGNL5-L`: primary AMD Radeon RX 9060 XT development host
+  (16 GB VRAM, ROCm 10.0/HIP).
+- `vsf@vsf-242` (`10.148.21.12`): NVIDIA separation/diarization model server.
+- `loi` (`loinh8@10.148.1.176`) and `anhnct@10.148.21.113`: auxiliary nodes.
+- Use `scripts/sync/*_{server,loi,anhnct}.sh`; keep credentials and artifacts local.
+
+## Out of scope unless requested
+
+- Tests or a new `tests/` directory.
+- Package installation, orchestration entrypoints, or CI.
+- Credentials, cookies, downloaded media, or other runtime artifacts in git.

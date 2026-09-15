@@ -1,6 +1,6 @@
 # Environment setup and command cookbook
 
-[← Index](README.md) · [CLI contract](cli_contract.md) · [Data contract](data_contract.md)
+[← Overview](../README.md) · [Data contract](data_contract.md)
 
 ## Invocation
 
@@ -11,6 +11,25 @@ directory, and never install dependencies. `ffmpeg`/`ffprobe` must be on `PATH`.
 `HF_HOME` defaults to `.data/huggingface`. Export secrets (`HF_TOKEN`,
 `GEMINI_API_KEY`, `OPENAI_API_KEY`, `UNSLOTH_API_KEY`, `VLLM_API_KEY`) as
 environment variables; the shared parser logs parsed options.
+
+## CLI and file rules
+
+- `--input-file` takes precedence over `--input-dir`; `--output-file` is an exact
+  destination and requires a single input. Relative paths use the caller's working
+  directory.
+- Downloads are named `<video_id>_<title10>-<sample_rate>.wav`. Other names are
+  sanitized to `[a-zA-Z0-9_-]`; default outputs live under
+  `.data/<operation>[/<model>]/<audio-family>/`.
+- Audio outputs have an atomic sibling `.json` sidecar. Matching outputs with a
+  valid hash are cached; conflicting outputs require `--overwrite`. Audio is never
+  modified in place.
+- Commands consuming a segment manifest verify `source.sha256`; an explicit
+  `--input-file` override must preserve the original timeline.
+- `--concurrency` and `--batch-size` default to 1. Progress/configuration goes to
+  stderr, successful artifact paths go to stdout, and any item failure makes the
+  command exit nonzero after remaining items finish.
+- Run any launcher with `-h` for its authoritative flags and defaults. JSON schemas
+  and artifact layouts are defined in [data_contract.md](data_contract.md).
 
 | Launchers | Default venv (fallbacks) | Override variable |
 |---|---|---|
@@ -67,7 +86,7 @@ uv pip install --python .venvs/audio/bin/python -r envs/requirements-audio.txt
 ## Cookbook
 
 Paths are relative to the current working directory. Omit `--output-dir` to use
-the per-family defaults described in the [CLI contract](cli_contract.md).
+the per-family defaults described above.
 
 ### Download
 
@@ -76,7 +95,25 @@ bash scripts/download/youtube.sh  --url 'https://www.youtube.com/watch?v=VIDEO' 
 bash scripts/download/youtube.sh  --url-file urls.txt                                # one URL/ID per line
 bash scripts/download/playlist.sh --url 'https://www.youtube.com/playlist?list=PL' --limit 5
 bash scripts/download/channel.sh  --url 'https://www.youtube.com/@CHANNEL/videos' --limit 10
+bash scripts/download/crawl.sh --source-file scripts/download/sources/vi_en_codeswitch.json --metadata-only
+bash scripts/download/crawl.sh --source-file scripts/download/sources/vi_en_codeswitch.json --concurrency 2
 ```
+
+`crawl` accepts a JSON collection of named playlist URLs, channel tabs, and yt-dlp
+search targets. It evaluates global and source-specific title regexes, duration
+bounds when the listing exposes duration, and live status; it then deduplicates
+accepted entries by YouTube video ID. The included `vi_en_codeswitch.json` source
+collection covers the Hana's Lexis, IELTS Thùy Anh, Đặng Trần Tùng, Nguyễn Huyền,
+YouPass, and IELTS cùng Daniel sources. Use repeatable `--source '<exact name>'`
+to restrict a run and `--max-items` to cap the accepted collection.
+
+Use `--metadata-only` first to inspect the default
+`.data/download/<collection>/crawl.json`; omit it to download 48 kHz mono WAVs
+through the same cache-aware path as `youtube`, `playlist`, and `channel`.
+Title metadata cannot establish natural code-switch density, single-speaker purity,
+or the absence of short music/effect inserts. Those properties require reviewing
+the crawl manifest and applying the standalone separation, diarization, and audio
+verification commands after download.
 
 ### Audio utilities
 

@@ -24,7 +24,7 @@ verifiers) are provisioned per target with the same script; see
 
 | Group | Commands |
 |---|---|
-| `scripts/download/` | `youtube`, `playlist`, `channel` |
+| `scripts/download/` | `youtube`, `playlist`, `channel`, multi-source `crawl` |
 | `scripts/separate/` | `htdemucs`, `htdemucs_ft`, `bs_roformer`, `mel_roformer`, `mvsep_mdx23` |
 | `scripts/diarize/` | `sortformer`, `pyannote_community1`, `pyannote_31`, `clustering`, `threed_speaker`, `diarizen` |
 | `scripts/audio/` | `info`, `convert`, `cut`, `export_segments`, `compare_waveforms`, `compare_spectrograms` |
@@ -65,6 +65,10 @@ bash scripts/agent/verifier/analysis.sh --input-dir .data/agent/verifier/gemini/
 
 ## Documentation
 
-[docs/README.md](docs/README.md) indexes the setup guide, CLI and data contracts,
-agent/verifier guide, hardware notes, and experiment history. Agent rules for this
-repo are in [AGENTS.md](AGENTS.md).
+- [Setup, CLI rules, and command cookbook](docs/commands.md)
+- [Data and file contracts](docs/data_contract.md)
+- [Agent generation and verifier behavior](docs/agent_verifier.md)
+- [Hardware and provisioning notes](docs/hardware.md)
+- [Experiment decisions](docs/experiments.md)
+
+Coding-agent rules are in [AGENTS.md](AGENTS.md).

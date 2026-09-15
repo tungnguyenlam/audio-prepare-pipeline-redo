@@ -1,6 +1,6 @@
 # Agent generation and hardened verifiers
 
-[← Index](README.md) · [Data contract §5–8](data_contract.md#5-agent-response-pair-scriptsagent) · [Cookbook](commands.md#agent-generation-and-verification)
+[← Overview](../README.md) · [Data contract §5–8](data_contract.md#5-agent-response-pair-scriptsagent) · [Cookbook](commands.md#agent-generation-and-verification)
 
 `scripts/agent/` sends a user-owned prompt plus one audio clip to an audio-capable
 model and preserves the unparsed answer. `scripts/agent/verifier/` reuses the same

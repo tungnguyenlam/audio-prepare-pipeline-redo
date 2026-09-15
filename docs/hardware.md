@@ -1,6 +1,6 @@
 # Hardware notes: AMD ROCm and NVIDIA CUDA
 
-[← Index](README.md) · [Provisioning](commands.md#provisioning)
+[← Overview](../README.md) · [Provisioning](commands.md#provisioning)
 
 ## Machines
 

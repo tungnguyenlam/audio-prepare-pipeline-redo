@@ -1,6 +1,6 @@
 # Experiments and governing decisions
 
-[← Index](README.md)
+[← Overview](../README.md)
 
 Historical record, condensed. The scripts that produced these numbers
 (`audit_tts_data.py`, `build_distillation_dataset.py`, `train_verifier.py`, the

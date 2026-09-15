@@ -22,26 +22,45 @@ def normalize_playlist_url(url: str) -> str:
     return url
 
 
-def main(description: str = __doc__) -> int:
-    args = arguments(description, bulk=True).parse_args()
+def list_entries(url: str, *, cookie_file: Path | None = None,
+                 limit: int | None = None) -> tuple[str, int, list[dict]]:
+    """Resolve a playlist-like yt-dlp target without downloading its media."""
     from yt_dlp import YoutubeDL
     options = {'extract_flat': 'in_playlist', 'quiet': True, 'ignoreerrors': True}
-    if args.cookie_file:
-        options['cookiefile'] = str(args.cookie_file.resolve())
-    if args.limit is not None:
-        options['playlistend'] = args.limit
-    target_url = normalize_playlist_url(args.url)
-    if target_url != args.url:
-        progress('INFER', f'Inferred playlist URL: {target_url}')
+    if cookie_file:
+        options['cookiefile'] = str(cookie_file.resolve())
+    if limit is not None:
+        options['playlistend'] = limit
+    target_url = normalize_playlist_url(url)
     with contextlib.redirect_stdout(sys.stderr), YoutubeDL(options) as ydl:
         listing = ydl.extract_info(target_url, download=False)
-        if not listing or 'entries' not in listing:
-            raise ValueError('URL did not resolve to a playlist or channel')
-        raw_entries = [e for e in listing['entries'] if e is not None]
-    entries = raw_entries[:args.limit] if args.limit is not None else raw_entries
+    if not listing or 'entries' not in listing:
+        raise ValueError('URL did not resolve to a playlist, channel tab, or search')
+    raw_entries = list(listing['entries'])
+    entries = [entry for entry in raw_entries if entry is not None]
+    if limit is not None:
+        entries = entries[:limit]
+    return target_url, len(raw_entries), entries
+
+
+def entry_url(entry: dict) -> str:
+    url = entry.get('webpage_url') or entry.get('url')
+    if url and str(url).startswith('http'):
+        return str(url)
+    if not entry.get('id'):
+        raise ValueError('Playlist entry has neither a URL nor video ID')
+    return 'https://www.youtube.com/watch?v=' + str(entry['id'])
+
+
+def main(description: str = __doc__) -> int:
+    args = arguments(description, bulk=True).parse_args()
+    target_url, raw_count, entries = list_entries(
+        args.url, cookie_file=args.cookie_file, limit=args.limit)
+    if target_url != args.url:
+        progress('INFER', f'Inferred playlist URL: {target_url}')
     total = len(entries)
-    if args.limit is not None and len(raw_entries) != total:
-        progress('PLAYLIST', f'Found {len(raw_entries)} items; limited to first {total}')
+    if args.limit is not None and raw_count != total:
+        progress('PLAYLIST', f'Found {raw_count} items; limited to first {total}')
     else:
         progress('PLAYLIST', f'Found {total} items to process')
     indexed_entries = list(enumerate(entries, 1))
@@ -53,13 +72,11 @@ def main(description: str = __doc__) -> int:
         if not entry:
             raise ValueError('Unavailable playlist entry')
         title = entry.get('title') or entry.get('id') or 'video'
-        url = entry.get('webpage_url') or entry.get('url')
-        if not url or not url.startswith('http'):
-            url = 'https://www.youtube.com/watch?v=' + entry['id']
+        url = entry_url(entry)
         with lock:
             progress('ITEM_START', f'{title}', current=idx, total=total)
         with contextlib.redirect_stdout(sys.stderr):
-            dest = download(url, args)
+            dest = download(url, args, source_info=entry)
         with lock:
             progress('ITEM_DONE', f'{dest.name}', current=idx, total=total)
             print(dest, flush=True)

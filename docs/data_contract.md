@@ -1,9 +1,34 @@
 # Data and file contract
 
-[← Index](README.md) · [CLI contract](cli_contract.md) · [Cookbook](commands.md)
+[← Overview](../README.md) · [CLI cookbook](commands.md)
 
 Commands exchange data only through WAV files, sibling JSON sidecars, and JSON
 manifests. Every JSON artifact is written atomically (temp file + rename).
+
+## Crawl manifest (`download/crawl`)
+
+The default destination is `.data/download/<collection>/crawl.json`. `videos`
+contains accepted unique YouTube videos in source-priority order; duplicate
+occurrences are represented by multiple objects in a video's `sources` array.
+`rejected` is an occurrence-level audit because the same video can be rejected by
+one source-specific filter and accepted through another source. Each accepted
+video has `download.status` equal to `pending`, `not_requested`, `complete`, or
+`failed`; completed items record the WAV path and failures record the error
+text. `sources` records per-source listing status, while `summary` exposes source,
+filter, truncation, and download counts.
+
+```json
+{
+  "schema_version": 1,
+  "operation": "crawl",
+  "collection": "vi-en-natural-codeswitch",
+  "filters": {"exclude_title_regex": ["podcast"], "exclude_live": true},
+  "summary": {"accepted_unique": 42, "duplicate_occurrences": 7, "rejected_occurrences": 3, "metadata_only": true},
+  "sources": [{"name": "Example", "url": "https://www.youtube.com/@example/videos", "status": "complete"}],
+  "videos": [{"video_id": "abcdefghijk", "title": "Example", "url": "https://www.youtube.com/watch?v=abcdefghijk", "sources": [], "download": {"status": "not_requested"}}],
+  "rejected": [{"video_id": "lmnopqrstuv", "source": "Example", "reason": "title_matched_exclude_regex"}]
+}
+```
 
 ## 1. Audio sidecar (`recording.wav` → `recording.json`)
 
@@ -28,7 +53,7 @@ interrupted write is recognizable and retried.
   exists its `source` is copied into `source.origin` (this is how the audio family
   propagates).
 - Skip / retry / conflict decisions compare `source`, `operation`, `model`,
-  `parameters` and the output hash (see [CLI contract](cli_contract.md)).
+  `parameters` and the output hash.
 
 ## 2. Diarization manifest (`<stem>/segments.json`)
 

@@ -9,7 +9,21 @@ import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _common.files import (LoggingArgumentParser, ROOT, completed, convert,
                            family_audio_name, family_name, positive_int,
-                           progress, publish, read_json, request, safe_name)
+                           progress, publish, request)
+
+
+def add_download_arguments(p: LoggingArgumentParser) -> LoggingArgumentParser:
+    """Add options shared by single-video, playlist, channel, and crawl commands."""
+    p.add_argument('--sample-rate', type=positive_int, default=48000, help='Target sample rate in Hz for converted WAV')
+    p.add_argument('--output-dir', type=Path, default=None,
+                   help='Output directory (default: dynamic per audio family under .data/download/<family>)')
+    p.add_argument('--work-dir', type=Path, default=ROOT / '.data/download/work', help='Working directory for temporary files')
+    p.add_argument('--cookie-file', type=Path, help='Optional cookies.txt file for yt-dlp authentication')
+    p.add_argument('--overwrite', action='store_true', help='Overwrite existing output files and sidecars')
+    p.add_argument('--concurrency', type=positive_int, default=1, help='Number of concurrent workers for downloads. Set > 1 to enable concurrent execution')
+    p.add_argument('--batch-size', type=positive_int, default=1, help='Number of items to batch per worker task')
+    p.set_defaults(_operation='download', _default_base=ROOT / '.data/download')
+    return p
 
 
 def arguments(description: str, bulk: bool = False) -> LoggingArgumentParser:
@@ -24,28 +38,23 @@ def arguments(description: str, bulk: bool = False) -> LoggingArgumentParser:
         p.add_argument('--url', required=True, help='YouTube video, playlist, or channel URL')
         p.add_argument('--limit', '--max-items', dest='limit', type=positive_int, default=None,
                        help='Maximum number of videos to download from the playlist or channel')
-    p.add_argument('--sample-rate', type=positive_int, default=48000, help='Target sample rate in Hz for converted WAV')
-    p.add_argument('--output-dir', type=Path, default=None,
-                   help='Output directory (default: dynamic per audio family under .data/download/<family>)')
-    p.add_argument('--work-dir', type=Path, default=ROOT / '.data/download/work', help='Working directory for temporary files')
-    p.add_argument('--cookie-file', type=Path, help='Optional cookies.txt file for yt-dlp authentication')
-    p.add_argument('--overwrite', action='store_true', help='Overwrite existing output files and sidecars')
-    p.add_argument('--concurrency', type=positive_int, default=1, help='Number of concurrent workers for downloads. Set > 1 to enable concurrent execution')
-    p.add_argument('--batch-size', type=positive_int, default=1, help='Number of items to batch per worker task')
-    p.set_defaults(_operation='download', _default_base=ROOT / '.data/download')
-    return p
+    return add_download_arguments(p)
 
 
-def download(url: str, args) -> Path:
+def download(url: str, args, source_info: dict | None = None) -> Path:
     from yt_dlp import YoutubeDL
     options = {'noplaylist': True, 'format': 'bestaudio/best', 'quiet': True, 'no_warnings': False}
     if args.cookie_file:
         options['cookiefile'] = str(args.cookie_file.resolve())
-    progress('METADATA', f'Fetching info for {url}')
-    with YoutubeDL({**options, 'extract_flat': 'in_playlist'}) as ydl:
-        info = ydl.extract_info(url, download=False)
-    if not info or info.get('_type') in {'playlist', 'multi_video'}:
-        raise ValueError('Expected a single video URL; use playlist.py or channel.py for bulk downloads')
+    info = source_info
+    if info is None:
+        progress('METADATA', f'Fetching info for {url}')
+        with YoutubeDL({**options, 'extract_flat': 'in_playlist'}) as ydl:
+            info = ydl.extract_info(url, download=False)
+        if not info or info.get('_type') in {'playlist', 'multi_video'}:
+            raise ValueError('Expected a single video URL; use playlist.py, channel.py, or crawl.py for bulk downloads')
+    if not info or not info.get('id'):
+        raise ValueError(f'YouTube metadata did not contain a video ID: {url}')
     video_id = str(info['id'])
     title = info.get('title') or 'video'
     source = {'video_id': video_id, 'title': title, 'url': info.get('webpage_url') or url}
