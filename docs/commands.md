@@ -342,18 +342,21 @@ bash scripts/evaluate/plot_diarization.sh --input-manifest pred/segments.json --
 # writes .data/gantt.png, .data/gantt_duration.png, .data/gantt_cutoff.png
 # aggregate every segments.json below a family (or model root):
 bash scripts/evaluate/plot_diarization.sh --input-dir .data/s3-diarize/sortformer/<family> --overwrite
-# defaults to <input-dir>/plot/; use --output-dir to choose another folder
+# one family defaults to <input-dir>/plot/; an explicit output root uses
+# <output-dir>/<family>/plot/
 bash scripts/evaluate/plot_metrics.sh --metrics-file a.json --metrics-file b.json --output-file .data/metrics.png
 ```
 
 Folder mode recursively reads every `segments.json` below `--input-dir` and
-combines their raw, merged, and final turns. It writes the final aggregate plots
-under `<output-dir>/` and the pre-merge and after-merge aggregates under
-`<output-dir>/before_merge/` and `<output-dir>/after_merge/`. `timeline_duration.png`
-is the pooled segment-duration histogram (with count, mean, and median), and
-`timeline_cutoff.png` shows pooled remaining segment count and audio seconds for
-each minimum-duration cutoff. Point `--input-dir` at one family for that family,
-or at a model root to combine all its families.
+groups them by inferred audio family. For one family without `--output-dir`, the
+final aggregate plots are under `<input-dir>/plot/`. With an explicit output
+root, or when multiple families are found, each family is written under
+`<output-dir>/<family>/plot/` (or `<input-dir>/<family>/plot/` when no output
+root was supplied). The final plots are directly in `plot/`; pre-merge and
+after-merge aggregates are under `plot/before_merge/` and `plot/after_merge/`.
+`timeline_duration.png` is the pooled segment-duration histogram (with count,
+mean, and median), and `timeline_cutoff.png` shows pooled remaining segment
+count and audio seconds for each minimum-duration cutoff.
 
 ### Dataset export (`s5-export`)
 

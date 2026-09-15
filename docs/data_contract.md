@@ -158,8 +158,11 @@ interrupted write is recognizable and retried.
   `timeline.png` (speaker Gantt), `timeline_duration.png` (segment-length
   histogram), and `timeline_cutoff.png` (remaining count/percent and remaining
   audio if segments shorter than T are dropped). Missing plots are filled in on a
-  skipped rerun; a new export overwrites them. `evaluate/plot_diarization` writes
-  the same stage sets under its aggregate `--output-dir` in folder mode.
+  skipped rerun; a new export overwrites them. `evaluate/plot_diarization` groups
+  folder-mode manifests by inferred family and writes the same stage sets under
+  each family's `plot/` directory. For one family without an explicit output
+  root this is `<input-dir>/plot/`; with `--output-dir`, it is
+  `<output-dir>/<family>/plot/`.
 - When diarization receives `--input-dir`, it groups the completed manifests by
   inferred audio family and writes the same aggregate stage sets under that
   family's `plot/` directory. With the default output layout this is
