@@ -16,10 +16,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _cli import resolved_parameters, run_verifier
 from _common.files import destinations, parser
+from _common.vibevoice import DEFAULT_VIBEVOICE_MODEL_ID, add_checkpoint_args, load_vibevoice
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_VIBEVOICE_MODEL_ID = "microsoft/VibeVoice-ASR-HF"
 DEFAULT_MIN_SECONDARY_SPEECH_S = 0.25
 DEFAULT_MAX_NEW_TOKENS = 2048
 
@@ -71,18 +71,17 @@ def classify_segments(segments: list[dict[str, Any]], min_secondary_speech_s: fl
 
 class VibeVoiceVerifier:
     def __init__(self, model_id: str = DEFAULT_VIBEVOICE_MODEL_ID, device: str = "auto",
-                 max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS, token: str | None = None) -> None:
-        import torch
-        from transformers import AutoProcessor, VibeVoiceAsrForConditionalGeneration
-        self.device = ("cuda:0" if torch.cuda.is_available() else "cpu") if device == "auto" else device
-        self.model_id = model_id
+                 quantization: str = "none", max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
+                 token: str | None = None) -> None:
+        loaded = load_vibevoice(
+            model_id, device=device, quantization=quantization, token=token or os.getenv("HF_TOKEN"),
+        )
+        self.processor = loaded.processor
+        self.model = loaded.model
+        self.model_id = loaded.model_id
+        self.quantization = loaded.quantization
+        self.device = loaded.device
         self.max_new_tokens = max_new_tokens
-        hf_token = token or os.getenv("HF_TOKEN")
-        dtype = torch.bfloat16 if self.device.startswith("cuda") else torch.float32
-        self.processor = AutoProcessor.from_pretrained(model_id, token=hf_token)
-        self.model = VibeVoiceAsrForConditionalGeneration.from_pretrained(
-            model_id, dtype=dtype, token=hf_token, attn_implementation="eager"
-        ).to(self.device).eval()
 
     def verify(self, audio_path: Path, min_secondary_speech_s: float = DEFAULT_MIN_SECONDARY_SPEECH_S) -> dict[str, Any]:
         import torch
@@ -118,7 +117,7 @@ class VibeVoiceVerifier:
 
 def main() -> int:
     p = parser('Verify audio with VibeVoice-ASR speaker counts; writes verdicts without filtering audio.', 's4-agent/verifier', 'vibevoice')
-    p.add_argument('--model-id', default=DEFAULT_VIBEVOICE_MODEL_ID, help='VibeVoice model ID on Hugging Face or local checkpoint directory')
+    add_checkpoint_args(p)
     p.add_argument('--device', default='auto', help='Inference device ("auto", "cpu", "cuda", or "hip")')
     p.add_argument('--max-new-tokens', type=int, default=DEFAULT_MAX_NEW_TOKENS, help='Maximum number of tokens to generate')
     p.add_argument('--min-secondary-speech-s', type=float, default=DEFAULT_MIN_SECONDARY_SPEECH_S, help='Minimum duration in seconds of secondary speaker speech to trigger rejection')
@@ -126,12 +125,15 @@ def main() -> int:
 
     pairs = destinations(args, '_vibevoice', '.json')
     parameters = {
-        'model_id': args.model_id, 'device': args.device,
+        'model_id': args.model_id, 'quantization': args.quantization, 'device': args.device,
         'max_new_tokens': args.max_new_tokens,
         'min_secondary_speech_s': args.min_secondary_speech_s
     }
     with contextlib.redirect_stdout(sys.stderr):
-        verifier = VibeVoiceVerifier(model_id=args.model_id, device=args.device, max_new_tokens=args.max_new_tokens)
+        verifier = VibeVoiceVerifier(
+            model_id=args.model_id, device=args.device, quantization=args.quantization,
+            max_new_tokens=args.max_new_tokens,
+        )
 
     parameters = resolved_parameters(parameters, verifier)
     return run_verifier(

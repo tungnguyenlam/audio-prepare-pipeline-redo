@@ -43,7 +43,7 @@ endpoints without pricing metadata explicitly report cost as unavailable.
 | `moss` | `.venvs/moss` | MOSS-Audio (`--model-id`, `--torch-dtype`, `--trust-remote-code`) |
 | `minicpm` | `.venvs/minicpmo` | MiniCPM-o (Python 3.11 env) |
 | `kimi` | `.venvs/kimi` | Kimi-Audio (Python 3.11 env) |
-| `vibevoice` | `.venvs/vibevoice` | VibeVoice-ASR speaker counting; `--min-secondary-speech-s` separates `reject` from `uncertain` |
+| `vibevoice` | `.venvs/vibevoice` | VibeVoice-ASR speaker counting; `--quantization none` / `int8` / `nf4` (`int4` = NF4); `--min-secondary-speech-s` separates `reject` from `uncertain`. INT8/NF4 need NVIDIA CUDA + bitsandbytes |
 
 - `--prompt-file` defaults to `prompts/acoustic_defect-3.txt`. The prompt text selects
   the validation profile (`acoustic_defect_v3`, `speaker_purity_v1`,

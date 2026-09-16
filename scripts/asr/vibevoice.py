@@ -24,10 +24,10 @@ from _common.files import (
     request,
     write_json,
 )
+from _common.vibevoice import add_checkpoint_args, load_vibevoice
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_VIBEVOICE_MODEL_ID = "microsoft/VibeVoice-ASR-HF"
 DEFAULT_MAX_NEW_TOKENS = 2048
 
 
@@ -92,11 +92,7 @@ def _write_text_file(target_path: Path, lines: list[str]) -> None:
 
 def main() -> int:
     p = parser(__doc__, "asr", "vibevoice")
-    p.add_argument(
-        "--model-id",
-        default=DEFAULT_VIBEVOICE_MODEL_ID,
-        help="VibeVoice model ID on Hugging Face or local checkpoint directory (default: microsoft/VibeVoice-ASR-HF)",
-    )
+    add_checkpoint_args(p)
     p.add_argument(
         "--device",
         default="auto",
@@ -138,22 +134,23 @@ def main() -> int:
         return 0
 
     import torch
-    from transformers import AutoProcessor, VibeVoiceAsrForConditionalGeneration
-
-    if args.device == "auto":
-        device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    else:
-        device = args.device
 
     hf_token = os.getenv("HF_TOKEN")
-    dtype = torch.bfloat16 if str(device).startswith("cuda") else torch.float32
-
-    progress("load", f"Loading VibeVoice model '{args.model_id}' on {device} ({dtype})...")
+    progress(
+        "load",
+        f"Loading VibeVoice model '{args.model_id}' "
+        f"(quantization={args.quantization}) on {args.device}...",
+    )
     with contextlib.redirect_stdout(sys.stderr):
-        processor = AutoProcessor.from_pretrained(args.model_id, token=hf_token)
-        model = VibeVoiceAsrForConditionalGeneration.from_pretrained(
-            args.model_id, dtype=dtype, token=hf_token, attn_implementation="eager"
-        ).to(device).eval()
+        loaded = load_vibevoice(
+            args.model_id,
+            device=args.device,
+            quantization=args.quantization,
+            token=hf_token,
+        )
+    processor = loaded.processor
+    model = loaded.model
+    device = loaded.device
 
     whisper_model = None
     whisper_tokenizer = None
@@ -170,7 +167,8 @@ def main() -> int:
             )
 
     parameters = {
-        "model_id": args.model_id,
+        "model_id": loaded.model_id,
+        "quantization": loaded.quantization,
         "device": str(device),
         "max_new_tokens": args.max_new_tokens,
         "align_words": bool(args.align_words),

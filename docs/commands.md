@@ -287,7 +287,7 @@ are preserved. Diarization `--overwrite` also forces inference to rerun.
 
 ### ASR and speech transcription (`asr`)
 
-`vibevoice.sh` provides VibeVoice-ASR transcription combined with Whisper cross-attention forced alignment to produce speaker-attributed turns with word-level timestamps.
+`vibevoice.sh` provides VibeVoice-ASR transcription combined with Whisper cross-attention forced alignment to produce speaker-attributed turns with word-level timestamps. `--quantization` selects the Transformers checkpoint: `none` (default, `microsoft/VibeVoice-ASR-HF` BF16), `int8` (`Dubedo/VibeVoice-ASR-HF-INT8`, ~10–11 GB), or `nf4`/`int4` (`Dubedo/VibeVoice-ASR-HF-NF4`, ~7–8 GB). INT8/NF4 need NVIDIA CUDA and `bitsandbytes>=0.48.1` in `.venvs/vibevoice`; they are not supported on ROCm/HIP. GGUF, AWQ, and BitNet checkpoints are unsupported. `--model-id` still overrides the Hugging Face ID or local directory.
 
 ```bash
 # Transcribe single file with Whisper word-level alignment (writes <stem>_vibevoice.json and .txt)
@@ -301,6 +301,10 @@ bash scripts/asr/vibevoice.sh --input-file .data/recording.wav --no-align-words
 
 # Choose compute device and Whisper alignment model variant
 bash scripts/asr/vibevoice.sh --input-file .data/recording.wav --device cuda:0 --align-model small --verbose
+
+# Selective INT8 or NF4 4-bit checkpoints (NVIDIA CUDA)
+bash scripts/asr/vibevoice.sh --input-file .data/recording.wav --quantization int8
+bash scripts/asr/vibevoice.sh --input-file .data/recording.wav --quantization nf4
 ```
 
 ### Target speaker
@@ -345,6 +349,8 @@ bash scripts/s4-agent/verifier/moss.sh     --input-dir .data/clips
 bash scripts/s4-agent/verifier/minicpm.sh  --input-dir .data/clips
 bash scripts/s4-agent/verifier/kimi.sh     --input-dir .data/clips
 bash scripts/s4-agent/verifier/vibevoice.sh --input-dir .data/clips
+bash scripts/s4-agent/verifier/vibevoice.sh --input-dir .data/clips --quantization int8
+bash scripts/s4-agent/verifier/vibevoice.sh --input-dir .data/clips --quantization nf4
 
 # Offline analysis and comparison (no model calls)
 bash scripts/s4-agent/verifier/analysis.sh --input-dir .data/s4-agent/verifier/gemini/gemini-3-8-flash/low

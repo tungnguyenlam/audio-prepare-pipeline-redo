@@ -51,7 +51,7 @@ Match `torchvision` to the same AMD index (`0.28.0+rocm10.0.0`) to avoid
 | HTDemucs, BS-RoFormer, Mel-RoFormer | GPU | MIOpen conv/LSTM, SDPA, rocFFT |
 | MVSEP-MDX23 | partial | PyTorch part on GPU; ONNX falls back to CPU (`onnxruntime-gpu` wheels lack a ROCm provider) |
 | Pyannote 3.1 / Community-1, WeSpeaker scoring, whisper-timestamped | GPU | `HF_TOKEN` for gated pyannote weights; runs without `torchcodec` |
-| Sortformer, clustering, 3D-Speaker, VibeVoice | GPU in isolated venvs | worker venvs are provisioned with the same wheel logic |
+| Sortformer, clustering, 3D-Speaker, VibeVoice | GPU in isolated venvs | worker venvs are provisioned with the same wheel logic; VibeVoice `--quantization int8` / `nf4` is NVIDIA CUDA-only |
 | DiariZen | GPU | Neural segmentation & WeSpeaker embeddings run on AMD GPU; VBx/AHC clustering on CPU |
 | Gemma 4 (HF verifier, LoRA training) | GPU, bf16 | Native bfloat16 inference on GPU; see constraints below |
 | Hungarian matching, sklearn clustering, libsndfile / ffmpeg I/O, BSS metrics | CPU | no ROCm path in the scientific Python stack |
@@ -65,7 +65,9 @@ Match `torchvision` to the same AMD index (`0.28.0+rocm10.0.0`) to avoid
   and diarization workloads, which is why the setup script exports it.
 - **Quantization:** `bitsandbytes` 4/8-bit kernels are CUDA-only; use native
   `bfloat16` (`--quantization none` in past training runs). Gemma 4 E2B bf16 base
-  weights are ~4.6 GB.
+  weights are ~4.6 GB. VibeVoice ASR/verifier `--quantization int8` / `nf4` load
+  the Dubedo selective bitsandbytes checkpoints and likewise require NVIDIA CUDA;
+  on this AMD host keep `--quantization none` (full BF16).
 - **LoRA fits, full fine-tuning does not:** 2.3 B parameters full fine-tune needs
   ≥ 27 GB (weights + grads + AdamW); LoRA r=16/α=32 on `q/k/v/o/gate/up/down_proj`
   peaked at ~16.3 GB of 16.4 GB in past runs (≈ 0.8 s/sample).
