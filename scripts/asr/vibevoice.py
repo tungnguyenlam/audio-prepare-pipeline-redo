@@ -1,4 +1,4 @@
-"""VibeVoice-ASR transcription with optional Whisper forced word alignment."""
+"""VibeVoice-ASR transcription with optional Whisper/PhoWhisper forced word alignment."""
 from __future__ import annotations
 
 import argparse
@@ -90,6 +90,56 @@ def _write_text_file(target_path: Path, lines: list[str]) -> None:
         Path(tmp_name).unlink(missing_ok=True)
 
 
+def _load_whisper_alignment_model(model_name: str, device: Any) -> Any:
+    """Load Whisper or PhoWhisper model for word-level alignment.
+
+    Supports HuggingFace repositories (e.g. 'vinai/PhoWhisper-small') via whisper_timestamped
+    as well as standard OpenAI Whisper checkpoints ('base', 'small', etc.).
+    """
+    import whisper
+
+    try:
+        import whisper_timestamped as whisperts
+    except ImportError:
+        whisperts = None
+
+    whisper_model = None
+    if whisperts is not None:
+        try:
+            whisper_model = whisperts.load_model(model_name, device=device)
+        except Exception as wt_err:
+            logger.debug("whisper_timestamped loader failed for %s: %s", model_name, wt_err)
+            whisper_model = None
+
+    if whisper_model is None:
+        whisper_model = whisper.load_model(model_name, device=device)
+
+    # Ensure alignment_heads buffer is set (required for find_alignment when loaded via HF/whisper_timestamped)
+    if not hasattr(whisper_model, "alignment_heads") or getattr(whisper_model, "alignment_heads") is None:
+        try:
+            import whisper_timestamped as whisperts
+
+            g = whisperts.transcribe_timestamped.__globals__
+            _get_heads = g.get("_get_alignment_heads")
+            if _get_heads is not None:
+                n_layers = getattr(whisper_model.dims, "n_text_layer", 12)
+                n_heads = getattr(whisper_model.dims, "n_text_head", 12)
+                size_map = {
+                    (4, 6): "tiny",
+                    (6, 8): "base",
+                    (12, 12): "small",
+                    (24, 16): "medium",
+                    (32, 20): "large-v3",
+                }
+                variant = size_map.get((n_layers, n_heads), "small")
+                heads = _get_heads(variant, n_layers, n_heads).to(device)
+                whisper_model.register_buffer("alignment_heads", heads, persistent=False)
+        except Exception as head_err:
+            logger.warning("Could not set alignment heads for %s: %s", model_name, head_err)
+
+    return whisper_model
+
+
 def main() -> int:
     p = parser(__doc__, "asr", "vibevoice")
     add_checkpoint_args(p)
@@ -108,17 +158,17 @@ def main() -> int:
         "--align-words",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Align word-level timestamps using Whisper cross-attention forced alignment (default: True)",
+        help="Align word-level timestamps using Whisper/PhoWhisper forced alignment (default: True)",
     )
     p.add_argument(
         "--align-model",
-        default="base",
-        help="Whisper model variant for word-level alignment (default: base)",
+        default="vinai/PhoWhisper-small",
+        help="Whisper or PhoWhisper model identifier for word-level alignment (default: vinai/PhoWhisper-small)",
     )
     p.add_argument(
         "--align-language",
-        default=None,
-        help='Language code hint for Whisper tokenizer alignment (e.g. "vi", "en", default: None/multilingual)',
+        default="vi",
+        help='Language code hint for Whisper tokenizer alignment (e.g. "vi", "en", default: "vi")',
     )
     p.add_argument(
         "--verbose",
@@ -157,9 +207,9 @@ def main() -> int:
     if args.align_words:
         import whisper
         import whisper.timing
-        progress("load", f"Loading Whisper alignment model '{args.align_model}' on {device}...")
+        progress("load", f"Loading Whisper/PhoWhisper alignment model '{args.align_model}' on {device}...")
         with contextlib.redirect_stdout(sys.stderr):
-            whisper_model = whisper.load_model(args.align_model, device=device)
+            whisper_model = _load_whisper_alignment_model(args.align_model, device=device)
             whisper_tokenizer = whisper.tokenizer.get_tokenizer(
                 multilingual=True,
                 language=args.align_language or "vi",
@@ -306,7 +356,7 @@ def main() -> int:
                     words_summary = " ".join(
                         f"[{w['word']} {w['start']:.2f}-{w['end']:.2f}]" for w in turn["words"]
                     )
-                    print(f"  └─ Words: {words_summary}", file=sys.stderr)
+                    print(f"  └── Words: {words_summary}", file=sys.stderr)
             print("-" * 70, file=sys.stderr)
             print(f"FULL TEXT: {full_text}", file=sys.stderr)
             print(f"{border}\n", file=sys.stderr, flush=True)
