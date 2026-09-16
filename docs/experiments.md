@@ -88,18 +88,27 @@ Lower is better; `–` = no published number. Protocols differ across rows.
 | DiariZen (`BUT-FIT/diarizen-wavlm-large-s80-md-v2`, no collar, CC BY-NC 4.0) | 10.1 | 10.8 | 13.9 | 14.5 | 9.1 | – | – |
 
 NVIDIA's published TitaNet clustering numbers use oracle VAD and are therefore
-omitted. None of these checkpoints has a published Vietnamese number. Run the
-100-file `tuanduy1612/ViYT-Diar` set with isolated evaluate commands that call
-the current diarizer launchers and score raw turns:
+omitted. Vietnamese numbers for the backends in this repo, measured on the
+100-file `tuanduy1612/ViYT-Diar` `test` split (estimated speaker count, no
+oracle, `--merge false`, 0.25 s collar, `segments.raw.json`):
+
+| Backend | Mean DER % | Weighted DER % | Median DER % | Mean JER % | Seconds |
+|---|--:|--:|--:|--:|--:|
+| DiariZen Large s80-v2 | 29.08 | 7.19 | 1.21 | 10.99 | 540 |
+| Pyannote 3.1 | 32.01 | 9.68 | 2.92 | 22.09 | 891 |
+| Pyannote Community-1 | 33.07 | 10.94 | 3.37 | 24.29 | 898 |
+| 3D-Speaker | 36.86 | 10.25 | 4.42 | 16.83 | 218 |
+| NeMo Clustering | 37.59 | 11.15 | 5.33 | 19.28 | 448 |
+| NeMo Sortformer | 53.69 | 28.62 | 14.67 | 39.76 | 174 |
+
+Unweighted mean DER is pulled up by short clips; duration-weighted DER and
+median are the more stable rankings. Full per-file JSON and figures:
+`.data/evaluate/viyt-diar/results/full_report.md`. Re-run with:
 
 ```bash
 bash scripts/evaluate/prepare_viyt_diar.sh
 bash scripts/evaluate/run_viyt_diar.sh --all
 ```
-
-Protocol: estimated speaker count (no oracle), `--merge false`, 0.25 s collar,
-`segments.raw.json` vs the cached reference. Reports land under
-`.data/evaluate/viyt-diar/results/`.
 
 Sources: pyannote and NVIDIA model cards on Hugging Face, `modelscope/3D-Speaker`,
 `BUTSpeechFIT/DiariZen`, `NVIDIA-NeMo/Speech` diarization README.
@@ -110,4 +119,4 @@ Sources: pyannote and NVIDIA model cards on Hugging Face, `modelscope/3D-Speaker
 - `experiment_khanhvy/*` — 31-cut probe results (LOW-reasoning labels; superseded)
 - `distillation/{train,val}_e2b.jsonl`, `{train,val}_extended.jsonl`, `distillation_e2b/audit_manifest.json`
 - `crawled/crawled_manifest.json` — 6 Tran Thanh / Khanh Vy tracks (4,817 s, 16 kHz mono)
-- `tts_strategy/gold_benchmark_20260908/prompt_tuning/*` — prompts V0–V3 and per-clip results
+- `evaluate/viyt-diar/results/full_report.md` — 100-file ViYT-Diar DER/JER (2026-09-16)

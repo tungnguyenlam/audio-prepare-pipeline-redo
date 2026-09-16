@@ -51,7 +51,7 @@ Match `torchvision` to the same AMD index (`0.28.0+rocm10.0.0`) to avoid
 | HTDemucs, BS-RoFormer, Mel-RoFormer | GPU | MIOpen conv/LSTM, SDPA, rocFFT |
 | MVSEP-MDX23 | partial | PyTorch part on GPU; ONNX falls back to CPU (`onnxruntime-gpu` wheels lack a ROCm provider) |
 | Pyannote 3.1 / Community-1, WeSpeaker scoring, whisper-timestamped | GPU | `HF_TOKEN` for gated pyannote weights; runs without `torchcodec` |
-| Sortformer, clustering, 3D-Speaker, VibeVoice | GPU in isolated venvs | worker venvs are provisioned with the same wheel logic; VibeVoice `--quantization int8` / `nf4` is NVIDIA CUDA-only |
+| Sortformer, clustering, 3D-Speaker, VibeVoice | GPU in isolated venvs | worker venvs are provisioned with the same wheel logic; VibeVoice `--quantization int8` / `nf4` is NVIDIA CUDA-only. 3D-Speaker's ROCm torchaudio 2.11 lacks `AudioMetaData` / `info` / `list_audio_backends` and `load` needs torchcodec; `threed_speaker.py` falls back to soundfile. |
 | DiariZen | GPU | Neural segmentation & WeSpeaker embeddings run on AMD GPU; VBx/AHC clustering on CPU |
 | Gemma 4 (HF verifier, LoRA training) | GPU, bf16 | Native bfloat16 inference on GPU; see constraints below |
 | Hungarian matching, sklearn clustering, libsndfile / ffmpeg I/O, BSS metrics | CPU | no ROCm path in the scientific Python stack |
