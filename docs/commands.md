@@ -294,7 +294,9 @@ are preserved. Diarization `--overwrite` also forces inference to rerun.
 
 ### ASR and speech transcription (`asr`)
 
-`vibevoice.sh` provides VibeVoice-ASR transcription combined with Whisper cross-attention forced alignment to produce speaker-attributed turns with word-level timestamps. Default `--align-model vinai/PhoWhisper-small` is a Hugging Face checkpoint and needs `whisper-timestamped` in `.venvs/vibevoice`; stock names such as `small` still load through openai-whisper. `--quantization` selects the Transformers checkpoint: `none` (default, `microsoft/VibeVoice-ASR-HF` BF16), `int8` (`Dubedo/VibeVoice-ASR-HF-INT8`, ~10–11 GB), or `nf4`/`int4` (`Dubedo/VibeVoice-ASR-HF-NF4`, ~7–8 GB). INT8/NF4 need NVIDIA CUDA and `bitsandbytes>=0.48.1` in `.venvs/vibevoice`; they are not supported on ROCm/HIP. GGUF, AWQ, and BitNet checkpoints are unsupported. `--model-id` still overrides the Hugging Face ID or local directory.
+`vibevoice.sh` provides VibeVoice-ASR transcription combined with Whisper cross-attention forced alignment to produce speaker-attributed turns with word-level timestamps. `--align-model` selects the PhoWhisper size (`tiny`, `base`, `small`, `medium`, `large`; default `large` → `vinai/PhoWhisper-large`) or a full Hugging Face / OpenAI Whisper identifier. Alignment needs `whisper-timestamped` in `.venvs/vibevoice`. `--quantization` selects the Transformers checkpoint: `none` (default, `microsoft/VibeVoice-ASR-HF` BF16), `int8` (`Dubedo/VibeVoice-ASR-HF-INT8`, ~10–11 GB), or `nf4`/`int4` (`Dubedo/VibeVoice-ASR-HF-NF4`, ~7–8 GB). INT8/NF4 need NVIDIA CUDA and `bitsandbytes>=0.48.1` in `.venvs/vibevoice`; they are not supported on ROCm/HIP. GGUF, AWQ, and BitNet checkpoints are unsupported. `--model-id` still overrides the VibeVoice Hugging Face ID or local directory.
+
+`phowhisper.sh` transcribes with the same PhoWhisper size flag on `--model-id` (default `large`).
 
 ```bash
 # Transcribe single file with Whisper word-level alignment (writes <stem>_vibevoice.json and .txt)
@@ -306,12 +308,15 @@ bash scripts/asr/vibevoice.sh --input-dir .data/separated --verbose
 # Run turn-level transcription without Whisper word-level alignment
 bash scripts/asr/vibevoice.sh --input-file .data/recording.wav --no-align-words
 
-# Choose compute device and Whisper alignment model variant
+# Choose compute device and a smaller PhoWhisper alignment size
 bash scripts/asr/vibevoice.sh --input-file .data/recording.wav --device cuda:0 --align-model small --verbose
 
 # Selective INT8 or NF4 4-bit checkpoints (NVIDIA CUDA)
 bash scripts/asr/vibevoice.sh --input-file .data/recording.wav --quantization int8
 bash scripts/asr/vibevoice.sh --input-file .data/recording.wav --quantization nf4
+
+# PhoWhisper transcription (default vinai/PhoWhisper-large)
+bash scripts/asr/phowhisper.sh --input-dir .data/separated --model-id medium --verbose
 ```
 
 ### Target speaker

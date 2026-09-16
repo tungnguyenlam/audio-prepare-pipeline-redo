@@ -23,10 +23,9 @@ from _common.files import (
     request,
     write_json,
 )
+from _common.phowhisper import DEFAULT_PHOWHISPER_SIZE, model_flag_help, resolve_model_id
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_MODEL_ID = "vinai/PhoWhisper-small"
 
 
 def format_timestamp(seconds: float) -> str:
@@ -98,8 +97,8 @@ def main() -> int:
     p = parser(__doc__, "asr", "phowhisper")
     p.add_argument(
         "--model-id",
-        default=DEFAULT_MODEL_ID,
-        help=f"PhoWhisper/Whisper model name or Hugging Face repository (default: {DEFAULT_MODEL_ID})",
+        default=DEFAULT_PHOWHISPER_SIZE,
+        help=model_flag_help(),
     )
     p.add_argument(
         "--device",
@@ -156,14 +155,16 @@ def main() -> int:
     else:
         device = args.device
 
-    progress("load", f"Loading PhoWhisper model '{args.model_id}' on {device}...")
+    model_id = resolve_model_id(args.model_id)
+
+    progress("load", f"Loading PhoWhisper model '{model_id}' on {device}...")
     with contextlib.redirect_stdout(sys.stderr):
-        model = _load_phowhisper_model(args.model_id, device=device)
+        model = _load_phowhisper_model(model_id, device=device)
 
     import whisper_timestamped as whisperts
 
     parameters = {
-        "model_id": args.model_id,
+        "model_id": model_id,
         "device": str(device),
         "language": args.language,
         "beam_size": args.beam_size,

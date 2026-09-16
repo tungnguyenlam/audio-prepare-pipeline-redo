@@ -24,6 +24,7 @@ from _common.files import (
     request,
     write_json,
 )
+from _common.phowhisper import DEFAULT_PHOWHISPER_SIZE, model_flag_help, resolve_model_id
 from _common.vibevoice import add_checkpoint_args, load_vibevoice
 
 logger = logging.getLogger(__name__)
@@ -93,8 +94,8 @@ def _write_text_file(target_path: Path, lines: list[str]) -> None:
 def _load_whisper_alignment_model(model_name: str, device: Any) -> Any:
     """Load Whisper or PhoWhisper model for word-level alignment.
 
-    Supports HuggingFace repositories (e.g. 'vinai/PhoWhisper-small') via whisper_timestamped
-    as well as standard OpenAI Whisper checkpoints ('base', 'small', etc.).
+    Supports HuggingFace repositories (e.g. 'vinai/PhoWhisper-large') via whisper_timestamped
+    as well as standard OpenAI Whisper checkpoints ('base.en', 'large-v3', etc.).
     """
     import whisper
 
@@ -106,8 +107,7 @@ def _load_whisper_alignment_model(model_name: str, device: Any) -> Any:
             raise RuntimeError(
                 f"Alignment model {model_name!r} requires whisper-timestamped "
                 "(not openai-whisper). Install it in the vibevoice env with "
-                "./envs/setup_worker_envs.sh vibevoice, or pass a stock Whisper "
-                "name such as --align-model small."
+                "./envs/setup_worker_envs.sh vibevoice."
             ) from import_err
         whisperts = None
 
@@ -176,8 +176,8 @@ def main() -> int:
     )
     p.add_argument(
         "--align-model",
-        default="vinai/PhoWhisper-small",
-        help="Whisper or PhoWhisper model identifier for word-level alignment (default: vinai/PhoWhisper-small)",
+        default=DEFAULT_PHOWHISPER_SIZE,
+        help=model_flag_help(),
     )
     p.add_argument(
         "--align-language",
@@ -219,12 +219,13 @@ def main() -> int:
 
     whisper_model = None
     whisper_tokenizer = None
+    align_model = resolve_model_id(args.align_model) if args.align_words else None
     if args.align_words:
         import whisper
         import whisper.timing
-        progress("load", f"Loading Whisper/PhoWhisper alignment model '{args.align_model}' on {device}...")
+        progress("load", f"Loading Whisper/PhoWhisper alignment model '{align_model}' on {device}...")
         with contextlib.redirect_stdout(sys.stderr):
-            whisper_model = _load_whisper_alignment_model(args.align_model, device=device)
+            whisper_model = _load_whisper_alignment_model(align_model, device=device)
             whisper_tokenizer = whisper.tokenizer.get_tokenizer(
                 multilingual=True,
                 language=args.align_language or "vi",
@@ -237,7 +238,7 @@ def main() -> int:
         "device": str(device),
         "max_new_tokens": args.max_new_tokens,
         "align_words": bool(args.align_words),
-        "align_model": args.align_model if args.align_words else None,
+        "align_model": align_model,
         "align_language": args.align_language if args.align_words else None,
     }
 
