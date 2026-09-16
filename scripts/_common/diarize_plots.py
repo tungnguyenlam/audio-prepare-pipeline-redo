@@ -94,9 +94,12 @@ def write_folder_plots(
 
     output_file = Path(output_dir).resolve() / 'timeline.png'
     gantt, duration_path, cutoff_path = sibling_plot_paths(output_file)
-    existing = [path for path in (gantt, duration_path, cutoff_path) if path.exists()]
+    existing = [path for path in (duration_path, cutoff_path) if path.exists()]
     if existing and not overwrite:
         raise FileExistsError(f'Destination exists: {existing[0]}; use --overwrite')
+
+    if gantt.exists():
+        gantt.unlink(missing_ok=True)
 
     records = _read_folder_records(manifest_paths, root_dir=root_dir, concurrency=concurrency)
     turns = [turn for _, record_turns in records for turn in record_turns]
@@ -105,10 +108,6 @@ def write_folder_plots(
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots(figsize=(14, max(4.0, 1.4 + 0.45 * len(records))))
-    _plot_folder_turns(ax, records, title or f'Family timeline ({len(records)} manifest(s))', batch_size=batch_size)
-    _save(plt, fig, gantt)
-    progress('PLOT_DONE', f'Saved plot to {gantt}')
     durations = _turn_durations(turns)
     duration_stats = (
         f'n={len(durations)}, mean={statistics.fmean(durations):.2f}s, '
@@ -131,7 +130,7 @@ def write_folder_plots(
         title=f'Remaining across {len(records)} manifest(s) if dropping segments shorter than T',
     )
     progress('PLOT_DONE', f'Saved plot to {cutoff_path}')
-    return [gantt, duration_path, cutoff_path]
+    return [duration_path, cutoff_path]
 
 
 def write_family_plots(
@@ -205,38 +204,6 @@ def _read_folder_records(
         with ThreadPoolExecutor(max_workers=concurrency) as executor:
             return list(executor.map(read_record, manifest_paths))
     return [read_record(path) for path in manifest_paths]
-
-
-def _plot_folder_turns(ax, records: list[tuple[str, list[dict]]], title: str, batch_size: int = 1) -> None:
-    import matplotlib.pyplot as plt
-
-    speaker_keys = sorted({(label, turn['speaker_id']) for label, turns in records for turn in turns})
-    cmap = plt.cm.tab20
-    colors = {key: cmap(index % 20) for index, key in enumerate(speaker_keys)}
-    batch_size = max(1, batch_size)
-
-    for row, (label, turns) in enumerate(records):
-        for index in range(0, len(turns), batch_size):
-            for turn in turns[index:index + batch_size]:
-                duration = float(turn['end_s']) - float(turn['start_s'])
-                key = (label, turn['speaker_id'])
-                overlap = turn.get('overlap', False) or turn.get('overlaps_other_speaker', False)
-                ax.barh(
-                    y=row,
-                    width=duration,
-                    left=float(turn['start_s']),
-                    height=0.6,
-                    color=colors.get(key, '#3b82f6'),
-                    edgecolor='#ef4444' if overlap else 'none',
-                    linewidth=1.5 if overlap else 0,
-                    alpha=0.85,
-                )
-
-    ax.set_yticks(range(len(records)))
-    ax.set_yticklabels([label for label, _ in records])
-    ax.set_xlabel('Time (seconds)')
-    ax.set_title(title)
-    ax.grid(True, axis='x', linestyle='--', alpha=0.5)
 
 
 def write_plots(

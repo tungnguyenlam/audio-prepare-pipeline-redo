@@ -1150,7 +1150,7 @@ def main() -> int:
                    help='Minimum speech activation duration in seconds to keep (default: 0.10)')
     p.add_argument('--min-duration-off-s', type=float, default=0.15,
                    help='Minimum non-speech duration in seconds to trigger turn split (default: 0.15)')
-    p.add_argument('--min-duration-s', type=float, default=1.0, help='Minimum turn duration in seconds to keep and export (default: 1.0)')
+    p.add_argument('--min-duration-s', type=float, default=1.5, help='Minimum turn duration in seconds to keep and export (default: 1.5)')
     p.add_argument('--max-duration-s', type=float, default=15.0, help='Maximum turn duration in seconds to keep and export (default: 15.0)')
     p.add_argument('--sample-rate', type=positive_int, default=None,
                    help='Output sample rate in Hz for exported turn clips (default: preserve source)')

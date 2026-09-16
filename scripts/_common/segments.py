@@ -139,7 +139,7 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
     merged_turns = raw_turns
     params = manifest.get('parameters', {})
     if min_duration_s is None:
-        min_duration_s = params.get('min_duration_s', 1.0)
+        min_duration_s = params.get('min_duration_s', 1.5)
     if max_duration_s is None:
         max_duration_s = params.get('max_duration_s', 15.0)
     max_samples = None
@@ -397,7 +397,6 @@ def ensure_plots(manifest_path: Path, *, overwrite: bool = False) -> None:
         return
     progress('PLOT_START', f'Rendering diarization plots: {manifest_path.name}')
     plot_segment_outputs(manifest_path, overwrite=overwrite)
-
 
 def ensure_family_plots(
     pairs: list[tuple[Path, Path]],

@@ -88,7 +88,7 @@ interrupted write is recognizable and retried.
   "source": {"path": ".data/s2-separate/htdemucs/<family>/input.wav", "sha256": "…"},
   "operation": "diarize",
   "model": "sortformer",
-  "parameters": {"device": "cuda:0", "min_duration_s": 1.0, "max_duration_s": 15.0, "…": "…"},
+  "parameters": {"device": "cuda:0", "min_duration_s": 1.5, "max_duration_s": 15.0, "…": "…"},
   "timestamp_origin": "diarized_input",
   "source_sample_rate": 48000,
   "sample_rate": 48000,
@@ -166,8 +166,8 @@ interrupted write is recognizable and retried.
   this is `<input-dir>/_plot/`; with `--output-dir`, it is `<output-dir>/_plot/`
   or `<output-dir>/<subdir>/_plot/` when `--input-dir` contains subdirectories.
 - When diarization receives `--input-dir`, it groups completed manifests by the
-  enclosing output folder (`destination.parent.parent`) and writes the same
-  aggregate stage sets under that folder's `_plot/` directory. With the default
+  enclosing output folder (`destination.parent.parent`) and writes aggregate
+  duration and cutoff stage sets under that folder's `_plot/` directory. With the default
   output layout this is `.data/s3-diarize/<model>/<input-dir-name>/_plot/` for a
   flat collection; nested input subdirectories each get their own `_plot/`.
   With an explicit `--output-dir`, aggregates stay inside that output tree.

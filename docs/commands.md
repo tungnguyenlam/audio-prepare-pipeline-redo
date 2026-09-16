@@ -184,7 +184,7 @@ bash scripts/s2-separate/mvsep_mdx23.sh --input-file .data/source.wav --stem voc
 Outputs are named `<stem>_<model>.wav` (`_htdemucs`, `_htdemucs_ft`, `_bs_roformer`,
 `_mel_roformer`, `_mvsep_mdx23`) with a sibling `.json`.
 
-### Diarization (all default to 1–15 s clips)
+### Diarization (all default to 1.5–15 s clips)
 
 ```bash
 bash scripts/s3-diarize/sortformer.sh          --input-dir .data/separated --output-dir .data/turns
@@ -198,7 +198,7 @@ bash scripts/s3-diarize/diarizen.sh            --input-file x.wav --segmentation
 # each run also writes plot/before_merge/, plot/after_merge/, and plot/ with
 # timeline.png, timeline_duration.png, and timeline_cutoff.png in each folder
 # (before merge, after merge/before filtering, and after filtering respectively)
-# directory runs additionally write a collection-level aggregate _plot/ folder
+# directory runs additionally write collection-level aggregate duration and cutoff plots under _plot/
 ```
 
 For a directory run, aggregation follows the output layout rather than inferred

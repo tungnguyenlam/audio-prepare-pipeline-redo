@@ -37,7 +37,7 @@ def main() -> int:
                    help='Output sample rate in Hz for exported turn clips (default: preserve source)')
     p.add_argument('--channels', type=int, choices=(1, 2), default=1,
                    help='Output channel layout for clips (1=mono, 2=stereo) (default: 1)')
-    p.add_argument('--min-duration-s', type=float, default=1.0, help='Minimum turn duration in seconds to keep and export (default: 1.0)')
+    p.add_argument('--min-duration-s', type=float, default=1.5, help='Minimum turn duration in seconds to keep and export (default: 1.5)')
     p.add_argument('--max-duration-s', type=float, default=15.0, help='Maximum turn duration in seconds to keep and export (default: 15.0)')
     add_diarization_merge_arguments(p)
     args = p.parse_args()
