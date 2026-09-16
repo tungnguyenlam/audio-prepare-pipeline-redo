@@ -54,6 +54,7 @@ secret-valued options or long prompt contents.
 | `s3-diarize/threed_speaker.sh` | `.venvs/3dspeaker` (`.venv-3dspeaker`) | `DIARIZATION_PYTHON` |
 | `s3-diarize/diarizen.sh` | `.venvs/diarizen` (`.venv-diarizen`) | `DIARIZATION_PYTHON` |
 | `purity/align.sh` | `.venvs/align` (`.venv-align`, `.venvs/main`, `.venv`) | `ALIGNMENT_PYTHON` |
+| `asr/*.sh` | `.venvs/vibevoice` (`.venv-vibevoice`) | `ASR_PYTHON`, `VIBEVOICE_PYTHON` |
 | `s4-agent/{gemini,endpoint,hf}.sh`, `s4-agent/verifier/{gemini,endpoint,hf,unsloth}.sh` | `.venvs/verify` (`.venv-verify`, `.venvs/main`, `.venv`) | `VERIFIER_PYTHON` |
 | `s4-agent/verifier/vllm.sh` | `.venvs/vllm` (`.venv-vllm`, `.venvs/verify`, `.venvs/main`) | `VLLM_PYTHON`, then `VERIFIER_PYTHON` |
 | `s4-agent/verifier/moss.sh` | `.venvs/moss` (`.venv-moss`, `.venvs/verify`, `.venvs/main`) | `VERIFIER_PYTHON` |
@@ -87,7 +88,7 @@ provisions project-local JavaScript runtimes for yt-dlp.
 | `align` | `.venvs/align` | 3.13 | whisper-timestamped word alignment |
 | `sortformer` | `.venvs/sortformer` | 3.13 | NeMo Sortformer and clustering diarizers |
 | `3dspeaker` | `.venvs/3dspeaker` | 3.13 | ModelScope 3D-Speaker |
-| `vibevoice` | `.venvs/vibevoice` | 3.13 | VibeVoice-ASR speaker-count verifier |
+| `vibevoice` | `.venvs/vibevoice` | 3.13 | VibeVoice-ASR transcription and speaker-count verifier |
 | `diarizen` | `.venvs/diarizen` | 3.10 | DiariZen WavLM |
 | `minicpmo` | `.venvs/minicpmo` | 3.11 | MiniCPM-o (also `envs/setup_minicpmo_env.sh [--clean]`) |
 | `kimi` | `.venvs/kimi` | 3.11 | Kimi-Audio (also `envs/setup_kimi_env.sh [--clean]`, submodule + FlashAttention) |
@@ -283,6 +284,24 @@ destinations. Export rebuilds even a matching cached result and removes obsolete
 clips listed in its previous manifest. For output folders that already contain
 untracked WAVs from older exports, choose a fresh `--output-dir`; unrelated files
 are preserved. Diarization `--overwrite` also forces inference to rerun.
+
+### ASR and speech transcription (`asr`)
+
+`vibevoice.sh` provides VibeVoice-ASR transcription combined with Whisper cross-attention forced alignment to produce speaker-attributed turns with word-level timestamps.
+
+```bash
+# Transcribe single file with Whisper word-level alignment (writes <stem>_vibevoice.json and .txt)
+bash scripts/asr/vibevoice.sh --input-file .data/recording.wav
+
+# Transcribe directory of audio files with live turn & word output on stderr
+bash scripts/asr/vibevoice.sh --input-dir .data/separated --verbose
+
+# Run turn-level transcription without Whisper word-level alignment
+bash scripts/asr/vibevoice.sh --input-file .data/recording.wav --no-align-words
+
+# Choose compute device and Whisper alignment model variant
+bash scripts/asr/vibevoice.sh --input-file .data/recording.wav --device cuda:0 --align-model small --verbose
+```
 
 ### Target speaker
 
