@@ -87,9 +87,9 @@ def main() -> None:
         OSError: If the workspace cannot be created or written.
     """
     parser = LoggingArgumentParser(description=__doc__)
-    parser.add_argument("--name", nargs="+", action="extend", required=True, help="New experiment directory name (supports multiple names for batch scaffolding)")
-    parser.add_argument("--concurrency", type=positive_int, default=1, help="Number of worker threads for parallel workspace creation (default: 1)")
-    parser.add_argument("--batch-size", type=positive_int, default=1, help="Batch size for parallel workspace creation (default: 1)")
+    parser.add_argument("-n", "--name", nargs="+", action="extend", required=True, help="New experiment directory name (supports multiple names for batch scaffolding)")
+    parser.add_argument("-c", "--concurrency", type=positive_int, default=1, help="Number of worker threads for parallel workspace creation (default: 1)")
+    parser.add_argument("-b", "-bs", "--batch-size", type=positive_int, default=1, help="Batch size for parallel workspace creation (default: 1)")
     args = parser.parse_args()
     repo_root = Path(__file__).resolve().parents[3]
 

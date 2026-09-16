@@ -145,13 +145,13 @@ def _build_env(device: str) -> dict[str, str]:
 
 def main() -> int:
     p = parser(__doc__, 's2-separate', 'mvsep_mdx23')
-    p.add_argument('--device', default='auto',
+    p.add_argument('-d', '--device', default='auto',
                    help='Compute device (e.g. auto, cpu, cuda, cuda:0) (default: auto)')
     p.add_argument('--stem', default='vocals', choices=sorted(_STEM_OUTPUT_IDS.keys()),
                    help='Target stem to separate and export (default: vocals)')
-    p.add_argument('--sample-rate', type=positive_int, default=None,
+    p.add_argument('-sr', '--sample-rate', type=positive_int, default=None,
                    help='Output sample rate in Hz (default: preserve source)')
-    p.add_argument('--channels', type=int, choices=(1, 2), default=1,
+    p.add_argument('-ch', '--channels', type=int, choices=(1, 2), default=1,
                    help='Output channel layout (1=mono, 2=stereo) (default: 1)')
     p.add_argument('--overlap-large', type=float, default=0.25,
                    help='Overlap fraction for large sub-band models (default: 0.25)')

@@ -12,15 +12,15 @@ from _common.segments import normalize_turns, source_path
 
 def main() -> int:
     p = LoggingArgumentParser(description=__doc__)
-    p.add_argument('--input-manifest', type=Path, required=True, help='Manifest with scored segments')
-    p.add_argument('--output-manifest', type=Path, help='Filtered output manifest (default: dynamic per family under .data/speaker/filter/<family>/segments.json)')
-    p.add_argument('--threshold', type=float, default=0.6, help='Minimum similarity threshold')
-    p.add_argument('--min-duration-s', type=float, default=1.5, help='Minimum segment duration in seconds')
+    p.add_argument('-im', '--input-manifest', type=Path, required=True, help='Manifest with scored segments')
+    p.add_argument('-om', '--output-manifest', type=Path, help='Filtered output manifest (default: dynamic per family under .data/speaker/filter/<family>/segments.json)')
+    p.add_argument('-th', '--threshold', type=float, default=0.6, help='Minimum similarity threshold')
+    p.add_argument('-min', '--min-duration-s', type=float, default=1.5, help='Minimum segment duration in seconds')
     p.add_argument('--exclude-overlap', action=argparse.BooleanOptionalAction, default=True, help='Exclude turns overlapping other speakers')
-    p.add_argument('--input-file', type=Path, help='Optional source audio override')
-    p.add_argument('--overwrite', action='store_true', help='Overwrite existing filtered output manifest')
-    p.add_argument('--concurrency', type=int, default=1, help='Number of concurrent workers for filtering turns. Set > 1 to enable concurrent execution')
-    p.add_argument('--batch-size', type=int, default=1, help='Number of turns to batch per filter task')
+    p.add_argument('-i', '-if', '--input-file', type=Path, help='Optional source audio override')
+    p.add_argument('-w', '-ow', '--overwrite', action='store_true', help='Overwrite existing filtered output manifest')
+    p.add_argument('-c', '--concurrency', type=int, default=1, help='Number of concurrent workers for filtering turns. Set > 1 to enable concurrent execution')
+    p.add_argument('-b', '-bs', '--batch-size', type=int, default=1, help='Number of turns to batch per filter task')
     args = p.parse_args()
     if args.concurrency < 1:
         p.error('--concurrency must be at least 1')

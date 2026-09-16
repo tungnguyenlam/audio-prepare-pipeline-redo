@@ -15,6 +15,13 @@ secret-valued options or long prompt contents.
 
 ## CLI and file rules
 
+- **Flag shorthands**: All pipeline commands support concise standard shorthands alongside their canonical long names:
+  - Input/Output: `-i` or `-if` (`--input-file`), `-id` (`--input-dir`), `-o` or `-of` (`--output-file`), `-od` (`--output-dir`), `-wd` (`--work-dir`)
+  - Execution: `-w` or `-ow` (`--overwrite`), `-c` (`--concurrency`), `-b` or `-bs` (`--batch-size`)
+  - Audio/DSP: `-sr` (`--sample-rate`), `-ch` (`--channels`), `-s` (`--start`), `-e` (`--end`), `-min` (`--min-duration-s`), `-max` (`--max-duration-s`)
+  - Manifests: `-im` (`--input-manifest`), `-om` (`--output-manifest`), `-sm` (`--secondary-manifest`), `-rm` (`--reference-manifest`)
+  - Models/Agents: `-m` (`--model` / `--model-id`), `-d` (`--device`), `-p` or `-pf` (`--prompt-file`), `-spf` (`--system-prompt-file`), `-mt` (`--max-tokens` / `--max-new-tokens`), `-t` (`--temperature`), `-tp` (`--top-p`), `-ep` (`--endpoint`), `-ap` (`--adapter-path`), `-v` (`--verbose`)
+  - Ingest/Export: `-u` (`--url`), `-uf` (`--url-file`), `-sf` (`--source-file`), `-n` or `-l` (`--limit` / `--max-items`), `-f` (`--format`), `-t` (`--tag`)
 - `--input-file` takes precedence over `--input-dir`; `--output-file` is an exact
   destination and requires a single input. Relative paths use the caller's working
   directory.
@@ -88,7 +95,7 @@ provisions project-local JavaScript runtimes for yt-dlp.
 | `align` | `.venvs/align` | 3.13 | whisper-timestamped word alignment |
 | `sortformer` | `.venvs/sortformer` | 3.13 | NeMo Sortformer and clustering diarizers |
 | `3dspeaker` | `.venvs/3dspeaker` | 3.13 | ModelScope 3D-Speaker |
-| `vibevoice` | `.venvs/vibevoice` | 3.13 | VibeVoice-ASR transcription and speaker-count verifier |
+| `vibevoice` | `.venvs/vibevoice` | 3.13 | VibeVoice-ASR transcription, PhoWhisper/whisper-timestamped alignment, speaker-count verifier |
 | `diarizen` | `.venvs/diarizen` | 3.10 | DiariZen WavLM |
 | `minicpmo` | `.venvs/minicpmo` | 3.11 | MiniCPM-o (also `envs/setup_minicpmo_env.sh [--clean]`) |
 | `kimi` | `.venvs/kimi` | 3.11 | Kimi-Audio (also `envs/setup_kimi_env.sh [--clean]`, submodule + FlashAttention) |
@@ -287,7 +294,7 @@ are preserved. Diarization `--overwrite` also forces inference to rerun.
 
 ### ASR and speech transcription (`asr`)
 
-`vibevoice.sh` provides VibeVoice-ASR transcription combined with Whisper cross-attention forced alignment to produce speaker-attributed turns with word-level timestamps. `--quantization` selects the Transformers checkpoint: `none` (default, `microsoft/VibeVoice-ASR-HF` BF16), `int8` (`Dubedo/VibeVoice-ASR-HF-INT8`, ~10–11 GB), or `nf4`/`int4` (`Dubedo/VibeVoice-ASR-HF-NF4`, ~7–8 GB). INT8/NF4 need NVIDIA CUDA and `bitsandbytes>=0.48.1` in `.venvs/vibevoice`; they are not supported on ROCm/HIP. GGUF, AWQ, and BitNet checkpoints are unsupported. `--model-id` still overrides the Hugging Face ID or local directory.
+`vibevoice.sh` provides VibeVoice-ASR transcription combined with Whisper cross-attention forced alignment to produce speaker-attributed turns with word-level timestamps. Default `--align-model vinai/PhoWhisper-small` is a Hugging Face checkpoint and needs `whisper-timestamped` in `.venvs/vibevoice`; stock names such as `small` still load through openai-whisper. `--quantization` selects the Transformers checkpoint: `none` (default, `microsoft/VibeVoice-ASR-HF` BF16), `int8` (`Dubedo/VibeVoice-ASR-HF-INT8`, ~10–11 GB), or `nf4`/`int4` (`Dubedo/VibeVoice-ASR-HF-NF4`, ~7–8 GB). INT8/NF4 need NVIDIA CUDA and `bitsandbytes>=0.48.1` in `.venvs/vibevoice`; they are not supported on ROCm/HIP. GGUF, AWQ, and BitNet checkpoints are unsupported. `--model-id` still overrides the Hugging Face ID or local directory.
 
 ```bash
 # Transcribe single file with Whisper word-level alignment (writes <stem>_vibevoice.json and .txt)

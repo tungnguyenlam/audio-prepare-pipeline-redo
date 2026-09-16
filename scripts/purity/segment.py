@@ -179,9 +179,9 @@ def smart_segment_speaker_turns(audio: Path, turns: Sequence[dict], *, max_durat
 
 def main() -> int:
     p = arguments(__doc__)
-    p.add_argument('--words-file', type=Path, help='JSON file with a words array; no ASR runs implicitly')
-    p.add_argument('--max-duration-s', type=float, default=DEFAULT_TARGET_MAX_DURATION_S, help='Maximum target duration in seconds for segmented turns')
-    p.add_argument('--min-duration-s', type=float, default=DEFAULT_TARGET_MIN_DURATION_S, help='Minimum target duration in seconds for segmented turns')
+    p.add_argument('-wf', '--words-file', type=Path, help='JSON file with a words array; no ASR runs implicitly')
+    p.add_argument('-max', '--max-duration-s', type=float, default=DEFAULT_TARGET_MAX_DURATION_S, help='Maximum target duration in seconds for segmented turns')
+    p.add_argument('-min', '--min-duration-s', type=float, default=DEFAULT_TARGET_MIN_DURATION_S, help='Minimum target duration in seconds for segmented turns')
     p.add_argument('--min-pause-s', type=float, default=DEFAULT_MIN_SPLIT_PAUSE_S, help='Minimum pause gap in seconds between words required for splitting')
     args = p.parse_args()
     if args.concurrency < 1:

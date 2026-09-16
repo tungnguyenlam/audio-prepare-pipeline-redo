@@ -70,23 +70,23 @@ def parse_rate_limit(value: str) -> int | None:
 
 def add_download_arguments(p: LoggingArgumentParser) -> LoggingArgumentParser:
     """Add options shared by single-video, playlist, channel, and crawl commands."""
-    p.add_argument('--sample-rate', type=positive_int, default=48000, help='Target sample rate in Hz for converted WAV')
-    p.add_argument('--output-dir', type=Path, default=None,
+    p.add_argument('-sr', '--sample-rate', type=positive_int, default=48000, help='Target sample rate in Hz for converted WAV')
+    p.add_argument('-od', '--output-dir', type=Path, default=None,
                    help='Output root; bulk playlist/channel downloads add a resolved collection-name subdirectory')
-    p.add_argument('--work-dir', type=Path, default=ROOT / '.data/s1-download/work', help='Working directory for temporary files')
-    p.add_argument('--cookie-file', type=Path,
+    p.add_argument('-wd', '--work-dir', type=Path, default=ROOT / '.data/s1-download/work', help='Working directory for temporary files')
+    p.add_argument('-cf', '--cookie-file', type=Path,
                    help='Optional cookies.txt for yt-dlp. Prefer a throwaway account; a personal login can be banned')
-    p.add_argument('--overwrite', action='store_true', help='Overwrite existing output files and sidecars')
-    p.add_argument('--concurrency', type=positive_int, default=1,
+    p.add_argument('-w', '-ow', '--overwrite', action='store_true', help='Overwrite existing output files and sidecars')
+    p.add_argument('-c', '--concurrency', type=positive_int, default=1,
                    help='Parallel convert/publish workers. YouTube HTTP stays serialized. Keep 1 for large crawls')
-    p.add_argument('--batch-size', type=positive_int, default=1, help='Number of items to batch per worker task')
+    p.add_argument('-b', '-bs', '--batch-size', type=positive_int, default=1, help='Number of items to batch per worker task')
     p.add_argument('--sleep-requests', type=non_negative_float, default=1.5,
                    help='Seconds to sleep between yt-dlp metadata requests, including playlist/channel paging')
     p.add_argument('--sleep-interval', type=non_negative_float, default=5.0,
                    help='Minimum seconds to sleep before each media download; 0 disables download pacing')
     p.add_argument('--max-sleep-interval', type=non_negative_float, default=15.0,
                    help='Maximum seconds to sleep before each media download; randomized with --sleep-interval')
-    p.add_argument('--rate-limit', type=parse_rate_limit, default=2_000_000, metavar='RATE',
+    p.add_argument('-rl', '--rate-limit', type=parse_rate_limit, default=2_000_000, metavar='RATE',
                    help='Maximum media download rate (e.g. 500K, 2M). 0 disables. default: 2M')
     p.add_argument('--throttle-retries', type=non_negative_int, default=3,
                    help='Extra attempts per item after a YouTube rate-limit or bot-check error')
@@ -101,14 +101,14 @@ def add_download_arguments(p: LoggingArgumentParser) -> LoggingArgumentParser:
 def arguments(description: str, bulk: bool = False) -> LoggingArgumentParser:
     p = LoggingArgumentParser(description=description)
     if not bulk:
-        p.add_argument('--url', default=None, help='YouTube video URL or video ID')
-        p.add_argument('--url-file', type=Path, default=None,
+        p.add_argument('-u', '--url', default=None, help='YouTube video URL or video ID')
+        p.add_argument('-uf', '--url-file', type=Path, default=None,
                        help='Path to text file containing YouTube URLs or video IDs (one per line)')
-        p.add_argument('--output-file', type=Path,
+        p.add_argument('-o', '-of', '--output-file', type=Path,
                        help='Explicit destination WAV file path (requires single video download via --url)')
     else:
-        p.add_argument('--url', required=True, help='YouTube video, playlist, or channel URL')
-        p.add_argument('--limit', '--max-items', dest='limit', type=positive_int, default=None,
+        p.add_argument('-u', '--url', required=True, help='YouTube video, playlist, or channel URL')
+        p.add_argument('-n', '-l', '--limit', '--max-items', dest='limit', type=positive_int, default=None,
                        help='Maximum number of videos to download from the playlist or channel')
     return add_download_arguments(p)
 

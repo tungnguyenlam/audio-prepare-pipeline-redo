@@ -1050,13 +1050,13 @@ def _summary_from_csv(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input-dir", "--verdict-dir", dest="verdict_dir", type=Path, required=True, help="Saved model/effort run or one family; recursively read verifier JSON artifacts")
-    parser.add_argument("--input-manifest", type=Path, action="append", default=[], help="Diarization segments.json to join (repeatable)")
-    parser.add_argument("--manifest-dir", type=Path, help="Directory searched recursively for diarization segments.json files")
-    parser.add_argument("--output-dir", type=Path, help="Analysis directory (default: <input-dir>/plot; regenerated on each run)")
-    parser.add_argument("--overwrite", action="store_true", help="Allow refreshing a nonempty custom --output-dir (default plot/ refreshes automatically)")
-    parser.add_argument("--concurrency", type=positive_int, default=1, help="Number of worker threads for JSON loading")
-    parser.add_argument("--batch-size", type=positive_int, default=1, help="Number of JSON files loaded per worker task")
+    parser.add_argument("-id", "--input-dir", "--verdict-dir", dest="verdict_dir", type=Path, required=True, help="Saved model/effort run or one family; recursively read verifier JSON artifacts")
+    parser.add_argument("-im", "--input-manifest", type=Path, action="append", default=[], help="Diarization segments.json to join (repeatable)")
+    parser.add_argument("-md", "--manifest-dir", type=Path, help="Directory searched recursively for diarization segments.json files")
+    parser.add_argument("-od", "--output-dir", type=Path, help="Analysis directory (default: <input-dir>/plot; regenerated on each run)")
+    parser.add_argument("-w", "-ow", "--overwrite", action="store_true", help="Allow refreshing a nonempty custom --output-dir (default plot/ refreshes automatically)")
+    parser.add_argument("-c", "--concurrency", type=positive_int, default=1, help="Number of worker threads for JSON loading")
+    parser.add_argument("-b", "-bs", "--batch-size", type=positive_int, default=1, help="Number of JSON files loaded per worker task")
     args = parser.parse_args()
 
     verdict_dir = args.verdict_dir.expanduser().resolve()

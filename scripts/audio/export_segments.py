@@ -11,27 +11,27 @@ from _common.segments import ensure_plots, export, manifest_complete, source_pat
 
 def main() -> int:
     p = LoggingArgumentParser(description=__doc__)
-    p.add_argument('--input-manifest', type=Path, required=True,
+    p.add_argument('-im', '--input-manifest', type=Path, required=True,
                    help='Path to input segments.json manifest')
-    p.add_argument('--input-file', type=Path, default=None,
+    p.add_argument('-i', '-if', '--input-file', type=Path, default=None,
                    help='Source audio override on the same timeline; bypasses the recorded source hash (default: None)')
-    p.add_argument('--output-dir', type=Path, default=None,
+    p.add_argument('-od', '--output-dir', type=Path, default=None,
                    help='Output directory (default: dynamic per audio family under .data/audio/clips/<family>)')
-    p.add_argument('--work-dir', type=Path, default=ROOT / '.data/export_segments/work',
+    p.add_argument('-wd', '--work-dir', type=Path, default=ROOT / '.data/export_segments/work',
                    help='Working directory for temporary files (default: .data/export_segments/work)')
-    p.add_argument('--sample-rate', type=positive_int, default=None,
+    p.add_argument('-sr', '--sample-rate', type=positive_int, default=None,
                    help='Target audio sample rate in Hz (default: preserve source)')
-    p.add_argument('--channels', type=int, choices=(1, 2), default=1,
+    p.add_argument('-ch', '--channels', type=int, choices=(1, 2), default=1,
                    help='Target audio channels (1=mono, 2=stereo) (default: 1)')
-    p.add_argument('--min-duration-s', type=float, default=1.0,
+    p.add_argument('-min', '--min-duration-s', type=float, default=1.0,
                    help='Minimum turn duration in seconds to keep and export (default: 1.0)')
-    p.add_argument('--max-duration-s', type=float, default=15.0,
+    p.add_argument('-max', '--max-duration-s', type=float, default=15.0,
                    help='Maximum turn duration in seconds to keep and export (default: 15.0)')
-    p.add_argument('--overwrite', action='store_true', default=False,
+    p.add_argument('-w', '-ow', '--overwrite', action='store_true', default=False,
                    help='Rebuild clips and manifest, removing obsolete clips tracked by the previous manifest (default: False)')
-    p.add_argument('--concurrency', type=positive_int, default=1,
+    p.add_argument('-c', '--concurrency', type=positive_int, default=1,
                    help='Number of concurrent workers for parallel clip rendering (default: 1)')
-    p.add_argument('--batch-size', type=positive_int, default=1,
+    p.add_argument('-b', '-bs', '--batch-size', type=positive_int, default=1,
                    help='Number of clips rendered per batch chunk (default: 1)')
     args = p.parse_args()
     import math

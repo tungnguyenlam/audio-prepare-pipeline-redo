@@ -284,25 +284,25 @@ def resolve_output_dir(args: argparse.Namespace, src: Path) -> Path:
 
 def parser(description: str, operation: str, model: str | None = None, *, segments: bool = False) -> LoggingArgumentParser:
     p = LoggingArgumentParser(description=description)
-    p.add_argument('--input-file', type=Path, default=None,
+    p.add_argument('-i', '-if', '--input-file', type=Path, default=None,
                    help='Path to a single input audio file (default: None)')
-    p.add_argument('--input-dir', type=Path, default=None,
+    p.add_argument('-id', '--input-dir', type=Path, default=None,
                    help='Path to directory of input audio files (default: None)')
     if not segments:
-        p.add_argument('--output-file', type=Path, default=None,
+        p.add_argument('-o', '-of', '--output-file', type=Path, default=None,
                        help='Explicit destination path (requires --input-file; default: None)')
     base = ROOT / '.data' / operation
     if model:
         base /= model
-    p.add_argument('--output-dir', type=Path, default=None,
+    p.add_argument('-od', '--output-dir', type=Path, default=None,
                    help='Output directory (default: dynamic per audio family under .data/<operation>/<model>/<family>)')
-    p.add_argument('--work-dir', type=Path, default=base / 'work',
+    p.add_argument('-wd', '--work-dir', type=Path, default=base / 'work',
                    help='Working directory for intermediate/temporary files (default: .data/<operation>[/<model>]/work)')
-    p.add_argument('--overwrite', action='store_true', default=False,
+    p.add_argument('-w', '-ow', '--overwrite', action='store_true', default=False,
                    help='Overwrite existing output files and invalidate cached sidecars (default: False)')
-    p.add_argument('--concurrency', type=positive_int, default=1,
+    p.add_argument('-c', '--concurrency', type=positive_int, default=1,
                    help='Number of concurrent workers for parallel item processing. Set > 1 to enable concurrent execution (default: 1)')
-    p.add_argument('--batch-size', type=positive_int, default=1,
+    p.add_argument('-b', '-bs', '--batch-size', type=positive_int, default=1,
                    help='Number of items grouped and processed per batch chunk. Controls batch submission granularity (default: 1)')
     p.set_defaults(_operation=operation, _model=model, _default_base=base)
     return p

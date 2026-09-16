@@ -11,9 +11,9 @@ from _common.files import batch, completed, destinations, identity, parser, posi
 
 def main() -> int:
     p = parser(__doc__, 'compare_spectrograms')
-    p.add_argument('--reference-file', type=Path, required=True,
+    p.add_argument('-rf', '--reference-file', type=Path, required=True,
                    help='Path to reference audio file to compare against')
-    p.add_argument('--sample-rate', type=positive_int, default=16000,
+    p.add_argument('-sr', '--sample-rate', type=positive_int, default=16000,
                    help='Sample rate in Hz for spectrogram analysis (default: 16000)')
     p.add_argument('--n-mels', type=positive_int, default=128,
                    help='Number of Mel frequency filter banks (default: 128)')

@@ -114,15 +114,15 @@ class VLLMOfflineVerifier:
 
 def main() -> int:
     p = parser("Verify audio with vLLM; writes verdicts without filtering audio.", "s4-agent/verifier", "vllm")
-    p.add_argument("--prompt-file", type=Path, help="Prompt text file (default: prompts/acoustic_defect-3.txt)")
-    p.add_argument("--model", type=str, default=DEFAULT_MODEL_ID, help="Hugging Face model ID")
-    p.add_argument("--endpoint", type=str, default=None, help="vLLM server endpoint URL (runs in server mode if set)")
+    p.add_argument("-pf", "-p", "--prompt-file", type=Path, help="Prompt text file (default: prompts/acoustic_defect-3.txt)")
+    p.add_argument("-m", "--model", type=str, default=DEFAULT_MODEL_ID, help="Hugging Face model ID")
+    p.add_argument("-ep", "--endpoint", type=str, default=None, help="vLLM server endpoint URL (runs in server mode if set)")
     p.add_argument("--dtype", type=str, default="bfloat16", choices=("bfloat16", "float16", "auto"), help='Model weights precision ("bfloat16", "float16", or "auto")')
     p.add_argument("--tensor-parallel-size", type=int, default=1, help="Number of GPUs for tensor parallelism")
     p.add_argument("--gpu-memory-utilization", type=float, default=0.9, help="Fraction of GPU memory to reserve for vLLM engine")
     p.add_argument("--max-model-len", type=int, default=4096, help="Maximum model context length in tokens")
-    p.add_argument("--temperature", type=float, default=0.0, help="Sampling temperature")
-    p.add_argument("--max-tokens", type=int, default=512, help="Maximum generated tokens")
+    p.add_argument("-t", "--temperature", type=float, default=0.0, help="Sampling temperature")
+    p.add_argument("-mt", "--max-tokens", type=int, default=512, help="Maximum generated tokens")
     p.add_argument("--trust-remote-code", action=argparse.BooleanOptionalAction, default=True, help="Allow executing custom code from Hugging Face model repository")
     args = p.parse_args()
 

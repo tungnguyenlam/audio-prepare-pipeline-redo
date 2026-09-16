@@ -129,7 +129,7 @@ def compute_consensus_turns(primary_turns: Sequence[dict], secondary_turns: Sequ
 
 def main() -> int:
     p = arguments(__doc__)
-    p.add_argument('--secondary-manifest', type=Path, required=True, help='Secondary diarization segments.json manifest to intersect with primary')
+    p.add_argument('-sm', '--secondary-manifest', type=Path, required=True, help='Secondary diarization segments.json manifest to intersect with primary')
     args = p.parse_args()
     if args.concurrency < 1:
         p.error('--concurrency must be at least 1')

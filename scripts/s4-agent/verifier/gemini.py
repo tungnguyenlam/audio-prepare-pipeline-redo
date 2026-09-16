@@ -63,17 +63,17 @@ def main() -> int:
         "s4-agent/verifier",
         "gemini",
     )
-    command.add_argument("--prompt-file", type=Path, help="Prompt text file (default: prompts/acoustic_defect-3.txt)")
-    command.add_argument("--model", default="gemini-3.8-flash", help="Gemini model name")
+    command.add_argument("-pf", "-p", "--prompt-file", type=Path, help="Prompt text file (default: prompts/acoustic_defect-3.txt)")
+    command.add_argument("-m", "--model", default="gemini-3.8-flash", help="Gemini model name")
     command.add_argument(
         "--reasoning-effort",
         choices=("low", "medium", "high", "none"),
         default="medium",
         help="Reasoning effort level for models supporting thinking",
     )
-    command.add_argument("--max-tokens", type=positive_int, default=2048, help="Maximum output tokens")
-    command.add_argument("--temperature", type=float, default=0.0, help="Sampling temperature")
-    command.add_argument("--top-p", type=float, help="Nucleus sampling top-p probability threshold")
+    command.add_argument("-mt", "--max-tokens", type=positive_int, default=2048, help="Maximum output tokens")
+    command.add_argument("-t", "--temperature", type=float, default=0.0, help="Sampling temperature")
+    command.add_argument("-tp", "--top-p", type=float, help="Nucleus sampling top-p probability threshold")
     command.add_argument("--top-k", type=positive_int, help="Top-k sampling parameter")
     command.add_argument("--timeout-s", type=positive_float, default=120.0, help="HTTP request timeout in seconds")
     command.add_argument("--max-retries", type=positive_int, default=5, help="Maximum retry attempts per request")

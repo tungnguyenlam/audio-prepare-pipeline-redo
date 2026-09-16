@@ -91,7 +91,7 @@ def clean_speaker_turns(turns: Sequence[dict], *, min_turn_duration_s: float=DEF
 
 def main() -> int:
     p = arguments(__doc__)
-    p.add_argument('--min-turn-duration-s', type=float, default=DEFAULT_MIN_TURN_DURATION_S, help='Minimum duration in seconds for surviving cleaned turns')
+    p.add_argument('-min', '--min-turn-duration-s', type=float, default=DEFAULT_MIN_TURN_DURATION_S, help='Minimum duration in seconds for surviving cleaned turns')
     p.add_argument('--merge-same-speaker-gap-s', type=float, default=DEFAULT_MERGE_SAME_SPEAKER_GAP_S, help='Maximum gap in seconds between same-speaker turns to merge')
     p.add_argument('--boundary-collar-s', type=float, default=DEFAULT_BOUNDARY_COLLAR_S, help='Collar margin in seconds shaved from each side of close speaker boundaries')
     p.add_argument('--jitter-max-duration-s', type=float, default=DEFAULT_JITTER_MAX_DURATION_S, help='Maximum turn duration in seconds for A-B-A jitter relabeling (0 to disable)')

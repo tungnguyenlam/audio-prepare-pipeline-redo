@@ -64,6 +64,7 @@ class LoadedVibeVoice(NamedTuple):
 def add_checkpoint_args(parser: argparse.ArgumentParser) -> None:
     """Add --model-id and --quantization flags used by both VibeVoice commands."""
     parser.add_argument(
+        "-m",
         "--model-id",
         default=DEFAULT_VIBEVOICE_MODEL_ID,
         help=(
@@ -73,6 +74,7 @@ def add_checkpoint_args(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
+        "-q",
         "--quantization",
         default=QUANTIZATION_NONE,
         type=normalize_quantization,

@@ -735,7 +735,7 @@ def main() -> int:
         "gemini",
     )
     add_prompt_arguments(command, top_p=True)
-    command.add_argument("--model", default="gemini-3.8-flash", help="Gemini model name")
+    command.add_argument("-m", "--model", default="gemini-3.8-flash", help="Gemini model name")
     command.add_argument(
         "--reasoning-effort",
         choices=("none", "low", "medium", "high"),

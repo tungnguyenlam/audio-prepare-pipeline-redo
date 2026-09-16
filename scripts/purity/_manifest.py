@@ -12,12 +12,12 @@ from _common.segments import normalize_turns, source_path
 
 def arguments(description: str) -> LoggingArgumentParser:
     p = LoggingArgumentParser(description=description)
-    p.add_argument('--input-manifest', type=Path, required=True, help='Path to input segments.json manifest')
-    p.add_argument('--output-manifest', type=Path, help='Output manifest (default: dynamic per family under .data/purity/<stage>/<family>/segments.json)')
-    p.add_argument('--input-file', type=Path, help='Optional source audio file override')
-    p.add_argument('--overwrite', action='store_true', help='Overwrite existing output manifest and invalidate cached sidecars')
-    p.add_argument('--concurrency', type=int, default=1, help='Number of concurrent workers for processing turns. Set > 1 to enable concurrent execution')
-    p.add_argument('--batch-size', type=int, default=1, help='Number of turns to batch per processing unit')
+    p.add_argument('-im', '--input-manifest', type=Path, required=True, help='Path to input segments.json manifest')
+    p.add_argument('-om', '--output-manifest', type=Path, help='Output manifest (default: dynamic per family under .data/purity/<stage>/<family>/segments.json)')
+    p.add_argument('-i', '-if', '--input-file', type=Path, help='Optional source audio file override')
+    p.add_argument('-w', '-ow', '--overwrite', action='store_true', help='Overwrite existing output manifest and invalidate cached sidecars')
+    p.add_argument('-c', '--concurrency', type=int, default=1, help='Number of concurrent workers for processing turns. Set > 1 to enable concurrent execution')
+    p.add_argument('-b', '-bs', '--batch-size', type=int, default=1, help='Number of turns to batch per processing unit')
     return p
 
 

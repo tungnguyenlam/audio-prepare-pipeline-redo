@@ -45,12 +45,12 @@ def main() -> int:
         "s4-agent/verifier",
         "endpoint",
     )
-    command.add_argument("--prompt-file", type=Path, help="Prompt file (default: prompts/acoustic_defect-3.txt)")
-    command.add_argument("--endpoint", default="http://localhost:8000/v1/chat/completions", help="Chat completions endpoint URL")
-    command.add_argument("--model", default="default", help="Model name to request")
+    command.add_argument("-pf", "-p", "--prompt-file", type=Path, help="Prompt file (default: prompts/acoustic_defect-3.txt)")
+    command.add_argument("-ep", "--endpoint", default="http://localhost:8000/v1/chat/completions", help="Chat completions endpoint URL")
+    command.add_argument("-m", "--model", default="default", help="Model name to request")
     command.add_argument("--timeout-s", type=float, default=120.0, help="Request timeout in seconds")
-    command.add_argument("--temperature", type=float, default=0.0, help="Sampling temperature")
-    command.add_argument("--max-tokens", type=int, default=1024, help="Maximum generated tokens")
+    command.add_argument("-t", "--temperature", type=float, default=0.0, help="Sampling temperature")
+    command.add_argument("-mt", "--max-tokens", type=int, default=1024, help="Maximum generated tokens")
     args = command.parse_args()
 
     pairs = destinations(args, "_endpoint", ".json")

@@ -421,13 +421,13 @@ def main() -> int:
     from _cli import load_prompt, resolved_parameters, run_verifier
     from _common.files import destinations, parser
     p = parser('Verify audio with unsloth; writes verdicts without filtering audio.', 's4-agent/verifier', 'unsloth')
-    p.add_argument('--prompt-file', type=Path, help='Prompt text file (default: prompts/acoustic_defect-3.txt)')
-    p.add_argument('--endpoint', type=str, default=None, help='Unsloth API chat completions endpoint URL')
-    p.add_argument('--model', type=str, default=None, help='Model identifier to request from Unsloth server')
+    p.add_argument('-pf', '-p', '--prompt-file', type=Path, help='Prompt text file (default: prompts/acoustic_defect-3.txt)')
+    p.add_argument('-ep', '--endpoint', type=str, default=None, help='Unsloth API chat completions endpoint URL')
+    p.add_argument('-m', '--model', type=str, default=None, help='Model identifier to request from Unsloth server')
     p.add_argument('--gguf-variant', type=str, default=None, help='Specific GGUF quantization variant (e.g. Q8_0, UD-Q6_K_XL)')
     p.add_argument('--timeout-s', type=float, default=120.0, help='Request timeout in seconds')
-    p.add_argument('--temperature', type=float, default=0.0, help='Sampling temperature')
-    p.add_argument('--max-tokens', type=int, default=1024, help='Maximum tokens to generate')
+    p.add_argument('-t', '--temperature', type=float, default=0.0, help='Sampling temperature')
+    p.add_argument('-mt', '--max-tokens', type=int, default=1024, help='Maximum tokens to generate')
     p.add_argument('--auto-probe-model', action=argparse.BooleanOptionalAction, default=True, help='Automatically probe available model from /v1/models if unspecified')
     p.add_argument('--payload-mode', type=str, default='hybrid', help='Audio transmission format ("hybrid", "input_audio", or "audio_base64")')
     args = p.parse_args()

@@ -12,12 +12,12 @@ from concurrent.futures import ThreadPoolExecutor
 
 def main() -> int:
     p = LoggingArgumentParser(description=__doc__)
-    p.add_argument('--metrics-file', dest='files', action='append', required=True, type=Path, help='Evaluation metrics JSON file (repeatable)')
-    p.add_argument('--output-file', type=Path, required=True, help='Output image path (.png, .svg, .pdf)')
+    p.add_argument('-mf', '--metrics-file', dest='files', action='append', required=True, type=Path, help='Evaluation metrics JSON file (repeatable)')
+    p.add_argument('-o', '-of', '--output-file', type=Path, required=True, help='Output image path (.png, .svg, .pdf)')
     p.add_argument('--title', help='Custom plot title (default: auto-generated from metric type)')
-    p.add_argument('--overwrite', action='store_true', help='Overwrite existing output file if present')
-    p.add_argument('--concurrency', type=positive_int, default=1, help='Number of worker threads for parallel metrics file loading (default: 1)')
-    p.add_argument('--batch-size', type=positive_int, default=1, help='Batch size for chunked metrics file processing (default: 1)')
+    p.add_argument('-w', '-ow', '--overwrite', action='store_true', help='Overwrite existing output file if present')
+    p.add_argument('-c', '--concurrency', type=positive_int, default=1, help='Number of worker threads for parallel metrics file loading (default: 1)')
+    p.add_argument('-b', '-bs', '--batch-size', type=positive_int, default=1, help='Batch size for chunked metrics file processing (default: 1)')
     args = p.parse_args()
 
     dest = args.output_file.resolve()

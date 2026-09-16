@@ -85,10 +85,10 @@ def main() -> int:
         "s4-agent/verifier",
         "hf",
     )
-    command.add_argument("--prompt-file", type=Path, help="Prompt file (default: prompts/acoustic_defect-3.txt)")
-    command.add_argument("--model-id", default="google/gemma-4-E2B-it", help="Hugging Face model repository ID")
-    command.add_argument("--device", default="auto", help='Inference device ("auto", "cpu", "cuda", or "hip")')
-    command.add_argument("--adapter-path", help="Optional LoRA adapter checkpoint directory")
+    command.add_argument("-pf", "-p", "--prompt-file", type=Path, help="Prompt file (default: prompts/acoustic_defect-3.txt)")
+    command.add_argument("-m", "--model-id", default="google/gemma-4-E2B-it", help="Hugging Face model repository ID")
+    command.add_argument("-d", "--device", default="auto", help='Inference device ("auto", "cpu", "cuda", or "hip")')
+    command.add_argument("-ap", "--adapter-path", help="Optional LoRA adapter checkpoint directory")
     command.add_argument(
         "--trust-remote-code",
         action=argparse.BooleanOptionalAction,
@@ -102,6 +102,7 @@ def main() -> int:
         help="PyTorch weights dtype",
     )
     command.add_argument(
+        "-mt",
         "--max-new-tokens",
         type=positive_int,
         default=1024,

@@ -1112,7 +1112,7 @@ class _Sortformer:
 
 def main() -> int:
     p = parser('Sortformer diarization with long-audio window stitching.', 's3-diarize', 'sortformer', segments=True)
-    p.add_argument('--model-id', default=DEFAULT_MODEL_ID,
+    p.add_argument('-m', '--model-id', default=DEFAULT_MODEL_ID,
                    help='NeMo / HuggingFace model ID for Sortformer (default: %(default)s)')
     p.add_argument('--revision', default=DEFAULT_MODEL_REVISION,
                    help='HuggingFace model revision branch/tag (default: %(default)s)')
@@ -1120,9 +1120,9 @@ def main() -> int:
                    help='Target .nemo model checkpoint filename (default: %(default)s)')
     p.add_argument('--checkpoint-path', type=Path, default=None,
                    help='Explicit local path to .nemo checkpoint file (default: None)')
-    p.add_argument('--device', default='auto',
+    p.add_argument('-d', '--device', default='auto',
                    help='Execution device (e.g. auto, cpu, cuda) (default: auto)')
-    p.add_argument('--batch-size', type=positive_int, default=1,
+    p.add_argument('-b', '-bs', '--batch-size', type=positive_int, default=1,
                    help='Model inference batch size for Sortformer and clip chunking (default: 1)')
     p.add_argument('--window-duration-s', type=float, default=360.0,
                    help='Sliding window duration in seconds for long audio chunking (default: 360.0)')
@@ -1150,11 +1150,11 @@ def main() -> int:
                    help='Minimum speech activation duration in seconds to keep (default: 0.10)')
     p.add_argument('--min-duration-off-s', type=float, default=0.15,
                    help='Minimum non-speech duration in seconds to trigger turn split (default: 0.15)')
-    p.add_argument('--min-duration-s', type=float, default=1.5, help='Minimum turn duration in seconds to keep and export (default: 1.5)')
-    p.add_argument('--max-duration-s', type=float, default=15.0, help='Maximum turn duration in seconds to keep and export (default: 15.0)')
-    p.add_argument('--sample-rate', type=positive_int, default=None,
+    p.add_argument('-min', '--min-duration-s', type=float, default=1.5, help='Minimum turn duration in seconds to keep and export (default: 1.5)')
+    p.add_argument('-max', '--max-duration-s', type=float, default=15.0, help='Maximum turn duration in seconds to keep and export (default: 15.0)')
+    p.add_argument('-sr', '--sample-rate', type=positive_int, default=None,
                    help='Output sample rate in Hz for exported turn clips (default: preserve source)')
-    p.add_argument('--channels', type=int, choices=(1, 2), default=1,
+    p.add_argument('-ch', '--channels', type=int, choices=(1, 2), default=1,
                    help='Output channel layout for clips (1=mono, 2=stereo) (default: 1)')
     add_diarization_merge_arguments(p)
     args = p.parse_args()

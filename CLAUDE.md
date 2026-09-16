@@ -56,6 +56,13 @@ audio-model verification, evaluation, mixing, and dataset export.
 ## CLI and artifact contracts
 
 - Commands accept paths/flags and communicate through files; callers compose them.
+- Standard flag shorthands are supported across all pipeline tools:
+  `-i`/`-if` (`--input-file`), `-id` (`--input-dir`), `-o`/`-of` (`--output-file`),
+  `-od` (`--output-dir`), `-wd` (`--work-dir`), `-w`/`-ow` (`--overwrite`),
+  `-c` (`--concurrency`), `-b`/`-bs` (`--batch-size`), `-sr` (`--sample-rate`),
+  `-ch` (`--channels`), `-m` (`--model`/`--model-id`), `-d` (`--device`),
+  `-v` (`--verbose`), `-p`/`-pf` (`--prompt-file`), `-im` (`--input-manifest`),
+  `-om` (`--output-manifest`).
 - `--input-file` takes precedence over `--input-dir`; `--output-file` is exact.
 - Audio commands write sibling JSON sidecars. Diarizers write
   `<stem>/segments.json` plus clips.

@@ -254,9 +254,9 @@ def main() -> int:
         "hf",
     )
     add_prompt_arguments(command, top_p=True)
-    command.add_argument("--model-id", default="google/gemma-4-E2B-it", help="Hugging Face model repository ID")
-    command.add_argument("--device", default="auto", help='Inference device ("auto", "cpu", "cuda", or "hip")')
-    command.add_argument("--adapter-path", help="Optional LoRA adapter checkpoint directory")
+    command.add_argument("-m", "--model-id", default="google/gemma-4-E2B-it", help="Hugging Face model repository ID")
+    command.add_argument("-d", "--device", default="auto", help='Inference device ("auto", "cpu", "cuda", or "hip")')
+    command.add_argument("-ap", "--adapter-path", help="Optional LoRA adapter checkpoint directory")
     command.add_argument(
         "--trust-remote-code",
         action=argparse.BooleanOptionalAction,

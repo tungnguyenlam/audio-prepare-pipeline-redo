@@ -14,11 +14,11 @@ from _common.files import LoggingArgumentParser, completed, digest, identity, pr
 
 def main() -> int:
     p = LoggingArgumentParser(description=__doc__)
-    p.add_argument('--input-manifest', type=Path, required=True, help='Path to input dataset manifest JSON')
-    p.add_argument('--output-file', type=Path, required=True, help='Output ZIP archive destination path')
-    p.add_argument('--overwrite', action='store_true', help='Overwrite existing output ZIP archive and sidecars')
-    p.add_argument('--concurrency', type=int, default=1, help='Number of concurrent workers for checking file hashes. Set > 1 to enable concurrent execution')
-    p.add_argument('--batch-size', type=int, default=1, help='Batch size of entries to verify per worker task')
+    p.add_argument('-im', '--input-manifest', type=Path, required=True, help='Path to input dataset manifest JSON')
+    p.add_argument('-o', '-of', '--output-file', type=Path, required=True, help='Output ZIP archive destination path')
+    p.add_argument('-w', '-ow', '--overwrite', action='store_true', help='Overwrite existing output ZIP archive and sidecars')
+    p.add_argument('-c', '--concurrency', type=int, default=1, help='Number of concurrent workers for checking file hashes. Set > 1 to enable concurrent execution')
+    p.add_argument('-b', '-bs', '--batch-size', type=int, default=1, help='Batch size of entries to verify per worker task')
     args = p.parse_args()
     if args.concurrency < 1:
         p.error('--concurrency must be at least 1')

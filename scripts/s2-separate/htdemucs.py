@@ -11,15 +11,15 @@ from _common.files import batch, completed, convert, destinations, identity, par
 
 def main() -> int:
     p = parser(__doc__, 's2-separate', 'htdemucs')
-    p.add_argument('--model', choices=('htdemucs', 'htdemucs_ft'), default='htdemucs',
+    p.add_argument('-m', '--model', choices=('htdemucs', 'htdemucs_ft'), default='htdemucs',
                    help='Demucs model architecture variant (default: htdemucs)')
-    p.add_argument('--device', default='cpu',
+    p.add_argument('-d', '--device', default='cpu',
                    help='Compute device for model inference (e.g. cpu, cuda, cuda:0) (default: cpu)')
     p.add_argument('--stem', default='vocals', choices=('vocals', 'instrumental', 'drums', 'bass', 'other'),
                    help='Target stem to separate and export (default: vocals)')
-    p.add_argument('--sample-rate', type=positive_int, default=None,
+    p.add_argument('-sr', '--sample-rate', type=positive_int, default=None,
                    help='Output sample rate in Hz (default: preserve source)')
-    p.add_argument('--channels', type=int, choices=(1, 2), default=1,
+    p.add_argument('-ch', '--channels', type=int, choices=(1, 2), default=1,
                    help='Output channel layout (1=mono, 2=stereo) (default: 1)')
     p.add_argument('--shifts', type=int, default=1,
                    help='Number of random equivariant shifts for inference (default: 1)')

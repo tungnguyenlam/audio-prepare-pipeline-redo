@@ -11,11 +11,11 @@ from _common.files import batch, completed, convert, destinations, identity, par
 
 def main() -> int:
     p = parser(__doc__, 'cut')
-    p.add_argument('--start', type=float, required=True, help='Start seconds relative to input')
-    p.add_argument('--end', type=float, required=True, help='End seconds relative to input')
-    p.add_argument('--sample-rate', type=positive_int, default=None,
+    p.add_argument('-s', '--start', type=float, required=True, help='Start seconds relative to input')
+    p.add_argument('-e', '--end', type=float, required=True, help='End seconds relative to input')
+    p.add_argument('-sr', '--sample-rate', type=positive_int, default=None,
                    help='Target audio sample rate in Hz (default: preserve source)')
-    p.add_argument('--channels', type=int, choices=(1, 2), default=1,
+    p.add_argument('-ch', '--channels', type=int, choices=(1, 2), default=1,
                    help='Target audio channel layout (1=mono, 2=stereo) (default: 1)')
     args = p.parse_args()
     if not math.isfinite(args.start) or not math.isfinite(args.end) or not 0 <= args.start < args.end:

@@ -414,9 +414,9 @@ def main() -> int:
         'Choose one backend/model/effort per input. Both flat folders and family trees are read recursively.\n'
         'The old implicit Gemini reference, positional folder, and --base-dir discovery have been removed.',
     )
-    parser.add_argument('--reference-dir', type=Path, required=True, help='Reference run or one audio-family directory')
-    parser.add_argument('--candidates-dir', '--candidate-dir', dest='candidates_dir', type=Path, action='append', required=True, help='Candidate run or family; repeat for multiple candidates')
-    parser.add_argument('--output-dir', type=Path, help='Exact report destination; default: .data/s4-agent/verifier/comparisons/<timestamp>-<selection-hash>')
+    parser.add_argument('-rd', '--reference-dir', type=Path, required=True, help='Reference run or one audio-family directory')
+    parser.add_argument('-cd', '--candidates-dir', '--candidate-dir', dest='candidates_dir', type=Path, action='append', required=True, help='Candidate run or family; repeat for multiple candidates')
+    parser.add_argument('-od', '--output-dir', type=Path, help='Exact report destination; default: .data/s4-agent/verifier/comparisons/<timestamp>-<selection-hash>')
     parser.add_argument('--title', help='Report title')
     parser.add_argument('--no-plots', action='store_true', help='Write tables and reports without matplotlib')
     args = parser.parse_args()

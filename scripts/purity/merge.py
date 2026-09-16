@@ -10,15 +10,15 @@ from _common.merge import add_merge_arguments, merge_parameters, merge_turns
 
 def main() -> int:
     p = LoggingArgumentParser(description=__doc__)
-    p.add_argument('--input-manifest', type=Path, required=True, help='Input segments.raw.json manifest')
-    p.add_argument('--output-manifest', type=Path,
+    p.add_argument('-im', '--input-manifest', type=Path, required=True, help='Input segments.raw.json manifest')
+    p.add_argument('-om', '--output-manifest', type=Path,
                    help='Output manifest (default: .data/purity/merge/<family>/segments.json)')
-    p.add_argument('--input-file', type=Path,
+    p.add_argument('-i', '-if', '--input-file', type=Path,
                    help='Source audio override on the same timeline; bypasses the recorded source hash')
-    p.add_argument('--overwrite', action='store_true', help='Overwrite a conflicting output manifest')
-    p.add_argument('--concurrency', type=int, default=1,
+    p.add_argument('-w', '-ow', '--overwrite', action='store_true', help='Overwrite a conflicting output manifest')
+    p.add_argument('-c', '--concurrency', type=int, default=1,
                    help='Shared CLI option; this ordered merge runs sequentially')
-    p.add_argument('--batch-size', type=int, default=1,
+    p.add_argument('-b', '-bs', '--batch-size', type=int, default=1,
                    help='Shared CLI option; this ordered merge reads one frame at a time')
     add_merge_arguments(p)
     args = p.parse_args()

@@ -394,15 +394,15 @@ class _Clustering:
 
 def main() -> int:
     p = parser('Standalone clustering diarization.', 's3-diarize', 'clustering', segments=True)
-    p.add_argument('--device', default='auto',
+    p.add_argument('-d', '--device', default='auto',
                    help='Compute device for model inference (e.g. auto, cpu, cuda) (default: auto)')
-    p.add_argument('--num-speakers', type=positive_int, default=None,
+    p.add_argument('-ns', '--num-speakers', type=positive_int, default=None,
                    help='Exact known number of speakers (default: None)')
     p.add_argument('--batch-size', type=positive_int, default=64,
                    help='VAD and speaker embedding extraction batch size (default: 64)')
-    p.add_argument('--sample-rate', type=positive_int, default=None,
+    p.add_argument('-sr', '--sample-rate', type=positive_int, default=None,
                    help='Output sample rate in Hz for exported turn clips (default: preserve source)')
-    p.add_argument('--channels', type=int, choices=(1, 2), default=1,
+    p.add_argument('-ch', '--channels', type=int, choices=(1, 2), default=1,
                    help='Output channel layout for clips (1=mono, 2=stereo) (default: 1)')
     p.add_argument('--vad-model', type=str, default=DEFAULT_VAD_MODEL,
                    help='VAD model checkpoint name (default: %(default)s)')
@@ -424,8 +424,8 @@ def main() -> int:
                    help='Minimum speech segment duration in seconds to keep (default: 0.5)')
     p.add_argument('--vad-min-duration-off-s', type=float, default=0.5,
                    help='Minimum silence duration in seconds to split turns (default: 0.5)')
-    p.add_argument('--min-duration-s', type=float, default=1.5, help='Minimum turn duration in seconds to keep and export (default: 1.5)')
-    p.add_argument('--max-duration-s', type=float, default=15.0, help='Maximum turn duration in seconds to keep and export (default: 15.0)')
+    p.add_argument('-min', '--min-duration-s', type=float, default=1.5, help='Minimum turn duration in seconds to keep and export (default: 1.5)')
+    p.add_argument('-max', '--max-duration-s', type=float, default=15.0, help='Maximum turn duration in seconds to keep and export (default: 15.0)')
     safe_parent = lambda rel: Path(*[safe_name(p) for p in rel.parent.parts]) if rel.parent.parts else Path('.')
     add_diarization_merge_arguments(p)
     args = p.parse_args()

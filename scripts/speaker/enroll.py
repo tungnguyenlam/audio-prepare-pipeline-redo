@@ -14,17 +14,17 @@ from _common.files import LoggingArgumentParser, ROOT, progress, safe_name
 
 def main() -> int:
     p = LoggingArgumentParser(description=__doc__)
-    p.add_argument('--name', required=True, help='Target speaker profile name')
+    p.add_argument('-n', '--name', required=True, help='Target speaker profile name')
     p.add_argument('--clip', dest='clips', action='append', default=[], type=Path, help='Reference WAV clip file (repeatable)')
     p.add_argument('--clip-dir', type=Path, help='Directory of reference WAV clips')
-    p.add_argument('--profiles-dir', type=Path, default=ROOT / '.data' / 'speaker_profiles', help='Root profiles directory')
-    p.add_argument('--overwrite', action='store_true', help='Replace existing profile completely')
+    p.add_argument('-pd', '--profiles-dir', type=Path, default=ROOT / '.data' / 'speaker_profiles', help='Root profiles directory')
+    p.add_argument('-w', '-ow', '--overwrite', action='store_true', help='Replace existing profile completely')
     p.add_argument('--add', action='store_true', help='Append reference clips to existing profile')
     p.add_argument('--channel-id', help='Optional source channel ID for provenance')
     p.add_argument('--channel-name', help='Optional source channel name for provenance')
     p.add_argument('--channel-url', help='Optional source channel URL for provenance')
-    p.add_argument('--concurrency', type=int, default=1, help='Number of concurrent workers for copying clips. Set > 1 to enable concurrent execution')
-    p.add_argument('--batch-size', type=int, default=1, help='Number of clips to batch per copying task')
+    p.add_argument('-c', '--concurrency', type=int, default=1, help='Number of concurrent workers for copying clips. Set > 1 to enable concurrent execution')
+    p.add_argument('-b', '-bs', '--batch-size', type=int, default=1, help='Number of clips to batch per copying task')
     args = p.parse_args()
     if args.concurrency < 1:
         p.error('--concurrency must be at least 1')

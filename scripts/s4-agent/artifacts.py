@@ -60,23 +60,27 @@ def add_prompt_arguments(
 ) -> None:
     """Add options shared by every free-form generation backend."""
     command.add_argument(
+        "-pf", "-p",
         "--prompt-file",
         required=True,
         type=Path,
         help="Path to text prompt file to send to model",
     )
     command.add_argument(
+        "-spf",
         "--system-prompt-file",
         type=Path,
         help="Optional system instruction prompt file",
     )
     command.add_argument(
+        "-mt",
         "--max-tokens",
         type=positive_int,
         default=4096,
         help="Maximum number of tokens to generate",
     )
     command.add_argument(
+        "-t",
         "--temperature",
         type=float,
         default=0.0,
@@ -84,6 +88,7 @@ def add_prompt_arguments(
     )
     if top_p:
         command.add_argument(
+            "-tp",
             "--top-p",
             type=float,
             default=None,

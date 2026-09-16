@@ -10,9 +10,9 @@ from _common.files import batch, completed, convert, destinations, identity, par
 
 def main() -> int:
     p = parser(__doc__, 'convert')
-    p.add_argument('--sample-rate', type=positive_int, default=48000,
+    p.add_argument('-sr', '--sample-rate', type=positive_int, default=48000,
                    help='Target audio sample rate in Hz (default: 48000)')
-    p.add_argument('--channels', type=int, choices=(1, 2), default=1,
+    p.add_argument('-ch', '--channels', type=int, choices=(1, 2), default=1,
                    help='Target audio channel layout (1=mono, 2=stereo) (default: 1)')
     args = p.parse_args()
     pairs = destinations(args)

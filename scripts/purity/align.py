@@ -419,11 +419,11 @@ def _run_mms_fa_alignment(audio: Path, turns: Sequence[dict], *, device: str='cp
 def main() -> int:
     p = arguments(__doc__)
     p.add_argument('--engine', choices=('whisper_timestamped', 'remote_whisper', 'mms_fa', 'words'), default='whisper_timestamped', help='Alignment engine choice: "whisper_timestamped", "remote_whisper", "mms_fa", or "words"')
-    p.add_argument('--model', default='vinai/PhoWhisper-small', help='Model name or Hugging Face repository for alignment')
+    p.add_argument('-m', '--model', default='vinai/PhoWhisper-small', help='Model name or Hugging Face repository for alignment')
     p.add_argument('--language', default='vi', help='Audio language code (e.g. "vi", "en")')
-    p.add_argument('--device', default='cpu', help='Inference device ("cpu", "cuda", or "hip")')
-    p.add_argument('--endpoint', help='Remote endpoint URL for remote_whisper engine')
-    p.add_argument('--words-file', type=Path, help='Path to JSON file containing precomputed word timestamps')
+    p.add_argument('-d', '--device', default='cpu', help='Inference device ("cpu", "cuda", or "hip")')
+    p.add_argument('-ep', '--endpoint', help='Remote endpoint URL for remote_whisper engine')
+    p.add_argument('-wf', '--words-file', type=Path, help='Path to JSON file containing precomputed word timestamps')
     args = p.parse_args()
     if args.concurrency < 1:
         p.error('--concurrency must be at least 1')

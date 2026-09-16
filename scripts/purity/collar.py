@@ -200,7 +200,7 @@ def main() -> int:
     p = arguments(__doc__)
     p.add_argument('--context-aware', action='store_true', help='Use asymmetric handoff-aware collar adjustment')
     p.add_argument('--collar-s', type=float, default=DEFAULT_COLLAR_EROSION_S, help='Inward margin shaved from start and end of every turn in seconds')
-    p.add_argument('--min-duration-s', type=float, default=DEFAULT_MIN_TURN_DURATION_S, help='Minimum surviving turn duration in seconds required')
+    p.add_argument('-min', '--min-duration-s', type=float, default=DEFAULT_MIN_TURN_DURATION_S, help='Minimum surviving turn duration in seconds required')
     p.add_argument('--transition-exclusion-s', type=float, default=DEFAULT_TRANSITION_EXCLUSION_S, help='Speaker transition gap exclusion threshold in seconds')
     args = p.parse_args()
     if args.concurrency < 1:

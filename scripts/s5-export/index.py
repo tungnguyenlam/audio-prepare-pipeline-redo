@@ -10,8 +10,8 @@ from _common.files import ROOT, identity, inputs, parser, persist_path, probe, p
 
 def main() -> int:
     p = parser(__doc__, 's5-export', segments=True)
-    p.add_argument('--output-manifest', type=Path, help='Explicit destination path for output manifest JSON')
-    p.add_argument('--tag', action='append', default=[], help='Tag to associate with indexed entries in manifest (repeatable)')
+    p.add_argument('-om', '--output-manifest', type=Path, help='Explicit destination path for output manifest JSON')
+    p.add_argument('-t', '--tag', action='append', default=[], help='Tag to associate with indexed entries in manifest (repeatable)')
     args = p.parse_args()
     sources = inputs(args)
     destination = (args.output_manifest or args.output_dir / 'manifest.json').resolve()

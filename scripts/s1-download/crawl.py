@@ -17,15 +17,15 @@ from youtube import RateLimitAbort, add_download_arguments, download, raise_if_r
 
 def arguments() -> LoggingArgumentParser:
     p = LoggingArgumentParser(description=__doc__)
-    p.add_argument('--source-file', type=Path, required=True,
+    p.add_argument('-sf', '--source-file', type=Path, required=True,
                    help='JSON collection containing named playlist, channel, or yt-dlp search sources')
-    p.add_argument('--source', action='append', default=None,
+    p.add_argument('-s', '--source', action='append', default=None,
                    help='Only crawl this exact source name; repeat to select multiple sources')
-    p.add_argument('--output-manifest', type=Path, default=None,
+    p.add_argument('-om', '--output-manifest', type=Path, default=None,
                    help='Candidate/audit JSON (default: .data/s1-download/<collection>/crawl.json)')
     p.add_argument('--metadata-only', action='store_true',
                    help='Write the filtered crawl manifest without downloading audio')
-    p.add_argument('--max-items', '--limit', dest='max_items', type=positive_int, default=None,
+    p.add_argument('-n', '-l', '--max-items', '--limit', dest='max_items', type=positive_int, default=None,
                    help='Maximum accepted unique videos across the selected sources')
     return add_download_arguments(p)
 

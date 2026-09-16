@@ -156,11 +156,13 @@ def main() -> int:
     p = parser(__doc__, "asr", "vibevoice")
     add_checkpoint_args(p)
     p.add_argument(
+        "-d",
         "--device",
         default="auto",
         help='Compute device for model inference ("auto", "cpu", "cuda", or "hip") (default: auto)',
     )
     p.add_argument(
+        "-mt",
         "--max-new-tokens",
         type=int,
         default=DEFAULT_MAX_NEW_TOKENS,
@@ -183,6 +185,7 @@ def main() -> int:
         help='Language code hint for Whisper tokenizer alignment (e.g. "vi", "en", default: "vi")',
     )
     p.add_argument(
+        "-v",
         "--verbose",
         action="store_true",
         default=False,

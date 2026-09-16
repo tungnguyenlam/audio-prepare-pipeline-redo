@@ -118,8 +118,8 @@ class VibeVoiceVerifier:
 def main() -> int:
     p = parser('Verify audio with VibeVoice-ASR speaker counts; writes verdicts without filtering audio.', 's4-agent/verifier', 'vibevoice')
     add_checkpoint_args(p)
-    p.add_argument('--device', default='auto', help='Inference device ("auto", "cpu", "cuda", or "hip")')
-    p.add_argument('--max-new-tokens', type=int, default=DEFAULT_MAX_NEW_TOKENS, help='Maximum number of tokens to generate')
+    p.add_argument('-d', '--device', default='auto', help='Inference device ("auto", "cpu", "cuda", or "hip")')
+    p.add_argument('-mt', '--max-new-tokens', type=int, default=DEFAULT_MAX_NEW_TOKENS, help='Maximum number of tokens to generate')
     p.add_argument('--min-secondary-speech-s', type=float, default=DEFAULT_MIN_SECONDARY_SPEECH_S, help='Minimum duration in seconds of secondary speaker speech to trigger rejection')
     args = p.parse_args()
 
