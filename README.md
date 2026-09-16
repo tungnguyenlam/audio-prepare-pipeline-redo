@@ -38,7 +38,7 @@ verifiers) are provisioned per target with the same script; see
 | `scripts/purity/` | `consensus`, `cleanup`, `merge`, `collar`, `snap`, `align`, `segment` |
 | `scripts/s4-agent/` | raw audio-LLM generation: `gemini`, `endpoint`, `hf` |
 | `scripts/s4-agent/verifier/` | pass/reject verifiers `gemini`, `hf`, `endpoint`, `unsloth`, `vllm`, `moss`, `minicpm`, `kimi`, `vibevoice`; offline `analysis`, `compare`, `evaluate_verifier`, `scaffold_experiment` |
-| `scripts/mix/`, `scripts/evaluate/` | `mix`; `separation`, `diarization`, `plot_diarization`, `plot_metrics` |
+| `scripts/mix/`, `scripts/evaluate/` | `mix`; `separation`, `diarization`, `plot_diarization`, `plot_metrics`, `prepare_viyt_diar`, `run_viyt_diar` |
 | `scripts/s5-export/` | `index`, `filter`, `export`, `bundle` |
 | `scripts/sync/` | rsync code/data to the model server and auxiliary hosts |
 

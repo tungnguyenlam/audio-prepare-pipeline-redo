@@ -380,5 +380,13 @@ only the first four enter metrics. Zero denominators are `null`.
 `hypothesis_speaker_s`, `scored_audio_s`, `collar_s`, `skip_overlap`,
 `speaker_mapping` (Hungarian assignment).
 
+`evaluate/prepare_viyt_diar` (`operation: "prepare_viyt_diar"`) writes
+`.data/evaluate/viyt-diar/audio/<id>.wav`, `reference/<id>/segments.json`, and
+`manifest.json`. `evaluate/run_viyt_diar` (`operation: "viyt_diar_benchmark"`)
+stores per-system checkpoints and a combined JSON under `results/`, plus
+comparison figures under `figures/`. Scoring uses raw diarizer turns
+(`segments.raw.json`) and reports unweighted mean DER plus duration-weighted
+corpus DER.
+
 `mix/mix` writes `mixture.wav`, `speech_reference.wav`, `music_reference.wav`
 plus sidecars into `--output-dir`.

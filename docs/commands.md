@@ -384,7 +384,22 @@ bash scripts/evaluate/plot_diarization.sh --input-dir .data/s3-diarize/sortforme
 # one collection defaults to <input-dir>/_plot/; an explicit output root uses
 # <output-dir>/_plot/ or <output-dir>/<subdir>/_plot/ for nested collections
 bash scripts/evaluate/plot_metrics.sh --metrics-file a.json --metrics-file b.json --output-file .data/metrics.png
+
+# ViYT-Diar (isolated evaluate commands; do not import s3-diarize Python)
+bash scripts/evaluate/prepare_viyt_diar.sh
+bash scripts/evaluate/run_viyt_diar.sh --systems pyannote_community1 --limit 2
+bash scripts/evaluate/run_viyt_diar.sh --all
 ```
+
+`prepare_viyt_diar` downloads the public 100-file `tuanduy1612/ViYT-Diar` `test`
+split into `.data/evaluate/viyt-diar/audio/` and writes matching reference
+`segments.json` files. `run_viyt_diar` then calls the existing diarizer Bash
+launchers as subprocesses (`--merge false`) and scores each clip's
+`segments.raw.json` with `evaluate_diarization` at a 0.25 s collar. Systems run
+one at a time. Results and figures land under `.data/evaluate/viyt-diar/results/`
+and `figures/`. The runner raises the clip-duration window so WAV clip export is
+skipped; DER still uses unfiltered raw turns. `--oracle-speakers` passes
+`--num-speakers` per clip when the launcher has that flag (Sortformer does not).
 
 Folder mode recursively reads every `segments.json` below `--input-dir` and
 groups them by enclosing collection folder (`<collection>/<stem>/segments.json`).

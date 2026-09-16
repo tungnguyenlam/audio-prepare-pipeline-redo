@@ -88,9 +88,18 @@ Lower is better; `–` = no published number. Protocols differ across rows.
 | DiariZen (`BUT-FIT/diarizen-wavlm-large-s80-md-v2`, no collar, CC BY-NC 4.0) | 10.1 | 10.8 | 13.9 | 14.5 | 9.1 | – | – |
 
 NVIDIA's published TitaNet clustering numbers use oracle VAD and are therefore
-omitted. None of these checkpoints has a published Vietnamese number; the
-100-file `tuanduy1612/ViYT-Diar` set is the natural next benchmark to run with
-`scripts/evaluate/diarization.py`.
+omitted. None of these checkpoints has a published Vietnamese number. Run the
+100-file `tuanduy1612/ViYT-Diar` set with isolated evaluate commands that call
+the current diarizer launchers and score raw turns:
+
+```bash
+bash scripts/evaluate/prepare_viyt_diar.sh
+bash scripts/evaluate/run_viyt_diar.sh --all
+```
+
+Protocol: estimated speaker count (no oracle), `--merge false`, 0.25 s collar,
+`segments.raw.json` vs the cached reference. Reports land under
+`.data/evaluate/viyt-diar/results/`.
 
 Sources: pyannote and NVIDIA model cards on Hugging Face, `modelscope/3D-Speaker`,
 `BUTSpeechFIT/DiariZen`, `NVIDIA-NeMo/Speech` diarization README.

@@ -25,6 +25,12 @@ from typing import Any
 import argparse
 import contextlib
 import sys
+
+# Prevent this script directory from shadowing the installed 'pyannote' package.
+_script_dir = str(Path(__file__).resolve().parent)
+while _script_dir in sys.path:
+    sys.path.remove(_script_dir)
+sys.modules.pop('pyannote', None)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _common.files import batch, convert, identity, inputs, manifest_destinations, parser, persist_path, positive_int, probe, request, safe_name
 from _common.merge import add_diarization_merge_arguments, merge_parameters
@@ -263,12 +269,56 @@ class _ThreeDSpeaker:
         """Load CAM++ embeddings, FSMN VAD, and optional overlap segmentation."""
         try:
             import torch
+            import torchaudio
         except ImportError as exc:
             raise RuntimeError(
                 "3D-Speaker diarizer dependencies are unavailable. Install the "
                 "pinned envs/requirements-3dspeaker.txt dependencies in an isolated "
                 "environment."
             ) from exc
+        if not hasattr(torchaudio, 'AudioMetaData'):
+            class AudioMetaData:
+                def __init__(self, sample_rate: int = 0, num_frames: int = 0, num_channels: int = 0,
+                             bits_per_sample: int = 0, encoding: str = '') -> None:
+                    self.sample_rate = sample_rate
+                    self.num_frames = num_frames
+                    self.num_channels = num_channels
+                    self.bits_per_sample = bits_per_sample
+                    self.encoding = encoding
+            torchaudio.AudioMetaData = AudioMetaData  # type: ignore[attr-defined]
+        if not hasattr(torchaudio, 'list_audio_backends'):
+            torchaudio.list_audio_backends = lambda: ['soundfile']  # type: ignore[attr-defined]
+        if not hasattr(torchaudio, 'info'):
+            import soundfile as sf
+
+            def _torchaudio_info(uri, backend=None):
+                info = sf.info(uri)
+                return torchaudio.AudioMetaData(
+                    sample_rate=int(info.samplerate),
+                    num_frames=int(info.frames),
+                    num_channels=int(info.channels),
+                    bits_per_sample=0,
+                    encoding=str(info.subtype or ''),
+                )
+            torchaudio.info = _torchaudio_info  # type: ignore[attr-defined]
+        _orig_load = torchaudio.load
+
+        def _soundfile_load(uri, frame_offset=0, num_frames=-1, normalize=True, channels_first=True,
+                            format=None, buffer_size=4096, backend=None):
+            import numpy as np
+            import soundfile as sf
+            import torch
+            try:
+                return _orig_load(uri, frame_offset=frame_offset, num_frames=num_frames, normalize=normalize,
+                                  channels_first=channels_first, format=format, buffer_size=buffer_size,
+                                  backend=backend)
+            except Exception:
+                frames = None if num_frames is None or int(num_frames) < 0 else int(num_frames)
+                data, sample_rate = sf.read(uri, dtype='float32', always_2d=True, start=int(frame_offset),
+                                            frames=-1 if frames is None else frames)
+                waveform = torch.from_numpy(np.ascontiguousarray(data.T if channels_first else data))
+                return waveform, int(sample_rate)
+        torchaudio.load = _soundfile_load  # type: ignore[assignment]
 
         self._ensure_speakerlab_path()
         self.model_cache_dir.mkdir(parents=True, exist_ok=True)

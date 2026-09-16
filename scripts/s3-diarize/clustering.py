@@ -22,6 +22,12 @@ from typing import Any
 
 import argparse
 import contextlib
+
+# Prevent this script directory from shadowing the installed 'pyannote' package.
+_script_dir = str(Path(__file__).resolve().parent)
+while _script_dir in sys.path:
+    sys.path.remove(_script_dir)
+sys.modules.pop('pyannote', None)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _common.files import batch, convert, identity, inputs, manifest_destinations, parser, persist_path, positive_int, probe, request, safe_name
 from _common.merge import add_diarization_merge_arguments, merge_parameters
