@@ -490,6 +490,8 @@ dev_type = 'ROCm/HIP: ' + torch.cuda.get_device_name(0) if getattr(torch.version
 print(f'   -> Torch: {torch.__version__} ({dev_type})')
 import transformers
 print(f'   -> Transformers: {transformers.__version__} successfully loaded')
+import whisper
+print(f'   -> Whisper: {whisper.__version__} successfully loaded')
 "
     ln -sfn "$venv_dir" ".venv-vibevoice"
     echo "🎉 ${venv_dir} ready!"
