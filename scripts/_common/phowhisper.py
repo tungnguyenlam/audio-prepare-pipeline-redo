@@ -3,6 +3,7 @@ from __future__ import annotations
 
 PHOWHISPER_SIZES = ("tiny", "base", "small", "medium", "large")
 DEFAULT_PHOWHISPER_SIZE = "large"
+DEFAULT_ALIGN_SIZE = "medium"
 DEFAULT_PHOWHISPER_MODEL_ID = f"vinai/PhoWhisper-{DEFAULT_PHOWHISPER_SIZE}"
 _SIZE_HELP = ", ".join(PHOWHISPER_SIZES)
 

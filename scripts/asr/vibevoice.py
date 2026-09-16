@@ -24,7 +24,7 @@ from _common.files import (
     request,
     write_json,
 )
-from _common.phowhisper import DEFAULT_PHOWHISPER_SIZE, model_flag_help, resolve_model_id
+from _common.phowhisper import DEFAULT_ALIGN_SIZE, model_flag_help, resolve_model_id
 from _common.vibevoice import add_checkpoint_args, load_vibevoice
 
 logger = logging.getLogger(__name__)
@@ -94,7 +94,7 @@ def _write_text_file(target_path: Path, lines: list[str]) -> None:
 def _load_whisper_alignment_model(model_name: str, device: Any) -> Any:
     """Load Whisper or PhoWhisper model for word-level alignment.
 
-    Supports HuggingFace repositories (e.g. 'vinai/PhoWhisper-large') via whisper_timestamped
+    Supports HuggingFace repositories (e.g. 'vinai/PhoWhisper-medium') via whisper_timestamped
     as well as standard OpenAI Whisper checkpoints ('base.en', 'large-v3', etc.).
     """
     import whisper
@@ -176,8 +176,8 @@ def main() -> int:
     )
     p.add_argument(
         "--align-model",
-        default=DEFAULT_PHOWHISPER_SIZE,
-        help=model_flag_help(),
+        default=DEFAULT_ALIGN_SIZE,
+        help=model_flag_help(default_size=DEFAULT_ALIGN_SIZE),
     )
     p.add_argument(
         "--align-language",
