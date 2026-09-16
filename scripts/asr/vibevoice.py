@@ -98,9 +98,17 @@ def _load_whisper_alignment_model(model_name: str, device: Any) -> Any:
     """
     import whisper
 
+    openai_names = set(whisper.available_models())
     try:
         import whisper_timestamped as whisperts
-    except ImportError:
+    except ImportError as import_err:
+        if model_name not in openai_names:
+            raise RuntimeError(
+                f"Alignment model {model_name!r} requires whisper-timestamped "
+                "(not openai-whisper). Install it in the vibevoice env with "
+                "./envs/setup_worker_envs.sh vibevoice, or pass a stock Whisper "
+                "name such as --align-model small."
+            ) from import_err
         whisperts = None
 
     whisper_model = None
@@ -108,6 +116,10 @@ def _load_whisper_alignment_model(model_name: str, device: Any) -> Any:
         try:
             whisper_model = whisperts.load_model(model_name, device=device)
         except Exception as wt_err:
+            if model_name not in openai_names:
+                raise RuntimeError(
+                    f"Failed to load alignment model {model_name!r} with whisper_timestamped: {wt_err}"
+                ) from wt_err
             logger.debug("whisper_timestamped loader failed for %s: %s", model_name, wt_err)
             whisper_model = None
 

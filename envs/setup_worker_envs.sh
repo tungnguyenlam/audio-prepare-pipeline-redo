@@ -492,6 +492,8 @@ import transformers
 print(f'   -> Transformers: {transformers.__version__} successfully loaded')
 import whisper
 print(f'   -> Whisper: {whisper.__version__} successfully loaded')
+import whisper_timestamped
+print(f'   -> whisper-timestamped: {whisper_timestamped.__version__} successfully loaded')
 import librosa
 print(f'   -> Librosa: {librosa.__version__} successfully loaded')
 "
