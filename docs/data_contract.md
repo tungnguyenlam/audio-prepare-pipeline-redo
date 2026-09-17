@@ -198,6 +198,13 @@ audit. Existing export writes a manifest and WAVs, not individual clip JSONs;
 adding sibling sidecars remains part of the proposed production integration.
 See [verification and integration](tts_segmentation_verification.md).
 
+Experimental `audio/segment_vad` writes the same manifest shape with
+`operation: segment_vad`, `speaker_id: unknown`, `clips_valid: false`, and no
+WAVs. It consumes the source audio plus a matching completed `evaluate/silero_jit`
+report. Its `audit.cuts` records the recursive parent interval, cut sample, VAD
+frame, speech probability, and deterministic tie-break rule. Turns form a gapless
+partition of the source and are bounded by `parameters.max_duration_samples`.
+
 `purity/{consensus,cleanup,merge,collar,snap,align,segment}` and
 `speaker/{score,filter,purity}` read a manifest and write a new one (defaults:
 `.data/purity/<stage>/<family>/segments.json`, `.data/speaker/<stage>/<family>/segments.json`).

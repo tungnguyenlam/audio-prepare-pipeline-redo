@@ -171,6 +171,7 @@ verification commands after download.
 bash scripts/audio/info.sh    --input-file .data/source.wav                       # JSON Lines to stdout
 bash scripts/audio/convert.sh --input-dir .data/input --output-dir .data/converted --sample-rate 48000 --channels 1
 bash scripts/audio/cut.sh     --input-file .data/source.wav --start 12.34 --end 18.92 --output-file .data/cut.wav
+bash scripts/audio/segment_vad.sh --input-file .data/source.wav --vad-report .data/vad.json --output-file .data/vad-plan/segments.json
 bash scripts/audio/export_segments.sh --input-manifest .data/purity/collar/<family>/segments.json --output-dir .data/clips
 # default output (when --output-dir is omitted): .data/audio/clips/<family>/
 # export also writes plot/timeline.png, plot/timeline_duration.png, plot/timeline_cutoff.png
@@ -353,6 +354,33 @@ stderr summary reports how many sentence ends passed the VAD gate; PhoWhisper
 punctuates sparsely, so VibeVoice transcripts are expected to raise that number.
 Cached probabilities can be reused with different cut settings without rerunning
 the VAD benchmark.
+
+For a deliberately simple VAD-only baseline, `audio/segment_vad.sh` requires no
+ASR or diarization manifest. Every interval longer than `--max-duration-s` (15 by
+default) is split at the lowest Silero speech-probability frame within that whole
+interval. The rule is then applied independently to each oversized child until
+all output intervals satisfy the limit. Equal minima prefer the point nearest the
+interval midpoint, then the earlier point. This is not fixed-duration slicing:
+VAD chooses boundaries, while the output remains a gapless partition of the full
+source timeline.
+
+```bash
+bash scripts/audio/segment_vad.sh --input-file .data/recording.wav \
+  --vad-report .data/tts/vad.json --vad-device cpu \
+  --output-file .data/vad-plan/segments.json
+
+bash scripts/audio/export_segments.sh --input-manifest .data/vad-plan/segments.json \
+  --output-dir .data/vad-clips --min-duration-s 0 --max-duration-s 15
+```
+
+The planner reuses the cached native-JIT probability track and records every cut,
+parent interval, recursion depth, VAD frame, and probability. It never invokes a
+model or renders clips. The baseline has no silence threshold: if an interval has
+continuous speech, its least-active frame is still selected, so word completeness
+must be evaluated separately. The final partial VAD frame is ineligible because
+Silero inference zero-pads it beyond the real source duration.
+See the [recorded baseline run](vad_segmentation_baseline.md) for the observed
+tiny-fragment behavior and Gemini 3.8 Flash word-completeness review.
 
 ```bash
 # Transcribe single file with Whisper word-level alignment (writes <stem>_vibevoice.json and .txt)
