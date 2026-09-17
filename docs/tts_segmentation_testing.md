@@ -12,7 +12,7 @@ implicitly. All artifacts stay under `.data/`.
 | --- | --- | --- |
 | Source WAV | `s1-download` or any local file | Any rate; the same bytes must be used for every step |
 | ASR JSON with `turns[].words[]` | `asr/vibevoice.sh` (preferred) or `asr/phowhisper.sh` | VibeVoice punctuates every sentence; PhoWhisper emitted one sentence end per ~44 s on the Hana test, so its plans rely on the word-pause fallback |
-| Silero JIT report | `evaluate/silero_jit.sh` | Needs `silero_vad.jit` on disk, e.g. `.data/models/silero/silero_vad.jit`; CPU is fine and faster than ROCm |
+| Silero JIT report | `evaluate/silero_jit.sh` | `setup_worker_envs.sh audio` downloads `~/.cache/silero-vad/silero_vad.jit`; CPU is fine and faster than ROCm |
 | Optional unfiltered diarization | any `s3-diarize` backend's `segments.raw.json` | Only when ASR speaker labels are not trusted; never pass an exported, filtered manifest |
 
 ## Step by step
@@ -31,7 +31,6 @@ bash scripts/asr/vibevoice.sh --input-file "$src" --output-dir "$out/asr"
 
 # 2. Cache Silero probabilities once per recording (reusable for every cut setting)
 bash scripts/evaluate/silero_jit.sh --input-file "$src" \
-  --model-file .data/models/silero/silero_vad.jit \
   --devices cpu --output-file "$out/vad.json"
 
 # 3. Plan cuts (no model inference; fast)

@@ -40,6 +40,58 @@ print_usage() {
 TARGET="${1:-status}"
 FORCE=0
 
+SILERO_MODEL_URL="https://raw.githubusercontent.com/snakers4/silero-vad/41f03a954b841327835dea1ddb7bb28ae23ddc2c/src/silero_vad/data/silero_vad.jit"
+SILERO_MODEL_SHA256="e1122837f4154c511485fe0b9c64455f7b929c96fbb8d79fbdb336383ebd3720"
+
+sha256_file() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        shasum -a 256 "$1" | awk '{print $1}'
+    fi
+}
+
+ensure_silero_model() {
+    local cache_root="${HOME}/.cache"
+    local model_path="${cache_root}/silero-vad/silero_vad.jit"
+    local model_dir
+    model_dir="$(dirname "$model_path")"
+    mkdir -p "$model_dir"
+
+    if [ -f "$model_path" ] && [ "$(sha256_file "$model_path")" = "$SILERO_MODEL_SHA256" ]; then
+        echo "✅ Silero JIT cached at ${model_path}"
+        return 0
+    fi
+
+    local temp_path
+    temp_path="$(mktemp "${model_path}.tmp.XXXXXX")"
+    echo "⬇️  Downloading Silero JIT model to ${model_path}..."
+    if command -v curl >/dev/null 2>&1; then
+        if ! curl --fail --location --retry 3 --connect-timeout 20 --output "$temp_path" "$SILERO_MODEL_URL"; then
+            rm -f "$temp_path"
+            return 1
+        fi
+    elif command -v wget >/dev/null 2>&1; then
+        if ! wget --no-verbose --tries=3 --timeout=20 --output-document "$temp_path" "$SILERO_MODEL_URL"; then
+            rm -f "$temp_path"
+            return 1
+        fi
+    else
+        rm -f "$temp_path"
+        echo "Missing curl or wget; cannot download the Silero JIT model." >&2
+        return 1
+    fi
+
+    if [ "$(sha256_file "$temp_path")" != "$SILERO_MODEL_SHA256" ]; then
+        rm -f "$temp_path"
+        echo "Silero JIT model checksum mismatch; refusing to install it." >&2
+        return 1
+    fi
+    mv -f "$temp_path" "$model_path"
+    chmod 0644 "$model_path"
+    echo "✅ Silero JIT model ready at ${model_path}"
+}
+
 for arg in "$@"; do
     case "$arg" in
         --force) FORCE=1 ;;
@@ -213,6 +265,7 @@ setup_audio() {
 
     echo "📦 Installing audio requirements..."
     uv pip install --python "${venv_dir}/bin/python" -r "$REPO_ROOT/envs/requirements-audio.txt"
+    ensure_silero_model
     ln -sfn "$venv_dir" ".venv-audio"
     echo "🎉 ${venv_dir} ready!"
 }
@@ -377,6 +430,7 @@ print(f'   -> Torch: {torch.__version__} ({dev_type})')
 import whisper_timestamped
 print('   -> Whisper-timestamped: successfully loaded')
 "
+    ensure_silero_model
     ln -sfn "$venv_dir" ".venv-align"
     echo "🎉 ${venv_dir} ready!"
 }
@@ -497,6 +551,7 @@ print(f'   -> whisper-timestamped: {whisper_timestamped.__version__} successfull
 import librosa
 print(f'   -> Librosa: {librosa.__version__} successfully loaded')
 "
+    ensure_silero_model
     ln -sfn "$venv_dir" ".venv-vibevoice"
     echo "🎉 ${venv_dir} ready!"
 }

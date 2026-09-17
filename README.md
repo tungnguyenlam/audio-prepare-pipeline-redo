@@ -13,7 +13,7 @@ state — callers compose commands through `.data/` paths and JSON manifests.
 ```bash
 ./envs/setup_worker_envs.sh download                   # YouTube env (.venvs/download)
 bash scripts/s1-download/youtube.sh --url 'https://www.youtube.com/watch?v=VIDEO'
-./envs/setup_worker_envs.sh audio                       # lightweight downstream audio env
+./envs/setup_worker_envs.sh audio                       # audio env + cached Silero JIT in ~/.cache/silero-vad
 bash scripts/audio/info.sh --input-file .data/s1-download/<family>/<file>.wav
 ```
 

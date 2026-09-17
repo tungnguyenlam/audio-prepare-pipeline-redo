@@ -53,3 +53,17 @@
 - Updated [AGENTS.md](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/AGENTS.md) to describe `CURRENT_MACHINE.md`.
 - Appended tracking log to [WORKLOG.md](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/WORKLOG.md).
 - Validated with `git check-ignore -v CURRENT_MACHINE.md`. Tests were omitted because none were requested.
+
+## 2026-09-17 - Download Silero JIT during environment setup
+
+### Decisions
+- Pin the Silero native JIT URL to upstream commit `41f03a954b841327835dea1ddb7bb28ae23ddc2c` and verify SHA-256 `e1122837f4154c511485fe0b9c64455f7b929c96fbb8d79fbdb336383ebd3720`.
+- Cache the verified artifact at `~/.cache/silero-vad/silero_vad.jit`; reuse valid existing files and download atomically through a temporary file.
+- Run the cache check from the `audio`, `align`, and `vibevoice` setup targets so every supported Silero workflow provisions the same model.
+- Make `evaluate/silero_jit.py --model-file` optional, defaulting to the setup-managed cache path, while retaining explicit override support.
+
+### Results
+- Updated `envs/setup_worker_envs.sh`, the Silero evaluator, README, and segmentation documentation.
+- Ran `./envs/setup_worker_envs.sh audio`: downloaded and verified the 2.16 MiB model, then reran it successfully using the cached file.
+- Ran the evaluator without `--model-file` on `.data/test_amd/test_input.wav`; CPU inference completed and wrote `.data/evaluate/silero_cache_smoke/report.json`.
+- Validated shell syntax, Python compilation, and diff formatting. No test suite was written or run.

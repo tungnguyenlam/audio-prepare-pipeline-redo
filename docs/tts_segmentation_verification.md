@@ -197,10 +197,9 @@ Each command below runs one stage. Supply a **new output directory** for another
 experiment, or explicitly use `--overwrite` where supported.
 
 ```bash
-# Native model check; an existing local JIT is required. No ONNX or downloads.
+# Native model check; setup_worker_envs downloads the pinned JIT into ~/.cache/silero-vad.
 bash scripts/evaluate/silero_jit.sh \
   --input-file .data/s1-download/truyen-chem/vn3KdmD0eCA_KHAU-NGHIE-48000.wav \
-  --model-file .data/models/silero/silero_vad.jit \
   --devices cpu cuda:0 --repeats 3 \
   --output-file .data/evaluate/hana_rerun/vad.json
 ```

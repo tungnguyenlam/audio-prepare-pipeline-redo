@@ -308,10 +308,10 @@ the earlier negative result. A speaker override should use **unfiltered**
 `segments.raw.json`; already-exported manifests may have discarded all long turns.
 
 ```bash
-# Native JIT only; cuda:0 selects NVIDIA CUDA or AMD ROCm for the installed torch build.
+# Native JIT only; setup_worker_envs downloads the pinned model into ~/.cache/silero-vad.
+# cuda:0 selects NVIDIA CUDA or AMD ROCm for the installed torch build.
 # SILERO_PYTHON (then ASR_PYTHON) can select an existing torch/torchaudio environment.
 bash scripts/evaluate/silero_jit.sh --input-file .data/recording.wav \
-  --model-file .data/models/silero/silero_vad.jit \
   --devices cpu --output-file .data/tts/vad.json
 
 # No model inference here: inspect this plan before separately rendering it.
@@ -323,7 +323,8 @@ bash scripts/audio/export_segments.sh --input-manifest .data/tts/plan/segments.j
 ```
 
 `silero_jit.sh` searches `.venvs/vibevoice`, `.venv-vibevoice`, `.venvs/align`, and
-`.venv-align`; it installs nothing and downloads no model. Its JSON retains every
+`.venv-align`; `setup_worker_envs.sh audio`, `align`, and `vibevoice` download the
+pinned native JIT model at `~/.cache/silero-vad/silero_vad.jit`. Its JSON retains every
 frame probability, source/model hashes, device versions, synchronized timing,
 repeat differences, and CPU/GPU threshold disagreements. An unavailable requested
 device is recorded as an error and returns nonzero; there is no silent fallback.

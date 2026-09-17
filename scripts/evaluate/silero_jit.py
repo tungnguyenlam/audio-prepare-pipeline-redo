@@ -41,7 +41,9 @@ def infer_probabilities(model, waveform, *, transfer_block_frames: int = 256):
 def main() -> int:
     p = LoggingArgumentParser(description=__doc__)
     p.add_argument('--input-file', type=Path, required=True)
-    p.add_argument('--model-file', type=Path, required=True, help='Existing silero_vad.jit; no downloads or ONNX')
+    p.add_argument('--model-file', type=Path,
+                   default=Path.home() / '.cache/silero-vad/silero_vad.jit',
+                   help='Existing silero_vad.jit (setup_worker_envs downloads this default into ~/.cache)')
     p.add_argument('--output-file', type=Path, default=ROOT / '.data/evaluate/silero_jit/report.json')
     p.add_argument('--devices', nargs='+', default=['cpu', 'cuda:0'], help='ROCm also uses cuda:0')
     p.add_argument('--repeats', type=positive_int, default=3)
@@ -53,6 +55,8 @@ def main() -> int:
         p.error('--threshold must be finite and between 0 and 1')
     if args.model_file.suffix != '.jit':
         p.error('--model-file must be a native .jit model')
+    if not args.model_file.is_file():
+        p.error(f'Missing Silero JIT model: {args.model_file}; run ./envs/setup_worker_envs.sh audio')
     destination = args.output_file.resolve()
     if destination.suffix != '.json':
         p.error('--output-file must end in .json')
