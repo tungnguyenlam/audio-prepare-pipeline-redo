@@ -504,6 +504,13 @@ bash scripts/s4-agent/verifier/evaluate_verifier.sh --predictions-dir .data/verd
 bash scripts/mix/mix.sh --speech speech.wav --music music.wav --smr-db 6 --seed 42 --output-dir .data/mix/example
 bash scripts/evaluate/separation.sh  --input-file pred.wav --reference-file .data/mix/example/speech_reference.wav --mixture-file .data/mix/example/mixture.wav --output-file .data/metrics.json
 bash scripts/evaluate/diarization.sh --input-manifest pred/segments.json --reference-manifest ref/segments.json --duration 120 --collar 0.25 --output-file .data/der.json
+# Audit audio duration loss across diarization, silence, and post-merge filtering:
+bash scripts/evaluate/duration_loss.sh --input-manifest .data/s3-diarize/pyannote_community1/<stem>/segments.json
+# Aggregate duration loss and yield across an entire diarization folder or collection:
+bash scripts/evaluate/duration_loss.sh --input-dir .data/s3-diarize/pyannote_community1 --format table
+# Save audit report to JSON or CSV:
+bash scripts/evaluate/duration_loss.sh --input-dir .data/s3-diarize/pyannote_community1 --output-file .data/loss_report.json
+
 bash scripts/evaluate/plot_diarization.sh --input-manifest pred/segments.json --reference-manifest ref/segments.json --output-file .data/gantt.png
 # writes .data/gantt.png, .data/gantt_duration.png, .data/gantt_cutoff.png
 # aggregate every segments.json below a collection (or model root):
