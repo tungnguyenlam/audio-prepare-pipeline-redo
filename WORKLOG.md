@@ -67,3 +67,13 @@
 - Ran `./envs/setup_worker_envs.sh audio`: downloaded and verified the 2.16 MiB model, then reran it successfully using the cached file.
 - Ran the evaluator without `--model-file` on `.data/test_amd/test_input.wav`; CPU inference completed and wrote `.data/evaluate/silero_cache_smoke/report.json`.
 - Validated shell syntax, Python compilation, and diff formatting. No test suite was written or run.
+
+## 2026-09-17 - Guide the Hana example VAD workflow
+
+### Decisions
+- Use the existing matching source under `.data/s1-download/truyen-chem/` because the requested `.data/s1-download/hana-playlist/` path is absent in this checkout.
+- Reuse `.data/evaluate/hana_tts/vad/report.json` only after checking its source hash against the selected WAV; regenerate the report if a different copy is used.
+
+### Results
+- Confirmed the existing source/report pair is complete and hash-matched, with 916.448875 seconds of audio and a successful CPU VAD track.
+- Prepared a step-by-step workflow covering setup/cache, source identity, report reuse or regeneration, recursive VAD planning, rendering, inspection, and optional Gemini review.
