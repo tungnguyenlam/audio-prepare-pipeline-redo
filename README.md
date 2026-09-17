@@ -68,9 +68,12 @@ bash scripts/s4-agent/verifier/analysis.sh --input-dir .data/s4-agent/verifier/g
   see the
   [merge cookbook](docs/commands.md#merge-before-duration-filtering).
 - Turns over 15 seconds are recursively cut at cached Silero VAD valleys by
-  default. Generate reports with `evaluate/silero_jit.sh` and pass
-  `--vad-report` (or `--vad-report-dir` for directory runs). Use
-  `--long-segment-strategy drop` to explicitly discard oversized turns.
+  default, but only where the speech probability is strictly below
+  `--vad-cut-threshold` (default `0.1`). Generate reports with
+  `evaluate/silero_jit.sh` and pass `--vad-report` (or `--vad-report-dir` for
+  directory runs). If no eligible valley exists, the oversized turn is left
+  for the final duration filter; use `--long-segment-strategy drop` to skip
+  VAD cuts explicitly.
 - `--input-file` beats `--input-dir`; `--output-file` is an exact destination for single outputs.
 - Audio outputs get a sibling `.json` sidecar; diarizers write `<stem>/segments.json` plus clips
   and `<stem>/plot/` (including before-merge, after-merge, and post-filter plots);

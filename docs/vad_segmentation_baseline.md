@@ -4,8 +4,9 @@
 
 This records one real-video run of `audio/segment_vad.sh`. The command is a
 literal baseline: every interval over 15 seconds is cut at its globally lowest
-Silero speech-probability frame, recursively. It does not use ASR, diarization,
-sentence boundaries, or a minimum child duration.
+Silero speech-probability frame when that probability is below the default
+`0.1` cut threshold, recursively. It does not use ASR, diarization, sentence
+boundaries, or a minimum child duration.
 
 The example is the 89.629-second mono excerpt from YouTube video `a9aVQCWi9MY`,
 “Movie cut | Trích đoạn KHÁCH MỜI HẢI LAN: MỘT LẦN NÓI HẾT - THỎ ƠI!! - Phim
@@ -72,12 +73,13 @@ phoneme completeness.
 This example did not exhibit word clipping in its 11 substantive intervals, so
 it is a successful negative observation rather than proof of safety. The method
 can still cut a word when the lowest probability in an oversized interval occurs
-inside quiet speech: it has no silence threshold, word alignment, or phoneme
+inside quiet speech: the activity threshold is not word alignment or a phoneme
 check. More immediately, literal global-minimum recursion is unsuitable as a
 standalone dataset segmenter because clustered minima create many tiny fragments.
 The same recursive planner is now the default policy for oversized turns in
 diarization and `audio/export_segments`; those commands preserve speaker
 labels and split each overlong turn independently. The standalone command still
-partitions the complete source timeline and therefore retains the tiny-fragment
-behavior observed here. Use `--long-segment-strategy drop` when the legacy
-discard policy is required.
+partitions the complete source timeline and records any threshold-rejected
+overlong interval for the downstream duration filter, while retaining the
+tiny-fragment behavior observed here. Use `--long-segment-strategy drop` when the
+legacy discard policy is required.

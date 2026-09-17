@@ -470,7 +470,7 @@ def main() -> int:
                src, dest, args.work_dir, rate, args.channels, args.min_duration_s, args.max_duration_s,
                concurrency=args.concurrency, batch_size=args.batch_size,
                long_segment_strategy=args.long_segment_strategy, vad_report=vad_report,
-               vad_device=args.vad_device)
+               vad_device=args.vad_device, vad_cut_threshold=args.vad_cut_threshold)
         ensure_plots(dest, overwrite=True)
     try:
         result = batch(pairs, process, concurrency=args.concurrency, batch_size=args.batch_size)

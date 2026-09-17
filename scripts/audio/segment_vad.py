@@ -1,4 +1,4 @@
-"""Plan recursive VAD-only cuts at the lowest speech probability in each oversized interval.
+"""Plan recursive VAD-only cuts at low speech probabilities in each oversized interval.
 
 Consumes a completed evaluate/silero_jit report and writes an inspectable segment
 manifest. It does not run VAD inference or render clips; use audio/export_segments
@@ -27,6 +27,9 @@ def main() -> int:
                    help='Completed evaluate/silero_jit JSON for the same source bytes')
     p.add_argument('--vad-device', default='cpu',
                    help='Probability track in the report; cuda:0 also denotes ROCm')
+    p.add_argument('--vad-cut-threshold', '--vad-threshold',
+                   dest='vad_cut_threshold', type=float, default=0.1,
+                   help='Only cut at VAD probabilities strictly below this value (default: 0.1)')
     p.add_argument('--max-duration-s', type=float, default=15.0,
                    help='Recursively split intervals longer than this duration')
     p.add_argument('--output-file', type=Path,
@@ -36,6 +39,9 @@ def main() -> int:
 
     if not math.isfinite(args.max_duration_s) or args.max_duration_s <= 0:
         p.error('--max-duration-s must be finite and positive')
+    if (not math.isfinite(args.vad_cut_threshold) or
+            not 0 <= args.vad_cut_threshold <= 1):
+        p.error('--vad-cut-threshold must be finite and between 0 and 1')
     destination = args.output_file.resolve()
     source = args.input_file.resolve()
     report_path = args.vad_report.resolve()
@@ -54,7 +60,14 @@ def main() -> int:
         p.error(str(exc))
 
     max_samples = math.floor(Decimal(str(args.max_duration_s)) * info['sample_rate'])
-    leaves, cuts = plan_segments(info['frames'], max_samples, candidates)
+    try:
+        leaves, cuts = plan_segments(
+            info['frames'], max_samples, candidates,
+            vad_cut_threshold=args.vad_cut_threshold,
+        )
+    except (FileContractError, ValueError) as exc:
+        p.error(str(exc))
+    rejected = [event for event in cuts if event.get('action') == 'reject']
     turns = normalize_turns([
         {
             'speaker_id': 'unknown',
@@ -75,16 +88,20 @@ def main() -> int:
             'max_duration_s': args.max_duration_s,
             'max_duration_samples': max_samples,
             'vad_device': args.vad_device,
+            'vad_cut_threshold': args.vad_cut_threshold,
             'vad_report': identity(report_path),
             'vad_model': report.get('model'),
-            'algorithm_version': 'recursive-global-min-v1',
+            'algorithm_version': 'recursive-global-min-threshold-v1',
             'implementation': identity(Path(__file__)),
         },
         'timestamp_origin': 'source_audio',
         'source_sample_rate': info['sample_rate'],
         'speaker_ids': ['unknown'],
         'turns': turns,
-        'audit': {'cuts': cuts},
+        'audit': {
+            'cuts': [event for event in cuts if event.get('action') != 'reject'],
+            'rejections': rejected,
+        },
         'clips_valid': False,
         'complete': True,
         'limitations': [
@@ -97,7 +114,8 @@ def main() -> int:
     durations = [(turn['end_sample'] - turn['start_sample']) / info['sample_rate'] for turn in turns]
     progress(
         'VAD_SEGMENT',
-        f'{info["duration_s"]:.3f}s -> {len(turns)} segments; {len(cuts)} cuts; '
+        f'{info["duration_s"]:.3f}s -> {len(turns)} segments; '
+        f'{len(cuts) - len(rejected)} cuts; {len(rejected)} threshold rejections; '
         f'max={max(durations, default=0):.3f}s',
     )
     print(destination)

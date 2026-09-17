@@ -101,6 +101,9 @@ def add_long_segment_arguments(parser) -> None:
                         help='Directory of Silero reports named <audio-stem>.json for --input-dir VAD cuts')
     parser.add_argument('--vad-device', default='cpu',
                         help='Probability track in the VAD report; cuda:0 also denotes ROCm')
+    parser.add_argument('--vad-cut-threshold', '--vad-threshold',
+                        dest='vad_cut_threshold', type=float, default=0.1,
+                        help='Only cut at VAD probabilities strictly below this value (default: 0.1)')
 
 
 def validate_long_segment_arguments(args, parser) -> None:
@@ -118,6 +121,9 @@ def validate_long_segment_arguments(args, parser) -> None:
             parser.error(f'VAD report path does not exist: {path}')
     if args.vad_report_dir is not None and not args.vad_report_dir.is_dir():
         parser.error(f'--vad-report-dir is not a directory: {args.vad_report_dir}')
+    if (not math.isfinite(args.vad_cut_threshold) or
+            not 0 <= args.vad_cut_threshold <= 1):
+        parser.error('--vad-cut-threshold must be finite and between 0 and 1')
 
 
 def resolve_vad_report(args, source: Path, parser) -> Path | None:
@@ -139,12 +145,14 @@ def long_segment_parameters(args, report: Path | None) -> dict:
     return {
         'long_segment_strategy': args.long_segment_strategy,
         'vad_device': args.vad_device,
+        'vad_cut_threshold': args.vad_cut_threshold,
         'vad_report': identity(report) if report is not None else None,
     }
 
 
 def _split_long_turns_vad(turns: list[dict], source: Path, max_samples: int,
-                          candidates: list[tuple[int, float, int, float]]) -> tuple[list[dict], list[dict]]:
+                          candidates: list[tuple[int, float, int, float]],
+                          vad_cut_threshold: float) -> tuple[list[dict], list[dict]]:
     """Split only oversized turns while preserving speaker labels and lineage."""
     info = probe(source)
     split_turns, audit = [], []
@@ -153,8 +161,11 @@ def _split_long_turns_vad(turns: list[dict], source: Path, max_samples: int,
         if end_sample - start_sample <= max_samples:
             split_turns.append(turn)
             continue
-        leaves, cuts = plan_segments(info['frames'], max_samples, candidates,
-                                     start_sample=start_sample, end_sample=end_sample)
+        leaves, cuts = plan_segments(
+            info['frames'], max_samples, candidates,
+            start_sample=start_sample, end_sample=end_sample,
+            vad_cut_threshold=vad_cut_threshold,
+        )
         for cut in cuts:
             audit.append({**cut, 'turn_index': turn_index,
                           'speaker_id': turn.get('speaker_id'),
@@ -222,7 +233,7 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
            min_duration_s: float | None = None, max_duration_s: float | None = None,
            *, concurrency: int = 1, batch_size: int = 1,
            long_segment_strategy: str = 'vad', vad_report: Path | None = None,
-           vad_device: str = 'cpu') -> None:
+           vad_device: str = 'cpu', vad_cut_threshold: float = 0.1) -> None:
     import concurrent.futures
     import shutil
     import soundfile as sf
@@ -244,6 +255,9 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
                    if min_duration_s is not None else None)
     if long_segment_strategy not in {'vad', 'drop'}:
         raise ValueError(f'Unsupported long segment strategy: {long_segment_strategy}')
+    if (not math.isfinite(vad_cut_threshold) or
+            not 0 <= vad_cut_threshold <= 1):
+        raise ValueError('vad_cut_threshold must be finite and between 0 and 1')
     vad_candidates = None
 
     def apply_long_segment_strategy(candidate_turns: list[dict]) -> tuple[list[dict], list[dict]]:
@@ -259,7 +273,9 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
             )
         if vad_candidates is None:
             vad_candidates, _ = load_vad_report(source, vad_report, vad_device)
-        return _split_long_turns_vad(candidate_turns, source, max_samples, vad_candidates)
+        return _split_long_turns_vad(
+            candidate_turns, source, max_samples, vad_candidates, vad_cut_threshold
+        )
 
     merge_details = {}
     long_segment_audit = []

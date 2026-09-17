@@ -91,3 +91,15 @@
 - Updated README, command cookbook, data contract, and VAD baseline notes.
 - Validated CLI help exposure, Python compilation, shell syntax, and diff whitespace. No tests or model inference were run.
 - Checked the Hana raw DiariZen manifest against `.data/evaluate/hana_tts/vad/report.json`: 14 raw turns exceed 15 s; the highest selected recursive cut-boundary probability is 0.0941166 (9.41%) at 45.744 s in raw turn 4 (23.6925–55.1325 s, spk00). The existing final Hana manifest predates this wiring and has no `long_segment_audit`; its maximum exported duration is 14.82 s.
+
+## 2026-09-17 - Gate default VAD cuts at 0.1 activity
+
+### Decisions
+- Added `--vad-cut-threshold` (alias `--vad-threshold`), default `0.1`, across the shared long-segment policy, standalone VAD planner, exporter, and all diarization backends.
+- A cut is eligible only when the lowest available VAD speech probability in the current oversized interval is strictly below the threshold. Intervals without an eligible boundary remain as explicit overlong rejections so the final duration filter removes them.
+- Included the threshold in request parameters and standalone manifests so cache reuse cannot cross threshold settings.
+
+### Results
+- Updated README, command cookbook, data contract, and VAD baseline documentation with strict-threshold and rejection behavior.
+- Rechecked Hana read-only: 14 raw turns exceed 15 seconds; all 14 are eligible at threshold 0.1, and the highest selected cut probability is 0.094116643.
+- Validated Python compilation, launcher shell syntax, CLI help exposure, and diff whitespace. No tests or model inference were run.

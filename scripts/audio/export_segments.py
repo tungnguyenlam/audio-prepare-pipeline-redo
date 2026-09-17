@@ -34,6 +34,9 @@ def main() -> int:
                    help='Completed evaluate/silero_jit report for VAD cuts when an oversized turn is present')
     p.add_argument('--vad-device', default='cpu',
                    help='Probability track in the VAD report; cuda:0 also denotes ROCm')
+    p.add_argument('--vad-cut-threshold', '--vad-threshold',
+                   dest='vad_cut_threshold', type=float, default=0.1,
+                   help='Only cut at VAD probabilities strictly below this value (default: 0.1)')
     p.add_argument('-w', '-ow', '--overwrite', action='store_true', default=False,
                    help='Rebuild clips and manifest, removing obsolete clips tracked by the previous manifest (default: False)')
     p.add_argument('-c', '--concurrency', type=positive_int, default=1,
@@ -46,6 +49,9 @@ def main() -> int:
         p.error('--min-duration-s must be finite and non-negative')
     if args.max_duration_s is not None and (not math.isfinite(args.max_duration_s) or args.max_duration_s <= 0):
         p.error('--max-duration-s must be finite and positive')
+    if (not math.isfinite(args.vad_cut_threshold) or
+            not 0 <= args.vad_cut_threshold <= 1):
+        p.error('--vad-cut-threshold must be finite and between 0 and 1')
     if args.min_duration_s is not None and args.max_duration_s is not None and args.min_duration_s > args.max_duration_s:
         p.error('--min-duration-s cannot exceed --max-duration-s')
     if args.long_segment_strategy == 'drop' and args.vad_report is not None:
@@ -63,12 +69,13 @@ def main() -> int:
                      'min_duration_s': args.min_duration_s, 'max_duration_s': args.max_duration_s,
                      'long_segment_strategy': args.long_segment_strategy,
                      'vad_device': args.vad_device,
+                     'vad_cut_threshold': args.vad_cut_threshold,
                      'vad_report': identity(args.vad_report) if args.vad_report else None}, manifest.get('model'))
     if not manifest_complete(destination, wanted, args.overwrite):
         export({**wanted, 'turns': manifest['turns']}, source, destination, args.work_dir, args.sample_rate, args.channels,
                args.min_duration_s, args.max_duration_s, concurrency=args.concurrency, batch_size=args.batch_size,
                long_segment_strategy=args.long_segment_strategy, vad_report=args.vad_report,
-               vad_device=args.vad_device)
+               vad_device=args.vad_device, vad_cut_threshold=args.vad_cut_threshold)
         ensure_plots(destination, overwrite=True)
     else:
         # A prior export may predate automatic plots, or an interrupted plot

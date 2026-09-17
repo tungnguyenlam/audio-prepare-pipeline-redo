@@ -115,10 +115,15 @@ interrupted write is recognizable and retried.
 - `--long-segment-strategy vad` is the default for diarization and
   `audio/export_segments`. It recursively splits turns longer than
   `parameters.max_duration_s` with the cached Silero probability report named
-  by `parameters.vad_report`; `--long-segment-strategy drop` preserves the
-  legacy discard behavior. The report must identify the same source bytes and
-  source geometry. Diarization stores each selected cut in the top-level
-  `long_segment_audit`; `segments.raw.json` remains the uncut backend output.
+  by `parameters.vad_report`, but only selects a cut when its probability is
+  strictly below `parameters.vad_cut_threshold` (CLI default `0.1`). If an
+  oversized interval has no eligible cut, it remains in the merged stage and is
+  removed by the final inclusive duration filter; the top-level
+  `long_segment_audit` records the rejection and minimum probability.
+  `--long-segment-strategy drop` preserves the legacy discard behavior. The
+  report must identify the same source bytes and source geometry. Diarization
+  stores each selected cut or threshold rejection in `long_segment_audit`;
+  `segments.raw.json` remains the uncut backend output.
 - Commands resolving a manifest's source audio verify its recorded `source.sha256`
   before using its turns. A missing or mismatched hash is an error. An explicit
   `--input-file` override bypasses this check; the caller must preserve the original
@@ -209,8 +214,12 @@ Experimental `audio/segment_vad` writes the same manifest shape with
 `operation: segment_vad`, `speaker_id: unknown`, `clips_valid: false`, and no
 WAVs. It consumes the source audio plus a matching completed `evaluate/silero_jit`
 report. Its `audit.cuts` records the recursive parent interval, cut sample, VAD
-frame, speech probability, and deterministic tie-break rule. Turns form a gapless
-partition of the source and are bounded by `parameters.max_duration_samples`.
+frame, speech probability, and deterministic tie-break rule. The
+`parameters.vad_cut_threshold` gate is strict: probabilities equal to or above
+it cannot be selected. Its `audit.rejections` records overlong intervals with
+no eligible cut; these remain in the plan for the downstream duration filter.
+Turns form a gapless partition of the source, but rejected overlong turns are
+not bounded until that filter runs.
 
 `purity/{consensus,cleanup,merge,collar,snap,align,segment}` and
 `speaker/{score,filter,purity}` read a manifest and write a new one (defaults:

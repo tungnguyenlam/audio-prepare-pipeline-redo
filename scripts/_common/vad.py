@@ -55,10 +55,19 @@ def load_vad_report(source: Path, report_path: Path, vad_device: str) -> tuple[l
 
 def plan_segments(source_frames: int, max_samples: int,
                   candidates: list[tuple[int, float, int, float]], *,
-                  start_sample: int = 0, end_sample: int | None = None) -> tuple[list[tuple[int, int, int, int | None]], list[dict]]:
-    """Recursively split one source interval at its lowest VAD probabilities."""
+                  start_sample: int = 0, end_sample: int | None = None,
+                  vad_cut_threshold: float | None = None) -> tuple[list[tuple[int, int, int, int | None]], list[dict]]:
+    """Recursively split one interval at eligible low VAD probabilities.
+
+    When the lowest available probability is not below ``vad_cut_threshold``,
+    the interval is retained as an overlong leaf and an explicit rejection
+    event is returned. Exporters can then apply their normal duration filter.
+    """
     if max_samples <= 0:
         raise ValueError('max_samples must be positive')
+    if (vad_cut_threshold is not None and
+            (not math.isfinite(vad_cut_threshold) or not 0 <= vad_cut_threshold <= 1)):
+        raise ValueError('vad_cut_threshold must be finite and between 0 and 1')
     end_sample = source_frames if end_sample is None else end_sample
     if not 0 <= start_sample < end_sample <= source_frames:
         raise ValueError('Expected an interval within the source timeline')
@@ -79,6 +88,22 @@ def plan_segments(source_frames: int, max_samples: int,
             raise FileContractError(
                 f'No interior VAD frame can split oversized interval {start}:{end}'
             )
+        minimum_probability = min(candidates[index][1] for index in range(first, stop))
+        if (vad_cut_threshold is not None and
+                minimum_probability >= vad_cut_threshold):
+            leaves.append((start, end, depth, parent_cut_id))
+            cuts.append({
+                'action': 'reject',
+                'reason': 'no_vad_cut_below_threshold',
+                'parent_cut_id': parent_cut_id,
+                'depth': depth,
+                'interval_start_sample': start,
+                'interval_end_sample': end,
+                'interval_duration_samples': end - start,
+                'minimum_speech_probability': minimum_probability,
+                'vad_cut_threshold': vad_cut_threshold,
+            })
+            continue
         selected_index = min(
             range(first, stop),
             key=lambda index: (

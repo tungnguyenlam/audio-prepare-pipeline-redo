@@ -195,12 +195,16 @@ Outputs are named `<stem>_<model>.wav` (`_htdemucs`, `_htdemucs_ft`, `_bs_roform
 ### Diarization (all default to 1.5–15 s clips)
 
 The default `--long-segment-strategy vad` recursively splits any turn longer
-than `--max-duration-s` at the lowest cached Silero speech-probability frames.
-VAD inference remains a separate command: for one input, pass its completed
-report with `--vad-report`; for a directory, pass reports named
-`<audio-stem>.json` through `--vad-report-dir`. If no turn exceeds the limit,
-the report is not read. Use `--long-segment-strategy drop` to explicitly retain
-the old behavior of discarding oversized turns.
+than `--max-duration-s` at the lowest cached Silero speech-probability frames,
+but only when that probability is strictly below `--vad-cut-threshold` (default
+`0.1`). If an oversized interval has no eligible frame, it remains overlong
+and the final duration filter removes it; the rejection is recorded in
+`long_segment_audit`. VAD inference remains a separate command: for one input,
+pass its completed report with `--vad-report`; for a directory, pass reports
+named `<audio-stem>.json` through `--vad-report-dir`. If no turn exceeds the
+limit, the report is not read. Use `--long-segment-strategy drop` to explicitly
+retain the old behavior of discarding oversized turns. `--vad-threshold` is an
+alias for `--vad-cut-threshold`.
 
 ```bash
 bash scripts/s3-diarize/sortformer.sh          --input-dir .data/separated --output-dir .data/turns
@@ -300,9 +304,11 @@ merging, using the same merge and clip export helpers as the standalone workflow
 The integrated merge also stops before adding a same-speaker turn if the
 resulting span would exceed `--max-duration-s`; the rejected turn starts a new
 merge chain. After merging, the default VAD strategy recursively splits any
-individual turn still over the limit before the duration filter. The split
-audit is stored in `long_segment_audit`; `--long-segment-strategy drop` instead
-discards those turns. Standalone `purity/merge` retains its unfiltered behavior,
+individual turn still over the limit before the duration filter, using the
+strict `--vad-cut-threshold` gate. An interval with no lower-probability cut is
+kept in the merged stage and then removed by the final duration filter. The
+split/rejection audit is stored in `long_segment_audit`;
+`--long-segment-strategy drop` instead discards those turns. Standalone `purity/merge` retains its unfiltered behavior,
 so its output can still contain overlong merged chains until
 `audio/export_segments` applies the selected duration strategy.
 See [the file contract](data_contract.md#silence-aware-merge) for audit fields.
@@ -383,15 +389,17 @@ the VAD benchmark.
 For a deliberately simple VAD-only baseline, `audio/segment_vad.sh` requires no
 ASR or diarization manifest. Every interval longer than `--max-duration-s` (15 by
 default) is split at the lowest Silero speech-probability frame within that whole
-interval. The rule is then applied independently to each oversized child until
-all output intervals satisfy the limit. Equal minima prefer the point nearest the
-interval midpoint, then the earlier point. This is not fixed-duration slicing:
-VAD chooses boundaries, while the output remains a gapless partition of the full
-source timeline.
+interval, provided it is strictly below `--vad-cut-threshold` (default `0.1`).
+The rule is then applied independently to each oversized child until all output
+intervals satisfy the limit. Equal minima prefer the point nearest the interval
+midpoint, then the earlier point. This is not fixed-duration slicing: VAD chooses
+boundaries, while the output remains a gapless partition of the full source
+timeline.
 
 ```bash
 bash scripts/audio/segment_vad.sh --input-file .data/recording.wav \
   --vad-report .data/tts/vad.json --vad-device cpu \
+  --vad-cut-threshold 0.1 \
   --output-file .data/vad-plan/segments.json
 
 bash scripts/audio/export_segments.sh --input-manifest .data/vad-plan/segments.json \
@@ -400,10 +408,11 @@ bash scripts/audio/export_segments.sh --input-manifest .data/vad-plan/segments.j
 
 The planner reuses the cached native-JIT probability track and records every cut,
 parent interval, recursion depth, VAD frame, and probability. It never invokes a
-model or renders clips. The baseline has no silence threshold: if an interval has
-continuous speech, its least-active frame is still selected, so word completeness
-must be evaluated separately. The final partial VAD frame is ineligible because
-Silero inference zero-pads it beyond the real source duration.
+model or renders clips. An oversized interval without a frame below the threshold
+is retained as an explicit rejection in the plan; integrated diarization and
+`audio/export_segments` carry it to their final duration filter, which removes
+the overlong interval. The final partial VAD frame is ineligible because Silero
+inference zero-pads it beyond the real source duration.
 See the [recorded baseline run](vad_segmentation_baseline.md) for the observed
 tiny-fragment behavior and Gemini 3.8 Flash word-completeness review.
 
