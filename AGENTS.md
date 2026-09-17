@@ -3,6 +3,7 @@
 ## Non-negotiable rules
 
 - Do not write or run tests unless the user explicitly asks.
+- Append decisions and results to `WORKLOG.md` using bash to maintain continuous tracking and avoid losing track of work.
 - Commit and push after every completed task.
 - Keep every pipeline stage as an independent command. Never add orchestration
   chaining crawl → separate → diarize → mix.
@@ -29,8 +30,9 @@
   Simplify root causes; remove dead code and unused dependencies. For behavior-
   preserving refactors, prefer fewer lines and concepts.
 - Before completion, inspect the final diff, include every intended new file,
-  validate CLI/launcher wiring without invoking paid models, and state validations
-  omitted because tests were not requested.
+  validate CLI/launcher wiring without invoking paid models, state validations
+  omitted because tests were not requested, and append decisions and results to
+  `WORKLOG.md` using bash.
 
 ## Repository
 
