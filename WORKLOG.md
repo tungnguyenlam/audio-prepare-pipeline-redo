@@ -39,3 +39,17 @@
 - Submitted the 11 clips in one Gemini Batch job using `gemini-3.8-flash` and the existing default verifier prompt. All 11 were judged word-complete; four passed overall and seven failed for unrelated speaker/music/singing defects. Estimated cost was $0.02435775.
 - Reused the existing same-model, same-prompt `gemini_vad_protected_relaxed` aggregate as contextual evidence: 54/62 complete, two clipped starts, and six clipped ends. This does not test the exact new algorithm but confirms that VAD evidence is not a phoneme-completeness guarantee.
 - Validated launcher syntax, Python compilation, CLI execution, exact timeline coverage, adjacency, and the <=15-second sample invariant. No test suite was written or run.
+
+## 2026-09-17 - Document machine-specific quirks in CURRENT_MACHINE.md
+
+### Decisions
+- Created a local, gitignored `CURRENT_MACHINE.md` file summarizing current host hardware, ROCm/HIP device mappings, attention kernel quirks, quantization restrictions, audio loader fallbacks, and memory ceilings.
+- Added `CURRENT_MACHINE.md` to `.gitignore` to keep host-specific quirks strictly local without polluting version control across different nodes.
+- Documented the purpose of `CURRENT_MACHINE.md` shortly in `AGENTS.md` under `## Machines`.
+
+### Results
+- Created [CURRENT_MACHINE.md](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/CURRENT_MACHINE.md) with details for AMD Radeon RX 9060 XT (gfx1200), ROCm 10.0, PyTorch `cuda:0` mapping, AOTriton Gemma 4 issue, bitsandbytes CUDA limitations, torchaudio/soundfile fallback, and memory limits.
+- Ignored `CURRENT_MACHINE.md` in [.gitignore](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/.gitignore).
+- Updated [AGENTS.md](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/AGENTS.md) to describe `CURRENT_MACHINE.md`.
+- Appended tracking log to [WORKLOG.md](file:///home/nguyenlt/Documents/tts-data-pipeline/audio-prepare-pipeline-redo/WORKLOG.md).
+- Validated with `git check-ignore -v CURRENT_MACHINE.md`. Tests were omitted because none were requested.

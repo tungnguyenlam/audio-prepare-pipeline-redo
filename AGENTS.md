@@ -68,6 +68,8 @@ audio-model verification, evaluation, mixing, and dataset export.
 
 - `tungnl5@VF-TUNGNL5-L`: primary AMD Radeon RX 9060 XT development host
   (16 GB VRAM, ROCm 10.0/HIP).
+- `CURRENT_MACHINE.md` (gitignored): summarizes local machine-specific hardware specs,
+  ROCm/HIP quirks, memory ceilings, and backend constraints.
 - `vsf@vsf-242` (`10.148.21.12`): NVIDIA separation/diarization model server.
 - `loi` (`loinh8@10.148.1.176`) and `anhnct@10.148.21.113`: auxiliary nodes.
 - Use `scripts/sync/*_{server,loi,anhnct}.sh`; keep credentials and artifacts local.
