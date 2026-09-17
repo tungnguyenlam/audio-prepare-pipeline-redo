@@ -134,3 +134,15 @@
 - Added automatic GPU-to-CPU retry reporting and auto track selection for completed reports.
 - Updated README, command cookbook, and data contract documentation.
 - Validated Python compilation, launcher and setup shell syntax, CLI help/default exposure, launcher help, and diff whitespace. No model inference or test suite was run.
+
+## 2026-09-17 - Add parent-family diarization aggregates
+
+### Decisions
+- Keep per-result plots and child-family aggregates unchanged.
+- For directory diarization, aggregate manifests at every output collection level from the child collection through the configured output root, so nested runs also receive a parent-family _plot/.
+- Apply the same parent-and-child grouping to evaluate/plot_diarization --input-dir; retain the existing plot/ compatibility symlink behavior.
+
+### Results
+- Updated shared diarization aggregation, standalone plot evaluation, README, command cookbook, and data contract.
+- The nested Hana layout now produces .../hana-playlist/9bu.../_plot/ and .../hana-playlist/_plot/, with the parent aggregate pooling all nested manifests.
+- Validated Python compilation, plot CLI help, launcher shell syntax, and diff whitespace. No tests or model inference were run.

@@ -60,7 +60,15 @@ def main() -> int:
             p.error(f'No segments.json manifests found below: {input_dir}')
         groups: dict[Path, list[Path]] = {}
         for manifest in manifests:
-            groups.setdefault(_collection_root(manifest, input_dir), []).append(manifest)
+            collection_root = _collection_root(manifest, input_dir)
+            while True:
+                groups.setdefault(collection_root, []).append(manifest)
+                if collection_root == input_dir or not collection_root.is_relative_to(input_dir):
+                    break
+                collection_root = collection_root.parent
+
+        for group_root, group_manifests in groups.items():
+            groups[group_root] = list(dict.fromkeys(group_manifests))
 
         output_root = args.output_dir.resolve() if args.output_dir is not None else None
         progress('PLOT_START', f'Rendering aggregate diarization plots for {len(manifests)} manifest(s) in {len(groups)} collection(s)')

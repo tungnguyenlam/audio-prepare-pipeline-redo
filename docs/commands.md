@@ -242,7 +242,8 @@ For a directory run, aggregation follows the output layout rather than inferred
 video IDs. A flat `--input-dir` writes one aggregate under
 `.data/s3-diarize/<model>/<input-dir-name>/_plot/` (or `<output-dir>/_plot/`
 when `--output-dir` is set). Nested input subdirectories each get their own
-`_plot/` inside that output tree. `plot/` is a symlink to `_plot/` when unused.
+`_plot/`, and the parent output root also gets an aggregate `_plot/` pooling
+all nested manifests. `plot/` is a symlink to `_plot/` when unused.
 
 ### Merge before duration filtering
 
@@ -531,7 +532,8 @@ Folder mode recursively reads every `segments.json` below `--input-dir` and
 groups them by enclosing collection folder (`<collection>/<stem>/segments.json`).
 For one collection without `--output-dir`, the final aggregate plots are under
 `<input-dir>/_plot/`. Nested collections, or an explicit output root, keep each
-aggregate inside that tree as `_plot/` (with a `plot/` symlink when unused).
+collection aggregate inside that tree as `_plot/`, and also write a parent-root
+`_plot/` pooling all nested manifests (with a `plot/` symlink when unused).
 The final plots are directly in `_plot/`; pre-merge and after-merge aggregates
 are under `_plot/before_merge/` and `_plot/after_merge/`.
 `timeline_duration.png` is the pooled segment-duration histogram (with count,

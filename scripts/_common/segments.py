@@ -601,14 +601,22 @@ def ensure_family_plots(
         return
 
     from _common.diarize_plots import FAMILY_PLOT_DIR, ensure_family_plot_link, write_family_plots
+    from _common.files import resolve_output_dir
 
     groups: dict[Path, list[Path]] = {}
+    output_root = (args.output_dir.resolve() if args.output_dir is not None
+                   else resolve_output_dir(args, args.input_dir))
     for _, destination in pairs:
         # destination is <collection>/<clip_stem>/segments.json
-        groups.setdefault(destination.parent.parent, []).append(destination)
+        collection_root = destination.parent.parent
+        while True:
+            groups.setdefault(collection_root, []).append(destination)
+            if collection_root == output_root or not collection_root.is_relative_to(output_root):
+                break
+            collection_root = collection_root.parent
 
     for family_root, destinations in groups.items():
-        manifests = [path for path in destinations if path.is_file()]
+        manifests = list(dict.fromkeys(path for path in destinations if path.is_file()))
         if not manifests:
             continue
         progress('FAMILY_PLOT_START', f'Rendering aggregate diarization plots for {family_root.name} ({len(manifests)} manifest(s))')

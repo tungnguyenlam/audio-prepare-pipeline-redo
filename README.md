@@ -79,7 +79,8 @@ bash scripts/s4-agent/verifier/analysis.sh --input-dir .data/s4-agent/verifier/g
 - `--input-file` beats `--input-dir`; `--output-file` is an exact destination for single outputs.
 - Audio outputs get a sibling `.json` sidecar; diarizers write `<stem>/segments.json` plus clips
   and `<stem>/plot/` (including before-merge, after-merge, and post-filter plots);
-  directory diarization runs also write aggregate plots under each collection’s `_plot/`.
+  directory diarization runs also write aggregate plots under each collection’s
+  `_plot/`, including the parent output collection when inputs are nested.
   Purity stages write new manifests and `export_segments` renders them.
 - Progress on stderr, output paths on stdout, runtime artifacts under `.data/` (gitignored).
 
