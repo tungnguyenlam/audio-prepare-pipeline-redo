@@ -10,6 +10,7 @@ from _common.files import (
     FileContractError,
     convert,
     digest,
+    identity,
     probe,
     progress,
     read_json,
@@ -19,6 +20,7 @@ from _common.files import (
 )
 from _common.merge import (MEAN_ADJUST_MAX_ATTEMPTS, MEAN_ADJUST_STEP_S,
                             MEAN_DURATION_MAX_S, MEAN_DURATION_MIN_S, merge_turns)
+from _common.vad import load_vad_report, plan_segments
 
 
 def source_path(manifest: dict, manifest_path: Path, override: Path | None = None) -> Path:
@@ -88,6 +90,97 @@ def _filter_duration_turns(turns: list[dict], min_samples: int | None,
     return turns
 
 
+def add_long_segment_arguments(parser) -> None:
+    """Add the shared policy for turns above the export duration limit."""
+    parser.add_argument('--long-segment-strategy', '--overlong-strategy',
+                        dest='long_segment_strategy', choices=('vad', 'drop'), default='vad',
+                        help='How to handle turns longer than --max-duration-s: vad recursively cuts them; drop discards them')
+    parser.add_argument('--vad-report', type=Path,
+                        help='Completed evaluate/silero_jit report for a single input file (required when VAD cuts an oversized turn)')
+    parser.add_argument('--vad-report-dir', type=Path,
+                        help='Directory of Silero reports named <audio-stem>.json for --input-dir VAD cuts')
+    parser.add_argument('--vad-device', default='cpu',
+                        help='Probability track in the VAD report; cuda:0 also denotes ROCm')
+
+
+def validate_long_segment_arguments(args, parser) -> None:
+    """Validate report selection without requiring a report for short inputs."""
+    if args.vad_report is not None and args.vad_report_dir is not None:
+        parser.error('Use only one of --vad-report and --vad-report-dir')
+    if args.vad_report is not None and args.input_dir is not None:
+        parser.error('--vad-report is for --input-file; use --vad-report-dir with --input-dir')
+    if args.vad_report_dir is not None and args.input_file is not None:
+        parser.error('--vad-report-dir is for --input-dir; use --vad-report with --input-file')
+    if args.long_segment_strategy == 'drop' and (args.vad_report is not None or args.vad_report_dir is not None):
+        parser.error('--vad-report and --vad-report-dir require --long-segment-strategy vad')
+    for path in (args.vad_report, args.vad_report_dir):
+        if path is not None and not path.exists():
+            parser.error(f'VAD report path does not exist: {path}')
+    if args.vad_report_dir is not None and not args.vad_report_dir.is_dir():
+        parser.error(f'--vad-report-dir is not a directory: {args.vad_report_dir}')
+
+
+def resolve_vad_report(args, source: Path, parser) -> Path | None:
+    """Resolve the report belonging to one source in a single or directory run."""
+    if args.long_segment_strategy != 'vad':
+        return None
+    if args.vad_report is not None:
+        return args.vad_report.resolve()
+    if args.vad_report_dir is None:
+        return None
+    report = args.vad_report_dir.resolve() / f'{source.stem}.json'
+    if not report.is_file():
+        parser.error(f'Missing VAD report for {source.name}: {report}')
+    return report
+
+
+def long_segment_parameters(args, report: Path | None) -> dict:
+    """Return cache-safe request parameters for the selected long-turn policy."""
+    return {
+        'long_segment_strategy': args.long_segment_strategy,
+        'vad_device': args.vad_device,
+        'vad_report': identity(report) if report is not None else None,
+    }
+
+
+def _split_long_turns_vad(turns: list[dict], source: Path, max_samples: int,
+                          candidates: list[tuple[int, float, int, float]]) -> tuple[list[dict], list[dict]]:
+    """Split only oversized turns while preserving speaker labels and lineage."""
+    info = probe(source)
+    split_turns, audit = [], []
+    for turn_index, turn in enumerate(turns):
+        start_sample, end_sample = turn['start_sample'], turn['end_sample']
+        if end_sample - start_sample <= max_samples:
+            split_turns.append(turn)
+            continue
+        leaves, cuts = plan_segments(info['frames'], max_samples, candidates,
+                                     start_sample=start_sample, end_sample=end_sample)
+        for cut in cuts:
+            audit.append({**cut, 'turn_index': turn_index,
+                          'speaker_id': turn.get('speaker_id'),
+                          'parent_start_sample': start_sample,
+                          'parent_end_sample': end_sample})
+        for child_start, child_end, depth, parent_cut_id in leaves:
+            child = {key: value for key, value in turn.items()
+                     if key not in {'clip', 'clip_sha256', 'clip_frames',
+                                    'start_sample', 'end_sample'}}
+            lineage = dict(child.get('lineage') or {})
+            lineage['long_segment'] = {
+                'strategy': 'vad',
+                'parent_start_sample': start_sample,
+                'parent_end_sample': end_sample,
+                'depth': depth,
+                'parent_cut_id': parent_cut_id,
+            }
+            child['lineage'] = lineage
+            child['start_sample'] = child_start
+            child['end_sample'] = child_end
+            child['start_s'] = child_start / info['sample_rate']
+            child['end_s'] = child_end / info['sample_rate']
+            split_turns.append(child)
+    return split_turns, audit
+
+
 def _mean_duration_s(turns: list[dict], sample_rate: int) -> float | None:
     if not turns:
         return None
@@ -127,7 +220,9 @@ def _merge_detail(mean_duration_s: float | None, merged_turn_count: int,
 
 def export(manifest: dict, source: Path, destination: Path, work_dir: Path, sample_rate: int | None = None, channels: int = 1,
            min_duration_s: float | None = None, max_duration_s: float | None = None,
-           *, concurrency: int = 1, batch_size: int = 1) -> None:
+           *, concurrency: int = 1, batch_size: int = 1,
+           long_segment_strategy: str = 'vad', vad_report: Path | None = None,
+           vad_device: str = 'cpu') -> None:
     import concurrent.futures
     import shutil
     import soundfile as sf
@@ -147,7 +242,27 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
         max_samples = math.floor(Decimal(str(max_duration_s)) * info['sample_rate'])
     min_samples = (math.ceil(Decimal(str(min_duration_s)) * info['sample_rate'])
                    if min_duration_s is not None else None)
+    if long_segment_strategy not in {'vad', 'drop'}:
+        raise ValueError(f'Unsupported long segment strategy: {long_segment_strategy}')
+    vad_candidates = None
+
+    def apply_long_segment_strategy(candidate_turns: list[dict]) -> tuple[list[dict], list[dict]]:
+        nonlocal vad_candidates
+        if (long_segment_strategy != 'vad' or max_samples is None or
+                not any(t['end_sample'] - t['start_sample'] > max_samples for t in candidate_turns)):
+            return candidate_turns, []
+        if vad_report is None:
+            raise FileContractError(
+                'VAD is the default long-segment strategy; provide --vad-report '
+                '(or --vad-report-dir for directory runs), or select '
+                '--long-segment-strategy drop'
+            )
+        if vad_candidates is None:
+            vad_candidates, _ = load_vad_report(source, vad_report, vad_device)
+        return _split_long_turns_vad(candidate_turns, source, max_samples, vad_candidates)
+
     merge_details = {}
+    long_segment_audit = []
     if manifest.get('operation') == 'diarize' and params.get('merge'):
         merge_config = {key: value for key, value in params['merge'].items() if key != 'adjust_mean'}
         merge_config['max_duration_samples'] = max_samples
@@ -164,6 +279,7 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
             return merge_turns(source, raw_turns, **{**merge_config, 'max_gap_s': gap_s})
 
         turns, audit = run_merge(initial_gap_s)
+        turns, segment_audit = apply_long_segment_strategy(turns)
         filtered_turns = _filter_duration_turns(turns, min_samples, max_samples)
         mean_duration_s = _mean_duration_s(filtered_turns, info['sample_rate'])
         merged_gaps = sum(item['reason'] == 'merged' for item in audit)
@@ -176,7 +292,8 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
                  f'{_merge_detail(mean_duration_s, len(turns), audit, len(filtered_turns))}')
 
         current_gap_s = initial_gap_s
-        best_state = (turns, audit, filtered_turns, current_gap_s, mean_duration_s, merged_gaps)
+        best_state = (turns, audit, filtered_turns, current_gap_s, mean_duration_s,
+                      merged_gaps, segment_audit)
         best_distance_s = _mean_distance_s(mean_duration_s)
         seen_gaps = {round(initial_gap_s, 10)}
         if not adjust_mean:
@@ -212,6 +329,7 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
                          f'mean={mean_duration_s:.2f}s outside target, {direction} max_gap '
                          f'{current_gap_s:.2f}s -> {next_gap_s:.2f}s')
                 turns, audit = run_merge(next_gap_s)
+                turns, segment_audit = apply_long_segment_strategy(turns)
                 filtered_turns = _filter_duration_turns(turns, min_samples, max_samples)
                 mean_duration_s = _mean_duration_s(filtered_turns, info['sample_rate'])
                 current_gap_s = next_gap_s
@@ -225,7 +343,8 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
                          f'{_merge_detail(mean_duration_s, len(turns), audit, len(filtered_turns))}')
                 distance_s = _mean_distance_s(mean_duration_s)
                 if distance_s < best_distance_s:
-                    best_state = (turns, audit, filtered_turns, current_gap_s, mean_duration_s, merged_gaps)
+                    best_state = (turns, audit, filtered_turns, current_gap_s, mean_duration_s,
+                                  merged_gaps, segment_audit)
                     best_distance_s = distance_s
                 if mean_duration_s is None:
                     stop_reason = 'no_valid_clips'
@@ -236,7 +355,7 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
             else:
                 stop_reason = 'retry_limit_reached'
 
-        turns, audit, filtered_turns, current_gap_s, mean_duration_s, merged_gaps = best_state
+        turns, audit, filtered_turns, current_gap_s, mean_duration_s, merged_gaps, long_segment_audit = best_state
         # Statistics describe the final merge before duration filtering.
         merge_statistics = {'input_turns': len(raw_turns), 'output_turns': len(turns),
                             'merged_gaps': merged_gaps,
@@ -264,7 +383,7 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
                          'merge_audit': audit, 'merge_mean_adjustment': merge_mean_adjustment}
         progress('MERGE_COMPLETE', f'{source.name}: {len(raw_turns)} raw turns -> {len(turns)} valid clips; exporting')
     else:
-        merged_turns = turns
+        merged_turns, long_segment_audit = apply_long_segment_strategy(turns)
     # Keep the unfiltered merged stage available for plotting and provenance.
     merged_turns = normalize_turns(merged_turns, source)
     turns = _filter_duration_turns(merged_turns, min_samples, max_samples)
@@ -272,7 +391,8 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
     turns = normalize_turns(turns, source)
     turns_count = len(turns)
     progress('EXPORT', f'Exporting {turns_count} clip(s) from {source.name} (concurrency={concurrency}, batch_size={batch_size})')
-    output = {**manifest, **merge_details, 'timestamp_origin': 'diarized_input', 'source_sample_rate': info['sample_rate'],
+    output = {**manifest, **merge_details, 'long_segment_audit': long_segment_audit,
+              'timestamp_origin': 'diarized_input', 'source_sample_rate': info['sample_rate'],
               'sample_rate': sample_rate or info['sample_rate'], 'channels': channels, 'turns': turns,
               'speaker_ids': sorted({t['speaker_id'] for t in turns}), 'complete': False}
     for i, turn in enumerate(turns, 1):
@@ -359,6 +479,7 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
         merged_output = {
             **manifest,
             **merge_details,
+            'long_segment_audit': long_segment_audit,
             'timestamp_origin': 'diarized_input',
             'source_sample_rate': info['sample_rate'],
             'merge_applied': bool(params.get('merge')),

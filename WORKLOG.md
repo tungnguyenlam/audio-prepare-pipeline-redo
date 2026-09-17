@@ -77,3 +77,17 @@
 ### Results
 - Confirmed the existing source/report pair is complete and hash-matched, with 916.448875 seconds of audio and a successful CPU VAD track.
 - Prepared a step-by-step workflow covering setup/cache, source identity, report reuse or regeneration, recursive VAD planning, rendering, inspection, and optional Gemini review.
+
+## 2026-09-17 - Make recursive VAD the default long-segment strategy
+
+### Decisions
+- Reused the existing recursive Silero VAD planner through a shared `_common/vad.py` helper so diarizers and standalone `audio/export_segments` apply identical sample-accurate cuts.
+- Made `--long-segment-strategy vad` the default for turns longer than `--max-duration-s`; retained the former discard behavior as explicit `--long-segment-strategy drop`.
+- Kept VAD inference independent: commands consume a matching completed report via `--vad-report`, or `<audio-stem>.json` files via `--vad-report-dir` for directory runs.
+- Preserved uncut backend output in `segments.raw.json`; VAD cuts and lineage are recorded in the merged/final manifests through `long_segment_audit`.
+
+### Results
+- Wired the strategy through all six diarization backends, `audio/export_segments`, and the standalone VAD planner.
+- Updated README, command cookbook, data contract, and VAD baseline notes.
+- Validated CLI help exposure, Python compilation, shell syntax, and diff whitespace. No tests or model inference were run.
+- Checked the Hana raw DiariZen manifest against `.data/evaluate/hana_tts/vad/report.json`: 14 raw turns exceed 15 s; the highest selected recursive cut-boundary probability is 0.0941166 (9.41%) at 45.744 s in raw turn 4 (23.6925–55.1325 s, spk00). The existing final Hana manifest predates this wiring and has no `long_segment_audit`; its maximum exported duration is 14.82 s.

@@ -194,6 +194,14 @@ Outputs are named `<stem>_<model>.wav` (`_htdemucs`, `_htdemucs_ft`, `_bs_roform
 
 ### Diarization (all default to 1.5–15 s clips)
 
+The default `--long-segment-strategy vad` recursively splits any turn longer
+than `--max-duration-s` at the lowest cached Silero speech-probability frames.
+VAD inference remains a separate command: for one input, pass its completed
+report with `--vad-report`; for a directory, pass reports named
+`<audio-stem>.json` through `--vad-report-dir`. If no turn exceeds the limit,
+the report is not read. Use `--long-segment-strategy drop` to explicitly retain
+the old behavior of discarding oversized turns.
+
 ```bash
 bash scripts/s3-diarize/sortformer.sh          --input-dir .data/separated --output-dir .data/turns
 bash scripts/s3-diarize/sortformer.sh          --input-file x.wav --min-duration-s 1.0 --max-duration-s 30.0
@@ -208,6 +216,19 @@ bash scripts/s3-diarize/diarizen.sh            --input-file x.wav --segmentation
 # (before merge, after merge/before filtering, and after filtering respectively)
 # directory runs additionally write collection-level aggregate duration and cutoff plots under _plot/
 ```
+
+Prepare a report before a run that may emit overlong turns. This remains an
+independent stage and can be reused by diarization and later `export_segments`:
+
+```bash
+bash scripts/evaluate/silero_jit.sh --input-file .data/recording.wav \
+  --devices cpu --output-file .data/vad/recording.json
+bash scripts/s3-diarize/sortformer.sh --input-file .data/recording.wav \
+  --output-dir .data/turns --vad-report .data/vad/recording.json
+```
+
+For directory input, put one report per source under `.data/vad/` using the
+source stem as the filename and pass `--vad-report-dir .data/vad`.
 
 For a directory run, aggregation follows the output layout rather than inferred
 video IDs. A flat `--input-dir` writes one aggregate under
@@ -265,7 +286,8 @@ bash scripts/purity/merge.sh \
 bash scripts/audio/export_segments.sh \
   --input-manifest .data/purity/merge/recording/segments.json \
   --output-dir .data/clips/recording \
-  --min-duration-s 1 --max-duration-s 15
+  --min-duration-s 1 --max-duration-s 15 \
+  --vad-report .data/vad/recording.json
 ```
 
 Merge preserves speaker labels and requires silence in every channel across the
@@ -277,10 +299,12 @@ preserved pauses. With `--merge`, diarization applies its duration limits after
 merging, using the same merge and clip export helpers as the standalone workflow.
 The integrated merge also stops before adding a same-speaker turn if the
 resulting span would exceed `--max-duration-s`; the rejected turn starts a new
-merge chain. Any individual turn that is already over the limit is still
-discarded by the subsequent duration filter. Standalone `purity/merge` retains
-its unfiltered behavior, so its output can still contain overlong merged
-chains until `audio/export_segments` applies its duration filter.
+merge chain. After merging, the default VAD strategy recursively splits any
+individual turn still over the limit before the duration filter. The split
+audit is stored in `long_segment_audit`; `--long-segment-strategy drop` instead
+discards those turns. Standalone `purity/merge` retains its unfiltered behavior,
+so its output can still contain overlong merged chains until
+`audio/export_segments` applies the selected duration strategy.
 See [the file contract](data_contract.md#silence-aware-merge) for audit fields.
 
 Merge and export verify the source audio against the input manifest's recorded

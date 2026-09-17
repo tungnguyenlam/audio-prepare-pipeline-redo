@@ -75,6 +75,9 @@ can still cut a word when the lowest probability in an oversized interval occurs
 inside quiet speech: it has no silence threshold, word alignment, or phoneme
 check. More immediately, literal global-minimum recursion is unsuitable as a
 standalone dataset segmenter because clustered minima create many tiny fragments.
-A production variant should treat a silence valley as one candidate and enforce
-a minimum child duration before comparing candidates; that would be a different
-algorithm and is not implemented by this baseline.
+The same recursive planner is now the default policy for oversized turns in
+diarization and `audio/export_segments`; those commands preserve speaker
+labels and split each overlong turn independently. The standalone command still
+partitions the complete source timeline and therefore retains the tiny-fragment
+behavior observed here. Use `--long-segment-strategy drop` when the legacy
+discard policy is required.

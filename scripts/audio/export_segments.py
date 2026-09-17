@@ -27,6 +27,13 @@ def main() -> int:
                    help='Minimum turn duration in seconds to keep and export (default: 1.0)')
     p.add_argument('-max', '--max-duration-s', type=float, default=15.0,
                    help='Maximum turn duration in seconds to keep and export (default: 15.0)')
+    p.add_argument('--long-segment-strategy', '--overlong-strategy',
+                   dest='long_segment_strategy', choices=('vad', 'drop'), default='vad',
+                   help='How to handle turns longer than --max-duration-s: vad recursively cuts them; drop discards them')
+    p.add_argument('--vad-report', type=Path,
+                   help='Completed evaluate/silero_jit report for VAD cuts when an oversized turn is present')
+    p.add_argument('--vad-device', default='cpu',
+                   help='Probability track in the VAD report; cuda:0 also denotes ROCm')
     p.add_argument('-w', '-ow', '--overwrite', action='store_true', default=False,
                    help='Rebuild clips and manifest, removing obsolete clips tracked by the previous manifest (default: False)')
     p.add_argument('-c', '--concurrency', type=positive_int, default=1,
@@ -41,6 +48,10 @@ def main() -> int:
         p.error('--max-duration-s must be finite and positive')
     if args.min_duration_s is not None and args.max_duration_s is not None and args.min_duration_s > args.max_duration_s:
         p.error('--min-duration-s cannot exceed --max-duration-s')
+    if args.long_segment_strategy == 'drop' and args.vad_report is not None:
+        p.error('--vad-report requires --long-segment-strategy vad')
+    if args.vad_report is not None and not args.vad_report.is_file():
+        p.error(f'VAD report does not exist: {args.vad_report}')
     manifest = read_json(args.input_manifest)
     source = source_path(manifest, args.input_manifest, args.input_file)
     output_dir = args.output_dir.resolve() if args.output_dir is not None else (ROOT / '.data/audio/clips' / infer_audio_family(args.input_manifest)).resolve()
@@ -49,10 +60,15 @@ def main() -> int:
         p.error('Output directory must be separate from the input manifest and source')
     wanted = request(identity(source), 'export_segments', {'input_manifest': identity(args.input_manifest),
                      'sample_rate': args.sample_rate, 'channels': args.channels,
-                     'min_duration_s': args.min_duration_s, 'max_duration_s': args.max_duration_s}, manifest.get('model'))
+                     'min_duration_s': args.min_duration_s, 'max_duration_s': args.max_duration_s,
+                     'long_segment_strategy': args.long_segment_strategy,
+                     'vad_device': args.vad_device,
+                     'vad_report': identity(args.vad_report) if args.vad_report else None}, manifest.get('model'))
     if not manifest_complete(destination, wanted, args.overwrite):
         export({**wanted, 'turns': manifest['turns']}, source, destination, args.work_dir, args.sample_rate, args.channels,
-               args.min_duration_s, args.max_duration_s, concurrency=args.concurrency, batch_size=args.batch_size)
+               args.min_duration_s, args.max_duration_s, concurrency=args.concurrency, batch_size=args.batch_size,
+               long_segment_strategy=args.long_segment_strategy, vad_report=args.vad_report,
+               vad_device=args.vad_device)
         ensure_plots(destination, overwrite=True)
     else:
         # A prior export may predate automatic plots, or an interrupted plot

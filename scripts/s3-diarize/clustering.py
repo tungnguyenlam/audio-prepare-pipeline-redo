@@ -31,7 +31,10 @@ sys.modules.pop('pyannote', None)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _common.files import batch, convert, identity, inputs, manifest_destinations, parser, persist_path, positive_int, probe, request, safe_name
 from _common.merge import add_diarization_merge_arguments, merge_parameters
-from _common.segments import ensure_family_plots, ensure_plots, export, manifest_complete
+from _common.segments import (add_long_segment_arguments, ensure_family_plots,
+                              ensure_plots, export, long_segment_parameters,
+                              manifest_complete, resolve_vad_report,
+                              validate_long_segment_arguments)
 
 logger = logging.getLogger(__name__)
 
@@ -432,9 +435,11 @@ def main() -> int:
                    help='Minimum silence duration in seconds to split turns (default: 0.5)')
     p.add_argument('-min', '--min-duration-s', type=float, default=1.5, help='Minimum turn duration in seconds to keep and export (default: 1.5)')
     p.add_argument('-max', '--max-duration-s', type=float, default=15.0, help='Maximum turn duration in seconds to keep and export (default: 15.0)')
+    add_long_segment_arguments(p)
     safe_parent = lambda rel: Path(*[safe_name(p) for p in rel.parent.parts]) if rel.parent.parts else Path('.')
     add_diarization_merge_arguments(p)
     args = p.parse_args()
+    validate_long_segment_arguments(args, p)
     merge_options = {**merge_parameters(args, p), 'adjust_mean': args.adjust_mean}
     if args.min_duration_s is not None and (not math.isfinite(args.min_duration_s) or args.min_duration_s < 0):
         p.error('--min-duration-s must be finite and non-negative')
@@ -452,16 +457,20 @@ def main() -> int:
     parameters = {key: persist_path(value) if isinstance(value, Path) else value for key, value in parameters.items()}
     def process(src, dest):
         rate = args.sample_rate or probe(src)['sample_rate']
+        vad_report = resolve_vad_report(args, src, p)
         wanted = request(identity(src), 'diarize', {**({'merge': merge_options} if args.merge else {}),
                          **parameters, 'sample_rate': rate, 'channels': args.channels,
-                         'min_duration_s': args.min_duration_s, 'max_duration_s': args.max_duration_s}, 'clustering')
+                         'min_duration_s': args.min_duration_s, 'max_duration_s': args.max_duration_s,
+                         **long_segment_parameters(args, vad_report)}, 'clustering')
         if manifest_complete(dest, wanted, args.overwrite):
             ensure_plots(dest, overwrite=False)
             return
         turns = model.diarize(src)
         export({**wanted, 'speaker_ids': sorted({t['speaker_id'] for t in turns}), 'turns': turns},
                src, dest, args.work_dir, rate, args.channels, args.min_duration_s, args.max_duration_s,
-               concurrency=args.concurrency, batch_size=args.batch_size)
+               concurrency=args.concurrency, batch_size=args.batch_size,
+               long_segment_strategy=args.long_segment_strategy, vad_report=vad_report,
+               vad_device=args.vad_device)
         ensure_plots(dest, overwrite=True)
     try:
         result = batch(pairs, process, concurrency=args.concurrency, batch_size=args.batch_size)

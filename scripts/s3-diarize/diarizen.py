@@ -15,7 +15,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from _common.files import batch, identity, inputs, manifest_destinations, parser, positive_int, probe, request, safe_name
 from _common.merge import add_diarization_merge_arguments, merge_parameters
-from _common.segments import ensure_family_plots, ensure_plots, export, manifest_complete
+from _common.segments import (add_long_segment_arguments, ensure_family_plots,
+                              ensure_plots, export, long_segment_parameters,
+                              manifest_complete, resolve_vad_report,
+                              validate_long_segment_arguments)
 
 
 def main() -> int:
@@ -30,11 +33,13 @@ def main() -> int:
     p.add_argument('-ch', '--channels', type=int, choices=(1, 2), default=1, help='Output audio channel count (1=mono, 2=stereo)')
     p.add_argument('-min', '--min-duration-s', type=float, default=1.5, help='Minimum turn duration in seconds to keep and export (default: 1.5)')
     p.add_argument('-max', '--max-duration-s', type=float, default=15.0, help='Maximum turn duration in seconds to keep and export')
+    add_long_segment_arguments(p)
     p.add_argument('--segmentation-step', type=float, default=0.1, help='Segmentation shifting ratio step')
     p.add_argument('--binarize-onset', type=float, default=0.5, help='Binarize onset threshold')
     p.add_argument('--binarize-offset', type=float, default=0.5, help='Binarize offset threshold')
     add_diarization_merge_arguments(p)
     args = p.parse_args()
+    validate_long_segment_arguments(args, p)
     merge_options = {**merge_parameters(args, p), 'adjust_mean': args.adjust_mean}
     if args.min_duration_s is not None and (not math.isfinite(args.min_duration_s) or args.min_duration_s < 0):
         p.error('--min-duration-s must be finite and non-negative')
@@ -271,12 +276,14 @@ def main() -> int:
     kwargs = {key: getattr(args, key) for key in ('num_speakers', 'min_speakers', 'max_speakers') if getattr(args, key) is not None}
     def process(src, dest):
         rate = args.sample_rate or probe(src)['sample_rate']
+        vad_report = resolve_vad_report(args, src, p)
         wanted = request(identity(src), 'diarize', {**({'merge': merge_options} if args.merge else {}),
                          **kwargs, 'device': device, 'batch_size': args.batch_size,\
                          'sample_rate': rate, 'channels': args.channels, 'checkpoint': args.model,\
                          'min_duration_s': args.min_duration_s, 'max_duration_s': args.max_duration_s,\
                          'segmentation_step': args.segmentation_step, 'binarize_onset': args.binarize_onset,\
-                         'binarize_offset': args.binarize_offset}, 'diarizen')
+                         'binarize_offset': args.binarize_offset,
+                         **long_segment_parameters(args, vad_report)}, 'diarizen')
         if manifest_complete(dest, wanted, args.overwrite):
             ensure_plots(dest, overwrite=False)
             return
@@ -297,7 +304,9 @@ def main() -> int:
             if segment.end > segment.start:
                 turns.append({'speaker_id': labels[label], 'start_s': float(segment.start), 'end_s': float(segment.end)})
         export({**wanted, 'speaker_ids': list(labels.values()), 'turns': turns}, src, dest, args.work_dir, rate, args.channels,\
-               args.min_duration_s, args.max_duration_s, concurrency=args.concurrency, batch_size=args.batch_size)
+               args.min_duration_s, args.max_duration_s, concurrency=args.concurrency, batch_size=args.batch_size,
+               long_segment_strategy=args.long_segment_strategy, vad_report=vad_report,
+               vad_device=args.vad_device)
         ensure_plots(dest, overwrite=True)
     result = batch(pairs, process, concurrency=args.concurrency, batch_size=args.batch_size)
     ensure_family_plots(pairs, args, concurrency=args.concurrency, batch_size=args.batch_size)

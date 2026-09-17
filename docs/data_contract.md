@@ -112,6 +112,13 @@ interrupted write is recognizable and retried.
 - Export duration limits are inclusive and checked against integer source-sample
   lengths. The minimum is rounded up to a whole sample and the maximum down,
   using decimal seconds so exact limits are not lost to timestamp subtraction.
+- `--long-segment-strategy vad` is the default for diarization and
+  `audio/export_segments`. It recursively splits turns longer than
+  `parameters.max_duration_s` with the cached Silero probability report named
+  by `parameters.vad_report`; `--long-segment-strategy drop` preserves the
+  legacy discard behavior. The report must identify the same source bytes and
+  source geometry. Diarization stores each selected cut in the top-level
+  `long_segment_audit`; `segments.raw.json` remains the uncut backend output.
 - Commands resolving a manifest's source audio verify its recorded `source.sha256`
   before using its turns. A missing or mismatched hash is an error. An explicit
   `--input-file` override bypasses this check; the caller must preserve the original

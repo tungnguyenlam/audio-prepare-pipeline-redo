@@ -49,7 +49,8 @@ Every `.py` has a same-name `.sh` launcher that selects the right virtualenv.
 ```bash
 bash scripts/s1-download/youtube.sh     --url 'https://www.youtube.com/watch?v=VIDEO' --output-dir .data/dl
 bash scripts/s2-separate/htdemucs_ft.sh --input-dir .data/dl --output-dir .data/sep
-bash scripts/s3-diarize/sortformer.sh   --input-dir .data/sep --output-dir .data/turns      # <stem>/segments.json + clips
+# Independently write .data/vad/<stem>.json with evaluate/silero_jit.sh for each source.
+bash scripts/s3-diarize/sortformer.sh   --input-dir .data/sep --output-dir .data/turns --vad-report-dir .data/vad  # reports named <stem>.json
 bash scripts/purity/cleanup.sh       --input-manifest .data/turns/<stem>/segments.json --output-manifest .data/p/cleaned.json
 bash scripts/purity/collar.sh        --input-manifest .data/p/cleaned.json --output-manifest .data/p/collared.json
 bash scripts/audio/export_segments.sh --input-manifest .data/p/collared.json --output-dir .data/clips
@@ -66,6 +67,10 @@ bash scripts/s4-agent/verifier/analysis.sh --input-dir .data/s4-agent/verifier/g
   clips, plots, and the original `segments.raw.json` plus `segments.merged.json`;
   see the
   [merge cookbook](docs/commands.md#merge-before-duration-filtering).
+- Turns over 15 seconds are recursively cut at cached Silero VAD valleys by
+  default. Generate reports with `evaluate/silero_jit.sh` and pass
+  `--vad-report` (or `--vad-report-dir` for directory runs). Use
+  `--long-segment-strategy drop` to explicitly discard oversized turns.
 - `--input-file` beats `--input-dir`; `--output-file` is an exact destination for single outputs.
 - Audio outputs get a sibling `.json` sidecar; diarizers write `<stem>/segments.json` plus clips
   and `<stem>/plot/` (including before-merge, after-merge, and post-filter plots);
