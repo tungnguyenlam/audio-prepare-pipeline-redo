@@ -117,7 +117,7 @@ All runtime artifacts are local and gitignored under `.data/evaluate/hana_tts/`.
 
 | Artifact | What to inspect |
 | --- | --- |
-| `review.html` | Filter variants/pass/reject; play each clip and its source context (±1 s); inspect word times, boundary evidence, ASR text, and Gemini transcript/reason |
+| `review.md` | Markdown review report for VS Code preview; click audio links to open WAV clips directly in VS Code; inspect word times, boundary evidence, ASR text, and Gemini verdicts |
 | `summary.json` | Counts, passed seconds, costs, every clip hash and referenced verdict, all failed/successful attempts |
 | `asr/phowhisper.json` | Actual production PhoWhisper output with all word entries |
 | `vad/report.json` | Raw CPU/ROCm probabilities, hashes, timing repetitions, environment, numerical comparisons |
@@ -127,11 +127,11 @@ All runtime artifacts are local and gitignored under `.data/evaluate/hana_tts/`.
 | `gemini_*/` | Exact raw response `.txt` plus validated verdict/error JSON; retries are separate |
 | `checks/results.json` | Twelve successful logic/artifact checks |
 | `checks/check_planner.py` | Rerunnable local check script; synthetic cases are clearly identified as logic checks |
-| `make_review.py` | Rebuild the local HTML/JSON review without model calls |
+| `make_review.py` | Rebuild the local Markdown/JSON review without model calls |
 
 The report uses the local WAVs; it is not a hosted service. Do not move it alone
-without preserving its relative paths. The source-context player makes it
-possible to hear whether a cut removes a coda or introduces part of a neighbor.
+without preserving its relative paths. Audio links can be clicked directly in VS Code
+Markdown Preview to open and play each clip in VS Code.
 
 Checks covered sentence aggregation, long-run partitioning, isolated short
 utterances, continuous speech with no admissible pause, a speaker interruption
