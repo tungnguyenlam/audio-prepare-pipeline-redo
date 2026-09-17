@@ -196,6 +196,13 @@ interrupted write is recognizable and retried.
   `plot/timeline.png`, `plot/timeline_duration.png`, and
   `plot/timeline_cutoff.png` beside the exported `segments.json`; these plots
   describe the post-filter turns.
+- Each diarization command automatically audits duration loss and writes
+  `duration_loss.json` beside `segments.json`, quantifying duration lost to initial
+  non-speech/silence, silence absorbed during same-speaker merging, turns filtered
+  out by duration limits (< 1.5 s or > 15.0 s), and final clip yield percentages.
+  A summary line is emitted to stderr (`DURATION_LOSS`). For directory runs,
+  `ensure_family_plots` aggregates audits across all manifests into
+  `<collection>/_plot/duration_loss.json`.
 
 ## 3. Purity and speaker manifests
 

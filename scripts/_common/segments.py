@@ -558,10 +558,16 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
         output['merged_manifest_sha256'] = digest(merged_path)
     write_json(destination, output)
     progress('EXPORT_COMPLETE', f'Exported {turns_count} clips to {destination.parent.name}')
+    if manifest.get('operation') == 'diarize':
+        from _common.duration_loss import ensure_duration_loss
+        ensure_duration_loss(destination, overwrite=True)
 
 
 def ensure_plots(manifest_path: Path, *, overwrite: bool = False) -> None:
-    """Write stage plots and final timeline, duration, and cutoff plots."""
+    """Write stage plots, duration loss audit, and final timeline, duration, and cutoff plots."""
+    from _common.duration_loss import ensure_duration_loss
+    ensure_duration_loss(manifest_path, overwrite=overwrite)
+
     from _common.diarize_plots import (manifest_plot_file, plot_segment_outputs,
                                        sibling_plot_paths, stage_plot_file, write_stage_plots)
 
@@ -619,6 +625,9 @@ def ensure_family_plots(
         manifests = list(dict.fromkeys(path for path in destinations if path.is_file()))
         if not manifests:
             continue
+        from _common.duration_loss import ensure_family_duration_loss
+        ensure_family_duration_loss(manifests, family_root / FAMILY_PLOT_DIR, overwrite=overwrite)
+
         progress('FAMILY_PLOT_START', f'Rendering aggregate diarization plots for {family_root.name} ({len(manifests)} manifest(s))')
         paths = write_family_plots(
             manifests,
