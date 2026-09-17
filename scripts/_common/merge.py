@@ -8,7 +8,7 @@ from pathlib import Path
 MEAN_DURATION_MIN_S = 7.0
 MEAN_DURATION_MAX_S = 10.0
 MEAN_ADJUST_STEP_S = 0.1
-MEAN_ADJUST_MAX_ATTEMPTS = 100
+MEAN_ADJUST_MAX_RETRIES = 100
 
 
 def parse_bool(value: str) -> bool:

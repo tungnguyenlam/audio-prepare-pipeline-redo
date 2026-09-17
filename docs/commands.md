@@ -268,7 +268,11 @@ Mean adjustment targets a 7–10 second mean per input video and changes
 `max_gap_s` by 0.1 seconds per retry. Because a larger maximum gap permits more
 merges, it increases the gap when the mean is below 7 seconds and decreases it
 when the mean is above 10 seconds. The adjustment is bounded by 100 retries and
-the available same-speaker gaps.
+the available same-speaker gaps. The initial merge is retry 0, so the 100-retry
+limit permits at most 101 total merge evaluations; most files stop earlier when
+the target is reached or the usable gap range is exhausted. Progress output
+reports merge turns before the long-segment strategy, post-strategy turns,
+VAD cuts/rejections, and duration-filter removals separately.
 
 The example writes processed `segments.json`, `segments.merged.json`, merged clips
 that pass the duration filter, and three stage plot sets under

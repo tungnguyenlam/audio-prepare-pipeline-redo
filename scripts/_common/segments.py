@@ -18,7 +18,7 @@ from _common.files import (
     safe_name,
     write_json,
 )
-from _common.merge import (MEAN_ADJUST_MAX_ATTEMPTS, MEAN_ADJUST_STEP_S,
+from _common.merge import (MEAN_ADJUST_MAX_RETRIES, MEAN_ADJUST_STEP_S,
                             MEAN_DURATION_MAX_S, MEAN_DURATION_MIN_S, merge_turns)
 from _common.vad import ensure_vad_report, load_vad_report, plan_segments
 
@@ -220,15 +220,47 @@ def _largest_same_speaker_gap_s(turns: list[dict], sample_rate: int) -> float:
     return max(gaps, default=0.0)
 
 
-def _merge_detail(mean_duration_s: float | None, merged_turn_count: int,
-                  audit: list[dict], clip_count: int) -> str:
+def _merge_metrics(merge_turn_count: int, candidate_turns: list[dict],
+                   audit: list[dict], long_segment_audit: list[dict],
+                   filtered_turns: list[dict], min_samples: int | None,
+                   max_samples: int | None) -> dict:
+    reason_counts = {}
+    for item in audit:
+        reason = item['reason']
+        reason_counts[reason] = reason_counts.get(reason, 0) + 1
+    return {
+        'merge_turns': merge_turn_count,
+        'post_strategy_turns': len(candidate_turns),
+        'merged_turns': len(candidate_turns),
+        'merge_reason_counts': reason_counts,
+        'merged_gaps': reason_counts.get('merged', 0),
+        'max_duration_rejections': reason_counts.get('max_duration_exceeded', 0),
+        'vad_cut_count': sum('cut_id' in item for item in long_segment_audit),
+        'vad_rejection_count': sum(item.get('action') == 'reject'
+                                   for item in long_segment_audit),
+        'duration_filtered_out': len(candidate_turns) - len(filtered_turns),
+        'too_short': sum(min_samples is not None and
+                         t['end_sample'] - t['start_sample'] < min_samples
+                         for t in candidate_turns),
+        'too_long': sum(max_samples is not None and
+                        t['end_sample'] - t['start_sample'] > max_samples
+                        for t in candidate_turns),
+        'valid_clips': len(filtered_turns),
+    }
+
+
+def _merge_detail(mean_duration_s: float | None, metrics: dict) -> str:
     mean = 'n/a' if mean_duration_s is None else f'{mean_duration_s:.2f}s'
-    merged_gaps = sum(item['reason'] == 'merged' for item in audit)
-    duration_rejections = sum(item['reason'] == 'max_duration_exceeded' for item in audit)
-    filtered_out = merged_turn_count - clip_count
-    return (f'merged_turns={merged_turn_count}, merged_gaps={merged_gaps}, '
-            f'max_duration_rejections={duration_rejections}, filtered_out={filtered_out}, '
-            f'valid_clips={clip_count}, mean_duration={mean}')
+    reason_detail = ','.join(f'{key}={value}'
+                             for key, value in sorted(metrics['merge_reason_counts'].items())) or 'none'
+    return (f'merge_turns={metrics["merge_turns"]}, '
+            f'post_strategy_turns={metrics["post_strategy_turns"]}, '
+            f'merge_decisions={reason_detail}, '
+            f'vad_cuts={metrics["vad_cut_count"]}, '
+            f'vad_rejections={metrics["vad_rejection_count"]}, '
+            f'duration_filtered_out={metrics["duration_filtered_out"]} '
+            f'(too_short={metrics["too_short"]}, too_long={metrics["too_long"]}), '
+            f'valid_clips={metrics["valid_clips"]}, mean_duration={mean}')
 
 
 def export(manifest: dict, source: Path, destination: Path, work_dir: Path, sample_rate: int | None = None, channels: int = 1,
@@ -287,27 +319,29 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
                  f'{source.name}: raw_turns={len(raw_turns)}, initial_max_gap={initial_gap_s:.2f}s, '
                  f'max_duration={max_duration_detail}, target_mean={MEAN_DURATION_MIN_S:.2f}-{MEAN_DURATION_MAX_S:.2f}s, '
                  f'adjust_mean={adjust_mean}, step={MEAN_ADJUST_STEP_S:.2f}s, '
-                 f'max_attempts={MEAN_ADJUST_MAX_ATTEMPTS}')
+                 f'max_retries={MEAN_ADJUST_MAX_RETRIES}, '
+                 f'max_evaluations={MEAN_ADJUST_MAX_RETRIES + 1}')
 
         def run_merge(gap_s: float) -> tuple[list[dict], list[dict]]:
             return merge_turns(source, raw_turns, **{**merge_config, 'max_gap_s': gap_s})
 
-        turns, audit = run_merge(initial_gap_s)
+        merge_turns_result, audit = run_merge(initial_gap_s)
+        turns = merge_turns_result
         turns, segment_audit = apply_long_segment_strategy(turns)
         filtered_turns = _filter_duration_turns(turns, min_samples, max_samples)
         mean_duration_s = _mean_duration_s(filtered_turns, info['sample_rate'])
-        merged_gaps = sum(item['reason'] == 'merged' for item in audit)
-        attempt_records = [{'attempt': 0, 'max_gap_s': initial_gap_s,
-                            'merged_turns': len(turns), 'merged_gaps': merged_gaps,
-                            'max_duration_rejections': sum(item['reason'] == 'max_duration_exceeded' for item in audit),
-                            'valid_clips': len(filtered_turns),
+        metrics = _merge_metrics(len(merge_turns_result), turns, audit, segment_audit,
+                                 filtered_turns, min_samples, max_samples)
+        attempt_records = [{'attempt': 0, 'retry': 0, 'evaluation': 1,
+                            'max_gap_s': initial_gap_s, **metrics,
                             'mean_duration_s': mean_duration_s}]
-        progress('MERGE_MEAN', f'{source.name}: attempt=0, max_gap={initial_gap_s:.2f}s, '
-                 f'{_merge_detail(mean_duration_s, len(turns), audit, len(filtered_turns))}')
+        progress('MERGE_MEAN', f'{source.name}: retry=0/{MEAN_ADJUST_MAX_RETRIES}, '
+                 f'evaluation=1/{MEAN_ADJUST_MAX_RETRIES + 1}, max_gap={initial_gap_s:.2f}s, '
+                 f'{_merge_detail(mean_duration_s, metrics)}')
 
         current_gap_s = initial_gap_s
         best_state = (turns, audit, filtered_turns, current_gap_s, mean_duration_s,
-                      merged_gaps, segment_audit)
+                      metrics['merged_gaps'], segment_audit, len(merge_turns_result))
         best_distance_s = _mean_distance_s(mean_duration_s)
         seen_gaps = {round(initial_gap_s, 10)}
         if not adjust_mean:
@@ -320,7 +354,7 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
             largest_gap_s = _largest_same_speaker_gap_s(raw_turns, info['sample_rate'])
             max_adjustable_gap_s = max(initial_gap_s, largest_gap_s)
             stop_reason = 'retry_limit_reached'
-            for attempt in range(1, MEAN_ADJUST_MAX_ATTEMPTS + 1):
+            for attempt in range(1, MEAN_ADJUST_MAX_RETRIES + 1):
                 if mean_duration_s < MEAN_DURATION_MIN_S:
                     if current_gap_s >= max_adjustable_gap_s:
                         stop_reason = 'gap_upper_bound_reached'
@@ -339,26 +373,30 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
                     break
                 seen_gaps.add(next_gap_s)
                 progress('MERGE_RETRY',
-                         f'{source.name}: attempt={attempt}/{MEAN_ADJUST_MAX_ATTEMPTS}, '
+                         f'{source.name}: retry={attempt}/{MEAN_ADJUST_MAX_RETRIES}, '
+                         f'evaluation={attempt + 1}/{MEAN_ADJUST_MAX_RETRIES + 1}, '
                          f'mean={mean_duration_s:.2f}s outside target, {direction} max_gap '
                          f'{current_gap_s:.2f}s -> {next_gap_s:.2f}s')
-                turns, audit = run_merge(next_gap_s)
+                merge_turns_result, audit = run_merge(next_gap_s)
+                turns = merge_turns_result
                 turns, segment_audit = apply_long_segment_strategy(turns)
                 filtered_turns = _filter_duration_turns(turns, min_samples, max_samples)
                 mean_duration_s = _mean_duration_s(filtered_turns, info['sample_rate'])
                 current_gap_s = next_gap_s
-                merged_gaps = sum(item['reason'] == 'merged' for item in audit)
-                attempt_records.append({'attempt': attempt, 'max_gap_s': current_gap_s,
-                                        'merged_turns': len(turns), 'merged_gaps': merged_gaps,
-                                        'max_duration_rejections': sum(item['reason'] == 'max_duration_exceeded' for item in audit),
-                                        'valid_clips': len(filtered_turns),
+                metrics = _merge_metrics(len(merge_turns_result), turns, audit, segment_audit,
+                                         filtered_turns, min_samples, max_samples)
+                attempt_records.append({'attempt': attempt, 'retry': attempt,
+                                        'evaluation': attempt + 1,
+                                        'max_gap_s': current_gap_s, **metrics,
                                         'mean_duration_s': mean_duration_s})
-                progress('MERGE_MEAN', f'{source.name}: attempt={attempt}, max_gap={current_gap_s:.2f}s, '
-                         f'{_merge_detail(mean_duration_s, len(turns), audit, len(filtered_turns))}')
+                progress('MERGE_MEAN', f'{source.name}: retry={attempt}/{MEAN_ADJUST_MAX_RETRIES}, '
+                         f'evaluation={attempt + 1}/{MEAN_ADJUST_MAX_RETRIES + 1}, '
+                         f'max_gap={current_gap_s:.2f}s, '
+                         f'{_merge_detail(mean_duration_s, metrics)}')
                 distance_s = _mean_distance_s(mean_duration_s)
                 if distance_s < best_distance_s:
                     best_state = (turns, audit, filtered_turns, current_gap_s, mean_duration_s,
-                                  merged_gaps, segment_audit)
+                                  metrics['merged_gaps'], segment_audit, len(merge_turns_result))
                     best_distance_s = distance_s
                 if mean_duration_s is None:
                     stop_reason = 'no_valid_clips'
@@ -369,12 +407,19 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
             else:
                 stop_reason = 'retry_limit_reached'
 
-        turns, audit, filtered_turns, current_gap_s, mean_duration_s, merged_gaps, long_segment_audit = best_state
+        (turns, audit, filtered_turns, current_gap_s, mean_duration_s, merged_gaps,
+         long_segment_audit, merge_turn_count) = best_state
+        metrics = _merge_metrics(merge_turn_count, turns, audit, long_segment_audit,
+                                 filtered_turns, min_samples, max_samples)
         # Statistics describe the final merge before duration filtering.
         merge_statistics = {'input_turns': len(raw_turns), 'output_turns': len(turns),
                             'merged_gaps': merged_gaps,
                             'max_duration_rejections': sum(item['reason'] == 'max_duration_exceeded' for item in audit),
-                            'max_gap_s': current_gap_s}
+                            'max_gap_s': current_gap_s,
+                            'merge_turns_before_long_segment_strategy': merge_turn_count,
+                            'long_segment_cuts': metrics['vad_cut_count'],
+                            'long_segment_rejections': metrics['vad_rejection_count'],
+                            'duration_filter_rejections': metrics['duration_filtered_out']}
         merge_mean_adjustment = {
             'enabled': adjust_mean,
             'target_min_duration_s': MEAN_DURATION_MIN_S,
@@ -385,11 +430,17 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
             'final_mean_duration_s': mean_duration_s,
             'final_valid_clips': len(filtered_turns),
             'stop_reason': stop_reason,
+            'max_retries': MEAN_ADJUST_MAX_RETRIES,
+            'max_evaluations': MEAN_ADJUST_MAX_RETRIES + 1,
+            'retry_count': len(attempt_records) - 1,
+            'evaluation_count': len(attempt_records),
             'attempts': attempt_records,
         }
         progress('MERGE_DONE',
                  f'{source.name}: final_max_gap={current_gap_s:.2f}s, '
-                 f'{_merge_detail(mean_duration_s, len(turns), audit, len(filtered_turns))}, '
+                 f'retries={len(attempt_records) - 1}/{MEAN_ADJUST_MAX_RETRIES}, '
+                 f'evaluations={len(attempt_records)}/{MEAN_ADJUST_MAX_RETRIES + 1}, '
+                 f'{_merge_detail(mean_duration_s, metrics)}, '
                  f'stop_reason={stop_reason}')
         merged_turns = turns
         turns = filtered_turns

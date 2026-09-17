@@ -1,3 +1,19 @@
+## 2026-09-17 - Clarify DiariZen merge progress accounting
+
+### Decisions
+
+- Interpret the configured value of 100 as a maximum of 100 mean-adjustment retries after the initial merge evaluation, for 101 evaluations at most.
+- Keep attempt/retry 0 as the initial pass and expose both the retry/evaluation limits and actual counts in progress output and the processed manifest.
+- Separate direct merge output from post-long-segment-strategy output in live summaries so VAD expansion is not reported as additional merging.
+- Preserve the detailed per-candidate `merge_audit`; add compact reason counts, VAD cut/rejection counts, and duration-filter counts to each recorded attempt.
+
+### Results
+
+- Renamed the internal limit to `MEAN_ADJUST_MAX_RETRIES` and added `max_retries`, `max_evaluations`, `retry_count`, and `evaluation_count` to `merge_mean_adjustment`.
+- Expanded `MERGE_MEAN` and `MERGE_DONE` progress with retry/evaluation numbering, merge decisions, VAD activity, and duration-filter breakdowns.
+- Updated the command cookbook and data contract to document the accounting.
+- Validated Python compilation, DiariZen launcher shell syntax, CLI help wiring, stale-reference search, and diff whitespace. No tests or model inference were run.
+
 ## 2026-09-17 - Update AGENTS.md with WORKLOG.md tracking instructions
 
 ### Decisions
