@@ -186,8 +186,11 @@ times, plus a matching native Silero JIT evaluation report. Its `parameters`
 identify the ASR, VAD report, optional unfiltered speaker manifest, implementation,
 and cut settings. Each output turn carries `text`, `_transcript`, `_words`,
 original turn/word indices, `boundary` evidence, and `quality.status: candidate`.
-`quality.flags` records truncated collars. `audit` retains candidate boundaries;
-`rejected` accounts for missing/invalid/unassigned words and unsegmentable spans.
+`quality.flags` records truncated collars. `audit` retains every VAD-confirmed
+candidate boundary per run (`sentence_pause`/`word_pause`, with pause span and
+whether the cut fell inside an aligned word's extent) plus the pre-merge
+`fragments`; `rejected` accounts for missing/invalid/unassigned words,
+`too_short` results, and `no_pause_within_hard_max` spans.
 `complete: true` means planning finished, not that the clips passed verification.
 Render separately using `audio/export_segments`; it retains turn metadata and
 references the plan by hash, while the plan remains the authoritative rejection

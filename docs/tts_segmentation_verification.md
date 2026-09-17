@@ -1,5 +1,13 @@
 # TTS cutting verification and integration decision
 
+> **Superseded strategy (2026-09-17).** These results describe the `experimental-v2`
+> planner, which required a pause strictly inside the aligned inter-word gap and
+> optimized durations by dynamic programming. On this recording only 4 of 264
+> Silero pauses fell inside an aligned gap, which explains finding 3 below. The
+> current `experimental-v3` planner searches around sentence ends instead and
+> merges fragments afterwards; see [tts_segmentation_testing.md](tts_segmentation_testing.md).
+> The Gemini verdicts below have not been rerun on v3 output.
+
 **Decision: native Silero JIT works on CPU and the local AMD GPU, but the current
 cutting prototype should not replace the main pipeline.** Gemini found more
 clipped boundaries in both prototype versions than in the existing cuts. The

@@ -301,21 +301,21 @@ are preserved. Diarization `--overwrite` also forces inference to rerun.
 Experimental, independent cut planning is available as `audio/segment_tts.sh`.
 It consumes nested ASR words plus a completed `evaluate/silero_jit.sh` probability
 report. It writes candidate boundaries and rejection audits, not approved TTS
-data. See [verification and integration](tts_segmentation_verification.md) before
-using its output. A speaker override should use **unfiltered** `segments.raw.json`;
-already-exported manifests may have discarded all long turns.
+data. See the [testing guide](tts_segmentation_testing.md) for the end-to-end
+recipe and [verification and integration](tts_segmentation_verification.md) for
+the earlier negative result. A speaker override should use **unfiltered**
+`segments.raw.json`; already-exported manifests may have discarded all long turns.
 
 ```bash
 # Native JIT only; cuda:0 selects NVIDIA CUDA or AMD ROCm for the installed torch build.
 # SILERO_PYTHON (then ASR_PYTHON) can select an existing torch/torchaudio environment.
 bash scripts/evaluate/silero_jit.sh --input-file .data/recording.wav \
   --model-file .data/models/silero/silero_vad.jit \
-  --devices cpu cuda:0 --repeats 3 --output-file .data/tts/vad.json
+  --devices cpu --output-file .data/tts/vad.json
 
 # No model inference here: inspect this plan before separately rendering it.
 bash scripts/audio/segment_tts.sh --input-manifest .data/asr/recording_vibevoice.json \
-  --vad-report .data/tts/vad.json --vad-device cuda:0 \
-  --output-file .data/tts/plan/segments.json
+  --vad-report .data/tts/vad.json --output-file .data/tts/plan/segments.json
 
 bash scripts/audio/export_segments.sh --input-manifest .data/tts/plan/segments.json \
   --output-dir .data/tts/clips --min-duration-s 1.5 --max-duration-s 15
@@ -331,14 +331,28 @@ not a GPU multi-stream throughput benchmark.
 
 The planner uses the normal audio launcher (`AUDIO_PYTHON` override). It accepts
 one ASR file and optional `--speaker-manifest`; source hashes must match the VAD
-report and audio. `--output-file` is exact. It never merges across a known speaker
-change and audits unsupported cuts instead of exceeding 15 seconds. A bounded
-250 ms VAD search protects outer edges, with explicit flags if a 40 ms collar
-cannot fit. These flags and Gemini results need review; success of the CLI is
-not evidence of complete phonemes. Prototype limitations include no corpus batch
-mode, no punctuation character-span mapping, and no voiced-word fallback for
-continuous monologues. Cached probabilities can be reused with different cut
-settings without rerunning the VAD benchmark.
+report and audio. `--output-file` is exact. Strategy (`experimental-v3`):
+
+1. Every word ending in `.`, `!`, `?`, or `…` is a cut candidate. It is accepted
+   only when a Silero pause exists nearby: every frame below `--silence-threshold`
+   (default 0.1) for at least `--min-silence-ms` (64). The search window reaches
+   `--cut-search-ms` (400) into either neighbouring word, because forced alignment
+   stretches word timestamps over pauses; the cut lands at the pause centre, keeping
+   between `--collar-ms` and `--max-edge-silence-ms` of pause on each side.
+2. Any piece still longer than `--hard-max` (15 s) is split at the accepted
+   word-gap pause nearest its middle, repeatedly. Pieces with no such pause are
+   rejected as `no_pause_within_hard_max`.
+3. Contiguous fragments are merged greedily toward `--target-min`/`--target-max`
+   (7–10 s), never past `--hard-max`. `--merge false` keeps the raw fragments.
+   Results under `--hard-min` (1.5 s) are rejected as `too_short`.
+
+Runs never join across a speaker change, an aligned gap over `--max-join-gap`,
+or an unassigned word. A bounded `--edge-search-ms` VAD search protects outer run
+edges, with explicit `*_collar_truncated` flags if a collar cannot fit. The
+stderr summary reports how many sentence ends passed the VAD gate; PhoWhisper
+punctuates sparsely, so VibeVoice transcripts are expected to raise that number.
+Cached probabilities can be reused with different cut settings without rerunning
+the VAD benchmark.
 
 ```bash
 # Transcribe single file with Whisper word-level alignment (writes <stem>_vibevoice.json and .txt)

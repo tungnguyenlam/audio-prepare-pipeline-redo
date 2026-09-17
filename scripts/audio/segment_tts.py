@@ -1,25 +1,30 @@
 """Experimental TTS cut planning from aligned ASR words and cached Silero JIT probabilities.
 
+Strategy: cut at every sentence-ending word whose surroundings contain a sustained
+Silero low-probability pause, split any remaining piece longer than --hard-max at the
+nearest word pause, then greedily merge contiguous fragments toward --target-min/max.
+
 Writes an inspectable manifest only. Render it separately with audio/export_segments.
 No ASR, VAD inference, speaker inference, or verifier is run implicitly.
 """
 from __future__ import annotations
 
-from decimal import Decimal
 import math
 from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _common.files import LoggingArgumentParser, ROOT, identity, probe, progress, read_json, write_json
+from _common.merge import parse_bool
 from _common.segments import normalize_turns, source_path
 
 
-def pause_boundaries(left, right, probabilities, hop_s, collar, max_silence, threshold, min_silence):
-    """Return a protected boundary in each sustained low-probability gap interval."""
-    gap_start, gap_end = left['end'], right['start']
-    first = max(0, math.ceil(gap_start / hop_s))
-    stop = min(len(probabilities), math.floor(gap_end / hop_s))
+SENTENCE_END = ('.', '!', '?', '…')
+
+
+def low_spans(probabilities, hop_s, a, b, threshold, min_silence):
+    """Return [start_s, end_s) spans inside [a, b] where every frame is below threshold."""
+    first, stop = max(0, math.ceil(a / hop_s)), min(len(probabilities), math.floor(b / hop_s))
     spans, begin = [], None
     for i in range(first, stop + 1):
         quiet = i < stop and probabilities[i] < threshold
@@ -27,31 +32,42 @@ def pause_boundaries(left, right, probabilities, hop_s, collar, max_silence, thr
             begin = i
         if not quiet and begin is not None:
             if (i - begin) * hop_s >= min_silence:
-                a = max(begin * hop_s, gap_start + collar)
-                b = min(i * hop_s, gap_end - collar)
-                if a <= b:
-                    choices = [k for k in range(begin, i) if a <= (k + 0.5) * hop_s <= b]
-                    cut = ((min(choices, key=lambda k: (probabilities[k], abs((k + .5) * hop_s - (a + b) / 2))) + .5) * hop_s
-                           if choices else (a + b) / 2)
-                    sentence = left['word'].rstrip().endswith(('.', '!', '?', '…'))
-                    mean = sum(probabilities[begin:i]) / (i - begin)
-                    spans.append({'left_end': min(cut, gap_start + max_silence),
-                                  'right_start': max(cut, gap_end - max_silence),
-                                  'cut_s': cut, 'gap_start_s': gap_start, 'gap_end_s': gap_end,
-                                  'mean_speech_probability': mean,
-                                  'silence_duration_s': (i - begin) * hop_s,
-                                  'method': 'sentence_silence' if sentence else 'word_silence',
-                                  'cost': 2 * mean + .5 * (1 - min((i - begin) * hop_s / .2, 1)) + (0 if sentence else 2)})
+                spans.append((begin * hop_s, i * hop_s))
             begin = None
     return spans
 
 
-def plan_run(words, probabilities, hop_s, rate, params):
-    collar = params['collar_ms'] / 1000
-    max_silence = params['max_edge_silence_ms'] / 1000
-    # Word alignment is not an acoustic envelope. Preserve adjacent VAD support
-    # before applying collars, constrained by the known speaker-safe interval.
-    search = params['edge_search_ms'] / 1000
+def cut_candidate(left, right, probabilities, hop_s, params):
+    """Return a boundary between two words, or None when VAD shows no pause nearby.
+
+    Alignment smears words over pauses, so the search window extends past the
+    aligned gap into either word's extent, never beyond the neighbouring words.
+    """
+    search = params['cut_search_ms'] / 1000
+    a = max(left['start'], left['end'] - search)
+    b = min(right['end'], right['start'] + search)
+    spans = low_spans(probabilities, hop_s, a, b, params['silence_threshold'], params['min_silence_ms'] / 1000)
+    if not spans:
+        return None
+    gap_mid = (left['end'] + right['start']) / 2
+    span_start, span_end = min(spans, key=lambda s: abs((s[0] + s[1]) / 2 - gap_mid))
+    cut = (span_start + span_end) / 2
+    collar, max_silence = params['collar_ms'] / 1000, params['max_edge_silence_ms'] / 1000
+    frames = probabilities[math.floor(span_start / hop_s):math.ceil(span_end / hop_s)]
+    sentence = left['word'].rstrip().endswith(SENTENCE_END)
+    return {'left_end': min(cut, max(span_start + collar, span_start + max_silence)),
+            'right_start': max(cut, min(span_end - collar, span_end - max_silence)),
+            'cut_s': cut, 'pause_start_s': span_start, 'pause_end_s': span_end,
+            'aligned_gap_start_s': left['end'], 'aligned_gap_end_s': right['start'],
+            'inside_aligned_word': cut < left['end'] or cut > right['start'],
+            'max_speech_probability': max(frames) if frames else None,
+            'silence_duration_s': span_end - span_start,
+            'method': 'sentence_pause' if sentence else 'word_pause'}
+
+
+def run_edges(words, probabilities, hop_s, params):
+    """Return protected run start/end nodes with VAD-supported outer edges."""
+    collar, search = params['collar_ms'] / 1000, params['edge_search_ms'] / 1000
     first_word, last_word = words[0], words[-1]
     onset, offset = first_word['start'], last_word['end']
     a = max(first_word['speaker_start_s'], onset - search)
@@ -66,67 +82,96 @@ def plan_run(words, probabilities, hop_s, rate, params):
             offset = max(offset, min(b, frame_end))
     start = max(first_word['speaker_start_s'], onset - collar)
     end = min(last_word['speaker_end_s'], offset + collar)
-    nodes = [{'index': 0, 'left_end': start, 'right_start': start, 'method': 'run_start',
-              'aligned_s': first_word['start'], 'protected_s': onset,
-              'retained_collar_s': max(0., onset - start), 'requested_collar_s': collar, 'cost': 0}]
+    return ({'index': 0, 'left_end': start, 'right_start': start, 'method': 'run_start',
+             'aligned_s': first_word['start'], 'protected_s': onset,
+             'retained_collar_s': max(0., onset - start), 'requested_collar_s': collar},
+            {'index': len(words), 'left_end': end, 'right_start': end, 'method': 'run_end',
+             'aligned_s': last_word['end'], 'protected_s': offset,
+             'retained_collar_s': max(0., end - offset), 'requested_collar_s': collar})
+
+
+def plan_run(words, probabilities, hop_s, rate, params):
+    """Cut at every VAD-confirmed sentence end, split over-long pieces at word
+    pauses, then optionally merge contiguous fragments toward the target band."""
+    hard_max = params['hard_max']
+    candidates = {}
     for index, (left, right) in enumerate(zip(words, words[1:]), 1):
-        for boundary in pause_boundaries(left, right, probabilities, hop_s, collar, max_silence,
-                                         params['silence_threshold'], params['min_silence_ms'] / 1000):
-            nodes.append({'index': index, **boundary})
-    nodes.append({'index': len(words), 'left_end': end, 'right_start': end, 'method': 'run_end',
-                  'aligned_s': last_word['end'], 'protected_s': offset,
-                  'retained_collar_s': max(0., end - offset), 'requested_collar_s': collar, 'cost': 0})
-    minimum = math.ceil(Decimal(str(params['hard_min'])) * rate)
-    maximum = math.floor(Decimal(str(params['hard_max'])) * rate)
-    prefix = [0.0]
-    for word in words:
-        prefix.append(prefix[-1] + word['end'] - word['start'])
-    # First minimize rejected aligned speech seconds, then target/acoustic cost.
-    costs, previous = [(math.inf, math.inf)] * len(nodes), [None] * len(nodes)
-    costs[0] = (0.0, 0.0)
-    for j in range(1, len(nodes)):
-        right = nodes[j]
-        for i in range(j):
-            left = nodes[i]
-            if left['index'] >= right['index'] or not math.isfinite(costs[i][0]):
+        node = cut_candidate(left, right, probabilities, hop_s, params)
+        if node:
+            candidates[index] = {'index': index, **node}
+    start_node, end_node = run_edges(words, probabilities, hop_s, params)
+    cuts = [i for i, n in candidates.items() if n['method'] == 'sentence_pause']
+    pieces = [(a, b) for a, b in zip([0, *cuts], [*cuts, len(words)])]
+    # Fallback: split sentences longer than hard_max at the word pause nearest their middle.
+    final, pending = [], list(pieces)
+    while pending:
+        a, b = pending.pop(0)
+        left = start_node if a == 0 else candidates[a]
+        right = end_node if b == len(words) else candidates[b]
+        if right['left_end'] - left['right_start'] <= hard_max:
+            final.append((a, b))
+            continue
+        middle = (left['right_start'] + right['left_end']) / 2
+        options = [i for i in candidates if a < i < b and candidates[i]['method'] == 'word_pause']
+        if not options:
+            final.append((a, b))
+            continue
+        split = min(options, key=lambda i: abs(candidates[i]['cut_s'] - middle))
+        pending[:0] = [(a, split), (split, b)]
+    final.sort()
+    fragments = []
+    for a, b in final:
+        left = start_node if a == 0 else candidates[a]
+        right = end_node if b == len(words) else candidates[b]
+        fragments.append({'first': a, 'last': b, 'left': left, 'right': right,
+                          'duration_s': right['left_end'] - left['right_start']})
+    if params['merge']:
+        groups, current = [], None
+        for fragment in fragments:
+            if current is None:
+                current = dict(fragment)
                 continue
-            rejected = prefix[right['index']] - prefix[left['index']]
-            fallback = (costs[i][0] + rejected, costs[i][1])
-            if fallback < costs[j]:
-                costs[j], previous[j] = fallback, (i, False)
-            a, b = round(left['right_start'] * rate), round(right['left_end'] * rate)
-            if not minimum <= b - a <= maximum:
-                continue
-            d = (b - a) / rate
-            target = (params['target_min'] + params['target_max']) / 2
-            duration_cost = max(0, params['target_min'] - d) ** 2 + max(0, d - params['target_max']) ** 2 + .02 * (d - target) ** 2
-            accepted = (costs[i][0], costs[i][1] + 1 + duration_cost + right['cost'])
-            if accepted < costs[j]:
-                costs[j], previous[j] = accepted, (i, True)
+            combined = fragment['right']['left_end'] - current['left']['right_start']
+            if combined <= params['target_max'] or (current['duration_s'] < params['target_min'] and combined <= hard_max):
+                current.update(last=fragment['last'], right=fragment['right'], duration_s=combined)
+            else:
+                groups.append(current)
+                current = dict(fragment)
+        if current is not None:
+            if (groups and current['duration_s'] < params['hard_min'] and
+                    current['right']['left_end'] - groups[-1]['left']['right_start'] <= hard_max):
+                groups[-1].update(last=current['last'], right=current['right'],
+                                  duration_s=current['right']['left_end'] - groups[-1]['left']['right_start'])
+            else:
+                groups.append(current)
+    else:
+        groups = fragments
     chunks, rejected = [], []
-    j = len(nodes) - 1
-    while j:
-        i, accepted = previous[j]
-        left, right = nodes[i], nodes[j]
-        selected = words[left['index']:right['index']]
+    collar = params['collar_ms'] / 1000
+    for group in groups:
+        left, right = group['left'], group['right']
+        selected = words[group['first']:group['last']]
         refs = [{'turn_index': w['turn_index'], 'word_index': w['word_index']} for w in selected]
-        if accepted:
-            a, b = round(left['right_start'] * rate), round(right['left_end'] * rate)
-            text = ' '.join(w['word'] for w in selected)
-            flags = [f'{side}_collar_truncated' for side, node in [('start', left), ('end', right)]
-                     if node.get('retained_collar_s', collar) < collar - 1 / rate]
-            chunks.append({'speaker_id': selected[0]['speaker_id'], 'start_s': a / rate, 'end_s': b / rate,
-                           'confidence': None, '_transcript': text, 'text': text,
-                           '_words': [{**w, 'text': w['word'], 'clip_start_s': w['start'] - a / rate,
-                                       'clip_end_s': w['end'] - a / rate} for w in selected],
-                           'lineage': {'word_refs': refs},
-                           'boundary': {'start': left, 'end': right},
-                           'quality': {'status': 'candidate', 'flags': flags, 'human_verified': False}})
-        else:
-            rejected.append({'reason': 'no_duration_feasible_protected_partition',
+        a, b = round(left['right_start'] * rate), round(right['left_end'] * rate)
+        duration = (b - a) / rate
+        if not params['hard_min'] <= duration <= hard_max:
+            rejected.append({'reason': 'too_short' if duration < params['hard_min'] else 'no_pause_within_hard_max',
                              'start_s': selected[0]['start'], 'end_s': selected[-1]['end'], 'word_refs': refs})
-        j = i
-    return list(reversed(chunks)), list(reversed(rejected)), nodes
+            continue
+        text = ' '.join(w['word'] for w in selected)
+        flags = [f'{side}_collar_truncated' for side, node in [('start', left), ('end', right)]
+                 if node.get('retained_collar_s', collar) < collar - 1 / rate]
+        chunks.append({'speaker_id': selected[0]['speaker_id'], 'start_s': a / rate, 'end_s': b / rate,
+                       'confidence': None, '_transcript': text, 'text': text,
+                       '_words': [{**w, 'text': w['word'], 'clip_start_s': w['start'] - a / rate,
+                                   'clip_end_s': w['end'] - a / rate} for w in selected],
+                       'lineage': {'word_refs': refs},
+                       'boundary': {'start': left, 'end': right},
+                       'quality': {'status': 'candidate', 'flags': flags, 'human_verified': False}})
+    nodes = [start_node, *candidates.values(), end_node]
+    audit_fragments = [{'first_word': f['first'], 'last_word': f['last'], 'duration_s': f['duration_s'],
+                        'start_method': f['left']['method'], 'end_method': f['right']['method']} for f in fragments]
+    return chunks, rejected, nodes, audit_fragments
 
 
 def main() -> int:
@@ -137,18 +182,29 @@ def main() -> int:
     p.add_argument('--vad-report', type=Path, required=True, help='evaluate/silero_jit JSON, same source hash')
     p.add_argument('--vad-device', default='cpu', help='Probability track in the VAD report; cuda:0 also selects ROCm')
     p.add_argument('--output-file', type=Path, default=ROOT / '.data/audio/segment_tts/segments.json')
-    for name, default in [('target-min', 7.), ('target-max', 10.), ('hard-min', 1.5), ('hard-max', 15.),
-                          ('collar-ms', 40.), ('max-edge-silence-ms', 150.), ('max-join-gap', 1.),
-                          ('silence-threshold', .20), ('min-silence-ms', 64.),
-                          ('edge-search-ms', 250.), ('vad-threshold', .35)]:
-        p.add_argument('--' + name, type=float, default=default)
-    p.add_argument('--overwrite', action='store_true')
+    for name, default, doc in [
+            ('target-min', 7., 'merge fragments until at least this many seconds'),
+            ('target-max', 10., 'do not merge past this many seconds unless still under target-min'),
+            ('hard-min', 1.5, 'reject shorter results'), ('hard-max', 15., 'never exceed; split at word pauses'),
+            ('collar-ms', 40., 'minimum pause retained at each cut edge'),
+            ('max-edge-silence-ms', 150., 'maximum pause retained at each cut edge'),
+            ('max-join-gap', 1., 'longer aligned gaps end a speaker run'),
+            ('silence-threshold', .10, 'every Silero frame in a pause must be below this'),
+            ('min-silence-ms', 64., 'minimum pause length'),
+            ('cut-search-ms', 400., 'search this far into either word around a candidate gap'),
+            ('edge-search-ms', 250., 'protect VAD speech this far outside a run'),
+            ('vad-threshold', .35, 'Silero speech threshold for run-edge protection')]:
+        p.add_argument('--' + name, type=float, default=default, help=f'{doc} (default: {default})')
+    p.add_argument('--merge', nargs='?', const=True, default=True, type=parse_bool, metavar='BOOL',
+                   help='Merge contiguous fragments toward the target band (default: true; --merge false keeps raw fragments)')
+    p.add_argument('-w', '-ow', '--overwrite', action='store_true')
     args = p.parse_args()
     keys = ('target_min', 'target_max', 'hard_min', 'hard_max', 'collar_ms',
             'max_edge_silence_ms', 'max_join_gap', 'silence_threshold', 'min_silence_ms',
-            'edge_search_ms', 'vad_threshold')
+            'cut_search_ms', 'edge_search_ms', 'vad_threshold')
     params = {k: getattr(args, k) for k in keys}
-    if not all(math.isfinite(x) and x > 0 for x in params.values()):
+    params['merge'] = args.merge
+    if not all(math.isfinite(params[k]) and params[k] > 0 for k in keys):
         p.error('Numeric settings must be finite and positive')
     if not 1.5 <= args.hard_min <= args.target_min <= args.target_max <= args.hard_max <= 15:
         p.error('Require 1.5 <= hard-min <= target-min <= target-max <= hard-max <= 15')
@@ -258,13 +314,13 @@ def main() -> int:
                 right['speaker_end_s'] = min(right['speaker_end_s'], a)
     chunks, audits = [], []
     for ri, run in enumerate(runs):
-        accepted, dropped, nodes = plan_run(run, probabilities, hop_s, info['sample_rate'], params)
+        accepted, dropped, nodes, fragments = plan_run(run, probabilities, hop_s, info['sample_rate'], params)
         chunks.extend(accepted)
         rejected.extend(dropped)
-        audits.append({'run_index': ri, 'word_count': len(run), 'boundaries': nodes})
+        audits.append({'run_index': ri, 'word_count': len(run), 'boundaries': nodes, 'fragments': fragments})
     chunks = normalize_turns(chunks, source)
     output = {'schema_version': 1, 'operation': 'segment_tts', 'model': manifest.get('model'),
-              'source': audio_identity, 'parameters': {**params, 'algorithm_version': 'experimental-v2',
+              'source': audio_identity, 'parameters': {**params, 'algorithm_version': 'experimental-v3',
               'implementation': identity(Path(__file__)),
               'input_manifest': identity(args.input_manifest), 'vad_report': identity(args.vad_report),
               'vad_device': args.vad_device, 'speaker_manifest': identity(args.speaker_manifest) if args.speaker_manifest else None},
@@ -275,7 +331,15 @@ def main() -> int:
                               'Transcripts join ASR word units; punctuation/character-span fidelity needs review.',
                               'Outer-edge VAD search is bounded; quiet phonemes and timestamp errors still require review.']}
     write_json(destination, output)
-    progress('TTS_PLAN', f'{len(chunks)} candidates; {len(rejected)} rejection records; {len(runs)} speaker runs')
+    durations = [c['end_s'] - c['start_s'] for c in chunks]
+    fragment_count = sum(len(a['fragments']) for a in audits)
+    sentence_cuts = sum(n['method'] == 'sentence_pause' for a in audits for n in a['boundaries'])
+    sentence_words = sum(w['word'].endswith(SENTENCE_END) for w in words)
+    mean = sum(durations) / len(durations) if durations else 0.
+    progress('TTS_PLAN', f'{len(runs)} speaker runs; {sentence_cuts}/{sentence_words} sentence ends passed the VAD gate; '
+             f'{fragment_count} fragments -> {len(chunks)} candidates (mean {mean:.2f}s, '
+             f'{sum(args.target_min <= d <= args.target_max for d in durations)} in target band); '
+             f'{len(rejected)} rejection records')
     print(destination)
     return 0
 
