@@ -72,6 +72,11 @@ Vietnamese/English transcription and an audible emotion/speaking-style label. It
 accepts faint non-intrusive background noise, adds `unsupported_language` and
 `singing` eligibility failures, requires nonempty `emotion` and final `transcript`
 fields for pass, and forbids the transcript field for reject.
+Word boundaries allow tight crops of silence or faint tails after speech sounds
+have finished, but still reject clearly truncated phonemes. Music tolerance is
+limited to barely perceptible traces that neither mask nor compete with speech
+and have no clearly discernible beat or melody; even quiet identifiable beats or
+melodies still fail. Other rejection criteria are unchanged.
 
 The HF backend requires a multimodal processor. Gemma 4 is detected from its model
 configuration and is loaded only through `AutoModelForMultimodalLM`; it does not

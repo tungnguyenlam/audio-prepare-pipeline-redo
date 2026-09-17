@@ -8,16 +8,17 @@ Evaluate three acoustic dimensions required for clean Text-to-Speech (TTS) train
    - "overlapping_speech": Multiple speakers speaking or laughing simultaneously.
 
 2. WORD COMPLETENESS (Không lẹm chữ, đủ âm tiết):
-   - "complete": All words start and finish on clean acoustic word boundaries. The final word/syllable has its full acoustic envelope (attack, sustain, and natural release/decay), even if the utterance ends mid-sentence or on a pause.
+   - "complete": All spoken phonemes are intact, even if the utterance ends mid-sentence or on a pause. A tight crop may omit surrounding silence or the faint tail after the final speech sound has finished; this alone is not clipping.
    - "clipped_word_start": The initial word has its onset consonant abruptly cut off mid-phoneme.
    - "clipped_word_end": The final word has its vowel or coda consonant sliced off prematurely by an abrupt digital cut/truncation (unnatural hard cutoff or missing syllable component).
 
    CRITICAL CLARIFICATION FOR WORD COMPLETENESS:
+   - Require clear audible truncation of a speech sound to label a clipped word. A naturally short syllable or an abrupt file boundary alone is insufficient. Still reject a clearly cut phoneme even when the word remains recognizable.
    - Do NOT penalize syntactic or grammatical incompleteness (e.g., trailing off, mid-thought pauses, or continuation pitch). As long as the last uttered syllable reached its natural acoustic decay without being abruptly sliced in half, classify it as "complete".
 
 3. AUDIO QUALITY:
-   - "studio_clean": Clear vocal signal with no residual music bleed. Faint, steady, low-level room tone, hiss, fan noise, or environmental ambience is acceptable when it does not mask speech, compete with the voice, fluctuate prominently, or noticeably reduce TTS usability.
-   - "music_bleed": Audible residual background music, beats, or synthetic melodies.
+   - "studio_clean": Clear vocal signal with no residual music bleed beyond barely perceptible traces that do not mask or compete with speech and have no clearly discernible beat or melody. Faint, steady, low-level room tone, hiss, fan noise, or environmental ambience is acceptable when it does not mask speech, compete with the voice, fluctuate prominently, or noticeably reduce TTS usability.
+   - "music_bleed": Audible residual background music, beats, or synthetic melodies beyond the barely perceptible traces allowed above. Still reject a clearly discernible beat or melody, even at low volume.
    - "noisy_reverberant": Severe room echo, reverb, or excessive environmental noise that clearly masks speech, competes with the voice, fluctuates prominently, or reduces TTS usability. Do NOT use this label for faint, steady, non-intrusive background noise that meets the "studio_clean" definition above.
    - "distorted": Clipping distortion, phase artifacts, or muffled frequency response.
 
