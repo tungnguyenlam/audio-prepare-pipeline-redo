@@ -1,3 +1,19 @@
+## 2026-09-17 - Clean obsolete non-pipeline folders from .data
+
+### Decisions
+- Identified active pipeline directories: stage roots `s1-download`, `s3-diarize`, `s4-agent`, `asr`, utility roots `audio`, `cut`, `export_segments`, evaluation suites `evaluate`, frozen gold benchmark `tts_strategy/gold_benchmark_20260908`, and required runtime/model caches `huggingface`, `modelscope`, `3d-speaker`, `models`.
+- Identified and purged obsolete folders no longer considered part of the pipeline:
+  - Pre-rename legacy stage folders superseded by s1-s5: `download`, `separate`, `diarize`, `agent`, `diarization`.
+  - Obsolete folders from removed legacy scripts / Studio UI / old crawler: `demucs`, `mel_roformer`, `test_mel_roformer`, `crawled`, `yt_crawler`, `audio_cutter`, `pipeline`, `studio`, `web_uploads`, `labeled_datasets`, `testing`, `new_video`, `notebook`, `archive`, `gemini_cache_probe`.
+  - Historical experiment folders: `benchmark_v2`, `distillation`, `distillation_e2b`, `experiment_khanhvy`, `experiment_tab_sweep`, `verifier_experiments`, non-gold folders in `tts_strategy`.
+  - Obsolete uv package build/wheel cache: `uv-cache`.
+  - Stray root test JSON files: `test_bundle.json`, `test_export.json`.
+
+### Results
+- Reclaimed approximately 27.2 GB of disk space (reduced .data from 31 GB to 3.8 GB).
+- Preserved all active pipeline artifacts, benchmark datasets, model weights, and sample test files.
+- Verified workspace integrity with git status. No test suite was written or run.
+
 ## 2026-09-17 - Clarify DiariZen merge progress accounting
 
 ### Decisions
