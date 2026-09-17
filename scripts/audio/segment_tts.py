@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _common.files import LoggingArgumentParser, ROOT, identity, probe, progress, read_json, write_json
 from _common.merge import parse_bool
 from _common.segments import normalize_turns, source_path
+from _common.vad import select_vad_device
 
 
 SENTENCE_END = ('.', '!', '?', '…')
@@ -180,7 +181,7 @@ def main() -> int:
     p.add_argument('--input-file', type=Path, help='Same-timeline source override')
     p.add_argument('--speaker-manifest', type=Path, help='Optional diarization; overrides ASR speaker labels')
     p.add_argument('--vad-report', type=Path, required=True, help='evaluate/silero_jit JSON, same source hash')
-    p.add_argument('--vad-device', default='cpu', help='Probability track in the VAD report; cuda:0 also selects ROCm')
+    p.add_argument('--vad-device', default='auto', help='Probability track in the VAD report; auto prefers cuda:0 and falls back to cpu')
     p.add_argument('--output-file', type=Path, default=ROOT / '.data/audio/segment_tts/segments.json')
     for name, default, doc in [
             ('target-min', 7., 'merge fragments until at least this many seconds'),
@@ -225,7 +226,8 @@ def main() -> int:
         p.error('VAD report must be a completed native JIT report')
     if report['source']['sha256'] != audio_identity['sha256'] or manifest['source']['sha256'] != audio_identity['sha256']:
         p.error('ASR, VAD and audio must identify the same source bytes')
-    track = report['devices'].get(args.vad_device, {})
+    selected_device = select_vad_device(report, args.vad_device)
+    track = report['devices'].get(selected_device, {})
     if track.get('status') != 'ok':
         p.error('Requested VAD track did not complete successfully')
     probabilities = track['probabilities']

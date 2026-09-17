@@ -49,8 +49,8 @@ Every `.py` has a same-name `.sh` launcher that selects the right virtualenv.
 ```bash
 bash scripts/s1-download/youtube.sh     --url 'https://www.youtube.com/watch?v=VIDEO' --output-dir .data/dl
 bash scripts/s2-separate/htdemucs_ft.sh --input-dir .data/dl --output-dir .data/sep
-# Independently write .data/vad/<stem>.json with evaluate/silero_jit.sh for each source.
-bash scripts/s3-diarize/sortformer.sh   --input-dir .data/sep --output-dir .data/turns --vad-report-dir .data/vad  # reports named <stem>.json
+# Optional: precompute reusable .data/vad/<stem>.json reports with evaluate/silero_jit.sh.
+bash scripts/s3-diarize/sortformer.sh   --input-dir .data/sep --output-dir .data/turns
 bash scripts/purity/cleanup.sh       --input-manifest .data/turns/<stem>/segments.json --output-manifest .data/p/cleaned.json
 bash scripts/purity/collar.sh        --input-manifest .data/p/cleaned.json --output-manifest .data/p/collared.json
 bash scripts/audio/export_segments.sh --input-manifest .data/p/collared.json --output-dir .data/clips
@@ -69,11 +69,13 @@ bash scripts/s4-agent/verifier/analysis.sh --input-dir .data/s4-agent/verifier/g
   [merge cookbook](docs/commands.md#merge-before-duration-filtering).
 - Turns over 15 seconds are recursively cut at cached Silero VAD valleys by
   default, but only where the speech probability is strictly below
-  `--vad-cut-threshold` (default `0.1`). Generate reports with
-  `evaluate/silero_jit.sh` and pass `--vad-report` (or `--vad-report-dir` for
-  directory runs). If no eligible valley exists, the oversized turn is left
-  for the final duration filter; use `--long-segment-strategy drop` to skip
-  VAD cuts explicitly.
+  `--vad-cut-threshold` (default `0.1`). If no report is supplied, the
+  diarizer/exporter lazily creates or reuses a report under
+  `.data/vad/auto/<source-sha256>.json`. `--vad-device auto` prefers `cuda:0`
+  and falls back to CPU after an inference error; pass `--vad-report` (or
+  `--vad-report-dir` for directory runs) to reuse precomputed reports. If no
+  eligible valley exists, the oversized turn is left for the final duration
+  filter; use `--long-segment-strategy drop` to skip VAD cuts explicitly.
 - `--input-file` beats `--input-dir`; `--output-file` is an exact destination for single outputs.
 - Audio outputs get a sibling `.json` sidecar; diarizers write `<stem>/segments.json` plus clips
   and `<stem>/plot/` (including before-merge, after-merge, and post-filter plots);

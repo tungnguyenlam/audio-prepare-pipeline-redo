@@ -197,14 +197,17 @@ Outputs are named `<stem>_<model>.wav` (`_htdemucs`, `_htdemucs_ft`, `_bs_roform
 The default `--long-segment-strategy vad` recursively splits any turn longer
 than `--max-duration-s` at the lowest cached Silero speech-probability frames,
 but only when that probability is strictly below `--vad-cut-threshold` (default
-`0.1`). If an oversized interval has no eligible frame, it remains overlong
-and the final duration filter removes it; the rejection is recorded in
-`long_segment_audit`. VAD inference remains a separate command: for one input,
-pass its completed report with `--vad-report`; for a directory, pass reports
-named `<audio-stem>.json` through `--vad-report-dir`. If no turn exceeds the
-limit, the report is not read. Use `--long-segment-strategy drop` to explicitly
-retain the old behavior of discarding oversized turns. `--vad-threshold` is an
-alias for `--vad-cut-threshold`.
+`0.1`). If no report is supplied, the command lazily creates or reuses a
+content-addressed report under `.data/vad/auto/<source-sha256>.json`. The
+default `--vad-device auto` tries `cuda:0` first and retries on CPU if GPU
+loading or inference fails. For one input, pass a completed report with
+`--vad-report`; for a directory, pass reports named `<audio-stem>.json` through
+`--vad-report-dir` to reuse them. If no eligible frame exists, the oversized
+interval remains overlong and the final duration filter removes it; the
+rejection is recorded in `long_segment_audit`. Use
+`--long-segment-strategy drop` to explicitly retain the old behavior of
+discarding oversized turns. `--vad-threshold` is an alias for
+`--vad-cut-threshold`.
 
 ```bash
 bash scripts/s3-diarize/sortformer.sh          --input-dir .data/separated --output-dir .data/turns
@@ -221,12 +224,13 @@ bash scripts/s3-diarize/diarizen.sh            --input-file x.wav --segmentation
 # directory runs additionally write collection-level aggregate duration and cutoff plots under _plot/
 ```
 
-Prepare a report before a run that may emit overlong turns. This remains an
-independent stage and can be reused by diarization and later `export_segments`:
+You can still prepare a report before a run that may emit overlong turns. This
+remains an independent stage and can be reused by diarization and later
+`export_segments`; omitting it uses the automatic cache above:
 
 ```bash
 bash scripts/evaluate/silero_jit.sh --input-file .data/recording.wav \
-  --devices cpu --output-file .data/vad/recording.json
+  --devices auto --output-file .data/vad/recording.json
 bash scripts/s3-diarize/sortformer.sh --input-file .data/recording.wav \
   --output-dir .data/turns --vad-report .data/vad/recording.json
 ```
@@ -342,7 +346,7 @@ the earlier negative result. A speaker override should use **unfiltered**
 # cuda:0 selects NVIDIA CUDA or AMD ROCm for the installed torch build.
 # SILERO_PYTHON (then ASR_PYTHON) can select an existing torch/torchaudio environment.
 bash scripts/evaluate/silero_jit.sh --input-file .data/recording.wav \
-  --devices cpu --output-file .data/tts/vad.json
+  --devices auto --output-file .data/tts/vad.json
 
 # No model inference here: inspect this plan before separately rendering it.
 bash scripts/audio/segment_tts.sh --input-manifest .data/asr/recording_vibevoice.json \
@@ -353,13 +357,13 @@ bash scripts/audio/export_segments.sh --input-manifest .data/tts/plan/segments.j
 ```
 
 `silero_jit.sh` searches `.venvs/vibevoice`, `.venv-vibevoice`, `.venvs/align`, and
-`.venv-align`; `setup_worker_envs.sh audio`, `align`, and `vibevoice` download the
-pinned native JIT model at `~/.cache/silero-vad/silero_vad.jit`. Its JSON retains every
-frame probability, source/model hashes, device versions, synchronized timing,
-repeat differences, and CPU/GPU threshold disagreements. An unavailable requested
-device is recorded as an error and returns nonzero; there is no silent fallback.
-Use `--devices cpu` on a CPU-only host. This is a single-recording benchmark,
-not a GPU multi-stream throughput benchmark.
+`.venv-align`; worker setup targets also cache the pinned native JIT model at
+`~/.cache/silero-vad/silero_vad.jit`. Its JSON retains every frame probability,
+source/model hashes, device versions, synchronized timing, repeat differences,
+and CPU/GPU threshold disagreements. `--devices auto` (the default) records a
+GPU error when necessary and returns success after a CPU retry; explicit device
+lists retain strict failure behavior. Use `--devices cpu` on a CPU-only host.
+This is a single-recording benchmark, not a GPU multi-stream throughput benchmark.
 
 The planner uses the normal audio launcher (`AUDIO_PYTHON` override). It accepts
 one ASR file and optional `--speaker-manifest`; source hashes must match the VAD
@@ -398,7 +402,7 @@ timeline.
 
 ```bash
 bash scripts/audio/segment_vad.sh --input-file .data/recording.wav \
-  --vad-report .data/tts/vad.json --vad-device cpu \
+  --vad-report .data/tts/vad.json --vad-device auto \
   --vad-cut-threshold 0.1 \
   --output-file .data/vad-plan/segments.json
 

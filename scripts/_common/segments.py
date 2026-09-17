@@ -20,7 +20,7 @@ from _common.files import (
 )
 from _common.merge import (MEAN_ADJUST_MAX_ATTEMPTS, MEAN_ADJUST_STEP_S,
                             MEAN_DURATION_MAX_S, MEAN_DURATION_MIN_S, merge_turns)
-from _common.vad import load_vad_report, plan_segments
+from _common.vad import ensure_vad_report, load_vad_report, plan_segments
 
 
 def source_path(manifest: dict, manifest_path: Path, override: Path | None = None) -> Path:
@@ -96,11 +96,11 @@ def add_long_segment_arguments(parser) -> None:
                         dest='long_segment_strategy', choices=('vad', 'drop'), default='vad',
                         help='How to handle turns longer than --max-duration-s: vad recursively cuts them; drop discards them')
     parser.add_argument('--vad-report', type=Path,
-                        help='Completed evaluate/silero_jit report for a single input file (required when VAD cuts an oversized turn)')
+                        help='Completed evaluate/silero_jit report for a single input file (auto-generated when omitted)')
     parser.add_argument('--vad-report-dir', type=Path,
-                        help='Directory of Silero reports named <audio-stem>.json for --input-dir VAD cuts')
-    parser.add_argument('--vad-device', default='cpu',
-                        help='Probability track in the VAD report; cuda:0 also denotes ROCm')
+                        help='Directory of Silero reports named <audio-stem>.json for --input-dir VAD cuts (auto-generated when omitted)')
+    parser.add_argument('--vad-device', default='auto',
+                        help='Probability track in the VAD report; auto prefers cuda:0 and falls back to cpu')
     parser.add_argument('--vad-cut-threshold', '--vad-threshold',
                         dest='vad_cut_threshold', type=float, default=0.1,
                         help='Only cut at VAD probabilities strictly below this value (default: 0.1)')
@@ -147,6 +147,8 @@ def long_segment_parameters(args, report: Path | None) -> dict:
         'vad_device': args.vad_device,
         'vad_cut_threshold': args.vad_cut_threshold,
         'vad_report': identity(report) if report is not None else None,
+        'vad_report_mode': ('explicit' if report is not None else
+                            'auto' if args.long_segment_strategy == 'vad' else None),
     }
 
 
@@ -233,7 +235,7 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
            min_duration_s: float | None = None, max_duration_s: float | None = None,
            *, concurrency: int = 1, batch_size: int = 1,
            long_segment_strategy: str = 'vad', vad_report: Path | None = None,
-           vad_device: str = 'cpu', vad_cut_threshold: float = 0.1) -> None:
+           vad_device: str = 'auto', vad_cut_threshold: float = 0.1) -> None:
     import concurrent.futures
     import shutil
     import soundfile as sf
@@ -261,16 +263,12 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
     vad_candidates = None
 
     def apply_long_segment_strategy(candidate_turns: list[dict]) -> tuple[list[dict], list[dict]]:
-        nonlocal vad_candidates
+        nonlocal vad_candidates, vad_report
         if (long_segment_strategy != 'vad' or max_samples is None or
                 not any(t['end_sample'] - t['start_sample'] > max_samples for t in candidate_turns)):
             return candidate_turns, []
         if vad_report is None:
-            raise FileContractError(
-                'VAD is the default long-segment strategy; provide --vad-report '
-                '(or --vad-report-dir for directory runs), or select '
-                '--long-segment-strategy drop'
-            )
+            vad_report = ensure_vad_report(source, vad_device=vad_device)
         if vad_candidates is None:
             vad_candidates, _ = load_vad_report(source, vad_report, vad_device)
         return _split_long_turns_vad(

@@ -25,8 +25,8 @@ def main() -> int:
     p.add_argument('-i', '-if', '--input-file', type=Path, required=True)
     p.add_argument('--vad-report', type=Path, required=True,
                    help='Completed evaluate/silero_jit JSON for the same source bytes')
-    p.add_argument('--vad-device', default='cpu',
-                   help='Probability track in the report; cuda:0 also denotes ROCm')
+    p.add_argument('--vad-device', default='auto',
+                   help='Probability track in the report; auto prefers cuda:0 and falls back to cpu')
     p.add_argument('--vad-cut-threshold', '--vad-threshold',
                    dest='vad_cut_threshold', type=float, default=0.1,
                    help='Only cut at VAD probabilities strictly below this value (default: 0.1)')

@@ -115,11 +115,16 @@ interrupted write is recognizable and retried.
 - `--long-segment-strategy vad` is the default for diarization and
   `audio/export_segments`. It recursively splits turns longer than
   `parameters.max_duration_s` with the cached Silero probability report named
-  by `parameters.vad_report`, but only selects a cut when its probability is
-  strictly below `parameters.vad_cut_threshold` (CLI default `0.1`). If an
+  by `parameters.vad_report` when an explicit report is supplied, but only
+  selects a cut when its probability is strictly below
+  `parameters.vad_cut_threshold` (CLI default `0.1`). If an
   oversized interval has no eligible cut, it remains in the merged stage and is
   removed by the final inclusive duration filter; the top-level
   `long_segment_audit` records the rejection and minimum probability.
+  When no report is supplied, the command creates or reuses a content-addressed
+  report under `.data/vad/auto/<source-sha256>.json` and records
+  `parameters.vad_report_mode: auto`. The default `--vad-device auto` prefers
+  `cuda:0` and retries on CPU after a GPU error.
   `--long-segment-strategy drop` preserves the legacy discard behavior. The
   report must identify the same source bytes and source geometry. Diarization
   stores each selected cut or threshold rejection in `long_segment_audit`;

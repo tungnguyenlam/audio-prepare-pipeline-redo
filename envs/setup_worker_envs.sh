@@ -350,6 +350,7 @@ print(f'   -> Torch: {torch.__version__} ({dev_type})')
 import pyannote.audio
 print('   -> Pyannote Audio: successfully loaded')
 "
+    ensure_silero_model
     ln -sfn "$venv_dir" ".venv-pyannote"
     echo "🎉 ${venv_dir} ready!"
 }
@@ -469,6 +470,7 @@ print(f'   -> Torch: {torch.__version__} ({dev_type})')
 import nemo.collections.asr.models as nemo_asr
 print('   -> NeMo ASR collection: successfully loaded')
 "
+    ensure_silero_model
     ln -sfn "$venv_dir" ".venv-sortformer"
     echo "🎉 ${venv_dir} ready!"
 }
@@ -507,6 +509,7 @@ print(f'   -> Torch: {torch.__version__} ({dev_type})')
 import modelscope
 print(f'   -> ModelScope: {modelscope.__version__} successfully loaded')
 "
+    ensure_silero_model
     ln -sfn "$venv_dir" ".venv-3dspeaker"
     echo "🎉 ${venv_dir} ready!"
 }
@@ -642,6 +645,7 @@ dev_type = f'ROCm/HIP: {dev_name}' if getattr(torch.version, 'hip', None) and to
 print(f'   -> Torch: {torch.__version__} ({dev_type})')
 print('   -> DiariZenPipeline: successfully loaded')
 "
+    ensure_silero_model
     ln -sfn "$venv_dir" ".venv-diarizen"
     echo "🎉 ${venv_dir} ready!"
 }

@@ -103,3 +103,18 @@
 - Updated README, command cookbook, data contract, and VAD baseline documentation with strict-threshold and rejection behavior.
 - Rechecked Hana read-only: 14 raw turns exceed 15 seconds; all 14 are eligible at threshold 0.1, and the highest selected cut probability is 0.094116643.
 - Validated Python compilation, launcher shell syntax, CLI help exposure, and diff whitespace. No tests or model inference were run.
+
+## 2026-09-17 - Make default recursive VAD automatic with device fallback
+
+### Decisions
+
+- Set the shared Silero VAD selector default to auto across diarization, export, standalone VAD planning, and TTS planning; auto prefers cuda:0 and falls back to cpu when a GPU track is unavailable or fails.
+- Keep explicit --vad-report and --vad-report-dir inputs authoritative, but lazily create or reuse content-addressed reports under .data/vad/auto/<source-sha256>.json when the default recursive VAD policy needs one.
+- Reuse the shared recurrent Silero inference implementation for automatic reports and the silero_jit evaluator; cache the pinned model from every diarization worker setup target.
+
+### Results
+
+- Fixed the observed DiariZen failure: an oversized merged turn no longer fails solely because no VAD report flag was supplied; recursive cuts use the default 0.1 strict activity gate and threshold rejections still flow to the duration filter.
+- Added automatic GPU-to-CPU retry reporting and auto track selection for completed reports.
+- Updated README, command cookbook, and data contract documentation.
+- Validated Python compilation, launcher and setup shell syntax, CLI help/default exposure, launcher help, and diff whitespace. No model inference or test suite was run.

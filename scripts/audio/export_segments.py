@@ -1,4 +1,8 @@
-"""Render supplied turns into WAV clips without running a diarization model."""
+"""Render supplied turns into WAV clips without running a diarization model.
+
+Oversized turns use the shared recursive Silero VAD policy; when no report is
+provided, the policy creates or reuses its cached report automatically.
+"""
 from __future__ import annotations
 
 import argparse
@@ -31,9 +35,9 @@ def main() -> int:
                    dest='long_segment_strategy', choices=('vad', 'drop'), default='vad',
                    help='How to handle turns longer than --max-duration-s: vad recursively cuts them; drop discards them')
     p.add_argument('--vad-report', type=Path,
-                   help='Completed evaluate/silero_jit report for VAD cuts when an oversized turn is present')
-    p.add_argument('--vad-device', default='cpu',
-                   help='Probability track in the VAD report; cuda:0 also denotes ROCm')
+                   help='Completed evaluate/silero_jit report for VAD cuts; auto-generated when omitted')
+    p.add_argument('--vad-device', default='auto',
+                   help='Probability track in the VAD report; auto prefers cuda:0 and falls back to cpu')
     p.add_argument('--vad-cut-threshold', '--vad-threshold',
                    dest='vad_cut_threshold', type=float, default=0.1,
                    help='Only cut at VAD probabilities strictly below this value (default: 0.1)')
