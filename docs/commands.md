@@ -298,6 +298,48 @@ are preserved. Diarization `--overwrite` also forces inference to rerun.
 
 `phowhisper.sh` transcribes with the same PhoWhisper size flag on `--model-id` (default `large`).
 
+Experimental, independent cut planning is available as `audio/segment_tts.sh`.
+It consumes nested ASR words plus a completed `evaluate/silero_jit.sh` probability
+report. It writes candidate boundaries and rejection audits, not approved TTS
+data. See [verification and integration](tts_segmentation_verification.md) before
+using its output. A speaker override should use **unfiltered** `segments.raw.json`;
+already-exported manifests may have discarded all long turns.
+
+```bash
+# Native JIT only; cuda:0 selects NVIDIA CUDA or AMD ROCm for the installed torch build.
+# SILERO_PYTHON (then ASR_PYTHON) can select an existing torch/torchaudio environment.
+bash scripts/evaluate/silero_jit.sh --input-file .data/recording.wav \
+  --model-file .data/models/silero/silero_vad.jit \
+  --devices cpu cuda:0 --repeats 3 --output-file .data/tts/vad.json
+
+# No model inference here: inspect this plan before separately rendering it.
+bash scripts/audio/segment_tts.sh --input-manifest .data/asr/recording_vibevoice.json \
+  --vad-report .data/tts/vad.json --vad-device cuda:0 \
+  --output-file .data/tts/plan/segments.json
+
+bash scripts/audio/export_segments.sh --input-manifest .data/tts/plan/segments.json \
+  --output-dir .data/tts/clips --min-duration-s 1.5 --max-duration-s 15
+```
+
+`silero_jit.sh` searches `.venvs/vibevoice`, `.venv-vibevoice`, `.venvs/align`, and
+`.venv-align`; it installs nothing and downloads no model. Its JSON retains every
+frame probability, source/model hashes, device versions, synchronized timing,
+repeat differences, and CPU/GPU threshold disagreements. An unavailable requested
+device is recorded as an error and returns nonzero; there is no silent fallback.
+Use `--devices cpu` on a CPU-only host. This is a single-recording benchmark,
+not a GPU multi-stream throughput benchmark.
+
+The planner uses the normal audio launcher (`AUDIO_PYTHON` override). It accepts
+one ASR file and optional `--speaker-manifest`; source hashes must match the VAD
+report and audio. `--output-file` is exact. It never merges across a known speaker
+change and audits unsupported cuts instead of exceeding 15 seconds. A bounded
+250 ms VAD search protects outer edges, with explicit flags if a 40 ms collar
+cannot fit. These flags and Gemini results need review; success of the CLI is
+not evidence of complete phonemes. Prototype limitations include no corpus batch
+mode, no punctuation character-span mapping, and no voiced-word fallback for
+continuous monologues. Cached probabilities can be reused with different cut
+settings without rerunning the VAD benchmark.
+
 ```bash
 # Transcribe single file with Whisper word-level alignment (writes <stem>_vibevoice.json and .txt)
 bash scripts/asr/vibevoice.sh --input-file .data/recording.wav

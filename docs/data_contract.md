@@ -179,6 +179,22 @@ interrupted write is recognizable and retried.
 
 ## 3. Purity and speaker manifests
 
+Experimental `audio/segment_tts` also writes a manifest of this shape, with
+`operation: segment_tts`, `clips_valid: false`, and no WAVs. Input is an ASR JSON
+with `turns[].words[]` (`word`, `start`, `end`, `probability`) and source-relative
+times, plus a matching native Silero JIT evaluation report. Its `parameters`
+identify the ASR, VAD report, optional unfiltered speaker manifest, implementation,
+and cut settings. Each output turn carries `text`, `_transcript`, `_words`,
+original turn/word indices, `boundary` evidence, and `quality.status: candidate`.
+`quality.flags` records truncated collars. `audit` retains candidate boundaries;
+`rejected` accounts for missing/invalid/unassigned words and unsegmentable spans.
+`complete: true` means planning finished, not that the clips passed verification.
+Render separately using `audio/export_segments`; it retains turn metadata and
+references the plan by hash, while the plan remains the authoritative rejection
+audit. Existing export writes a manifest and WAVs, not individual clip JSONs;
+adding sibling sidecars remains part of the proposed production integration.
+See [verification and integration](tts_segmentation_verification.md).
+
 `purity/{consensus,cleanup,merge,collar,snap,align,segment}` and
 `speaker/{score,filter,purity}` read a manifest and write a new one (defaults:
 `.data/purity/<stage>/<family>/segments.json`, `.data/speaker/<stage>/<family>/segments.json`).

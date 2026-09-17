@@ -1,6 +1,10 @@
 # Acoustic-aware TTS segmentation proposal
 
-Status: design only; the proposed command and flags below are not implemented.
+Status: target design. An experimental manifest-only `audio/segment_tts.sh` and
+native JIT verification command now exist. Their narrower implemented interface,
+measured failures, and promotion criteria are documented in
+[verification and integration](tts_segmentation_verification.md). The combined
+inference/rendering CLI illustrated below is still a proposal, not the current CLI.
 
 Recommend an independent `scripts/audio/segment_tts.py` command after VibeVoice
 and PhoWhisper alignment, with native Silero JIT inference on CPU. Optimize a
@@ -391,12 +395,11 @@ builders with a per-key lock, recheck after acquiring it, and publish complete
 metadata last. Reuse decoded audio within one worker for energy refinement;
 export the original-quality source, not the VAD's 16 kHz analysis copy.
 
-## Completion scope
+## Implementation status
 
-This change records the algorithm and integration contract only. No command,
-launcher, dependency, or production behavior changes. Existing launchers and
-helpers were inspected statically; the proposed CLI cannot be invoked yet.
-No tests, model inference, audio experiments, or package installations were run.
-Tests were not requested. Before implementation release, corpus listening and
-boundary-quality evaluation are still required to calibrate the heuristic
-weights, collars, and VAD thresholds for soft Vietnamese endings.
+The initial proposal was documentation only. A subsequent user-requested model
+and Gemini verification added an experimental planner and a native JIT benchmark.
+The current planner reads cached probabilities and rendering remains a separate
+command. CPU and AMD ROCm execution have been measured; NVIDIA CUDA execution
+has not. See the linked verification report for scope, actual results, and
+remaining work. No packages or orchestration entrypoints were added.
