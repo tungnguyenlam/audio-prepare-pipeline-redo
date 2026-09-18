@@ -20,7 +20,7 @@ secret-valued options or long prompt contents.
   - Execution: `-w` or `-ow` (`--overwrite`), `-c` (`--concurrency`), `-b` or `-bs` (`--batch-size`)
   - Audio/DSP: `-sr` (`--sample-rate`), `-ch` (`--channels`), `-s` (`--start`), `-e` (`--end`), `-min` (`--min-duration-s`), `-max` (`--max-duration-s`)
   - Manifests: `-im` (`--input-manifest`), `-om` (`--output-manifest`), `-sm` (`--secondary-manifest`), `-rm` (`--reference-manifest`)
-  - Models/Agents: `-m` (`--model` / `--model-id`), `-d` (`--device`), `-p` or `-pf` (`--prompt-file`), `-spf` (`--system-prompt-file`), `-mt` (`--max-tokens` / `--max-new-tokens`), `-t` (`--temperature`), `-tp` (`--top-p`), `-ep` (`--endpoint`), `-ap` (`--adapter-path`), `-v` (`--verbose`)
+  - Models/Agents: `-m` (`--model` / `--model-id`), `-d` (`--device`), `-p` or `-pf` (`--prompt-file`), `-spf` (`--system-prompt-file`), `-mt` (`--max-tokens` / `--max-new-tokens`), `-t` (`--temperature`) and `-tp` (`--top-p`) on local/endpoint backends only (Gemini 3 ignores sampling parameters, so its commands do not accept them), `-ep` (`--endpoint`), `-ap` (`--adapter-path`), `-v` (`--verbose`)
   - Ingest/Export: `-u` (`--url`), `-uf` (`--url-file`), `-sf` (`--source-file`), `-n` or `-l` (`--limit` / `--max-items`), `-f` (`--format`), `-t` (`--tag`)
 - `--input-file` takes precedence over `--input-dir`; `--output-file` is an exact
   destination and requires a single input. Relative paths use the caller's working
@@ -479,7 +479,7 @@ See [agent_verifier.md](agent_verifier.md) for defaults and artifacts.
 
 ```bash
 # Raw generation (unparsed text + metadata sidecar)
-bash scripts/s4-agent/gemini.sh   --input-dir .data/clips --prompt-file prompts/vi-prompt-alam.txt --temperature 0.2
+bash scripts/s4-agent/gemini.sh   --input-dir .data/clips --prompt-file prompts/vi-prompt-alam.txt
 bash scripts/s4-agent/endpoint.sh --input-dir .data/clips --endpoint http://localhost:8000/v1/chat/completions --model google/gemma-4-E2B-it --prompt-file p.txt
 bash scripts/s4-agent/hf.sh       --input-dir .data/clips --model-id google/gemma-4-E2B-it --prompt-file p.txt
 

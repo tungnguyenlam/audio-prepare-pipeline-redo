@@ -11,7 +11,7 @@ schema. Neither directory orchestrates other pipeline stages.
 
 | Backend | Transport | Notes |
 |---|---|---|
-| `gemini` | Google Gemini API | Batch API by default (`--inference-mode batch`, ≤ `--batch-size 10` requests per job, split further under the 20 MB inline limit, polled up to `--batch-timeout-s 86400`); `--inference-mode flex` for synchronous calls on Google's Flex tier (same 50% discount as Batch, 1–15 min latency, defaults `--timeout-s 900 --max-retries 12` because Flex answers 503 when capacity is short); `--inference-mode standard` for full-price synchronous calls. Default `--model gemini-3.8-flash --reasoning-effort medium` (`none/low/medium/high` → `thinkingLevel`). Needs `GEMINI_API_KEY`. |
+| `gemini` | Google Gemini API | Batch API by default (`--inference-mode batch`, ≤ `--batch-size 10` requests per job, split further under the 20 MB inline limit, polled up to `--batch-timeout-s 86400`); `--inference-mode flex` for synchronous calls on Google's Flex tier (same 50% discount as Batch, 1–15 min latency, defaults `--timeout-s 900 --max-retries 12` because Flex answers 503 when capacity is short); `--inference-mode standard` for full-price synchronous calls. Default `--model gemini-3.8-flash --reasoning-effort medium` (`none/low/medium/high` → `thinkingLevel`) and `--max-tokens 65536` (the model's 64k ceiling, matching AI Studio's unlimited output). No `temperature`/`top-p`/`top-k` flags and no JSON response mode: Gemini 3 ignores sampling parameters and AI Studio does not force `responseMimeType`, so requests carry only `thinkingConfig` and `maxOutputTokens` to keep API behaviour aligned with the web UI. Needs `GEMINI_API_KEY`. |
 | `endpoint` | OpenAI-compatible `/v1/chat/completions` | Served vLLM, Unsloth, etc. Optional `OPENAI_API_KEY`. |
 | `hf` | Local `transformers` model | Multimodal `AutoProcessor` / `AutoModelForMultimodalLM` path for Gemma 4; `--model-id`, `--adapter-path` (LoRA), `--load-in-4bit/-8bit`, `--device`. |
 
@@ -27,8 +27,12 @@ schema. Neither directory orchestrates other pipeline stages.
   (prompt text is placed before the audio) once a request exceeds the model's
   minimum (4,096 tokens for Gemini 3.x Flash; `prompts/full-tags-prompt.md` is
   ~6.3k tokens). Cache hits appear as `cached_input_tokens` in `_usage` and are
-  billed at 10% of the input rate; explicit `cachedContents` are not used because
-  the prompt is only marginally above the threshold and audio is never shared.
+  billed at 10% of the input rate. Implicit caching is best-effort: observed hits
+  on `gemini-3.8-flash` (Flex, September 2026) were ~4.0k of the 6.3k shared text
+  tokens, and Google apportions `cacheTokensDetails` across modalities, so a
+  non-zero `cached_audio_input_tokens` does not mean the (unique) audio was
+  cached. Explicit `cachedContents` are not used because the prompt is only
+  marginally above the threshold and audio is never shared.
 
 All agent and verifier progress is written to stderr so stdout remains a clean
 stream of successful artifact paths. Each run logs its backend/model, item start

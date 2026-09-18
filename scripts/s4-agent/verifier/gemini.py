@@ -26,7 +26,7 @@ class GeminiVerifier(GeminiAgent):
     """Gemini generation constrained and parsed as a pass/reject verdict."""
 
     def verify(self, audio_path: Path, prompt: str) -> dict[str, Any]:
-        generated = self.generate(audio_path, prompt, json_response=True)
+        generated = self.generate(audio_path, prompt)
         return self.parse_generated(audio_path, generated)
 
     def parse_generated(
@@ -71,10 +71,7 @@ def main() -> int:
         default="medium",
         help="Reasoning effort level for models supporting thinking",
     )
-    command.add_argument("-mt", "--max-tokens", type=positive_int, default=2048, help="Maximum output tokens")
-    command.add_argument("-t", "--temperature", type=float, default=0.0, help="Sampling temperature")
-    command.add_argument("-tp", "--top-p", type=float, help="Nucleus sampling top-p probability threshold")
-    command.add_argument("--top-k", type=positive_int, help="Top-k sampling parameter")
+    command.add_argument("-mt", "--max-tokens", type=positive_int, default=65536, help="Maximum output tokens")
     command.add_argument(
         "--timeout-s",
         type=positive_float,
@@ -115,9 +112,6 @@ def main() -> int:
         "model": args.model,
         "reasoning_effort": args.reasoning_effort,
         "max_tokens": args.max_tokens,
-        "temperature": args.temperature,
-        "top_p": args.top_p,
-        "top_k": args.top_k,
         "timeout_s": args.timeout_s,
         "max_retries": args.max_retries,
         "inference_mode": args.inference_mode,
@@ -139,7 +133,6 @@ def main() -> int:
         generated = verifier.generate_batch(
             [source for source, _ in pairs],
             prompt,
-            json_response=True,
             batch_size=args.batch_size,
             poll_interval_s=args.batch_poll_interval_s,
             batch_timeout_s=args.batch_timeout_s,

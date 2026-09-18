@@ -132,10 +132,7 @@ class GeminiAgent:
         reasoning_effort: str = "medium",
         max_retries: int = 5,
         base_backoff_s: float = 2.0,
-        max_tokens: int = 2048,
-        temperature: float = 0.0,
-        top_p: float | None = None,
-        top_k: int | None = None,
+        max_tokens: int = 65536,
         timeout_s: float = 120.0,
         service_tier: str = "standard",
         **kwargs: Any,
@@ -154,9 +151,6 @@ class GeminiAgent:
         self.max_retries = max_retries
         self.base_backoff_s = base_backoff_s
         self.max_tokens = max_tokens
-        self.temperature = temperature
-        self.top_p = top_p
-        self.top_k = top_k
         self.timeout_s = timeout_s
         self._lock = threading.Lock()
         self._usage_totals = empty_usage_totals()
@@ -170,12 +164,11 @@ class GeminiAgent:
         except ImportError:
             self._session = None
         logger.info(
-            "Initialized GeminiAgent with model '%s' (reasoning_effort=%s, service_tier=%s, max_tokens=%d, temp=%.2f, session_transport=%s).",
+            "Initialized GeminiAgent with model '%s' (reasoning_effort=%s, service_tier=%s, max_tokens=%d, session_transport=%s).",
             model,
             reasoning_effort,
             service_tier,
             max_tokens,
-            temperature,
             "requests" if self._session is not None else "urllib",
         )
 
@@ -322,7 +315,6 @@ class GeminiAgent:
         prompt: str,
         *,
         system_prompt: str | None,
-        json_response: bool,
     ) -> tuple[dict[str, Any], float | None]:
         audio_path = Path(audio_path)
         with audio_path.open("rb") as stream:
@@ -345,19 +337,10 @@ class GeminiAgent:
                     {"inlineData": {"mimeType": audio_mime_type(audio_path), "data": audio_b64}},
                 ],
             }],
-            "generationConfig": {
-                "temperature": self.temperature,
-                "maxOutputTokens": self.max_tokens,
-            },
+            "generationConfig": {"maxOutputTokens": self.max_tokens},
         }
         if system_prompt is not None:
             payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
-        if json_response:
-            payload["generationConfig"]["responseMimeType"] = "application/json"
-        if self.top_p is not None:
-            payload["generationConfig"]["topP"] = self.top_p
-        if self.top_k is not None:
-            payload["generationConfig"]["topK"] = self.top_k
         if self.reasoning_effort and self.reasoning_effort.lower() != "none":
             payload["generationConfig"]["thinkingConfig"] = {
                 "thinkingLevel": self.reasoning_effort.upper()
@@ -408,13 +391,11 @@ class GeminiAgent:
         prompt: str,
         *,
         system_prompt: str | None = None,
-        json_response: bool = False,
     ) -> dict[str, Any]:
         payload, duration = self._request_payload(
             audio_path,
             prompt,
             system_prompt=system_prompt,
-            json_response=json_response,
         )
         if self.service_tier == "flex":
             payload["serviceTier"] = "flex"
@@ -497,7 +478,6 @@ class GeminiAgent:
         prompt: str,
         *,
         system_prompt: str | None = None,
-        json_response: bool = False,
         batch_size: int = 100,
         poll_interval_s: float = 10.0,
         batch_timeout_s: float = 86400.0,
@@ -512,7 +492,6 @@ class GeminiAgent:
                 source,
                 prompt,
                 system_prompt=system_prompt,
-                json_response=json_response,
             )
             key_material = {
                 "index": index,
@@ -746,7 +725,7 @@ def main() -> int:
         "s4-agent",
         "gemini",
     )
-    add_prompt_arguments(command, top_p=True)
+    add_prompt_arguments(command, max_tokens=65536, sampling=False)
     command.add_argument("-m", "--model", default="gemini-3.8-flash", help="Gemini model name")
     command.add_argument(
         "--reasoning-effort",
@@ -754,7 +733,6 @@ def main() -> int:
         default="medium",
         help="Reasoning effort level for models supporting thinking",
     )
-    command.add_argument("--top-k", type=positive_int, help="Top-k sampling parameter")
     command.add_argument(
         "--timeout-s",
         type=positive_float,
@@ -796,9 +774,6 @@ def main() -> int:
         "system_prompt": system_prompt,
         "reasoning_effort": args.reasoning_effort,
         "max_tokens": args.max_tokens,
-        "temperature": args.temperature,
-        "top_p": args.top_p,
-        "top_k": args.top_k,
         "timeout_s": args.timeout_s,
         "inference_mode": args.inference_mode,
     }
@@ -806,9 +781,6 @@ def main() -> int:
         model=args.model,
         reasoning_effort=args.reasoning_effort,
         max_tokens=args.max_tokens,
-        temperature=args.temperature,
-        top_p=args.top_p,
-        top_k=args.top_k,
         timeout_s=args.timeout_s,
         max_retries=args.max_retries,
         service_tier="flex" if args.inference_mode == "flex" else "standard",

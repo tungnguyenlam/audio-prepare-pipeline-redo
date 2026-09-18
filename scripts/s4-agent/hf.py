@@ -253,7 +253,7 @@ def main() -> int:
         "s4-agent",
         "hf",
     )
-    add_prompt_arguments(command, top_p=True)
+    add_prompt_arguments(command)
     command.add_argument("-m", "--model-id", default="google/gemma-4-E2B-it", help="Hugging Face model repository ID")
     command.add_argument("-d", "--device", default="auto", help='Inference device ("auto", "cpu", "cuda", or "hip")')
     command.add_argument("-ap", "--adapter-path", help="Optional LoRA adapter checkpoint directory")

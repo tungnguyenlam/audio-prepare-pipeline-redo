@@ -56,9 +56,15 @@ def write_text(path: Path, text: str) -> None:
 
 
 def add_prompt_arguments(
-    command: argparse.ArgumentParser, *, top_p: bool = False
+    command: argparse.ArgumentParser,
+    *,
+    max_tokens: int = 4096,
+    sampling: bool = True,
 ) -> None:
-    """Add options shared by every free-form generation backend."""
+    """Add options shared by every free-form generation backend.
+
+    ``sampling=False`` omits temperature/top-p for providers that ignore them.
+    """
     command.add_argument(
         "-pf", "-p",
         "--prompt-file",
@@ -76,17 +82,17 @@ def add_prompt_arguments(
         "-mt",
         "--max-tokens",
         type=positive_int,
-        default=4096,
+        default=max_tokens,
         help="Maximum number of tokens to generate",
     )
-    command.add_argument(
-        "-t",
-        "--temperature",
-        type=float,
-        default=0.0,
-        help="Sampling temperature",
-    )
-    if top_p:
+    if sampling:
+        command.add_argument(
+            "-t",
+            "--temperature",
+            type=float,
+            default=0.0,
+            help="Sampling temperature",
+        )
         command.add_argument(
             "-tp",
             "--top-p",
