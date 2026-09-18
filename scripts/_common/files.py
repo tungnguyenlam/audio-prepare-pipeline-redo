@@ -72,7 +72,7 @@ _SENSITIVE_CONFIG_KEYS = ('api_key', 'token', 'secret', 'password', 'cookie', 'a
 def _display_config_value(key: str, value: object) -> object:
     """Keep configuration logs useful without echoing secrets or huge text."""
     lowered = key.lower()
-    if any(part in lowered for part in _SENSITIVE_CONFIG_KEYS):
+    if lowered.replace('-', '_') != 'max_tokens' and any(part in lowered for part in _SENSITIVE_CONFIG_KEYS):
         return '<redacted>'
     if isinstance(value, str) and ('endpoint' in lowered or lowered.endswith('url')):
         try:
