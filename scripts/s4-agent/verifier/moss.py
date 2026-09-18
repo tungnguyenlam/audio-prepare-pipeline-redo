@@ -176,7 +176,7 @@ def main() -> int:
     from _cli import load_prompt, resolved_parameters, run_verifier
     from _common.files import destinations, parser
     p = parser('Verify audio with moss; writes verdicts without filtering audio.', 's4-agent/verifier', 'moss')
-    p.add_argument('-pf', '-p', '--prompt-file', type=Path, help='Prompt text file (default: prompts/acoustic_defect-3.txt)')
+    p.add_argument('-pf', '-p', '--prompt-file', type=Path, help='Prompt text file (default: prompts/full-tags-prompt.md)')
     p.add_argument('-m', '--model-id', type=str, default='OpenMOSS-Team/MOSS-Audio-8B-Thinking', help='MOSS-Audio model ID or local directory')
     p.add_argument('-d', '--device', type=str, default='auto', help='Inference device ("auto", "cpu", or "cuda:N")')
     p.add_argument('--trust-remote-code', action=argparse.BooleanOptionalAction, default=True, help='Allow executing custom code from Hugging Face model repository')

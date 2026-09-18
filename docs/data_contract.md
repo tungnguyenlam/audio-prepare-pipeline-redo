@@ -402,7 +402,7 @@ Validation profile is selected by the prompt text (`scripts/s4-agent/verifier/_v
 
 | Profile | Selected when prompt equals | Required fields and consistency |
 |---|---|---|
-| `acoustic_defect_v3` | `prompts/acoustic_defect-3.txt` (default) | Three acoustic dimensions as below; `failure_codes` contains exactly their non-clean values plus optional `unsupported_language` / `singing`; `decision` = pass iff no codes; pass requires nonempty `emotion` and final `transcript`; reject forbids the transcript field |
+| `acoustic_defect_v3` | `prompts/full-tags-prompt.md` (default) | Three acoustic dimensions as below; `failure_codes` contains exactly their non-clean values plus optional `unsupported_language` / `singing`; `decision` = pass iff no codes; pass requires nonempty `emotion` and final `transcript`; reject forbids the transcript field |
 | `speaker_purity_v1` | `prompts/speaker_purity.txt` | `speaker_purity`; pass iff `pure` |
 | `word_boundary_v1` | `prompts/word_boundary.txt` | `boundary_start`, `boundary_end` ∈ clean/clipped; pass iff both clean |
 | `vibevoice_v1` | VibeVoice backend (no prompt) | `decision` ∈ pass/reject/uncertain, `num_speakers`, `secondary_speech_s`, `dominant_speaker_id`; `uncertain` is excluded from pass/reject metrics; `parameters.quantization` is `none` / `int8` / `nf4` |

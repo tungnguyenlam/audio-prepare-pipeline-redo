@@ -93,7 +93,7 @@ def load_prompt(prompt_file: Path | None) -> str:
             raise ValueError(f"Prompt file not found: {prompt_file}")
         return prompt_file.read_text(encoding="utf-8").strip()
 
-    default_file = ROOT / "prompts" / "acoustic_defect-3.txt"
+    default_file = ROOT / "prompts" / "full-tags-prompt.md"
     if not default_file.is_file():
         raise ValueError(f"Default prompt file not found: {default_file}")
     return default_file.read_text(encoding="utf-8").strip()

@@ -21,9 +21,13 @@ FAILURE_CODES = (*ACOUSTIC_FAILURE_CODES, *ELIGIBILITY_FAILURE_CODES)
 def _known_prompts() -> dict[str, str]:
     result = {}
     for filename, profile in (
+        ("full-tags-prompt.md", "acoustic_defect_v3"),
         ("acoustic_defect-3.txt", "acoustic_defect_v3"),
         ("speaker_purity.txt", "speaker_purity_v1"),
         ("word_boundary.txt", "word_boundary_v1"),
+        ("archive/acoustic_defect-3.txt", "acoustic_defect_v3"),
+        ("archive/speaker_purity.txt", "speaker_purity_v1"),
+        ("archive/word_boundary.txt", "word_boundary_v1"),
     ):
         path = ROOT / "prompts" / filename
         if path.is_file():
@@ -41,8 +45,11 @@ def _validate_verdict(
         return "unknown", "invalid_decision"
 
     profile = known_prompts.get(prompt.strip(), "custom") if isinstance(prompt, str) else "custom"
-    if profile == "custom" and isinstance(prompt, str) and prompt.strip().startswith(
-        "Listen to the supplied audio directly. Perform both acoustic verification and transcription"
+    if profile == "custom" and isinstance(prompt, str) and (
+        prompt.strip().startswith(
+            "Listen to the supplied audio directly. Perform both acoustic verification and transcription"
+        )
+        or prompt.strip().startswith("# SYSTEM PROMPT — ACOUSTIC QC")
     ):
         profile = "acoustic_defect_v3"
     if not isinstance(prompt, str) and backend == "vibevoice":

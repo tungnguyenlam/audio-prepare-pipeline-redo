@@ -45,7 +45,7 @@ def main() -> int:
         "s4-agent/verifier",
         "endpoint",
     )
-    command.add_argument("-pf", "-p", "--prompt-file", type=Path, help="Prompt file (default: prompts/acoustic_defect-3.txt)")
+    command.add_argument("-pf", "-p", "--prompt-file", type=Path, help="Prompt file (default: prompts/full-tags-prompt.md)")
     command.add_argument("-ep", "--endpoint", default="http://localhost:8000/v1/chat/completions", help="Chat completions endpoint URL")
     command.add_argument("-m", "--model", default="default", help="Model name to request")
     command.add_argument("--timeout-s", type=float, default=120.0, help="Request timeout in seconds")

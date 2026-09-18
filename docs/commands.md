@@ -483,7 +483,7 @@ bash scripts/s4-agent/gemini.sh   --input-dir .data/clips --prompt-file prompts/
 bash scripts/s4-agent/endpoint.sh --input-dir .data/clips --endpoint http://localhost:8000/v1/chat/completions --model google/gemma-4-E2B-it --prompt-file p.txt
 bash scripts/s4-agent/hf.sh       --input-dir .data/clips --model-id google/gemma-4-E2B-it --prompt-file p.txt
 
-# Hardened verifiers (default prompt: prompts/acoustic_defect-3.txt)
+# Hardened verifiers (default prompt: prompts/full-tags-prompt.md)
 bash scripts/s4-agent/verifier/gemini.sh   --input-dir .data/clips --model gemini-3.8-flash --reasoning-effort medium
 bash scripts/s4-agent/verifier/gemini.sh   --input-file clip.wav --inference-mode standard      # skip Batch API
 bash scripts/s4-agent/verifier/hf.sh       --input-dir .data/clips --model-id google/gemma-4-E2B-it --max-new-tokens 1024

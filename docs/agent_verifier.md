@@ -45,7 +45,7 @@ endpoints without pricing metadata explicitly report cost as unavailable.
 | `kimi` | `.venvs/kimi` | Kimi-Audio (Python 3.11 env) |
 | `vibevoice` | `.venvs/vibevoice` | VibeVoice-ASR speaker counting; `--quantization none` / `int8` / `nf4` (`int4` = NF4); `--min-secondary-speech-s` separates `reject` from `uncertain`. INT8/NF4 need NVIDIA CUDA + bitsandbytes |
 
-- `--prompt-file` defaults to `prompts/acoustic_defect-3.txt`. The prompt text selects
+- `--prompt-file` defaults to `prompts/full-tags-prompt.md`. The prompt text selects
   the validation profile (`acoustic_defect_v3`, `speaker_purity_v1`,
   `word_boundary_v1`, or `custom`) — see
   [data contract §6](data_contract.md#6-verifier-verdict-scriptsagentverifier).
@@ -61,7 +61,7 @@ endpoints without pricing metadata explicitly report cost as unavailable.
 - `vibevoice` remains a prompt-free speaker-count verifier and therefore does not
   run the acoustic v3 rubric or emit its transcript field.
 
-Prompts in `prompts/`: `acoustic_defect-3.txt` is the active verifier default;
+Prompts in `prompts/`: `full-tags-prompt.md` is the active verifier default;
 `acoustic_defect.txt` and `acoustic_defect-2.txt` are retained unchanged as
 deprecated, reference-only revisions and are not registered validation profiles.
 `speaker_purity.txt` and `word_boundary.txt` are narrower verifier alternatives.
