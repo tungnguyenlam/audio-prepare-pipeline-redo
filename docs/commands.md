@@ -25,7 +25,7 @@ secret-valued options or long prompt contents.
 - `--input-file` takes precedence over `--input-dir`; `--output-file` is an exact
   destination and requires a single input. Relative paths use the caller's working
   directory.
-- Downloads are named `<video_id>_<title10>-<sample_rate>.wav`. Other names are
+- Downloads are named `<video_id>_<title>-<sample_rate>.wav` (title sanitized and cut at a word boundary to 40 characters). Other names are
   sanitized to `[a-zA-Z0-9_-]`; single-video outputs live under
   `.data/s1-download/<audio-family>/`. Playlist and channel downloads resolve the
   remote collection name and group files under

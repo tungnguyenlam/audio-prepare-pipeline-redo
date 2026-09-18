@@ -199,7 +199,7 @@ experiment, or explicitly use `--overwrite` where supported.
 ```bash
 # Native model check; setup_worker_envs downloads the pinned JIT into ~/.cache/silero-vad.
 bash scripts/evaluate/silero_jit.sh \
-  --input-file .data/s1-download/truyen-chem/vn3KdmD0eCA_KHAU-NGHIE-48000.wav \
+  --input-file .data/s1-download/truyen-chem/vn3KdmD0eCA_KHAU-NGHIEP-CHEM-TIENG-ANH-CHUI-GIAO-48000.wav \
   --devices cpu cuda:0 --repeats 3 \
   --output-file .data/evaluate/hana_rerun/vad.json
 ```

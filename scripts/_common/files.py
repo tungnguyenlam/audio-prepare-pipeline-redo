@@ -197,17 +197,23 @@ def safe_name(value: str, limit: int | None = None, default: str = 'audio') -> s
     value = re.sub(r'_+', '_', value)
     value = value.strip('-_')
     if limit and len(value) > limit:
-        value = value[:limit].rstrip('-_')
+        # Cut at the last separator inside the limit so words are not split
+        cut = value[:limit + 1]
+        boundary = max(cut.rfind('-'), cut.rfind('_'))
+        value = (cut[:boundary] if boundary > 0 else value[:limit]).rstrip('-_')
     return value or default
 
 
+TITLE_LIMIT = 40
+
+
 def family_name(video_id: str, title: str) -> str:
-    """Return canonical family identifier: {safe_id}_{safe_title_10}."""
-    return f"{safe_name(video_id)}_{safe_name(title, 10, default='video')}"
+    """Return canonical family identifier: {safe_id}_{safe_title_40}."""
+    return f"{safe_name(video_id)}_{safe_name(title, TITLE_LIMIT, default='video')}"
 
 
 def family_audio_name(video_id: str, title: str, sample_rate: int | None = None, extension: str = '.wav') -> str:
-    """Return standard download audio filename: {safe_id}_{safe_title_10}[-{sample_rate}].wav."""
+    """Return standard download audio filename: {safe_id}_{safe_title_40}[-{sample_rate}].wav."""
     fam = family_name(video_id, title)
     rate_suffix = f"-{sample_rate}" if sample_rate else ""
     ext = extension if extension.startswith('.') else f".{extension}"
@@ -251,17 +257,20 @@ def infer_audio_family(path: Path) -> str:
         if path.parent.name and path.parent.name not in _NON_FAMILY_DIRS:
             return path.parent.name
 
-    # Check for <id>_<title10> pattern (e.g. 11-char YT id, or id_title10-<sample_rate>)
-    m = re.match(r'^([a-zA-Z0-9_-]{11})_([a-zA-Z0-9-]{1,10})(?:-\d+)?(?:_.*)?$', stem)
-    if m:
-        return f"{m.group(1)}_{m.group(2)}"
-    m = re.match(r'^([a-zA-Z0-9_-]+?)_([a-zA-Z0-9-]{1,10})-\d+(?:_.*)?$', stem)
-    if m:
-        return f"{m.group(1)}_{m.group(2)}"
+    # Check for <id>_<title> pattern (11-char YT id, or id_title-<sample_rate>). The
+    # sample-rate suffix is 4-6 digits; try it first so a title ending in a number
+    # is not mistaken for one when the stem is short enough to fit both.
+    title = f'[a-zA-Z0-9-]{{1,{TITLE_LIMIT}}}'
+    for pattern in (rf'^([a-zA-Z0-9_-]{{11}})_({title})-\d{{4,6}}(?:_.*)?$',
+                    rf'^([a-zA-Z0-9_-]{{11}})_({title})(?:_.*)?$',
+                    rf'^([a-zA-Z0-9_-]+?)_({title})-\d{{4,6}}(?:_.*)?$'):
+        m = re.match(pattern, stem)
+        if m:
+            return f"{m.group(1)}_{m.group(2)}"
 
-    # Check for parent directory family pattern (e.g. 11-char YT id, or id_title10)
+    # Check for parent directory family pattern (e.g. 11-char YT id, or id_title)
     if path.parent.name and path.parent.name not in _NON_FAMILY_DIRS | {'audio', '.'}:
-        m_parent = re.match(r'^([a-zA-Z0-9_-]{11})(?:_([a-zA-Z0-9-]{1,10}))?(?:_.*)?$', path.parent.name)
+        m_parent = re.match(rf'^([a-zA-Z0-9_-]{{11}})(?:_({title}))?(?:_.*)?$', path.parent.name)
         if m_parent:
             return f"{m_parent.group(1)}_{m_parent.group(2)}" if m_parent.group(2) else m_parent.group(1)
 

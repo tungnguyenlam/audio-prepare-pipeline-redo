@@ -22,7 +22,7 @@ server for VibeVoice; INT8/NF4 checkpoints are bitsandbytes and CUDA-only.
 
 ```bash
 # 0. Pick a recording
-src=.data/s1-download/truyen-chem/vn3KdmD0eCA_KHAU-NGHIE-48000.wav
+src=.data/s1-download/truyen-chem/vn3KdmD0eCA_KHAU-NGHIEP-CHEM-TIENG-ANH-CHUI-GIAO-48000.wav
 out=.data/tts/vn3KdmD0eCA
 
 # 1. Transcribe with word alignment (VibeVoice on the NVIDIA server, or PhoWhisper locally)
