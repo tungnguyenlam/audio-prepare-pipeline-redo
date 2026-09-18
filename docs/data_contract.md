@@ -364,6 +364,10 @@ either a validated `verdict` or an `error`:
 }
 ```
 
+Gemini `_inference_mode` is `batch`, `flex`, or `standard`, mirrored by
+`_cost.pricing_tier` (`paid_batch` / `paid_flex` / `paid_standard`); Batch and Flex
+share the same discounted rates.
+
 For a pass, the public verdict fields use the same order, include a nonempty
 `"emotion": "…"`, and end with a nonempty `"transcript": "…"`. Reject verdicts
 omit `transcript` entirely and may omit `emotion`. Runtime schema errors include

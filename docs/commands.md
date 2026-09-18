@@ -485,7 +485,8 @@ bash scripts/s4-agent/hf.sh       --input-dir .data/clips --model-id google/gemm
 
 # Hardened verifiers (default prompt: prompts/full-tags-prompt.md)
 bash scripts/s4-agent/verifier/gemini.sh   --input-dir .data/clips --model gemini-3.8-flash --reasoning-effort medium
-bash scripts/s4-agent/verifier/gemini.sh   --input-file clip.wav --inference-mode standard      # skip Batch API
+bash scripts/s4-agent/verifier/gemini.sh   --input-dir .data/clips --inference-mode flex          # synchronous, Batch-priced
+bash scripts/s4-agent/verifier/gemini.sh   --input-file clip.wav --inference-mode standard      # skip Batch API, full price
 bash scripts/s4-agent/verifier/hf.sh       --input-dir .data/clips --model-id google/gemma-4-E2B-it --max-new-tokens 1024
 bash scripts/s4-agent/verifier/vllm.sh     --input-dir .data/clips --model google/gemma-4-E2B-it
 bash scripts/s4-agent/verifier/unsloth.sh  --input-dir .data/clips --model unsloth/gemma-4-12b-it-GGUF --gguf-variant UD-Q6_K_XL

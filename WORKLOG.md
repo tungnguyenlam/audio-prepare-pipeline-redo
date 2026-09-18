@@ -1,3 +1,16 @@
+## 2026-09-18 - Add Gemini Flex inference mode and confirm implicit prompt caching
+
+### Decisions
+- Audited Gemini cost drivers on `.data/evaluate/hana_tts/gemini_baseline` (59 clips, $0.50): run was `--inference-mode standard` (full price), 71.5% of cost was output where thinking tokens (87.9k) were ~12x answer tokens (7.5k), and `cached_input_tokens` was 0 on every sample because that run used an older 3,287-token prompt below the 4,096-token implicit-cache minimum for Gemini 3.x Flash.
+- Current default `prompts/full-tags-prompt.md` is 6,269 tokens (`countTokens`), so implicit caching now applies to the shared prefix without any explicit `cachedContents`; explicit caching is not worth adding because audio is never shared and the prompt is only marginally above the threshold.
+- Added `--inference-mode flex` to `s4-agent/gemini.sh` and `s4-agent/verifier/gemini.sh`: top-level `serviceTier: "flex"` on `generateContent` (probed; `generationConfig.serviceTier` is rejected with 400), priced as `paid_flex` at Batch rates. Flex is synchronous and returns 503 when capacity is short, so flex defaults to `--timeout-s 900 --max-retries 12` and exponential backoff is now capped at 60 s.
+- Fixed a pre-existing verifier crash: `record_result(stats, verdict, error=...)` did not match the `success=`/`decision=` signature, so every verifier item was reported as `ITEM_FAIL` after its artifact was written and `TOTAL_COST` never counted decisions.
+
+### Results
+- Flex run on 3 Hana clips: all 3 `pass`, `usageMetadata.serviceTier="flex"`, `pricing_tier=paid_flex`, 4,007–4,019 of ~6.3k prompt tokens served from implicit cache; per-clip cost $0.0029–$0.0048 (baseline standard mode for the same 2.5 s clip: $0.0049 with no cache hits). Latency 19 s–414 s with 503 retries.
+- Docs updated: `docs/agent_verifier.md` (flex row, caching note, `paid_flex`), `docs/commands.md`, `docs/data_contract.md`.
+- Validated CLI wiring via a live 3-clip and 1-clip flex verifier run; no tests written. Remaining lever for cost is `--reasoning-effort low`, not caching.
+
 ## 2026-09-17 - Clean obsolete non-pipeline folders from .data
 
 ### Decisions

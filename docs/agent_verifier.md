@@ -11,7 +11,7 @@ schema. Neither directory orchestrates other pipeline stages.
 
 | Backend | Transport | Notes |
 |---|---|---|
-| `gemini` | Google Gemini API | Batch API by default (`--inference-mode batch`, ≤ `--batch-size 10` requests per job, split further under the 20 MB inline limit, polled up to `--batch-timeout-s 86400`); `--inference-mode standard` for synchronous calls. Default `--model gemini-3.8-flash --reasoning-effort medium` (`none/low/medium/high` → `thinkingLevel`). Needs `GEMINI_API_KEY`. |
+| `gemini` | Google Gemini API | Batch API by default (`--inference-mode batch`, ≤ `--batch-size 10` requests per job, split further under the 20 MB inline limit, polled up to `--batch-timeout-s 86400`); `--inference-mode flex` for synchronous calls on Google's Flex tier (same 50% discount as Batch, 1–15 min latency, defaults `--timeout-s 900 --max-retries 12` because Flex answers 503 when capacity is short); `--inference-mode standard` for full-price synchronous calls. Default `--model gemini-3.8-flash --reasoning-effort medium` (`none/low/medium/high` → `thinkingLevel`). Needs `GEMINI_API_KEY`. |
 | `endpoint` | OpenAI-compatible `/v1/chat/completions` | Served vLLM, Unsloth, etc. Optional `OPENAI_API_KEY`. |
 | `hf` | Local `transformers` model | Multimodal `AutoProcessor` / `AutoModelForMultimodalLM` path for Gemma 4; `--model-id`, `--adapter-path` (LoRA), `--load-in-4bit/-8bit`, `--device`. |
 
@@ -23,6 +23,12 @@ schema. Neither directory orchestrates other pipeline stages.
   asked for.
 - Interrupted Gemini Batch runs resume from `work/batch_jobs/` when re-invoked with
   identical arguments; `--overwrite` submits a fresh job.
+- Gemini implicit context caching applies automatically to the shared prompt prefix
+  (prompt text is placed before the audio) once a request exceeds the model's
+  minimum (4,096 tokens for Gemini 3.x Flash; `prompts/full-tags-prompt.md` is
+  ~6.3k tokens). Cache hits appear as `cached_input_tokens` in `_usage` and are
+  billed at 10% of the input rate; explicit `cachedContents` are not used because
+  the prompt is only marginally above the threshold and audio is never shared.
 
 All agent and verifier progress is written to stderr so stdout remains a clean
 stream of successful artifact paths. Each run logs its backend/model, item start
@@ -35,7 +41,7 @@ endpoints without pricing metadata explicitly report cost as unavailable.
 
 | Backend | Environment | Model / options |
 |---|---|---|
-| `gemini` | `.venvs/verify` | as above; adds `_usage`, `_cost` (`paid_batch` / `paid_standard`) |
+| `gemini` | `.venvs/verify` | as above; adds `_usage`, `_cost` (`paid_batch` / `paid_flex` / `paid_standard`) |
 | `hf` | `.venvs/verify` | Gemma 4 E2B / E4B / 12B or any HF audio LLM, optional LoRA adapter; `--max-new-tokens 1024` by default |
 | `endpoint` | `.venvs/verify` | any OpenAI-compatible server |
 | `unsloth` | `.venvs/verify` | Unsloth Studio (`--model`, `--gguf-variant`, `--payload-mode`, `UNSLOTH_*` env) |
