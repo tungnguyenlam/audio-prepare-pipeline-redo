@@ -216,3 +216,14 @@
 - Verified clean creation of `cost_distribution.png`, `cost_total.png`, and `sample_costs.md`, and confirmed stale `costs.png` was deleted.
 - Verified timestamp ordering in `sample_costs.md` from 0.01s through 342.33s.
 - No tests were written or executed in adherence with repository rules.
+
+## 2026-09-18 - Clickable file paths in VS Code preview for sample_costs.md
+
+### Decisions
+- In `sample_costs.md`, format file paths as clickable Markdown links pointing to the relative path from the markdown report to the actual audio file on disk.
+- Enhanced `_markdown_relpath` and added `_resolve_target_file` with directory caching: if the stored path is stale or relocated, search adjacent evaluation directories to find the real existing file so links never result in 404/file not found in VS Code preview.
+- Links in `sample_costs.md` display the clean project-relative path while linking via POSIX relative path (`../../diarizen/...`), ensuring VS Code Markdown Preview navigates directly to the audio clip on click.
+
+### Results
+- Regenerated `sample_costs.md` and confirmed all audio links point to existing files on disk.
+- No tests were written or run.

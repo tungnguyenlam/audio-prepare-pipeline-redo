@@ -494,39 +494,60 @@ def _case_categories(row: dict[str, str]) -> list[tuple[str, str]]:
     return codes
 
 
+_TARGET_FILE_CACHE: dict[tuple[str, str], Path] = {}
+
+
+def _resolve_target_file(path_str: str, base_dir: Path) -> Path:
+    key = (path_str, str(base_dir))
+    if key in _TARGET_FILE_CACHE:
+        return _TARGET_FILE_CACHE[key]
+
+    p = Path(path_str)
+    if p.is_absolute():
+        if p.exists():
+            res = p.resolve()
+            _TARGET_FILE_CACHE[key] = res
+            return res
+        target_p = p
+    else:
+        target_p = resolve_stored_path(p)
+        if target_p.exists():
+            res = target_p.resolve()
+            _TARGET_FILE_CACHE[key] = res
+            return res
+
+    fname = p.name
+    curr = base_dir.resolve()
+    while curr != curr.parent:
+        cand = curr / fname
+        if cand.is_file():
+            res = cand.resolve()
+            _TARGET_FILE_CACHE[key] = res
+            return res
+        for sub in ("diarizen", "audio", "wav", "clips"):
+            cand_sub = curr / sub
+            if cand_sub.is_dir():
+                matches = list(cand_sub.rglob(fname))
+                if matches:
+                    res = matches[0].resolve()
+                    _TARGET_FILE_CACHE[key] = res
+                    return res
+        curr = curr.parent
+
+    _TARGET_FILE_CACHE[key] = target_p
+    return target_p
+
+
 def _markdown_relpath(path_str: str, base_dir: Path) -> str:
     if not path_str:
         return ""
     try:
-        p = Path(path_str)
         base = base_dir.resolve()
-        if p.is_absolute():
-            target_p = p.resolve() if p.exists() else None
-            if target_p is None:
-                for anchor in (".data", base.name):
-                    if anchor in p.parts:
-                        idx = p.parts.index(anchor)
-                        subpath = Path(*p.parts[idx:])
-                        curr = base
-                        while curr != curr.parent:
-                            if (curr / subpath).exists() or (curr / anchor).exists():
-                                target_p = (curr / subpath).resolve()
-                                break
-                            curr = curr.parent
-                        if target_p:
-                            break
-            if target_p is None:
-                target_p = p
-            try:
-                rel = os.path.relpath(target_p, base)
-            except ValueError:
-                rel = str(target_p)
-        else:
-            target_p = resolve_stored_path(p)
-            try:
-                rel = os.path.relpath(target_p, base)
-            except ValueError:
-                rel = persist_path(target_p)
+        target_p = _resolve_target_file(path_str, base)
+        try:
+            rel = os.path.relpath(target_p, base)
+        except ValueError:
+            rel = persist_path(target_p)
         return Path(rel).as_posix()
     except Exception:
         return path_str
@@ -633,8 +654,19 @@ def _write_sample_costs_markdown(all_csv: Path, output_dir: Path) -> Path:
         cost_val = _number(r.get("cost_usd", 0.0))
         cost_fmt = f"${cost_val:.4f}" if cost_val > 0 else "$0.0000"
 
-        safe_path = path_str.replace("|", "\\|")
-        lines.append(f"| {safe_path} | {st_fmt} | {en_fmt} | {status_fmt} | {transcript_fmt} | {cost_fmt} |")
+        if path_str != "-":
+            target_rel = _markdown_relpath(path_str, output_dir)
+            resolved_p = _resolve_target_file(path_str, output_dir)
+            display_path = persist_path(resolved_p) if resolved_p.exists() else path_str
+            safe_display = display_path.replace("|", "\\|")
+            if any(c in target_rel for c in (" ", "(", ")")):
+                path_cell = f"[{safe_display}](<{target_rel}>)"
+            else:
+                path_cell = f"[{safe_display}]({target_rel})"
+        else:
+            path_cell = "-"
+
+        lines.append(f"| {path_cell} | {st_fmt} | {en_fmt} | {status_fmt} | {transcript_fmt} | {cost_fmt} |")
 
     sample_costs_md = output_dir / "sample_costs.md"
     sample_costs_md.write_text("\n".join(lines) + "\n", encoding="utf-8")
