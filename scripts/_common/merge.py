@@ -23,8 +23,8 @@ def parse_bool(value: str) -> bool:
 def add_diarization_merge_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument('--merge', nargs='?', const=True, default=True, type=parse_bool, metavar='BOOL',
                    help='Merge same-speaker turns across silence before duration filtering (default: true; use --merge false to disable)')
-    p.add_argument('--adjust-mean', nargs='?', const=True, default=True, type=parse_bool, metavar='BOOL',
-                   help='Retry merging with 0.1-second gap adjustments to target a 7–10 second mean (default: true; use --adjust-mean false to disable)')
+    p.add_argument('--dynamic-merge', '--adjust-mean', dest='adjust_mean', nargs='?', const=True, default=False, type=parse_bool, metavar='BOOL',
+                   help='Retry merging with 0.1-second gap adjustments to target a 7–10 second mean (default: false; use --dynamic-merge or --adjust-mean to enable)')
     add_merge_arguments(p)
 
 

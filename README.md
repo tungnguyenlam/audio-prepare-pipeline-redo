@@ -60,12 +60,13 @@ bash scripts/s4-agent/verifier/analysis.sh --input-dir .data/s4-agent/verifier/g
 
 ## Conventions
 
-- Diarization enables same-speaker merging and mean-duration adjustment by
-  default. It retries the merge gap in 0.1-second steps toward a 7–10 second
-  mean per input video; use `--merge false` or `--adjust-mean false` to disable
-  either behavior. Its normal output directory contains the processed manifest,
-  clips, plots, and the original `segments.raw.json` plus `segments.merged.json`;
-  see the
+- Diarization enables same-speaker merging across silence by default (fixed
+  `--max-gap-s 1.0`). Dynamic merge (adjusting the merge gap in 0.1-second steps
+  to hit a 7–10 second mean per video) is disabled by default; enable it with
+  `--dynamic-merge` (or `--adjust-mean`). Merging can be disabled entirely with
+  `--merge false`. The dynamic merge status is explicitly reported in video-level
+  plot titles. The output directory contains the processed manifest, clips, plots,
+  and the intermediate `segments.raw.json` plus `segments.merged.json`; see the
   [merge cookbook](docs/commands.md#merge-before-duration-filtering).
 - Turns over 15 seconds are recursively cut at cached Silero VAD valleys by
   default, but only where the speech probability is strictly below

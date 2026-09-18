@@ -282,7 +282,8 @@ afterwards; its merge manifest retains overlong chains, while integrated
 diarization retains original component turns in `segments.raw.json` and merge
 decisions (including duration rejections) in the final audit.
 
-When `adjust_mean` is enabled, integrated diarization measures the mean of the
+When `dynamic_merge` / `adjust_mean` is enabled (via `--dynamic-merge` or
+`--adjust-mean`; disabled by default), integrated diarization measures the mean of the
 duration-filtered turns for each input video. It retries from the original raw
 turns, moving `max_gap_s` by 0.1 seconds toward the 7–10 second target, and
 records every attempt and its stop reason in `merge_mean_adjustment`. The
@@ -291,9 +292,10 @@ allows at most 101 total evaluations. The object also records the actual
 `retry_count` and `evaluation_count`, while each attempt records merge output
 before the long-segment strategy, post-strategy output, audit reason counts,
 VAD cuts/rejections, and duration-filter removals. The final gap and mean are
-also included in the terminal progress output. A bare
-`--merge` or `--adjust-mean` enables the corresponding default-true option;
-pass `false` to disable it.
+also included in the terminal progress output. Video-level plot titles explicitly
+indicate whether dynamic merge was enabled, disabled, or if merging was omitted altogether.
+A bare `--merge` enables turn merging (default: true). A bare `--dynamic-merge` or
+`--adjust-mean` enables dynamic mean adjustment (default: false); pass `false` to keep it disabled.
 
 ## 4. Speaker profile (`.data/speaker_profiles/<slug>/profile.json`)
 

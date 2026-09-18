@@ -46,7 +46,7 @@ def main() -> int:
     add_diarization_merge_arguments(p)
     args = p.parse_args()
     validate_long_segment_arguments(args, p)
-    merge_options = {**merge_parameters(args, p), 'adjust_mean': args.adjust_mean}
+    merge_options = {**merge_parameters(args, p), 'adjust_mean': args.adjust_mean, 'dynamic_merge': args.adjust_mean}
     if args.min_duration_s is not None and (not math.isfinite(args.min_duration_s) or args.min_duration_s < 0):
         p.error('--min-duration-s must be finite and non-negative')
     if args.max_duration_s is not None and (not math.isfinite(args.max_duration_s) or args.max_duration_s <= 0):

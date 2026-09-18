@@ -42,6 +42,57 @@ def stage_plot_file(manifest_path: Path, stage: str) -> Path:
     return Path(manifest_path).resolve().parent / 'plot' / stage / 'timeline.png'
 
 
+def _manifest_dynamic_merge_label(data: dict, manifest_path: Path | None = None) -> str:
+    path = Path(manifest_path) if manifest_path else None
+    if path and path.name == 'segments.raw.json':
+        return 'before merge'
+
+    merge_adj = data.get('merge_mean_adjustment') if isinstance(data.get('merge_mean_adjustment'), dict) else None
+    params = data.get('parameters') if isinstance(data.get('parameters'), dict) else {}
+    merge_params = params.get('merge') if isinstance(params.get('merge'), dict) else None
+    merge_applied = data.get('merge_applied')
+
+    if merge_applied is False or (merge_params is None and merge_adj is None):
+        return 'merge: disabled'
+
+    is_dynamic = False
+    if merge_adj is not None and 'enabled' in merge_adj:
+        is_dynamic = bool(merge_adj['enabled'])
+    elif merge_params is not None:
+        is_dynamic = bool(merge_params.get('adjust_mean') or merge_params.get('dynamic_merge'))
+
+    prefix = 'after merge | ' if path and path.name == 'segments.merged.json' else ''
+
+    if is_dynamic:
+        target_min = merge_adj.get('target_min_duration_s', 7.0) if merge_adj else 7.0
+        target_max = merge_adj.get('target_max_duration_s', 10.0) if merge_adj else 10.0
+        final_gap = None
+        if merge_adj and 'final_max_gap_s' in merge_adj:
+            final_gap = merge_adj['final_max_gap_s']
+        elif merge_params:
+            final_gap = merge_params.get('max_gap_s')
+
+        gap_str = f', max_gap={final_gap:.1f}s' if final_gap is not None else ''
+        return f'{prefix}dynamic merge: enabled (target {target_min:g}–{target_max:g}s{gap_str})'
+    else:
+        gap = None
+        if merge_params and 'max_gap_s' in merge_params:
+            gap = merge_params['max_gap_s']
+        elif merge_adj and 'final_max_gap_s' in merge_adj:
+            gap = merge_adj['final_max_gap_s']
+
+        gap_str = f' (max_gap={gap:.1f}s)' if gap is not None else ''
+        return f'{prefix}dynamic merge: disabled{gap_str}'
+
+
+def _format_video_plot_title(data: dict, manifest_path: Path, title: str | None = None) -> str:
+    if title:
+        return title
+    source = data.get('source', {}).get('path', Path(manifest_path).stem) if isinstance(data.get('source'), dict) else (data.get('source') or Path(manifest_path).stem)
+    dynamic_label = _manifest_dynamic_merge_label(data, manifest_path)
+    return f'Diarization: {source} [{dynamic_label}]'
+
+
 def plot_segment_outputs(
     manifest_path: Path,
     *,
@@ -58,7 +109,7 @@ def plot_segment_outputs(
     try:
         return write_plots(manifest_path, output_file, title=title, overwrite=True, bin_width=bin_width)
     except ImportError:
-        return _write_plots_via_audio_python(manifest_path, output_file, bin_width=bin_width)
+        return _write_plots_via_audio_python(manifest_path, output_file, title=title, bin_width=bin_width)
 
 
 def write_stage_plots(
@@ -242,21 +293,22 @@ def write_plots(
         fig, (ax_ref, ax_hyp) = plt.subplots(2, 1, figsize=(14, 7), sharex=True)
         _plot_turns(ax_ref, ref_turns, 'Reference Diarization', batch_size=batch_size)
         _plot_turns(ax_hyp, turns, 'Hypothesis Diarization', batch_size=batch_size)
-        if title:
-            fig.suptitle(title, fontsize=14)
+        effective_title = _format_video_plot_title(data, manifest_path, title)
+        fig.suptitle(effective_title, fontsize=14)
     else:
         data = read_json(manifest_path)
         turns = data.get('turns', [])
         fig, ax = plt.subplots(figsize=(14, max(3.0, 1.2 + 0.5 * len({t['speaker_id'] for t in turns}))))
-        source = data.get('source', {}).get('path', Path(manifest_path).stem)
-        _plot_turns(ax, turns, title or f'Diarization: {source}', batch_size=batch_size)
+        effective_title = _format_video_plot_title(data, manifest_path, title)
+        _plot_turns(ax, turns, effective_title, batch_size=batch_size)
 
+    dynamic_label = _manifest_dynamic_merge_label(data, manifest_path)
     dest.parent.mkdir(parents=True, exist_ok=True)
     _save(plt, fig, gantt)
     progress('PLOT_DONE', f'Saved plot to {gantt.name}')
-    _write_duration_histogram(plt, turns, duration_path, bin_width=bin_width)
+    _write_duration_histogram(plt, turns, duration_path, bin_width=bin_width, dynamic_label=dynamic_label)
     progress('PLOT_DONE', f'Saved plot to {duration_path.name}')
-    _write_cutoff_bars(plt, turns, cutoff_path, bin_width=bin_width)
+    _write_cutoff_bars(plt, turns, cutoff_path, bin_width=bin_width, dynamic_label=dynamic_label)
     progress('PLOT_DONE', f'Saved plot to {cutoff_path.name}')
     return [gantt, duration_path, cutoff_path]
 
@@ -305,6 +357,7 @@ def _write_duration_histogram(
     *,
     bin_width: float = 0.25,
     title: str | None = None,
+    dynamic_label: str | None = None,
 ) -> None:
     durations = _turn_durations(turns)
     fig, ax = plt.subplots(figsize=(10, 4))
@@ -331,10 +384,15 @@ def _write_duration_histogram(
 
     ax.set_xlabel('Segment duration (s)')
     ax.set_ylabel('Count')
-    ax.set_title(title or (
-        f'Segment duration (n={len(durations)}, mean={mean_val:.2f}s, '
-        f'median={median_val:.2f}s)'
-    ))
+    if title:
+        hist_title = title
+    else:
+        stats = (
+            f'Segment duration (n={len(durations)}, mean={mean_val:.2f}s, '
+            f'median={median_val:.2f}s)'
+        )
+        hist_title = f'{stats} [{dynamic_label}]' if dynamic_label else stats
+    ax.set_title(hist_title)
     ax.grid(True, axis='y', linestyle='--', alpha=0.4)
     _save(plt, fig, dest)
 
@@ -346,6 +404,7 @@ def _write_cutoff_bars(
     *,
     bin_width: float = 0.25,
     title: str | None = None,
+    dynamic_label: str | None = None,
 ) -> None:
     durations = _turn_durations(turns)
     if not durations:
@@ -378,7 +437,12 @@ def _write_cutoff_bars(
     count_bars = ax_count.bar(thresholds, remain_n, color='#3b82f6', width=bar_w)
     ax_count.bar_label(count_bars, labels=count_labels, fontsize=fsize, padding=3, rotation=rot)
     ax_count.set_ylabel('Remaining segments')
-    ax_count.set_title(title or 'Remaining if dropping segments shorter than T')
+    if title:
+        cutoff_title = title
+    else:
+        base = 'Remaining if dropping segments shorter than T'
+        cutoff_title = f'{base} [{dynamic_label}]' if dynamic_label else base
+    ax_count.set_title(cutoff_title)
     ax_count.set_ylim(0, max(remain_n) * headroom if remain_n else 1)
     ax_count.grid(True, axis='y', linestyle='--', alpha=0.4)
 
@@ -443,9 +507,17 @@ def _audio_python() -> Path:
     )
 
 
-def _write_plots_via_audio_python(manifest_path: Path, output_file: Path, *, bin_width: float = 0.25) -> list[Path]:
+def _write_plots_via_audio_python(
+    manifest_path: Path,
+    output_file: Path,
+    *,
+    title: str | None = None,
+    bin_width: float = 0.25,
+) -> list[Path]:
     script = Path(__file__).resolve().parents[1] / 'evaluate' / 'plot_diarization.py'
     cmd = [str(_audio_python()), str(script), '--input-manifest', str(Path(manifest_path).resolve()),
            '--output-file', str(Path(output_file).resolve()), '--bin-width', str(bin_width), '--overwrite']
+    if title:
+        cmd.extend(['--title', title])
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
     return list(sibling_plot_paths(output_file))

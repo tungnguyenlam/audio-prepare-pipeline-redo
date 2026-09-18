@@ -247,8 +247,8 @@ all nested manifests. `plot/` is a symlink to `_plot/` when unused.
 
 ### Merge before duration filtering
 
-All diarization launchers merge fragmented same-speaker turns and adjust the
-mean clip duration by default, then export the result in one invocation:
+All diarization launchers merge fragmented same-speaker turns across silence by
+default (fixed `--max-gap-s 1.0`), then export the result in one invocation:
 
 ```bash
 bash scripts/s3-diarize/sortformer.sh \
@@ -257,19 +257,21 @@ bash scripts/s3-diarize/sortformer.sh \
   --min-duration-s 1 --max-duration-s 15
 ```
 
-Use `--merge false` to disable merging or `--adjust-mean false` to keep the
-configured `--max-gap-s` unchanged. Boolean flags accept `true` or `false`; a
-bare `--merge` or `--adjust-mean` means `true`.
+Merging is enabled by default (`--merge true`). Dynamic merge adjustment (iteratively
+adjusting `max_gap_s` by 0.1 seconds around 1.0s to achieve a 7–10 second mean) is
+**disabled by default** (`default: false`). Enable it with `--dynamic-merge` (or `--adjust-mean`).
+Use `--merge false` to disable turn merging entirely. Boolean flags accept `true` or `false`;
+a bare `--dynamic-merge` or `--adjust-mean` means `true`.
 
 The same flags work with `pyannote.sh`, `pyannote_31.sh`,
 `pyannote_community1.sh`, `clustering.sh`, `threed_speaker.sh`, and `diarizen.sh`,
 for both `--input-file` and `--input-dir`. Merge is on by default, with
 `--max-gap-s 1`, `--silence-threshold-dbfs -40`, and `--frame-ms 20`.
-Mean adjustment targets a 7–10 second mean per input video and changes
-`max_gap_s` by 0.1 seconds per retry. Because a larger maximum gap permits more
-merges, it increases the gap when the mean is below 7 seconds and decreases it
-when the mean is above 10 seconds. The adjustment is bounded by 100 retries and
-the available same-speaker gaps. The initial merge is retry 0, so the 100-retry
+When enabled with `--dynamic-merge` or `--adjust-mean`, mean adjustment targets a
+7–10 second mean per input video and changes `max_gap_s` by 0.1 seconds per retry.
+Because a larger maximum gap permits more merges, it increases the gap when the mean is
+below 7 seconds and decreases it when the mean is above 10 seconds. The adjustment is
+bounded by 100 retries and the available same-speaker gaps. The initial merge is retry 0, so the 100-retry
 limit permits at most 101 total merge evaluations; most files stop earlier when
 the target is reached or the usable gap range is exhausted. Progress output
 reports merge turns before the long-segment strategy, post-strategy turns,

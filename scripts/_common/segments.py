@@ -163,7 +163,7 @@ def _split_long_turns_vad(turns: list[dict], source: Path, max_samples: int,
         if end_sample - start_sample <= max_samples:
             split_turns.append(turn)
             continue
-        leaves, cuts = plan_segments(
+        leaves, cuts = plan_segments(\
             info['frames'], max_samples, candidates,
             start_sample=start_sample, end_sample=end_sample,
             vad_cut_threshold=vad_cut_threshold,
@@ -310,16 +310,16 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
     merge_details = {}
     long_segment_audit = []
     if manifest.get('operation') == 'diarize' and params.get('merge'):
-        merge_config = {key: value for key, value in params['merge'].items() if key != 'adjust_mean'}
+        merge_config = {key: value for key, value in params['merge'].items() if key not in ('adjust_mean', 'dynamic_merge')}
         merge_config['max_duration_samples'] = max_samples
         initial_gap_s = merge_config['max_gap_s']
-        adjust_mean = params['merge'].get('adjust_mean', True)
+        adjust_mean = bool(params['merge'].get('adjust_mean') or params['merge'].get('dynamic_merge') or False)
         max_duration_detail = 'none' if max_duration_s is None else f'{max_duration_s:.2f}s'
         progress('MERGE_START',
-                 f'{source.name}: raw_turns={len(raw_turns)}, initial_max_gap={initial_gap_s:.2f}s, '
-                 f'max_duration={max_duration_detail}, target_mean={MEAN_DURATION_MIN_S:.2f}-{MEAN_DURATION_MAX_S:.2f}s, '
-                 f'adjust_mean={adjust_mean}, step={MEAN_ADJUST_STEP_S:.2f}s, '
-                 f'max_retries={MEAN_ADJUST_MAX_RETRIES}, '
+                 f'{source.name}: raw_turns={len(raw_turns)}, initial_max_gap={initial_gap_s:.2f}s, '\
+                 f'max_duration={max_duration_detail}, target_mean={MEAN_DURATION_MIN_S:.2f}-{MEAN_DURATION_MAX_S:.2f}s, '\
+                 f'adjust_mean={adjust_mean}, step={MEAN_ADJUST_STEP_S:.2f}s, '\
+                 f'max_retries={MEAN_ADJUST_MAX_RETRIES}, '\
                  f'max_evaluations={MEAN_ADJUST_MAX_RETRIES + 1}')
 
         def run_merge(gap_s: float) -> tuple[list[dict], list[dict]]:
@@ -335,8 +335,8 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
         attempt_records = [{'attempt': 0, 'retry': 0, 'evaluation': 1,
                             'max_gap_s': initial_gap_s, **metrics,
                             'mean_duration_s': mean_duration_s}]
-        progress('MERGE_MEAN', f'{source.name}: retry=0/{MEAN_ADJUST_MAX_RETRIES}, '
-                 f'evaluation=1/{MEAN_ADJUST_MAX_RETRIES + 1}, max_gap={initial_gap_s:.2f}s, '
+        progress('MERGE_MEAN', f'{source.name}: retry=0/{MEAN_ADJUST_MAX_RETRIES}, '\
+                 f'evaluation=1/{MEAN_ADJUST_MAX_RETRIES + 1}, max_gap={initial_gap_s:.2f}s, '\
                  f'{_merge_detail(mean_duration_s, metrics)}')
 
         current_gap_s = initial_gap_s
@@ -373,9 +373,9 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
                     break
                 seen_gaps.add(next_gap_s)
                 progress('MERGE_RETRY',
-                         f'{source.name}: retry={attempt}/{MEAN_ADJUST_MAX_RETRIES}, '
-                         f'evaluation={attempt + 1}/{MEAN_ADJUST_MAX_RETRIES + 1}, '
-                         f'mean={mean_duration_s:.2f}s outside target, {direction} max_gap '
+                         f'{source.name}: retry={attempt}/{MEAN_ADJUST_MAX_RETRIES}, '\
+                         f'evaluation={attempt + 1}/{MEAN_ADJUST_MAX_RETRIES + 1}, '\
+                         f'mean={mean_duration_s:.2f}s outside target, {direction} max_gap '\
                          f'{current_gap_s:.2f}s -> {next_gap_s:.2f}s')
                 merge_turns_result, audit = run_merge(next_gap_s)
                 turns = merge_turns_result
@@ -389,9 +389,9 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
                                         'evaluation': attempt + 1,
                                         'max_gap_s': current_gap_s, **metrics,
                                         'mean_duration_s': mean_duration_s})
-                progress('MERGE_MEAN', f'{source.name}: retry={attempt}/{MEAN_ADJUST_MAX_RETRIES}, '
-                         f'evaluation={attempt + 1}/{MEAN_ADJUST_MAX_RETRIES + 1}, '
-                         f'max_gap={current_gap_s:.2f}s, '
+                progress('MERGE_MEAN', f'{source.name}: retry={attempt}/{MEAN_ADJUST_MAX_RETRIES}, '\
+                         f'evaluation={attempt + 1}/{MEAN_ADJUST_MAX_RETRIES + 1}, '\
+                         f'max_gap={current_gap_s:.2f}s, '\
                          f'{_merge_detail(mean_duration_s, metrics)}')
                 distance_s = _mean_distance_s(mean_duration_s)
                 if distance_s < best_distance_s:
@@ -422,6 +422,7 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
                             'duration_filter_rejections': metrics['duration_filtered_out']}
         merge_mean_adjustment = {
             'enabled': adjust_mean,
+            'dynamic_merge': adjust_mean,
             'target_min_duration_s': MEAN_DURATION_MIN_S,
             'target_max_duration_s': MEAN_DURATION_MAX_S,
             'gap_step_s': MEAN_ADJUST_STEP_S,
@@ -437,10 +438,10 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
             'attempts': attempt_records,
         }
         progress('MERGE_DONE',
-                 f'{source.name}: final_max_gap={current_gap_s:.2f}s, '
-                 f'retries={len(attempt_records) - 1}/{MEAN_ADJUST_MAX_RETRIES}, '
-                 f'evaluations={len(attempt_records)}/{MEAN_ADJUST_MAX_RETRIES + 1}, '
-                 f'{_merge_detail(mean_duration_s, metrics)}, '
+                 f'{source.name}: final_max_gap={current_gap_s:.2f}s, '\
+                 f'retries={len(attempt_records) - 1}/{MEAN_ADJUST_MAX_RETRIES}, '\
+                 f'evaluations={len(attempt_records)}/{MEAN_ADJUST_MAX_RETRIES + 1}, '\
+                 f'{_merge_detail(mean_duration_s, metrics)}, '\
                  f'stop_reason={stop_reason}')
         merged_turns = turns
         turns = filtered_turns
@@ -461,8 +462,8 @@ def export(manifest: dict, source: Path, destination: Path, work_dir: Path, samp
               'sample_rate': sample_rate or info['sample_rate'], 'channels': channels, 'turns': turns,
               'speaker_ids': sorted({t['speaker_id'] for t in turns}), 'complete': False}
     for i, turn in enumerate(turns, 1):
-        turn['clip'] = (f"{safe_name(source.stem)}_{safe_name(str(manifest.get('model') or 'segments'))}_"
-                        f"{safe_name(turn['speaker_id'])}_{round(turn['start_s'] * 1000):09d}-"
+        turn['clip'] = (f"{safe_name(source.stem)}_{safe_name(str(manifest.get('model') or 'segments'))}_"\
+                        f"{safe_name(turn['speaker_id'])}_{round(turn['start_s'] * 1000):09d}-"\
                         f"{round(turn['end_s'] * 1000):09d}_{i:04d}.wav")
         if (destination.parent / turn['clip']).resolve() == source.resolve():
             raise FileContractError('Clip would overwrite source')
