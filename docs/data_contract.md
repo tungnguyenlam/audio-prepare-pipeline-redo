@@ -410,24 +410,25 @@ Validation profile is selected by the prompt text (`scripts/s4-agent/verifier/_v
 
 ## 7. Verifier analysis (`plot_verifier_analysis.sh --input-dir DIR` → `DIR/plot/`)
 
+All verifiers run post-verification analysis and plotting automatically upon completion by default (populating `<verdict-dir>/plot/`), unless `--skip-analysis` / `--no-analyze` is passed. Analysis can also be run or refreshed standalone at any time.
+
 ```text
 plot/
-  analysis.json           schema_version 2; coverage, decisions, transcripts, emotions, durations, model/prompt groups, failure codes, model_stats, error_stats, CSV digests, plot list
-  all_samples.csv         every expected turn (from manifests) + every artifact, even unmatched/invalid
+  analysis.json           schema_version 2; coverage, decisions, transcripts, emotions, costs, durations, model/prompt groups, failure codes, model_stats, error_stats, CSV digests, plot list
+  all_samples.csv         every expected turn (from manifests) + every artifact, even unmatched/invalid; includes cost_usd, token counts
   successful_samples.csv  subset with a schema-valid pass/reject
-  report.md               model configuration, statistics, linked error cases
+  report.md               model configuration, statistics, cost analysis, linked error cases
   error_cases.csv         model_id, model, kind, category, family, audio_path, verdict_file, decision, reason, emotion, transcript, failure_stage, assistant_raw_response
   error_stats.csv         model_id, model, kind, category, count, denominator, rate
-  coverage.png decisions.png defects.png transcripts.png emotions.png
+  coverage.png decisions.png defects.png transcripts.png emotions.png costs.png
   dimensions.png measurements.png processing_errors.png by_model.png by_speaker.png emotions_by_speaker.png timeline*.png   (when applicable)
 ```
 
 Both CSVs share a column order beginning `audio_path, final_verdict,
-assistant_raw_response, transcript, transcript_chars, transcript_words, emotion`; nested
-values remain in `*_json` columns. Invalid or
+assistant_raw_response, transcript, transcript_chars, transcript_words, emotion`, followed
+by operational flags, diarization metadata, prompt/schema details, defect codes, and cost metrics (`usage_json, cost_json, cost_usd, input_cost_usd, output_cost_usd, tokens_prompt, tokens_output, tokens_thinking, tokens_total`). Invalid or
 missing results have a blank `final_verdict` and are never counted as rejects.
-`kind` separates `acoustic`, `eligibility`, and `processing` failures; label rates
-use valid artifacts, while processing rates use all artifacts of that model group. Rerunning
+`costs.png` visualizes cost distribution histogram (with mean and median markers), cumulative expenditure progression curve, input vs. output token cost breakdown, and cost vs. audio duration scatter with summary statistics inset. Rerunning
 refreshes `plot/` and deletes PNGs it previously recorded.
 
 ## 8. Verifier comparison (`compare.sh` → `.data/s4-agent/verifier/comparisons/<utc>-<hash>/`)

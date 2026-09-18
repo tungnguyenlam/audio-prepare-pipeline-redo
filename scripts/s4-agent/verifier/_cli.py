@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
@@ -99,24 +101,61 @@ def load_prompt(prompt_file: Path | None) -> str:
     return default_file.read_text(encoding="utf-8").strip()
 
 
-def resolved_parameters(parameters: dict[str, Any], verifier: Any) -> dict[str, Any]:
-    """Record stable runtime-resolved settings without inspecting credentials."""
-    result = dict(parameters)
-    missing = object()
-    for key in (
-        "model",
-        "model_id",
-        "endpoint",
-        "gguf_variant",
-        "quantization",
-        "device",
-        "model_class",
-        "processor_class",
-    ):
-        value = getattr(verifier, key, missing)
-        if value is not missing and isinstance(value, (str, int, float, bool, type(None))):
-            result[key] = value
-    return result
+def resolved_parameters(parameters: dict[str, Any], verifier: Any | None = None) -> dict[str, Any]:
+    resolved = {key: value for key, value in parameters.items() if value is not None}
+    if verifier is not None:
+        model = getattr(verifier, "model", None)
+        if model:
+            resolved.setdefault("model", model)
+        effort = getattr(verifier, "reasoning_effort", None)
+        if effort:
+            resolved.setdefault("reasoning_effort", effort)
+        tokens = getattr(verifier, "max_tokens", None)
+        if tokens:
+            resolved.setdefault("max_tokens", tokens)
+    return resolved
+
+
+def _write_verdict_artifacts(
+    *,
+    source: Path,
+    destination: Path,
+    backend: str,
+    parameters: dict[str, Any],
+    verdict: dict[str, Any] | None,
+    raw_response: str | None,
+    error: tuple[str, str, str] | None = None,
+    invalid_verdict: dict[str, Any] | None = None,
+) -> None:
+    text_path = destination.with_suffix(".txt")
+    if raw_response is not None:
+        write_text(text_path, raw_response)
+        response_meta = {
+            "path": persist_path(text_path),
+            "format": "utf-8 text",
+            "kind": "text",
+            "bytes": len(raw_response.encode("utf-8")),
+            "sha256": digest(text_path),
+        }
+    else:
+        response_meta = {"available": False}
+
+    artifact: dict[str, Any] = request(identity(source), "verify", parameters, backend)
+    artifact["status"] = "fail" if error is not None else "success"
+    artifact["response"] = response_meta
+    if error is not None:
+        code, message, exception_type = error
+        artifact["error"] = {
+            "stage": "verifier",
+            "code": code,
+            "message": message,
+            "exception": exception_type,
+        }
+        if invalid_verdict is not None:
+            artifact["invalid_verdict"] = invalid_verdict
+    else:
+        artifact["verdict"] = verdict
+    write_json(destination, artifact)
 
 
 def verdict_processor(
@@ -127,120 +166,103 @@ def verdict_processor(
     verify: Callable[[Path], dict[str, Any]],
     stats: dict[str, Any],
 ) -> Callable[[Path, Path], None]:
-    """Build the common resumable verifier artifact writer."""
     known_prompts = _known_prompts()
     prompt = parameters.get("prompt")
 
-    def publish_response(destination: Path, raw_response: str, kind: str) -> dict[str, Any]:
-        response_path = destination.with_suffix(".txt")
-        write_text(response_path, raw_response)
-        return {
-            "path": persist_path(response_path),
-            "format": "utf-8 text",
-            "kind": kind,
-            "bytes": response_path.stat().st_size,
-            "sha256": digest(response_path),
-        }
-
-    def publish_failure(
-        destination: Path,
-        wanted: dict[str, Any],
-        *,
-        stage: str,
-        code: str,
-        raw_response: str | None = None,
-        response_kind: str = "text",
-        exception_type: str | None = None,
-        invalid_verdict: dict[str, Any] | None = None,
-    ) -> None:
-        error = {
-            "stage": stage,
-            "code": code,
-            "message": _error_message(code),
-        }
-        if exception_type is not None:
-            error["exception_type"] = exception_type
-        artifact: dict[str, Any] = {
-            **wanted,
-            "status": "fail",
-            "error": error,
-        }
-        if invalid_verdict is not None:
-            artifact["invalid_verdict"] = invalid_verdict
-        if raw_response is not None:
-            artifact["response"] = publish_response(
-                destination, raw_response, response_kind
-            )
-        else:
-            destination.with_suffix(".txt").unlink(missing_ok=True)
-        write_json(destination, artifact)
-
     def process(source: Path, destination: Path) -> None:
-        wanted = request(identity(source), "verify", parameters, backend)
+        verdict: dict[str, Any] | None = None
+        raw_response: str | None = None
+        error: tuple[str, str, str] | None = None
+        invalid_verdict: dict[str, Any] | None = None
+
         try:
             verdict = verify(source)
+            raw_response = (
+                str(verdict.pop("_raw_response"))
+                if isinstance(verdict, dict) and "_raw_response" in verdict
+                else None
+            )
+            profile, schema_error = _validate_verdict(verdict, prompt, backend, known_prompts)
+            del profile
+            if schema_error is not None:
+                error = (schema_error, _error_message(schema_error), "VerifierResponseError")
+                invalid_verdict = verdict
+                verdict = None
         except VerifierResponseError as exc:
-            publish_failure(
-                destination,
-                wanted,
-                stage="parse",
-                code=exc.code,
-                raw_response=exc.raw_response,
-            )
-            record_result(stats, None, success=False)
-            progress('VERIFIER_FAIL', f'{source.name}: stage=parse; code={exc.code}')
-            raise ValueError(f"{exc.code}: {_error_message(exc.code)}") from exc
+            raw_response = exc.raw_response
+            error = (exc.code, _error_message(exc.code), type(exc).__name__)
         except Exception as exc:
-            code, message, exception_type = _generation_failure(exc)
-            publish_failure(
-                destination,
-                wanted,
-                stage="generation",
-                code=code,
-                exception_type=exception_type,
-            )
-            record_result(stats, None, success=False)
-            progress('VERIFIER_FAIL', f'{source.name}: stage=generation; code={code}')
-            raise ValueError(f"{code}: {message}") from exc
+            raw_error = getattr(exc, "raw_response", None)
+            if isinstance(raw_error, str):
+                raw_response = raw_error
+            error = _generation_failure(exc)
 
-        raw_response = verdict.pop("_raw_response", None) if isinstance(verdict, dict) else None
-        response_kind = verdict.pop("_response_kind", "text") if isinstance(verdict, dict) else "text"
-        _, schema_error = _validate_verdict(verdict, prompt, backend, known_prompts)
-        if schema_error is not None:
-            publish_failure(
-                destination,
-                wanted,
-                stage="schema",
-                code=schema_error,
-                raw_response=raw_response if isinstance(raw_response, str) else None,
-                response_kind=str(response_kind),
-                invalid_verdict=verdict if isinstance(verdict, dict) else None,
-            )
-            record_result(stats, verdict if isinstance(verdict, dict) else None, success=False)
-            progress('VERIFIER_FAIL', f'{source.name}: stage=schema; code={schema_error}')
-            raise ValueError(f"{schema_error}: {_error_message(schema_error)}")
-        response = (
-            publish_response(destination, raw_response, str(response_kind))
-            if isinstance(raw_response, str)
-            else {"available": False}
+        _write_verdict_artifacts(
+            source=source,
+            destination=destination,
+            backend=backend,
+            parameters=parameters,
+            verdict=verdict,
+            raw_response=raw_response,
+            error=error,
+            invalid_verdict=invalid_verdict,
         )
-        write_json(
-            destination,
-            {**wanted, "status": "success", "response": response, "verdict": verdict},
-        )
+
+        record_result(stats, verdict, error=error)
+        running_total = stats.get('total_cost_usd', 0.0)
         decision = verdict.get('decision') if isinstance(verdict, dict) else None
-        running_total = record_result(
-            stats,
-            verdict if isinstance(verdict, dict) else None,
-            success=True,
-            decision=str(decision) if decision is not None else None,
-        )
         progress(
-            'VERIFIER_RESULT',
+            'VERIFIER_ITEM',
             f'{source.name}: decision={decision or "unknown"}; {item_detail(verdict, running_total_usd=running_total)}',
         )
 
     return process
+
+
+def _resolve_verdict_dir(args: Any, pairs: list[tuple[Path, Path]]) -> Path | None:
+    if getattr(args, "output_dir", None) is not None:
+        return args.output_dir.resolve()
+    if getattr(args, "_default_base", None) is not None:
+        return args._default_base.resolve()
+    if pairs:
+        parents = [dest.resolve().parent for _, dest in pairs]
+        try:
+            return Path(os.path.commonpath([str(p) for p in parents]))
+        except ValueError:
+            return parents[0]
+    if getattr(args, "output_file", None) is not None:
+        return args.output_file.resolve().parent
+    return None
+
+
+def _run_post_verification_analysis(args: Any, verdict_dir: Path) -> None:
+    launcher = ROOT / "scripts" / "s4-agent" / "verifier" / "plot_verifier_analysis.sh"
+    if not launcher.is_file():
+        return
+    has_json = any(
+        p.is_file() and p.name not in ("report.json", "analysis.json")
+        for p in verdict_dir.rglob("*.json")
+        if not any(part in {"work", "plot", "plots", "comparisons", "experiments"} for part in p.parts)
+    )
+    if not has_json:
+        return
+    cmd = [
+        "bash",
+        str(launcher),
+        "--input-dir",
+        str(verdict_dir),
+        "--concurrency",
+        str(getattr(args, "concurrency", 1)),
+        "--batch-size",
+        str(getattr(args, "batch_size", 1)),
+    ]
+    if getattr(args, "overwrite", False):
+        cmd.append("--overwrite")
+    try:
+        progress("VERIFIER_ANALYZE", f"Running post-verification analysis on {verdict_dir}")
+        subprocess.run(cmd, check=True)
+    except Exception as exc:
+        progress("VERIFIER_ANALYZE_FAIL", f"Post-verification analysis failed: {exc}")
 
 
 def run_verifier(
@@ -254,6 +276,7 @@ def run_verifier(
 ) -> int:
     stats = new_run_stats()
     result = 1
+    initial_pairs = list(pairs)
     try:
         pairs = pending_verifier_pairs(
             args=args,
@@ -283,6 +306,10 @@ def run_verifier(
     finally:
         provider = cost_summary() if cost_summary is not None else None
         report_cost_summary(f'verifier/{backend}', stats, provider)
+        if not getattr(args, "skip_analysis", False):
+            verdict_dir = _resolve_verdict_dir(args, initial_pairs)
+            if verdict_dir is not None and verdict_dir.is_dir():
+                _run_post_verification_analysis(args, verdict_dir)
 
 
 def _response_complete(destination: Path, artifact: dict[str, Any]) -> bool:
@@ -326,7 +353,7 @@ def pending_verifier_pairs(
                 _, schema_error = _validate_verdict(
                     old.get("verdict"), prompt, backend, known_prompts
                 )
-                response_complete = old.get("status") is None or (
+                response_complete = old.get("status") is None or (\
                     old.get("status") == "success" and _response_complete(destination, old)
                 )
                 if schema_error is None and response_complete:

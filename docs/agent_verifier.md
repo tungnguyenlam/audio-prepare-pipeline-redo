@@ -91,6 +91,8 @@ schema failures remain failures and retain their raw response for diagnosis.
 
 ### `plot_verifier_analysis.sh --input-dir DIR` (aliases: `analysis.sh`, `analyze.sh`)
 
+All verifiers invoke this script automatically upon completing a run unless `--skip-analysis` / `--no-analyze` is passed. It can also be run or re-run standalone at any time.
+
 Reads every verifier JSON under `DIR` recursively (skipping `work/`, `plot*/`,
 `comparisons/`, `experiments/`, hidden dirs), joins diarization manifests found
 beside the recorded source audio (or given via `--input-manifest` /
@@ -102,7 +104,9 @@ per-model statistics and `by_model.png`. Acoustic v3 transcript text, character 
 word counts plus emotion labels are exported to both sample CSVs and summarized in
 `analysis.json`; `transcripts.png` shows contract outcomes and pass transcript
 lengths, while `emotions.png` and `emotions_by_speaker.png` show emotion counts and
-durations when available. Rerunning refreshes `plot/`; a nonempty
+durations when available. When cost metadata is available, `costs.png` visualizes
+the per-sample cost distribution (with mean and median markers), cumulative cost progression,
+input vs. output breakdown donut chart, and cost vs. duration scatter with summary statistics inset. Rerunning refreshes `plot/`; a nonempty
 custom `--output-dir` needs `--overwrite`. Detected defects are model labels, not
 errors against a reference.
 

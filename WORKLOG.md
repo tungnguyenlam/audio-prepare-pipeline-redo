@@ -176,3 +176,23 @@
 - Preserved file history via `git mv scripts/s4-agent/verifier/analyze.py scripts/s4-agent/verifier/plot_verifier_analysis.py`.
 - Verified `--help` execution for `plot_verifier_analysis.sh`, `analysis.sh`, and `analyze.sh`.
 - No tests were run in accordance with non-negotiable rules.
+
+## 2026-09-18 - Automatic post-verification analysis and cost visualization
+
+### Decisions
+- Trigger `plot_verifier_analysis.sh` automatically at the end of any verifier run by default, resolving the output directory from the destination arguments or generated verdict pairs.
+- Provide a `--skip-analysis` (alias `--no-analyze`) flag across all verifier CLIs via `scripts/_common/files.py` so post-verification analysis and plotting can be bypassed when desired.
+- Verifiers run under `.venvs/verify` (which does not contain matplotlib), so the post-verification analysis is launched via subprocess using `scripts/s4-agent/verifier/plot_verifier_analysis.sh`, which activates `.venvs/audio` (which contains matplotlib).
+- Extend `plot_verifier_analysis.py` to parse `_cost` and `_usage` from verdict artifacts and include individual sample costs (`cost_usd`, `input_cost_usd`, `output_cost_usd`) and token counts (`tokens_prompt`, `tokens_output`, `tokens_thinking`, `tokens_total`) in `all_samples.csv` and `successful_samples.csv`.
+- Add `costs.png` visualization (4-panel figure) whenever cost information is present:
+  1. Cost distribution histogram per sample with highlighted mean and median dashed lines.
+  2. Cumulative cost progression curve across processed samples.
+  3. Cost breakdown donut chart separating input vs. output token expenditure.
+  4. Cost vs. audio duration scatter plot with an inset summary statistics card (total cost, mean/median, token counts, cost per audio minute).
+- Add `costs` summary dictionary to `analysis.json` (totals, percentiles p25/p75/p95, mean, median, min, max, cost per audio minute, token counts) and append a formatted `## Cost analysis` section to `report.md`.
+- Document the new behavior, flags, CSV fields, and plot artifacts in `docs/data_contract.md` (§7) and `docs/agent_verifier.md`.
+
+### Results
+- Validated standalone execution of `plot_verifier_analysis.sh` on `.data/evaluate/hana_tts/gemini_baseline`, confirming proper generation of `costs.png`, updated `analysis.json` (showing $0.5007 total USD, 285,916 total tokens across 55 samples), and `report.md`.
+- Verified CLI `--help` flags for verifiers (`--skip-analysis`, `--no-analyze`).
+- In accordance with non-negotiable rules, no tests were written or run.

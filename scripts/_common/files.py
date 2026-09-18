@@ -313,6 +313,9 @@ def parser(description: str, operation: str, model: str | None = None, *, segmen
                    help='Number of concurrent workers for parallel item processing. Set > 1 to enable concurrent execution (default: 1)')
     p.add_argument('-b', '-bs', '--batch-size', type=positive_int, default=1,
                    help='Number of items grouped and processed per batch chunk. Controls batch submission granularity (default: 1)')
+    if operation.startswith('s4-agent/verifier') or operation == 'verify':
+        p.add_argument('--skip-analysis', '--no-analyze', dest='skip_analysis', action='store_true', default=False,
+                       help='Skip automatic post-verification analysis and plotting (default: False)')
     p.set_defaults(_operation=operation, _model=model, _default_base=base)
     return p
 

@@ -101,6 +101,13 @@ CSV_FIELDS = (
     "confidence",
     "usage_json",
     "cost_json",
+    "cost_usd",
+    "input_cost_usd",
+    "output_cost_usd",
+    "tokens_prompt",
+    "tokens_output",
+    "tokens_thinking",
+    "tokens_total",
     *(f"failure_{code}" for code in FAILURE_CODES),
 )
 
@@ -118,18 +125,21 @@ def _prompt_hash(prompt: Any) -> str:
 
 
 def _parallel_load(
-    paths: list[Path], concurrency: int, batch_size: int
+    paths: list[Path], concurrency: int = 1, batch_size: int = 1
 ) -> list[tuple[Path, dict[str, Any] | None, str | None]]:
-    def load_one(path: Path) -> tuple[Path, dict[str, Any] | None, str | None]:
-        try:
-            return path, read_json(path), None
-        except (OSError, ValueError, json.JSONDecodeError):
-            return path, None, "invalid_json"
-
-    def load_batch(batch: list[Path]) -> list[tuple[Path, dict[str, Any] | None, str | None]]:
-        return [load_one(path) for path in batch]
-
+    if not paths:
+        return []
     batches = [paths[i : i + batch_size] for i in range(0, len(paths), batch_size)]
+
+    def load_batch(chunk: list[Path]) -> list[tuple[Path, dict[str, Any] | None, str | None]]:
+        results = []
+        for path in chunk:
+            try:
+                results.append((path, read_json(path), None))
+            except Exception as exc:
+                results.append((path, None, type(exc).__name__))
+        return results
+
     if concurrency > 1 and len(batches) > 1:
         with ThreadPoolExecutor(max_workers=min(concurrency, len(batches))) as pool:
             return [item for group in pool.map(load_batch, batches) for item in group]
@@ -171,10 +181,9 @@ def _manifest_rows(manifest_path: Path) -> list[dict[str, Any]]:
                 "is_pass": False,
                 "is_reject": False,
                 "is_missing": True,
-                "raw_response_available": False,
                 "sample_scope": "expected",
                 "family": family,
-                "sample_id": f"{manifest_sha[:12]}:{index:06d}",
+                "sample_id": turn.get("id", ""),
                 "turn_index": index,
                 "speaker_id": turn.get("speaker_id", ""),
                 "start_s": start if start is not None else "",
@@ -182,10 +191,10 @@ def _manifest_rows(manifest_path: Path) -> list[dict[str, Any]]:
                 "duration_s": duration,
                 "start_sample": turn.get("start_sample", ""),
                 "end_sample": turn.get("end_sample", ""),
-                "overlap": turn.get("overlap", ""),
+                "overlap": bool(turn.get("overlap")),
                 "overlap_with_json": _json_cell(turn.get("overlap_with")),
                 "diarization_confidence": turn.get("confidence", ""),
-                "clip_sha256": turn.get("clip_sha256", ""),
+                "clip_sha256": turn.get("sha256", ""),
                 "source_recording_path": persist_path(source["path"]) if source.get("path") else "",
                 "source_recording_sha256": source.get("sha256", ""),
                 "manifest_path": persist_path(manifest_path),
@@ -194,8 +203,6 @@ def _manifest_rows(manifest_path: Path) -> list[dict[str, Any]]:
                 "diarizer_parameters_json": _json_cell(manifest.get("parameters")),
             }
         )
-        for code in FAILURE_CODES:
-            row[f"failure_{code}"] = ""
         result.append(row)
     return result
 
@@ -241,6 +248,44 @@ def _artifact_values(
         else "custom"
     )
 
+    cost_info = verdict.get("_cost") if isinstance(verdict, dict) else None
+    usage_info = verdict.get("_usage") if isinstance(verdict, dict) else None
+    if not cost_info and isinstance(data, dict):
+        cost_info = data.get("_cost") or data.get("cost")
+    if not usage_info and isinstance(data, dict):
+        usage_info = data.get("_usage") or data.get("usage")
+
+    cost_usd = ""
+    input_cost_usd = ""
+    output_cost_usd = ""
+    if isinstance(cost_info, dict) and "total_usd" in cost_info:
+        try:
+            cost_usd = f"{float(cost_info.get('total_usd') or 0.0):.6f}"
+            input_cost_usd = f"{float(cost_info.get('input_usd') or 0.0):.6f}"
+            output_cost_usd = f"{float(cost_info.get('output_usd') or 0.0):.6f}"
+        except (ValueError, TypeError):
+            pass
+
+    tokens_prompt = ""
+    tokens_output = ""
+    tokens_thinking = ""
+    tokens_total = ""
+    if isinstance(usage_info, dict):
+        try:
+            tokens_prompt = str(usage_info.get("prompt_tokens") or "")
+            tokens_output = str(usage_info.get("output_tokens") or "")
+            tokens_thinking = str(usage_info.get("thinking_tokens") or "")
+            tot = usage_info.get("total_tokens")
+            if tot is None:
+                p_int = int(tokens_prompt) if tokens_prompt else 0
+                o_int = int(tokens_output) if tokens_output else 0
+                t_int = int(tokens_thinking) if tokens_thinking else 0
+                if p_int or o_int or t_int:
+                    tot = p_int + o_int + t_int
+            tokens_total = str(tot or "")
+        except (ValueError, TypeError):
+            pass
+
     values.update(
         {
             "audio_path": persist_path(source["path"]) if source.get("path") else "",
@@ -263,6 +308,15 @@ def _artifact_values(
             "prompt": prompt if isinstance(prompt, str) else "",
             "prompt_sha256": _prompt_hash(prompt),
             "schema_profile": schema_profile,
+            "usage_json": _json_cell(usage_info),
+            "cost_json": _json_cell(cost_info),
+            "cost_usd": cost_usd,
+            "input_cost_usd": input_cost_usd,
+            "output_cost_usd": output_cost_usd,
+            "tokens_prompt": tokens_prompt,
+            "tokens_output": tokens_output,
+            "tokens_thinking": tokens_thinking,
+            "tokens_total": tokens_total,
         }
     )
 
@@ -313,8 +367,6 @@ def _artifact_values(
                 "parsed_response_json": _json_cell(verdict),
                 "latency_s": verdict.get("_latency_s", ""),
                 "confidence": verdict.get("confidence", ""),
-                "usage_json": _json_cell(verdict.get("_usage")),
-                "cost_json": _json_cell(verdict.get("_cost")),
             }
         )
         for field in ("speaker_purity", "word_completeness", "audio_quality"):
@@ -555,6 +607,34 @@ def _write_error_reports(all_csv: Path, output_dir: Path, verdict_dir: Path) -> 
             tot_dur = sum(_number(row["duration_s"]) for row in emotion_rows if row["emotion"].strip().lower() == e)
             report.append(f"| {cell(e)} | {p_cnt} | {r_cnt} | {total_count} | {p_dur:.1f} | {tot_dur:.1f} |")
 
+    cost_rows = [row for row in rows if _number(row.get("cost_usd", 0.0)) > 0]
+    if cost_rows:
+        costs = [_number(r["cost_usd"]) for r in cost_rows]
+        total_usd = sum(costs)
+        in_usd = sum(_number(r.get("input_cost_usd", 0.0)) for r in cost_rows)
+        out_usd = sum(_number(r.get("output_cost_usd", 0.0)) for r in cost_rows)
+        mean_usd = total_usd / len(cost_rows)
+        sorted_costs = sorted(costs)
+        median_usd = sorted_costs[len(sorted_costs) // 2]
+        tot_dur = sum(_number(r.get("duration_s", 0.0)) for r in cost_rows)
+        rate_min = f"${(total_usd / tot_dur * 60.0):.4f} USD" if tot_dur > 0 else "N/A"
+        tot_tokens = sum(int(r.get("tokens_total") or 0) for r in cost_rows)
+        tot_prompt = sum(int(r.get("tokens_prompt") or 0) for r in cost_rows)
+        tot_output = sum(int(r.get("tokens_output") or 0) for r in cost_rows)
+        tot_thinking = sum(int(r.get("tokens_thinking") or 0) for r in cost_rows)
+
+        report.extend([
+            "",
+            "## Cost analysis",
+            "",
+            f"- **Total cost:** ${total_usd:.4f} USD across {len(cost_rows)} priced sample(s)",
+            f"- **Cost per sample:** mean ${mean_usd:.4f} | median ${median_usd:.4f} | min ${sorted_costs[0]:.4f} | max ${sorted_costs[-1]:.4f}",
+            f"- **Cost breakdown:** input ${in_usd:.4f} ({in_usd / total_usd * 100:.1f}%) | output ${out_usd:.4f} ({out_usd / total_usd * 100:.1f}%)" if total_usd > 0 else "",
+            f"- **Rate per audio minute:** {rate_min}",
+        ])
+        if tot_tokens > 0:
+            report.append(f"- **Token usage:** {tot_tokens:,} total ({tot_prompt:,} prompt, {tot_output:,} output, {tot_thinking:,} thinking)")
+
     report.extend(["", "## Error cases", ""])
     for kind, category in sorted({(row["kind"], row["category"]) for row in cases}):
         selected = [row for row in cases if row["kind"] == kind and row["category"] == category]
@@ -645,227 +725,131 @@ def _make_plots(
             "transcript_schema_failure",
             "other_failure",
         )
-        lengths = [
-            int(row["transcript_chars"])
-            for row in transcript_rows
-            if row["verifier_status"] == "success"
-            and row["final_verdict"] == "pass"
-            and row["transcript_chars"]
-        ]
-        fig, axes = plt.subplots(1, 2 if lengths else 1, figsize=(12 if lengths else 8, 5))
-        if not lengths:
-            axes = [axes]
+        transcript_colors = {
+            "pass_with_transcript": "#22c55e",
+            "reject_without_transcript": "#ef4444",
+            "transcript_schema_failure": "#a855f7",
+            "other_failure": "#9ca3af",
+        }
+        fig, axes = plt.subplots(1, 2, figsize=(13, 5))
         bars = axes[0].bar(
             transcript_order,
-            [transcript_counts[label] for label in transcript_order],
-            color=("#22c55e", "#64748b", "#ef4444", "#f97316"),
+            [transcript_counts[k] for k in transcript_order],
+            color=[transcript_colors[k] for k in transcript_order],
         )
         axes[0].bar_label(bars)
-        axes[0].set_title("Acoustic v3 transcript contract")
+        axes[0].set_title("Transcript compliance by sample")
         axes[0].set_ylabel("Samples")
-        axes[0].tick_params(axis="x", rotation=15)
+        axes[0].tick_params(axis="x", rotation=18)
         axes[0].grid(True, axis="y", linestyle="--", alpha=0.4)
-        if lengths:
-            axes[1].hist(
-                lengths,
-                bins=min(30, max(1, len(set(lengths)))),
-                color="#3b82f6",
-                edgecolor="white",
-            )
-            axes[1].set_title("Pass transcript lengths")
+
+        char_counts = [_number(row["transcript_chars"]) for row in successful_rows if row["final_verdict"] == "pass" and row["schema_profile"] == "acoustic_defect_v3"]
+        if char_counts:
+            axes[1].hist(char_counts, bins=min(20, max(5, len(char_counts) // 2)), color="#3b82f6", edgecolor="black")
+            axes[1].set_title("Transcript length distribution (pass samples)")
             axes[1].set_xlabel("Characters")
-            axes[1].set_ylabel("Transcripts")
+            axes[1].set_ylabel("Samples")
+            axes[1].grid(True, axis="y", linestyle="--", alpha=0.4)
+        else:
+            axes[1].axis("off")
         plots.append(_save_figure(plt, fig, output_dir / "transcripts.png"))
-
-    defect_counts = {
-        code: sum(row[f"failure_{code}"].lower() == "true" for row in successful_rows)
-        for code in FAILURE_CODES
-    }
-    fig, ax = plt.subplots(figsize=(11, 5))
-    bars = ax.barh(list(reversed(FAILURE_CODES)), [defect_counts[c] for c in reversed(FAILURE_CODES)], color="#ef4444")
-    ax.bar_label(bars)
-    ax.set_xlabel("Valid samples")
-    ax.set_title("Detected failure codes")
-    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-    ax.grid(True, axis="x", linestyle="--", alpha=0.4)
-    plots.append(_save_figure(plt, fig, output_dir / "defects.png"))
-
-    dimension_columns = [
-        ("speaker_purity", "Speaker purity"),
-        ("word_completeness", "Word completeness"),
-        ("audio_quality", "Audio quality"),
-        ("boundary_start", "Start boundary"),
-        ("boundary_end", "End boundary"),
-    ]
-    available = [(column, title) for column, title in dimension_columns if any(row[column] for row in successful_rows)]
-    if available:
-        fig, axes = plt.subplots(len(available), 1, figsize=(11, max(4, 3.2 * len(available))))
-        if len(available) == 1:
-            axes = [axes]
-        non_defect_tags = {"pure", "complete", "studio_clean", "clean", "none"}
-        dim_canonical_order = {
-            "speaker_purity": ["pure", "secondary_speaker", "overlapping_speech", "tail_speaker_intrusion"],
-            "word_completeness": ["complete", "clipped_word_start", "clipped_word_end"],
-            "audio_quality": ["studio_clean", "music_bleed", "noisy_reverberant", "distorted"],
-            "boundary_start": ["clean", "clipped"],
-            "boundary_end": ["clean", "clipped"],
-        }
-        for i, (ax, (column, title)) in enumerate(zip(axes, available)):
-            counts = Counter(row[column] for row in successful_rows if row[column])
-            canonical = dim_canonical_order.get(column, [])
-
-            def _sort_key(label: str) -> tuple[int, int, str]:
-                norm = label.lower().strip().replace(" ", "_")
-                is_non_defect = 0 if norm in non_defect_tags else 1
-                order_idx = canonical.index(norm) if norm in canonical else 999
-                return (is_non_defect, order_idx, label)
-
-            labels = sorted(counts, key=_sort_key)
-            colors = [
-                "#22c55e" if lbl.lower().strip().replace(" ", "_") in non_defect_tags else "#ef4444"
-                for lbl in labels
-            ]
-            vals = [counts[label] for label in labels]
-            total_dim = sum(vals)
-            bars = ax.bar(labels, vals, color=colors)
-            bar_labels = [
-                f"{v} ({v / total_dim * 100:.1f}%)" if total_dim > 0 else str(v)
-                for v in vals
-            ]
-            ax.bar_label(bars, labels=bar_labels, padding=3)
-            ax.set_title(title)
-            ax.set_ylabel("Samples")
-            ax.margins(y=0.22)
-            ax.tick_params(axis="x", rotation=15)
-            ax.grid(True, axis="y", linestyle="--", alpha=0.4)
-            if i == 0:
-                legend_elements = [
-                    Patch(facecolor="#22c55e", label="Pass / Quality target"),
-                    Patch(facecolor="#ef4444", label="Defect / Failure tag"),
-                ]
-                ax.legend(handles=legend_elements, loc="upper right", framealpha=0.9)
-        plots.append(_save_figure(plt, fig, output_dir / "dimensions.png"))
 
     emotion_rows = [row for row in successful_rows if row.get("emotion")]
     if emotion_rows:
-        all_emotions = Counter(row["emotion"].strip().lower() for row in emotion_rows if row["emotion"].strip())
-        top_emotions = [e for e, _ in all_emotions.most_common(12)]
-        has_other = len(all_emotions) > 12
-        display_emotions = [*top_emotions, "other"] if has_other else top_emotions
+        emotion_counts = Counter(row["emotion"].strip().lower() for row in emotion_rows if row["emotion"].strip())
+        top_emotions = [e for e, _ in emotion_counts.most_common(12)]
+        fig, axes = plt.subplots(1, 2, figsize=(14, max(5, len(top_emotions) * 0.45)))
+        p_counts = [sum(row["final_verdict"] == "pass" and row["emotion"].strip().lower() == e for row in emotion_rows) for e in top_emotions]
+        r_counts = [sum(row["final_verdict"] == "reject" and row["emotion"].strip().lower() == e for row in emotion_rows) for e in top_emotions]
+        axes[0].barh(top_emotions, p_counts, label="pass", color="#22c55e")
+        axes[0].barh(top_emotions, r_counts, left=p_counts, label="reject", color="#ef4444")
+        axes[0].set_title("Emotion counts by decision")
+        axes[0].set_xlabel("Samples")
+        axes[0].legend()
+        axes[0].grid(True, axis="x", linestyle="--", alpha=0.4)
 
-        def get_display_emotion(raw: str) -> str:
-            val = raw.strip().lower()
-            return val if val in top_emotions else ("other" if has_other else val)
-
-        pass_counts = Counter(get_display_emotion(row["emotion"]) for row in emotion_rows if row["final_verdict"] == "pass")
-        reject_counts = Counter(get_display_emotion(row["emotion"]) for row in emotion_rows if row["final_verdict"] == "reject")
-
-        pass_durations = {
-            e: sum(_number(row["duration_s"]) for row in emotion_rows if get_display_emotion(row["emotion"]) == e and row["final_verdict"] == "pass")
-            for e in display_emotions
-        }
-        reject_durations = {
-            e: sum(_number(row["duration_s"]) for row in emotion_rows if get_display_emotion(row["emotion"]) == e and row["final_verdict"] == "reject")
-            for e in display_emotions
-        }
-
-        fig, axes = plt.subplots(1, 2, figsize=(max(11, len(display_emotions) * 0.9), 5))
-        p_counts = [pass_counts[e] for e in display_emotions]
-        r_counts = [reject_counts[e] for e in display_emotions]
-        axes[0].bar(display_emotions, p_counts, label="pass", color="#22c55e")
-        axes[0].bar(display_emotions, r_counts, bottom=p_counts, label="reject", color="#ef4444")
-        total_counts = [p + r for p, r in zip(p_counts, r_counts)]
-        total_all = sum(total_counts)
-        for idx, tot in enumerate(total_counts):
-            if tot > 0:
-                pct = f"{tot / total_all * 100:.1f}%" if total_all > 0 else "0%"
-                axes[0].text(idx, tot, f"{tot}\n({pct})", ha="center", va="bottom", fontsize=8)
-        axes[0].set_title("Emotion distribution by sample count")
-        axes[0].set_ylabel("Samples")
-        axes[0].tick_params(axis="x", rotation=25)
-        axes[0].legend(loc="upper right")
-        axes[0].grid(True, axis="y", linestyle="--", alpha=0.4)
-        axes[0].margins(y=0.2)
-
-        p_durs = [pass_durations[e] for e in display_emotions]
-        r_durs = [reject_durations[e] for e in display_emotions]
-        axes[1].bar(display_emotions, p_durs, label="pass", color="#22c55e")
-        axes[1].bar(display_emotions, r_durs, bottom=p_durs, label="reject", color="#ef4444")
-        total_durs = [p + r for p, r in zip(p_durs, r_durs)]
-        for idx, tot in enumerate(total_durs):
-            if tot > 0:
-                axes[1].text(idx, tot, f"{tot:.1f}s", ha="center", va="bottom", fontsize=8)
-        axes[1].set_title("Emotion distribution by audio duration")
-        axes[1].set_ylabel("Duration (seconds)")
-        axes[1].tick_params(axis="x", rotation=25)
-        axes[1].legend(loc="upper right")
-        axes[1].grid(True, axis="y", linestyle="--", alpha=0.4)
-        axes[1].margins(y=0.2)
-
-        fig.tight_layout()
+        p_durs = [sum(_number(row["duration_s"]) for row in emotion_rows if row["final_verdict"] == "pass" and row["emotion"].strip().lower() == e) for e in top_emotions]
+        r_durs = [sum(_number(row["duration_s"]) for row in emotion_rows if row["final_verdict"] == "reject" and row["emotion"].strip().lower() == e) for e in top_emotions]
+        axes[1].barh(top_emotions, p_durs, label="pass", color="#22c55e")
+        axes[1].barh(top_emotions, r_durs, left=p_durs, label="reject", color="#ef4444")
+        axes[1].set_title("Emotion duration by decision")
+        axes[1].set_xlabel("Seconds")
+        axes[1].legend()
+        axes[1].grid(True, axis="x", linestyle="--", alpha=0.4)
         plots.append(_save_figure(plt, fig, output_dir / "emotions.png"))
 
-        speaker_emotion_rows = [row for row in emotion_rows if row.get("speaker_id")]
-        speakers = sorted({row["speaker_id"] for row in speaker_emotion_rows})
-        if len(speakers) > 1:
-            fig, ax = plt.subplots(figsize=(max(9, len(speakers) * 1.2), 5))
-            bottoms = [0.0] * len(speakers)
-            cmap = plt.get_cmap("tab10", max(1, len(display_emotions)))
-            for e_idx, e in enumerate(display_emotions):
-                values = [
-                    sum(_number(row["duration_s"]) for row in speaker_emotion_rows if row["speaker_id"] == spk and get_display_emotion(row["emotion"]) == e)
-                    for spk in speakers
-                ]
-                if any(v > 0 for v in values):
-                    ax.bar(speakers, values, bottom=bottoms, label=e, color=cmap(e_idx % 10))
-                    bottoms = [b + v for b, v in zip(bottoms, values)]
-            ax.set_ylabel("Duration (seconds)")
-            ax.set_title("Emotion duration by diarized speaker")
-            ax.tick_params(axis="x", rotation=30)
-            ax.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
-            ax.grid(True, axis="y", linestyle="--", alpha=0.4)
-            fig.tight_layout()
-            plots.append(_save_figure(plt, fig, output_dir / "emotions_by_speaker.png"))
+    speakers = sorted({row["speaker_id"] for row in successful_rows if row["speaker_id"]})
+    if len(speakers) > 1:
+        fig, axes = plt.subplots(1, 2, figsize=(14, max(5, len(speakers) * 0.4)))
+        p_spk = [sum(row["final_verdict"] == "pass" and row["speaker_id"] == s for row in successful_rows) for s in speakers]
+        r_spk = [sum(row["final_verdict"] == "reject" and row["speaker_id"] == s for row in successful_rows) for s in speakers]
+        axes[0].barh(speakers, p_spk, label="pass", color="#22c55e")
+        axes[0].barh(speakers, r_spk, left=p_spk, label="reject", color="#ef4444")
+        axes[0].set_title("Decisions by speaker")
+        axes[0].set_xlabel("Samples")
+        axes[0].legend()
+        axes[0].grid(True, axis="x", linestyle="--", alpha=0.4)
 
-    speaker_rows = [row for row in all_rows if row["speaker_id"]]
-    if speaker_rows:
-        speakers = sorted({row["speaker_id"] for row in speaker_rows})
-        fig, ax = plt.subplots(figsize=(max(9, len(speakers) * 1.1), 5))
-        bottoms = [0.0] * len(speakers)
-        for status in status_order:
-            values = [
-                sum(_number(row["duration_s"]) for row in speaker_rows if row["speaker_id"] == speaker and row["verifier_status"] == status)
-                for speaker in speakers
-            ]
-            ax.bar(speakers, values, bottom=bottoms, label=status, color=status_colors[status])
-            bottoms = [bottom + value for bottom, value in zip(bottoms, values)]
-        ax.set_ylabel("Duration (seconds)")
-        ax.set_title("Verifier coverage by diarized speaker")
-        ax.tick_params(axis="x", rotation=30)
-        ax.legend()
-        ax.grid(True, axis="y", linestyle="--", alpha=0.4)
+        pd_spk = [sum(_number(row["duration_s"]) for row in successful_rows if row["final_verdict"] == "pass" and row["speaker_id"] == s) for s in speakers]
+        rd_spk = [sum(_number(row["duration_s"]) for row in successful_rows if row["final_verdict"] == "reject" and row["speaker_id"] == s) for s in speakers]
+        axes[1].barh(speakers, pd_spk, label="pass", color="#22c55e")
+        axes[1].barh(speakers, rd_spk, left=pd_spk, label="reject", color="#ef4444")
+        axes[1].set_title("Duration by speaker")
+        axes[1].set_xlabel("Seconds")
+        axes[1].legend()
+        axes[1].grid(True, axis="x", linestyle="--", alpha=0.4)
         plots.append(_save_figure(plt, fig, output_dir / "by_speaker.png"))
 
-    # Measurement distributions reflect only fields actually present in valid verdicts.
-    measurements = []
-    for column, label in (("latency_s", "Latency (s)"), ("confidence", "Confidence"),
-                          ("num_speakers", "Speaker count"), ("secondary_speech_s", "Secondary speech (s)")):
-        values = []
-        for row in successful_rows:
-            try:
-                value = float(row[column])
-            except (TypeError, ValueError):
-                continue
-            if math.isfinite(value):
-                values.append(value)
-        if values:
-            measurements.append((label, values))
-    if measurements:
-        fig, axes = plt.subplots(len(measurements), 1, squeeze=False, figsize=(10, 3 * len(measurements)))
-        for ax, (label, values) in zip(axes[:, 0], measurements):
-            ax.hist(values, bins=min(30, max(1, len(set(values)))), color="#3b82f6", edgecolor="white")
-            ax.set_xlabel(label)
-            ax.set_ylabel("Valid samples")
+    defect_counts = {code: sum(row[f"failure_{code}"].lower() == "true" for row in successful_rows) for code in FAILURE_CODES}
+    observed_defects = {k: v for k, v in defect_counts.items() if v > 0}
+    if observed_defects:
+        fig, ax = plt.subplots(figsize=(10, max(4, len(observed_defects) * 0.4)))
+        sorted_defects = sorted(observed_defects.items(), key=lambda item: item[1])
+        bars = ax.barh([k for k, _ in sorted_defects], [v for _, v in sorted_defects], color="#ef4444")
+        ax.bar_label(bars)
+        ax.set_title("Reported acoustic and eligibility defect counts")
+        ax.set_xlabel("Samples")
+        ax.grid(True, axis="x", linestyle="--", alpha=0.4)
+        plots.append(_save_figure(plt, fig, output_dir / "defects.png"))
+
+    dimensions = [
+        ("speaker_purity", "speaker purity", ("pure", "overlap", "multi_speaker")),
+        ("word_completeness", "word completeness", ("complete", "clipped_start", "clipped_end", "clipped_both")),
+        ("audio_quality", "audio quality", ("clean", "reverb", "noisy", "distorted", "compressed")),
+    ]
+    present_dims = [
+        (col, title, classes) for col, title, classes in dimensions
+        if any(row[col] for row in successful_rows)
+    ]
+    if present_dims:
+        fig, axes = plt.subplots(1, len(present_dims), figsize=(5 * len(present_dims), 4.5))
+        axes_list = [axes] if len(present_dims) == 1 else list(axes)
+        for ax, (col, title, classes) in zip(axes_list, present_dims):
+            counts = Counter(row[col] for row in successful_rows if row[col])
+            bars = ax.bar(classes, [counts[c] for c in classes], color="#6366f1")
+            ax.bar_label(bars)
+            ax.set_title(f"Reported {title}")
+            ax.set_ylabel("Samples")
+            ax.tick_params(axis="x", rotation=25)
+            ax.grid(True, axis="y", linestyle="--", alpha=0.4)
+        plots.append(_save_figure(plt, fig, output_dir / "dimensions.png"))
+
+    durations_all = [_number(row["duration_s"]) for row in successful_rows if _number(row["duration_s"]) > 0]
+    confidences = [_number(row["confidence"]) for row in successful_rows if row["confidence"]]
+    latencies = [_number(row["latency_s"]) for row in successful_rows if row["latency_s"]]
+    panels = [p for p in (
+        ("Duration (seconds)", durations_all, "#3b82f6"),
+        ("Model confidence", confidences, "#10b981"),
+        ("Inference latency (s)", latencies, "#f59e0b"),
+    ) if p[1]]
+    if panels:
+        fig, axes = plt.subplots(1, len(panels), figsize=(4.5 * len(panels), 4))
+        axes_list = [axes] if len(panels) == 1 else list(axes)
+        for ax, (title, values, color) in zip(axes_list, panels):
+            ax.hist(values, bins=min(20, max(5, len(values) // 2)), color=color, edgecolor="black")
+            ax.set_title(title)
+            ax.set_ylabel("Samples")
+            ax.grid(True, axis="y", linestyle="--", alpha=0.4)
         plots.append(_save_figure(plt, fig, output_dir / "measurements.png"))
 
     error_counts = Counter(row["failure_code"] or row["verifier_status"] for row in all_rows if row["verifier_status"] != "success")
@@ -892,6 +876,140 @@ def _make_plots(
         ax.set_title("Decisions and processing status by model configuration")
         ax.legend()
         plots.append(_save_figure(plt, fig, output_dir / "by_model.png"))
+
+    cost_rows = [r for r in all_rows if _number(r.get("cost_usd", 0.0)) > 0]
+    if cost_rows:
+        costs = [_number(r["cost_usd"]) for r in cost_rows]
+        input_costs = [_number(r.get("input_cost_usd", 0.0)) for r in cost_rows]
+        output_costs = [_number(r.get("output_cost_usd", 0.0)) for r in cost_rows]
+        durations = [_number(r.get("duration_s", 0.0)) for r in cost_rows]
+        total_cost = sum(costs)
+        mean_cost = total_cost / len(costs)
+        sorted_costs = sorted(costs)
+        n_c = len(sorted_costs)
+        median_cost = (
+            sorted_costs[n_c // 2]
+            if n_c % 2 != 0
+            else (sorted_costs[n_c // 2 - 1] + sorted_costs[n_c // 2]) / 2.0
+        )
+        total_dur = sum(durations)
+        rate_per_min = (total_cost / total_dur * 60.0) if total_dur > 0 else 0.0
+
+        fig, axes = plt.subplots(2, 2, figsize=(13, 10))
+
+        # Panel 1: Cost distribution histogram
+        ax_dist = axes[0, 0]
+        bins = min(25, max(8, len(costs) // 2)) if len(set(costs)) > 1 else 10
+        ax_dist.hist(costs, bins=bins, color="#0284c7", edgecolor="white", alpha=0.85)
+        ax_dist.axvline(mean_cost, color="#dc2626", linestyle="--", linewidth=1.8, label=f"Mean: ${mean_cost:.4f}")
+        ax_dist.axvline(median_cost, color="#16a34a", linestyle="-.", linewidth=1.8, label=f"Median: ${median_cost:.4f}")
+        ax_dist.set_title("Cost Distribution per Sample", fontsize=12, fontweight="bold")
+        ax_dist.set_xlabel("Cost per sample ($ USD)")
+        ax_dist.set_ylabel("Number of samples")
+        ax_dist.grid(True, axis="y", linestyle="--", alpha=0.4)
+        ax_dist.legend(loc="upper right")
+
+        # Panel 2: Cumulative expenditure progression
+        ax_cum = axes[0, 1]
+        cum_costs = []
+        c_acc = 0.0
+        for c in costs:
+            c_acc += c
+            cum_costs.append(c_acc)
+        x_indices = list(range(1, len(cum_costs) + 1))
+        ax_cum.plot(x_indices, cum_costs, color="#0284c7", linewidth=2.2)
+        ax_cum.fill_between(x_indices, cum_costs, color="#38bdf8", alpha=0.25)
+        ax_cum.scatter([x_indices[-1]], [cum_costs[-1]], color="#dc2626", s=50, zorder=5)
+        ax_cum.annotate(
+            f"Total: ${total_cost:.4f}",
+            xy=(x_indices[-1], cum_costs[-1]),
+            xytext=(-70, 10),
+            textcoords="offset points",
+            fontweight="bold",
+            color="#dc2626",
+            arrowprops=dict(arrowstyle="->", color="#dc2626"),
+        )
+        ax_cum.set_title("Cumulative Cost Progression", fontsize=12, fontweight="bold")
+        ax_cum.set_xlabel("Sample index")
+        ax_cum.set_ylabel("Cumulative cost ($ USD)")
+        ax_cum.grid(True, linestyle="--", alpha=0.4)
+
+        # Panel 3: Cost components breakdown (Input vs Output)
+        ax_comp = axes[1, 0]
+        tot_in = sum(input_costs)
+        tot_out = sum(output_costs)
+        comp_labels = ["Input Cost", "Output Cost"]
+        comp_vals = [tot_in, tot_out]
+        comp_colors = ["#3b82f6", "#8b5cf6"]
+        if tot_in + tot_out > 0:
+            wedges, texts, autotexts = ax_comp.pie(
+                comp_vals,
+                labels=comp_labels,
+                colors=comp_colors,
+                autopct=lambda pct: f"{pct:.1f}%\n(${pct * (tot_in + tot_out) / 100:.4f})",
+                startangle=140,
+                wedgeprops=dict(width=0.4, edgecolor="white", linewidth=2),
+            )
+            for at in autotexts:
+                at.set_fontsize(10)
+                at.set_fontweight("bold")
+            ax_comp.set_title("Cost Breakdown by Component", fontsize=12, fontweight="bold")
+        else:
+            ax_comp.text(0.5, 0.5, "No component cost breakdown", ha="center", va="center")
+
+        # Panel 4: Cost vs Audio Duration & Summary Metrics
+        ax_stat = axes[1, 1]
+        has_dur = any(d > 0 for d in durations)
+        if has_dur:
+            scatter_colors = [
+                "#22c55e" if r.get("final_verdict") == "pass" else "#ef4444"
+                for r in cost_rows
+            ]
+            ax_stat.scatter(durations, costs, c=scatter_colors, alpha=0.7, edgecolors="none", s=35)
+            ax_stat.set_xlabel("Audio duration (seconds)")
+            ax_stat.set_ylabel("Cost per sample ($ USD)")
+            ax_stat.set_title("Cost vs Duration & Summary", fontsize=12, fontweight="bold")
+            ax_stat.grid(True, linestyle="--", alpha=0.4)
+            pass_patch = Patch(color="#22c55e", label="pass")
+            reject_patch = Patch(color="#ef4444", label="reject")
+            ax_stat.legend(handles=[pass_patch, reject_patch], loc="lower right")
+        else:
+            ax_stat.axis("off")
+
+        # Add text stats summary box
+        tot_prompt = sum(int(r.get("tokens_prompt") or 0) for r in cost_rows)
+        tot_output = sum(int(r.get("tokens_output") or 0) for r in cost_rows)
+        tot_thinking = sum(int(r.get("tokens_thinking") or 0) for r in cost_rows)
+        tot_tokens = sum(int(r.get("tokens_total") or 0) for r in cost_rows)
+
+        summary_lines = [
+            f"Total Cost: ${total_cost:.4f} USD",
+            f"Priced Samples: {len(cost_rows):,}",
+            f"Mean: ${mean_cost:.4f} / sample",
+            f"Median: ${median_cost:.4f} / sample",
+        ]
+        if total_dur > 0:
+            summary_lines.append(f"Rate: ${rate_per_min:.4f} / audio min")
+        if tot_tokens > 0:
+            summary_lines.append(f"Tokens: {tot_tokens:,} total")
+            if tot_prompt > 0:
+                summary_lines.append(f"  Prompt: {tot_prompt:,}")
+            if tot_output > 0:
+                summary_lines.append(f"  Output: {tot_output:,}")
+            if tot_thinking > 0:
+                summary_lines.append(f"  Thinking: {tot_thinking:,}")
+
+        ax_stat.text(
+            0.05,
+            0.95,
+            "\n".join(summary_lines),
+            transform=ax_stat.transAxes,
+            fontsize=9.5,
+            verticalalignment="top",
+            bbox=dict(boxstyle="round,pad=0.5", facecolor="#f8fafc", edgecolor="#cbd5e1", alpha=0.9),
+        )
+
+        plots.append(_save_figure(plt, fig, output_dir / "costs.png"))
 
     timeline_groups: dict[str, list[dict[str, str]]] = defaultdict(list)
     for row in all_rows:
@@ -973,8 +1091,13 @@ def _summary_from_csv(
     ]
     prompt_groups = sorted(
         {
-            (row["verifier_backend"], row["verifier_model"], row["prompt_sha256"], row["schema_profile"])
-            for row in successful_rows
+            (
+                row["verifier_backend"],
+                row["verifier_model"],
+                row["prompt_sha256"],
+                row["schema_profile"],
+            )
+            for row in coverage_rows
         }
     )
     emotion_rows = [row for row in successful_coverage_rows if row.get("emotion")]
@@ -988,6 +1111,49 @@ def _summary_from_csv(
             for e in sorted({row["emotion"].strip().lower() for row in emotion_rows if row["emotion"].strip()})
         },
     }
+
+    cost_rows = [r for r in coverage_rows if _number(r.get("cost_usd", 0.0)) > 0]
+    cost_summary = None
+    if cost_rows:
+        costs = [_number(r["cost_usd"]) for r in cost_rows]
+        input_costs = [_number(r.get("input_cost_usd", 0.0)) for r in cost_rows]
+        output_costs = [_number(r.get("output_cost_usd", 0.0)) for r in cost_rows]
+        durations = [_number(r.get("duration_s", 0.0)) for r in cost_rows]
+        tot_dur = sum(durations)
+        total_usd = sum(costs)
+        sorted_costs = sorted(costs)
+        n_c = len(sorted_costs)
+        median_usd = (
+            sorted_costs[n_c // 2]
+            if n_c % 2 != 0
+            else (sorted_costs[n_c // 2 - 1] + sorted_costs[n_c // 2]) / 2.0
+        )
+        p25_usd = sorted_costs[int(n_c * 0.25)]
+        p75_usd = sorted_costs[int(n_c * 0.75)]
+        p95_usd = sorted_costs[int(n_c * 0.95)] if n_c >= 20 else sorted_costs[-1]
+
+        cost_summary = {
+            "currency": "USD",
+            "samples_priced": len(cost_rows),
+            "total_usd": round(total_usd, 6),
+            "input_usd": round(sum(input_costs), 6),
+            "output_usd": round(sum(output_costs), 6),
+            "mean_usd": round(total_usd / len(cost_rows), 6),
+            "median_usd": round(median_usd, 6),
+            "min_usd": round(sorted_costs[0], 6),
+            "max_usd": round(sorted_costs[-1], 6),
+            "p25_usd": round(p25_usd, 6),
+            "p75_usd": round(p75_usd, 6),
+            "p95_usd": round(p95_usd, 6),
+            "cost_per_minute_usd": round(total_usd / tot_dur * 60.0, 6) if tot_dur > 0 else None,
+            "tokens": {
+                "prompt_tokens": sum(int(r.get("tokens_prompt") or 0) for r in cost_rows),
+                "output_tokens": sum(int(r.get("tokens_output") or 0) for r in cost_rows),
+                "thinking_tokens": sum(int(r.get("tokens_thinking") or 0) for r in cost_rows),
+                "total_tokens": sum(int(r.get("tokens_total") or 0) for r in cost_rows),
+            },
+        }
+
     return {
         "schema_version": 2,
         "operation": "analyze_verifier",
@@ -1026,6 +1192,7 @@ def _summary_from_csv(
             ),
         },
         "emotions": emotions_summary,
+        "costs": cost_summary,
         "prompt_groups": [
             {"backend": backend, "model": model, "prompt_sha256": prompt_sha, "schema_profile": profile}
             for backend, model, prompt_sha, profile in prompt_groups
@@ -1090,7 +1257,11 @@ def main() -> int:
             if name not in {"plot", "plots", "work", "comparisons", "experiments", "__pycache__"}
             and not name.startswith(".") and (Path(root) / name).resolve() != output_dir
         )
-        json_files.extend(Path(root) / name for name in sorted(files) if name.endswith(".json") and not name.startswith("."))
+        json_files.extend(
+            Path(root) / name
+            for name in sorted(files)
+            if name.endswith(".json") and not name.startswith(".") and name not in {"analysis.json", "report.json"}
+        )
     progress("ANALYZE_LOAD", f"Loading {len(json_files)} verifier JSON candidate(s)")
     loaded = _parallel_load(json_files, args.concurrency, args.batch_size)
     verifier_artifacts = [
