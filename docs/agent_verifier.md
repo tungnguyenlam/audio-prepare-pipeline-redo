@@ -89,13 +89,13 @@ schema failures remain failures and retain their raw response for diagnosis.
 
 ## Offline tools (no model calls)
 
-### `analysis.sh --input-dir DIR` (alias `analyze.sh --verdict-dir DIR`)
+### `plot_verifier_analysis.sh --input-dir DIR` (aliases: `analysis.sh`, `analyze.sh`)
 
 Reads every verifier JSON under `DIR` recursively (skipping `work/`, `plot*/`,
 `comparisons/`, `experiments/`, hidden dirs), joins diarization manifests found
 beside the recorded source audio (or given via `--input-manifest` /
 `--manifest-dir`), and writes `DIR/plot/` — see
-[data contract §7](data_contract.md#7-verifier-analysis-analysissh---input-dir-dir--dirplot).
+[data contract §7](data_contract.md#7-verifier-analysis-plot_verifier_analysissh---input-dir-dir--dirplot).
 Start with `plot/report.md`. Point it at one model/effort directory for
 single-variant figures; a directory with several configurations still gets
 per-model statistics and `by_model.png`. Acoustic v3 transcript text, character and

@@ -57,7 +57,7 @@ secret-valued options or long prompt contents.
 | Launchers | Default venv (fallbacks) | Override variable |
 |---|---|---|
 | `s1-download/*.sh` | `.venvs/download` (`.venv-download`) | `DOWNLOAD_PYTHON` |
-| `audio/*.sh`, `s5-export/*.sh`, `evaluate/*.sh`, `mix/mix.sh`, `speaker/{enroll,filter}.sh`, `purity/{consensus,cleanup,merge,collar,snap,segment}.sh`, `s4-agent/verifier/{analysis,analyze,compare,evaluate_verifier,scaffold_experiment}.sh` | `.venvs/audio` (`.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
+| `audio/*.sh`, `s5-export/*.sh`, `evaluate/*.sh`, `mix/mix.sh`, `speaker/{enroll,filter}.sh`, `purity/{consensus,cleanup,merge,collar,snap,segment}.sh`, `s4-agent/verifier/{plot_verifier_analysis,analysis,analyze,compare,evaluate_verifier,scaffold_experiment}.sh` | `.venvs/audio` (`.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
 | `s2-separate/*.sh` | `.venvs/separation` (`.venv-separation`, `.venvs/main`, `.venv`) | `SEPARATION_PYTHON` |
 | `s3-diarize/{pyannote,pyannote_31,pyannote_community1}.sh`, `speaker/{score,purity}.sh` | `.venvs/pyannote` (`.venv-pyannote`, `.venvs/main`, `.venv`) | `DIARIZATION_PYTHON` |
 | `s3-diarize/{sortformer,clustering}.sh` | `.venvs/sortformer` (`.venv-sortformer`) | `DIARIZATION_PYTHON` |
@@ -498,7 +498,7 @@ bash scripts/s4-agent/verifier/vibevoice.sh --input-dir .data/clips --quantizati
 bash scripts/s4-agent/verifier/vibevoice.sh --input-dir .data/clips --quantization nf4
 
 # Offline analysis and comparison (no model calls)
-bash scripts/s4-agent/verifier/analysis.sh --input-dir .data/s4-agent/verifier/gemini/gemini-3-8-flash/low
+bash scripts/s4-agent/verifier/plot_verifier_analysis.sh --input-dir .data/s4-agent/verifier/gemini/gemini-3-8-flash/low
 bash scripts/s4-agent/verifier/compare.sh  --reference-dir .data/s4-agent/verifier/gemini/gemini-3-8-flash/medium \
                                         --candidates-dir .data/s4-agent/verifier/gemini/gemini-3-8-flash/low
 bash scripts/s4-agent/verifier/evaluate_verifier.sh --predictions-dir .data/verdicts/vllm --reference-dir .data/verdicts/gemini --output-file .data/eval.json

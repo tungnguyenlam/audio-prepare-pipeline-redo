@@ -162,3 +162,17 @@
 - Updated shared diarization aggregation, standalone plot evaluation, README, command cookbook, and data contract.
 - The nested Hana layout now produces .../hana-playlist/9bu.../_plot/ and .../hana-playlist/_plot/, with the parent aggregate pooling all nested manifests.
 - Validated Python compilation, plot CLI help, launcher shell syntax, and diff whitespace. No tests or model inference were run.
+
+## 2026-09-18 - Make verifier analysis plotting script name explicit and update AGENTS.md
+
+### Decisions
+- Renamed generic `scripts/s4-agent/verifier/analyze.py` to `scripts/s4-agent/verifier/plot_verifier_analysis.py` so its name explicitly describes its function (analyzing verifier verdicts and rendering figures/reports).
+- Added `scripts/s4-agent/verifier/plot_verifier_analysis.sh` as the canonical same-name Bash launcher.
+- Maintained backward compatibility by updating `analysis.sh` and `analyze.sh` to forward arguments to `plot_verifier_analysis.py`.
+- Added explicit naming guidelines to `AGENTS.md` under both `## Non-negotiable rules` and `## CLI and artifact contracts` prohibiting vague or overly general file names.
+- Updated documentation across `README.md`, `docs/commands.md`, `docs/agent_verifier.md`, and `docs/data_contract.md`.
+
+### Results
+- Preserved file history via `git mv scripts/s4-agent/verifier/analyze.py scripts/s4-agent/verifier/plot_verifier_analysis.py`.
+- Verified `--help` execution for `plot_verifier_analysis.sh`, `analysis.sh`, and `analyze.sh`.
+- No tests were run in accordance with non-negotiable rules.

@@ -5,6 +5,7 @@
 - Do not write or run tests unless the user explicitly asks.
 - Append decisions and results to `WORKLOG.md` using bash to maintain continuous tracking and avoid losing track of work.
 - Commit and push after every completed task.
+- File and script names must be explicit about what the file does; never use vague or overly general names (e.g. use `plot_verifier_analysis.py` instead of generic names like `analyze.py`).
 - Keep every pipeline stage as an independent command. Never add orchestration
   chaining crawl → separate → diarize → mix.
 - Put downloads, stems, cuts, plots, and other runtime artifacts under `.data/`
@@ -63,6 +64,7 @@ audio-model verification, evaluation, mixing, and dataset export.
 - Progress goes to stderr and successful artifact paths to stdout.
 - Every public Python command has a same-name Bash launcher selecting its virtual
   environment and forwarding arguments unchanged. See `docs/commands.md`.
+- File and command names must explicitly reflect what the file does rather than being generic (e.g., `plot_verifier_analysis.py` / `.sh` instead of `analyze.py` or `analysis.sh`).
 
 ## Machines
 

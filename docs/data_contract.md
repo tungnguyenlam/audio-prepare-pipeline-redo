@@ -408,7 +408,7 @@ Validation profile is selected by the prompt text (`scripts/s4-agent/verifier/_v
 | `vibevoice_v1` | VibeVoice backend (no prompt) | `decision` ∈ pass/reject/uncertain, `num_speakers`, `secondary_speech_s`, `dominant_speaker_id`; `uncertain` is excluded from pass/reject metrics; `parameters.quantization` is `none` / `int8` / `nf4` |
 | `custom` | any other prompt | only `decision` ∈ pass/reject |
 
-## 7. Verifier analysis (`analysis.sh --input-dir DIR` → `DIR/plot/`)
+## 7. Verifier analysis (`plot_verifier_analysis.sh --input-dir DIR` → `DIR/plot/`)
 
 ```text
 plot/

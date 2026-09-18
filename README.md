@@ -37,7 +37,7 @@ verifiers) are provisioned per target with the same script; see
 | `scripts/speaker/` | `enroll`, `score`, `filter`, `purity` |
 | `scripts/purity/` | `consensus`, `cleanup`, `merge`, `collar`, `snap`, `align`, `segment` |
 | `scripts/s4-agent/` | raw audio-LLM generation: `gemini`, `endpoint`, `hf` |
-| `scripts/s4-agent/verifier/` | pass/reject verifiers `gemini`, `hf`, `endpoint`, `unsloth`, `vllm`, `moss`, `minicpm`, `kimi`, `vibevoice`; offline `analysis`, `compare`, `evaluate_verifier`, `scaffold_experiment` |
+| `scripts/s4-agent/verifier/` | pass/reject verifiers `gemini`, `hf`, `endpoint`, `unsloth`, `vllm`, `moss`, `minicpm`, `kimi`, `vibevoice`; offline `plot_verifier_analysis` (aliases `analysis`, `analyze`), `compare`, `evaluate_verifier`, `scaffold_experiment` |
 | `scripts/mix/`, `scripts/evaluate/` | `mix`; `separation`, `diarization`, `plot_diarization`, `plot_metrics`, `prepare_viyt_diar`, `run_viyt_diar` |
 | `scripts/s5-export/` | `index`, `filter`, `export`, `bundle` |
 | `scripts/sync/` | rsync code/data to the model server and auxiliary hosts |
@@ -55,7 +55,7 @@ bash scripts/purity/cleanup.sh       --input-manifest .data/turns/<stem>/segment
 bash scripts/purity/collar.sh        --input-manifest .data/p/cleaned.json --output-manifest .data/p/collared.json
 bash scripts/audio/export_segments.sh --input-manifest .data/p/collared.json --output-dir .data/clips
 bash scripts/s4-agent/verifier/gemini.sh --input-dir .data/clips                              # verdict JSON per clip
-bash scripts/s4-agent/verifier/analysis.sh --input-dir .data/s4-agent/verifier/gemini/gemini-3-8-flash/medium
+bash scripts/s4-agent/verifier/plot_verifier_analysis.sh --input-dir .data/s4-agent/verifier/gemini/gemini-3-8-flash/medium
 ```
 
 ## Conventions
