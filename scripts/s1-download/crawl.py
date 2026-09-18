@@ -155,7 +155,8 @@ def _download_candidates(candidates: list[dict], args, output_groups: dict[str, 
             with lock:
                 progress('ITEM_START', candidate['title'], current=index, total=total)
             source_info = {'id': candidate['video_id'], 'title': candidate['title'],
-                           'webpage_url': candidate['url']}
+                           'webpage_url': candidate['url'], 'duration': candidate.get('duration_s'),
+                           **{key: candidate.get(key) for key in ('channel', 'channel_id', 'upload_date')}}
             dest = download(candidate['url'], args, source_info=source_info,
                             output_group=output_groups.get(candidate['video_id']))
             candidate['download'] = {'status': 'complete', 'path': persist_path(dest)}

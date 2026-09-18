@@ -33,6 +33,16 @@ download counts.
 }
 ```
 
+## Download index (`<download-dir>/index.jsonl`)
+
+Every directory that receives YouTube downloads holds an `index.jsonl` rebuilt from
+its sidecars after each download (or by `download/index`). One object per completed
+download, sorted by `upload_date`, then `title`:
+
+```json
+{"video_id": "abcdefghijk", "title": "Example", "channel": "Example Channel", "channel_id": "UC…", "upload_date": "20240315", "duration_s": 916.4, "sample_rate": 48000, "url": "https://www.youtube.com/watch?v=abcdefghijk", "path": ".data/s1-download/example/abcdefghijk_Example-48000.wav", "sha256": "…"}
+```
+
 ## 1. Audio sidecar (`recording.wav` → `recording.json`)
 
 Written by `download/*`, `audio/{convert,cut}`, `separate/*` (and, with a
@@ -52,6 +62,9 @@ interrupted write is recognizable and retried.
 ```
 
 - Download sources carry `video_id`, `title`, `url` directly in `source`.
+  YouTube downloads add a top-level `video` block (`channel`, `channel_id`,
+  `upload_date`, `duration_s`, any of which may be null) that is excluded from
+  cache comparison so older sidecars without it stay valid.
 - Local sources carry `path` + `sha256`. Paths under the repository root are
   stored **repo-relative** (POSIX, no leading `./`); paths outside the repo stay
   absolute. Readers accept both forms. When a verified prior sidecar exists its

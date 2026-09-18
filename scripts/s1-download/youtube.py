@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse
 import contextlib
 import copy
+import json
+import os
 import re
 import threading
 import time
@@ -12,8 +14,8 @@ import sys
 import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _common.files import (LoggingArgumentParser, ROOT, completed, convert,
-                           family_audio_name, family_name, positive_int,
-                           progress, publish, request, safe_name)
+                           family_audio_name, family_name, persist_path, positive_int,
+                           progress, publish, read_json, request, safe_name)
 
 
 _RATE_LIMIT_MARKERS = (
@@ -29,6 +31,8 @@ _RATE_LIMIT_MARKERS = (
 )
 _YOUTUBE_LOCK = threading.Lock()
 _THROTTLE_LOCK = threading.Lock()
+_INDEX_LOCK = threading.Lock()
+INDEX_NAME = 'index.jsonl'
 _NEXT_YOUTUBE_TIME = 0.0
 _CONSECUTIVE_THROTTLED_ITEMS = 0
 _RATE_LIMIT_ABORT = threading.Event()
@@ -278,6 +282,54 @@ def _extract_media(url: str, args, info: dict, work: Path):
     return src
 
 
+def video_details(info: dict) -> dict:
+    """Tracking metadata from a yt-dlp info dict; kept outside `source` so cache checks stay stable."""
+    return {'channel': info.get('channel') or info.get('uploader'),
+            'channel_id': info.get('channel_id') or info.get('uploader_id'),
+            'upload_date': info.get('upload_date'),
+            'duration_s': info.get('duration')}
+
+
+def index_row(sidecar: Path, data: dict) -> dict | None:
+    """Flatten a completed download sidecar into one index line, or None if it is not one."""
+    output = data.get('output') or {}
+    if data.get('operation') != 'download' or not output.get('sha256'):
+        return None
+    source = data.get('source') or {}
+    video = data.get('video') or {}
+    return {'video_id': source.get('video_id'), 'title': source.get('title'),
+            'channel': video.get('channel'), 'channel_id': video.get('channel_id'),
+            'upload_date': video.get('upload_date'), 'duration_s': output.get('duration_s'),
+            'sample_rate': output.get('sample_rate'), 'url': source.get('url'),
+            'path': persist_path(sidecar.with_suffix('.wav')), 'sha256': output['sha256']}
+
+
+def write_index(directory: Path) -> Path | None:
+    """Rebuild `<directory>/index.jsonl` from the download sidecars in that directory."""
+    dest = directory / INDEX_NAME
+    with _INDEX_LOCK:
+        rows = []
+        for sidecar in sorted(directory.glob('*.json')):
+            try:
+                row = index_row(sidecar, read_json(sidecar))
+            except (OSError, ValueError):
+                continue
+            if row:
+                rows.append(row)
+        if not rows:
+            return dest if dest.is_file() else None
+        rows.sort(key=lambda row: (row['upload_date'] or '', row['title'] or '', row['video_id'] or ''))
+        fd, name = tempfile.mkstemp(dir=directory, prefix='.' + INDEX_NAME, suffix='.tmp')
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+                for row in rows:
+                    stream.write(json.dumps(row, ensure_ascii=False) + '\n')
+            os.replace(name, dest)
+        finally:
+            Path(name).unlink(missing_ok=True)
+    return dest
+
+
 def download(url: str, args, source_info: dict | None = None,
              *, output_group: str | None = None) -> Path:
     raise_if_rate_limited()
@@ -304,6 +356,8 @@ def download(url: str, args, source_info: dict | None = None,
         dest = (ROOT / '.data/s1-download' / family / filename).resolve()
     if completed(dest, metadata, args.overwrite):
         progress('CACHED', f'Already completed: {dest.name}')
+        if explicit is None:
+            write_index(dest.parent)
         return dest
 
     def _download_and_publish():
@@ -315,10 +369,12 @@ def download(url: str, args, source_info: dict | None = None,
             staged = Path(work) / 'output.wav'
             progress('CONVERT', f'Converting {src.name} -> {args.sample_rate}Hz mono WAV')
             convert(src, staged, args.sample_rate, 1)
-            publish(staged, dest, metadata)
+            publish(staged, dest, {**metadata, 'video': video_details(info)})
         return dest
 
     dest = with_throttle_retry(args, _download_and_publish, label=title)
+    if explicit is None:
+        write_index(dest.parent)
     progress('COMPLETE', f'Saved to {dest.name}')
     return dest
 

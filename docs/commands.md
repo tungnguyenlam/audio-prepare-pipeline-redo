@@ -31,6 +31,9 @@ secret-valued options or long prompt contents.
   remote collection name and group files under
   `.data/s1-download/<playlist-or-channel>/` (or under
   `<output-dir>/<playlist-or-channel>/` when `--output-dir` is supplied).
+  Every download directory also gets an `index.jsonl` (one line per completed
+  download: id, title, channel, upload date, duration, path, hash), rebuilt after
+  each download; `s1-download/index.sh` rebuilds them for an existing tree.
 - Audio outputs have an atomic sibling `.json` sidecar. Matching outputs with a
   valid hash are cached; conflicting outputs require `--overwrite`. Audio is never
   modified in place.
@@ -125,6 +128,7 @@ bash scripts/s1-download/playlist.sh --url 'https://www.youtube.com/playlist?lis
 bash scripts/s1-download/channel.sh  --url 'https://www.youtube.com/@CHANNEL/videos' --limit 10
 bash scripts/s1-download/crawl.sh --source-file scripts/s1-download/sources/vi_en_codeswitch.json --metadata-only
 bash scripts/s1-download/crawl.sh --source-file scripts/s1-download/sources/vi_en_codeswitch.json
+bash scripts/s1-download/index.sh                                                       # rebuild .data/s1-download/**/index.jsonl
 ```
 
 Download commands use `.venvs/download` by default. Provisioning updates
