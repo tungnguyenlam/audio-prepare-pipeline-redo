@@ -104,9 +104,9 @@ per-model statistics and `by_model.png`. Acoustic v3 transcript text, character 
 word counts plus emotion labels are exported to both sample CSVs and summarized in
 `analysis.json`; `transcripts.png` shows contract outcomes and pass transcript
 lengths, while `emotions.png` and `emotions_by_speaker.png` show emotion counts and
-durations when available. When cost metadata is available, `costs.png` visualizes
-the per-sample cost distribution (with mean and median markers), cumulative cost progression,
-input vs. output breakdown donut chart, and cost vs. duration scatter with summary statistics inset. Rerunning refreshes `plot/`; a nonempty
+durations when available. When cost metadata is available, separate dead-simple plots `cost_distribution.png`
+(per-sample cost histogram with mean and median markers) and `cost_total.png` (input, output, and total expenditure bar chart)
+are generated alongside `sample_costs.md` (top summary followed by a timestamp-ordered table containing path, start time, end time, pass/not pass, transcripts, and cost). Rerunning refreshes `plot/`; a nonempty
 custom `--output-dir` needs `--overwrite`. Detected defects are model labels, not
 errors against a reference.
 

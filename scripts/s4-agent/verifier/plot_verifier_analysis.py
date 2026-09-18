@@ -7,6 +7,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import tempfile
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -286,9 +287,28 @@ def _artifact_values(
         except (ValueError, TypeError):
             pass
 
+    audio_path_str = persist_path(source["path"]) if source.get("path") else ""
+    start_s = values.get("start_s") or ""
+    end_s = values.get("end_s") or ""
+    duration_s = values.get("duration_s") or ""
+    if not start_s or not end_s:
+        m = re.search(r"_(\d{8,10})-(\d{8,10})_", audio_path_str or artifact_path.name)
+        if m:
+            st_sec = int(m.group(1)) / 1000.0
+            en_sec = int(m.group(2)) / 1000.0
+            if not start_s:
+                start_s = f"{st_sec:.3f}"
+            if not end_s:
+                end_s = f"{en_sec:.3f}"
+            if not duration_s:
+                duration_s = f"{en_sec - st_sec:.3f}"
+
     values.update(
         {
-            "audio_path": persist_path(source["path"]) if source.get("path") else "",
+            "audio_path": audio_path_str,
+            "start_s": start_s,
+            "end_s": end_s,
+            "duration_s": duration_s,
             "assistant_raw_response": raw,
             "raw_response_available": bool(response.get("path")) and raw_error is None,
             "response_kind": response_kind,
@@ -512,6 +532,114 @@ def _markdown_relpath(path_str: str, base_dir: Path) -> str:
         return path_str
 
 
+def _write_sample_costs_markdown(all_csv: Path, output_dir: Path) -> Path:
+    with all_csv.open("r", encoding="utf-8", newline="") as stream:
+        rows = list(csv.DictReader(stream))
+
+    total_samples = len(rows)
+    pass_samples = sum(1 for r in rows if r.get("final_verdict") == "pass")
+    reject_samples = sum(1 for r in rows if r.get("final_verdict") == "reject")
+    other_samples = total_samples - pass_samples - reject_samples
+    pass_rate = (pass_samples / total_samples * 100.0) if total_samples > 0 else 0.0
+
+    cost_rows = [r for r in rows if _number(r.get("cost_usd", 0.0)) > 0]
+    costs = [_number(r["cost_usd"]) for r in cost_rows]
+    total_cost = sum(costs)
+    input_cost = sum(_number(r.get("input_cost_usd", 0.0)) for r in cost_rows)
+    output_cost = sum(_number(r.get("output_cost_usd", 0.0)) for r in cost_rows)
+    mean_cost = (total_cost / len(cost_rows)) if cost_rows else 0.0
+    sorted_costs = sorted(costs) if costs else [0.0]
+    median_cost = sorted_costs[len(sorted_costs) // 2] if costs else 0.0
+
+    durations = [_number(r.get("duration_s", 0.0)) for r in rows]
+    total_duration = sum(durations)
+    pass_duration = sum(_number(r.get("duration_s", 0.0)) for r in rows if r.get("final_verdict") == "pass")
+    rate_per_min = (total_cost / total_duration * 60.0) if total_duration > 0 else None
+
+    tot_tokens = sum(int(r.get("tokens_total") or 0) for r in cost_rows)
+    tot_prompt = sum(int(r.get("tokens_prompt") or 0) for r in cost_rows)
+    tot_output = sum(int(r.get("tokens_output") or 0) for r in cost_rows)
+    tot_thinking = sum(int(r.get("tokens_thinking") or 0) for r in cost_rows)
+
+    def _timestamp_key(r: dict[str, Any]) -> tuple[float, str]:
+        st = r.get("start_s", "")
+        if st != "":
+            return (_number(st), str(r.get("audio_path", "")))
+        audio_str = str(r.get("audio_path") or "")
+        m = re.search(r"_(\d{8,10})-(\d{8,10})_", audio_str)
+        if m:
+            return (int(m.group(1)) / 1000.0, audio_str)
+        return (9999999.0, audio_str)
+
+    sorted_rows = sorted(rows, key=_timestamp_key)
+
+    def _format_time(val: Any) -> str:
+        if val is None or str(val).strip() == "":
+            return "-"
+        num = _number(val)
+        return f"{num:.2f}s"
+
+    def _clean_transcript(text: Any) -> str:
+        if not text:
+            return "-"
+        cleaned = str(text).replace("\r", " ").replace("\n", " ").replace("|", "\\|").strip()
+        return cleaned if cleaned else "-"
+
+    def _pass_status(r: dict[str, Any]) -> str:
+        verdict = r.get("final_verdict")
+        if verdict == "pass":
+            return "pass"
+        return "not pass"
+
+    lines = [
+        "# Verifier Sample Costs and Verdicts",
+        "",
+        "## Summary",
+        "",
+        f"- **Total samples:** {total_samples} ({pass_samples} pass, {reject_samples} reject" + (f", {other_samples} other)" if other_samples else ")"),
+        f"- **Pass rate:** {pass_rate:.1f}%",
+        f"- **Total duration:** {total_duration:.2f}s (pass: {pass_duration:.2f}s)",
+        f"- **Total cost:** ${total_cost:.4f} USD",
+        f"- **Cost breakdown:** input ${input_cost:.4f} ({input_cost / total_cost * 100:.1f}%) | output ${output_cost:.4f} ({output_cost / total_cost * 100:.1f}%)" if total_cost > 0 else "- **Cost breakdown:** $0.0000 USD",
+        f"- **Cost per sample:** mean ${mean_cost:.4f} | median ${median_cost:.4f} | min ${sorted_costs[0]:.4f} | max ${sorted_costs[-1]:.4f}",
+    ]
+    if rate_per_min is not None:
+        lines.append(f"- **Cost rate:** ${rate_per_min:.4f} USD / audio minute")
+    if tot_tokens > 0:
+        lines.append(f"- **Token usage:** {tot_tokens:,} total ({tot_prompt:,} prompt, {tot_output:,} output, {tot_thinking:,} thinking)")
+
+    lines.extend([
+        "",
+        "## Samples (ordered by timestamp)",
+        "",
+        "| path | start time | end time | pass or not pass | transcripts | cost |",
+        "|---|---:|---:|:---:|---|---:|",
+    ])
+
+    for r in sorted_rows:
+        path_str = r.get("audio_path") or r.get("verdict_file") or "-"
+        st = r.get("start_s")
+        en = r.get("end_s")
+        if (not st or not en) and path_str != "-":
+            m = re.search(r"_(\d{8,10})-(\d{8,10})_", path_str)
+            if m:
+                st = st or f"{int(m.group(1)) / 1000.0:.2f}"
+                en = en or f"{int(m.group(2)) / 1000.0:.2f}"
+
+        st_fmt = _format_time(st)
+        en_fmt = _format_time(en)
+        status_fmt = _pass_status(r)
+        transcript_fmt = _clean_transcript(r.get("transcript"))
+        cost_val = _number(r.get("cost_usd", 0.0))
+        cost_fmt = f"${cost_val:.4f}" if cost_val > 0 else "$0.0000"
+
+        safe_path = path_str.replace("|", "\\|")
+        lines.append(f"| {safe_path} | {st_fmt} | {en_fmt} | {status_fmt} | {transcript_fmt} | {cost_fmt} |")
+
+    sample_costs_md = output_dir / "sample_costs.md"
+    sample_costs_md.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return sample_costs_md
+
 def _write_error_reports(all_csv: Path, output_dir: Path, verdict_dir: Path) -> dict[str, Any]:
     """Read the canonical CSV to produce model-specific counts and reviewable cases."""
     rows = _read_csv(all_csv)
@@ -627,6 +755,7 @@ def _write_error_reports(all_csv: Path, output_dir: Path, verdict_dir: Path) -> 
             "",
             "## Cost analysis",
             "",
+            "- Detailed per-sample costs and transcripts (ordered by timestamp): [sample_costs.md](sample_costs.md)",
             f"- **Total cost:** ${total_usd:.4f} USD across {len(cost_rows)} priced sample(s)",
             f"- **Cost per sample:** mean ${mean_usd:.4f} | median ${median_usd:.4f} | min ${sorted_costs[0]:.4f} | max ${sorted_costs[-1]:.4f}",
             f"- **Cost breakdown:** input ${in_usd:.4f} ({in_usd / total_usd * 100:.1f}%) | output ${out_usd:.4f} ({out_usd / total_usd * 100:.1f}%)" if total_usd > 0 else "",
@@ -877,139 +1006,44 @@ def _make_plots(
         ax.legend()
         plots.append(_save_figure(plt, fig, output_dir / "by_model.png"))
 
+    (output_dir / "costs.png").unlink(missing_ok=True)
     cost_rows = [r for r in all_rows if _number(r.get("cost_usd", 0.0)) > 0]
     if cost_rows:
         costs = [_number(r["cost_usd"]) for r in cost_rows]
         input_costs = [_number(r.get("input_cost_usd", 0.0)) for r in cost_rows]
         output_costs = [_number(r.get("output_cost_usd", 0.0)) for r in cost_rows]
-        durations = [_number(r.get("duration_s", 0.0)) for r in cost_rows]
         total_cost = sum(costs)
         mean_cost = total_cost / len(costs)
         sorted_costs = sorted(costs)
-        n_c = len(sorted_costs)
-        median_cost = (
-            sorted_costs[n_c // 2]
-            if n_c % 2 != 0
-            else (sorted_costs[n_c // 2 - 1] + sorted_costs[n_c // 2]) / 2.0
-        )
-        total_dur = sum(durations)
-        rate_per_min = (total_cost / total_dur * 60.0) if total_dur > 0 else 0.0
+        median_cost = sorted_costs[len(sorted_costs) // 2]
 
-        fig, axes = plt.subplots(2, 2, figsize=(13, 10))
+        # Separate plot 1: Cost distribution per sample (dead simple histogram)
+        fig, ax = plt.subplots(figsize=(7.5, 4.8))
+        bins = min(20, max(5, len(set(costs))))
+        ax.hist(costs, bins=bins, color="#3b82f6", edgecolor="black", alpha=0.75)
+        ax.axvline(mean_cost, color="#dc2626", linestyle="--", linewidth=1.5, label=f"Mean: ${mean_cost:.4f}")
+        ax.axvline(median_cost, color="#16a34a", linestyle="--", linewidth=1.5, label=f"Median: ${median_cost:.4f}")
+        ax.set_title("Cost Distribution per Sample")
+        ax.set_xlabel("Cost per sample ($ USD)")
+        ax.set_ylabel("Samples")
+        ax.legend()
+        ax.grid(True, linestyle="--", alpha=0.4)
+        plots.append(_save_figure(plt, fig, output_dir / "cost_distribution.png"))
 
-        # Panel 1: Cost distribution histogram
-        ax_dist = axes[0, 0]
-        bins = min(25, max(8, len(costs) // 2)) if len(set(costs)) > 1 else 10
-        ax_dist.hist(costs, bins=bins, color="#0284c7", edgecolor="white", alpha=0.85)
-        ax_dist.axvline(mean_cost, color="#dc2626", linestyle="--", linewidth=1.8, label=f"Mean: ${mean_cost:.4f}")
-        ax_dist.axvline(median_cost, color="#16a34a", linestyle="-.", linewidth=1.8, label=f"Median: ${median_cost:.4f}")
-        ax_dist.set_title("Cost Distribution per Sample", fontsize=12, fontweight="bold")
-        ax_dist.set_xlabel("Cost per sample ($ USD)")
-        ax_dist.set_ylabel("Number of samples")
-        ax_dist.grid(True, axis="y", linestyle="--", alpha=0.4)
-        ax_dist.legend(loc="upper right")
-
-        # Panel 2: Cumulative expenditure progression
-        ax_cum = axes[0, 1]
-        cum_costs = []
-        c_acc = 0.0
-        for c in costs:
-            c_acc += c
-            cum_costs.append(c_acc)
-        x_indices = list(range(1, len(cum_costs) + 1))
-        ax_cum.plot(x_indices, cum_costs, color="#0284c7", linewidth=2.2)
-        ax_cum.fill_between(x_indices, cum_costs, color="#38bdf8", alpha=0.25)
-        ax_cum.scatter([x_indices[-1]], [cum_costs[-1]], color="#dc2626", s=50, zorder=5)
-        ax_cum.annotate(
-            f"Total: ${total_cost:.4f}",
-            xy=(x_indices[-1], cum_costs[-1]),
-            xytext=(-70, 10),
-            textcoords="offset points",
-            fontweight="bold",
-            color="#dc2626",
-            arrowprops=dict(arrowstyle="->", color="#dc2626"),
-        )
-        ax_cum.set_title("Cumulative Cost Progression", fontsize=12, fontweight="bold")
-        ax_cum.set_xlabel("Sample index")
-        ax_cum.set_ylabel("Cumulative cost ($ USD)")
-        ax_cum.grid(True, linestyle="--", alpha=0.4)
-
-        # Panel 3: Cost components breakdown (Input vs Output)
-        ax_comp = axes[1, 0]
+        # Separate plot 2: Total cost breakdown (dead simple bar chart)
         tot_in = sum(input_costs)
         tot_out = sum(output_costs)
-        comp_labels = ["Input Cost", "Output Cost"]
-        comp_vals = [tot_in, tot_out]
-        comp_colors = ["#3b82f6", "#8b5cf6"]
-        if tot_in + tot_out > 0:
-            wedges, texts, autotexts = ax_comp.pie(
-                comp_vals,
-                labels=comp_labels,
-                colors=comp_colors,
-                autopct=lambda pct: f"{pct:.1f}%\n(${pct * (tot_in + tot_out) / 100:.4f})",
-                startangle=140,
-                wedgeprops=dict(width=0.4, edgecolor="white", linewidth=2),
-            )
-            for at in autotexts:
-                at.set_fontsize(10)
-                at.set_fontweight("bold")
-            ax_comp.set_title("Cost Breakdown by Component", fontsize=12, fontweight="bold")
-        else:
-            ax_comp.text(0.5, 0.5, "No component cost breakdown", ha="center", va="center")
-
-        # Panel 4: Cost vs Audio Duration & Summary Metrics
-        ax_stat = axes[1, 1]
-        has_dur = any(d > 0 for d in durations)
-        if has_dur:
-            scatter_colors = [
-                "#22c55e" if r.get("final_verdict") == "pass" else "#ef4444"
-                for r in cost_rows
-            ]
-            ax_stat.scatter(durations, costs, c=scatter_colors, alpha=0.7, edgecolors="none", s=35)
-            ax_stat.set_xlabel("Audio duration (seconds)")
-            ax_stat.set_ylabel("Cost per sample ($ USD)")
-            ax_stat.set_title("Cost vs Duration & Summary", fontsize=12, fontweight="bold")
-            ax_stat.grid(True, linestyle="--", alpha=0.4)
-            pass_patch = Patch(color="#22c55e", label="pass")
-            reject_patch = Patch(color="#ef4444", label="reject")
-            ax_stat.legend(handles=[pass_patch, reject_patch], loc="lower right")
-        else:
-            ax_stat.axis("off")
-
-        # Add text stats summary box
-        tot_prompt = sum(int(r.get("tokens_prompt") or 0) for r in cost_rows)
-        tot_output = sum(int(r.get("tokens_output") or 0) for r in cost_rows)
-        tot_thinking = sum(int(r.get("tokens_thinking") or 0) for r in cost_rows)
-        tot_tokens = sum(int(r.get("tokens_total") or 0) for r in cost_rows)
-
-        summary_lines = [
-            f"Total Cost: ${total_cost:.4f} USD",
-            f"Priced Samples: {len(cost_rows):,}",
-            f"Mean: ${mean_cost:.4f} / sample",
-            f"Median: ${median_cost:.4f} / sample",
-        ]
-        if total_dur > 0:
-            summary_lines.append(f"Rate: ${rate_per_min:.4f} / audio min")
-        if tot_tokens > 0:
-            summary_lines.append(f"Tokens: {tot_tokens:,} total")
-            if tot_prompt > 0:
-                summary_lines.append(f"  Prompt: {tot_prompt:,}")
-            if tot_output > 0:
-                summary_lines.append(f"  Output: {tot_output:,}")
-            if tot_thinking > 0:
-                summary_lines.append(f"  Thinking: {tot_thinking:,}")
-
-        ax_stat.text(
-            0.05,
-            0.95,
-            "\n".join(summary_lines),
-            transform=ax_stat.transAxes,
-            fontsize=9.5,
-            verticalalignment="top",
-            bbox=dict(boxstyle="round,pad=0.5", facecolor="#f8fafc", edgecolor="#cbd5e1", alpha=0.9),
-        )
-
-        plots.append(_save_figure(plt, fig, output_dir / "costs.png"))
+        fig, ax = plt.subplots(figsize=(6, 4.8))
+        labels = ["Input", "Output", "Total"]
+        vals = [tot_in, tot_out, total_cost]
+        colors = ["#60a5fa", "#a78bfa", "#34d399"]
+        bars = ax.bar(labels, vals, color=colors, edgecolor="black")
+        ax.bar_label(bars, fmt="$%.4f", padding=3)
+        ax.set_title("Total Cost Breakdown ($ USD)")
+        ax.set_ylabel("Cost ($ USD)")
+        ax.grid(True, axis="y", linestyle="--", alpha=0.4)
+        ax.margins(y=0.15)
+        plots.append(_save_figure(plt, fig, output_dir / "cost_total.png"))
 
     timeline_groups: dict[str, list[dict[str, str]]] = defaultdict(list)
     for row in all_rows:
@@ -1410,7 +1444,9 @@ def main() -> int:
     plots = _make_plots(all_csv, successful_csv, output_dir)
     summary = _summary_from_csv(all_csv, successful_csv, plots, verdict_dir)
     details = _write_error_reports(all_csv, output_dir, verdict_dir)
+    sample_costs_file = _write_sample_costs_markdown(all_csv, output_dir)
     summary.update(details)
+    summary["sample_costs_md"] = str(sample_costs_file)
     for previous_plot in previous_plots:
         path = Path(previous_plot)
         if path.parent == output_dir and path.suffix == ".png" and str(path) not in plots:

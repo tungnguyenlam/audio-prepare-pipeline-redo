@@ -417,10 +417,11 @@ plot/
   analysis.json           schema_version 2; coverage, decisions, transcripts, emotions, costs, durations, model/prompt groups, failure codes, model_stats, error_stats, CSV digests, plot list
   all_samples.csv         every expected turn (from manifests) + every artifact, even unmatched/invalid; includes cost_usd, token counts
   successful_samples.csv  subset with a schema-valid pass/reject
+  sample_costs.md         summary metrics on top; timestamp-ordered table: path, start time, end time, pass or not pass, transcripts, cost
   report.md               model configuration, statistics, cost analysis, linked error cases
   error_cases.csv         model_id, model, kind, category, family, audio_path, verdict_file, decision, reason, emotion, transcript, failure_stage, assistant_raw_response
   error_stats.csv         model_id, model, kind, category, count, denominator, rate
-  coverage.png decisions.png defects.png transcripts.png emotions.png costs.png
+  coverage.png decisions.png defects.png transcripts.png emotions.png cost_distribution.png cost_total.png
   dimensions.png measurements.png processing_errors.png by_model.png by_speaker.png emotions_by_speaker.png timeline*.png   (when applicable)
 ```
 
@@ -428,7 +429,7 @@ Both CSVs share a column order beginning `audio_path, final_verdict,
 assistant_raw_response, transcript, transcript_chars, transcript_words, emotion`, followed
 by operational flags, diarization metadata, prompt/schema details, defect codes, and cost metrics (`usage_json, cost_json, cost_usd, input_cost_usd, output_cost_usd, tokens_prompt, tokens_output, tokens_thinking, tokens_total`). Invalid or
 missing results have a blank `final_verdict` and are never counted as rejects.
-`costs.png` visualizes cost distribution histogram (with mean and median markers), cumulative expenditure progression curve, input vs. output token cost breakdown, and cost vs. audio duration scatter with summary statistics inset. Rerunning
+Cost analysis outputs `cost_distribution.png` (per-sample cost histogram with mean and median markers), `cost_total.png` (bar chart breaking down input, output, and total expenditure), and `sample_costs.md` (summary metrics at the top with timestamp-sorted sample details). Rerunning
 refreshes `plot/` and deletes PNGs it previously recorded.
 
 ## 8. Verifier comparison (`compare.sh` → `.data/s4-agent/verifier/comparisons/<utc>-<hash>/`)

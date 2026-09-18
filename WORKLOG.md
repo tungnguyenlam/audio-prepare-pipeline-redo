@@ -196,3 +196,23 @@
 - Validated standalone execution of `plot_verifier_analysis.sh` on `.data/evaluate/hana_tts/gemini_baseline`, confirming proper generation of `costs.png`, updated `analysis.json` (showing $0.5007 total USD, 285,916 total tokens across 55 samples), and `report.md`.
 - Verified CLI `--help` flags for verifiers (`--skip-analysis`, `--no-analyze`).
 - In accordance with non-negotiable rules, no tests were written or run.
+
+## 2026-09-18 - Separate dead-simple cost plots and timestamp-ordered sample_costs.md
+
+### Decisions
+- Replaced combined multi-panel `costs.png` and removed cumulative cost curve completely per user feedback.
+- Created separate dead-simple matplotlib plots:
+  - `cost_distribution.png`: Clean single-panel histogram of cost per sample with mean and median dashed markers.
+  - `cost_total.png`: Clean single-panel bar chart showing input, output, and total expenditure in USD with bar value labels.
+- Added generation of `sample_costs.md` under `<output-dir>`:
+  - Summary metrics at the top: total samples, pass/reject counts, pass rate, total and pass durations, total cost, component breakdown (input/output), cost per sample (mean, median, min, max), rate per audio minute, and token counts.
+  - Markdown table ordered by timestamp (`start time`): `path`, `start time`, `end time`, `pass or not pass`, `transcripts`, `cost`.
+  - Added clip filename timestamp regex extraction fallback (`_(\d{8,10})-(\d{8,10})_`) to ensure `start_s` and `end_s` are always populated and accurately sorted chronologically even when manifests are not co-located.
+- Linked `sample_costs.md` from `report.md` and recorded it in `analysis.json`.
+- Updated documentation in `docs/data_contract.md` (§7) and `docs/agent_verifier.md`.
+
+### Results
+- Executed `plot_verifier_analysis.sh` on `.data/evaluate/hana_tts/gemini_baseline`.
+- Verified clean creation of `cost_distribution.png`, `cost_total.png`, and `sample_costs.md`, and confirmed stale `costs.png` was deleted.
+- Verified timestamp ordering in `sample_costs.md` from 0.01s through 342.33s.
+- No tests were written or executed in adherence with repository rules.
