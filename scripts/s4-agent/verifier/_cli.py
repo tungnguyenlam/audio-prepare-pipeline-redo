@@ -208,9 +208,13 @@ def verdict_processor(
             invalid_verdict=invalid_verdict,
         )
 
-        record_result(stats, verdict, error=error)
-        running_total = stats.get('total_cost_usd', 0.0)
         decision = verdict.get('decision') if isinstance(verdict, dict) else None
+        running_total = record_result(
+            stats,
+            verdict if verdict is not None else invalid_verdict,
+            success=error is None,
+            decision=decision,
+        )
         progress(
             'VERIFIER_ITEM',
             f'{source.name}: decision={decision or "unknown"}; {item_detail(verdict, running_total_usd=running_total)}',

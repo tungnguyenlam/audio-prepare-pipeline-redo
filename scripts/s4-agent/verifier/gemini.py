@@ -75,13 +75,24 @@ def main() -> int:
     command.add_argument("-t", "--temperature", type=float, default=0.0, help="Sampling temperature")
     command.add_argument("-tp", "--top-p", type=float, help="Nucleus sampling top-p probability threshold")
     command.add_argument("--top-k", type=positive_int, help="Top-k sampling parameter")
-    command.add_argument("--timeout-s", type=positive_float, default=120.0, help="HTTP request timeout in seconds")
-    command.add_argument("--max-retries", type=positive_int, default=5, help="Maximum retry attempts per request")
+    command.add_argument(
+        "--timeout-s",
+        type=positive_float,
+        help="HTTP request timeout in seconds (default: 120; 900 for flex)",
+    )
+    command.add_argument(
+        "--max-retries",
+        type=positive_int,
+        help="Maximum retry attempts per request (default: 5; 12 for flex, which returns 503 when capacity is short)",
+    )
     command.add_argument(
         "--inference-mode",
-        choices=("batch", "standard"),
+        choices=("batch", "flex", "standard"),
         default="batch",
-        help="Gemini provider mode; batch is asynchronous and billed at Batch rates",
+        help=(
+            "Gemini provider mode; batch is asynchronous and flex is synchronous with "
+            "1-15 min latency, both billed at 50%% of standard rates"
+        ),
     )
     command.add_argument(
         "--batch-size",
@@ -93,6 +104,10 @@ def main() -> int:
     command.add_argument("--batch-timeout-s", type=positive_float, default=86400.0, help="Maximum seconds to wait for Batch completion")
     args = command.parse_args()
     configure_gemini_paths(args, "s4-agent/verifier")
+    if args.timeout_s is None:
+        args.timeout_s = 900.0 if args.inference_mode == "flex" else 120.0
+    if args.max_retries is None:
+        args.max_retries = 12 if args.inference_mode == "flex" else 5
 
     pairs = destinations(args, "_gemini", ".json")
     prompt = load_prompt(args.prompt_file)
@@ -108,7 +123,10 @@ def main() -> int:
         "inference_mode": args.inference_mode,
     }
     with contextlib.redirect_stdout(sys.stderr):
-        verifier = GeminiVerifier(**init_parameters)
+        verifier = GeminiVerifier(
+            **init_parameters,
+            service_tier="flex" if args.inference_mode == "flex" else "standard",
+        )
 
     parameters = resolved_parameters({**init_parameters, "prompt": prompt}, verifier)
     pairs = pending_verifier_pairs(

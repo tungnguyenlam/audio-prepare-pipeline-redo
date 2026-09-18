@@ -32,6 +32,7 @@ logger = logging.getLogger("agent.gemini")
 
 API_ROOT = "https://generativelanguage.googleapis.com/v1beta"
 BATCH_MAX_INLINE_BYTES = 18 * 1024 * 1024
+MAX_BACKOFF_S = 60.0
 BATCH_TERMINAL_STATES = {
     "JOB_STATE_SUCCEEDED",
     "JOB_STATE_FAILED",
@@ -122,7 +123,7 @@ def configure_gemini_paths(args: Any, operation: str) -> Path:
 
 
 class GeminiAgent:
-    """Raw generation client for Gemini standard and asynchronous Batch APIs."""
+    """Raw generation client for Gemini standard, Flex, and asynchronous Batch APIs."""
 
     def __init__(
         self,
@@ -136,10 +137,14 @@ class GeminiAgent:
         top_p: float | None = None,
         top_k: int | None = None,
         timeout_s: float = 120.0,
+        service_tier: str = "standard",
         **kwargs: Any,
     ) -> None:
         del kwargs
+        if service_tier not in ("standard", "flex"):
+            raise ValueError(f"Unsupported Gemini service tier: {service_tier}")
         self.model = model
+        self.service_tier = service_tier
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         if not self.api_key:
             raise ValueError(
@@ -165,9 +170,10 @@ class GeminiAgent:
         except ImportError:
             self._session = None
         logger.info(
-            "Initialized GeminiAgent with model '%s' (reasoning_effort=%s, max_tokens=%d, temp=%.2f, session_transport=%s).",
+            "Initialized GeminiAgent with model '%s' (reasoning_effort=%s, service_tier=%s, max_tokens=%d, temp=%.2f, session_transport=%s).",
             model,
             reasoning_effort,
+            service_tier,
             max_tokens,
             temperature,
             "requests" if self._session is not None else "urllib",
@@ -200,6 +206,10 @@ class GeminiAgent:
             self._cost_totals = empty_cost_totals()
             self._cost_totals["model"] = self.model
 
+    def _backoff_s(self, attempt: int) -> float:
+        """Exponential backoff capped so flex 503 storms retry for minutes, not hours."""
+        return min(self.base_backoff_s * (2 ** (attempt - 1)), MAX_BACKOFF_S)
+
     def _request_json(
         self,
         method: str,
@@ -223,7 +233,7 @@ class GeminiAgent:
                         timeout=self.timeout_s,
                     )
                     if resp.status_code in (429, 500, 502, 503, 504) and attempt < self.max_retries:
-                        sleep_s = self.base_backoff_s * (2 ** (attempt - 1)) + random.uniform(0.1, 1.0)
+                        sleep_s = self._backoff_s(attempt) + random.uniform(0.1, 1.0)
                         logger.warning(
                             "Gemini HTTP %d (%s). Retrying in %.2fs (attempt %d/%d)...",
                             resp.status_code,
@@ -250,7 +260,7 @@ class GeminiAgent:
                             f"SOCKS proxy is configured but PySocks is missing: {exc}. Install with: uv pip install pysocks"
                         ) from exc
                     if retry_network_errors and attempt < self.max_retries:
-                        sleep_s = self.base_backoff_s * (2 ** (attempt - 1)) + random.uniform(0.1, 0.5)
+                        sleep_s = self._backoff_s(attempt) + random.uniform(0.1, 0.5)
                         logger.warning(
                             "Gemini network timeout/error: %s. Retrying in %.2fs (attempt %d/%d)...",
                             exc,
@@ -279,7 +289,7 @@ class GeminiAgent:
             except urllib.error.HTTPError as exc:
                 err_msg = exc.read().decode("utf-8", errors="replace")
                 if exc.code in (429, 500, 502, 503, 504) and attempt < self.max_retries:
-                    sleep_s = self.base_backoff_s * (2 ** (attempt - 1)) + random.uniform(0.1, 1.0)
+                    sleep_s = self._backoff_s(attempt) + random.uniform(0.1, 1.0)
                     logger.warning(
                         "Gemini HTTP %d (%s). Retrying in %.2fs (attempt %d/%d)...",
                         exc.code,
@@ -293,7 +303,7 @@ class GeminiAgent:
                 raise RuntimeError(f"Gemini API HTTP {exc.code} error: {err_msg}") from exc
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 if retry_network_errors and attempt < self.max_retries:
-                    sleep_s = self.base_backoff_s * (2 ** (attempt - 1)) + random.uniform(0.1, 0.5)
+                    sleep_s = self._backoff_s(attempt) + random.uniform(0.1, 0.5)
                     logger.warning(
                         "Gemini network timeout/error: %s. Retrying in %.2fs (attempt %d/%d)...",
                         exc,
@@ -383,7 +393,7 @@ class GeminiAgent:
             "headers": headers or {},
             "usage": usage,
             "cost": cost,
-            "inference_mode": "batch" if pricing_tier == "paid_batch" else "standard",
+            "inference_mode": pricing_tier.removeprefix("paid_"),
             "provider_body": response,
         }
         if batch_job is not None:
@@ -406,6 +416,8 @@ class GeminiAgent:
             system_prompt=system_prompt,
             json_response=json_response,
         )
+        if self.service_tier == "flex":
+            payload["serviceTier"] = "flex"
         started = time.monotonic()
         response, headers = self._request_json(
             "POST",
@@ -416,7 +428,7 @@ class GeminiAgent:
             response,
             latency_s=time.monotonic() - started,
             audio_duration_s=duration,
-            pricing_tier="paid_standard",
+            pricing_tier=f"paid_{self.service_tier}",
             headers=headers,
         )
 
@@ -743,13 +755,24 @@ def main() -> int:
         help="Reasoning effort level for models supporting thinking",
     )
     command.add_argument("--top-k", type=positive_int, help="Top-k sampling parameter")
-    command.add_argument("--timeout-s", type=positive_float, default=120.0, help="HTTP request timeout in seconds")
-    command.add_argument("--max-retries", type=positive_int, default=5, help="Maximum retry attempts per request")
+    command.add_argument(
+        "--timeout-s",
+        type=positive_float,
+        help="HTTP request timeout in seconds (default: 120; 900 for flex)",
+    )
+    command.add_argument(
+        "--max-retries",
+        type=positive_int,
+        help="Maximum retry attempts per request (default: 5; 12 for flex, which returns 503 when capacity is short)",
+    )
     command.add_argument(
         "--inference-mode",
-        choices=("batch", "standard"),
+        choices=("batch", "flex", "standard"),
         default="batch",
-        help="Gemini provider mode; batch is asynchronous and billed at Batch rates",
+        help=(
+            "Gemini provider mode; batch is asynchronous and flex is synchronous with "
+            "1-15 min latency, both billed at 50%% of standard rates"
+        ),
     )
     command.add_argument(
         "--batch-size",
@@ -761,6 +784,10 @@ def main() -> int:
     command.add_argument("--batch-timeout-s", type=positive_float, default=86400.0, help="Maximum seconds to wait for Batch completion")
     args = command.parse_args()
     configure_gemini_paths(args, "s4-agent")
+    if args.timeout_s is None:
+        args.timeout_s = 900.0 if args.inference_mode == "flex" else 120.0
+    if args.max_retries is None:
+        args.max_retries = 12 if args.inference_mode == "flex" else 5
 
     prompt, system_prompt = load_prompts(args)
     parameters = {
@@ -772,6 +799,7 @@ def main() -> int:
         "temperature": args.temperature,
         "top_p": args.top_p,
         "top_k": args.top_k,
+        "timeout_s": args.timeout_s,
         "inference_mode": args.inference_mode,
     }
     client = GeminiAgent(
@@ -783,6 +811,7 @@ def main() -> int:
         top_k=args.top_k,
         timeout_s=args.timeout_s,
         max_retries=args.max_retries,
+        service_tier="flex" if args.inference_mode == "flex" else "standard",
     )
     pairs = destinations(args, "_gemini", ".txt")
     if args.inference_mode == "batch":

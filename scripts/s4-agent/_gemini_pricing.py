@@ -108,9 +108,10 @@ def estimate_gemini_cost(
     rates = GEMINI_STANDARD_PRICES.get(model)
     if rates is None:
         return None
-    if pricing_tier not in {"paid_standard", "paid_batch"}:
+    # Flex is billed at the same 50% discount as Batch.
+    if pricing_tier not in {"paid_standard", "paid_batch", "paid_flex"}:
         raise ValueError(f"Unsupported Gemini pricing tier: {pricing_tier}")
-    prefix = "batch_" if pricing_tier == "paid_batch" else ""
+    prefix = "" if pricing_tier == "paid_standard" else "batch_"
     input_rate = rates[f"{prefix}input"]
     audio_input_rate = rates.get(f"{prefix}audio_input", input_rate)
     output_rate = rates[f"{prefix}output"]
