@@ -16,7 +16,7 @@ if [[ -z "$python_bin" ]]; then
     fi
 fi
 if [[ ! -x "$python_bin" ]]; then
-    echo "Missing alignment environment: $python_bin. See docs/commands.md for setup." >&2
+    echo "Missing alignment environment: $python_bin. Run: ./envs/setup_worker_envs.sh align" >&2
     exit 2
 fi
 exec "$python_bin" "$repo_root/scripts/purity/align.py" "$@"

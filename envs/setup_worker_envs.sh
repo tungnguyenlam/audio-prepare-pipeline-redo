@@ -5,9 +5,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 print_usage() {
-    echo "Usage: $0 [all|core|workers|main|download|audio|separation|pyannote|verify|align|sortformer|3dspeaker|vibevoice|diarizen|minicpmo|kimi|status] [--force]"
+    echo "Usage: $0 [TARGET] [OPTIONS]"
     echo ""
     echo "Device-agnostic environment provisioner for audio processing models."
+    echo "If TARGET is omitted, displays current status and prompts interactively."
     echo ""
     echo "Core Pipeline Targets:"
     echo "  core         Provision all core environments (download, audio, separation, pyannote, verify, align)"
@@ -36,9 +37,6 @@ print_usage() {
     echo "  --force      Recreate target environment from scratch if it already exists"
     echo "  -h, --help   Show this help message"
 }
-
-TARGET="${1:-status}"
-FORCE=0
 
 SILERO_MODEL_URL="https://raw.githubusercontent.com/snakers4/silero-vad/41f03a954b841327835dea1ddb7bb28ae23ddc2c/src/silero_vad/data/silero_vad.jit"
 SILERO_MODEL_SHA256="e1122837f4154c511485fe0b9c64455f7b929c96fbb8d79fbdb336383ebd3720"
@@ -92,10 +90,23 @@ ensure_silero_model() {
     echo "✅ Silero JIT model ready at ${model_path}"
 }
 
+FORCE=0
+TARGET=""
+EXPLICIT_STATUS=0
+
 for arg in "$@"; do
     case "$arg" in
         --force) FORCE=1 ;;
         -h|--help) print_usage; exit 0 ;;
+        status|check)
+            TARGET="status"
+            EXPLICIT_STATUS=1
+            ;;
+        *)
+            if [ -z "$TARGET" ]; then
+                TARGET="$arg"
+            fi
+            ;;
     esac
 done
 
@@ -697,10 +708,15 @@ status_report() {
         ".venvs/minicpmo"
         ".venvs/kimi"
     )
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    trap 'rm -rf "$tmpdir"' RETURN
+    local idx=0
     for v in "${venvs[@]}"; do
+        idx=$((idx + 1))
         if [ -x "${v}/bin/python" ]; then
-            local info
-            info=$("${v}/bin/python" -c "
+            (
+                info=$("${v}/bin/python" -c "
 import sys, importlib.util
 try:
     import torch
@@ -709,20 +725,81 @@ try:
     dev_name = f' ({torch.cuda.get_device_name(0)})' if cuda else ''
     dev = f'ROCm {hip}' if hip else (f'CUDA {torch.version.cuda}{dev_name}' if cuda else 'CPU')
     tver = torch.__version__
-except Exception as e:
+except Exception:
     dev = 'No Torch'
     tver = '-'
 codec = 'torchcodec' if importlib.util.find_spec('torchcodec') else 'no-codec'
 pyver = f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}'
 print(f'Python {pyver} | Torch {tver} [{dev}] | {codec}')
 " 2>/dev/null || echo "Corrupt or uninitialized")
-            printf "  %-18s -> ✅ %s\n" "$v" "$info"
+                printf "  %-18s -> ✅ %s\n" "$v" "$info" > "$tmpdir/$idx"
+            ) &
         else
-            printf "  %-18s -> ❌ Not created\n" "$v"
+            printf "  %-18s -> ❌ Not created\n" "$v" > "$tmpdir/$idx"
         fi
     done
+    wait
+    for i in $(seq 1 ${#venvs[@]}); do
+        cat "$tmpdir/$i" 2>/dev/null || true
+    done
+    rm -rf "$tmpdir"
+    trap - RETURN
     echo "========================================================"
 }
+
+if [ "$EXPLICIT_STATUS" -eq 1 ]; then
+    status_report
+    echo ""
+    echo "💡 To provision environments, run '$0 core' or '$0 --help' for options."
+    exit 0
+fi
+
+if [ -z "$TARGET" ]; then
+    status_report
+    if [ -t 0 ] && [ -t 1 ]; then
+        echo ""
+        echo "No target specified. Select an environment to provision:"
+        echo "  1) core       Provision core pipeline (download, audio, separation, pyannote, verify, align) [default]"
+        echo "  2) download   Provision YouTube downloader and JavaScript runtimes (.venvs/download)"
+        echo "  3) audio      Provision audio utilities & Silero VAD (.venvs/audio)"
+        echo "  4) all        Provision all core + isolated worker environments"
+        echo "  5) workers    Provision isolated workers (sortformer, 3dspeaker, vibevoice, diarizen, minicpmo)"
+        echo "  6) custom     Enter target name manually"
+        echo "  q) quit       Exit without changes"
+        echo ""
+        read -r -p "Select option [1]: " choice </dev/tty || choice="q"
+        case "$choice" in
+            1|""|core) TARGET="core" ;;
+            2|download) TARGET="download" ;;
+            3|audio) TARGET="audio" ;;
+            4|all) TARGET="all" ;;
+            5|workers) TARGET="workers" ;;
+            6|custom)
+                read -r -p "Enter target name (e.g. separation, pyannote): " custom_target </dev/tty || custom_target="q"
+                TARGET="$custom_target"
+                ;;
+            q|quit|exit)
+                echo "Exiting without making changes."
+                exit 0
+                ;;
+            *)
+                TARGET="$choice"
+                ;;
+        esac
+    else
+        echo ""
+        echo "========================================================"
+        echo "💡 No target specified."
+        echo "Quick start:"
+        echo "  $0 core         # Provision core pipeline (download, audio, separation, pyannote, verify, align)"
+        echo "  $0 download     # Provision YouTube downloader and JS runtimes"
+        echo "  $0 audio        # Provision audio processing utilities"
+        echo "  $0 all          # Provision all environments"
+        echo "Run '$0 --help' for all available targets."
+        echo "========================================================"
+        exit 0
+    fi
+fi
 
 case "$TARGET" in
     main)
@@ -771,9 +848,6 @@ case "$TARGET" in
         ;;
     kimi)
         setup_kimi
-        ;;
-    status|check)
-        status_report
         ;;
     all)
         setup_core

@@ -14,8 +14,37 @@ if [[ -z "$python_bin" ]]; then
         fi
     done
 fi
+
 if [[ -z "$python_bin" || ! -x "$python_bin" ]]; then
-    echo "Missing download environment. Run bash \"$repo_root/envs/setup_worker_envs.sh\" download or set DOWNLOAD_PYTHON to an executable Python path." >&2
+    setup_script="$repo_root/envs/setup_worker_envs.sh"
+    auto_provision="${AUTO_PROVISION:-0}"
+
+    if [[ "$auto_provision" != "1" && -t 0 && -t 1 ]]; then
+        echo "⚠️  Download environment (.venvs/download) is missing." >&2
+        read -r -p "Would you like to provision it now? [Y/n] " response </dev/tty || response="n"
+        case "${response:-y}" in
+            [yY][eE][sS]|[yY]|"") auto_provision=1 ;;
+            *) auto_provision=0 ;;
+        esac
+    fi
+
+    if [[ "$auto_provision" == "1" ]]; then
+        echo "🚀 Provisioning download environment via: $setup_script download" >&2
+        bash "$setup_script" download
+        for candidate in .venvs/download .venv-download; do
+            if [[ -x "$repo_root/$candidate/bin/python" ]]; then
+                python_bin="$repo_root/$candidate/bin/python"
+                break
+            fi
+        done
+    fi
+fi
+
+if [[ -z "$python_bin" || ! -x "$python_bin" ]]; then
+    echo "❌ Missing download environment (.venvs/download)." >&2
+    echo "To set it up, run:" >&2
+    echo "  ./envs/setup_worker_envs.sh download" >&2
+    echo "Or set DOWNLOAD_PYTHON to an executable Python path." >&2
     exit 2
 fi
 

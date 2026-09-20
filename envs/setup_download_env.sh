@@ -164,10 +164,29 @@ with zipfile.ZipFile(archive) as source:
 echo "📦 Updating Python download requirements (including yt-dlp)..."
 uv pip install --upgrade --python "$PY" -r "$REPO_ROOT/envs/requirements-download.txt"
 
-install_deno
-install_node
-install_bun
-install_quickjs
+if [ "$FORCE" -eq 1 ] || [ ! -x "$BIN_DIR/deno" ]; then
+    install_deno
+else
+    echo "✅ Deno already installed in ${BIN_DIR}/deno"
+fi
+
+if [ "$FORCE" -eq 1 ] || [ ! -x "$BIN_DIR/node" ] || [ ! -x "$BIN_DIR/npm" ]; then
+    install_node
+else
+    echo "✅ Node.js already installed in ${BIN_DIR}/node"
+fi
+
+if [ "$FORCE" -eq 1 ] || [ ! -x "$BIN_DIR/bun" ]; then
+    install_bun
+else
+    echo "✅ Bun already installed in ${BIN_DIR}/bun"
+fi
+
+if [ "$FORCE" -eq 1 ] || [ ! -x "$BIN_DIR/qjs" ]; then
+    install_quickjs
+else
+    echo "✅ QuickJS already installed in ${BIN_DIR}/qjs"
+fi
 
 echo "✅ Verifying download environment..."
 PATH="$BIN_DIR:$PATH" DENO_DIR="$DENO_CACHE_DIR" "$PY" -c '
@@ -180,7 +199,7 @@ yt_dlp_version = version("yt-dlp")
 print(f"   -> yt-dlp: {yt_dlp_version}")
 for executable in ("deno", "node", "npm", "bun", "qjs"):
     path = shutil.which(executable)
-    print(f"   -> {executable}: {path or 'missing'}")
+    print(f"   -> {executable}: {path or '\''missing'\''}")
     if path is None:
         raise SystemExit(f"Missing JavaScript runtime: {executable}")
 '

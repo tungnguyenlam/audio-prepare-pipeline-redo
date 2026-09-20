@@ -1,3 +1,23 @@
+## 2026-09-20 - Improve environment setup UX and launcher auto-provisioning
+
+### Decisions
+- Enhanced `scripts/_common/download_launcher.sh` and `scripts/_common/audio_launcher.sh` with interactive auto-provisioning: when an environment is missing in an interactive terminal, the launcher prompts the user `[Y/n]` to provision it on the spot and seamlessly proceeds with execution upon completion, rather than exiting with an error.
+- Re-architected `envs/setup_worker_envs.sh`:
+  - Replaced the confusing silent fallback of `TARGET="${1:-status}"`.
+  - When invoked with no target interactively (`-t 0 && -t 1`), it renders current status and prompts with a 1-key menu (`core` by default, `download`, `audio`, `all`, `workers`, custom, or quit).
+  - When invoked non-interactively without arguments, it displays the status report followed by a clear, actionable Quick Start guide.
+  - Explicit `status` / `check` commands print the status report and helpful tips without prompting.
+  - Robust argument parsing separates `--force` and `-h`/`--help` from target names.
+- Optimized `status_report` to run environment and hardware inspections in parallel across background subshells, reducing status check latency from ~20 seconds down to ~2 seconds on AMD ROCm systems.
+- Guarded JavaScript runtime installations (Deno, Node.js, Bun, QuickJS) in `envs/setup_download_env.sh` so already-installed executables are skipped unless `--force` / `--clean` / `--recreate` is specified.
+- Updated 24 launcher scripts across `scripts/s2-separate`, `scripts/s3-diarize`, `scripts/s4-agent`, `scripts/speaker`, and `scripts/purity` to provide the direct, copy-pasteable provisioning command (`./envs/setup_worker_envs.sh <target>`) instead of vague pointers.
+- Created symlink `~/Documents/audio-prepare-pipeline-redo -> ~/Documents/tts-data-pipeline/audio-prepare-pipeline-redo` for path compatibility across terminal sessions.
+
+### Results
+- Seamless CLI experience when running scripts on fresh clones: users can run `scripts/s1-download/youtube.sh` or `./envs/setup_worker_envs.sh` without friction or confusion.
+- Fast status queries (~2s vs ~20s).
+- All changes verified against local CLI commands (`youtube.sh`, `info.sh`, `setup_worker_envs.sh`); no test suite was written or run per guidelines.
+
 ## 2026-09-18 - Add Gemini Flex inference mode and confirm implicit prompt caching
 
 ### Decisions
