@@ -6,52 +6,67 @@ from typing import Any, Mapping
 
 # Paid list prices in USD per million tokens. Versioned because Google prices
 # and introductory offers can change independently of this repository.
-GEMINI_PRICE_CARD_AS_OF = "2026-09-11"
+GEMINI_PRICE_CARD_AS_OF = "2026-09-21"
 GEMINI_STANDARD_PRICES: dict[str, dict[str, float]] = {
     "gemini-3.8-flash": {
         "input": 0.75, "output": 3.75, "cached_input": 0.075,
         "batch_input": 0.375, "batch_output": 1.875,
-        "batch_cached_input": 0.0375,
+        "batch_cached_input": 0.0375, "cache_storage": 0.50,
     },
     "gemini-3.7-flash": {
         "input": 0.75, "output": 3.75, "cached_input": 0.075,
         "batch_input": 0.375, "batch_output": 1.875,
-        "batch_cached_input": 0.0375,
+        "batch_cached_input": 0.0375, "cache_storage": 0.50,
     },
     "gemini-3.6-flash": {
         "input": 0.75, "output": 3.75, "cached_input": 0.075,
         "batch_input": 0.375, "batch_output": 1.875,
-        "batch_cached_input": 0.0375,
+        "batch_cached_input": 0.0375, "cache_storage": 0.50,
     },
     "gemini-3.5-flash": {
         "input": 1.50, "output": 9.00, "cached_input": 0.15,
         "batch_input": 0.75, "batch_output": 4.50,
-        "batch_cached_input": 0.075,
+        "batch_cached_input": 0.075, "flex_cached_input": 0.08, "cache_storage": 1.00,
     },
     "gemini-3.5-flash-lite": {
         "input": 0.30, "output": 2.50, "cached_input": 0.03,
         "batch_input": 0.15, "batch_output": 1.25,
-        "batch_cached_input": 0.02,
+        "batch_cached_input": 0.02, "cache_storage": 1.00,
     },
     "gemini-3.1-pro-preview": {
         "input": 2.00, "output": 12.00, "cached_input": 0.20,
         "batch_input": 1.00, "batch_output": 6.00,
-        "batch_cached_input": 0.20,
+        "batch_cached_input": 0.20, "cache_storage": 4.50,
     },
     "gemini-3.1-flash-lite": {
         "input": 0.25, "audio_input": 0.50, "output": 1.50,
         "cached_input": 0.025, "cached_audio_input": 0.05,
         "batch_input": 0.125, "batch_audio_input": 0.25,
         "batch_output": 0.75, "batch_cached_input": 0.0125,
-        "batch_cached_audio_input": 0.025,
+        "batch_cached_audio_input": 0.025, "cache_storage": 1.00,
+        "batch_cache_storage": 0.50,
     },
 }
+
+
+def estimate_cache_storage_cost(model: str, tokens: int, ttl_s: int, inference_mode: str) -> float | None:
+    """Full TTL storage estimate, charged once; no guessed rate for unknown models.
+
+    Source: https://ai.google.dev/gemini-api/docs/pricing
+    Caches are left to expire, so storage remains billable after the command ends.
+    """
+    rates = GEMINI_STANDARD_PRICES.get(model)
+    if rates is None:
+        return None
+    rate = rates.get("batch_cache_storage", rates["cache_storage"]) if inference_mode in {"batch", "flex"} else rates["cache_storage"]
+    return round(tokens * ttl_s / 3600 * rate / 1_000_000, 9)
 
 
 def normalize_gemini_usage(
     value: Mapping[str, Any] | None,
     *,
     audio_duration_s: float | None = None,
+    explicit_text_cache: bool = False,
 ) -> dict[str, Any]:
     """Normalize Gemini token metadata, including cache hits by modality."""
     metadata = value if isinstance(value, dict) else {}
@@ -83,6 +98,12 @@ def normalize_gemini_usage(
         audio_tokens = min(prompt_tokens, round(float(audio_duration_s) * 32))
         text_tokens = max(text_tokens, prompt_tokens - audio_tokens)
         audio_tokens_estimated = True
+    if explicit_text_cache:
+        # Only text was cached, even if the API apportions hits across modalities.
+        audio_tokens = min(audio_tokens, prompt_tokens - cached_tokens)
+        text_tokens = min(max(text_tokens, cached_tokens), prompt_tokens - audio_tokens)
+        cached_audio_tokens = 0
+        cached_text_tokens = cached_tokens
     return {
         "prompt_tokens": prompt_tokens,
         "cached_input_tokens": cached_tokens,
@@ -94,7 +115,7 @@ def normalize_gemini_usage(
         "output_tokens": int(metadata.get("candidatesTokenCount", 0) or 0),
         "thinking_tokens": int(metadata.get("thoughtsTokenCount", 0) or 0),
         "total_tokens": int(metadata.get("totalTokenCount", 0) or 0),
-        "service_tier": metadata.get("serviceTier"),
+        "service_tier": metadata.get("serviceTier") or metadata.get("service_tier"),
     }
 
 
@@ -116,11 +137,19 @@ def estimate_gemini_cost(
     audio_input_rate = rates.get(f"{prefix}audio_input", input_rate)
     output_rate = rates[f"{prefix}output"]
     cached_input_rate = rates.get(f"{prefix}cached_input", input_rate)
+    if pricing_tier == "paid_flex":
+        cached_input_rate = rates.get("flex_cached_input", cached_input_rate)
     cached_audio_rate = rates.get(
         f"{prefix}cached_audio_input", cached_input_rate
     )
 
     prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
+    if model == "gemini-3.1-pro-preview" and prompt_tokens > 200_000:
+        input_rate *= 2
+        audio_input_rate *= 2
+        output_rate *= 1.5
+        cached_input_rate *= 2
+        cached_audio_rate *= 2
     audio_tokens = min(prompt_tokens, int(usage.get("audio_input_tokens", 0) or 0))
     text_tokens = min(
         prompt_tokens - audio_tokens,
@@ -205,6 +234,8 @@ def empty_cost_totals() -> dict[str, Any]:
     return {
         "uncached_input_usd": 0.0,
         "cached_input_usd": 0.0,
+        "cache_storage_usd": 0.0,
+        "unpriced_caches": 0,
         "input_usd": 0.0,
         "output_usd": 0.0,
         "total_usd": 0.0,
@@ -243,13 +274,16 @@ def accumulate_cost(totals: dict[str, Any], cost: Mapping[str, Any] | None) -> N
     for key in (
         "uncached_input_usd",
         "cached_input_usd",
+        "cache_storage_usd",
         "input_usd",
         "output_usd",
         "total_usd",
     ):
         totals[key] = float(totals.get(key, 0.0)) + float(cost.get(key, 0.0) or 0.0)
     totals["currency"] = cost.get("currency", totals.get("currency", "USD"))
-    totals["pricing_tier"] = cost.get("pricing_tier", totals.get("pricing_tier"))
+    tier = cost.get("pricing_tier")
+    old_tier = totals.get("pricing_tier")
+    totals["pricing_tier"] = "mixed" if old_tier and tier != old_tier else tier
     totals["rate_card_as_of"] = cost.get(
         "rate_card_as_of", totals.get("rate_card_as_of")
     )
@@ -271,6 +305,7 @@ def aggregate_prediction_costs(predictions: list[Mapping[str, Any]]) -> dict[str
     for key in (
         "uncached_input_usd",
         "cached_input_usd",
+        "cache_storage_usd",
         "input_usd",
         "output_usd",
         "total_usd",

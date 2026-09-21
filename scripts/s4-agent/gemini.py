@@ -5,26 +5,27 @@ import base64
 import hashlib
 import json
 import logging
+import math
 import mimetypes
 import os
 import random
 import sys
 import threading
 import time
-import urllib.error
-import urllib.request
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from _common.files import ROOT, digest, persist_path, safe_name, write_json  # noqa: E402
+from _common.files import ROOT, digest, persist_path, safe_name, write_json, positive_int  # noqa: E402
 from _gemini_pricing import (  # noqa: E402
     accumulate_cost,
     accumulate_usage,
     empty_cost_totals,
     empty_usage_totals,
     estimate_gemini_cost,
+    estimate_cache_storage_cost,
     normalize_gemini_usage,
 )
 
@@ -58,7 +59,7 @@ MIME_TYPES = {
 
 def positive_float(value: str) -> float:
     result = float(value)
-    if result <= 0:
+    if not math.isfinite(result) or result <= 0:
         raise argparse.ArgumentTypeError("must be positive")
     return result
 
@@ -130,47 +131,42 @@ class GeminiAgent:
         model: str = "gemini-3.8-flash",
         api_key: str | None = None,
         reasoning_effort: str = "medium",
-        max_retries: int = 5,
+        max_retries: int | None = None,
         base_backoff_s: float = 2.0,
         max_tokens: int = 65536,
-        timeout_s: float = 120.0,
-        service_tier: str = "standard",
-        **kwargs: Any,
+        timeout_s: float | None = None,
+        inference_mode: str = "batch",
+        cache_prompt: bool = False,
+        cache_ttl_s: int | None = None,
     ) -> None:
-        del kwargs
-        if service_tier not in ("standard", "flex"):
-            raise ValueError(f"Unsupported Gemini service tier: {service_tier}")
+        if inference_mode not in ("standard", "flex", "batch"):
+            raise ValueError(f"Unsupported Gemini inference mode: {inference_mode}")
         self.model = model
-        self.service_tier = service_tier
+        self.inference_mode = inference_mode
+        self.cache_prompt = cache_prompt
+        self.cache_ttl_s = cache_ttl_s or (90000 if inference_mode == "batch" else 3600)
+        self._cache_lock = threading.Lock()
+        self._cache = None
+        self._cache_key = None
+        self._cache_expires = 0.0
+        self._pending_storage_usd = 0.0
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         if not self.api_key:
             raise ValueError(
                 "GEMINI_API_KEY environment variable or .env setting is required for GeminiAgent."
             )
         self.reasoning_effort = reasoning_effort
-        self.max_retries = max_retries
+        self.max_retries = max_retries if max_retries is not None else (12 if inference_mode == "flex" else 5)
         self.base_backoff_s = base_backoff_s
         self.max_tokens = max_tokens
-        self.timeout_s = timeout_s
+        self.timeout_s = timeout_s if timeout_s is not None else (900.0 if inference_mode == "flex" else 120.0)
         self._lock = threading.Lock()
         self._usage_totals = empty_usage_totals()
         self._cost_totals = empty_cost_totals()
         self._cost_totals["model"] = model
-        self._session = None
-        try:
-            import requests
+        import httpx
 
-            self._session = requests.Session()
-        except ImportError:
-            self._session = None
-        logger.info(
-            "Initialized GeminiAgent with model '%s' (reasoning_effort=%s, service_tier=%s, max_tokens=%d, session_transport=%s).",
-            model,
-            reasoning_effort,
-            service_tier,
-            max_tokens,
-            "requests" if self._session is not None else "urllib",
-        )
+        self._session = httpx.Client(timeout=self.timeout_s)
 
     def get_cost_summary(self) -> dict[str, Any]:
         """Return a copy of cumulative usage and estimated USD cost for this session."""
@@ -180,6 +176,7 @@ class GeminiAgent:
             for key in (
                 "uncached_input_usd",
                 "cached_input_usd",
+                "cache_storage_usd",
                 "input_usd",
                 "output_usd",
                 "total_usd",
@@ -198,6 +195,7 @@ class GeminiAgent:
             self._usage_totals = empty_usage_totals()
             self._cost_totals = empty_cost_totals()
             self._cost_totals["model"] = self.model
+            self._pending_storage_usd = 0.0
 
     def _backoff_s(self, attempt: int) -> float:
         """Exponential backoff capped so flex 503 storms retry for minutes, not hours."""
@@ -211,103 +209,66 @@ class GeminiAgent:
         *,
         retry_network_errors: bool = True,
     ) -> tuple[dict[str, Any], dict[str, str]]:
-        headers = {
-            "Content-Type": "application/json",
-            "x-goog-api-key": self.api_key,
-        }
-        for attempt in range(1, self.max_retries + 1):
-            if self._session is not None:
-                try:
-                    resp = self._session.request(
-                        method,
-                        url,
-                        json=payload,
-                        headers=headers,
-                        timeout=self.timeout_s,
-                    )
-                    if resp.status_code in (429, 500, 502, 503, 504) and attempt < self.max_retries:
-                        sleep_s = self._backoff_s(attempt) + random.uniform(0.1, 1.0)
-                        logger.warning(
-                            "Gemini HTTP %d (%s). Retrying in %.2fs (attempt %d/%d)...",
-                            resp.status_code,
-                            resp.reason,
-                            sleep_s,
-                            attempt,
-                            self.max_retries,
-                        )
-                        time.sleep(sleep_s)
-                        continue
-                    if not resp.ok:
-                        raise RuntimeError(f"Gemini API HTTP {resp.status_code} error: {resp.text}")
-                    return resp.json(), {
-                        key: value
-                        for key, value in resp.headers.items()
-                        if key.lower() in {"content-type", "date", "server", "x-request-id"}
-                    }
-                except Exception as exc:
-                    if isinstance(exc, RuntimeError):
-                        raise
-                    err_type = type(exc).__name__
-                    if "InvalidSchema" in err_type and "SOCKS" in str(exc):
-                        raise RuntimeError(
-                            f"SOCKS proxy is configured but PySocks is missing: {exc}. Install with: uv pip install pysocks"
-                        ) from exc
-                    if retry_network_errors and attempt < self.max_retries:
-                        sleep_s = self._backoff_s(attempt) + random.uniform(0.1, 0.5)
-                        logger.warning(
-                            "Gemini network timeout/error: %s. Retrying in %.2fs (attempt %d/%d)...",
-                            exc,
-                            sleep_s,
-                            attempt,
-                            self.max_retries,
-                        )
-                        time.sleep(sleep_s)
-                        continue
-                    raise RuntimeError(f"Gemini API connection error: {exc}") from exc
+        import httpx
 
-            req_body = json.dumps(payload).encode("utf-8") if payload is not None else None
-            req = urllib.request.Request(
-                url,
-                data=req_body,
-                headers=headers,
-                method=method,
-            )
+        headers = {"x-goog-api-key": self.api_key}
+        for attempt in range(1, self.max_retries + 1):
             try:
-                with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
-                    return json.loads(resp.read().decode("utf-8")), {
-                        key: value
-                        for key, value in resp.headers.items()
-                        if key.lower() in {"content-type", "date", "server", "x-request-id"}
+                response = self._session.request(method, url, json=payload, headers=headers)
+            except httpx.TransportError:
+                if not retry_network_errors or attempt == self.max_retries:
+                    raise RuntimeError("Gemini connection failed") from None
+            else:
+                if response.is_success:
+                    return response.json(), {
+                        key: value for key, value in response.headers.items()
+                        if key in {"content-type", "date", "server", "x-request-id"}
                     }
-            except urllib.error.HTTPError as exc:
-                err_msg = exc.read().decode("utf-8", errors="replace")
-                if exc.code in (429, 500, 502, 503, 504) and attempt < self.max_retries:
-                    sleep_s = self._backoff_s(attempt) + random.uniform(0.1, 1.0)
-                    logger.warning(
-                        "Gemini HTTP %d (%s). Retrying in %.2fs (attempt %d/%d)...",
-                        exc.code,
-                        exc.reason,
-                        sleep_s,
-                        attempt,
-                        self.max_retries,
-                    )
-                    time.sleep(sleep_s)
-                    continue
-                raise RuntimeError(f"Gemini API HTTP {exc.code} error: {err_msg}") from exc
-            except (urllib.error.URLError, TimeoutError, OSError) as exc:
-                if retry_network_errors and attempt < self.max_retries:
-                    sleep_s = self._backoff_s(attempt) + random.uniform(0.1, 0.5)
-                    logger.warning(
-                        "Gemini network timeout/error: %s. Retrying in %.2fs (attempt %d/%d)...",
-                        exc,
-                        sleep_s,
-                        attempt,
-                        self.max_retries,
-                    )
-                    time.sleep(sleep_s)
-                    continue
-                raise RuntimeError(f"Gemini API connection error: {exc}") from exc
-        raise RuntimeError("Gemini API call exhausted retries.")
+                if response.status_code not in {429, 500, 502, 503, 504} or attempt == self.max_retries:
+                    # Do not echo provider bodies or transport exceptions: they may contain secrets.
+                    operation = "prompt cache creation" if url.endswith("/cachedContents") else "request"
+                    hint = "; check model caching support and minimum prompt size" if operation == "prompt cache creation" else ""
+                    raise RuntimeError(f"Gemini {operation}: HTTP {response.status_code}{hint}")
+            delay = self._backoff_s(attempt) + random.uniform(0.1, 0.5)
+            logger.warning("Gemini request failed; retry %d/%d in %.2fs", attempt, self.max_retries, delay)
+            time.sleep(delay)
+        raise RuntimeError("Gemini API call exhausted retries")
+
+    def _apply_prompt_cache(self, payload: dict[str, Any], prompt: str, system_prompt: str | None) -> None:
+        """Reuse one text-only cache per client; audio always stays in the request."""
+        if not self.cache_prompt:
+            return
+        key = (prompt, system_prompt)
+        with self._cache_lock:
+            if key != self._cache_key or time.monotonic() >= self._cache_expires:
+                body = {
+                    "model": f"models/{self.model}",
+                    "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                    "ttl": f"{self.cache_ttl_s}s",
+                }
+                if system_prompt is not None:
+                    body["systemInstruction"] = {"parts": [{"text": system_prompt}]}
+                started = time.monotonic()
+                cache, _ = self._request_json("POST", f"{API_ROOT}/cachedContents", body, retry_network_errors=False)
+                self._cache = cache["name"]
+                self._cache_key = key
+                reserve_s = 86400 if self.inference_mode == "batch" else min(60, self.cache_ttl_s / 10)
+                self._cache_expires = started + self.cache_ttl_s - reserve_s
+                tokens = int(cache.get("usageMetadata", {}).get("totalTokenCount", 0))
+                storage = estimate_cache_storage_cost(self.model, tokens, self.cache_ttl_s, self.inference_mode)
+                with self._lock:
+                    if storage is None or not tokens:
+                        self._cost_totals["unpriced_caches"] += 1
+                    else:
+                        self._cost_totals["cache_storage_usd"] += storage
+                        self._cost_totals["total_usd"] += storage
+                        self._pending_storage_usd += storage
+                logger.info("Created prompt cache %s (%d tokens, TTL %ds)", self._cache, tokens, self.cache_ttl_s)
+            payload["cachedContent"] = self._cache
+        payload["contents"][0]["parts"] = [
+            part for part in payload["contents"][0]["parts"] if "text" not in part
+        ]
+        payload.pop("systemInstruction", None)
 
     def _request_payload(
         self,
@@ -361,7 +322,12 @@ class GeminiAgent:
         usage = normalize_gemini_usage(
             response.get("usageMetadata"),
             audio_duration_s=audio_duration_s,
+            explicit_text_cache=self.cache_prompt,
         )
+        if pricing_tier != "paid_batch":
+            returned_tier = str(usage.get("service_tier") or "").lower()
+            if returned_tier in {"standard", "flex"}:
+                pricing_tier = f"paid_{returned_tier}"
         cost = estimate_gemini_cost(
             self.model,
             usage,
@@ -370,6 +336,11 @@ class GeminiAgent:
         with self._lock:
             accumulate_usage(self._usage_totals, usage)
             accumulate_cost(self._cost_totals, cost)
+            if cost is not None:
+                # Assign storage once to an artifact so offline sums include it too.
+                cost["cache_storage_usd"] = round(self._pending_storage_usd, 9)
+                cost["total_usd"] = round(cost["total_usd"] + self._pending_storage_usd, 9)
+                self._pending_storage_usd = 0.0
         result = {
             "text": response_text(response),
             "latency_s": round(latency_s, 3),
@@ -377,6 +348,8 @@ class GeminiAgent:
             "usage": usage,
             "cost": cost,
             "inference_mode": pricing_tier.removeprefix("paid_"),
+            "requested_inference_mode": self.inference_mode,
+            "cache_prompt": self.cache_prompt,
             "provider_body": response,
         }
         if batch_job is not None:
@@ -392,13 +365,15 @@ class GeminiAgent:
         *,
         system_prompt: str | None = None,
     ) -> dict[str, Any]:
+        if self.inference_mode == "batch":
+            raise ValueError("Batch mode requires generate_batch(), not generate()")
         payload, duration = self._request_payload(
             audio_path,
             prompt,
             system_prompt=system_prompt,
         )
-        if self.service_tier == "flex":
-            payload["serviceTier"] = "flex"
+        self._apply_prompt_cache(payload, prompt, system_prompt)
+        payload["service_tier"] = self.inference_mode
         started = time.monotonic()
         response, headers = self._request_json(
             "POST",
@@ -409,7 +384,7 @@ class GeminiAgent:
             response,
             latency_s=time.monotonic() - started,
             audio_duration_s=duration,
-            pricing_tier=f"paid_{self.service_tier}",
+            pricing_tier=f"paid_{self.inference_mode}",
             headers=headers,
         )
 
@@ -485,6 +460,11 @@ class GeminiAgent:
         reuse_state: bool = True,
     ) -> dict[Path, dict[str, Any] | Exception]:
         """Submit missing audio requests to Gemini Batch and wait for results."""
+        if self.inference_mode != "batch":
+            raise ValueError("generate_batch() requires inference_mode='batch'")
+        if self.cache_prompt and self.cache_ttl_s < 90000:
+            raise ValueError("Batch prompt caching requires --cache-ttl-s >= 90000 (25 hours)")
+        initial_storage = self._cost_totals["cache_storage_usd"]
         descriptors: list[dict[str, Any]] = []
         for index, source_value in enumerate(audio_paths):
             source = Path(source_value).resolve()
@@ -499,6 +479,7 @@ class GeminiAgent:
                 "sha256": digest(source),
                 "model": self.model,
                 "reasoning_effort": self.reasoning_effort,
+                "cache_prompt": self.cache_prompt,
                 "payload_without_audio": {
                     **payload,
                     "contents": [{"role": "user", "parts": [{"text": prompt}]}],
@@ -587,6 +568,13 @@ class GeminiAgent:
                 keys = [str(item["key"]) for item in group]
                 existing = saved_groups[group_index] if group_index < len(saved_groups) else None
                 if not isinstance(existing, dict) or existing.get("request_keys") != keys or not existing.get("job_name"):
+                    previous_storage = self._cost_totals["cache_storage_usd"]
+                    for item in group:
+                        self._apply_prompt_cache(item["entry"]["request"], prompt, system_prompt)
+                    saved["cache_storage_usd"] = saved.get("cache_storage_usd", 0.0) + (
+                        self._cost_totals["cache_storage_usd"] - previous_storage
+                    )
+                    write_json(state_path, saved)
                     body = {
                         "batch": {
                             "display_name": f"{safe_name(self.model)}-{safe_name(self.reasoning_effort)}-{session_id}-{group_index + 1}",
@@ -687,6 +675,13 @@ class GeminiAgent:
             })
             write_json(state_path, saved)
 
+        # Batch artifacts include the job's storage estimate even after a restart.
+        with self._lock:
+            storage = float(saved.get("cache_storage_usd", 0.0))
+            new_storage = self._cost_totals["cache_storage_usd"] - initial_storage
+            self._cost_totals["total_usd"] += storage - new_storage
+            self._cost_totals["cache_storage_usd"] += storage - new_storage
+            self._pending_storage_usd += storage - new_storage
         results: dict[Path, dict[str, Any] | Exception] = {}
         descriptor_by_key = {str(item["key"]): item for item in descriptors}
         for key, descriptor in descriptor_by_key.items():
@@ -716,16 +711,8 @@ class GeminiAgent:
         return results
 
 
-def main() -> int:
-    from artifacts import add_prompt_arguments, load_prompts, run_agent
-    from _common.files import destinations, parser, positive_int
-
-    command = parser(
-        "Explore Gemini audio understanding without imposing a response schema.",
-        "s4-agent",
-        "gemini",
-    )
-    add_prompt_arguments(command, max_tokens=65536, sampling=False)
+def add_gemini_arguments(command: argparse.ArgumentParser) -> None:
+    """Identical provider controls for raw generation and verification."""
     command.add_argument("-m", "--model", default="gemini-3.8-flash", help="Gemini model name")
     command.add_argument(
         "--reasoning-effort",
@@ -753,58 +740,83 @@ def main() -> int:
         ),
     )
     command.add_argument(
-        "--batch-size",
+        "-b", "-bs", "--batch-size",
         type=positive_int,
         default=10,
         help="Maximum requests per Gemini Batch job (also capped below 20 MB)",
     )
     command.add_argument("--batch-poll-interval-s", type=positive_float, default=10.0, help="Seconds between Batch status polls")
     command.add_argument("--batch-timeout-s", type=positive_float, default=86400.0, help="Maximum seconds to wait for Batch completion")
-    args = command.parse_args()
-    configure_gemini_paths(args, "s4-agent")
+    command.add_argument("--cache-prompt", action="store_true", help="Explicitly cache prompt text (default: false)")
+    command.add_argument("--cache-ttl-s", type=positive_int, help="Cache lifetime in seconds (default: 3600; 90000 for batch)")
+
+
+def gemini_parameters(args: Any) -> dict[str, Any]:
     if args.timeout_s is None:
         args.timeout_s = 900.0 if args.inference_mode == "flex" else 120.0
     if args.max_retries is None:
         args.max_retries = 12 if args.inference_mode == "flex" else 5
+    if args.cache_ttl_s is None:
+        args.cache_ttl_s = 90000 if args.inference_mode == "batch" else 3600
+    if args.cache_prompt and args.inference_mode == "batch" and args.cache_ttl_s < 90000:
+        raise ValueError("Batch prompt caching requires --cache-ttl-s >= 90000 (25 hours)")
+    return {key: getattr(args, key) for key in (
+        "model", "reasoning_effort", "max_tokens", "timeout_s", "max_retries",
+        "inference_mode", "cache_prompt", "cache_ttl_s",
+    )}
 
-    prompt, system_prompt = load_prompts(args)
-    parameters = {
-        "model": args.model,
-        "prompt": prompt,
-        "system_prompt": system_prompt,
-        "reasoning_effort": args.reasoning_effort,
-        "max_tokens": args.max_tokens,
-        "timeout_s": args.timeout_s,
-        "inference_mode": args.inference_mode,
-    }
-    client = GeminiAgent(
-        model=args.model,
-        reasoning_effort=args.reasoning_effort,
-        max_tokens=args.max_tokens,
-        timeout_s=args.timeout_s,
-        max_retries=args.max_retries,
-        service_tier="flex" if args.inference_mode == "flex" else "standard",
-    )
-    pairs = destinations(args, "_gemini", ".txt")
-    if args.inference_mode == "batch":
-        generated = client.generate_batch(
-            [source for source, _ in pairs],
-            prompt,
-            system_prompt=system_prompt,
-            batch_size=args.batch_size,
-            poll_interval_s=args.batch_poll_interval_s,
-            batch_timeout_s=args.batch_timeout_s,
-            state_dir=args.work_dir / "batch_jobs",
+
+def generation_callback(
+    client: GeminiAgent,
+    args: Any,
+    pairs: list[tuple[Path, Path]],
+    prompt: str,
+    system_prompt: str | None = None,
+) -> Callable[[Path], dict[str, Any]]:
+    """Select the provider API once; both commands consume raw results."""
+    if client.inference_mode != "batch":
+        return lambda source: client.generate(source, prompt, system_prompt=system_prompt)
+    try:
+        results = client.generate_batch(
+            [source for source, _ in pairs], prompt, system_prompt=system_prompt,
+            batch_size=args.batch_size, poll_interval_s=args.batch_poll_interval_s,
+            batch_timeout_s=args.batch_timeout_s, state_dir=args.work_dir / "batch_jobs",
             reuse_state=not args.overwrite,
         )
+    except BaseException:
+        from _reporting import new_run_stats, report_cost_summary
 
-        def generate(source: Path) -> dict[str, Any]:
-            value = generated[source.resolve()]
-            if isinstance(value, Exception):
-                raise value
-            return value
-    else:
-        generate = lambda source: client.generate(source, prompt, system_prompt=system_prompt)
+        report_cost_summary("gemini/batch", new_run_stats(), client.get_cost_summary())
+        raise
+
+    def generate(source: Path) -> dict[str, Any]:
+        value = results[source.resolve()]
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    return generate
+
+
+def main() -> int:
+    from artifacts import add_prompt_arguments, load_prompts, run_agent
+    from _common.files import destinations, parser
+
+    command = parser(
+        "Explore Gemini audio understanding without imposing a response schema.",
+        "s4-agent",
+        "gemini",
+    )
+    add_prompt_arguments(command, max_tokens=65536, sampling=False)
+    add_gemini_arguments(command)
+    args = command.parse_args()
+    configure_gemini_paths(args, "s4-agent")
+
+    prompt, system_prompt = load_prompts(args)
+    client = GeminiAgent(**gemini_parameters(args))
+    parameters = {**gemini_parameters(args), "prompt": prompt, "system_prompt": system_prompt}
+    pairs = destinations(args, "_gemini", ".txt")
+    generate = generation_callback(client, args, pairs, prompt, system_prompt)
 
     result = run_agent(
         args=args,

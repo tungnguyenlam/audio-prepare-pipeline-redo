@@ -23,16 +23,44 @@ schema. Neither directory orchestrates other pipeline stages.
   asked for.
 - Interrupted Gemini Batch runs resume from `work/batch_jobs/` when re-invoked with
   identical arguments; `--overwrite` submits a fresh job.
-- Gemini implicit context caching applies automatically to the shared prompt prefix
-  (prompt text is placed before the audio) once a request exceeds the model's
-  minimum (4,096 tokens for Gemini 3.x Flash; `prompts/full-tags-prompt.md` is
-  ~6.3k tokens). Cache hits appear as `cached_input_tokens` in `_usage` and are
-  billed at 10% of the input rate. Implicit caching is best-effort: observed hits
-  on `gemini-3.8-flash` (Flex, September 2026) were ~4.0k of the 6.3k shared text
-  tokens, and Google apportions `cacheTokensDetails` across modalities, so a
-  non-zero `cached_audio_input_tokens` does not mean the (unique) audio was
-  cached. Explicit `cachedContents` are not used because the prompt is only
-  marginally above the threshold and audio is never shared.
+- Both Gemini commands share one mode selector and request implementation. Python
+  callers use `inference_mode="batch" | "flex" | "standard"` (default `batch`);
+  call `generate_batch()` for Batch or `generate()` / `verify()` for synchronous
+  modes. Unknown constructor options now raise instead of being silently ignored.
+- Explicit prompt caching is **off by default**. Add `--cache-prompt` to create a
+  Google `cachedContents` resource containing the prompt file text and optional
+  system instruction. Audio is sent separately on every request. The cache is
+  reused within that command invocation, including concurrent workers. It is
+  created only when a new provider request needs it; resumed Batch jobs reuse
+  their existing requests. New invocations create their own cache for new work.
+- `--cache-ttl-s` defaults to 3,600 seconds for Standard/Flex and 90,000 seconds
+  (25 hours) for Batch. Batch requires at least 90,000 seconds to cover its queue
+  window. Caches expire automatically, including after interruption; storage is
+  billed for the full TTL. Caches are replaced before new submissions when near
+  expiry (or when less than 24 hours remain for Batch).
+  Google rejects prompts below its model-specific minimum or unsupported caching
+  combinations; the command does not silently switch back to uncached requests.
+- Implicit caching can still occur without `--cache-prompt`. Usage-based estimates
+  distinguish cached reads from uncached input and include output/thinking tokens.
+  Explicit caches contain only text, so cached tokens are priced as text even if
+  provider modality details apportion hits across audio and text.
+- Cost estimates include `cache_storage_usd` once per created cache, using its
+  returned token count and full TTL. Storage is included in the run total and
+  assigned to the first subsequent priced response for offline artifact sums;
+  per-clip totals therefore include that shared overhead on one clip. If no
+  response is produced, storage appears only in the run summary. Unknown storage
+  rates/counts are reported as `unpriced_caches`, not zero-priced caches. Cached
+  Batch jobs retain their recorded storage estimate on resume alongside inference
+  estimates; resumed totals describe the job, not solely new charges.
+- Synchronous pricing uses the returned Standard/Flex service tier when present,
+  otherwise the requested mode; Batch always uses Batch pricing. The September
+  21, 2026 rate card includes the introductory Flash storage rate and the distinct
+  Gemini 3.5 Flash Flex cached-read rate. Sources:
+  [REST Flex](https://ai.google.dev/gemini-api/docs/generate-content/flex-inference),
+  [caching](https://ai.google.dev/gemini-api/docs/generate-content/caching), and
+  [pricing](https://ai.google.dev/gemini-api/docs/pricing).
+- Cache settings are part of artifact identity. Existing verifier outputs from
+  earlier versions may require `--overwrite` or a new output directory.
 
 All agent and verifier progress is written to stderr so stdout remains a clean
 stream of successful artifact paths. Each run logs its backend/model, item start

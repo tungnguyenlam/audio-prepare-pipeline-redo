@@ -143,7 +143,7 @@ def report_cost_summary(
     except (TypeError, ValueError):
         total = 0.0
 
-    if available or priced > 0:
+    if available or priced > 0 or cost.get('cache_storage_usd'):
         cost_text = f'total=${total:.6f} USD'
         if cost.get('estimated'):
             cost_text += ' (estimated)'
@@ -162,6 +162,10 @@ def report_cost_summary(
         f'requests={requests}',
         cost_text,
     ]
+    if cost.get('cache_storage_usd'):
+        details.append(f"cache_storage=${float(cost['cache_storage_usd']):.6f} (full TTL)")
+    if cost.get('unpriced_caches'):
+        details.append(f"unpriced_caches={cost['unpriced_caches']} (storage excluded)")
     pricing_tier = cost.get('pricing_tier')
     if pricing_tier:
         details.append(f'tier={pricing_tier}')

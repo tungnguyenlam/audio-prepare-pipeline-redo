@@ -333,6 +333,13 @@ metadata, so `--output-file result.json` is rejected.
 Defaults: `.data/s4-agent/<backend>/<family>/`;
 Gemini: `.data/s4-agent/gemini/<model>/<reasoning-effort>/<family>/`.
 Gemini Batch state lives under the variant's `work/batch_jobs/` for resume.
+Gemini's `cache_prompt` parameter defaults to false; `cache_ttl_s` records the
+explicit prompt cache lifetime. Cost records include `cache_storage_usd`, charged
+once for each cache's full TTL and assigned to the first subsequent priced
+response. `total_usd` includes storage as well as input and output. The run summary
+also reports `unpriced_caches` when storage cannot be estimated. Explicit caches
+contain text only; generation responses preserve the requested inference mode
+alongside the effective pricing mode.
 Runtime progress is written to stderr, including per-item latency and response
 size. Provider usage and cost remain in the sidecar when available; the final
 stderr `TOTAL_COST` line summarizes the invocation's cumulative estimated cost.
@@ -431,9 +438,9 @@ plot/
 
 Both CSVs share a column order beginning `audio_path, final_verdict,
 assistant_raw_response, transcript, transcript_chars, transcript_words, emotion`, followed
-by operational flags, diarization metadata, prompt/schema details, defect codes, and cost metrics (`usage_json, cost_json, cost_usd, input_cost_usd, output_cost_usd, tokens_prompt, tokens_output, tokens_thinking, tokens_total`). Invalid or
+by operational flags, diarization metadata, prompt/schema details, defect codes, and cost metrics (`usage_json, cost_json, cost_usd, input_cost_usd, output_cost_usd, cache_storage_cost_usd, tokens_prompt, tokens_output, tokens_thinking, tokens_total`). Invalid or
 missing results have a blank `final_verdict` and are never counted as rejects.
-Cost analysis outputs `cost_distribution.png` (per-sample cost histogram with mean and median markers), `cost_total.png` (bar chart breaking down input, output, and total expenditure), and `sample_costs.md` (summary metrics at the top with timestamp-sorted sample details). Rerunning
+Cost analysis outputs `cost_distribution.png` (per-sample cost histogram with mean and median markers), `cost_total.png` (bar chart breaking down input, output, cache storage, and total expenditure), and `sample_costs.md` (summary metrics at the top with timestamp-sorted sample details). Rerunning
 refreshes `plot/` and deletes PNGs it previously recorded.
 
 ## 8. Verifier comparison (`compare.sh` → `.data/s4-agent/verifier/comparisons/<utc>-<hash>/`)

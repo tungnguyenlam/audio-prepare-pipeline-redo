@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import sys
 from pathlib import Path
 from typing import Any
@@ -20,7 +19,14 @@ from _cli import (  # noqa: E402
     run_verifier,
 )
 from _common.files import destinations, parser, positive_int  # noqa: E402
-from gemini import GeminiAgent, configure_gemini_paths, positive_float  # noqa: E402
+from gemini import (  # noqa: E402
+    GeminiAgent,
+    add_gemini_arguments,
+    configure_gemini_paths,
+    gemini_parameters,
+    generation_callback,
+)
+
 
 class GeminiVerifier(GeminiAgent):
     """Gemini generation constrained and parsed as a pass/reject verdict."""
@@ -43,6 +49,8 @@ class GeminiVerifier(GeminiAgent):
         parsed["_model"] = self.model
         parsed["_reasoning_effort"] = self.reasoning_effort
         parsed["_inference_mode"] = generated.get("inference_mode", "standard")
+        parsed["_requested_inference_mode"] = self.inference_mode
+        parsed["_cache_prompt"] = self.cache_prompt
         parsed["_engine"] = "gemini"
         if generated.get("batch_job"):
             parsed["_batch_job"] = generated["batch_job"]
@@ -64,63 +72,15 @@ def main() -> int:
         "gemini",
     )
     command.add_argument("-pf", "-p", "--prompt-file", type=Path, help="Prompt text file (default: prompts/full-tags-prompt.md)")
-    command.add_argument("-m", "--model", default="gemini-3.8-flash", help="Gemini model name")
-    command.add_argument(
-        "--reasoning-effort",
-        choices=("low", "medium", "high", "none"),
-        default="medium",
-        help="Reasoning effort level for models supporting thinking",
-    )
     command.add_argument("-mt", "--max-tokens", type=positive_int, default=65536, help="Maximum output tokens")
-    command.add_argument(
-        "--timeout-s",
-        type=positive_float,
-        help="HTTP request timeout in seconds (default: 120; 900 for flex)",
-    )
-    command.add_argument(
-        "--max-retries",
-        type=positive_int,
-        help="Maximum retry attempts per request (default: 5; 12 for flex, which returns 503 when capacity is short)",
-    )
-    command.add_argument(
-        "--inference-mode",
-        choices=("batch", "flex", "standard"),
-        default="batch",
-        help=(
-            "Gemini provider mode; batch is asynchronous and flex is synchronous with "
-            "1-15 min latency, both billed at 50%% of standard rates"
-        ),
-    )
-    command.add_argument(
-        "--batch-size",
-        type=positive_int,
-        default=10,
-        help="Maximum requests per Gemini Batch job (also capped below 20 MB)",
-    )
-    command.add_argument("--batch-poll-interval-s", type=positive_float, default=10.0, help="Seconds between Batch status polls")
-    command.add_argument("--batch-timeout-s", type=positive_float, default=86400.0, help="Maximum seconds to wait for Batch completion")
+    add_gemini_arguments(command)
     args = command.parse_args()
     configure_gemini_paths(args, "s4-agent/verifier")
-    if args.timeout_s is None:
-        args.timeout_s = 900.0 if args.inference_mode == "flex" else 120.0
-    if args.max_retries is None:
-        args.max_retries = 12 if args.inference_mode == "flex" else 5
 
     pairs = destinations(args, "_gemini", ".json")
     prompt = load_prompt(args.prompt_file)
-    init_parameters = {
-        "model": args.model,
-        "reasoning_effort": args.reasoning_effort,
-        "max_tokens": args.max_tokens,
-        "timeout_s": args.timeout_s,
-        "max_retries": args.max_retries,
-        "inference_mode": args.inference_mode,
-    }
-    with contextlib.redirect_stdout(sys.stderr):
-        verifier = GeminiVerifier(
-            **init_parameters,
-            service_tier="flex" if args.inference_mode == "flex" else "standard",
-        )
+    init_parameters = gemini_parameters(args)
+    verifier = GeminiVerifier(**init_parameters)
 
     parameters = resolved_parameters({**init_parameters, "prompt": prompt}, verifier)
     pairs = pending_verifier_pairs(
@@ -129,31 +89,14 @@ def main() -> int:
         backend="gemini",
         parameters=parameters,
     )
-    if args.inference_mode == "batch":
-        generated = verifier.generate_batch(
-            [source for source, _ in pairs],
-            prompt,
-            batch_size=args.batch_size,
-            poll_interval_s=args.batch_poll_interval_s,
-            batch_timeout_s=args.batch_timeout_s,
-            state_dir=args.work_dir / "batch_jobs",
-            reuse_state=not args.overwrite,
-        )
-
-        def verify(source: Path) -> dict[str, Any]:
-            value = generated[source.resolve()]
-            if isinstance(value, Exception):
-                raise value
-            return verifier.parse_generated(source, value)
-    else:
-        verify = lambda source: verifier.verify(source, prompt)
+    generate = generation_callback(verifier, args, pairs, prompt)
 
     return run_verifier(
         args=args,
         pairs=pairs,
         backend="gemini",
         parameters=parameters,
-        verify=verify,
+        verify=lambda source: verifier.parse_generated(source, generate(source)),
         cost_summary=verifier.get_cost_summary,
     )
 

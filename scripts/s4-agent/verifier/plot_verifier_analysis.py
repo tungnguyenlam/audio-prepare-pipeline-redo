@@ -105,6 +105,7 @@ CSV_FIELDS = (
     "cost_usd",
     "input_cost_usd",
     "output_cost_usd",
+    "cache_storage_cost_usd",
     "tokens_prompt",
     "tokens_output",
     "tokens_thinking",
@@ -259,11 +260,13 @@ def _artifact_values(
     cost_usd = ""
     input_cost_usd = ""
     output_cost_usd = ""
+    cache_storage_cost_usd = ""
     if isinstance(cost_info, dict) and "total_usd" in cost_info:
         try:
             cost_usd = f"{float(cost_info.get('total_usd') or 0.0):.6f}"
             input_cost_usd = f"{float(cost_info.get('input_usd') or 0.0):.6f}"
             output_cost_usd = f"{float(cost_info.get('output_usd') or 0.0):.6f}"
+            cache_storage_cost_usd = f"{float(cost_info.get('cache_storage_usd') or 0.0):.6f}"
         except (ValueError, TypeError):
             pass
 
@@ -333,6 +336,7 @@ def _artifact_values(
             "cost_usd": cost_usd,
             "input_cost_usd": input_cost_usd,
             "output_cost_usd": output_cost_usd,
+            "cache_storage_cost_usd": cache_storage_cost_usd,
             "tokens_prompt": tokens_prompt,
             "tokens_output": tokens_output,
             "tokens_thinking": tokens_thinking,
@@ -568,6 +572,7 @@ def _write_sample_costs_markdown(all_csv: Path, output_dir: Path) -> Path:
     total_cost = sum(costs)
     input_cost = sum(_number(r.get("input_cost_usd", 0.0)) for r in cost_rows)
     output_cost = sum(_number(r.get("output_cost_usd", 0.0)) for r in cost_rows)
+    storage_cost = sum(_number(r.get("cache_storage_cost_usd", 0.0)) for r in cost_rows)
     mean_cost = (total_cost / len(cost_rows)) if cost_rows else 0.0
     sorted_costs = sorted(costs) if costs else [0.0]
     median_cost = sorted_costs[len(sorted_costs) // 2] if costs else 0.0
@@ -621,7 +626,7 @@ def _write_sample_costs_markdown(all_csv: Path, output_dir: Path) -> Path:
         f"- **Pass rate:** {pass_rate:.1f}%",
         f"- **Total duration:** {total_duration:.2f}s (pass: {pass_duration:.2f}s)",
         f"- **Total cost:** ${total_cost:.4f} USD",
-        f"- **Cost breakdown:** input ${input_cost:.4f} ({input_cost / total_cost * 100:.1f}%) | output ${output_cost:.4f} ({output_cost / total_cost * 100:.1f}%)" if total_cost > 0 else "- **Cost breakdown:** $0.0000 USD",
+        f"- **Cost breakdown:** input ${input_cost:.4f} ({input_cost / total_cost * 100:.1f}%) | output ${output_cost:.4f} ({output_cost / total_cost * 100:.1f}%) | cache storage ${storage_cost:.4f} ({storage_cost / total_cost * 100:.1f}%)" if total_cost > 0 else "- **Cost breakdown:** $0.0000 USD",
         f"- **Cost per sample:** mean ${mean_cost:.4f} | median ${median_cost:.4f} | min ${sorted_costs[0]:.4f} | max ${sorted_costs[-1]:.4f}",
     ]
     if rate_per_min is not None:
@@ -773,6 +778,7 @@ def _write_error_reports(all_csv: Path, output_dir: Path, verdict_dir: Path) -> 
         total_usd = sum(costs)
         in_usd = sum(_number(r.get("input_cost_usd", 0.0)) for r in cost_rows)
         out_usd = sum(_number(r.get("output_cost_usd", 0.0)) for r in cost_rows)
+        storage_usd = sum(_number(r.get("cache_storage_cost_usd", 0.0)) for r in cost_rows)
         mean_usd = total_usd / len(cost_rows)
         sorted_costs = sorted(costs)
         median_usd = sorted_costs[len(sorted_costs) // 2]
@@ -790,7 +796,7 @@ def _write_error_reports(all_csv: Path, output_dir: Path, verdict_dir: Path) -> 
             "- Detailed per-sample costs and transcripts (ordered by timestamp): [sample_costs.md](sample_costs.md)",
             f"- **Total cost:** ${total_usd:.4f} USD across {len(cost_rows)} priced sample(s)",
             f"- **Cost per sample:** mean ${mean_usd:.4f} | median ${median_usd:.4f} | min ${sorted_costs[0]:.4f} | max ${sorted_costs[-1]:.4f}",
-            f"- **Cost breakdown:** input ${in_usd:.4f} ({in_usd / total_usd * 100:.1f}%) | output ${out_usd:.4f} ({out_usd / total_usd * 100:.1f}%)" if total_usd > 0 else "",
+            f"- **Cost breakdown:** input ${in_usd:.4f} ({in_usd / total_usd * 100:.1f}%) | output ${out_usd:.4f} ({out_usd / total_usd * 100:.1f}%) | cache storage ${storage_usd:.4f} ({storage_usd / total_usd * 100:.1f}%)" if total_usd > 0 else "",
             f"- **Rate per audio minute:** {rate_min}",
         ])
         if tot_tokens > 0:
@@ -1044,6 +1050,7 @@ def _make_plots(
         costs = [_number(r["cost_usd"]) for r in cost_rows]
         input_costs = [_number(r.get("input_cost_usd", 0.0)) for r in cost_rows]
         output_costs = [_number(r.get("output_cost_usd", 0.0)) for r in cost_rows]
+        storage_costs = [_number(r.get("cache_storage_cost_usd", 0.0)) for r in cost_rows]
         total_cost = sum(costs)
         mean_cost = total_cost / len(costs)
         sorted_costs = sorted(costs)
@@ -1066,9 +1073,9 @@ def _make_plots(
         tot_in = sum(input_costs)
         tot_out = sum(output_costs)
         fig, ax = plt.subplots(figsize=(6, 4.8))
-        labels = ["Input", "Output", "Total"]
-        vals = [tot_in, tot_out, total_cost]
-        colors = ["#60a5fa", "#a78bfa", "#34d399"]
+        labels = ["Input", "Output", "Cache storage", "Total"]
+        vals = [tot_in, tot_out, sum(storage_costs), total_cost]
+        colors = ["#60a5fa", "#a78bfa", "#fbbf24", "#34d399"]
         bars = ax.bar(labels, vals, color=colors, edgecolor="black")
         ax.bar_label(bars, fmt="$%.4f", padding=3)
         ax.set_title("Total Cost Breakdown ($ USD)")
@@ -1184,6 +1191,7 @@ def _summary_from_csv(
         costs = [_number(r["cost_usd"]) for r in cost_rows]
         input_costs = [_number(r.get("input_cost_usd", 0.0)) for r in cost_rows]
         output_costs = [_number(r.get("output_cost_usd", 0.0)) for r in cost_rows]
+        storage_costs = [_number(r.get("cache_storage_cost_usd", 0.0)) for r in cost_rows]
         durations = [_number(r.get("duration_s", 0.0)) for r in cost_rows]
         tot_dur = sum(durations)
         total_usd = sum(costs)
@@ -1204,6 +1212,7 @@ def _summary_from_csv(
             "total_usd": round(total_usd, 6),
             "input_usd": round(sum(input_costs), 6),
             "output_usd": round(sum(output_costs), 6),
+            "cache_storage_usd": round(sum(storage_costs), 6),
             "mean_usd": round(total_usd / len(cost_rows), 6),
             "median_usd": round(median_usd, 6),
             "min_usd": round(sorted_costs[0], 6),

@@ -282,3 +282,22 @@
 - Documented in `docs/commands.md`. Validated `py_compile`, launcher `bash -n`, and `--help` (no `--backend`). No model inference or tests were run.
 - Existing sidecars that stored `"backend": null` will no longer cache-match and need `--overwrite` to replace.
 
+
+## 2026-09-21 - Simplify Gemini mode selection and add opt-in prompt caching
+
+### Plan and decisions
+- Share Gemini CLI settings and dispatch between raw generation and verification; replace the ignored inference_mode constructor keyword and separate service_tier setting with one explicit mode.
+- Preserve standard, flex, and resumable batch inference, with batch as the CLI default.
+- Add --cache-prompt (false by default), cache text only, and account for cached reads plus the full configured cache storage lifetime once per cache.
+- Keep provider generation separate from verdict parsing. Review official Google REST caching, Flex, and pricing documentation before changing payloads and rates.
+- Validate syntax and CLI/launcher wiring only; no tests or paid inference were requested.
+
+### Results
+- Both commands now share Gemini arguments and provider dispatch, with one explicit inference_mode constructor setting and matching Batch defaults. Removed ignored constructor kwargs and the separate service_tier control. Standard/Flex use the documented REST service_tier field; returned tier metadata drives synchronous cost estimates.
+- Replaced duplicate requests/urllib transports with the existing httpx[socks] dependency and one retry loop. Unified -b/-bs/--batch-size defaults at 10.
+- Added --cache-prompt (false by default) and --cache-ttl-s (3600 synchronous; 90000 Batch minimum). Text/system instructions are cached once per live client cache, audio remains inline, concurrent creation is locked, and Batch creates caches only for new submissions. Batch reserves a full 24-hour queue window before reusing a cache.
+- Cost accounting separates cached reads, uncached input, output/thinking, and full-TTL cache storage. Storage is assigned once to the first priced response, reported in run totals, and recorded in Batch state for resume. Unknown cache rates/counts are explicitly unpriced. Updated CSV, JSON, Markdown, and chart cost breakdowns to include storage.
+- Updated focused command, verifier, and artifact-contract docs. Google REST Flex/caching/pricing references are linked in docs/agent_verifier.md; prices are dated 2026-09-21.
+- Validation: Python compilation passed for all five changed Python files; Gemini launcher bash syntax and --help passed; analysis launcher --help passed; existing verify environment imports httpx; git diff --check passed. Reviewed the final diff and intended file list.
+- No tests were written or run, no packages were installed, and no paid inference/cache API calls were made. Live provider behavior, numerical execution, and rendered plot output remain unverified because tests/live inference were not requested.
+- Compatibility: constructor callers must use inference_mode and choose the corresponding generate/generate_batch method. New cache settings change verifier artifact identity; old outputs may require --overwrite or a new output directory. Caches expire at their TTL and are not shared across fresh invocations.
