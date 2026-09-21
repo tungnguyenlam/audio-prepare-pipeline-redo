@@ -23,8 +23,8 @@ audio tools. It installs Deno, Node/npm, Bun, and QuickJS under
 `.venvs/download`; runtime caches stay under `.data/s1-download/`.
 
 Model environments (Demucs/RoFormer, Pyannote, Sortformer, 3D-Speaker, DiariZen,
-verifiers) are provisioned per target with the same script; see
-[docs/commands.md](docs/commands.md).
+verifiers, DeepFilterNet/ClearVoice/VoiceFixer) are provisioned per target with
+the same script; see [docs/commands.md](docs/commands.md).
 
 ## Command groups
 
@@ -32,6 +32,7 @@ verifiers) are provisioned per target with the same script; see
 |---|---|
 | `scripts/s1-download/` | `youtube`, `playlist`, `channel`, multi-source `crawl` |
 | `scripts/s2-separate/` | `htdemucs`, `htdemucs_ft`, `bs_roformer`, `mel_roformer`, `mvsep_mdx23` |
+| `scripts/cleanup/` | `denoise_deepfilternet`, `enhance_clearvoice`, `vad_gate_silero`, `separate_overlap_clearvoice`, `restore_voicefixer`, `speech_cleanup_cascade` |
 | `scripts/s3-diarize/` | `sortformer`, `pyannote_community1`, `pyannote_31`, `clustering`, `threed_speaker`, `diarizen` |
 | `scripts/audio/` | `info`, `convert`, `cut`, `segment_vad`, `segment_tts`, `export_segments`, `compare_waveforms`, `compare_spectrograms` |
 | `scripts/speaker/` | `enroll`, `score`, `filter`, `purity` |
@@ -49,6 +50,8 @@ Every `.py` has a same-name `.sh` launcher that selects the right virtualenv.
 ```bash
 bash scripts/s1-download/youtube.sh     --url 'https://www.youtube.com/watch?v=VIDEO' --output-dir .data/dl
 bash scripts/s2-separate/htdemucs_ft.sh --input-dir .data/dl --output-dir .data/sep
+# Optional independent cleanup (denoise → enhance → VAD gate); not chained into diarize:
+# bash scripts/cleanup/speech_cleanup_cascade.sh --input-dir .data/sep --output-dir .data/clean
 # Optional: precompute reusable .data/vad/<stem>.json reports with evaluate/silero_jit.sh.
 bash scripts/s3-diarize/sortformer.sh   --input-dir .data/sep --output-dir .data/turns
 bash scripts/purity/cleanup.sh       --input-manifest .data/turns/<stem>/segments.json --output-manifest .data/p/cleaned.json

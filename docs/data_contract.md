@@ -45,7 +45,7 @@ download, sorted by `upload_date`, then `title`:
 
 ## 1. Audio sidecar (`recording.wav` → `recording.json`)
 
-Written by `download/*`, `audio/{convert,cut}`, `separate/*` (and, with a
+Written by `download/*`, `audio/{convert,cut}`, `separate/*`, `cleanup/{denoise_deepfilternet,enhance_clearvoice,vad_gate_silero,restore_voicefixer,speech_cleanup_cascade}` (and, with a
 non-audio `output`, by `compare_*`, `evaluate/*`, `mix`). An incomplete record
 (`"output": {}`) is installed before the audio and replaced afterwards, so an
 interrupted write is recognizable and retried.
@@ -72,6 +72,46 @@ interrupted write is recognizable and retried.
   propagates).
 - Skip / retry / conflict decisions compare `source`, `operation`, `model`,
   `parameters` and the output hash.
+
+Cleanup operations use the same sidecar. `operation` is `denoise`, `enhance`,
+`vad_gate`, `restore`, or `speech_cleanup_cascade`. Default DeepFilterNet
+denoising records `atten_lim_db: 12` (voice-preserving mix-back). VAD gating
+records `threshold`, `pad_ms`, and the Silero report identity. The cascade
+records the ordered `steps` plus the same per-step knobs; `intermediates` is
+an extra top-level list of step artifacts and is excluded from cache
+comparison.
+
+## 1b. Overlap stems (`<stem>/stems.json`)
+
+Written by `cleanup/separate_overlap_clearvoice`. Two speaker WAVs plus
+sidecars live beside the manifest:
+
+```text
+<output-dir>/<safe stem>/
+  stems.json
+  spk00.wav
+  spk00.json
+  spk01.wav
+  spk01.json
+```
+
+```json
+{
+  "schema_version": 1,
+  "source": {"path": ".data/s2-separate/htdemucs/<family>/input.wav", "sha256": "…"},
+  "operation": "separate_overlap",
+  "model": "MossFormer2_SS_16K",
+  "parameters": {"sample_rate": 48000, "channels": 1, "device": "auto", "start_s": null, "end_s": null},
+  "stems": [
+    {"speaker_id": "spk00", "path": ".data/cleanup/separate_overlap_clearvoice/<family>/spk00.wav", "sha256": "…"},
+    {"speaker_id": "spk01", "path": ".data/cleanup/separate_overlap_clearvoice/<family>/spk01.wav", "sha256": "…"}
+  ],
+  "complete": true
+}
+```
+
+Separated streams are not mapped onto diarization speaker IDs. Optional
+`--start` / `--end` restrict inference to one interval.
 
 ## 2. Diarization manifest (`<stem>/segments.json`)
 

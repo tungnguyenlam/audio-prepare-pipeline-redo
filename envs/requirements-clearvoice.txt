@@ -1,0 +1,5 @@
+# Isolated ClearVoice worker (MossFormer2 / FRCRN enhance and MossFormer2 overlap).
+# Python 3.11; torch is installed by setup_worker_envs.sh. clearvoice 0.1.2 pins numpy<2.
+clearvoice==0.1.2
+pysocks>=1.7.1
+httpx[socks]>=0.27.0

@@ -113,6 +113,27 @@ bash scripts/evaluate/run_viyt_diar.sh --all
 Sources: pyannote and NVIDIA model cards on Hugging Face, `modelscope/3D-Speaker`,
 `BUTSpeechFIT/DiariZen`, `NVIDIA-NeMo/Speech` diarization README.
 
+## Speech cleanup commands (2026-09-21)
+
+Independent file-in/file-out stages after stem separation, on branch
+`experiment`. Not a crawl → separate → diarize → mix orchestrator.
+
+- DeepFilterNet denoise defaults to a 12 dB attenuation cap because unlimited
+  denoise can color the voice; Mel-RoFormer already does light noise/accompaniment
+  suppression.
+- ClearVoice MossFormer2_SE_48K / FRCRN_SE_16K enhance residual bleed and
+  separator artifacts. MossFormer2_SS_16K overlap separation writes two stems
+  and is not mixed into the linear cascade (permutation onto diarization IDs is
+  left to the caller).
+- Silero VAD gating zeros non-speech gaps (SFX/music/hiss between sentences) with
+  hangover padding. SFX that overlap active speech is not removed; there is no
+  dedicated SFX classifier.
+- VoiceFixer restore is opt-in in the cascade because it is the most aggressive
+  and most likely to change timbre.
+- Isolated Python 3.11 venvs (`deepfilternet`, `clearvoice`, `voicefixer`):
+  `DeepFilterLib` wheels stop at cp311, ClearVoice pins `numpy<2`, and ROCm 10.0
+  wheels are 3.13-only, so the AMD host runs these on CPU torch.
+
 ## Tracked artifacts under `.data/`
 
 - `benchmark_v2/BENCHMARK_REPORT.md`, `audit_results.json`, `diar_turns.json`

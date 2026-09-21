@@ -28,6 +28,10 @@ print_usage() {
     echo "  diarizen     DiariZen WavLM (.venvs/diarizen, Python 3.10)"
     echo "  minicpmo     MiniCPM-o 4.5 / 2.6 verifier (.venvs/minicpmo, Python 3.11)"
     echo "  kimi         Kimi-Audio verifier (.venvs/kimi, Python 3.11)"
+    echo "  deepfilternet DeepFilterNet speech denoise (.venvs/deepfilternet, Python 3.11)"
+    echo "  clearvoice   ClearVoice MossFormer2/FRCRN enhance and overlap (.venvs/clearvoice, Python 3.11)"
+    echo "  voicefixer   VoiceFixer restoration (.venvs/voicefixer, Python 3.11)"
+    echo "  cleanup      All three speech-cleanup model environments"
     echo ""
     echo "General Targets:"
     echo "  all          Provision/reconcile core + worker environments"
@@ -671,6 +675,101 @@ setup_kimi() {
     ln -sfn ".venvs/kimi" ".venv-kimi"
 }
 
+install_py311_torch() {
+    local py_bin="$1"
+    if [ "$HAS_NVIDIA_GPU" -eq 1 ]; then
+        local index_url
+        index_url=$(get_cuda_wheel_index)
+        if [ -n "$index_url" ]; then
+            echo "⚡ Installing NVIDIA CUDA PyTorch into $(dirname "$(dirname "$py_bin")") (${index_url})..."
+            uv pip install --python "$py_bin" --index-url "$index_url" "torch>=2.4.0" "torchaudio>=2.4.0"
+        else
+            echo "⚡ Installing NVIDIA CUDA PyTorch into $(dirname "$(dirname "$py_bin")")..."
+            uv pip install --python "$py_bin" --upgrade "torch>=2.4.0" "torchaudio>=2.4.0"
+        fi
+    else
+        echo "⚡ Installing CPU PyTorch (ROCm 10.0 wheels are Python 3.13-only)..."
+        uv pip install --python "$py_bin" --index-url https://download.pytorch.org/whl/cpu \
+            "torch>=2.4.0" "torchaudio>=2.4.0"
+    fi
+}
+
+setup_py311_worker() {
+    local venv_dir="$1"
+    local label="$2"
+    local requirements="$3"
+    local verify_snippet="$4"
+    local symlink_name=".venv-$(basename "$venv_dir")"
+
+    echo ""
+    echo "========================================================"
+    echo "  Setting up ${label} (${venv_dir}, Python 3.11)"
+    echo "========================================================"
+
+    if [ "$FORCE" -eq 1 ] && [ -d "$venv_dir" ]; then
+        echo "🗑️  Removing existing ${venv_dir} (--force)..."
+        rm -rf "$venv_dir"
+    fi
+
+    if [ ! -d "$venv_dir" ]; then
+        echo "📦 Ensuring Python 3.11 is installed via uv..."
+        uv python install 3.11
+        echo "📦 Creating Python 3.11 virtual environment ${venv_dir}..."
+        uv venv --python 3.11 "$venv_dir"
+    fi
+
+    local py_bin="${venv_dir}/bin/python"
+    echo "⚙️ Installing PyTorch stack..."
+    install_py311_torch "$py_bin"
+
+    echo "📦 Installing ${label} requirements..."
+    uv pip install --python "$py_bin" -r "$REPO_ROOT/$requirements"
+
+    echo "⚙️ Re-pinning PyTorch stack after requirements..."
+    install_py311_torch "$py_bin"
+
+    echo "✅ Verifying ${label} installation..."
+    "$py_bin" -c "$verify_snippet"
+    ln -sfn "$venv_dir" "$symlink_name"
+    echo "🎉 ${venv_dir} ready!"
+}
+
+setup_deepfilternet() {
+    setup_py311_worker ".venvs/deepfilternet" "DeepFilterNet" "envs/requirements-deepfilternet.txt" "
+import torch
+from df.enhance import enhance, init_df
+dev = 'CUDA: ' + torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'
+print(f'   -> Torch: {torch.__version__} ({dev})')
+print('   -> DeepFilterNet: successfully imported')
+"
+}
+
+setup_clearvoice() {
+    setup_py311_worker ".venvs/clearvoice" "ClearVoice" "envs/requirements-clearvoice.txt" "
+import torch
+from clearvoice import ClearVoice
+dev = 'CUDA: ' + torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'
+print(f'   -> Torch: {torch.__version__} ({dev})')
+print('   -> ClearVoice: successfully imported')
+"
+}
+
+setup_voicefixer() {
+    setup_py311_worker ".venvs/voicefixer" "VoiceFixer" "envs/requirements-voicefixer.txt" "
+import torch
+from voicefixer import VoiceFixer
+dev = 'CUDA: ' + torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'
+print(f'   -> Torch: {torch.__version__} ({dev})')
+print('   -> VoiceFixer: successfully imported')
+"
+}
+
+setup_cleanup() {
+    setup_deepfilternet
+    setup_clearvoice
+    setup_voicefixer
+}
+
 setup_core() {
     setup_download
     setup_audio
@@ -707,6 +806,9 @@ status_report() {
         ".venvs/diarizen"
         ".venvs/minicpmo"
         ".venvs/kimi"
+        ".venvs/deepfilternet"
+        ".venvs/clearvoice"
+        ".venvs/voicefixer"
     )
     local tmpdir
     tmpdir=$(mktemp -d)
@@ -848,6 +950,19 @@ case "$TARGET" in
         ;;
     kimi)
         setup_kimi
+        ;;
+    deepfilternet|denoise)
+        setup_deepfilternet
+        ;;
+    clearvoice|enhance)
+        setup_clearvoice
+        ;;
+    voicefixer|restore)
+        setup_voicefixer
+        ;;
+    cleanup|speech-cleanup)
+        setup_cleanup
+        status_report
         ;;
     all)
         setup_core

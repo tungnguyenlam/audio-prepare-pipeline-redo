@@ -225,7 +225,7 @@ def family_audio_name(video_id: str, title: str, sample_rate: int | None = None,
 # pattern below. Legacy names stay so pre-rename `.data/` trees remain valid inputs.
 _NON_FAMILY_DIRS = frozenset({
     'out', 'work', 'verify', 'verifier',
-    's1-download', 's2-separate', 's3-diarize', 's4-agent', 's5-export',
+    's1-download', 's2-separate', 's3-diarize', 's4-agent', 's5-export', 'cleanup',
     'download', 'separate', 'diarize', 'agent', 'dataset',
 })
 

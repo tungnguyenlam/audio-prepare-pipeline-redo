@@ -313,3 +313,16 @@
 - Added `--continue`, input signature persistence, prior-state mismatch detection, and full-set verifier state lookup. Updated focused command, data-contract, and verifier documentation.
 - Continuation also migrates compatible Batch state written by the previous Gemini implementation, so an interrupted run from before this flag was added can be resumed without resubmission. Incomplete verifier text artifacts are safely republished from saved Batch responses.
 - Validation: Python compilation passed for Gemini and verifier modules, both launcher syntax checks passed, both `--help` outputs expose `--continue`, and `git diff --check` passed. Tests remain omitted per repository instructions; paid Gemini calls were not made.
+
+## 2026-09-21 - Independent speech-cleanup commands on experiment
+
+### Decisions
+- Added six standalone cleanup commands under `scripts/cleanup/`, each with a same-name launcher. They address missing hiss/HVAC denoise, residual bleed/separator artifacts, SFX-in-silence, overlap talkers, and aggressive restoration without chaining crawl → separate → diarize → mix.
+- DeepFilterNet defaults to a 12 dB attenuation cap because unlimited denoise can color the voice; Mel-RoFormer already does light accompaniment suppression. `--no-atten-lim` / `--post-filter` remain available. There is no dedicated SFX classifier: Silero VAD gating zeros non-speech gaps with 200 ms hangover; SFX overlapping active speech is an explicit limitation.
+- ClearVoice MossFormer2_SE_48K / FRCRN_SE_16K / MossFormerGAN_SE_16K enhance residual contamination. MossFormer2_SS_16K overlap separation writes `spk00`/`spk01` plus `stems.json` and is not mixed into the linear cascade (permutation onto diarization IDs is left to the caller). VoiceFixer restore is opt-in in `speech_cleanup_cascade` because it is the most aggressive.
+- Isolated Python 3.11 venvs (`deepfilternet`, `clearvoice`, `voicefixer`) because DeepFilterLib wheels stop at cp311, ClearVoice pins numpy<2, and ROCm 10.0 wheels are 3.13-only. The AMD host therefore uses CPU torch in these venvs; NVIDIA hosts get CUDA wheels. VAD gating reuses an existing torch env (vibevoice/align/…). Shared WAV I/O and ffmpeg resampling live in `scripts/_common/audio_utils.py`.
+- `speech_cleanup_cascade.sh` only shells out to the linear launchers (default denoise → enhance → vad_gate) so each step still runs in its own venv.
+
+### Results
+- Validated launcher/CLI wiring: `speech_cleanup_cascade.sh -h`, `vad_gate_silero.sh -h`, Python `-h` for denoise/enhance/overlap/restore, overlap rejected from `--steps`, missing venvs exit 2 with the exact `./envs/setup_worker_envs.sh <target>` command. Did not provision the new venvs or run model inference. No test suite was written or run.
+

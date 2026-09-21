@@ -1,0 +1,7 @@
+# Isolated DeepFilterNet worker. Python 3.11; torch is installed by setup_worker_envs.sh.
+# DeepFilterLib PyPI wheels stop at cp311, so this env is not Python 3.13.
+numpy>=1.24,<2
+soundfile>=0.12.1
+deepfilternet>=0.5.6
+pysocks>=1.7.1
+httpx[socks]>=0.27.0

@@ -42,6 +42,7 @@ audio-model verification, evaluation, mixing, and dataset export.
 |---|---|
 | `scripts/s1-download/`, `audio/`, `mix/` | ingest and deterministic audio operations |
 | `scripts/s2-separate/` | HTDemucs, BS/Mel-RoFormer, MVSEP-MDX23 |
+| `scripts/cleanup/` | DeepFilterNet denoise, ClearVoice enhance/overlap, Silero VAD gate, VoiceFixer restore |
 | `scripts/s3-diarize/` | Sortformer, Pyannote, clustering, 3D-Speaker, DiariZen |
 | `scripts/asr/` | VibeVoice-ASR transcription with Whisper word-level alignment |
 | `scripts/speaker/`, `purity/` | enrollment, scoring, filtering, boundary refinement |

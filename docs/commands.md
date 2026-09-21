@@ -65,6 +65,11 @@ secret-valued options or long prompt contents.
 | `s3-diarize/diarizen.sh` | `.venvs/diarizen` (`.venv-diarizen`) | `DIARIZATION_PYTHON` |
 | `purity/align.sh` | `.venvs/align` (`.venv-align`, `.venvs/main`, `.venv`) | `ALIGNMENT_PYTHON` |
 | `asr/*.sh` | `.venvs/vibevoice` (`.venv-vibevoice`) | `ASR_PYTHON`, `VIBEVOICE_PYTHON` |
+| `cleanup/denoise_deepfilternet.sh` | `.venvs/deepfilternet` (`.venv-deepfilternet`) | `DEEPFILTERNET_PYTHON` |
+| `cleanup/{enhance_clearvoice,separate_overlap_clearvoice}.sh` | `.venvs/clearvoice` (`.venv-clearvoice`) | `CLEARVOICE_PYTHON` |
+| `cleanup/restore_voicefixer.sh` | `.venvs/voicefixer` (`.venv-voicefixer`) | `VOICEFIXER_PYTHON` |
+| `cleanup/vad_gate_silero.sh` | `.venvs/vibevoice` (`.venv-vibevoice`, `.venvs/align`, `.venvs/sortformer`, `.venvs/3dspeaker`, `.venvs/diarizen`, `.venvs/main`) | `SILERO_PYTHON`, then `ASR_PYTHON` |
+| `cleanup/speech_cleanup_cascade.sh` | `.venvs/audio` (`.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
 | `s4-agent/{gemini,endpoint,hf}.sh`, `s4-agent/verifier/{gemini,endpoint,hf,unsloth}.sh` | `.venvs/verify` (`.venv-verify`, `.venvs/main`, `.venv`) | `VERIFIER_PYTHON` |
 | `s4-agent/verifier/vllm.sh` | `.venvs/vllm` (`.venv-vllm`, `.venvs/verify`, `.venvs/main`) | `VLLM_PYTHON`, then `VERIFIER_PYTHON` |
 | `s4-agent/verifier/moss.sh` | `.venvs/moss` (`.venv-moss`, `.venvs/verify`, `.venvs/main`) | `VERIFIER_PYTHON` |
@@ -85,6 +90,7 @@ provisions project-local JavaScript runtimes for yt-dlp.
 ./envs/setup_worker_envs.sh workers    # sortformer, 3dspeaker, vibevoice, diarizen, minicpmo, kimi
 ./envs/setup_worker_envs.sh download   # YouTube + JavaScript runtime environment
 ./envs/setup_worker_envs.sh <target>   # one env; add --force to recreate
+./envs/setup_worker_envs.sh cleanup    # deepfilternet + clearvoice + voicefixer
 ./envs/setup_worker_envs.sh status     # health + accelerator report
 ```
 
@@ -102,6 +108,10 @@ provisions project-local JavaScript runtimes for yt-dlp.
 | `diarizen` | `.venvs/diarizen` | 3.10 | DiariZen WavLM |
 | `minicpmo` | `.venvs/minicpmo` | 3.11 | MiniCPM-o (also `envs/setup_minicpmo_env.sh [--clean]`) |
 | `kimi` | `.venvs/kimi` | 3.11 | Kimi-Audio (also `envs/setup_kimi_env.sh [--clean]`, submodule + FlashAttention) |
+| `deepfilternet` | `.venvs/deepfilternet` | 3.11 | DeepFilterNet speech denoise (`DeepFilterLib` wheels are cp311) |
+| `clearvoice` | `.venvs/clearvoice` | 3.11 | ClearVoice MossFormer2/FRCRN enhance and MossFormer2 overlap |
+| `voicefixer` | `.venvs/voicefixer` | 3.11 | VoiceFixer restoration |
+| `cleanup` | the three venvs above | 3.11 | All speech-cleanup model environments |
 
 Manual equivalent (repeat per environment; pick the torch index for your driver,
 e.g. `--index-url https://download.pytorch.org/whl/cu128`):
@@ -202,6 +212,45 @@ Outputs are named `<stem>_<model>.wav` (`_htdemucs`, `_htdemucs_ft`, `_bs_roform
 BS-RoFormer take `--device` only; current `melband-roformer-infer` /
 `bs-roformer-infer` git builds are Torch (CPU/CUDA) and no longer accept a
 `--backend` selector.
+
+### Speech cleanup (independent post-separation steps)
+
+These commands sit after vocal stem extraction. Each is a standalone file-in /
+file-out stage with its own virtualenv. There is no crawl → separate →
+diarize → mix orchestrator; `speech_cleanup_cascade.sh` only shells out to the
+linear cleanup launchers.
+
+Mel-RoFormer already does light accompaniment suppression. DeepFilterNet
+defaults to a 12 dB attenuation cap so hiss/HVAC can be reduced without
+over-suppressing the voice; `--no-atten-lim` and `--post-filter` are more
+aggressive. Strong SFX that overlap active speech is not removed; Silero VAD
+gating zeros non-speech gaps (music, SFX, hiss between sentences) with a
+200 ms hangover so word edges are kept. Overlap talkers are a separate
+two-stem command, not mixed into the linear cascade. VoiceFixer restore is
+opt-in because it can color the timbre.
+
+```bash
+./envs/setup_worker_envs.sh cleanup          # deepfilternet + clearvoice + voicefixer
+# VAD gating reuses an existing torch env (vibevoice/align/sortformer/…)
+
+bash scripts/cleanup/denoise_deepfilternet.sh --input-file vocals.wav
+bash scripts/cleanup/enhance_clearvoice.sh    --input-file vocals.wav --model MossFormer2_SE_48K
+bash scripts/cleanup/enhance_clearvoice.sh    --input-file vocals.wav --model FRCRN_SE_16K
+bash scripts/cleanup/vad_gate_silero.sh       --input-file vocals.wav --threshold 0.5 --pad-ms 200
+bash scripts/cleanup/restore_voicefixer.sh    --input-file vocals.wav --mode 0
+bash scripts/cleanup/separate_overlap_clearvoice.sh --input-file overlap.wav
+# optional region: --start 12.3 --end 18.9
+# writes <family>/<stem>/spk00.wav, spk01.wav, and stems.json
+
+# Linear convenience wrapper (denoise → enhance → VAD gate). Restore is opt-in:
+bash scripts/cleanup/speech_cleanup_cascade.sh --input-file vocals.wav
+bash scripts/cleanup/speech_cleanup_cascade.sh --input-file vocals.wav \
+  --steps denoise,enhance,restore,vad_gate --restore-mode 0
+```
+
+Default outputs live under `.data/cleanup/<command>/<family>/` with sibling
+JSON sidecars (or `stems.json` for overlap). On the AMD ROCm host the 3.11
+cleanup venvs use CPU PyTorch; NVIDIA hosts get CUDA wheels.
 
 ### Diarization (all default to 1.5–15 s clips)
 

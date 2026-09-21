@@ -55,6 +55,7 @@ Match `torchvision` to the same AMD index (`0.28.0+rocm10.0.0`) to avoid
 | DiariZen | GPU | Neural segmentation & WeSpeaker embeddings run on AMD GPU; VBx/AHC clustering on CPU |
 | Gemma 4 (HF verifier, LoRA training) | GPU, bf16 | Native bfloat16 inference on GPU; see constraints below |
 | Hungarian matching, sklearn clustering, libsndfile / ffmpeg I/O, BSS metrics | CPU | no ROCm path in the scientific Python stack |
+| DeepFilterNet, ClearVoice (MossFormer2/FRCRN), VoiceFixer | CPU on this host | isolated Python 3.11 venvs; ROCm 10.0 wheels are 3.13-only so AMD uses CPU torch. NVIDIA hosts install CUDA torch in the same venvs. |
 
 ## Constraints learned on RDNA 4 / `gfx1200`
 
