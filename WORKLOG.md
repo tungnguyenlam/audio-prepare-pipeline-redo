@@ -260,3 +260,15 @@
 ### Results
 - Regenerated `sample_costs.md` and confirmed all audio links point to existing files on disk.
 - No tests were written or run.
+
+## 2026-09-21 - Stop passing removed RoFormer session `backend`
+
+### Decisions
+- Current git `melband-roformer-infer` / `bs-roformer-infer` dropped the experimental MLX `backend=` constructor argument (Torch CPU/CUDA only). The pipeline still passed `backend=None` on every Mel-RoFormer and BS-RoFormer session, which crashes default invocations: `TypeError: MelBandRoformerSession.__init__() got an unexpected keyword argument 'backend'`.
+- Remove `--backend` from both commands and stop recording it in sidecar `parameters`. Device selection remains `--device` (`auto` maps to the package default).
+
+### Results
+- `mel_roformer.py` and `bs_roformer.py` construct sessions with `model_name` and `device` only.
+- Documented in `docs/commands.md`. Validated `py_compile`, launcher `bash -n`, and `--help` (no `--backend`). No model inference or tests were run.
+- Existing sidecars that stored `"backend": null` will no longer cache-match and need `--overwrite` to replace.
+

@@ -15,8 +15,6 @@ def main() -> int:
                    help='BS-RoFormer model checkpoint name (default: roformer-model-bs-roformer-sw-by-jarredou)')
     p.add_argument('-d', '--device', default='auto',
                    help='Compute device for model inference (e.g. auto, cpu, cuda) (default: auto)')
-    p.add_argument('--backend', default=None,
-                   help='Inference backend engine (optional; default: None)')
     p.add_argument('--stem', default='vocals',
                    help='Target stem to separate and export (default: vocals)')
     p.add_argument('--model-sample-rate', type=positive_int, default=44100,
@@ -30,12 +28,12 @@ def main() -> int:
     from bs_roformer import BSRoformerSession
     args.work_dir.mkdir(parents=True, exist_ok=True)
     with contextlib.redirect_stdout(sys.stderr):
-        session = BSRoformerSession(model_name=args.model, device=None if args.device == 'auto' else args.device, backend=args.backend)
+        session = BSRoformerSession(model_name=args.model, device=None if args.device == 'auto' else args.device)
         session.load()
     def process(src, dest):
         rate = args.sample_rate or probe(src)['sample_rate']
         parameters = {'sample_rate': rate, 'channels': args.channels, 'stem': args.stem,
-                      'device': args.device, 'backend': args.backend, 'model_sample_rate': args.model_sample_rate}
+                      'device': args.device, 'model_sample_rate': args.model_sample_rate}
         metadata = request(identity(src), 'separate', parameters, args.model)
         if completed(dest, metadata, args.overwrite):
             return

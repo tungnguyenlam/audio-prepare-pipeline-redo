@@ -194,7 +194,10 @@ bash scripts/s2-separate/mvsep_mdx23.sh --input-file .data/source.wav --stem voc
 ```
 
 Outputs are named `<stem>_<model>.wav` (`_htdemucs`, `_htdemucs_ft`, `_bs_roformer`,
-`_mel_roformer`, `_mvsep_mdx23`) with a sibling `.json`.
+`_mel_roformer`, `_mvsep_mdx23`) with a sibling `.json`. Mel-RoFormer and
+BS-RoFormer take `--device` only; current `melband-roformer-infer` /
+`bs-roformer-infer` git builds are Torch (CPU/CUDA) and no longer accept a
+`--backend` selector.
 
 ### Diarization (all default to 1.5–15 s clips)
 
