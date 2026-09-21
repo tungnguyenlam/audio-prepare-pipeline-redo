@@ -125,7 +125,9 @@ resolved, sanitized collection name below the output root.
 bash scripts/s1-download/youtube.sh  --url 'https://www.youtube.com/watch?v=VIDEO' --output-dir .data/downloads
 bash scripts/s1-download/youtube.sh  --url-file urls.txt                                # one URL/ID per line
 bash scripts/s1-download/playlist.sh --url 'https://www.youtube.com/playlist?list=PL' --limit 5
+bash scripts/s1-download/playlist.sh --url-file playlists.txt --limit 5                  # one playlist URL per line
 bash scripts/s1-download/channel.sh  --url 'https://www.youtube.com/@CHANNEL/videos' --limit 10
+bash scripts/s1-download/channel.sh  --url-file channels.txt --limit 10                  # one /videos URL per line
 bash scripts/s1-download/crawl.sh --source-file scripts/s1-download/sources/vi_en_codeswitch.json --metadata-only
 bash scripts/s1-download/crawl.sh --source-file scripts/s1-download/sources/vi_en_codeswitch.json
 bash scripts/s1-download/index.sh                                                       # rebuild .data/s1-download/**/index.jsonl
@@ -146,7 +148,9 @@ Keep `--concurrency 1` for a large crawl. Prefer `--metadata-only` on `crawl`
 first, then download in a later session, and use `--max-items` / source
 `max_items` to spread work. `--cookie-file` is optional; a personal account can
 be banned under bulk crawling, so use a throwaway login only if a bot-check
-forces it. Override pacing with `--sleep-requests`, `--sleep-interval`,
+forces it. `playlist` and `channel` also accept `--url-file` (one URL per line;
+blank lines and `#` comments are skipped). `--limit` caps videos from each URL,
+not across the file. Override pacing with `--sleep-requests`, `--sleep-interval`,
 `--max-sleep-interval`, `--rate-limit 0`, `--throttle-retries`, and
 `--throttle-abort-after`.
 

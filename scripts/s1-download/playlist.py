@@ -1,4 +1,4 @@
-"""Download all entries in a playlist, sequentially."""
+"""Download all entries in a playlist, sequentially; accepts --url or --url-file."""
 from __future__ import annotations
 
 import contextlib
@@ -9,7 +9,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _common.files import progress
 from youtube import (RateLimitAbort, arguments, download, raise_if_rate_limited,
-                     with_throttle_retry, ydl_options, youtube_session)
+                     resolve_url_or_url_file, with_throttle_retry, ydl_options,
+                     youtube_session)
 
 
 def normalize_playlist_url(url: str) -> str:
@@ -99,15 +100,18 @@ def entry_url(entry: dict) -> str:
     return 'https://www.youtube.com/watch?v=' + str(entry['id'])
 
 
-def main(description: str = __doc__) -> int:
-    args = arguments(description, bulk=True).parse_args()
+def download_playlist(url: str, args) -> tuple[int, int, bool]:
+    """Download one playlist or channel URL. Returns (succeeded, failed, aborted)."""
     try:
         target_url, raw_count, entries, output_group = list_entries(
-            args.url, args, limit=args.limit)
+            url, args, limit=args.limit)
     except RateLimitAbort as exc:
         progress('RATE_LIMITED', f'{exc}')
-        return 1
-    if target_url != args.url:
+        return 0, 0, True
+    except Exception as exc:
+        progress('ERROR', f'{exc}')
+        return 0, 1, False
+    if target_url != url:
         progress('INFER', f'Inferred playlist URL: {target_url}')
     total = len(entries)
     if args.limit is not None and raw_count != total:
@@ -126,11 +130,11 @@ def main(description: str = __doc__) -> int:
         if not entry:
             raise ValueError('Unavailable playlist entry')
         title = entry.get('title') or entry.get('id') or 'video'
-        url = entry_url(entry)
+        item_url = entry_url(entry)
         with lock:
             progress('ITEM_START', f'{title}', current=idx, total=total)
         with contextlib.redirect_stdout(sys.stderr):
-            dest = download(url, args, source_info=entry, output_group=output_group)
+            dest = download(item_url, args, source_info=entry, output_group=output_group)
         with lock:
             succeeded += 1
             progress('ITEM_DONE', f'{dest.name}', current=idx, total=total)
@@ -175,6 +179,35 @@ def main(description: str = __doc__) -> int:
                  f'{succeeded} succeeded; {failed} failed; {skipped} skipped after rate limit')
     else:
         progress('PLAYLIST_COMPLETE', f'{succeeded} succeeded; {failed} failed')
+    return succeeded, failed, aborted
+
+
+def main(description: str = __doc__) -> int:
+    parser = arguments(description, bulk=True)
+    args = parser.parse_args()
+    urls = resolve_url_or_url_file(parser, args)
+    if args.url_file:
+        progress('URL_FILE', f'Found {len(urls)} URL(s) to process from {args.url_file.name}')
+        if not urls:
+            progress('STATUS', '0 succeeded; 0 failed')
+            return 0
+
+    succeeded = 0
+    failed = 0
+    aborted = False
+    for index, url in enumerate(urls, 1):
+        if len(urls) > 1:
+            progress('PLAYLIST_START', url, current=index, total=len(urls))
+        item_succeeded, item_failed, aborted = download_playlist(url, args)
+        succeeded += item_succeeded
+        failed += item_failed
+        if aborted:
+            remaining = len(urls) - index
+            if remaining:
+                progress('STATUS', f'{remaining} URL(s) skipped after rate limit')
+            break
+    if len(urls) > 1:
+        progress('STATUS', f'{succeeded} videos succeeded; {failed} failed')
     return int(failed > 0 or aborted)
 
 

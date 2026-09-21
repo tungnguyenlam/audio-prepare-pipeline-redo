@@ -111,10 +111,31 @@ def arguments(description: str, bulk: bool = False) -> LoggingArgumentParser:
         p.add_argument('-o', '-of', '--output-file', type=Path,
                        help='Explicit destination WAV file path (requires single video download via --url)')
     else:
-        p.add_argument('-u', '--url', required=True, help='YouTube video, playlist, or channel URL')
+        p.add_argument('-u', '--url', default=None, help='YouTube playlist or channel URL')
+        p.add_argument('-uf', '--url-file', type=Path, default=None,
+                       help='Path to text file containing playlist or channel URLs (one per line)')
         p.add_argument('-n', '-l', '--limit', '--max-items', dest='limit', type=positive_int, default=None,
-                       help='Maximum number of videos to download from the playlist or channel')
+                       help='Maximum number of videos to download from each playlist or channel')
     return add_download_arguments(p)
+
+
+def read_url_file(path: Path) -> list[str]:
+    """Return non-empty, non-comment lines from a URL list file."""
+    with path.open(encoding='utf-8') as stream:
+        return [line.strip() for line in stream if line.strip() and not line.strip().startswith('#')]
+
+
+def resolve_url_or_url_file(parser: LoggingArgumentParser, args) -> list[str]:
+    """Require exactly one of --url or --url-file and return the URL list."""
+    if not args.url and not args.url_file:
+        parser.error('Supply --url or --url-file')
+    if args.url and args.url_file:
+        parser.error('Cannot specify both --url and --url-file')
+    if args.url:
+        return [args.url]
+    if not args.url_file.is_file():
+        parser.error(f'URL file not found: {args.url_file}')
+    return read_url_file(args.url_file)
 
 
 def _retry_sleep(attempt: int) -> float:
@@ -382,21 +403,14 @@ def download(url: str, args, source_info: dict | None = None,
 def main() -> int:
     parser = arguments(__doc__)
     args = parser.parse_args()
-
-    if not args.url and not args.url_file:
-        parser.error('Supply --url or --url-file')
-    if args.url and args.url_file:
-        parser.error('Cannot specify both --url and --url-file')
-    if args.url_file:
-        if getattr(args, 'output_file', None) is not None:
-            parser.error('--output-file cannot be used with --url-file; use --output-dir')
-        if not args.url_file.is_file():
-            parser.error(f'URL file not found: {args.url_file}')
+    if args.url_file and getattr(args, 'output_file', None) is not None:
+        parser.error('--output-file cannot be used with --url-file; use --output-dir')
+    urls = resolve_url_or_url_file(parser, args)
 
     if args.url:
         try:
             with contextlib.redirect_stdout(sys.stderr):
-                dest = download(args.url, args)
+                dest = download(urls[0], args)
             print(dest)
             progress('STATUS', '1 succeeded; 0 failed')
             return 0
@@ -408,9 +422,6 @@ def main() -> int:
             progress('ERROR', f'{exc}')
             progress('STATUS', '0 succeeded; 1 failed')
             return 1
-
-    with args.url_file.open(encoding='utf-8') as f:
-        urls = [line.strip() for line in f if line.strip() and not line.strip().startswith('#')]
 
     total = len(urls)
     progress('URL_FILE', f'Found {total} URL(s) to process from {args.url_file.name}')

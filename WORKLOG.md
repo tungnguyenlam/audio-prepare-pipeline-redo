@@ -1,3 +1,13 @@
+## 2026-09-21 - Accept playlist URL lists in download playlist/channel
+
+### Decisions
+- `playlist.sh` / `channel.sh` now accept `-uf` / `--url-file` with one playlist or channel URL per line, matching `youtube.sh`. `--url` and `--url-file` are mutually exclusive; blank lines and `#` comments are skipped.
+- `--limit` applies per URL, not across the file. Playlists are processed sequentially; each still resolves its own output group under `.data/s1-download/<playlist-or-channel>/`.
+- Shared `read_url_file` / `resolve_url_or_url_file` helpers live in `youtube.py` so the three download commands use the same file contract.
+
+### Results
+- Validated launcher wiring with `playlist.sh -h`, `channel.sh -h`, missing-args, both-flags, missing-file, and empty/comment-only url-file cases. Did not download media or run a test suite.
+
 ## 2026-09-20 - Improve environment setup UX and launcher auto-provisioning
 
 ### Decisions

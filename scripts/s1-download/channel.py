@@ -1,4 +1,4 @@
-"""Download a channel's videos sequentially. Supply its /videos URL."""
+"""Download a channel's videos sequentially; accepts --url or --url-file of /videos URLs."""
 from __future__ import annotations
 from playlist import main
 
