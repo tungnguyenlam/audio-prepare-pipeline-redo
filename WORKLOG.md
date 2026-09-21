@@ -301,3 +301,15 @@
 - Validation: Python compilation passed for all five changed Python files; Gemini launcher bash syntax and --help passed; analysis launcher --help passed; existing verify environment imports httpx; git diff --check passed. Reviewed the final diff and intended file list.
 - No tests were written or run, no packages were installed, and no paid inference/cache API calls were made. Live provider behavior, numerical execution, and rendered plot output remain unverified because tests/live inference were not requested.
 - Compatibility: constructor callers must use inference_mode and choose the corresponding generate/generate_batch method. New cache settings change verifier artifact identity; old outputs may require --overwrite or a new output directory. Caches expire at their TTL and are not shared across fresh invocations.
+
+## 2026-09-21 - Explicit Gemini Batch continuation
+
+### Decisions
+- Add `--continue` to both Gemini commands, but accept it only for Batch mode because Batch exposes recoverable job IDs while Standard/Flex responses are synchronous and cannot be reconstructed after local interruption.
+- Batch continuation now requires an exact saved run match. The persisted signature covers the input directory root, relative audio paths, and source SHA-256 digests, alongside prompt/model/generation settings. A changed directory returns an error before submission.
+- Do not implicitly reuse Batch state. Without `--continue`, a new Batch job is submitted; this makes the cost-sensitive behavior explicit. Verifier continuation computes its signature from the complete input set even when completed verdict artifacts are filtered from processing.
+
+### Results
+- Added `--continue`, input signature persistence, prior-state mismatch detection, and full-set verifier state lookup. Updated focused command, data-contract, and verifier documentation.
+- Continuation also migrates compatible Batch state written by the previous Gemini implementation, so an interrupted run from before this flag was added can be resumed without resubmission. Incomplete verifier text artifacts are safely republished from saved Batch responses.
+- Validation: Python compilation passed for Gemini and verifier modules, both launcher syntax checks passed, both `--help` outputs expose `--continue`, and `git diff --check` passed. Tests remain omitted per repository instructions; paid Gemini calls were not made.

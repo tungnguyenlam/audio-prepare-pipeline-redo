@@ -347,6 +347,11 @@ def pending_verifier_pairs(
         wanted = request(identity(source), "verify", parameters, backend)
         response_path = destination.with_suffix(".txt")
         if (destination.exists() or response_path.exists()) and not args.overwrite:
+            if getattr(args, "continue_run", False) and not destination.exists():
+                # A process may have published the raw response just before it was
+                # interrupted. The resumed Batch result can safely replace it.
+                pending.append((source, destination))
+                continue
             if not destination.exists():
                 raise ValueError(
                     f"Incomplete verifier output pair: {response_path}; use --overwrite"
@@ -362,6 +367,11 @@ def pending_verifier_pairs(
                 )
                 if schema_error is None and response_complete:
                     continue
+            if getattr(args, "continue_run", False):
+                # Re-run local parsing/publication from the saved provider response;
+                # no new Gemini request is made by Batch continuation.
+                pending.append((source, destination))
+                continue
             if matches and old.get("status") == "fail":
                 error = old.get("error") if isinstance(old.get("error"), dict) else {}
                 code = str(error.get("code") or "generation_failed")

@@ -21,8 +21,14 @@ schema. Neither directory orchestrates other pipeline stages.
   [data contract](data_contract.md#5-agent-response-pair-scriptsagent). No parsing
   is applied: the text may be prose, JSON, XML, a transcript, or anything the prompt
   asked for.
-- Interrupted Gemini Batch runs resume from `work/batch_jobs/` when re-invoked with
-  identical arguments; `--overwrite` submits a fresh job.
+- Interrupted Gemini Batch runs resume from `work/batch_jobs/` only when re-invoked
+  with `--continue`. The saved state records the input-directory signature (root,
+  relative audio paths, and source digests); a changed directory is rejected before
+  another paid Batch request can be submitted. Without `--continue`, a new Batch
+  job is submitted. `--overwrite` still forces fresh output artifacts.
+- `--continue` applies to Batch mode because the provider exposes a recoverable job
+  ID. Standard and Flex requests are synchronous and cannot recover an in-flight
+  response after the local process is interrupted, so those modes reject the flag.
 - Both Gemini commands share one mode selector and request implementation. Python
   callers use `inference_mode="batch" | "flex" | "standard"` (default `batch`);
   call `generate_batch()` for Batch or `generate()` / `verify()` for synchronous

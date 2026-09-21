@@ -17,7 +17,7 @@ secret-valued options or long prompt contents.
 
 - **Flag shorthands**: All pipeline commands support concise standard shorthands alongside their canonical long names:
   - Input/Output: `-i` or `-if` (`--input-file`), `-id` (`--input-dir`), `-o` or `-of` (`--output-file`), `-od` (`--output-dir`), `-wd` (`--work-dir`)
-  - Execution: `-w` or `-ow` (`--overwrite`), `-c` (`--concurrency`), `-b` or `-bs` (`--batch-size`)
+  - Execution: `-w` or `-ow` (`--overwrite`), `--continue` (Gemini Batch only), `-c` (`--concurrency`), `-b` or `-bs` (`--batch-size`)
   - Audio/DSP: `-sr` (`--sample-rate`), `-ch` (`--channels`), `-s` (`--start`), `-e` (`--end`), `-min` (`--min-duration-s`), `-max` (`--max-duration-s`)
   - Manifests: `-im` (`--input-manifest`), `-om` (`--output-manifest`), `-sm` (`--secondary-manifest`), `-rm` (`--reference-manifest`)
   - Models/Agents: `-m` (`--model` / `--model-id`), `-d` (`--device`), `-p` or `-pf` (`--prompt-file`), `-spf` (`--system-prompt-file`), `-mt` (`--max-tokens` / `--max-new-tokens`), `-t` (`--temperature`) and `-tp` (`--top-p`) on local/endpoint backends only (Gemini 3 ignores sampling parameters, so its commands do not accept them), `-ep` (`--endpoint`), `-ap` (`--adapter-path`), `-v` (`--verbose`)
@@ -494,6 +494,7 @@ bash scripts/s4-agent/hf.sh       --input-dir .data/clips --model-id google/gemm
 bash scripts/s4-agent/verifier/gemini.sh   --input-dir .data/clips --model gemini-3.8-flash --reasoning-effort medium
 bash scripts/s4-agent/verifier/gemini.sh   --input-dir .data/clips --inference-mode flex          # synchronous, Batch-priced
 bash scripts/s4-agent/verifier/gemini.sh   --input-file clip.wav --inference-mode standard      # skip Batch API, full price
+bash scripts/s4-agent/verifier/gemini.sh   --input-dir .data/clips --continue                  # resume matching interrupted Batch work
 bash scripts/s4-agent/verifier/gemini.sh   --input-dir .data/clips --inference-mode flex --cache-prompt --cache-ttl-s 3600
 bash scripts/s4-agent/gemini.sh           --input-dir .data/clips --prompt-file prompts/full-tags-prompt.md --cache-prompt  # Batch cache, 25h TTL
 bash scripts/s4-agent/verifier/hf.sh       --input-dir .data/clips --model-id google/gemma-4-E2B-it --max-new-tokens 1024

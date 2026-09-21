@@ -333,6 +333,11 @@ metadata, so `--output-file result.json` is rejected.
 Defaults: `.data/s4-agent/<backend>/<family>/`;
 Gemini: `.data/s4-agent/gemini/<model>/<reasoning-effort>/<family>/`.
 Gemini Batch state lives under the variant's `work/batch_jobs/` for resume.
+Pass `--continue` to reuse an interrupted Batch job. Its state records an input
+directory signature made from the directory root, relative audio paths, and source
+digests; continuation fails if that signature changes. Standard and Flex requests
+are synchronous and reject `--continue` because an in-flight response cannot be
+recovered after local interruption.
 Gemini's `cache_prompt` parameter defaults to false; `cache_ttl_s` records the
 explicit prompt cache lifetime. Cost records include `cache_storage_usd`, charged
 once for each cache's full TTL and assigned to the first subsequent priced

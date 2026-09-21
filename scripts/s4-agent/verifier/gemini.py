@@ -23,6 +23,7 @@ from gemini import (  # noqa: E402
     GeminiAgent,
     add_gemini_arguments,
     configure_gemini_paths,
+    gemini_input_signature,
     gemini_parameters,
     generation_callback,
 )
@@ -77,7 +78,11 @@ def main() -> int:
     args = command.parse_args()
     configure_gemini_paths(args, "s4-agent/verifier")
 
-    pairs = destinations(args, "_gemini", ".json")
+    all_pairs = destinations(args, "_gemini", ".json")
+    input_root = args.input_dir.resolve() if args.input_dir is not None else args.input_file.resolve().parent
+    input_signature = gemini_input_signature(
+        [source for source, _ in all_pairs], input_root
+    )
     prompt = load_prompt(args.prompt_file)
     init_parameters = gemini_parameters(args)
     verifier = GeminiVerifier(**init_parameters)
@@ -85,11 +90,18 @@ def main() -> int:
     parameters = resolved_parameters({**init_parameters, "prompt": prompt}, verifier)
     pairs = pending_verifier_pairs(
         args=args,
-        pairs=pairs,
+        pairs=all_pairs,
         backend="gemini",
         parameters=parameters,
     )
-    generate = generation_callback(verifier, args, pairs, prompt)
+    generate = generation_callback(
+        verifier,
+        args,
+        all_pairs,
+        prompt,
+        input_signature=input_signature,
+        input_root=input_root,
+    )
 
     return run_verifier(
         args=args,

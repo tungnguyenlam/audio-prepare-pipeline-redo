@@ -123,6 +123,29 @@ def configure_gemini_paths(args: Any, operation: str) -> Path:
     return variant_base
 
 
+def gemini_input_signature(
+    audio_paths: list[Path],
+    input_root: Path | None = None,
+) -> str:
+    """Identify the exact audio set used by a resumable Gemini run."""
+    root = Path(input_root).resolve() if input_root is not None else None
+    files: list[dict[str, str]] = []
+    for value in audio_paths:
+        source = Path(value).resolve()
+        try:
+            relative = source.relative_to(root).as_posix() if root is not None else source.as_posix()
+        except ValueError:
+            relative = source.as_posix()
+        files.append({"path": relative, "sha256": digest(source)})
+    material = {
+        "root": root.as_posix() if root is not None else None,
+        "files": sorted(files, key=lambda item: item["path"]),
+    }
+    return hashlib.sha256(
+        json.dumps(material, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
 class GeminiAgent:
     """Raw generation client for Gemini standard, Flex, and asynchronous Batch APIs."""
 
@@ -457,13 +480,20 @@ class GeminiAgent:
         poll_interval_s: float = 10.0,
         batch_timeout_s: float = 86400.0,
         state_dir: Path,
-        reuse_state: bool = True,
+        input_signature: str | None = None,
+        input_root: Path | None = None,
+        continue_run: bool = False,
+        reuse_state: bool | None = None,
     ) -> dict[Path, dict[str, Any] | Exception]:
         """Submit missing audio requests to Gemini Batch and wait for results."""
         if self.inference_mode != "batch":
             raise ValueError("generate_batch() requires inference_mode='batch'")
         if self.cache_prompt and self.cache_ttl_s < 90000:
             raise ValueError("Batch prompt caching requires --cache-ttl-s >= 90000 (25 hours)")
+        if reuse_state is not None:
+            # Keep the Python API source-compatible while making the CLI flag explicit.
+            continue_run = reuse_state
+        input_signature = input_signature or gemini_input_signature(audio_paths, input_root)
         initial_storage = self._cost_totals["cache_storage_usd"]
         descriptors: list[dict[str, Any]] = []
         for index, source_value in enumerate(audio_paths):
@@ -524,27 +554,134 @@ class GeminiAgent:
 
         state_dir = Path(state_dir)
         state_dir.mkdir(parents=True, exist_ok=True)
-        session_material = {
+        run_identity = {
             "model": self.model,
             "reasoning_effort": self.reasoning_effort,
+            "max_tokens": self.max_tokens,
+            "batch_size": batch_size,
+            "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+            "system_prompt_sha256": (
+                hashlib.sha256(system_prompt.encode("utf-8")).hexdigest()
+                if system_prompt is not None else None
+            ),
+            "cache_prompt": self.cache_prompt,
+            "cache_ttl_s": self.cache_ttl_s,
+        }
+        session_material = {
+            **run_identity,
+            "input_signature": input_signature,
             "request_keys": [item["key"] for item in descriptors],
         }
         session_id = hashlib.sha256(
             json.dumps(session_material, sort_keys=True, separators=(",", ":")).encode("utf-8")
         ).hexdigest()[:20]
         state_path = state_dir / f"batch_{session_id}.json"
+        request_keys = [item["key"] for item in descriptors]
+        group_request_keys = [
+            [str(item["key"]) for item in group] for group in groups
+        ]
         saved: dict[str, Any] = {}
-        if reuse_state and state_path.is_file():
+        if continue_run and state_path.is_file():
             try:
                 saved = json.loads(state_path.read_text(encoding="utf-8"))
             except (OSError, ValueError, json.JSONDecodeError):
-                saved = {}
-        if saved.get("session") != session_material or saved.get("status") == "failed":
+                raise ValueError(
+                    f"Cannot continue Gemini Batch run: unreadable state file {state_path}"
+                ) from None
+            if not isinstance(saved, dict):
+                raise ValueError(
+                    f"Cannot continue Gemini Batch run: invalid state file {state_path}"
+                )
+        elif continue_run:
+            prior_states: list[tuple[Path, dict[str, Any]]] = []
+            for candidate in sorted(
+                state_dir.glob("batch_*.json"),
+                key=lambda path: path.stat().st_mtime,
+                reverse=True,
+            ):
+                try:
+                    candidate_state = json.loads(candidate.read_text(encoding="utf-8"))
+                except (OSError, ValueError, json.JSONDecodeError):
+                    continue
+                if not isinstance(candidate_state, dict):
+                    continue
+                candidate_session = candidate_state.get("session")
+                if not isinstance(candidate_session, dict):
+                    continue
+                same_new_identity = all(
+                    candidate_session.get(key) == value for key, value in run_identity.items()
+                )
+                same_legacy_identity = (
+                    candidate_session.get("model") == self.model
+                    and candidate_session.get("reasoning_effort") == self.reasoning_effort
+                )
+                if same_new_identity or same_legacy_identity:
+                    prior_states.append((candidate, candidate_state))
+            legacy_matches = [
+                record for record in prior_states
+                if (
+                    record[1].get("session", {}).get("request_keys") == request_keys
+                    and [
+                        [str(key) for key in group.get("request_keys", [])]
+                        for group in record[1].get("groups", [])
+                        if isinstance(group, dict)
+                    ] == group_request_keys[:len(record[1].get("groups", []))]
+                )
+            ]
+            if legacy_matches:
+                state_path, saved = legacy_matches[0]
+                # State written before --continue existed has the same request
+                # keys, so it is safe to migrate it in place and keep its jobs.
+                saved["schema_version"] = 2
+                saved["session"] = session_material
+                saved["run_identity"] = run_identity
+                saved["input_signature"] = input_signature
+                saved["input_root"] = Path(input_root).resolve().as_posix() if input_root else None
+                write_json(state_path, saved)
+            elif any(
+                state.get("session", {}).get("input_signature") != input_signature
+                for _, state in prior_states
+                if "input_signature" in state.get("session", {})
+            ) or any(
+                state.get("session", {}).get("request_keys") != request_keys
+                for _, state in prior_states
+                if "input_signature" not in state.get("session", {})
+            ):
+                # A matching provider configuration with a different source set
+                # must never silently submit another paid job.
+                raise ValueError(
+                    "Cannot continue Gemini Batch run: input directory signature changed; "
+                    "use a new work directory or omit --continue for a fresh run."
+                )
+            else:
+                raise ValueError(
+                    "Cannot continue Gemini Batch run: no saved run matches this input directory "
+                    "and generation configuration."
+                )
+        saved_session = saved.get("session")
+        if continue_run and saved_session != session_material:
+            if not isinstance(saved_session, dict) or saved_session.get("input_signature") != input_signature:
+                raise ValueError(
+                    "Cannot continue Gemini Batch run: input directory signature changed; "
+                    "use a new work directory or omit --continue for a fresh run."
+                )
+            raise ValueError(
+                "Cannot continue Gemini Batch run: saved run settings do not match this command."
+            )
+        if continue_run and saved.get("status") == "failed":
+            raise ValueError(
+                "Cannot continue Gemini Batch run: the saved Batch job failed; "
+                "use a new work directory for a fresh run."
+            )
+        if not continue_run:
             if state_path.exists():
                 state_path = state_dir / f"batch_{session_id}_{int(time.time())}.json"
             saved = {
-                "schema_version": 1,
+                "schema_version": 2,
                 "session": session_material,
+                "run_identity": run_identity,
+                "input_signature": input_signature,
+                "input_root": Path(input_root).resolve().as_posix() if input_root else None,
                 "status": "submitting",
                 "groups": [],
             }
@@ -633,7 +770,7 @@ class GeminiAgent:
                     break
                 if time.monotonic() - started >= batch_timeout_s:
                     raise TimeoutError(
-                        f"Gemini Batch did not finish within {batch_timeout_s:g}s; resume with the same command. State: {state_path}"
+                        f"Gemini Batch did not finish within {batch_timeout_s:g}s; rerun with --continue. State: {state_path}"
                     )
                 time.sleep(min(poll_interval_s, 60.0))
 
@@ -747,6 +884,12 @@ def add_gemini_arguments(command: argparse.ArgumentParser) -> None:
     )
     command.add_argument("--batch-poll-interval-s", type=positive_float, default=10.0, help="Seconds between Batch status polls")
     command.add_argument("--batch-timeout-s", type=positive_float, default=86400.0, help="Maximum seconds to wait for Batch completion")
+    command.add_argument(
+        "--continue",
+        dest="continue_run",
+        action="store_true",
+        help="Continue a matching interrupted Gemini Batch run; error if its input directory changed",
+    )
     command.add_argument("--cache-prompt", action="store_true", help="Explicitly cache prompt text (default: false)")
     command.add_argument("--cache-ttl-s", type=positive_int, help="Cache lifetime in seconds (default: 3600; 90000 for batch)")
 
@@ -772,8 +915,15 @@ def generation_callback(
     pairs: list[tuple[Path, Path]],
     prompt: str,
     system_prompt: str | None = None,
+    input_signature: str | None = None,
+    input_root: Path | None = None,
 ) -> Callable[[Path], dict[str, Any]]:
     """Select the provider API once; both commands consume raw results."""
+    if getattr(args, "continue_run", False) and client.inference_mode != "batch":
+        raise ValueError(
+            "--continue is only supported with --inference-mode batch; "
+            "synchronous requests cannot be recovered after interruption."
+        )
     if client.inference_mode != "batch":
         return lambda source: client.generate(source, prompt, system_prompt=system_prompt)
     try:
@@ -781,7 +931,9 @@ def generation_callback(
             [source for source, _ in pairs], prompt, system_prompt=system_prompt,
             batch_size=args.batch_size, poll_interval_s=args.batch_poll_interval_s,
             batch_timeout_s=args.batch_timeout_s, state_dir=args.work_dir / "batch_jobs",
-            reuse_state=not args.overwrite,
+            input_signature=input_signature,
+            input_root=input_root,
+            continue_run=getattr(args, "continue_run", False),
         )
     except BaseException:
         from _reporting import new_run_stats, report_cost_summary
@@ -816,7 +968,11 @@ def main() -> int:
     client = GeminiAgent(**gemini_parameters(args))
     parameters = {**gemini_parameters(args), "prompt": prompt, "system_prompt": system_prompt}
     pairs = destinations(args, "_gemini", ".txt")
-    generate = generation_callback(client, args, pairs, prompt, system_prompt)
+    input_root = args.input_dir.resolve() if args.input_dir is not None else args.input_file.resolve().parent
+    input_signature = gemini_input_signature([source for source, _ in pairs], input_root)
+    generate = generation_callback(
+        client, args, pairs, prompt, system_prompt, input_signature, input_root
+    )
 
     result = run_agent(
         args=args,
