@@ -352,3 +352,9 @@
 - Batch per-request errors and invalid verifier responses remain saved responses on continuation; obtaining fresh responses for those clips requires --overwrite. Standard/Flex cannot recover responses interrupted before publication, so retries may incur another charge.
 - Updated command examples and continuation contracts, including the actual Standard default. Reviewed every changed file and the final diff.
 - Validation passed: Python compilation for all three changed modules, Bash syntax for both Gemini launchers, both launcher --help outputs exposing --continue, and git diff --check. No tests were written or run, and no paid model calls were made; runtime recovery remains untested per repository instructions.
+
+## 2026-09-23 - Confirm standalone DeepFilterNet v3 support
+
+- Confirmed scripts/cleanup/denoise_deepfilternet.py already defaults to DeepFilterNet3 and passes the selected model to df.enhance.init_df; its same-name Bash launcher selects the isolated DeepFilterNet environment and forwards arguments. No duplicate command was needed.
+- Clarified the v3 default and DeepFilterNet-only environment setup command in docs/commands.md.
+- Validation: launcher Bash syntax passed; inspected model loading, launcher, setup target, shared helpers, adjacent backend, and documented artifact contract. Launcher --help reports the missing isolated environment; direct Python --help is blocked by missing numpy in the current interpreter. No packages installed or inference performed. No tests written or run because tests were not requested.

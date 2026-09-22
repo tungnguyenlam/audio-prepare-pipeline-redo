@@ -220,8 +220,9 @@ file-out stage with its own virtualenv. There is no crawl → separate →
 diarize → mix orchestrator; `speech_cleanup_cascade.sh` only shells out to the
 linear cleanup launchers.
 
-Mel-RoFormer already does light accompaniment suppression. DeepFilterNet
-defaults to a 12 dB attenuation cap so hiss/HVAC can be reduced without
+Mel-RoFormer already does light accompaniment suppression. The standalone
+`denoise_deepfilternet.sh` command defaults to `--model DeepFilterNet3` (v3),
+with a 12 dB attenuation cap so hiss/HVAC can be reduced without
 over-suppressing the voice; `--no-atten-lim` and `--post-filter` are more
 aggressive. Strong SFX that overlap active speech is not removed; Silero VAD
 gating zeros non-speech gaps (music, SFX, hiss between sentences) with a
@@ -231,6 +232,7 @@ opt-in because it can color the timbre.
 
 ```bash
 ./envs/setup_worker_envs.sh cleanup          # deepfilternet + clearvoice + voicefixer
+# For DeepFilterNet v3 alone: ./envs/setup_worker_envs.sh deepfilternet
 # VAD gating reuses an existing torch env (vibevoice/align/sortformer/…)
 
 bash scripts/cleanup/denoise_deepfilternet.sh --input-file vocals.wav
