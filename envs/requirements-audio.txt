@@ -1,7 +1,0 @@
-# Lightweight standalone-command environment; no model dependencies.
-soundfile>=0.14.0
-numpy>=2.4.6
-librosa>=0.11.0
-matplotlib>=3.11.1
-pysocks>=1.7.1
-httpx[socks]>=0.28.1

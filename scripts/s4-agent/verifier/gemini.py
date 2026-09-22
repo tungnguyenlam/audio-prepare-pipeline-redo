@@ -20,6 +20,7 @@ from _cli import (  # noqa: E402
 )
 from _common.files import destinations, parser, positive_int  # noqa: E402
 from gemini import (  # noqa: E402
+    GEMINI_MODEL,
     GeminiAgent,
     add_gemini_arguments,
     configure_gemini_paths,
@@ -48,6 +49,10 @@ class GeminiVerifier(GeminiAgent):
         parsed["_usage"] = generated["usage"]
         parsed["_cost"] = generated["cost"]
         parsed["_model"] = self.model
+        if self.model != GEMINI_MODEL:
+            raise RuntimeError(
+                f"Verifier must use {GEMINI_MODEL!r}, not {self.model!r}."
+            )
         parsed["_reasoning_effort"] = self.reasoning_effort
         parsed["_inference_mode"] = generated.get("inference_mode", "standard")
         parsed["_requested_inference_mode"] = self.inference_mode
@@ -58,8 +63,8 @@ class GeminiVerifier(GeminiAgent):
         if generated.get("batch_request_key"):
             parsed["_batch_request_key"] = generated["batch_request_key"]
         provider_body = generated["provider_body"]
-        if provider_body.get("modelVersion"):
-            parsed["_model_version"] = provider_body["modelVersion"]
+        if generated.get("model_version"):
+            parsed["_model_version"] = generated["model_version"]
         if provider_body.get("responseId"):
             parsed["_response_id"] = provider_body["responseId"]
 

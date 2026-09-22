@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "operation": "duration_loss_audit",
+  "audit": {
+    "stem": "UuQgxxfU_Hc_VLOG-Lan-dau-dat-chan-den-An-Do-Trai",
+    "manifest_dir": ".data/s3-diarize/diarizen/UuQgxxfU_Hc_VLOG-Lan-dau-dat-chan-den-An-Do-Trai",
+    "source_audio": ".data/s2-separate/mel_roformer/UuQgxxfU_Hc_VLOG-Lan-d/UuQgxxfU_Hc_VLOG-Lan-d-48000_mel_roformer.wav",
+    "probed_audio": true,
+    "sample_rate": 48000,
+    "raw_duration_s": 1956.5947,
+    "thresholds": {
+      "min_duration_s": 1.5,
+      "max_duration_s": 15.0
+    },
+    "stages": {
+      "has_explicit_raw": true,
+      "has_explicit_merged": true,
+      "has_explicit_final": true
+    },
+    "raw_diarization": {
+      "turns_count": 1327,
+      "speech_sum_s": 1755.74,
+      "speech_union_s": 1522.32,
+      "overlap_s": 233.42,
+      "silence_lost_s": 434.2747,
+      "silence_lost_pct": 22.2
+    },
+    "merged_stage": {
+      "turns_count": 1285,
+      "speech_sum_s": 1777.18,
+      "speech_union_s": 1543.76,
+      "silence_absorbed_s": 21.44
+    },
+    "duration_filtering": {
+      "too_short_count": 945,
+      "too_short_s": 446.2865,
+      "too_short_pct_of_raw": 22.81,
+      "too_short_pct_of_merged": 25.11,
+      "too_long_count": 6,
+      "too_long_s": 126.804,
+      "too_long_pct_of_raw": 6.48
+    },
+    "final_clips": {
+      "clips_count": 334,
+      "speech_duration_s": 1204.0895,
+      "speech_union_s": 1140.4695,
+      "mean_duration_s": 3.6051,
+      "yield_pct_of_raw": 61.54,
+      "yield_pct_of_raw_speech": 79.1,
+      "yield_pct_of_merged_speech": 67.75
+    },
+    "net_loss": {
+      "total_lost_s": 752.5052,
+      "total_lost_pct": 38.46,
+      "silence_lost_s": 434.2747,
+      "too_short_lost_s": 446.2865,
+      "too_long_lost_s": 126.804
+    }
+  }
+}
