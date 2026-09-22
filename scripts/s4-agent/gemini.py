@@ -18,7 +18,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from _common.files import ROOT, digest, persist_path, safe_name, write_json, positive_int  # noqa: E402
+from _common.files import ROOT, digest, persist_path, safe_name, write_json, positive_int, read_json, resolve_stored_path  # noqa: E402
 from _gemini_pricing import (  # noqa: E402
     accumulate_cost,
     accumulate_usage,
@@ -562,14 +562,20 @@ class GeminiAgent:
         ).hexdigest()[:20]
         state_path = state_dir / f"batch_{session_id}.json"
         saved: dict[str, Any] = {}
-        if reuse_state and state_path.is_file():
-            try:
-                saved = json.loads(state_path.read_text(encoding="utf-8"))
-            except (OSError, ValueError, json.JSONDecodeError):
-                saved = {}
-        if saved.get("session") != session_material or saved.get("status") == "failed":
+        if reuse_state:
+            candidates = sorted(
+                state_dir.glob(f"batch_{session_id}*.json"),
+                key=lambda path: path.stat().st_mtime_ns,
+                reverse=True,
+            )
+            if candidates:
+                state_path = candidates[0]
+                saved = read_json(state_path)
+                if saved.get("session") != session_material:
+                    raise ValueError(f"Conflicting Batch state: {state_path}; use --overwrite")
+        if not saved:
             if state_path.exists():
-                state_path = state_dir / f"batch_{session_id}_{int(time.time())}.json"
+                state_path = state_dir / f"batch_{session_id}_{time.time_ns()}.json"
             saved = {
                 "schema_version": 1,
                 "session": session_material,
@@ -595,7 +601,12 @@ class GeminiAgent:
             for group_index, group in enumerate(groups):
                 keys = [str(item["key"]) for item in group]
                 existing = saved_groups[group_index] if group_index < len(saved_groups) else None
-                if not isinstance(existing, dict) or existing.get("request_keys") != keys or not existing.get("job_name"):
+                if (
+                    not isinstance(existing, dict)
+                    or existing.get("request_keys") != keys
+                    or not existing.get("job_name")
+                    or existing.get("state") in BATCH_TERMINAL_STATES - {"JOB_STATE_SUCCEEDED", "BATCH_STATE_SUCCEEDED"}
+                ):
                     previous_storage = self._cost_totals["cache_storage_usd"]
                     for item in group:
                         self._apply_prompt_cache(item["entry"]["request"], prompt, system_prompt)
@@ -661,7 +672,7 @@ class GeminiAgent:
                     break
                 if time.monotonic() - started >= batch_timeout_s:
                     raise TimeoutError(
-                        f"Gemini Batch did not finish within {batch_timeout_s:g}s; resume with the same command. State: {state_path}"
+                        f"Gemini Batch did not finish within {batch_timeout_s:g}s; resume with the same command plus --continue. State: {state_path}"
                     )
                 time.sleep(min(poll_interval_s, 60.0))
 
@@ -742,6 +753,10 @@ class GeminiAgent:
 def add_gemini_arguments(command: argparse.ArgumentParser) -> None:
     """Identical provider controls for raw generation and verification."""
     command.add_argument(
+        "--continue", dest="continue_run", action="store_true",
+        help="Skip matching completed outputs and retry unfinished work; Batch also reconnects to saved jobs",
+    )
+    command.add_argument(
         "-m", "--model",
         choices=(GEMINI_MODEL,),
         default=GEMINI_MODEL,
@@ -785,6 +800,8 @@ def add_gemini_arguments(command: argparse.ArgumentParser) -> None:
 
 
 def gemini_parameters(args: Any) -> dict[str, Any]:
+    if args.continue_run and args.overwrite:
+        raise ValueError("--continue and --overwrite cannot be combined")
     if args.timeout_s is None:
         args.timeout_s = 900.0 if args.inference_mode == "flex" else 120.0
     if args.max_retries is None:
@@ -799,22 +816,88 @@ def gemini_parameters(args: Any) -> dict[str, Any]:
     )}
 
 
+def pending_agent_pairs(args: Any, pairs: list[tuple[Path, Path]], parameters: dict[str, Any]) -> list[tuple[Path, Path]]:
+    """Check raw Gemini pairs before any provider submission."""
+    pending = []
+    for source, destination in pairs:
+        metadata = destination.with_suffix(".json")
+        if destination == metadata:
+            raise ValueError("Raw response --output-file cannot have a .json suffix")
+        if not args.overwrite and (destination.exists() or metadata.exists()):
+            if not metadata.exists() and args.continue_run:
+                pending.append((source, destination))
+                continue
+            try:
+                old = read_json(metadata)
+            except (OSError, ValueError) as exc:
+                raise ValueError(f"Unreadable output metadata: {metadata}; use --overwrite") from exc
+            wanted = {
+                "source": {"path": persist_path(source), "sha256": digest(source)},
+                "operation": "explore_audio_model",
+                "model": parameters["model"],
+                "parameters": parameters,
+            }
+            if not isinstance(old, dict) or any(old.get(key) != value for key, value in wanted.items()):
+                raise ValueError(f"Conflicting output: {metadata}; use --overwrite")
+            output = old.get("output") or {}
+            if destination.is_file() and output.get("sha256") == digest(destination):
+                continue
+            if not args.continue_run:
+                raise ValueError(f"Incomplete output pair: {destination}; use --continue or --overwrite")
+        pending.append((source, destination))
+    return pending
+
+
 def generation_callback(
     client: GeminiAgent,
     args: Any,
     pairs: list[tuple[Path, Path]],
     prompt: str,
     system_prompt: str | None = None,
+    *,
+    all_pairs: list[tuple[Path, Path]],
 ) -> Callable[[Path], dict[str, Any]]:
     """Select the provider API once; both commands consume raw results."""
     if client.inference_mode != "batch":
         return lambda source: client.generate(source, prompt, system_prompt=system_prompt)
+    # Record the original submission subset separately from the full input identity.
+    # Completed artifacts may shrink `pairs` on a later invocation.
+    root = args.input_file if args.input_file is not None else args.input_dir
+    signature = {
+        "root": persist_path(root),
+        "inputs": [
+            {"source": persist_path(source), "sha256": digest(source), "output": persist_path(destination)}
+            for source, destination in all_pairs
+        ],
+        "parameters": gemini_parameters(args),
+        "prompt": prompt,
+        "system_prompt": system_prompt,
+        "batch_size": args.batch_size,
+    }
+    scope = {"root": signature["root"], "operation": args._operation}
+    run_id = hashlib.sha256(json.dumps(scope, sort_keys=True).encode()).hexdigest()[:20]
+    manifest_path = args.work_dir / "batch_jobs" / f"run_{run_id}.json"
+    sources = [source for source, _ in pairs]
+    if args.continue_run and manifest_path.exists():
+        manifest = read_json(manifest_path)
+        if manifest.get("signature") != signature:
+            raise ValueError(f"Batch inputs/settings changed: {manifest_path}; use --overwrite")
+        sources = [resolve_stored_path(value) for value in manifest["sources"]]
+        if any(source not in sources for source, _ in pairs):
+            raise ValueError("Missing outputs outside the saved Batch submission; rerun without --continue")
+    elif pairs:
+        write_json(manifest_path, {
+            "signature": signature,
+            "sources": [persist_path(source) for source in sources],
+        })
+    if not pairs:
+        return lambda source: {}  # No generation callback will be consumed.
     try:
         results = client.generate_batch(
-            [source for source, _ in pairs], prompt, system_prompt=system_prompt,
+            sources, prompt, system_prompt=system_prompt,
             batch_size=args.batch_size, poll_interval_s=args.batch_poll_interval_s,
             batch_timeout_s=args.batch_timeout_s, state_dir=args.work_dir / "batch_jobs",
-            reuse_state=not args.overwrite,
+            reuse_state=args.continue_run,
         )
     except BaseException:
         from _reporting import new_run_stats, report_cost_summary
@@ -849,7 +932,9 @@ def main() -> int:
     client = GeminiAgent(**gemini_parameters(args))
     parameters = {**gemini_parameters(args), "prompt": prompt, "system_prompt": system_prompt}
     pairs = destinations(args, "_gemini", ".txt")
-    generate = generation_callback(client, args, pairs, prompt, system_prompt)
+    all_pairs = pairs
+    pairs = pending_agent_pairs(args, pairs, parameters)
+    generate = generation_callback(client, args, pairs, prompt, system_prompt, all_pairs=all_pairs)
 
     result = run_agent(
         args=args,

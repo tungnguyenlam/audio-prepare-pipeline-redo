@@ -323,3 +323,19 @@
 - Validation: Python compilation, all verifier Bash launcher syntax checks, and git diff whitespace checks passed. Launcher --help passed for Gemini, HF, endpoint, MOSS, MiniCPM, Kimi, VibeVoice, plot_verifier_analysis, analysis, and analyze.
 - vLLM and Unsloth --help encounter an existing EndpointVerifier import collision with the raw agent endpoint module, outside this path-resolution fix. Their unchanged imports fail before command parsing.
 - No tests were written or run as requested by repository instructions. No model calls or rendered-output validation were performed.
+
+## 2026-09-22 - Continue Gemini Standard, Flex, and Batch runs
+
+### Decisions
+- Expose --continue on both Gemini commands for every inference mode; preserve matching completed artifacts, retry incomplete/failed synchronous work, and reject mismatched metadata unless --overwrite is explicit.
+- Make --continue and --overwrite mutually exclusive. Batch continuation must retain the original submitted subset and validate full input/settings identity before reconnecting to saved jobs.
+- Repair raw Gemini output preflight and verifier response-path resolution as required for reliable completion detection. Keep endpoint/HF CLI scope unchanged.
+- Validate syntax, launcher help, and the final diff only; no tests or paid inference.
+
+### Results
+- Added --continue to raw Gemini and Gemini verifier launchers in Standard, Flex, and Batch modes. Standard/Flex skip matching complete outputs and regenerate missing, failed, or incomplete pairs; conflicting metadata requires --overwrite.
+- Added raw Gemini metadata/digest preflight and fixed verifier repository-relative response lookup. Verifier completion now requires an actual matching raw response, including legacy artifacts; other verifier backends share that integrity check but do not gain a new CLI flag.
+- Batch CLI reuse is now explicit. Run manifests retain the original pending subset and validate full input/settings identity; continuation finds the latest matching saved job state, retries failed jobs without resubmitting successful jobs, and refuses conflicting state. Python generate_batch retains its existing reuse_state default.
+- Batch per-request errors and invalid verifier responses remain saved responses on continuation; obtaining fresh responses for those clips requires --overwrite. Standard/Flex cannot recover responses interrupted before publication, so retries may incur another charge.
+- Updated command examples and continuation contracts, including the actual Standard default. Reviewed every changed file and the final diff.
+- Validation passed: Python compilation for all three changed modules, Bash syntax for both Gemini launchers, both launcher --help outputs exposing --continue, and git diff --check. No tests were written or run, and no paid model calls were made; runtime recovery remains untested per repository instructions.

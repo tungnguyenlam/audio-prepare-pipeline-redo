@@ -88,17 +88,18 @@ def main() -> int:
     verifier = GeminiVerifier(**init_parameters)
 
     parameters = resolved_parameters({**init_parameters, "prompt": prompt}, verifier)
+    all_pairs = pairs
     pairs = pending_verifier_pairs(
         args=args,
         pairs=pairs,
         backend="gemini",
         parameters=parameters,
     )
-    generate = generation_callback(verifier, args, pairs, prompt)
+    generate = generation_callback(verifier, args, pairs, prompt, all_pairs=all_pairs)
 
     return run_verifier(
         args=args,
-        pairs=pairs,
+        pairs=all_pairs,
         backend="gemini",
         parameters=parameters,
         verify=lambda source: verifier.parse_generated(source, generate(source)),
