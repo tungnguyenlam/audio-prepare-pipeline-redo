@@ -32,6 +32,7 @@ from _gemini_pricing import (  # noqa: E402
 logger = logging.getLogger("agent.gemini")
 
 API_ROOT = "https://generativelanguage.googleapis.com/v1beta"
+GEMINI_MODEL = "gemini-3.8-flash"
 BATCH_MAX_INLINE_BYTES = 18 * 1024 * 1024
 MAX_BACKOFF_S = 60.0
 BATCH_TERMINAL_STATES = {
@@ -73,7 +74,7 @@ def audio_mime_type(path: Path) -> str:
 
 
 def response_text(response: dict[str, Any]) -> str:
-    """Concatenate the first candidate's text parts without altering them."""
+    """Return only final-answer text, matching the SDK's ``response.text`` behavior."""
     candidates = response.get("candidates")
     if not isinstance(candidates, list) or not candidates or not isinstance(candidates[0], dict):
         return ""
@@ -83,7 +84,11 @@ def response_text(response: dict[str, Any]) -> str:
     return "".join(
         part["text"]
         for part in content["parts"]
-        if isinstance(part, dict) and isinstance(part.get("text"), str)
+        if (
+            isinstance(part, dict)
+            and isinstance(part.get("text"), str)
+            and not part.get("thought", False)
+        )
     )
 
 
@@ -128,17 +133,21 @@ class GeminiAgent:
 
     def __init__(
         self,
-        model: str = "gemini-3.8-flash",
+        model: str = GEMINI_MODEL,
         api_key: str | None = None,
         reasoning_effort: str = "medium",
         max_retries: int | None = None,
         base_backoff_s: float = 2.0,
         max_tokens: int = 65536,
         timeout_s: float | None = None,
-        inference_mode: str = "batch",
+        inference_mode: str = "standard",
         cache_prompt: bool = False,
         cache_ttl_s: int | None = None,
     ) -> None:
+        if model != GEMINI_MODEL:
+            raise ValueError(
+                f"This pipeline is pinned to {GEMINI_MODEL!r}; received {model!r}."
+            )
         if inference_mode not in ("standard", "flex", "batch"):
             raise ValueError(f"Unsupported Gemini inference mode: {inference_mode}")
         self.model = model
@@ -298,7 +307,12 @@ class GeminiAgent:
                     {"inlineData": {"mimeType": audio_mime_type(audio_path), "data": audio_b64}},
                 ],
             }],
-            "generationConfig": {"maxOutputTokens": self.max_tokens},
+            # Gemini 3.x is tuned for its default sampler. Do not set temperature,
+            # topP, or topK here: Google explicitly recommends omitting them.
+            "generationConfig": {
+                "candidateCount": 1,
+                "maxOutputTokens": self.max_tokens,
+            },
         }
         if system_prompt is not None:
             payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
@@ -319,6 +333,15 @@ class GeminiAgent:
         batch_job: str | None = None,
         batch_request_key: str | None = None,
     ) -> dict[str, Any]:
+        returned_model = response.get("modelVersion")
+        if isinstance(returned_model, str) and returned_model:
+            normalized = returned_model.removeprefix("models/")
+            if not normalized.startswith(GEMINI_MODEL):
+                raise RuntimeError(
+                    f"Gemini returned unexpected modelVersion {returned_model!r}; "
+                    f"expected {GEMINI_MODEL!r}. No fallback is allowed."
+                )
+
         usage = normalize_gemini_usage(
             response.get("usageMetadata"),
             audio_duration_s=audio_duration_s,
@@ -351,6 +374,8 @@ class GeminiAgent:
             "requested_inference_mode": self.inference_mode,
             "cache_prompt": self.cache_prompt,
             "provider_body": response,
+            "requested_model": self.model,
+            "model_version": returned_model,
         }
         if batch_job is not None:
             result["batch_job"] = batch_job
@@ -373,7 +398,10 @@ class GeminiAgent:
             system_prompt=system_prompt,
         )
         self._apply_prompt_cache(payload, prompt, system_prompt)
-        payload["service_tier"] = self.inference_mode
+        # AI Studio's normal Run action uses standard generateContent and does
+        # not add a service-tier override. Omit it for request parity.
+        if self.inference_mode != "standard":
+            payload["serviceTier"] = self.inference_mode
         started = time.monotonic()
         response, headers = self._request_json(
             "POST",
@@ -713,10 +741,15 @@ class GeminiAgent:
 
 def add_gemini_arguments(command: argparse.ArgumentParser) -> None:
     """Identical provider controls for raw generation and verification."""
-    command.add_argument("-m", "--model", default="gemini-3.8-flash", help="Gemini model name")
+    command.add_argument(
+        "-m", "--model",
+        choices=(GEMINI_MODEL,),
+        default=GEMINI_MODEL,
+        help=f"Gemini model name (pinned to {GEMINI_MODEL})",
+    )
     command.add_argument(
         "--reasoning-effort",
-        choices=("none", "low", "medium", "high"),
+        choices=("low", "medium", "high"),
         default="medium",
         help="Reasoning effort level for models supporting thinking",
     )
@@ -733,10 +766,10 @@ def add_gemini_arguments(command: argparse.ArgumentParser) -> None:
     command.add_argument(
         "--inference-mode",
         choices=("batch", "flex", "standard"),
-        default="batch",
+        default="standard",
         help=(
-            "Gemini provider mode; batch is asynchronous and flex is synchronous with "
-            "1-15 min latency, both billed at 50%% of standard rates"
+            "Gemini provider mode; standard matches a normal Google AI Studio Run. "
+            "Batch and flex are opt-in cost/latency modes"
         ),
     )
     command.add_argument(
