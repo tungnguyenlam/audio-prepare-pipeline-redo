@@ -619,14 +619,22 @@ setup_diarizen() {
     elif [ "$HAS_NVIDIA_GPU" -eq 1 ]; then
         local index_url
         index_url=$(get_cuda_wheel_index)
-        [ -z "$index_url" ] && index_url="https://download.pytorch.org/whl/cu121"
-        echo "⚡ Installing NVIDIA CUDA PyTorch stack into ${venv_dir}..."
-        uv pip install --python "$py_bin" \
-            "torch>=2.1.1,<2.5.0" "torchvision" "torchaudio" \
-            --index-url "$index_url"
+        if [ -n "$index_url" ]; then
+            echo "⚡ Installing NVIDIA CUDA PyTorch stack (${index_url}) into ${venv_dir}..."
+            uv pip install --python "$py_bin" \
+                "torch>=2.1.1" "torchvision" "torchaudio" \
+                --index-url "$index_url"
 
-        echo "📦 Installing DiariZen requirements..."
-        uv pip install --python "$py_bin" --extra-index-url "$index_url" -r "$REPO_ROOT/envs/requirements-diarizen.txt"
+            echo "📦 Installing DiariZen requirements..."
+            uv pip install --python "$py_bin" --extra-index-url "$index_url" -r "$REPO_ROOT/envs/requirements-diarizen.txt"
+        else
+            echo "⚡ Configuring NVIDIA CUDA PyTorch stack for ${venv_dir}..."
+            uv pip install --python "$py_bin" \
+                "torch>=2.1.1" "torchvision" "torchaudio"
+
+            echo "📦 Installing DiariZen requirements..."
+            uv pip install --python "$py_bin" -r "$REPO_ROOT/envs/requirements-diarizen.txt"
+        fi
     else
         echo "⚡ Installing CPU PyTorch stack into ${venv_dir}..."
         uv pip install --python "$py_bin" \
