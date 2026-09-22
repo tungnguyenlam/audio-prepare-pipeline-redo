@@ -313,3 +313,13 @@
 - Added `--continue`, input signature persistence, prior-state mismatch detection, and full-set verifier state lookup. Updated focused command, data-contract, and verifier documentation.
 - Continuation also migrates compatible Batch state written by the previous Gemini implementation, so an interrupted run from before this flag was added can be resumed without resubmission. Incomplete verifier text artifacts are safely republished from saved Batch responses.
 - Validation: Python compilation passed for Gemini and verifier modules, both launcher syntax checks passed, both `--help` outputs expose `--continue`, and `git diff --check` passed. Tests remain omitted per repository instructions; paid Gemini calls were not made.
+
+## 2026-09-22 - Resolve automatic verifier plots beside run verdicts
+
+### Decisions and results
+- Found that shared automatic analysis preferred `_default_base` over actual verdict destinations, placing `plot/` above the family directory and aggregating unrelated families. Explicit `--output-file` was also shadowed by the default base or `--output-dir`.
+- Resolve explicit output files first, then explicit output directories; reuse production `resolve_output_dir` for directory inputs and actual destination parents for single-file defaults. Keep directory roots stable for nested inputs and retain the original destination list for cached reruns. Applies to all nine verifier backends through their shared runner; raw agent commands do not automatically plot.
+- Updated verifier documentation and the artifact contract. Existing plots were not moved or regenerated.
+- Validation: Python compilation, all verifier Bash launcher syntax checks, and git diff whitespace checks passed. Launcher --help passed for Gemini, HF, endpoint, MOSS, MiniCPM, Kimi, VibeVoice, plot_verifier_analysis, analysis, and analyze.
+- vLLM and Unsloth --help encounter an existing EndpointVerifier import collision with the raw agent endpoint module, outside this path-resolution fix. Their unchanged imports fail before command parsing.
+- No tests were written or run as requested by repository instructions. No model calls or rendered-output validation were performed.

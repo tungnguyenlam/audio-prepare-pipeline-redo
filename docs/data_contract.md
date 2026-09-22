@@ -428,6 +428,11 @@ Validation profile is selected by the prompt text (`scripts/s4-agent/verifier/_v
 
 All verifiers run post-verification analysis and plotting automatically upon completion by default (populating `<verdict-dir>/plot/`), unless `--skip-analysis` / `--no-analyze` is passed. Analysis can also be run or refreshed standalone at any time.
 
+For automatic analysis, `<verdict-dir>` is the parent of `--output-file` when
+specified, otherwise `--output-dir` or the resolved default audio-family output
+directory. Directory inputs retain that root even when all verdicts are nested
+in subdirectories. The backend/model parent is not automatically aggregated.
+
 ```text
 plot/
   analysis.json           schema_version 2; coverage, decisions, transcripts, emotions, costs, durations, model/prompt groups, failure codes, model_stats, error_stats, CSV digests, plot list

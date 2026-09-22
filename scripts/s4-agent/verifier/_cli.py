@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from _audio import VerifierResponseError
-from _common.files import ROOT, batch, digest, identity, persist_path, progress, read_json, request, write_json
+from _common.files import ROOT, batch, digest, identity, persist_path, progress, read_json, request, resolve_output_dir, write_json
 from artifacts import write_text
 from _verdicts import _known_prompts, _validate_verdict
 from _reporting import item_detail, new_run_stats, record_result, report_cost_summary
@@ -224,18 +224,18 @@ def verdict_processor(
 
 
 def _resolve_verdict_dir(args: Any, pairs: list[tuple[Path, Path]]) -> Path | None:
+    if getattr(args, "output_file", None) is not None:
+        return args.output_file.resolve().parent
     if getattr(args, "output_dir", None) is not None:
         return args.output_dir.resolve()
-    if getattr(args, "_default_base", None) is not None:
-        return args._default_base.resolve()
+    if getattr(args, "input_dir", None) is not None:
+        return resolve_output_dir(args, args.input_dir)
     if pairs:
         parents = [dest.resolve().parent for _, dest in pairs]
         try:
             return Path(os.path.commonpath([str(p) for p in parents]))
         except ValueError:
             return parents[0]
-    if getattr(args, "output_file", None) is not None:
-        return args.output_file.resolve().parent
     return None
 
 

@@ -137,6 +137,13 @@ schema failures remain failures and retain their raw response for diagnosis.
 
 All verifiers invoke this script automatically upon completing a run unless `--skip-analysis` / `--no-analyze` is passed. It can also be run or re-run standalone at any time.
 
+Automatic analysis writes `plot/` inside the run's verdict output directory:
+the parent of an explicit `--output-file`, an explicit `--output-dir`, or the
+default audio-family directory (for example,
+`.data/s4-agent/verifier/gemini/<model>/<effort>/<family>/plot/`). Directory
+inputs include nested verdict folders under that output root. To aggregate
+multiple families, run analysis explicitly on their parent directory.
+
 Reads every verifier JSON under `DIR` recursively (skipping `work/`, `plot*/`,
 `comparisons/`, `experiments/`, hidden dirs), joins diarization manifests found
 beside the recorded source audio (or given via `--input-manifest` /
