@@ -20,10 +20,10 @@ from _cli import (  # noqa: E402
 )
 from _common.files import destinations, parser, positive_int  # noqa: E402
 from gemini import (  # noqa: E402
+    GEMINI_MODEL,
     GeminiAgent,
     add_gemini_arguments,
     configure_gemini_paths,
-    gemini_input_signature,
     gemini_parameters,
     generation_callback,
 )
@@ -48,6 +48,10 @@ class GeminiVerifier(GeminiAgent):
         parsed["_usage"] = generated["usage"]
         parsed["_cost"] = generated["cost"]
         parsed["_model"] = self.model
+        if self.model != GEMINI_MODEL:
+            raise RuntimeError(
+                f"Verifier must use {GEMINI_MODEL!r}, not {self.model!r}."
+            )
         parsed["_reasoning_effort"] = self.reasoning_effort
         parsed["_inference_mode"] = generated.get("inference_mode", "standard")
         parsed["_requested_inference_mode"] = self.inference_mode
@@ -58,8 +62,8 @@ class GeminiVerifier(GeminiAgent):
         if generated.get("batch_request_key"):
             parsed["_batch_request_key"] = generated["batch_request_key"]
         provider_body = generated["provider_body"]
-        if provider_body.get("modelVersion"):
-            parsed["_model_version"] = provider_body["modelVersion"]
+        if generated.get("model_version"):
+            parsed["_model_version"] = generated["model_version"]
         if provider_body.get("responseId"):
             parsed["_response_id"] = provider_body["responseId"]
 
@@ -78,34 +82,24 @@ def main() -> int:
     args = command.parse_args()
     configure_gemini_paths(args, "s4-agent/verifier")
 
-    all_pairs = destinations(args, "_gemini", ".json")
-    input_root = args.input_dir.resolve() if args.input_dir is not None else args.input_file.resolve().parent
-    input_signature = gemini_input_signature(
-        [source for source, _ in all_pairs], input_root
-    )
+    pairs = destinations(args, "_gemini", ".json")
     prompt = load_prompt(args.prompt_file)
     init_parameters = gemini_parameters(args)
     verifier = GeminiVerifier(**init_parameters)
 
     parameters = resolved_parameters({**init_parameters, "prompt": prompt}, verifier)
+    all_pairs = pairs
     pairs = pending_verifier_pairs(
         args=args,
-        pairs=all_pairs,
+        pairs=pairs,
         backend="gemini",
         parameters=parameters,
     )
-    generate = generation_callback(
-        verifier,
-        args,
-        all_pairs,
-        prompt,
-        input_signature=input_signature,
-        input_root=input_root,
-    )
+    generate = generation_callback(verifier, args, pairs, prompt, all_pairs=all_pairs)
 
     return run_verifier(
         args=args,
-        pairs=pairs,
+        pairs=all_pairs,
         backend="gemini",
         parameters=parameters,
         verify=lambda source: verifier.parse_generated(source, generate(source)),

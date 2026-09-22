@@ -373,11 +373,18 @@ metadata, so `--output-file result.json` is rejected.
 Defaults: `.data/s4-agent/<backend>/<family>/`;
 Gemini: `.data/s4-agent/gemini/<model>/<reasoning-effort>/<family>/`.
 Gemini Batch state lives under the variant's `work/batch_jobs/` for resume.
-Pass `--continue` to reuse an interrupted Batch job. Its state records an input
-directory signature made from the directory root, relative audio paths, and source
-digests; continuation fails if that signature changes. Standard and Flex requests
-are synchronous and reject `--continue` because an in-flight response cannot be
-recovered after local interruption.
+Both Gemini commands accept `--continue` in Standard, Flex, and Batch mode.
+Matching complete pairs are skipped. Standard/Flex retry missing, failed, or
+incomplete pairs; an interrupted in-flight response cannot be recovered and its
+retry may incur another charge. Conflicting source/prompt/settings metadata
+requires `--overwrite`; it cannot be combined with `--continue`.
+Batch `--continue` reconnects to saved jobs and republishes their responses. A run
+manifest retains the original submitted subset and checks the full input root,
+source paths/digests, output destinations, prompts, generation settings, and batch
+size before resuming. Without the flag, pending work submits fresh Batch jobs.
+Failed provider jobs are resubmitted while successful jobs are retained. Saved
+per-request errors or responses that fail verdict validation are replayed;
+`--overwrite` is needed to request new responses for those clips.
 Gemini's `cache_prompt` parameter defaults to false; `cache_ttl_s` records the
 explicit prompt cache lifetime. Cost records include `cache_storage_usd`, charged
 once for each cache's full TTL and assigned to the first subsequent priced
@@ -467,6 +474,11 @@ Validation profile is selected by the prompt text (`scripts/s4-agent/verifier/_v
 ## 7. Verifier analysis (`plot_verifier_analysis.sh --input-dir DIR` → `DIR/plot/`)
 
 All verifiers run post-verification analysis and plotting automatically upon completion by default (populating `<verdict-dir>/plot/`), unless `--skip-analysis` / `--no-analyze` is passed. Analysis can also be run or refreshed standalone at any time.
+
+For automatic analysis, `<verdict-dir>` is the parent of `--output-file` when
+specified, otherwise `--output-dir` or the resolved default audio-family output
+directory. Directory inputs retain that root even when all verdicts are nested
+in subdirectories. The backend/model parent is not automatically aggregated.
 
 ```text
 plot/

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from _audio import VerifierResponseError
-from _common.files import ROOT, batch, digest, identity, persist_path, progress, read_json, request, write_json
+from _common.files import ROOT, batch, digest, identity, persist_path, progress, read_json, request, resolve_output_dir, resolve_stored_path, write_json
 from artifacts import write_text
 from _verdicts import _known_prompts, _validate_verdict
 from _reporting import item_detail, new_run_stats, record_result, report_cost_summary
@@ -224,18 +224,18 @@ def verdict_processor(
 
 
 def _resolve_verdict_dir(args: Any, pairs: list[tuple[Path, Path]]) -> Path | None:
+    if getattr(args, "output_file", None) is not None:
+        return args.output_file.resolve().parent
     if getattr(args, "output_dir", None) is not None:
         return args.output_dir.resolve()
-    if getattr(args, "_default_base", None) is not None:
-        return args._default_base.resolve()
+    if getattr(args, "input_dir", None) is not None:
+        return resolve_output_dir(args, args.input_dir)
     if pairs:
         parents = [dest.resolve().parent for _, dest in pairs]
         try:
             return Path(os.path.commonpath([str(p) for p in parents]))
         except ValueError:
             return parents[0]
-    if getattr(args, "output_file", None) is not None:
-        return args.output_file.resolve().parent
     return None
 
 
@@ -321,14 +321,12 @@ def _response_complete(destination: Path, artifact: dict[str, Any]) -> bool:
     if not isinstance(response, dict):
         return False
     if response.get("available") is False:
-        return True
+        return False
     path_value = response.get("path")
     expected_sha = response.get("sha256")
     if not isinstance(path_value, str) or not isinstance(expected_sha, str):
         return False
-    response_path = Path(path_value)
-    if not response_path.is_absolute():
-        response_path = (destination.parent / response_path).resolve()
+    response_path = resolve_stored_path(path_value, base=destination.parent)
     return response_path.is_file() and digest(response_path) == expected_sha
 
 
@@ -348,8 +346,8 @@ def pending_verifier_pairs(
         response_path = destination.with_suffix(".txt")
         if (destination.exists() or response_path.exists()) and not args.overwrite:
             if getattr(args, "continue_run", False) and not destination.exists():
-                # A process may have published the raw response just before it was
-                # interrupted. The resumed Batch result can safely replace it.
+                # Publication may have stopped between the text and JSON writes.
+                # Batch can recover its response; synchronous modes must retry.
                 pending.append((source, destination))
                 continue
             if not destination.exists():
@@ -362,14 +360,14 @@ def pending_verifier_pairs(
                 _, schema_error = _validate_verdict(
                     old.get("verdict"), prompt, backend, known_prompts
                 )
-                response_complete = old.get("status") is None or (\
-                    old.get("status") == "success" and _response_complete(destination, old)
+                response_complete = (
+                    old.get("status") in (None, "success") and _response_complete(destination, old)
                 )
                 if schema_error is None and response_complete:
                     continue
-            if getattr(args, "continue_run", False):
-                # Re-run local parsing/publication from the saved provider response;
-                # no new Gemini request is made by Batch continuation.
+            if matches and getattr(args, "continue_run", False):
+                # Retry only matching failed/incomplete artifacts. Conflicting
+                # source, prompt, or generation settings still require overwrite.
                 pending.append((source, destination))
                 continue
             if matches and old.get("status") == "fail":

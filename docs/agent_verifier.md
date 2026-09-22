@@ -11,7 +11,7 @@ schema. Neither directory orchestrates other pipeline stages.
 
 | Backend | Transport | Notes |
 |---|---|---|
-| `gemini` | Google Gemini API | Batch API by default (`--inference-mode batch`, ≤ `--batch-size 10` requests per job, split further under the 20 MB inline limit, polled up to `--batch-timeout-s 86400`); `--inference-mode flex` for synchronous calls on Google's Flex tier (same 50% discount as Batch, 1–15 min latency, defaults `--timeout-s 900 --max-retries 12` because Flex answers 503 when capacity is short); `--inference-mode standard` for full-price synchronous calls. Default `--model gemini-3.8-flash --reasoning-effort medium` (`none/low/medium/high` → `thinkingLevel`) and `--max-tokens 65536` (the model's 64k ceiling, matching AI Studio's unlimited output). No `temperature`/`top-p`/`top-k` flags and no JSON response mode: Gemini 3 ignores sampling parameters and AI Studio does not force `responseMimeType`, so requests carry only `thinkingConfig` and `maxOutputTokens` to keep API behaviour aligned with the web UI. Needs `GEMINI_API_KEY`. |
+| `gemini` | Google Gemini API | Standard synchronous API by default; opt into Batch (`--inference-mode batch`, ≤ `--batch-size 10` requests per job, split further under the 20 MB inline limit, polled up to `--batch-timeout-s 86400`); `--inference-mode flex` for synchronous calls on Google's Flex tier (same 50% discount as Batch, 1–15 min latency, defaults `--timeout-s 900 --max-retries 12` because Flex answers 503 when capacity is short); `--inference-mode standard` for full-price synchronous calls. Default `--model gemini-3.8-flash --reasoning-effort medium` (`none/low/medium/high` → `thinkingLevel`) and `--max-tokens 65536` (the model's 64k ceiling, matching AI Studio's unlimited output). No `temperature`/`top-p`/`top-k` flags and no JSON response mode: Gemini 3 ignores sampling parameters and AI Studio does not force `responseMimeType`, so requests carry only `thinkingConfig` and `maxOutputTokens` to keep API behaviour aligned with the web UI. Needs `GEMINI_API_KEY`. |
 | `endpoint` | OpenAI-compatible `/v1/chat/completions` | Served vLLM, Unsloth, etc. Optional `OPENAI_API_KEY`. |
 | `hf` | Local `transformers` model | Multimodal `AutoProcessor` / `AutoModelForMultimodalLM` path for Gemma 4; `--model-id`, `--adapter-path` (LoRA), `--load-in-4bit/-8bit`, `--device`. |
 
@@ -21,18 +21,26 @@ schema. Neither directory orchestrates other pipeline stages.
   [data contract](data_contract.md#5-agent-response-pair-scriptsagent). No parsing
   is applied: the text may be prose, JSON, XML, a transcript, or anything the prompt
   asked for.
-- Interrupted Gemini Batch runs resume from `work/batch_jobs/` only when re-invoked
-  with `--continue`. The saved state records the input-directory signature (root,
-  relative audio paths, and source digests); a changed directory is rejected before
-  another paid Batch request can be submitted. Without `--continue`, a new Batch
-  job is submitted. `--overwrite` still forces fresh output artifacts.
-- `--continue` applies to Batch mode because the provider exposes a recoverable job
-  ID. Standard and Flex requests are synchronous and cannot recover an in-flight
-  response after the local process is interrupted, so those modes reject the flag.
-- Both Gemini commands share one mode selector and request implementation. Python
-  callers use `inference_mode="batch" | "flex" | "standard"` (default `batch`);
-  call `generate_batch()` for Batch or `generate()` / `verify()` for synchronous
-  modes. Unknown constructor options now raise instead of being silently ignored.
+- Both Gemini commands accept `--continue` in Standard, Flex, and Batch mode.
+  Matching completed output pairs are skipped; source, prompt, or generation
+  setting conflicts require `--overwrite`. The two flags cannot be combined.
+- Standard/Flex continuation retries missing, failed, or incomplete outputs.
+  These synchronous requests cannot recover an in-flight response after a local
+  interruption; retrying that clip may incur another charge.
+- Batch continuation reconnects to saved jobs under `work/batch_jobs/` and
+  republishes their responses. The run manifest retains the original submitted
+  subset and validates the full input set (root, paths, source digests, output
+  destinations), prompts, settings, and batch size before resuming. Keep those
+  unchanged when continuing. Without `--continue`, pending work submits a fresh
+  Batch job. `--overwrite` regenerates all outputs with fresh requests.
+  Failed provider jobs are resubmitted while successful jobs are retained.
+  Saved per-request errors or responses that fail verdict validation are replayed
+  on continuation; use `--overwrite` to request new responses for those clips.
+- Both Gemini commands share one mode selector and request implementation.
+  Standard is the default. Python callers use
+  `inference_mode="batch" | "flex" | "standard"`; call `generate_batch()` for Batch
+  or `generate()` / `verify()` for synchronous modes. The Python Batch method
+  retains its `reuse_state=True` default; the CLI passes the explicit flag value.
 - Explicit prompt caching is **off by default**. Add `--cache-prompt` to create a
   Google `cachedContents` resource containing the prompt file text and optional
   system instruction. Audio is sent separately on every request. The cache is
@@ -136,6 +144,13 @@ schema failures remain failures and retain their raw response for diagnosis.
 ### `plot_verifier_analysis.sh --input-dir DIR` (aliases: `analysis.sh`, `analyze.sh`)
 
 All verifiers invoke this script automatically upon completing a run unless `--skip-analysis` / `--no-analyze` is passed. It can also be run or re-run standalone at any time.
+
+Automatic analysis writes `plot/` inside the run's verdict output directory:
+the parent of an explicit `--output-file`, an explicit `--output-dir`, or the
+default audio-family directory (for example,
+`.data/s4-agent/verifier/gemini/<model>/<effort>/<family>/plot/`). Directory
+inputs include nested verdict folders under that output root. To aggregate
+multiple families, run analysis explicitly on their parent directory.
 
 Reads every verifier JSON under `DIR` recursively (skipping `work/`, `plot*/`,
 `comparisons/`, `experiments/`, hidden dirs), joins diarization manifests found
