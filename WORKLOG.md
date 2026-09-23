@@ -490,3 +490,10 @@
 - Diagnosis: the ear-only section preceded the IPA decision and applied to every bracket ("meaningless sound", no language identification, no known IPA), so the model wrote ViePhoneme first; "sounds like a native speaker" let any Vietnamese voice quality disqualify IPA.
 - Change: 3.1 now chooses the system first. English words matching American English phonemes, codas/clusters, syllable count and stress must get IPA; voice quality, rate and surrounding Vietnamese intonation do not count. ViePhoneme requires a named Vietnamese-style cue. The ear-only rule moved to 3.2 and applies only to writing ViePhoneme.
 - Validation: diff review only; no tests (not requested), no model/API calls.
+
+## 2026-09-24 - Filler sweep, breath pauses, focused re-listen
+
+- Across 614 saved Gemini transcripts only 8 contain any tag and 167 any `~`; the user reports missed breath-catch pauses and missed clear (`ừm`, `ừ`) and vague (`<hm>`, `<mm>`) fillers.
+- Causes in the prompt: pauses were defined as "real silence", so breath intakes could not carry `~`; "not sure there is a sound → add nothing" applied to fillers too.
+- Change: a pause is silence or breath intake (`~` mid-flow, `,` at a phrasing boundary; breathing still untagged); a dedicated word-boundary sweep for fillers after transcription; vague fillers must be written as tags rather than dropped. Bracket decisions now require a focused second listen to the word's own segment, syllable by syllable, including aspiration, with ties resolved by the distinguishing cue rather than the spelling/standard/Vietnamized default. This supersedes the earlier "long reasoning does not help, write the first impression" line; the re-listen is targeted, not open-ended.
+- Validation: diff review only; no tests (not requested), no model/API calls.
