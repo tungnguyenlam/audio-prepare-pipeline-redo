@@ -461,3 +461,10 @@
 - Follow-up: Gemini 3.8 Flash still wrote brackets from spelling or familiar Vietnamese syllables (onset changed, back fricative merged into front, diphthong/glide flattened) across non-English names. User corrections are treated as reference, not verified listening; no word-specific examples were added.
 - Decision: replace accumulated rules with one ordered procedure ("sound first, spelling after"): describe each occurrence as meaningless sound, write it, then attach spelling; check three named pulls (Vietnamese reading of spelling, remembered/dictionary/common Vietnamized pronunciation, snapping to nearest Vietnamese syllable). ViePhoneme explicitly need not be a valid Vietnamese syllable. IPA decision now names both error directions (false IPA, false downgrade) and is limited to native American English. Brackets are decided before the final transcript is written. Punctuation restated as rhythm, not grammar; filler/pause contracts unchanged.
 - Validation: reviewed diff only. No tests (not requested), no model/API calls; improvement unmeasured.
+
+## 2026-09-23 - One-sound consonant letters in ViePhoneme
+
+- Follow-up run of the sound-first prompt still merged back fricatives into `s`, wrote velar `gh`/`d` for a front voiced onset, replaced a foreign affricate coda with a Vietnamese stop coda plus tone, dropped an inter-syllable glide, misheard a sentence-final particle as a question and returned an empty `reason`.
+- Diagnosis: Vietnamese letters `s`, `d`, `gi`, `tr` have dialect-dependent or merged readings, so the model could treat Vietnamese-style spellings as faithful; the coda rule only listed some Latin codas.
+- Change: ViePhoneme consonant table with one sound per letter (and `d`/`gi`/`tr` banned for foreign sounds), explicit contrast decision for every fricative/affricate, general rule for codas outside the Vietnamese set, glide check after diphthongs, sentence-final particle and `?` by audible tone/intonation, non-empty `reason`. No word-specific examples.
+- Validation: diff review only; no tests (not requested), no model/API calls.
