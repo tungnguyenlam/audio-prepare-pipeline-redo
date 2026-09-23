@@ -475,3 +475,11 @@
 - Diagnosis: the sound-first procedure named the "correct/dictionary/common" pronunciations as pulls to check and asked for IPA-like feature analysis, which invites the model to recall exactly those readings; longer text reasoning drifts further toward knowledge.
 - Change: section 3.1 is now "ear only" — no language identification, spelling, romanization, dictionary/IPA or intermediate transcription when writing brackets; knowledge-style reasoning is flagged as a signal to re-listen. Native American English comparison is confined to the IPA decision for English words. ViePhoneme is framed as a script to mimic the speaker; the consonant table became a letter reading key; post-coda frication is kept as a consonant block. No word-specific examples.
 - Validation: diff review only; no tests (not requested), no model/API calls.
+
+## 2026-09-23 - Why six prompt edits did not move the pronunciation errors
+
+- Checked delivery: every verifier metadata JSON stores the full system prompt it sent. The 22:08 medium run used the current file byte-for-byte (minus trailing newline), so edits were loaded; nothing stale was served from cache.
+- Outputs are overwritten per `<model>/<reasoning>/<family>` directory, so earlier prompt versions' outputs for the same clip are lost; comparisons between versions relied on one clip and one sample each.
+- Across versions and reasoning levels the same clip kept `ghen-zi`/`si-ki-bu` while only the diphthong moved (`hê-an` → `hây-an`). High reasoning spent 3–16k thinking tokens with no gain. Likely limit: reasoning operates on the already-encoded audio, so "listen again"/"back-check" instructions cannot add acoustic detail; text reasoning pulls toward priors. Prompt text alone may not fix these errors.
+- Change: IPA decision made symmetric (native-sounding English words must get IPA; removed "uncertain → ViePhoneme" default that biased toward ViePhoneme). Emotion is decided from the voice before transcription and follows the voice when content differs; content never selects a label.
+- Validation: diff review only; no tests (not requested), no model/API calls.
