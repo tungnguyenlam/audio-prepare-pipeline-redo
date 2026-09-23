@@ -123,6 +123,27 @@ schema. Neither directory orchestrates other pipeline stages.
 - Cache settings are part of artifact identity. Existing verifier outputs from
   earlier versions may require `--overwrite` or a new output directory.
 
+## Gemini launcher dependency errors
+
+The Gemini launchers select `VERIFIER_PYTHON` when set, otherwise
+`.venvs/verify/bin/python`, then `.venvs/main/bin/python`. Activating Conda
+`(base)` does not override that selection. If startup reports missing `httpx` or
+`google.genai`, check the selected interpreter; both dependencies are already
+listed in `envs/requirements-verify.txt`.
+
+If the active Python already has both dependencies, select it explicitly:
+
+```bash
+export VERIFIER_PYTHON="$(command -v python)"
+"$VERIFIER_PYTHON" -c 'import httpx; from google import genai'
+bash scripts/s4-agent/verifier/gemini.sh --help
+```
+
+Then rerun the normal command in that shell. Quote input paths containing spaces.
+To provision the dedicated environment instead, use the existing
+`bash envs/setup_worker_envs.sh verify` command; it installs the full verifier
+stack, including local HF dependencies, not only the Gemini client.
+
 ## Comparing Gemini with Google AI Studio
 
 Reviewed against Google's [Gemini 3.8 migration guide](https://ai.google.dev/gemini-api/docs/generate-content/latest-model)

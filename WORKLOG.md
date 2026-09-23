@@ -425,3 +425,9 @@
 ## 2026-09-23 - Full-tags prompt delivery status
 
 - Prompt, focused documentation, and task results are committed locally. Push to origin/main is blocked because HTTPS GitHub authentication is unavailable in this session; GitHub CLI is not installed, and strict SSH host verification cannot establish the alternative connection. No credentials were read, recorded, or changed. Remote delivery remains pending authentication.
+
+## 2026-09-23 - Diagnose Gemini launcher missing httpx
+
+- The default Gemini launchers select .venvs/verify/bin/python even when Conda base is active. On this machine that venv lacks both httpx and google-genai; /home/hault16/miniforge3/bin/python already has httpx and google-genai 2.18.1. Requirements already declare both dependencies, so no source/dependency changes or package installation are needed.
+- Confirmed the existing VERIFIER_PYTHON override selects the usable Miniforge environment for both raw and verifier commands. Documented the override and existing dedicated-env provisioning alternative. The reported input path also requires quotes around its space-containing directory.
+- Validation: dependency imports in Miniforge, both Gemini launcher --help invocations with the override, and Bash syntax passed. Reviewed the focused documentation/worklog diff. No tests, model/API calls, package installation, or changes to the user's .gitignore/prompt/untracked files.
