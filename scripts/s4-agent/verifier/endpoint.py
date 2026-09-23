@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import importlib.util
 import sys
 from pathlib import Path
 from typing import Any
@@ -15,7 +16,20 @@ sys.path.insert(0, str(AGENT_DIR))
 from _audio import parse_verifier_response  # noqa: E402
 from _cli import load_prompt, resolved_parameters, run_verifier  # noqa: E402
 from _common.files import destinations, parser  # noqa: E402
-from endpoint import EndpointAgent, send_http_request  # noqa: E402,F401
+
+# This file is also named endpoint. Load the raw agent by path so importing
+# EndpointVerifier does not bind this module back to itself.
+_AGENT_SPEC = importlib.util.spec_from_file_location(
+    "s4_agent_endpoint",
+    AGENT_DIR / "endpoint.py",
+)
+if _AGENT_SPEC is None or _AGENT_SPEC.loader is None:
+    raise ImportError(f"Cannot load agent endpoint from {AGENT_DIR / 'endpoint.py'}")
+_agent_endpoint = importlib.util.module_from_spec(_AGENT_SPEC)
+sys.modules[_AGENT_SPEC.name] = _agent_endpoint
+_AGENT_SPEC.loader.exec_module(_agent_endpoint)
+EndpointAgent = _agent_endpoint.EndpointAgent
+send_http_request = _agent_endpoint.send_http_request
 
 
 class EndpointVerifier(EndpointAgent):

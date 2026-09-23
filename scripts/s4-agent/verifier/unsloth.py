@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+_VERIFIER_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(_VERIFIER_DIR.parents[2]))
+sys.path.insert(0, str(_VERIFIER_DIR.parents[1]))
+sys.path.insert(0, str(_VERIFIER_DIR.parents[0]))
+sys.path.insert(0, str(_VERIFIER_DIR))
 
 
 import base64

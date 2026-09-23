@@ -10,9 +10,11 @@ import sys
 import time
 from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+_VERIFIER_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(_VERIFIER_DIR.parents[2]))
+sys.path.insert(0, str(_VERIFIER_DIR.parents[1]))
+sys.path.insert(0, str(_VERIFIER_DIR.parents[0]))
+sys.path.insert(0, str(_VERIFIER_DIR))
 from _audio import load_audio_waveform, parse_verifier_response
 from _cli import load_prompt, run_verifier
 from _common.files import destinations, parser

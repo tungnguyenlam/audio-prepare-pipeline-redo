@@ -374,3 +374,10 @@
 - Removed handoff audio decoding dependency: use finite inventory duration metadata, leave missing durations blank, and label known hours/unknown counts. The dedicated launcher uses existing Python and never invokes provisioning; this avoids the reported missing envs/requirements-audio.txt path without changing unrelated audio setup or installing packages.
 - Improved incomplete-run errors with coverage/outcome/unresolved counts. Updated command examples, verifier instructions, data contract and plan to reflect the simpler workflow.
 - Validation: Python syntax, Bash syntax, normal launcher --help and --help with system Python override passed; embedded JavaScript syntax and final whitespace checks passed. Reviewed final diff. No tests, package installation, inference or actual exports were run; the operator's remote run was not available here for runtime verification.
+
+## 2026-09-23 - Fix Unsloth and vLLM EndpointVerifier import
+
+### Decisions and results
+- `unsloth.sh -h` failed because `unsloth.py` and `vllm.py` searched `scripts/s4-agent` before the verifier directory, so `endpoint` resolved to the raw agent module. That module exposes `EndpointAgent` and `send_http_request`, while `EndpointVerifier` is defined in `verifier/endpoint.py`.
+- Load the raw agent by file path under a separate module name so the verifier module can be imported as `endpoint` without binding that name to itself. Search the verifier directory first in the Unsloth and vLLM commands. Unsloth still uses the agent `send_http_request` through the verifier re-export; vLLM server mode uses the same `EndpointVerifier`.
+- Validation: Python compilation passed for the verifier endpoint, Unsloth, and vLLM modules. Bash syntax and `--help` passed for `unsloth`, `vllm`, verifier `endpoint`, and raw `endpoint` launchers. Import check confirmed `UnslothVerifier` subclasses `EndpointVerifier`, which subclasses `EndpointAgent`. `git diff --check` passed. No tests were written or run. No model or endpoint calls were made.
