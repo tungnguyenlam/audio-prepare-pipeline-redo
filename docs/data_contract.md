@@ -407,9 +407,11 @@ Gemini `_inference_mode` is `batch`, `flex`, or `standard`, mirrored by
 `_cost.pricing_tier` (`paid_batch` / `paid_flex` / `paid_standard`); Batch and Flex
 share the same discounted rates.
 
-For a pass, the public verdict fields use the same order, include a nonempty
-`"emotion": "…"`, and end with a nonempty `"transcript": "…"`. Reject verdicts
-omit `transcript` entirely and may omit `emotion`. Runtime schema errors include
+For a pass, the public verdict fields end with a nonempty `"transcript": "…"`.
+The default `full-tags-prompt.md` puts emotion labels inside that transcript and
+emits no separate `emotion` field. The legacy `acoustic_defect-3.txt` prompt
+additionally requires a nonempty `"emotion": "…"` field. Reject verdicts omit
+`transcript` entirely and may omit `emotion`. Runtime schema errors include
 `missing_emotion`, `invalid_emotion`, `missing_transcript`,
 `unexpected_transcript`, and `transcript_not_last`; the exact raw model response
 remains in the sibling text artifact for diagnosis.
@@ -445,7 +447,7 @@ Validation profile is selected by the prompt text (`scripts/s4-agent/verifier/_v
 
 | Profile | Selected when prompt equals | Required fields and consistency |
 |---|---|---|
-| `acoustic_defect_v3` | `prompts/full-tags-prompt.md` (default) | Three acoustic dimensions as below; `failure_codes` contains exactly their non-clean values plus optional `unsupported_language` / `singing`; `decision` = pass iff no codes; pass requires nonempty `emotion` and final `transcript`; reject forbids the transcript field |
+| `acoustic_defect_v3` | `prompts/full-tags-prompt.md` (default) | Three acoustic dimensions as below; `failure_codes` contains exactly their non-clean values plus optional `unsupported_language` / `singing`; `decision` = pass iff no codes; pass requires a nonempty final `transcript` (`emotion` is additionally required by the legacy `acoustic_defect-3.txt` prompt); reject forbids the transcript field |
 | `speaker_purity_v1` | `prompts/speaker_purity.txt` | `speaker_purity`; pass iff `pure` |
 | `word_boundary_v1` | `prompts/word_boundary.txt` | `boundary_start`, `boundary_end` ∈ clean/clipped; pass iff both clean |
 | `vibevoice_v1` | VibeVoice backend (no prompt) | `decision` ∈ pass/reject/uncertain, `num_speakers`, `secondary_speech_s`, `dominant_speaker_id`; `uncertain` is excluded from pass/reject metrics; `parameters.quantization` is `none` / `int8` / `nf4` |

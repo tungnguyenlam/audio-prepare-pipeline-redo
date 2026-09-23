@@ -401,6 +401,15 @@
 - Fixed direct verifier generation to use keyword-only system_prompt, distinguished new system-prompt verifier metadata, declared the SDK dependency, and corrected affected prompt/cache/retry documentation. No packages installed.
 - Validation: Python AST syntax, both Bash launcher syntax checks and both launcher --help invocations passed with system Python; reviewed the merged diff, retained local file inventory, and whitespace checks. Verified SDK retry/ThinkingLevel definitions in upstream v1.56.0 and set that dependency floor. The SDK is absent locally; no installation, tests or paid inference were performed, so runtime provider behavior remains unverified.
 
+## 2026-09-23 - Ground full-tags pronunciation and disfluencies in audio
+
+- Request: revise the working-copy full-tags prompt without word-specific examples, preserving heard pronunciation across languages, fillers, and unexpected pauses. Existing uncommitted prompt edits are the starting point; unrelated local files are outside this task.
+- Inspected Gemini raw/verifier prompt loading, adjacent endpoint/HF backends, shared verdict validation, launchers, and documented contracts. Keep the JSON fields, verifier profile, and provider paths; no inference implementation changes.
+- Decisions: require audible evidence for native British/American English IPA; write other foreign pronunciations directly as open ViePhoneme, without IPA conversion tables, forced Vietnamese rhymes, dropped codas, or automatic tones. Permit transcribable multilingual speech; retain unsupported_language only for language content that cannot be reliably transcribed. Distinguish real fillers and mid-sentence silences from lexical normalization and editorial punctuation.
+- Result: shortened the working prompt from 4,098 to 3,136 whitespace-delimited words (214 to 141 logical lines), removed all word-specific examples and lossy conversion/rhyme/tone rules, and retained the response schema, tags, and emotion catalog. Updated focused verifier documentation and corrected the default-versus-legacy emotion-field description in the data contract.
+- Validation: reviewed the prompt against both the pre-edit working copy and HEAD, reviewed documentation diffs, and passed git diff --check and Bash syntax checks. Both Gemini launchers passed --help with the existing Miniforge Python via VERIFIER_PYTHON; system Python and the default verify environment lack httpx, so their help attempts failed before argument parsing. No packages installed. Static inspection confirmed both Gemini paths load the prompt as system instructions and the validator still recognizes its acoustic_defect_v3 profile.
+- No tests were written or run because the user did not request them. No model/API calls or audio evaluation were performed; actual transcription/phonetic accuracy remains unverified. Only the prompt, two affected documentation files, and this worklog are included; unrelated pre-existing untracked files are preserved.
+
 ## 2026-09-23 - Audit Gemini 3.8 API requests and empty-response retries
 
 - Inspected raw/verifier Gemini generation, adjacent endpoint, parsing/validation, artifact/continuation helpers, launchers, dependencies and contracts; preserve pre-existing prompt/export/doc edits.
@@ -412,3 +421,7 @@
 - Corrected docs that assumed Standard guarantees AI Studio parity. Added comparison guidance and new artifact/CLI contracts. Existing outputs need a fresh directory or explicit overwrite because user text and response retry settings change run identity.
 - Validation: changed Python files passed AST syntax checks; both Bash launchers passed bash -n and --help through system Python. Inspected installed SDK definitions without creating a client. Reviewed implementation/documentation diff and whitespace. No tests written or run, no package installation and no model/API calls; runtime retry behavior and AI Studio quality equivalence remain unverified.
 - Publication: implementation committed locally; push to origin was blocked because this environment has no GitHub HTTPS credentials (no credential helper, gh CLI, GH_TOKEN or GITHUB_TOKEN). Existing unrelated staged/working edits were excluded using an isolated commit index.
+
+## 2026-09-23 - Full-tags prompt delivery status
+
+- Prompt, focused documentation, and task results are committed locally. Push to origin/main is blocked because HTTPS GitHub authentication is unavailable in this session; GitHub CLI is not installed, and strict SSH host verification cannot establish the alternative connection. No credentials were read, recorded, or changed. Remote delivery remains pending authentication.

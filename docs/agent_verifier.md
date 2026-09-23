@@ -187,7 +187,21 @@ endpoints without pricing metadata explicitly report cost as unavailable.
 - `vibevoice` remains a prompt-free speaker-count verifier and therefore does not
   run the acoustic v3 rubric or emit its transcript field.
 
-Prompts in `prompts/`: `full-tags-prompt.md` is the active verifier default;
+Prompts in `prompts/`: `full-tags-prompt.md` is the active verifier default.
+It accepts transcribable multilingual speech, including foreign names and code
+switching. Each occurrence gets IPA only when the audio supports a native
+British/American English pronunciation; other foreign pronunciations use
+ViePhoneme written directly from the heard sounds, without IPA conversion tables
+or forced Vietnamese rhymes, tones, or coda deletion. Uncertain native status
+falls back to the clearly heard sounds in ViePhoneme, without asserting a
+pronunciation error. `unsupported_language` applies only when language content
+cannot be reliably transcribed, not merely because it is outside Vietnamese or
+English. Audible fillers remain in order; `~` marks short/medium unexpected
+pauses and `*` marks long pauses within an unfinished sentence. Punctuation
+requires audible phrasing or sentence closure. The default keeps emotion labels
+inside `transcript`, with no separate `emotion` field. These are prompt
+instructions; the runtime schema validator does not verify phonetic accuracy.
+
 `acoustic_defect.txt` and `acoustic_defect-2.txt` are retained unchanged as
 deprecated, reference-only revisions and are not registered validation profiles.
 `speaker_purity.txt` and `word_boundary.txt` are narrower verifier alternatives.
