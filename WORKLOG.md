@@ -497,3 +497,9 @@
 - Causes in the prompt: pauses were defined as "real silence", so breath intakes could not carry `~`; "not sure there is a sound → add nothing" applied to fillers too.
 - Change: a pause is silence or breath intake (`~` mid-flow, `,` at a phrasing boundary; breathing still untagged); a dedicated word-boundary sweep for fillers after transcription; vague fillers must be written as tags rather than dropped. Bracket decisions now require a focused second listen to the word's own segment, syllable by syllable, including aspiration, with ties resolved by the distinguishing cue rather than the spelling/standard/Vietnamized default. This supersedes the earlier "long reasoning does not help, write the first impression" line; the re-listen is targeted, not open-ended.
 - Validation: diff review only; no tests (not requested), no model/API calls.
+
+## 2026-09-24 - Short s5-export command names
+
+- User chose the short names `index`, `filter`, `export`, `bundle` (byte-identical copies already existed untracked); removed the long-named Python/Bash entrypoints and updated README and `docs/commands.md`. This reverses the earlier long-name rename.
+- Also committed pending local files: per-backend `requirements-*.txt`, `.python-version`, `playlist-url.txt`, and the `.gitignore` change (root `/.data` ignore).
+- Validation: `bash -n`, `py_compile`, and `--help` through each renamed launcher; no tests (not requested).
