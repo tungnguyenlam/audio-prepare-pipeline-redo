@@ -1140,7 +1140,7 @@ def add_gemini_arguments(command: argparse.ArgumentParser) -> None:
     )
     command.add_argument(
         "--continue", dest="continue_run", action="store_true",
-        help="Skip matching completed outputs and retry unfinished work; Batch also reconnects to saved jobs",
+        help="Skip completed outputs (even with other prompt/settings) and rerun missing, failed, or incomplete ones; Batch also reconnects to saved jobs",
     )
     command.add_argument(
         "-m", "--model",
@@ -1234,6 +1234,7 @@ def pending_agent_pairs(
 ) -> list[tuple[Path, Path]]:
     """Check raw Gemini pairs before any provider submission."""
     pending = []
+    kept_other_settings = 0
     for source, destination in pairs:
         metadata = destination.with_suffix(".json")
         if destination == metadata:
@@ -1245,6 +1246,9 @@ def pending_agent_pairs(
             try:
                 old = read_json(metadata)
             except (OSError, ValueError) as exc:
+                if args.continue_run:
+                    pending.append((source, destination))
+                    continue
                 raise ValueError(f"Unreadable output metadata: {metadata}; use --overwrite") from exc
             wanted = {
                 "source": {"path": persist_path(source), "sha256": digest(source)},
@@ -1252,16 +1256,23 @@ def pending_agent_pairs(
                 "model": parameters["model"],
                 "parameters": parameters,
             }
-            if not isinstance(old, dict) or any(old.get(key) != value for key, value in wanted.items()):
-                raise ValueError(f"Conflicting output: {metadata}; use --overwrite")
+            old = old if isinstance(old, dict) else {}
+            matches = all(old.get(key) == value for key, value in wanted.items())
+            if not matches and not args.continue_run:
+                raise ValueError(f"Conflicting output: {metadata}; use --continue or --overwrite")
             output = old.get("output") or {}
             if (old.get("status") != "fail" and destination.is_file()
                     and destination.read_text(encoding="utf-8").strip()
                     and output.get("sha256") == digest(destination)):
+                # --continue keeps complete outputs made with other settings;
+                # delete an output to regenerate it with the current ones.
+                kept_other_settings += not matches
                 continue
             if not args.continue_run:
                 raise ValueError(f"Incomplete output pair: {destination}; use --continue or --overwrite")
         pending.append((source, destination))
+    if kept_other_settings:
+        logger.info("--continue kept %d complete output(s) made with other prompt/settings", kept_other_settings)
     return pending
 
 
@@ -1298,14 +1309,15 @@ def generation_callback(
     run_id = hashlib.sha256(json.dumps(scope, sort_keys=True).encode()).hexdigest()[:20]
     manifest_path = args.work_dir / "batch_jobs" / f"run_{run_id}.json"
     sources = [source for source, _ in pairs]
-    if args.continue_run and manifest_path.exists():
-        manifest = read_json(manifest_path)
-        if manifest.get("signature") != signature:
-            raise ValueError(f"Batch inputs/settings changed: {manifest_path}; use --overwrite")
-        sources = [resolve_stored_path(value) for value in manifest["sources"]]
-        if any(source not in sources for source, _ in pairs):
-            raise ValueError("Missing outputs outside the saved Batch submission; rerun without --continue")
+    manifest = read_json(manifest_path) if args.continue_run and manifest_path.exists() else {}
+    saved = [resolve_stored_path(value) for value in manifest.get("sources", [])]
+    if manifest.get("signature") == signature and all(source in saved for source in sources):
+        # Resubmitting the saved subset reproduces its request keys, reconnecting saved jobs.
+        sources = saved
     elif pairs:
+        if manifest:
+            logger.info("--continue: settings or missing outputs differ from the saved Batch run; "
+                        "submitting the %d missing output(s) as a new Batch run", len(pairs))
         write_json(manifest_path, {
             "signature": signature,
             "sources": [persist_path(source) for source in sources],

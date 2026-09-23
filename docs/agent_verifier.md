@@ -71,18 +71,20 @@ schema. Neither directory orchestrates other pipeline stages.
   is applied: the text may be prose, JSON, XML, a transcript, or anything the prompt
   asked for.
 - Both Gemini commands accept `--continue` in Standard, Flex, and Batch mode.
-  Matching completed output pairs are skipped; source, prompt, or generation
-  setting conflicts require `--overwrite` or a new output directory.
+  Completed valid output pairs are skipped even if made with another prompt,
+  source digest, or settings (the run logs how many), so deleting bad outputs and
+  rerunning with `--continue` regenerates only those. Without `--continue`, such
+  conflicts require `--overwrite` or a new output directory.
   `--continue` and `--overwrite` cannot be combined.
-- Standard/Flex continuation retries missing, failed, or incomplete outputs.
-  These synchronous requests cannot recover an in-flight response after a local
-  interruption; retrying that clip may incur another charge.
+- Continuation retries missing, failed, or incomplete outputs. Standard/Flex
+  requests cannot recover an in-flight response after a local interruption;
+  retrying that clip may incur another charge.
 - Batch continuation reconnects to saved jobs under `work/batch_jobs/` and
-  republishes their responses. The run manifest retains the original submitted
-  subset and validates the full input set (root, paths, source digests, output
-  destinations), prompts, settings, and batch size before resuming. Keep those
-  unchanged when continuing. Without `--continue`, pending work submits a fresh
-  Batch job. `--overwrite` regenerates all outputs with fresh requests.
+  republishes their responses when the run manifest (root, paths, source digests,
+  output destinations, prompts, settings, batch size) is unchanged and covers
+  every missing output. Otherwise the missing outputs are submitted as a new Batch
+  run. Without `--continue`, pending work submits a fresh Batch job.
+  `--overwrite` regenerates all outputs with fresh requests.
   Failed provider jobs are resubmitted while successful jobs are retained.
   Saved per-request errors or responses that fail verdict validation are replayed
   on continuation; use `--overwrite` to request new responses for those clips.

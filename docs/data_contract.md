@@ -357,14 +357,17 @@ resubmit individual failed results automatically. A nonempty final answer that
 fails JSON/schema parsing is not a response-retry trigger.
 Gemini Batch state lives under the variant's `work/batch_jobs/` for resume.
 Both Gemini commands accept `--continue` in Standard, Flex, and Batch mode.
-Matching complete pairs are skipped. Standard/Flex retry missing, failed, or
-incomplete pairs; an interrupted in-flight response cannot be recovered and its
-retry may incur another charge. Conflicting source/prompt/settings metadata
-requires `--overwrite`; it cannot be combined with `--continue`.
-Batch `--continue` reconnects to saved jobs and republishes their responses. A run
-manifest retains the original submitted subset and checks the full input root,
-source paths/digests, output destinations, prompts, generation settings, and batch
-size before resuming. Without the flag, pending work submits fresh Batch jobs.
+Complete valid pairs are skipped even when they were made with a different
+source digest, prompt, or settings; delete an output to regenerate it with the
+current ones. Missing, failed, or incomplete pairs are retried; an interrupted
+in-flight Standard/Flex response cannot be recovered and its retry may incur
+another charge. Without `--continue`, conflicting metadata requires `--overwrite`;
+the two flags cannot be combined.
+Batch `--continue` reconnects to saved jobs and republishes their responses when
+the run manifest (full input root, source paths/digests, output destinations,
+prompts, generation settings, batch size) is unchanged and covers every missing
+output; otherwise the missing outputs are submitted as a new Batch run. Without
+the flag, pending work submits fresh Batch jobs.
 Failed provider jobs are resubmitted while successful jobs are retained. Saved
 per-request errors or responses that fail verdict validation are replayed;
 `--overwrite` is needed to request new responses for those clips.
