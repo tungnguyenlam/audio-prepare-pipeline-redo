@@ -254,6 +254,16 @@ schema failures remain failures and retain their raw response for diagnosis.
 
 All verifiers invoke this script automatically upon completing a run unless `--skip-analysis` / `--no-analyze` is passed. It can also be run or re-run standalone at any time.
 
+All verifier backends update `plot/sample_costs.md` atomically after each saved
+result, including failed results, even with `--skip-analysis`. Continuing a run
+includes previously saved artifacts and replaces the row for a retried/overwritten
+artifact, so samples are not duplicated. The summary reflects the currently saved
+artifacts, not a history of overwritten attempts. A partial run therefore retains
+its completed results without waiting for plotting; an in-flight request without
+a saved artifact is not included. During processing the report lists saved results;
+full analysis also adds missing turns from diarization manifests. Standalone
+analysis writes this report before rendering plots.
+
 Automatic analysis writes `plot/` inside the run's verdict output directory:
 the parent of an explicit `--output-file`, an explicit `--output-dir`, or the
 default audio-family directory (for example,

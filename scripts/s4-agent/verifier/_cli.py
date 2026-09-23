@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from threading import Lock
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
@@ -11,7 +12,7 @@ from typing import Any
 from _audio import VerifierResponseError
 from _common.files import ROOT, batch, digest, identity, persist_path, progress, read_json, request, resolve_output_dir, resolve_stored_path, write_json
 from artifacts import write_text
-from _verifier_artifacts import response_complete
+from _verifier_artifacts import response_complete, verifier_json_paths
 from _verdicts import _known_prompts, _validate_verdict
 from _reporting import item_detail, new_run_stats, record_result, report_cost_summary
 
@@ -169,6 +170,7 @@ def verdict_processor(
     parameters: dict[str, Any],
     verify: Callable[[Path], dict[str, Any]],
     stats: dict[str, Any],
+    update_sample_costs: Callable[[Path], None],
 ) -> Callable[[Path, Path], None]:
     known_prompts = _known_prompts()
     prompt = parameters.get("prompt")
@@ -221,6 +223,8 @@ def verdict_processor(
             generation=generation,
         )
 
+        update_sample_costs(destination)
+
         decision = verdict.get('decision') if isinstance(verdict, dict) else None
         running_total = record_result(
             stats,
@@ -252,6 +256,42 @@ def _resolve_verdict_dir(args: Any, pairs: list[tuple[Path, Path]]) -> Path | No
         except ValueError:
             return parents[0]
     return None
+
+
+def _sample_costs_updater(verdict_dir: Path | None) -> Callable[[Path], None]:
+    """Keep the cumulative report current after each published verdict."""
+    from plot_verifier_analysis import _artifact_values, _write_sample_costs_markdown
+
+    rows: dict[Path, dict[str, Any]] = {}
+    known_prompts = _known_prompts()
+    lock = Lock()
+
+    def load(path: Path) -> None:
+        data = read_json(path)
+        if data.get("operation") == "verify" or "verdict" in data or "decision" in data:
+            rows[path.resolve()] = _artifact_values(path, data, known_prompts)
+
+    if verdict_dir is not None and verdict_dir.is_dir():
+        for path in verifier_json_paths(verdict_dir):
+            try:
+                load(path)
+            except Exception as exc:
+                progress("VERIFIER_COSTS_FAIL", f"Cannot read {path.name}: {type(exc).__name__}")
+
+    def update(destination: Path | None = None) -> None:
+        if verdict_dir is None:
+            return
+        try:
+            with lock:
+                if destination is not None:
+                    load(destination)
+                if rows:
+                    _write_sample_costs_markdown(list(rows.values()), verdict_dir / "plot")
+        except Exception as exc:
+            progress("VERIFIER_COSTS_FAIL", f"Cannot update sample_costs.md: {type(exc).__name__}")
+
+    update()
+    return update
 
 
 def _run_post_verification_analysis(args: Any, verdict_dir: Path) -> None:
@@ -296,6 +336,7 @@ def run_verifier(
     stats = new_run_stats()
     result = 1
     initial_pairs = list(pairs)
+    update_sample_costs = _sample_costs_updater(_resolve_verdict_dir(args, initial_pairs))
     try:
         pairs = pending_verifier_pairs(
             args=args,
@@ -317,6 +358,7 @@ def run_verifier(
                 parameters=parameters,
                 verify=verify,
                 stats=stats,
+                update_sample_costs=update_sample_costs,
             ),
             concurrency=getattr(args, "concurrency", 1),
             batch_size=getattr(args, "batch_size", 1),

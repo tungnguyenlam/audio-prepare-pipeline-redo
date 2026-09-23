@@ -475,6 +475,16 @@ plot/
   dimensions.png measurements.png processing_errors.png by_model.png by_speaker.png emotions_by_speaker.png timeline*.png   (when applicable)
 ```
 
+All verifier backends update `plot/sample_costs.md` atomically after each saved
+result, including failed results, even with `--skip-analysis`. Continuing a run
+includes previously saved artifacts and replaces the row for a retried/overwritten
+artifact, so samples are not duplicated. The summary reflects the currently saved
+artifacts, not a history of overwritten attempts. A partial run therefore retains
+its completed results without waiting for plotting; an in-flight request without
+a saved artifact is not included. During processing the report lists saved results;
+full analysis also adds missing turns from diarization manifests. Standalone
+analysis writes this report before rendering plots.
+
 Both CSVs share a column order beginning `audio_path, final_verdict,
 assistant_raw_response, transcript, transcript_chars, transcript_words, emotion`, followed
 by operational flags, diarization metadata, prompt/schema details, defect codes, and cost metrics (`usage_json, cost_json, cost_usd, input_cost_usd, output_cost_usd, cache_storage_cost_usd, tokens_prompt, tokens_output, tokens_thinking, tokens_total`). Invalid or
