@@ -227,8 +227,12 @@ one-letter-one-sound consonant reading key replaces Vietnamese letters with
 dialect-dependent or merged readings (`s`/`x`, `d`/`gi`, `ch`/`tr`); codas and
 audible post-coda frication outside the Vietnamese set stay as hyphenated
 consonant blocks. No word-specific examples.
-The IPA decision has no default side: English words heard as native American
-English must get IPA; words heard as a Vietnamese-style reading get ViePhoneme. `unsupported_language` applies only when language content
+The IPA/ViePhoneme choice is made first, per occurrence, by phonemes: an English
+word whose sounds, codas/clusters, syllable count and stress match American
+English must get IPA regardless of Vietnamese voice quality; it becomes
+ViePhoneme only when a concrete Vietnamese-style cue is heard (Vietnamese tone,
+substituted sound, dropped/changed coda or cluster, inserted vowel, flattened or
+misplaced stress). The ear-only rule applies to writing ViePhoneme. `unsupported_language` applies only when language content
 cannot be reliably transcribed, not merely because it is outside Vietnamese or
 English. Audible fillers remain in order; `~` marks short/medium unexpected
 pauses and `*` marks long pauses within an unfinished sentence. Punctuation

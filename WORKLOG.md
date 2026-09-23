@@ -483,3 +483,10 @@
 - Across versions and reasoning levels the same clip kept `ghen-zi`/`si-ki-bu` while only the diphthong moved (`hê-an` → `hây-an`). High reasoning spent 3–16k thinking tokens with no gain. Likely limit: reasoning operates on the already-encoded audio, so "listen again"/"back-check" instructions cannot add acoustic detail; text reasoning pulls toward priors. Prompt text alone may not fix these errors.
 - Change: IPA decision made symmetric (native-sounding English words must get IPA; removed "uncertain → ViePhoneme" default that biased toward ViePhoneme). Emotion is decided from the voice before transcription and follows the voice when content differs; content never selects a label.
 - Validation: diff review only; no tests (not requested), no model/API calls.
+
+## 2026-09-23 - IPA chosen first, by phonemes
+
+- The 23:36–23:41 run used the current prompt and still downgraded English words the user heard as correctly pronounced to ViePhoneme.
+- Diagnosis: the ear-only section preceded the IPA decision and applied to every bracket ("meaningless sound", no language identification, no known IPA), so the model wrote ViePhoneme first; "sounds like a native speaker" let any Vietnamese voice quality disqualify IPA.
+- Change: 3.1 now chooses the system first. English words matching American English phonemes, codas/clusters, syllable count and stress must get IPA; voice quality, rate and surrounding Vietnamese intonation do not count. ViePhoneme requires a named Vietnamese-style cue. The ear-only rule moved to 3.2 and applies only to writing ViePhoneme.
+- Validation: diff review only; no tests (not requested), no model/API calls.
