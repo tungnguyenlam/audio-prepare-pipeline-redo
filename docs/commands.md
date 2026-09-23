@@ -495,6 +495,7 @@ bash scripts/s4-agent/verifier/gemini.sh   --input-dir .data/clips --model gemin
 bash scripts/s4-agent/verifier/gemini.sh   --input-dir .data/clips --inference-mode flex          # synchronous, Batch-priced
 bash scripts/s4-agent/verifier/gemini.sh   --input-file clip.wav --inference-mode standard      # skip Batch API, full price
 bash scripts/s4-agent/verifier/gemini.sh   --input-dir .data/clips --max-retry 3             # initial request plus up to 3 transient-failure retries
+bash scripts/s4-agent/verifier/gemini.sh   --input-dir .data/clips --max-retry 6 --max-response-retries 5 --output-dir .data/gemini-retry-review # fresh run; bounded HTTP + empty-response retries
 bash scripts/s4-agent/verifier/gemini.sh   --input-dir .data/clips --continue                  # resume unfinished Standard work
 bash scripts/s4-agent/verifier/gemini.sh   --input-dir .data/clips --inference-mode batch --continue # reconnect to matching saved Batch jobs
 bash scripts/s4-agent/verifier/gemini.sh   --input-dir .data/clips --inference-mode flex --cache-prompt --cache-ttl-s 3600

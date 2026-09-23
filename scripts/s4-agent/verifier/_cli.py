@@ -127,6 +127,7 @@ def _write_verdict_artifacts(
     raw_response: str | None,
     error: tuple[str, str, str] | None = None,
     invalid_verdict: dict[str, Any] | None = None,
+    generation: dict[str, Any] | None = None,
 ) -> None:
     text_path = destination.with_suffix(".txt")
     if raw_response is not None:
@@ -144,10 +145,12 @@ def _write_verdict_artifacts(
     artifact: dict[str, Any] = request(identity(source), "verify", parameters, backend)
     artifact["status"] = "fail" if error is not None else "success"
     artifact["response"] = response_meta
+    if generation is not None:
+        artifact["generation"] = {key: value for key, value in generation.items() if key != "text"}
     if error is not None:
         code, message, exception_type = error
         artifact["error"] = {
-            "stage": "verifier",
+            "stage": "generation" if generation and generation.get("generation_error") else "verifier",
             "code": code,
             "message": message,
             "exception": exception_type,
@@ -175,9 +178,12 @@ def verdict_processor(
         raw_response: str | None = None
         error: tuple[str, str, str] | None = None
         invalid_verdict: dict[str, Any] | None = None
+        generation: dict[str, Any] | None = None
 
         try:
             verdict = verify(source)
+            if isinstance(verdict, dict):
+                generation = verdict.pop("_generation", None)
             raw_response = (
                 str(verdict.pop("_raw_response"))
                 if isinstance(verdict, dict) and "_raw_response" in verdict
@@ -190,13 +196,18 @@ def verdict_processor(
                 invalid_verdict = verdict
                 verdict = None
         except VerifierResponseError as exc:
+            generation = getattr(exc, "generation", None)
             raw_response = exc.raw_response
             error = (exc.code, _error_message(exc.code), type(exc).__name__)
         except Exception as exc:
+            generation = getattr(exc, "generation", None)
             raw_error = getattr(exc, "raw_response", None)
             if isinstance(raw_error, str):
                 raw_response = raw_error
             error = _generation_failure(exc)
+            if isinstance(generation, dict) and generation.get("generation_error"):
+                failure = generation["generation_error"]
+                error = (failure["code"], failure["message"], type(exc).__name__)
 
         _write_verdict_artifacts(
             source=source,
@@ -207,18 +218,21 @@ def verdict_processor(
             raw_response=raw_response,
             error=error,
             invalid_verdict=invalid_verdict,
+            generation=generation,
         )
 
         decision = verdict.get('decision') if isinstance(verdict, dict) else None
         running_total = record_result(
             stats,
-            verdict if verdict is not None else invalid_verdict,
+            verdict if verdict is not None else invalid_verdict or generation,
             success=error is None,
             decision=decision,
         )
         progress(
             'VERIFIER_ITEM',
-            f'{source.name}: decision={decision or "unknown"}; {item_detail(verdict, running_total_usd=running_total)}',
+            f'{source.name}: decision={decision or "unknown"}; '
+            f'{"error=" + error[0] + "; " if error else ""}'
+            f'{item_detail(verdict or generation, running_total_usd=running_total)}',
         )
 
     return process

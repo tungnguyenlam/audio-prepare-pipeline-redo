@@ -338,6 +338,20 @@ these new runs rather than being silently reused. `--max-retry N` is normalized
 to the existing `max_retries: N + 1` total-attempt parameter in sidecars and Batch
 signatures; changing the retry budget therefore changes run identity. Valid
 `reject` verdicts remain completed artifacts, not failed requests.
+Gemini additionally records `user_prompt` (nonempty text sent alongside audio)
+and `max_response_retries` (default 3 additional Standard/Flex generations).
+These affect artifact identity; old runs require a new output directory or
+explicit overwrite. Gemini never treats empty/incomplete provider output as a
+successful raw pair: a retained diagnostic pair has `status: fail` and `error`.
+Its `response` retains the provider body and `generation_error`; verifier JSON
+stores the corresponding evidence in top-level `generation`, including on
+parse/schema failure. That contains final usage/cost plus `attempts` when multiple
+responses were received (each exact text, provider body, usage and cost).
+Top-level usage/cost then aggregate all received responses, including retries.
+Provider blocks and MAX_TOKENS are terminal; transient empty/incomplete answers
+have a bounded response retry budget. Batch validates completion but does not
+resubmit individual failed results automatically. A nonempty final answer that
+fails JSON/schema parsing is not a response-retry trigger.
 Gemini Batch state lives under the variant's `work/batch_jobs/` for resume.
 Both Gemini commands accept `--continue` in Standard, Flex, and Batch mode.
 Matching complete pairs are skipped. Standard/Flex retry missing, failed, or

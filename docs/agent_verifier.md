@@ -11,7 +11,7 @@ schema. Neither directory orchestrates other pipeline stages.
 
 | Backend | Transport | Notes |
 |---|---|---|
-| `gemini` | Google Gemini API | Standard synchronous API by default; opt into Batch (`--inference-mode batch`, ≤ `--batch-size 10` requests per job, split further under the 20 MB inline limit, polled up to `--batch-timeout-s 86400`); `--inference-mode flex` for synchronous calls on Google's Flex tier (same 50% discount as Batch, 1–15 min latency, defaults `--timeout-s 900 --max-retry 11` because Flex answers 503 when capacity is short); `--inference-mode standard` for full-price synchronous calls. Default `--model gemini-3.8-flash --reasoning-effort medium` (`low/medium/high` → `thinkingLevel`) and `--max-tokens 65536` (the model's 64k ceiling, matching AI Studio's unlimited output). No `temperature`/`top-p`/`top-k` flags and no JSON response mode: Gemini 3 ignores sampling parameters and AI Studio does not force `responseMimeType`, so requests carry only `thinkingConfig` and `maxOutputTokens` to keep API behaviour aligned with the web UI. Needs `GEMINI_API_KEY`. |
+| `gemini` | Google Gemini API | Standard synchronous API by default; opt into Batch (`--inference-mode batch`, ≤ `--batch-size 10` requests per job, split further under the 20 MB inline limit, polled up to `--batch-timeout-s 86400`); `--inference-mode flex` for synchronous calls on Google's Flex tier (same 50% discount as Batch, 1–15 min latency, defaults `--timeout-s 900 --max-retry 11` because Flex answers 503 when capacity is short); `--inference-mode standard` for full-price synchronous calls. Default `--model gemini-3.8-flash --reasoning-effort medium` (`low/medium/high` → `thinkingLevel`) and `--max-tokens 65536` (the model's 64k ceiling). Sampling controls are omitted as required by the Gemini 3.8 migration guide. No forced JSON response mode: the raw command preserves free-form answers and the verifier validates the requested JSON afterward. AI Studio settings must be matched explicitly. Needs `GEMINI_API_KEY`. |
 | `endpoint` | OpenAI-compatible `/v1/chat/completions` | Served vLLM, Unsloth, etc. Optional `OPENAI_API_KEY`. |
 | `hf` | Local `transformers` model | Multimodal `AutoProcessor` / `AutoModelForMultimodalLM` path for Gemma 4; `--model-id`, `--adapter-path` (LoRA), `--load-in-4bit/-8bit`, `--device`. |
 
@@ -19,23 +19,47 @@ schema. Neither directory orchestrates other pipeline stages.
   optional. Their user message places the prompt before the audio.
 - Raw Gemini loads `prompts/full-tags-prompt.md` as a system instruction, overridable
   with `GEMINI_SYSTEM_PROMPT` in the environment or repository `.env`. It has no
-  prompt CLI flags. The Gemini verifier retains `--prompt-file` and sends that
-  prompt as a system instruction too. User content contains only audio.
+  system-prompt file CLI flag. The Gemini verifier retains `--prompt-file` and sends that
+  prompt as a system instruction too. User content contains audio followed by
+  `--user-prompt` text (default: "Analyze the attached audio according to the system
+  instructions."). The Gemini 3.8 migration guide requires nonempty text in the
+  final user turn; blank user instructions are rejected locally.
   Standard uses `google-genai`; Flex/Batch use REST. The verify requirements now
   declare the SDK; existing environments need it provisioned separately.
 - Both Gemini commands accept `--max-retry N`: at most N additional attempts per
   transient failed HTTP request (network errors or HTTP 429/500/502/503/504).
   `0` means one attempt, with no retries; defaults are 4 retries for Standard/Batch
   and 11 for Flex. SDK internal retries are disabled so they cannot multiply this
-  limit. Legacy `--max-retries` still means total attempts, including the first;
+  limit. Retry delays respect a longer provider `Retry-After` header when present.
+  Legacy `--max-retries` still means total attempts, including the first;
   the two flags are mutually exclusive. Nonretryable errors stop immediately.
   Cache creation and Batch submission do not retry ambiguous network failures,
   preventing duplicate resources/jobs. Batch polling requests use the same limit,
   but failed Batch results are not automatically resubmitted by this flag.
 - A valid verifier `reject` is a successful completed verdict, never a retry trigger.
-  Invalid/empty model responses remain failed artifacts with raw text retained;
-  this request retry flag does not regenerate them. Existing continuation and
-  overwrite rules below apply.
+  `--max-response-retries N` separately retries empty or transient incomplete
+  provider answers in Standard/Flex (default: 3 additional generations; 0 disables
+  response retries). It handles HTTP 200 responses with no final text, missing
+  completion reason, or transient OTHER/malformed/tool-call finish reasons.
+  Each generation has its own HTTP retry budget: with defaults Standard can make
+  up to 4 × 5 generation HTTP attempts, plus preflight/cache requests. Retries can
+  incur charges; they stop at the configured limit, not an unbounded loop.
+  Prompt blocks, safety/recitation blocks, unknown terminal finish reasons, and
+  MAX_TOKENS fail explicitly without identical automatic resubmission. Review the
+  recorded reason/configuration; retry cannot guarantee a usable response.
+  Nonempty STOP text that fails verifier JSON/schema validation remains a failure;
+  response retries do not repair task output or reroll valid acoustic rejections.
+  Batch answers receive the same completion checks but are not automatically
+  resubmitted; saved failures replay on `--continue`, requiring fresh work via
+  `--overwrite` (scope input to the affected clips to avoid rerunning successes).
+- Gemini raw failures retain their text/provider evidence with `status: fail`.
+  Verifier artifacts retain `generation` on success, parse/schema failure, and
+  unusable provider answers, including provider finish/block reasons, response ID,
+  model version, and usage/cost. If more than one response was received, `attempts`
+  retains each original text/body/usage/cost; top-level usage/cost sum those
+  responses. HTTP failures without a provider generation cannot supply token
+  usage. Exhausted response retries are failures, never successful empty output.
+  Existing continuation and overwrite rules below apply.
 - Verifier metadata now records `prompt_role=system` so old user-prompt runs cannot
   silently mix with the new generation behavior. Older artifacts require a separate
   output directory or explicit `--overwrite`.
@@ -45,7 +69,8 @@ schema. Neither directory orchestrates other pipeline stages.
   asked for.
 - Both Gemini commands accept `--continue` in Standard, Flex, and Batch mode.
   Matching completed output pairs are skipped; source, prompt, or generation
-  setting conflicts require `--overwrite`. The two flags cannot be combined.
+  setting conflicts require `--overwrite` or a new output directory.
+  `--continue` and `--overwrite` cannot be combined.
 - Standard/Flex continuation retries missing, failed, or incomplete outputs.
   These synchronous requests cannot recover an in-flight response after a local
   interruption; retrying that clip may incur another charge.
@@ -97,6 +122,33 @@ schema. Neither directory orchestrates other pipeline stages.
   [pricing](https://ai.google.dev/gemini-api/docs/pricing).
 - Cache settings are part of artifact identity. Existing verifier outputs from
   earlier versions may require `--overwrite` or a new output directory.
+
+## Comparing Gemini with Google AI Studio
+
+Reviewed against Google's [Gemini 3.8 migration guide](https://ai.google.dev/gemini-api/docs/generate-content/latest-model)
+and [model specification](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash)
+on 2026-09-23. The documented generateContent path still includes Gemini 3.8;
+Google labels it Legacy while also offering Interactions. That label alone does
+not establish a model-quality difference. Model ID, medium thinking by default,
+65,536 output tokens, and omitted sampling controls match the model guidance.
+The audio-only final user turn was the concrete request mismatch corrected here.
+
+For an informative comparison, use the exact same audio bytes, model version,
+system rubric, user text, thinking level, output limit, safety configuration,
+response format and tools, with a fresh AI Studio conversation. Compare the code
+exported from AI Studio with these settings. Text pasted into its user chat is
+not the same message layout as the rubric in this command's system instruction.
+The raw command honors GEMINI_SYSTEM_PROMPT; the verifier instead uses its
+--prompt-file/default, so check both resolved prompts. No sampling/JSON/safety
+settings or conversation history are added by this command. This audit did not
+have the user's AI Studio request export and did not run paid comparisons, so it
+cannot attribute remaining quality differences or acoustic false rejections.
+
+Google's [response reference](https://ai.google.dev/api/generate-content#FinishReason)
+distinguishes provider completion/block reasons from a JSON verdict's `reject`.
+Use the saved generation evidence to identify which happened before changing the
+rubric. See the [troubleshooting guide](https://ai.google.dev/gemini-api/docs/troubleshooting)
+for request errors.
 
 All agent and verifier progress is written to stderr so stdout remains a clean
 stream of successful artifact paths. Each run logs its backend/model, item start

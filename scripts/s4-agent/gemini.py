@@ -12,6 +12,8 @@ import random
 import sys
 import threading
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from collections.abc import Callable
 from typing import Any
@@ -71,6 +73,7 @@ _load_repo_env()
 
 API_ROOT = "https://generativelanguage.googleapis.com/v1beta"
 GEMINI_MODEL = "gemini-3.8-flash"
+DEFAULT_USER_PROMPT = "Analyze the attached audio according to the system instructions."
 # Portable default: <repo>/prompts/full-tags-prompt.md, overridable per machine.
 DEFAULT_SYSTEM_PROMPT_PATH = ROOT / "prompts" / "full-tags-prompt.md"
 SYSTEM_PROMPT_PATH = Path(
@@ -123,6 +126,40 @@ class SystemPromptError(RuntimeError):
     Deliberately not a FileNotFoundError: the verifier maps FileNotFoundError to
     'input_not_found' (missing audio), which hid the real cause.
     """
+
+
+class GeminiResponseError(RuntimeError):
+    """An unusable provider answer, with generation evidence for artifact writers."""
+
+    def __init__(self, generation: dict[str, Any]) -> None:
+        error = generation["generation_error"]
+        super().__init__(error["message"])
+        self.generation = generation
+        self.raw_response = generation["text"]
+
+
+def response_error(response: dict[str, Any]) -> dict[str, Any] | None:
+    """Check provider completion only; task JSON and acoustic verdicts are separate."""
+    feedback = response.get("promptFeedback") or {}
+    block = _safe_status_name(feedback.get("blockReason"))
+    candidates = response.get("candidates") or []
+    candidate = candidates[0] if candidates else {}
+    finish = _safe_status_name(candidate.get("finishReason"))
+    if block and block != "BLOCK_REASON_UNSPECIFIED":
+        code, retryable, detail = "gemini_prompt_blocked", False, f"prompt block {block}"
+    elif finish == "MAX_TOKENS":
+        code, retryable, detail = "gemini_output_truncated", False, "MAX_TOKENS; review --max-tokens and thinking level"
+    elif finish not in {None, "STOP", "FINISH_REASON_UNSPECIFIED"}:
+        code, retryable, detail = "gemini_incomplete_response", finish in {
+            "OTHER", "MALFORMED_RESPONSE", "MALFORMED_FUNCTION_CALL", "UNEXPECTED_TOOL_CALL",
+        }, f"finish reason {finish}"
+    elif not response_text(response).strip():
+        code, retryable, detail = "gemini_empty_response", True, "no final-answer text"
+    elif finish != "STOP":
+        code, retryable, detail = "gemini_incomplete_response", True, "missing final STOP reason"
+    else:
+        return None
+    return {"code": code, "retryable": retryable, "message": f"Gemini returned {detail}."}
 
 
 def nonnegative_int(value: str) -> int:
@@ -238,6 +275,8 @@ class GeminiAgent:
         inference_mode: str = "standard",
         cache_prompt: bool = False,
         cache_ttl_s: int | None = None,
+        user_prompt: str = DEFAULT_USER_PROMPT,
+        max_response_retries: int = 3,
     ) -> None:
         if model != GEMINI_MODEL:
             raise ValueError(
@@ -246,6 +285,12 @@ class GeminiAgent:
         if inference_mode not in ("standard", "flex", "batch"):
             raise ValueError(f"Unsupported Gemini inference mode: {inference_mode}")
         self.model = model
+        if not user_prompt.strip():
+            raise ValueError("Gemini requires nonempty --user-prompt text")
+        if max_response_retries < 0:
+            raise ValueError("max_response_retries must be zero or greater")
+        self.user_prompt = user_prompt
+        self.max_response_retries = max_response_retries
         self.inference_mode = inference_mode
         self.cache_prompt = cache_prompt
         self.cache_ttl_s = cache_ttl_s or (90000 if inference_mode == "batch" else 3600)
@@ -286,7 +331,9 @@ class GeminiAgent:
         # Previously the SDK client ignored --timeout-s entirely. HttpOptions.timeout is in ms.
         self._genai_client = genai.Client(
             api_key=self.api_key,
+            vertexai=False,
             http_options=genai_types.HttpOptions(
+                api_version="v1beta",
                 timeout=int(self.timeout_s * 1000),
                 # Our loop owns the retry budget; SDK retries would multiply it.
                 retry_options=genai_types.HttpRetryOptions(attempts=1),
@@ -327,14 +374,17 @@ class GeminiAgent:
         audio_path: Path,
         system_prompt: str,
     ) -> tuple[dict[str, Any], dict[str, str]]:
-        """Call Gemini through the official SDK using audio-only user content."""
+        """Call Gemini through the official SDK with audio and a user instruction."""
         audio_part = self._genai_types.Part.from_bytes(
             data=audio_path.read_bytes(),
             mime_type=audio_mime_type(audio_path),
         )
-        contents = self._genai_types.Content(role="user", parts=[audio_part])
+        contents = self._genai_types.Content(role="user", parts=[
+            audio_part, self._genai_types.Part.from_text(text=self.user_prompt),
+        ])
 
         for attempt in range(1, self.max_retries + 1):
+            retry_after = None
             # Resolved per attempt so a cache refreshed during retries is picked up.
             cache_name = self._ensure_prompt_cache(system_prompt)
             prompt_config: dict[str, Any] = (
@@ -360,6 +410,7 @@ class GeminiAgent:
                     mode="json",
                     by_alias=True,
                     exclude_none=True,
+                    exclude={"sdk_http_response"},
                 )
                 http_response = getattr(response, "sdk_http_response", None)
                 response_headers = getattr(http_response, "headers", None) or {}
@@ -380,6 +431,9 @@ class GeminiAgent:
                     raise RuntimeError(
                         http_error_message("SDK request", status, getattr(exc, "status", None))
                     ) from None
+                error_response = getattr(exc, "response", None)
+                if error_response is not None:
+                    retry_after = error_response.headers.get("retry-after")
             except httpx.TransportError as exc:
                 # Previously uncaught: network blips failed the item without retry.
                 if attempt == self.max_retries:
@@ -388,7 +442,7 @@ class GeminiAgent:
                             f"Gemini SDK request timed out after {self.timeout_s:g}s"
                         ) from None
                     raise RuntimeError("Gemini SDK connection failed") from None
-            delay = self._backoff_s(attempt) + random.uniform(0.1, 0.5)
+            delay = self._retry_delay_s(attempt, retry_after)
             logger.warning(
                 "Gemini SDK request failed; retry %d/%d in %.2fs",
                 attempt,
@@ -431,6 +485,21 @@ class GeminiAgent:
         """Exponential backoff capped so flex 503 storms retry for minutes, not hours."""
         return min(self.base_backoff_s * (2 ** (attempt - 1)), MAX_BACKOFF_S)
 
+    def _retry_delay_s(self, attempt: int, retry_after: str | None) -> float:
+        """Respect Google's Retry-After seconds/date when longer than local backoff."""
+        delay = self._backoff_s(attempt) + random.uniform(0.1, 0.5)
+        if retry_after:
+            try:
+                seconds = float(retry_after)
+            except ValueError:
+                try:
+                    seconds = (parsedate_to_datetime(retry_after) - datetime.now(timezone.utc)).total_seconds()
+                except (TypeError, ValueError, OverflowError):
+                    return delay
+            if math.isfinite(seconds):
+                delay = max(delay, seconds)
+        return delay
+
     def _request_json(
         self,
         method: str,
@@ -444,6 +513,7 @@ class GeminiAgent:
             operation = "prompt cache creation" if url.endswith("/cachedContents") else "request"
         headers = {"x-goog-api-key": self.api_key}
         for attempt in range(1, self.max_retries + 1):
+            retry_after = None
             try:
                 response = self._session.request(method, url, json=payload, headers=headers)
             except httpx.TransportError as exc:
@@ -473,7 +543,8 @@ class GeminiAgent:
                     if operation == "prompt cache creation":
                         message += "; check model caching support and minimum prompt size"
                     raise GeminiHTTPError(message, response.status_code)
-            delay = self._backoff_s(attempt) + random.uniform(0.1, 0.5)
+                retry_after = response.headers.get("retry-after")
+            delay = self._retry_delay_s(attempt, retry_after)
             logger.warning("Gemini %s failed; retry %d/%d in %.2fs", operation, attempt, self.max_retries - 1, delay)
             time.sleep(delay)
         raise RuntimeError(f"Gemini {operation} exhausted retries")
@@ -550,6 +621,7 @@ class GeminiAgent:
                 "role": "user",
                 "parts": [
                     {"inlineData": {"mimeType": audio_mime_type(audio_path), "data": audio_b64}},
+                    {"text": self.user_prompt},
                 ],
             }],
             # Gemini 3.x is tuned for its default sampler. Do not set temperature,
@@ -618,6 +690,9 @@ class GeminiAgent:
             "requested_model": self.model,
             "model_version": returned_model,
         }
+        error = response_error(response)
+        if error:
+            result["generation_error"] = error
         if batch_job is not None:
             result["batch_job"] = batch_job
         if batch_request_key is not None:
@@ -632,6 +707,55 @@ class GeminiAgent:
     ) -> dict[str, Any]:
         if self.inference_mode == "batch":
             raise ValueError("Batch mode requires generate_batch(), not generate()")
+        attempts = []
+        started = time.monotonic()
+        for attempt in range(self.max_response_retries + 1):
+            try:
+                result = self._generate_once(audio_path, system_prompt=system_prompt)
+            except Exception as exc:
+                if attempts:
+                    # Preserve earlier paid responses even if the next transport fails.
+                    result = dict(attempts[-1])
+                    result["generation_error"] = {
+                        "code": "gemini_retry_transport_failed", "retryable": False,
+                        "message": "Gemini transport failed while retrying an unusable answer.",
+                        "exception": type(exc).__name__,
+                    }
+                    break
+                raise
+            attempts.append(result)
+            error = result.get("generation_error")
+            if error is None or not error["retryable"] or attempt == self.max_response_retries:
+                break
+            delay = self._backoff_s(attempt + 1) + random.uniform(0.1, 0.5)
+            logger.warning("%s Response retry %d/%d in %.2fs", error["message"],
+                           attempt + 1, self.max_response_retries, delay)
+            time.sleep(delay)
+        result = dict(result)
+        result["latency_s"] = round(time.monotonic() - started, 3)
+        if len(attempts) > 1:
+            result["attempts"] = attempts
+            usage, cost = empty_usage_totals(), empty_cost_totals()
+            for generated in attempts:
+                accumulate_usage(usage, generated["usage"])
+                accumulate_cost(cost, generated["cost"])
+            result["usage"] = usage
+            result["cost"] = cost if cost["priced_requests"] else None
+        if result.get("generation_error"):
+            if result["generation_error"]["retryable"]:
+                result["generation_error"] = {
+                    **result["generation_error"],
+                    "retries_exhausted": True,
+                    "message": result["generation_error"]["message"]
+                    + f" Response retry budget exhausted after {len(attempts)} response(s).",
+                }
+            raise GeminiResponseError(result)
+        return result
+
+    def _generate_once(
+        self, audio_path: Path, *, system_prompt: str,
+    ) -> dict[str, Any]:
+        """One generation with the transport retry budget; no task parsing."""
         audio_path = Path(audio_path)
         started = time.monotonic()
         if self.inference_mode == "standard":
@@ -989,7 +1113,7 @@ class GeminiAgent:
                     f"Gemini Batch request {key} failed: {json.dumps(error or item, ensure_ascii=False)}"
                 )
                 continue
-            results[descriptor["source"]] = self._generation_result(
+            generated = self._generation_result(
                 response,
                 latency_s=batch_latency,
                 audio_duration_s=descriptor["duration"],
@@ -997,11 +1121,23 @@ class GeminiAgent:
                 batch_job=job_by_key.get(key),
                 batch_request_key=key,
             )
+            results[descriptor["source"]] = (
+                GeminiResponseError(generated) if generated.get("generation_error") else generated
+            )
         return results
 
 
 def add_gemini_arguments(command: argparse.ArgumentParser) -> None:
     """Identical provider controls for raw generation and verification."""
+    command.add_argument(
+        "--user-prompt", default=DEFAULT_USER_PROMPT,
+        help="Nonempty user text accompanying audio; keep the rubric in the system prompt",
+    )
+    command.add_argument(
+        "--max-response-retries", type=nonnegative_int, default=3,
+        help="Additional Standard/Flex generations for empty or transient incomplete answers "
+             "(default: 3); separate from HTTP retries; no Batch resubmission",
+    )
     command.add_argument(
         "--continue", dest="continue_run", action="store_true",
         help="Skip matching completed outputs and retry unfinished work; Batch also reconnects to saved jobs",
@@ -1041,7 +1177,7 @@ def add_gemini_arguments(command: argparse.ArgumentParser) -> None:
         choices=("batch", "flex", "standard"),
         default="standard",
         help=(
-            "Gemini provider mode; standard matches a normal Google AI Studio Run. "
+            "Gemini provider mode; standard uses synchronous generateContent. "
             "Batch and flex are opt-in cost/latency modes"
         ),
     )
@@ -1087,6 +1223,7 @@ def gemini_parameters(args: Any) -> dict[str, Any]:
     return {key: getattr(args, key) for key in (
         "model", "reasoning_effort", "max_tokens", "timeout_s", "max_retries",
         "inference_mode", "cache_prompt", "cache_ttl_s",
+        "user_prompt", "max_response_retries",
     )}
 
 
@@ -1118,7 +1255,9 @@ def pending_agent_pairs(
             if not isinstance(old, dict) or any(old.get(key) != value for key, value in wanted.items()):
                 raise ValueError(f"Conflicting output: {metadata}; use --overwrite")
             output = old.get("output") or {}
-            if destination.is_file() and output.get("sha256") == digest(destination):
+            if (old.get("status") != "fail" and destination.is_file()
+                    and destination.read_text(encoding="utf-8").strip()
+                    and output.get("sha256") == digest(destination)):
                 continue
             if not args.continue_run:
                 raise ValueError(f"Incomplete output pair: {destination}; use --continue or --overwrite")
