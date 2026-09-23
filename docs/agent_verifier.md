@@ -227,13 +227,13 @@ one-letter-one-sound consonant reading key replaces Vietnamese letters with
 dialect-dependent or merged readings (`s`/`x`, `d`/`gi`, `ch`/`tr`); codas and
 audible post-coda frication outside the Vietnamese set stay as hyphenated
 consonant blocks. No word-specific examples.
-The IPA decision guards both false IPA and false downgrades. Uncertain native status falls back to the clearly
-heard sounds in ViePhoneme, without asserting a
-pronunciation error. `unsupported_language` applies only when language content
+The IPA decision has no default side: English words heard as native American
+English must get IPA; words heard as a Vietnamese-style reading get ViePhoneme. `unsupported_language` applies only when language content
 cannot be reliably transcribed, not merely because it is outside Vietnamese or
 English. Audible fillers remain in order; `~` marks short/medium unexpected
 pauses and `*` marks long pauses within an unfinished sentence. Punctuation
-requires audible phrasing or sentence closure. The default keeps emotion labels
+requires audible phrasing or sentence closure. Emotion is decided from the voice before transcription, and follows the voice
+when it differs from the content. The default keeps emotion labels
 inside `transcript`, with no separate `emotion` field. These are prompt
 instructions; the runtime schema validator does not verify phonetic accuracy.
 
