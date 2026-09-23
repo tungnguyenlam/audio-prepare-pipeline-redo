@@ -33,7 +33,7 @@ class GeminiVerifier(GeminiAgent):
     """Gemini generation constrained and parsed as a pass/reject verdict."""
 
     def verify(self, audio_path: Path, prompt: str) -> dict[str, Any]:
-        generated = self.generate(audio_path, prompt)
+        generated = self.generate(audio_path, system_prompt=prompt)
         return self.parse_generated(audio_path, generated)
 
     def parse_generated(
@@ -87,7 +87,7 @@ def main() -> int:
     init_parameters = gemini_parameters(args)
     verifier = GeminiVerifier(**init_parameters)
 
-    parameters = resolved_parameters({**init_parameters, "prompt": prompt}, verifier)
+    parameters = resolved_parameters({**init_parameters, "prompt": prompt, "prompt_role": "system"}, verifier)
     all_pairs = pairs
     pairs = pending_verifier_pairs(
         args=args,

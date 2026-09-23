@@ -486,7 +486,7 @@ See [agent_verifier.md](agent_verifier.md) for defaults and artifacts.
 
 ```bash
 # Raw generation (unparsed text + metadata sidecar)
-bash scripts/s4-agent/gemini.sh   --input-dir .data/clips --prompt-file prompts/vi-prompt-alam.txt
+GEMINI_SYSTEM_PROMPT=prompts/vi-prompt-alam.txt bash scripts/s4-agent/gemini.sh --input-dir .data/clips
 bash scripts/s4-agent/endpoint.sh --input-dir .data/clips --endpoint http://localhost:8000/v1/chat/completions --model google/gemma-4-E2B-it --prompt-file p.txt
 bash scripts/s4-agent/hf.sh       --input-dir .data/clips --model-id google/gemma-4-E2B-it --prompt-file p.txt
 
@@ -494,10 +494,11 @@ bash scripts/s4-agent/hf.sh       --input-dir .data/clips --model-id google/gemm
 bash scripts/s4-agent/verifier/gemini.sh   --input-dir .data/clips --model gemini-3.8-flash --reasoning-effort medium
 bash scripts/s4-agent/verifier/gemini.sh   --input-dir .data/clips --inference-mode flex          # synchronous, Batch-priced
 bash scripts/s4-agent/verifier/gemini.sh   --input-file clip.wav --inference-mode standard      # skip Batch API, full price
+bash scripts/s4-agent/verifier/gemini.sh   --input-dir .data/clips --max-retry 3             # initial request plus up to 3 transient-failure retries
 bash scripts/s4-agent/verifier/gemini.sh   --input-dir .data/clips --continue                  # resume unfinished Standard work
 bash scripts/s4-agent/verifier/gemini.sh   --input-dir .data/clips --inference-mode batch --continue # reconnect to matching saved Batch jobs
 bash scripts/s4-agent/verifier/gemini.sh   --input-dir .data/clips --inference-mode flex --cache-prompt --cache-ttl-s 3600
-bash scripts/s4-agent/gemini.sh           --input-dir .data/clips --prompt-file prompts/full-tags-prompt.md --inference-mode batch --cache-prompt  # Batch cache, 25h TTL
+bash scripts/s4-agent/gemini.sh           --input-dir .data/clips --inference-mode batch --cache-prompt  # Batch cache, 25h TTL
 bash scripts/s4-agent/verifier/hf.sh       --input-dir .data/clips --model-id google/gemma-4-E2B-it --max-new-tokens 1024
 bash scripts/s4-agent/verifier/vllm.sh     --input-dir .data/clips --model google/gemma-4-E2B-it
 bash scripts/s4-agent/verifier/unsloth.sh  --input-dir .data/clips --model unsloth/gemma-4-12b-it-GGUF --gguf-variant UD-Q6_K_XL

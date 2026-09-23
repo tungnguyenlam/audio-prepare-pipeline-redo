@@ -332,6 +332,12 @@ metadata, so `--output-file result.json` is rejected.
 
 Defaults: `.data/s4-agent/<backend>/<family>/`;
 Gemini: `.data/s4-agent/gemini/<model>/<reasoning-effort>/<family>/`.
+Raw Gemini records `system_prompt` and `system_prompt_path`; the verifier records
+`prompt` plus `prompt_role: "system"`. Old user-prompt metadata conflicts with
+these new runs rather than being silently reused. `--max-retry N` is normalized
+to the existing `max_retries: N + 1` total-attempt parameter in sidecars and Batch
+signatures; changing the retry budget therefore changes run identity. Valid
+`reject` verdicts remain completed artifacts, not failed requests.
 Gemini Batch state lives under the variant's `work/batch_jobs/` for resume.
 Both Gemini commands accept `--continue` in Standard, Flex, and Batch mode.
 Matching complete pairs are skipped. Standard/Flex retry missing, failed, or

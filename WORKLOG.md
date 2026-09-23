@@ -393,3 +393,10 @@
 
 - Confirmed current and attached Gemini implementations use Google response token counts with local pricing estimates, not returned billed dollar amounts. Cached input uses generation usageMetadata.cachedContentTokenCount; storage uses cache creation usageMetadata.totalTokenCount multiplied by requested TTL hours and the local model/mode storage rate, booked once when created.
 - Both use the existing _gemini_pricing.py helper. Storage assumes the full requested TTL; no billing reconciliation is performed. Read-only source inspection only; no code/launcher changes, tests or API calls were needed.
+
+## 2026-09-23 - Recover local progress and integrate remote Gemini generation
+
+- Merged origin/main c6b2ebc with all eight local commits retained; remote changed only raw gemini.py, while verifier gemini.py was identical. Preserved the remote SDK Standard path, system instructions, preflight, REST Flex/Batch, and cache fallback.
+- Added --max-retry N to both Gemini commands for N additional transient HTTP failure retries; zero disables retries. Kept legacy --max-retries total-attempt semantics mutually exclusive and disabled nested SDK retries. Valid verifier rejections and invalid response parsing never trigger transport retries. Batch result resubmission remains governed by existing continuation/overwrite behavior.
+- Fixed direct verifier generation to use keyword-only system_prompt, distinguished new system-prompt verifier metadata, declared the SDK dependency, and corrected affected prompt/cache/retry documentation. No packages installed.
+- Validation: Python AST syntax, both Bash launcher syntax checks and both launcher --help invocations passed with system Python; reviewed the merged diff, retained local file inventory, and whitespace checks. Verified SDK retry/ThinkingLevel definitions in upstream v1.56.0 and set that dependency floor. The SDK is absent locally; no installation, tests or paid inference were performed, so runtime provider behavior remains unverified.

@@ -11,12 +11,34 @@ schema. Neither directory orchestrates other pipeline stages.
 
 | Backend | Transport | Notes |
 |---|---|---|
-| `gemini` | Google Gemini API | Standard synchronous API by default; opt into Batch (`--inference-mode batch`, ≤ `--batch-size 10` requests per job, split further under the 20 MB inline limit, polled up to `--batch-timeout-s 86400`); `--inference-mode flex` for synchronous calls on Google's Flex tier (same 50% discount as Batch, 1–15 min latency, defaults `--timeout-s 900 --max-retries 12` because Flex answers 503 when capacity is short); `--inference-mode standard` for full-price synchronous calls. Default `--model gemini-3.8-flash --reasoning-effort medium` (`none/low/medium/high` → `thinkingLevel`) and `--max-tokens 65536` (the model's 64k ceiling, matching AI Studio's unlimited output). No `temperature`/`top-p`/`top-k` flags and no JSON response mode: Gemini 3 ignores sampling parameters and AI Studio does not force `responseMimeType`, so requests carry only `thinkingConfig` and `maxOutputTokens` to keep API behaviour aligned with the web UI. Needs `GEMINI_API_KEY`. |
+| `gemini` | Google Gemini API | Standard synchronous API by default; opt into Batch (`--inference-mode batch`, ≤ `--batch-size 10` requests per job, split further under the 20 MB inline limit, polled up to `--batch-timeout-s 86400`); `--inference-mode flex` for synchronous calls on Google's Flex tier (same 50% discount as Batch, 1–15 min latency, defaults `--timeout-s 900 --max-retry 11` because Flex answers 503 when capacity is short); `--inference-mode standard` for full-price synchronous calls. Default `--model gemini-3.8-flash --reasoning-effort medium` (`low/medium/high` → `thinkingLevel`) and `--max-tokens 65536` (the model's 64k ceiling, matching AI Studio's unlimited output). No `temperature`/`top-p`/`top-k` flags and no JSON response mode: Gemini 3 ignores sampling parameters and AI Studio does not force `responseMimeType`, so requests carry only `thinkingConfig` and `maxOutputTokens` to keep API behaviour aligned with the web UI. Needs `GEMINI_API_KEY`. |
 | `endpoint` | OpenAI-compatible `/v1/chat/completions` | Served vLLM, Unsloth, etc. Optional `OPENAI_API_KEY`. |
 | `hf` | Local `transformers` model | Multimodal `AutoProcessor` / `AutoModelForMultimodalLM` path for Gemma 4; `--model-id`, `--adapter-path` (LoRA), `--load-in-4bit/-8bit`, `--device`. |
 
-- `--prompt-file` is required; `--system-prompt-file` is optional. The user message
-  places the prompt before the audio.
+- Raw endpoint/HF commands require `--prompt-file`; `--system-prompt-file` is
+  optional. Their user message places the prompt before the audio.
+- Raw Gemini loads `prompts/full-tags-prompt.md` as a system instruction, overridable
+  with `GEMINI_SYSTEM_PROMPT` in the environment or repository `.env`. It has no
+  prompt CLI flags. The Gemini verifier retains `--prompt-file` and sends that
+  prompt as a system instruction too. User content contains only audio.
+  Standard uses `google-genai`; Flex/Batch use REST. The verify requirements now
+  declare the SDK; existing environments need it provisioned separately.
+- Both Gemini commands accept `--max-retry N`: at most N additional attempts per
+  transient failed HTTP request (network errors or HTTP 429/500/502/503/504).
+  `0` means one attempt, with no retries; defaults are 4 retries for Standard/Batch
+  and 11 for Flex. SDK internal retries are disabled so they cannot multiply this
+  limit. Legacy `--max-retries` still means total attempts, including the first;
+  the two flags are mutually exclusive. Nonretryable errors stop immediately.
+  Cache creation and Batch submission do not retry ambiguous network failures,
+  preventing duplicate resources/jobs. Batch polling requests use the same limit,
+  but failed Batch results are not automatically resubmitted by this flag.
+- A valid verifier `reject` is a successful completed verdict, never a retry trigger.
+  Invalid/empty model responses remain failed artifacts with raw text retained;
+  this request retry flag does not regenerate them. Existing continuation and
+  overwrite rules below apply.
+- Verifier metadata now records `prompt_role=system` so old user-prompt runs cannot
+  silently mix with the new generation behavior. Older artifacts require a separate
+  output directory or explicit `--overwrite`.
 - Output is the pair `<stem>_<backend>.txt` + `.json` described in the
   [data contract](data_contract.md#5-agent-response-pair-scriptsagent). No parsing
   is applied: the text may be prose, JSON, XML, a transcript, or anything the prompt
@@ -42,8 +64,7 @@ schema. Neither directory orchestrates other pipeline stages.
   or `generate()` / `verify()` for synchronous modes. The Python Batch method
   retains its `reuse_state=True` default; the CLI passes the explicit flag value.
 - Explicit prompt caching is **off by default**. Add `--cache-prompt` to create a
-  Google `cachedContents` resource containing the prompt file text and optional
-  system instruction. Audio is sent separately on every request. The cache is
+  Google `cachedContents` resource containing the system prompt text. Audio is sent separately on every request. The cache is
   reused within that command invocation, including concurrent workers. It is
   created only when a new provider request needs it; resumed Batch jobs reuse
   their existing requests. New invocations create their own cache for new work.
@@ -53,7 +74,8 @@ schema. Neither directory orchestrates other pipeline stages.
   billed for the full TTL. Caches are replaced before new submissions when near
   expiry (or when less than 24 hours remain for Batch).
   Google rejects prompts below its model-specific minimum or unsupported caching
-  combinations; the command does not silently switch back to uncached requests.
+  combinations; Standard/Flex log a warning and send the prompt inline after a
+  cache-creation HTTP 400. Batch stops instead.
 - Implicit caching can still occur without `--cache-prompt`. Usage-based estimates
   distinguish cached reads from uncached input and include output/thinking tokens.
   Explicit caches contain only text, so cached tokens are priced as text even if
