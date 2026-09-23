@@ -232,6 +232,7 @@ class GeminiAgent:
         api_key: str | None = None,
         reasoning_effort: str = "medium",
         max_retries: int | None = None,
+        max_retry: int | None = None,
         base_backoff_s: float = 2.0,
         max_tokens: int = 65536,
         timeout_s: float | None = None,
@@ -263,6 +264,8 @@ class GeminiAgent:
                 "GEMINI_API_KEY environment variable or .env setting is required for GeminiAgent."
             )
         self.reasoning_effort = reasoning_effort
+        if max_retry is not None:
+            max_retries = max_retry + 1
         self.max_retries = max_retries if max_retries is not None else (12 if inference_mode == "flex" else 5)
         self.base_backoff_s = base_backoff_s
         self.max_tokens = max_tokens
@@ -1023,18 +1026,11 @@ def add_gemini_arguments(command: argparse.ArgumentParser) -> None:
         type=positive_float,
         help="HTTP request timeout in seconds (default: 120; 900 for flex)",
     )
-    retries = command.add_mutually_exclusive_group()
-    retries.add_argument(
+    command.add_argument(
         "--max-retry",
         type=nonnegative_int,
         help="Additional retries per transient failed request; 0 disables retries "
              "(default: 4; 11 for flex). Verifier rejections are never retried",
-    )
-    retries.add_argument(
-        "--max-retries",
-        type=positive_int,
-        help="Legacy total attempt limit including the initial request "
-             "(default: 5; 12 for flex); mutually exclusive with --max-retry",
     )
     command.add_argument(
         "--inference-mode",
@@ -1078,7 +1074,7 @@ def gemini_parameters(args: Any) -> dict[str, Any]:
         args.timeout_s = 900.0 if args.inference_mode == "flex" else 120.0
     if args.max_retry is not None:
         args.max_retries = args.max_retry + 1
-    elif args.max_retries is None:
+    else:
         args.max_retries = 12 if args.inference_mode == "flex" else 5
     if args.cache_ttl_s is None:
         args.cache_ttl_s = 90000 if args.inference_mode == "batch" else 3600

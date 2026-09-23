@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger("verifier.gemini")
 
 AGENT_DIR = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = Path(__file__).resolve().parents[2]
@@ -33,8 +36,25 @@ class GeminiVerifier(GeminiAgent):
     """Gemini generation constrained and parsed as a pass/reject verdict."""
 
     def verify(self, audio_path: Path, prompt: str) -> dict[str, Any]:
-        generated = self.generate(audio_path, system_prompt=prompt)
-        return self.parse_generated(audio_path, generated)
+        max_retry = max(0, self.max_retries - 1)
+        for attempt in range(1, max_retry + 2):
+            generated = self.generate(audio_path, system_prompt=prompt)
+            try:
+                return self.parse_generated(audio_path, generated)
+            except VerifierResponseError as exc:
+                if attempt > max_retry:
+                    raise
+                raw = str(generated.get("text", ""))
+                cleaned = raw.replace("\r", " ").replace("\n", " ").strip()
+                snippet = f" | output: {cleaned[:200]!r}" if cleaned else " | output was empty"
+                logger.warning(
+                    "%s: Model failed to return a valid JSON object (%s)%s -> retrying (%d/%d)...",
+                    audio_path.name,
+                    exc.code,
+                    snippet,
+                    attempt,
+                    max_retry,
+                )
 
     def parse_generated(
         self,

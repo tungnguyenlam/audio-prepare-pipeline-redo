@@ -1,3 +1,22 @@
+## 2026-09-23 - Retry verifier runs on invalid JSON responses and fix sample_costs.md
+
+### Decisions
+- Added automatic retry when verifier runs receive model outputs that are not valid JSON objects or conformant verdicts (e.g. `invalid_json`, `json_not_object`, or schema validation errors):
+  - In `scripts/s4-agent/verifier/_cli.py` (`verdict_processor`), if a verification attempt fails due to invalid JSON or schema error, it logs the item name, reason, and a snippet of the model's output using `logger.warning` and `progress("VERIFIER_RETRY", ...)`, then sleeps with exponential backoff and retries up to `--max-retry` times.
+  - If retries are exhausted, the item failure artifact and raw response are written as before.
+  - A valid verifier `reject` remains a successful completed verdict and is never retried.
+  - Also added retry support to `GeminiVerifier.verify()` in `scripts/s4-agent/verifier/gemini.py` for direct callers.
+- Removed the legacy mutually exclusive `--max-retries` flag in `scripts/s4-agent/gemini.py` (shared by both `scripts/s4-agent/gemini.sh` and `scripts/s4-agent/verifier/gemini.sh`). Only `--max-retry` (additional retries per transient failure) is retained, preserving backwards compatibility internally.
+- Fixed `_pass_status` and summary calculation in `scripts/s4-agent/verifier/plot_verifier_analysis.py` for interrupted runs:
+  - Previously, any sample without a verdict defaulted to "not pass", causing unrun samples (e.g., when a run is interrupted midway) to be falsely reported as "not pass".
+  - Refined `_pass_status` to report `"not run"` for missing/unrun samples and `"fail"` for processing failures, reserving `"not pass"` solely for model rejections (`final_verdict == "reject"`).
+  - Updated `sample_costs.md` summary metrics to distinguish evaluated samples from unrun/missing samples, computing pass rate against evaluated samples and calculating the $/minute cost rate using evaluated audio duration rather than unrun manifest duration.
+
+### Results
+- Verified `--help` on both `scripts/s4-agent/gemini.py` and `scripts/s4-agent/verifier/gemini.py`.
+- Tested `_write_sample_costs_markdown` across multiple scenarios (normal complete run, interrupted run with missing samples, and processing error samples).
+- Tested `verdict_processor` retries across 5 unit test cases (single invalid JSON retry-and-succeed, exhausted retries writing failed artifact, `--max-retry 0` disabling retry, schema validation retry, and valid `reject` avoiding retry). All 5 cases passed cleanly with log and stderr outputs.
+
 ## 2026-09-21 - Accept playlist URL lists in download playlist/channel
 
 ### Decisions

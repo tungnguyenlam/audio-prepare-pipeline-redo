@@ -27,15 +27,16 @@ schema. Neither directory orchestrates other pipeline stages.
   transient failed HTTP request (network errors or HTTP 429/500/502/503/504).
   `0` means one attempt, with no retries; defaults are 4 retries for Standard/Batch
   and 11 for Flex. SDK internal retries are disabled so they cannot multiply this
-  limit. Legacy `--max-retries` still means total attempts, including the first;
-  the two flags are mutually exclusive. Nonretryable errors stop immediately.
+  limit. Nonretryable errors stop immediately.
   Cache creation and Batch submission do not retry ambiguous network failures,
   preventing duplicate resources/jobs. Batch polling requests use the same limit,
   but failed Batch results are not automatically resubmitted by this flag.
 - A valid verifier `reject` is a successful completed verdict, never a retry trigger.
-  Invalid/empty model responses remain failed artifacts with raw text retained;
-  this request retry flag does not regenerate them. Existing continuation and
-  overwrite rules below apply.
+  When a model response fails to parse into a valid JSON object or conformant verdict
+  (e.g. malformed JSON, missing object, or schema failure), the failure reason and output
+  snippet are logged to stderr and the item is retried up to `--max-retry` times.
+  If retries are exhausted, a failed artifact is written with the raw text retained.
+  Existing continuation and overwrite rules below apply.
 - Verifier metadata now records `prompt_role=system` so old user-prompt runs cannot
   silently mix with the new generation behavior. Older artifacts require a separate
   output directory or explicit `--overwrite`.
