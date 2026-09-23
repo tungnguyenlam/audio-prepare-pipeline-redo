@@ -16,9 +16,20 @@ from pathlib import Path
 from collections.abc import Callable
 from typing import Any
 
+import httpx
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from _common.files import ROOT, digest, persist_path, safe_name, write_json, positive_int, read_json, resolve_stored_path  # noqa: E402
+from _common.files import (  # noqa: E402
+    ROOT,
+    digest,
+    persist_path,
+    positive_int,
+    read_json,
+    resolve_stored_path,
+    safe_name,
+    write_json,
+)
 from _gemini_pricing import (  # noqa: E402
     accumulate_cost,
     accumulate_usage,
@@ -31,10 +42,50 @@ from _gemini_pricing import (  # noqa: E402
 
 logger = logging.getLogger("agent.gemini")
 
+
+def _load_repo_env() -> None:
+    """Load environment variables from <repo>/.env without overriding the shell."""
+    env_file = ROOT / ".env"
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(env_file if env_file.is_file() else None, override=False)
+    except Exception:
+        pass
+    if env_file.is_file():
+        try:
+            for line in env_file.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, val = line.split("=", 1)
+                    key = key.strip()
+                    val = val.strip().strip("'\"")
+                    if key and key not in os.environ:
+                        os.environ[key] = val
+        except Exception:
+            pass
+
+
+# Must run before SYSTEM_PROMPT_PATH so GEMINI_SYSTEM_PROMPT in .env is honored.
+_load_repo_env()
+
 API_ROOT = "https://generativelanguage.googleapis.com/v1beta"
 GEMINI_MODEL = "gemini-3.8-flash"
+# Portable default: <repo>/prompts/full-tags-prompt.md, overridable per machine.
+DEFAULT_SYSTEM_PROMPT_PATH = ROOT / "prompts" / "full-tags-prompt.md"
+SYSTEM_PROMPT_PATH = Path(
+    os.path.expanduser(os.getenv("GEMINI_SYSTEM_PROMPT") or str(DEFAULT_SYSTEM_PROMPT_PATH))
+).resolve()
 BATCH_MAX_INLINE_BYTES = 18 * 1024 * 1024
 MAX_BACKOFF_S = 60.0
+RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
+HTTP_HINTS = {
+    400: "request rejected; check audio format/size and generation config",
+    401: "check GEMINI_API_KEY",
+    403: "check GEMINI_API_KEY and its project permissions/billing",
+    404: f"model {GEMINI_MODEL!r} is not available to this API key",
+    429: "quota or rate limit exhausted",
+}
 BATCH_TERMINAL_STATES = {
     "JOB_STATE_SUCCEEDED",
     "JOB_STATE_FAILED",
@@ -58,11 +109,46 @@ MIME_TYPES = {
 }
 
 
+class GeminiHTTPError(RuntimeError):
+    """Provider HTTP failure; carries only the numeric status, never the body."""
+
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+class SystemPromptError(RuntimeError):
+    """Prompt configuration error.
+
+    Deliberately not a FileNotFoundError: the verifier maps FileNotFoundError to
+    'input_not_found' (missing audio), which hid the real cause.
+    """
+
+
 def positive_float(value: str) -> float:
     result = float(value)
     if not math.isfinite(result) or result <= 0:
         raise argparse.ArgumentTypeError("must be positive")
     return result
+
+
+def load_system_prompt(path: Path | None = None) -> str:
+    """Load the pipeline's single authorized instruction source."""
+    path = Path(path) if path is not None else SYSTEM_PROMPT_PATH
+    if not path.is_file():
+        raise SystemPromptError(
+            f"Required system prompt not found: {path}. "
+            f"Put it at {DEFAULT_SYSTEM_PROMPT_PATH} or set GEMINI_SYSTEM_PROMPT."
+        )
+    system_prompt = path.read_text(encoding="utf-8")
+    if not system_prompt.strip():
+        raise SystemPromptError(f"System prompt is empty: {path}")
+    return system_prompt
+
+
+def system_prompt_ref() -> Any:
+    """Machine-independent prompt reference stored in metadata and manifests."""
+    return persist_path(SYSTEM_PROMPT_PATH)
 
 
 def audio_mime_type(path: Path) -> str:
@@ -71,6 +157,34 @@ def audio_mime_type(path: Path) -> str:
         or mimetypes.guess_type(path.name)[0]
         or "application/octet-stream"
     )
+
+
+def audio_duration_s(path: Path) -> float | None:
+    try:
+        import soundfile as sf
+
+        info = sf.info(str(path))
+        if info.samplerate and info.frames:
+            return float(info.frames) / float(info.samplerate)
+    except Exception:
+        pass
+    return None
+
+
+def _safe_status_name(value: Any) -> str | None:
+    """Google status enums (e.g. NOT_FOUND) are safe to log; free text is not."""
+    if isinstance(value, str) and value and value.replace("_", "").isalpha() and value.isupper():
+        return value
+    return None
+
+
+def http_error_message(operation: str, code: Any, status_name: Any = None) -> str:
+    label = f"HTTP {code or 'unknown'}"
+    name = _safe_status_name(status_name)
+    if name:
+        label += f" {name}"
+    hint = HTTP_HINTS.get(code) if isinstance(code, int) else None
+    return f"Gemini {operation} failed: {label}" + (f"; {hint}" if hint else "")
 
 
 def response_text(response: dict[str, Any]) -> str:
@@ -90,32 +204,6 @@ def response_text(response: dict[str, Any]) -> str:
             and not part.get("thought", False)
         )
     )
-
-
-def _load_repo_env() -> None:
-    """Load environment variables from .env in the repository root if available."""
-    try:
-        from dotenv import load_dotenv
-
-        load_dotenv()
-    except Exception:
-        pass
-    env_file = Path(__file__).resolve().parents[2] / ".env"
-    if env_file.is_file():
-        try:
-            for line in env_file.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    key, val = line.split("=", 1)
-                    key = key.strip()
-                    val = val.strip().strip("'\"")
-                    if key and key not in os.environ:
-                        os.environ[key] = val
-        except Exception:
-            pass
-
-
-_load_repo_env()
 
 
 def configure_gemini_paths(args: Any, operation: str) -> Path:
@@ -158,6 +246,9 @@ class GeminiAgent:
         self._cache = None
         self._cache_key = None
         self._cache_expires = 0.0
+        # Set when the API refuses to cache this prompt (e.g. below the minimum
+        # token count); non-batch modes then send the prompt inline instead.
+        self._cache_unavailable = False
         self._pending_storage_usd = 0.0
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         if not self.api_key:
@@ -169,13 +260,132 @@ class GeminiAgent:
         self.base_backoff_s = base_backoff_s
         self.max_tokens = max_tokens
         self.timeout_s = timeout_s if timeout_s is not None else (900.0 if inference_mode == "flex" else 120.0)
+        try:
+            from google import genai
+            from google.genai import errors as genai_errors
+            from google.genai import types as genai_types
+        except ImportError as exc:
+            raise RuntimeError(
+                "The official Google Gen AI SDK is required. Install it with: "
+                "pip install --upgrade google-genai"
+            ) from exc
+        if inference_mode == "standard" and not hasattr(genai_types, "ThinkingLevel"):
+            raise RuntimeError(
+                "Installed google-genai is too old (no types.ThinkingLevel). "
+                "Upgrade with: pip install --upgrade google-genai"
+            )
+        self._genai_types = genai_types
+        self._genai_errors = genai_errors
+        # Previously the SDK client ignored --timeout-s entirely. HttpOptions.timeout is in ms.
+        self._genai_client = genai.Client(
+            api_key=self.api_key,
+            http_options=genai_types.HttpOptions(timeout=int(self.timeout_s * 1000)),
+        )
         self._lock = threading.Lock()
+        self._preflight_lock = threading.Lock()
+        self._preflight_ok = False
         self._usage_totals = empty_usage_totals()
         self._cost_totals = empty_cost_totals()
         self._cost_totals["model"] = model
-        import httpx
-
         self._session = httpx.Client(timeout=self.timeout_s)
+
+    def preflight(self) -> None:
+        """Verify API key and model access once (free metadata call, no tokens).
+
+        Bad keys or an unavailable model now stop the run with one clear error
+        instead of producing N failed artifacts and requests=0.
+        """
+        with self._preflight_lock:
+            if self._preflight_ok:
+                return
+            self._request_json("GET", f"{API_ROOT}/models/{self.model}", operation="preflight")
+            self._preflight_ok = True
+            logger.info("Gemini preflight OK: %s is reachable with this API key", self.model)
+
+    def _sdk_thinking_level(self) -> Any:
+        """Map the CLI level to the official Google Gen AI SDK enum."""
+        levels = {
+            "low": self._genai_types.ThinkingLevel.LOW,
+            "medium": self._genai_types.ThinkingLevel.MEDIUM,
+            "high": self._genai_types.ThinkingLevel.HIGH,
+        }
+        return levels[self.reasoning_effort.lower()]
+
+    def _sdk_generate_standard(
+        self,
+        audio_path: Path,
+        system_prompt: str,
+    ) -> tuple[dict[str, Any], dict[str, str]]:
+        """Call Gemini through the official SDK using audio-only user content."""
+        audio_part = self._genai_types.Part.from_bytes(
+            data=audio_path.read_bytes(),
+            mime_type=audio_mime_type(audio_path),
+        )
+        contents = self._genai_types.Content(role="user", parts=[audio_part])
+
+        for attempt in range(1, self.max_retries + 1):
+            # Resolved per attempt so a cache refreshed during retries is picked up.
+            cache_name = self._ensure_prompt_cache(system_prompt)
+            prompt_config: dict[str, Any] = (
+                # The API rejects system_instruction together with cached_content.
+                {"cached_content": cache_name}
+                if cache_name
+                else {"system_instruction": system_prompt}
+            )
+            config = self._genai_types.GenerateContentConfig(
+                **prompt_config,
+                max_output_tokens=self.max_tokens,
+                thinking_config=self._genai_types.ThinkingConfig(
+                    thinking_level=self._sdk_thinking_level(),
+                ),
+            )
+            try:
+                response = self._genai_client.models.generate_content(
+                    model=self.model,
+                    contents=contents,
+                    config=config,
+                )
+                body = response.model_dump(
+                    mode="json",
+                    by_alias=True,
+                    exclude_none=True,
+                )
+                http_response = getattr(response, "sdk_http_response", None)
+                response_headers = getattr(http_response, "headers", None) or {}
+                headers = {
+                    key: value
+                    for key, value in dict(response_headers).items()
+                    if key.lower() in {
+                        "content-type",
+                        "date",
+                        "server",
+                        "x-request-id",
+                    }
+                }
+                return body, headers
+            except self._genai_errors.APIError as exc:
+                status = getattr(exc, "code", None)
+                if status not in RETRYABLE_STATUS or attempt == self.max_retries:
+                    raise RuntimeError(
+                        http_error_message("SDK request", status, getattr(exc, "status", None))
+                    ) from None
+            except httpx.TransportError as exc:
+                # Previously uncaught: network blips failed the item without retry.
+                if attempt == self.max_retries:
+                    if isinstance(exc, httpx.TimeoutException):
+                        raise TimeoutError(
+                            f"Gemini SDK request timed out after {self.timeout_s:g}s"
+                        ) from None
+                    raise RuntimeError("Gemini SDK connection failed") from None
+            delay = self._backoff_s(attempt) + random.uniform(0.1, 0.5)
+            logger.warning(
+                "Gemini SDK request failed; retry %d/%d in %.2fs",
+                attempt,
+                self.max_retries,
+                delay,
+            )
+            time.sleep(delay)
+        raise RuntimeError("Gemini SDK request exhausted retries")
 
     def get_cost_summary(self) -> dict[str, Any]:
         """Return a copy of cumulative usage and estimated USD cost for this session."""
@@ -217,110 +427,130 @@ class GeminiAgent:
         payload: dict[str, Any] | None = None,
         *,
         retry_network_errors: bool = True,
+        operation: str | None = None,
     ) -> tuple[dict[str, Any], dict[str, str]]:
-        import httpx
-
+        if operation is None:
+            operation = "prompt cache creation" if url.endswith("/cachedContents") else "request"
         headers = {"x-goog-api-key": self.api_key}
         for attempt in range(1, self.max_retries + 1):
             try:
                 response = self._session.request(method, url, json=payload, headers=headers)
-            except httpx.TransportError:
+            except httpx.TransportError as exc:
                 if not retry_network_errors or attempt == self.max_retries:
-                    raise RuntimeError("Gemini connection failed") from None
+                    if isinstance(exc, httpx.TimeoutException):
+                        raise TimeoutError(
+                            f"Gemini {operation} timed out after {self.timeout_s:g}s"
+                        ) from None
+                    raise RuntimeError(f"Gemini {operation}: connection failed") from None
             else:
                 if response.is_success:
                     return response.json(), {
                         key: value for key, value in response.headers.items()
                         if key in {"content-type", "date", "server", "x-request-id"}
                     }
-                if response.status_code not in {429, 500, 502, 503, 504} or attempt == self.max_retries:
-                    # Do not echo provider bodies or transport exceptions: they may contain secrets.
-                    operation = "prompt cache creation" if url.endswith("/cachedContents") else "request"
-                    hint = "; check model caching support and minimum prompt size" if operation == "prompt cache creation" else ""
-                    raise RuntimeError(f"Gemini {operation}: HTTP {response.status_code}{hint}")
+                if response.status_code not in RETRYABLE_STATUS or attempt == self.max_retries:
+                    # Only the numeric code and Google's status enum are surfaced;
+                    # provider bodies may contain secrets.
+                    status_name = None
+                    try:
+                        body = response.json()
+                        error = body.get("error") if isinstance(body, dict) else None
+                        status_name = error.get("status") if isinstance(error, dict) else None
+                    except ValueError:
+                        pass
+                    message = http_error_message(operation, response.status_code, status_name)
+                    if operation == "prompt cache creation":
+                        message += "; check model caching support and minimum prompt size"
+                    raise GeminiHTTPError(message, response.status_code)
             delay = self._backoff_s(attempt) + random.uniform(0.1, 0.5)
-            logger.warning("Gemini request failed; retry %d/%d in %.2fs", attempt, self.max_retries, delay)
+            logger.warning("Gemini %s failed; retry %d/%d in %.2fs", operation, attempt, self.max_retries, delay)
             time.sleep(delay)
-        raise RuntimeError("Gemini API call exhausted retries")
+        raise RuntimeError(f"Gemini {operation} exhausted retries")
 
-    def _apply_prompt_cache(self, payload: dict[str, Any], prompt: str, system_prompt: str | None) -> None:
-        """Reuse one text-only cache per client; audio always stays in the request."""
+    def _ensure_prompt_cache(self, system_prompt: str) -> str | None:
+        """Return a cachedContents name for the system prompt, creating it if needed.
+
+        Shared by all modes: a cache created over REST is referenced by name from
+        the SDK (standard) as well as from REST payloads (flex/batch).
+        """
         if not self.cache_prompt:
-            return
-        key = (prompt, system_prompt)
+            return None
+        key = system_prompt
         with self._cache_lock:
-            if key != self._cache_key or time.monotonic() >= self._cache_expires:
-                body = {
-                    "model": f"models/{self.model}",
-                    "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                    "ttl": f"{self.cache_ttl_s}s",
-                }
-                if system_prompt is not None:
-                    body["systemInstruction"] = {"parts": [{"text": system_prompt}]}
-                started = time.monotonic()
-                cache, _ = self._request_json("POST", f"{API_ROOT}/cachedContents", body, retry_network_errors=False)
-                self._cache = cache["name"]
-                self._cache_key = key
-                reserve_s = 86400 if self.inference_mode == "batch" else min(60, self.cache_ttl_s / 10)
-                self._cache_expires = started + self.cache_ttl_s - reserve_s
-                tokens = int(cache.get("usageMetadata", {}).get("totalTokenCount", 0))
-                storage = estimate_cache_storage_cost(self.model, tokens, self.cache_ttl_s, self.inference_mode)
-                with self._lock:
-                    if storage is None or not tokens:
-                        self._cost_totals["unpriced_caches"] += 1
-                    else:
-                        self._cost_totals["cache_storage_usd"] += storage
-                        self._cost_totals["total_usd"] += storage
-                        self._pending_storage_usd += storage
-                logger.info("Created prompt cache %s (%d tokens, TTL %ds)", self._cache, tokens, self.cache_ttl_s)
-            payload["cachedContent"] = self._cache
-        payload["contents"][0]["parts"] = [
-            part for part in payload["contents"][0]["parts"] if "text" not in part
-        ]
-        payload.pop("systemInstruction", None)
+            if self._cache_unavailable:
+                return None
+            if key == self._cache_key and time.monotonic() < self._cache_expires:
+                return self._cache
+            body = {
+                "model": f"models/{self.model}",
+                "systemInstruction": {"parts": [{"text": system_prompt}]},
+                "ttl": f"{self.cache_ttl_s}s",
+            }
+            started = time.monotonic()
+            try:
+                cache, _ = self._request_json(
+                    "POST", f"{API_ROOT}/cachedContents", body, retry_network_errors=False
+                )
+            except GeminiHTTPError as exc:
+                if exc.status_code == 400 and self.inference_mode != "batch":
+                    self._cache_unavailable = True
+                    logger.warning(
+                        "Prompt cache refused (%s). Continuing WITHOUT caching: the "
+                        "system prompt is sent inline, output is unchanged, cost is higher.",
+                        exc,
+                    )
+                    return None
+                raise
+            self._cache = cache["name"]
+            self._cache_key = key
+            reserve_s = 86400 if self.inference_mode == "batch" else min(60, self.cache_ttl_s / 10)
+            self._cache_expires = started + self.cache_ttl_s - reserve_s
+            tokens = int(cache.get("usageMetadata", {}).get("totalTokenCount", 0))
+            storage = estimate_cache_storage_cost(self.model, tokens, self.cache_ttl_s, self.inference_mode)
+            with self._lock:
+                if storage is None or not tokens:
+                    self._cost_totals["unpriced_caches"] += 1
+                else:
+                    self._cost_totals["cache_storage_usd"] += storage
+                    self._cost_totals["total_usd"] += storage
+                    self._pending_storage_usd += storage
+            logger.info("Created prompt cache %s (%d tokens, TTL %ds)", self._cache, tokens, self.cache_ttl_s)
+            return self._cache
+
+    def _apply_prompt_cache(self, payload: dict[str, Any], system_prompt: str) -> None:
+        """Cache the fixed system prompt; audio always stays in the request."""
+        cache_name = self._ensure_prompt_cache(system_prompt)
+        if cache_name:
+            payload["cachedContent"] = cache_name
+            payload.pop("systemInstruction", None)
 
     def _request_payload(
         self,
         audio_path: Path,
-        prompt: str,
         *,
-        system_prompt: str | None,
+        system_prompt: str,
     ) -> tuple[dict[str, Any], float | None]:
         audio_path = Path(audio_path)
         with audio_path.open("rb") as stream:
             audio_b64 = base64.b64encode(stream.read()).decode("ascii")
-        audio_duration_s: float | None = None
-        try:
-            import soundfile as sf
-
-            info = sf.info(str(audio_path))
-            if info.samplerate and info.frames:
-                audio_duration_s = float(info.frames) / float(info.samplerate)
-        except Exception:
-            pass
 
         payload: dict[str, Any] = {
             "contents": [{
                 "role": "user",
                 "parts": [
-                    {"text": prompt},
                     {"inlineData": {"mimeType": audio_mime_type(audio_path), "data": audio_b64}},
                 ],
             }],
             # Gemini 3.x is tuned for its default sampler. Do not set temperature,
             # topP, or topK here: Google explicitly recommends omitting them.
-            "generationConfig": {
-                "candidateCount": 1,
-                "maxOutputTokens": self.max_tokens,
-            },
+            "generationConfig": {"maxOutputTokens": self.max_tokens},
         }
-        if system_prompt is not None:
-            payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
+        payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
         if self.reasoning_effort and self.reasoning_effort.lower() != "none":
             payload["generationConfig"]["thinkingConfig"] = {
-                "thinkingLevel": self.reasoning_effort.upper()
+                "thinkingLevel": self.reasoning_effort.lower()
             }
-        return payload, audio_duration_s
+        return payload, audio_duration_s(audio_path)
 
     def _generation_result(
         self,
@@ -345,7 +575,7 @@ class GeminiAgent:
         usage = normalize_gemini_usage(
             response.get("usageMetadata"),
             audio_duration_s=audio_duration_s,
-            explicit_text_cache=self.cache_prompt,
+            explicit_text_cache=self.cache_prompt and not self._cache_unavailable,
         )
         if pricing_tier != "paid_batch":
             returned_tier = str(usage.get("service_tier") or "").lower()
@@ -386,28 +616,31 @@ class GeminiAgent:
     def generate(
         self,
         audio_path: Path,
-        prompt: str,
         *,
-        system_prompt: str | None = None,
+        system_prompt: str,
     ) -> dict[str, Any]:
         if self.inference_mode == "batch":
             raise ValueError("Batch mode requires generate_batch(), not generate()")
-        payload, duration = self._request_payload(
-            audio_path,
-            prompt,
-            system_prompt=system_prompt,
-        )
-        self._apply_prompt_cache(payload, prompt, system_prompt)
-        # AI Studio's normal Run action uses standard generateContent and does
-        # not add a service-tier override. Omit it for request parity.
-        if self.inference_mode != "standard":
-            payload["serviceTier"] = self.inference_mode
+        audio_path = Path(audio_path)
         started = time.monotonic()
-        response, headers = self._request_json(
-            "POST",
-            f"{API_ROOT}/models/{self.model}:generateContent",
-            payload,
-        )
+        if self.inference_mode == "standard":
+            duration = audio_duration_s(audio_path)
+            response, headers = self._sdk_generate_standard(
+                audio_path,
+                system_prompt,
+            )
+        else:
+            payload, duration = self._request_payload(
+                audio_path,
+                system_prompt=system_prompt,
+            )
+            self._apply_prompt_cache(payload, system_prompt)
+            payload["serviceTier"] = self.inference_mode
+            response, headers = self._request_json(
+                "POST",
+                f"{API_ROOT}/models/{self.model}:generateContent",
+                payload,
+            )
         return self._generation_result(
             response,
             latency_s=time.monotonic() - started,
@@ -478,9 +711,8 @@ class GeminiAgent:
     def generate_batch(
         self,
         audio_paths: list[Path],
-        prompt: str,
         *,
-        system_prompt: str | None = None,
+        system_prompt: str,
         batch_size: int = 100,
         poll_interval_s: float = 10.0,
         batch_timeout_s: float = 86400.0,
@@ -498,7 +730,6 @@ class GeminiAgent:
             source = Path(source_value).resolve()
             payload, duration = self._request_payload(
                 source,
-                prompt,
                 system_prompt=system_prompt,
             )
             key_material = {
@@ -510,7 +741,7 @@ class GeminiAgent:
                 "cache_prompt": self.cache_prompt,
                 "payload_without_audio": {
                     **payload,
-                    "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                    "contents": [{"role": "user", "parts": []}],
                 },
             }
             request_key = hashlib.sha256(
@@ -605,18 +836,24 @@ class GeminiAgent:
                     not isinstance(existing, dict)
                     or existing.get("request_keys") != keys
                     or not existing.get("job_name")
-                    or existing.get("state") in BATCH_TERMINAL_STATES - {"JOB_STATE_SUCCEEDED", "BATCH_STATE_SUCCEEDED"}
+                    or existing.get("state")
+                    in BATCH_TERMINAL_STATES
+                    - {"JOB_STATE_SUCCEEDED", "BATCH_STATE_SUCCEEDED"}
                 ):
                     previous_storage = self._cost_totals["cache_storage_usd"]
                     for item in group:
-                        self._apply_prompt_cache(item["entry"]["request"], prompt, system_prompt)
+                        self._apply_prompt_cache(item["entry"]["request"], system_prompt)
                     saved["cache_storage_usd"] = saved.get("cache_storage_usd", 0.0) + (
                         self._cost_totals["cache_storage_usd"] - previous_storage
                     )
                     write_json(state_path, saved)
                     body = {
                         "batch": {
-                            "display_name": f"{safe_name(self.model)}-{safe_name(self.reasoning_effort)}-{session_id}-{group_index + 1}",
+                            "display_name": (
+                                f"{safe_name(self.model)}-"
+                                f"{safe_name(self.reasoning_effort)}-"
+                                f"{session_id}-{group_index + 1}"
+                            ),
                             "input_config": {
                                 "requests": {"requests": [item["entry"] for item in group]}
                             },
@@ -627,6 +864,7 @@ class GeminiAgent:
                         f"{API_ROOT}/models/{self.model}:batchGenerateContent",
                         body,
                         retry_network_errors=False,
+                        operation="batch submission",
                     )
                     existing = {
                         "request_keys": keys,
@@ -659,7 +897,7 @@ class GeminiAgent:
                         if job_name.startswith("v1beta/")
                         else f"{API_ROOT}/{job_name.lstrip('/')}"
                     )
-                    job, _ = self._request_json("GET", job_url)
+                    job, _ = self._request_json("GET", job_url, operation="batch polling")
                     state = self._batch_state(job)
                     group["state"] = state
                     logger.info("Gemini Batch job %s: %s", job_name, state)
@@ -672,7 +910,8 @@ class GeminiAgent:
                     break
                 if time.monotonic() - started >= batch_timeout_s:
                     raise TimeoutError(
-                        f"Gemini Batch did not finish within {batch_timeout_s:g}s; resume with the same command plus --continue. State: {state_path}"
+                        f"Gemini Batch did not finish within {batch_timeout_s:g}s; "
+                        f"resume with the same command plus --continue. State: {state_path}"
                     )
                 time.sleep(min(poll_interval_s, 60.0))
 
@@ -793,10 +1032,24 @@ def add_gemini_arguments(command: argparse.ArgumentParser) -> None:
         default=10,
         help="Maximum requests per Gemini Batch job (also capped below 20 MB)",
     )
-    command.add_argument("--batch-poll-interval-s", type=positive_float, default=10.0, help="Seconds between Batch status polls")
-    command.add_argument("--batch-timeout-s", type=positive_float, default=86400.0, help="Maximum seconds to wait for Batch completion")
-    command.add_argument("--cache-prompt", action="store_true", help="Explicitly cache prompt text (default: false)")
-    command.add_argument("--cache-ttl-s", type=positive_int, help="Cache lifetime in seconds (default: 3600; 90000 for batch)")
+    command.add_argument(
+        "--batch-poll-interval-s",
+        type=positive_float,
+        default=10.0,
+        help="Seconds between Batch status polls",
+    )
+    command.add_argument(
+        "--batch-timeout-s",
+        type=positive_float,
+        default=86400.0,
+        help="Maximum seconds to wait for Batch completion",
+    )
+    command.add_argument("--cache-prompt", action="store_true", help="Explicitly cache the system prompt in any inference mode (default: false)")
+    command.add_argument(
+        "--cache-ttl-s",
+        type=positive_int,
+        help="Cache lifetime in seconds (default: 3600; 90000 for batch)",
+    )
 
 
 def gemini_parameters(args: Any) -> dict[str, Any]:
@@ -816,7 +1069,11 @@ def gemini_parameters(args: Any) -> dict[str, Any]:
     )}
 
 
-def pending_agent_pairs(args: Any, pairs: list[tuple[Path, Path]], parameters: dict[str, Any]) -> list[tuple[Path, Path]]:
+def pending_agent_pairs(
+    args: Any,
+    pairs: list[tuple[Path, Path]],
+    parameters: dict[str, Any],
+) -> list[tuple[Path, Path]]:
     """Check raw Gemini pairs before any provider submission."""
     pending = []
     for source, destination in pairs:
@@ -852,14 +1109,17 @@ def generation_callback(
     client: GeminiAgent,
     args: Any,
     pairs: list[tuple[Path, Path]],
-    prompt: str,
-    system_prompt: str | None = None,
+    system_prompt: str,
     *,
     all_pairs: list[tuple[Path, Path]],
 ) -> Callable[[Path], dict[str, Any]]:
     """Select the provider API once; both commands consume raw results."""
+    if pairs:
+        # Shared by the agent and the verifier: a bad key/model now aborts the
+        # run once, before any per-item failure artifacts are written.
+        client.preflight()
     if client.inference_mode != "batch":
-        return lambda source: client.generate(source, prompt, system_prompt=system_prompt)
+        return lambda source: client.generate(source, system_prompt=system_prompt)
     # Record the original submission subset separately from the full input identity.
     # Completed artifacts may shrink `pairs` on a later invocation.
     root = args.input_file if args.input_file is not None else args.input_dir
@@ -870,8 +1130,8 @@ def generation_callback(
             for source, destination in all_pairs
         ],
         "parameters": gemini_parameters(args),
-        "prompt": prompt,
         "system_prompt": system_prompt,
+        "system_prompt_path": system_prompt_ref(),
         "batch_size": args.batch_size,
     }
     scope = {"root": signature["root"], "operation": args._operation}
@@ -894,7 +1154,7 @@ def generation_callback(
         return lambda source: {}  # No generation callback will be consumed.
     try:
         results = client.generate_batch(
-            sources, prompt, system_prompt=system_prompt,
+            sources, system_prompt=system_prompt,
             batch_size=args.batch_size, poll_interval_s=args.batch_poll_interval_s,
             batch_timeout_s=args.batch_timeout_s, state_dir=args.work_dir / "batch_jobs",
             reuse_state=args.continue_run,
@@ -915,7 +1175,7 @@ def generation_callback(
 
 
 def main() -> int:
-    from artifacts import add_prompt_arguments, load_prompts, run_agent
+    from artifacts import run_agent
     from _common.files import destinations, parser
 
     command = parser(
@@ -923,18 +1183,34 @@ def main() -> int:
         "s4-agent",
         "gemini",
     )
-    add_prompt_arguments(command, max_tokens=65536, sampling=False)
+    command.add_argument(
+        "-mt",
+        "--max-tokens",
+        type=positive_int,
+        default=65536,
+        help="Maximum output tokens",
+    )
     add_gemini_arguments(command)
     args = command.parse_args()
     configure_gemini_paths(args, "s4-agent")
 
-    prompt, system_prompt = load_prompts(args)
+    system_prompt = load_system_prompt()
     client = GeminiAgent(**gemini_parameters(args))
-    parameters = {**gemini_parameters(args), "prompt": prompt, "system_prompt": system_prompt}
+    parameters = {
+        **gemini_parameters(args),
+        "system_prompt": system_prompt,
+        "system_prompt_path": system_prompt_ref(),
+    }
     pairs = destinations(args, "_gemini", ".txt")
     all_pairs = pairs
     pairs = pending_agent_pairs(args, pairs, parameters)
-    generate = generation_callback(client, args, pairs, prompt, system_prompt, all_pairs=all_pairs)
+    generate = generation_callback(
+        client,
+        args,
+        pairs,
+        system_prompt,
+        all_pairs=all_pairs,
+    )
 
     result = run_agent(
         args=args,
