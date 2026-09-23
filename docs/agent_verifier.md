@@ -215,14 +215,16 @@ endpoints without pricing metadata explicitly report cost as unavailable.
 
 Prompts in `prompts/`: `full-tags-prompt.md` is the active verifier default.
 It accepts transcribable multilingual speech, including foreign names and code
-switching. Each occurrence gets IPA only when the audio supports a native
-British/American English pronunciation; other foreign pronunciations use
-ViePhoneme written directly from the heard sounds, without IPA conversion tables
-or forced Vietnamese rhymes, tones, or coda deletion. Its sound-level notation
-distinguishes fricative place/voicing and vowel/glide movement; extended letter groups
-are selected by audible cues, never by a word's spelling or language. Ambiguous
-readings are compared by the sound feature that distinguishes them, separately
-from recognizing the word. Uncertain native status falls back to the clearly
+switching. Each occurrence gets IPA only when no audible deviation from native
+American English is heard; other foreign pronunciations use ViePhoneme written
+directly from the heard sounds. Pronunciation follows "sound first, spelling
+after": each occurrence is described as meaningless sound before the word is
+attached, then checked against three pulls (Vietnamese reading of the source
+spelling, remembered dictionary/common Vietnamized pronunciation, snapping to
+the nearest familiar Vietnamese syllable). ViePhoneme need not form valid
+Vietnamese syllables; its notation distinguishes fricative place/voicing and
+vowel/glide movement, selected by audible cues, never by spelling or language.
+The IPA decision guards both false IPA and false downgrades. Uncertain native status falls back to the clearly
 heard sounds in ViePhoneme, without asserting a
 pronunciation error. `unsupported_language` applies only when language content
 cannot be reliably transcribed, not merely because it is outside Vietnamese or
