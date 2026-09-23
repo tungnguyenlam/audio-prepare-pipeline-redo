@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Audio and transcript review</title>
+<style>
+body{font:16px system-ui,sans-serif;max-width:1100px;margin:32px auto;padding:0 20px;background:#f6f8fa;color:#172b3a}h1{margin-bottom:8px}button,select,input,textarea{font:inherit;padding:8px;border:1px solid #8898a5;border-radius:5px}button{cursor:pointer;background:#fff}button:disabled{opacity:.5;cursor:default}.toolbar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:16px 0}article{background:#fff;padding:20px;border:1px solid #ccd5dd;border-radius:8px;margin:18px 0}textarea{box-sizing:border-box;width:100%;min-height:85px}label{display:block;margin:12px 0 5px}audio{width:100%;margin:12px 0}.notice{padding:16px;background:#fff0ca;border-left:4px solid #aa6700}pre{white-space:pre-wrap;overflow-wrap:anywhere}.muted{color:#465969}.status{font-weight:600}a{color:#075896}input[type=search]{min-width:250px}#feedback{min-height:24px}small{display:block}
+</style>
+<h1 id="title">Audio and transcript review</h1>
+<p id="summary"></p>
+<p class="notice" id="coverage"></p>
+<p>Listen, compare the transcript, then mark <b>approved</b>, <b>corrected</b>, or <b>exclude</b>.
+Enter a full replacement when correcting. Rejected clips remain rejected by the verifier even if you suggest a correction.</p>
+<p><a href="clip_catalog.xlsx">Open Excel catalog</a> · <a href="clip_catalog.csv">Open CSV catalog</a> · <a href="READ_ME.txt">Read instructions</a></p>
+<div class="toolbar">
+<button id="save">Save progress JSON</button><button id="csv">Download review CSV</button>
+<label>Resume saved HTML review <input id="load" type="file" accept=".json"></label>
+</div>
+<p class="muted">Edits are kept in memory until you download them. Save before closing. Excel/CSV changes do not sync to this page.
+The saved JSON resumes this exact release; return the CSV for spreadsheet review.</p>
+<p id="feedback" role="status" aria-live="polite"></p>
+<div class="toolbar">
+<label>Search <input id="search" type="search" placeholder="Clip ID or transcript"></label>
+<label>Show <select id="filter"><option value="all">All clips</option><option value="pass">Verifier passed</option><option value="attention">Needs attention</option><option value="transcription">Needs transcription</option><option value="pending">Human review pending</option><option value="reviewed">Human review entered</option></select></label>
+</div>
+<p id="totals"></p>
+<div class="toolbar"><button id="previous">Previous</button><span id="page"></span><button id="next">Next</button></div>
+<main id="clips"></main>
+<noscript>Enable JavaScript to use this local page, or open clip_catalog.xlsx/CSV and the audio folder.</noscript>
+<script type="application/json" id="delivery">__DELIVERY_DATA__</script>
+<script>
+'use strict';
+const data = JSON.parse(document.getElementById('delivery').textContent);
+const $ = id => document.getElementById(id);
+const states = ['pending','approved','corrected','exclude'];
+const reviewFields = ['review_status','corrected_transcript','review_notes'];
+const edits = new Map(data.clips.map(c=>[c.clip_id,{review_status:'pending',corrected_transcript:'',review_notes:''}]));
+let page=0, dirty=false;
+const size=25;
+$('title').textContent = `${data.summary.dataset_name} — ${data.summary.version}`;
+$('summary').textContent = `${data.summary.total_clips} clips · ${(data.summary.duration_s/3600).toFixed(2)} hours · ${data.summary.needs_transcription} need transcription`;
+$('coverage').textContent = `Verifier processing: ${data.summary.processing_status.toUpperCase()}. Coverage: ${data.summary.coverage}. Human transcript review: PENDING. Verifier counts: ${JSON.stringify(data.summary.counts)}. Profiles: ${data.summary.schema_profiles.join(', ')}. Model labels do not imply human approval.`;
+function node(tag,text){const n=document.createElement(tag); if(text!==undefined)n.textContent=text; return n;}
+function feedback(text){$('feedback').textContent=text;}
+function markDirty(){dirty=true;feedback('Unsaved changes — use Save progress JSON before closing.');}
+function filtered(){const term=$('search').value.toLocaleLowerCase(), filter=$('filter').value;return data.clips.filter(c=>{
+const e=edits.get(c.clip_id);
+return `${c.clip_id} ${c.transcript} ${e.corrected_transcript}`.toLocaleLowerCase().includes(term) && (
+filter==='all' || filter==='pass'&&c.verifier_status==='pass' ||
+filter==='attention'&&(c.verifier_status!=='pass'||c.transcript_status!=='provided') ||
+filter==='transcription'&&c.transcript_status==='needs_transcription' ||
+filter==='pending'&&e.review_status==='pending' || filter==='reviewed'&&e.review_status!=='pending');});}
+function render(){
+const list=filtered();page=Math.max(0,Math.min(page,Math.ceil(list.length/size)-1));
+$('clips').replaceChildren();$('page').textContent=`Page ${page+1} of ${Math.max(1,Math.ceil(list.length/size))}`;
+$('previous').disabled=page===0;$('next').disabled=(page+1)*size>=list.length;
+$('totals').textContent=`${list.length} matching clips. ${[...edits.values()].filter(e=>e.review_status!=='pending').length} of ${data.clips.length} have human review entries.`;
+for(const c of list.slice(page*size,(page+1)*size)){
+const e=edits.get(c.clip_id),card=node('article');card.append(node('h2',c.clip_id));
+card.append(node('p',`Verifier: ${c.verifier_status} · Transcript: ${c.transcript_status} · Emotion: ${c.emotion||'not provided'}`));
+if(c.reason)card.append(node('p',c.reason));
+if(c.audio_path){const audio=node('audio');audio.controls=true;audio.preload='none';audio.src=c.audio_path;card.append(audio);
+const link=node('a',`Open audio file: ${c.audio_path}`);link.href=c.audio_path;link.target='_blank';link.rel='noopener';card.append(link);
+}else card.append(node('p','Audio unavailable in this delivery. Ask the sender to resolve this clip.'));
+card.append(node('h3','Original transcript'));card.append(node('pre',c.transcript||'No transcript provided. Listen and enter a full transcript below, or exclude the clip.'));
+const statusLabel=node('label','Human review status '),select=node('select');select.setAttribute('aria-label',`${c.clip_id} review status`);
+for(const state of states){const option=node('option',state);option.value=state;select.append(option);}select.value=e.review_status;
+select.onchange=()=>{e.review_status=select.value;markDirty();};statusLabel.append(select);card.append(statusLabel);
+for(const [field,label] of [['corrected_transcript','Corrected / newly written transcript'],['review_notes','Review notes']]){
+const lab=node('label',label),input=node('textarea');input.value=e[field];input.setAttribute('aria-label',`${c.clip_id} ${label}`);
+input.oninput=()=>{e[field]=input.value;markDirty();};lab.append(input);card.append(lab);}
+$('clips').append(card);}}
+function download(name,text,type){const blob=new Blob([text],{type});const url=URL.createObjectURL(blob),a=node('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function issues(){return data.clips.filter(c=>{const e=edits.get(c.clip_id);return e.review_status==='corrected'&&!e.corrected_transcript.trim() || e.review_status==='approved'&&!c.transcript.trim();});}
+$('save').onclick=()=>{download('review_progress.json',JSON.stringify({release_id:data.release_id,reviews:data.clips.map(c=>({clip_id:c.clip_id,...edits.get(c.clip_id)}))},null,2),'application/json');dirty=false;feedback('Progress download requested. Keep the downloaded JSON to resume.');};
+$('csv').onclick=()=>{const invalid=issues();if(invalid.length){feedback(`Cannot export review CSV: ${invalid.length} clips are approved without an original transcript or corrected without a replacement. First: ${invalid[0].clip_id}`);return;}
+function cell(v){let s=String(v??'');if(/^[\s]*[=+\-@]/.test(s)||/^[\t\r\n]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';}
+const lines=[data.fields,...data.clips.map(c=>{const row={...c,...edits.get(c.clip_id)};return data.fields.map(f=>row[f]);})];
+download('reviewed_clip_catalog.csv','\ufeff'+lines.map(line=>line.map(cell).join(',')).join('\r\n')+'\r\n','text/csv;charset=utf-8');feedback('Review CSV download requested. Save progress JSON too if you want to resume in HTML.');};
+$('load').onchange=async event=>{const file=event.target.files[0];if(!file)return;
+try{const saved=JSON.parse(await file.text());if(saved.release_id!==data.release_id||!Array.isArray(saved.reviews)||saved.reviews.length!==data.clips.length)throw Error('This is not a complete review file for this release.');
+const incoming=new Map();for(const r of saved.reviews){if(!edits.has(r.clip_id)||incoming.has(r.clip_id)||!states.includes(r.review_status)||reviewFields.some(f=>typeof r[f]!=='string'))throw Error('Invalid or duplicate review entries.');incoming.set(r.clip_id,Object.fromEntries(reviewFields.map(f=>[f,r[f]])));}
+if(dirty&&!confirm('Replace your unsaved edits with this saved review?'))return;
+for(const [id,entry] of incoming)edits.set(id,entry);dirty=false;render();feedback('Saved review loaded.');
+}catch(error){feedback(`Could not load progress: ${error.message}`);}finally{event.target.value='';}};
+$('search').oninput=()=>{page=0;render();};$('filter').onchange=()=>{page=0;render();};
+$('previous').onclick=()=>{page--;render();};$('next').onclick=()=>{page++;render();};
+window.addEventListener('beforeunload',event=>{if(dirty){event.preventDefault();event.returnValue='';}});
+render();
+</script>
+</html>

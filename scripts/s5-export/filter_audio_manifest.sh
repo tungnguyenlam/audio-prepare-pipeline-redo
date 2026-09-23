@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec bash "$script_dir/../_common/audio_launcher.sh" "$script_dir/bundle.py" "$@"
+exec bash "$script_dir/../_common/audio_launcher.sh" "$script_dir/filter_audio_manifest.py" "$@"

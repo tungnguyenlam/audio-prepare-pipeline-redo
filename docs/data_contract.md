@@ -497,3 +497,53 @@ corpus DER.
 
 `mix/mix` writes `mixture.wav`, `speech_reference.wav`, `music_reference.wav`
 plus sidecars into `--output-dir`.
+
+## Verifier review handoff
+
+`export_verifier_handoff.sh` publishes one ZIP with one top-level
+`<dataset>_<version>` directory (`_PARTIAL` suffix when applicable). It contains
+`START_HERE.html`, `READ_ME.txt`, `clip_catalog.csv`, `clip_catalog.xlsx`,
+`audio/passed/`, `audio/needs_attention/` (created when needed), and
+`supporting_files/{delivery_summary.txt,needs_attention.csv,release_manifest.json,checksums.sha256}`.
+Audio is byte-for-byte copied, with its original extension and unique clip ID.
+All catalog audio paths are relative to the package root. No symlinks or absolute
+local source paths are included. Runtime exports stay under `.data/`.
+
+CSV, XLSX and HTML share these columns in this order:
+`clip_id, audio_path, duration_s, verifier_status, reason, transcript_status,
+transcript, emotion, review_status, corrected_transcript, review_notes`.
+`verifier_status` is pass/reject/failed/invalid/incomplete/uncertain/missing;
+`transcript_status` is provided/needs_transcription. Original transcript/emotion
+are taken only from valid completed artifacts. Review columns start pending/empty.
+`needs_attention.csv` lists non-pass rows and passed rows missing transcripts.
+CSV is UTF-8 with BOM, quotes embedded delimiters/newlines and prefixes potentially
+active spreadsheet text with an apostrophe. XLSX uses inline text cells, preserving
+literal formulas as text, and relative external audio hyperlinks. Original text is
+also preserved in JSON. Excel row/cell limits cause an explicit error, never truncation.
+
+`release_manifest.json` has `schema_version: 1`, `release_id`, `fields`, `summary`,
+and `clips`. Clips add source filename/hash, relative verdict filename/hash and
+schema profile; unavailable audio adds `audio_issue`. Summary includes the
+processing status, coverage, human review status, counts, total duration, inventory
+hashes, backend/model and configuration/prompt hashes. Raw provider data stays in
+the original run. Clip IDs hash source path identity plus source hash; they remain
+stable for unchanged source paths and bytes. Moving sources changes IDs.
+
+Expected inventories are supplied explicitly with repeatable `--input-manifest`:
+indexed `entries[].path/sha256` or exported `turns[].clip/clip_sha256`. Each must
+have `complete: true` and no failures for verified coverage. Turns lacking an
+exported clip identity cannot serve as an expected inventory. Duplicate inventory
+paths, extra run clips, duplicate verdicts or mixed configurations are errors.
+Raw response hashes are checked with the production completion helper. Missing or
+failed processing requires remediation or `--allow-partial`; no expected inventory
+means unknown coverage. Passed audio integrity failures always block export.
+
+HTML embeds its data and uses relative audio URLs without local JSON fetches or
+external assets. Saved review JSON contains `release_id` and `reviews` (one unique
+clip ID plus the three review fields for every clip); import requires the same
+release and a valid full set. Review CSV export rejects approved rows without an
+original transcript and corrected rows without replacement text. Excel/CSV edits
+are independent of HTML. Review files are feedback, not changes to source artifacts.
+Checksums cover delivered originals except the checksum file itself; subsequent
+review edits naturally differ. Browser/Excel playback depends on local format and
+application support; original audio is never transcoded during handoff export.

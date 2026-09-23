@@ -352,3 +352,17 @@
 - Added docs/plans/verifier_handoff_export_plan.md proposing a standalone verifier-aware ZIP export with accepted audio, offline listening/search page, CSV catalog, instructions, summary, exclusions and portable provenance/checksums.
 - Defined explicit completeness evidence, partial delivery labeling, source integrity checks, configuration conflict handling, and metadata exceptions across verifier profiles. Existing bundle/index commands do not implement this handoff.
 - Planning only: no implementation, media export, model calls or tests. CLI/launcher changes and runtime validation are not applicable; reviewed the plan and checked the final diff for whitespace errors.
+
+## 2026-09-23 - Implement verifier audio/transcript review handoff
+
+### Decisions and results
+- Updated the handoff plan for an actual human review package: offline HTML listening/search/editing, matching CSV and XLSX catalogs with relative audio paths, original transcripts and separate reviewer status/corrections/notes. HTML saves/loads release-specific progress JSON and downloads review CSV; spreadsheet edits are a separate workflow.
+- Added standalone export_verifier_handoff.py/.sh and its HTML template. XLSX uses stdlib ZIP/XML with inline text, relative audio hyperlinks, frozen/filterable headers and a review-status dropdown; no packages installed. Copy original audio bytes into passed/needs_attention folders and publish a versioned ZIP atomically under .data/ with instructions, summary, attention catalog, provenance and checksums.
+- Separate verifier completion from pending human review. Explicit expected indexed/exported-segment inventories prove coverage; missing/failed/invalid/uncertain/incomplete processing requires remediation or --allow-partial. Partial delivery is labeled visibly, rejected clips remain available for review, and absent transcripts require manual transcription. Missing/changed passed audio, duplicates, mixed settings and conflicting inventories block export. No inference or automatic pipeline chaining.
+- Extracted existing verifier discovery and response integrity into _verifier_artifacts.py for current production/analysis/export consumers; reuse production schema validation across verifier backends. Preserved analysis walk-error handling and production response integrity semantics.
+- Renamed index -> index_audio_manifest, filter -> filter_audio_manifest, export -> export_manifest_table and bundle -> bundle_manifest_audio (Python and Bash). Removed ambiguous old entrypoints without aliases and updated active README/command/verifier/data-contract documentation.
+
+### Validation
+- Python syntax compilation passed for all five export commands and the three changed verifier modules. Bash syntax and --help passed for all five s5-export launchers. Verifier analysis and Gemini launcher --help passed. Embedded browser JavaScript syntax passed node --check.
+- Reviewed new implementation, template, shared helper changes and final diff; checked renamed-command references and git diff whitespace. Included intended new files.
+- No tests were written or run per repository instructions. No model calls, media exports or package installation. End-to-end export, archive relocation, browser playback/save/load and Excel opening remain unverified; syntax/help checks do not establish runtime acceptance.

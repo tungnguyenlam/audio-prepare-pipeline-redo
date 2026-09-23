@@ -29,6 +29,7 @@ from _common.files import (  # noqa: E402
     safe_name,
     write_json,
 )
+from _verifier_artifacts import verifier_json_paths
 from _verdicts import (
     ACOUSTIC_FAILURE_CODES,
     ELIGIBILITY_FAILURE_CODES,
@@ -1321,22 +1322,10 @@ def main() -> int:
         except (OSError, ValueError):
             pass
     progress("ANALYZE_START", f"{verdict_dir} -> {output_dir}")
-    json_files = []
-
-    def walk_error(error: OSError) -> None:
-        parser.error(str(error))
-
-    for root, dirs, files in os.walk(verdict_dir, onerror=walk_error):
-        dirs[:] = sorted(
-            name for name in dirs
-            if name not in {"plot", "plots", "work", "comparisons", "experiments", "__pycache__"}
-            and not name.startswith(".") and (Path(root) / name).resolve() != output_dir
-        )
-        json_files.extend(
-            Path(root) / name
-            for name in sorted(files)
-            if name.endswith(".json") and not name.startswith(".") and name not in {"analysis.json", "report.json"}
-        )
+    try:
+        json_files = verifier_json_paths(verdict_dir, exclude=output_dir)
+    except OSError as exc:
+        parser.error(str(exc))
     progress("ANALYZE_LOAD", f"Loading {len(json_files)} verifier JSON candidate(s)")
     loaded = _parallel_load(json_files, args.concurrency, args.batch_size)
     verifier_artifacts = [

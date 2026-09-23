@@ -11,6 +11,7 @@ from typing import Any
 from _audio import VerifierResponseError
 from _common.files import ROOT, batch, digest, identity, persist_path, progress, read_json, request, resolve_output_dir, resolve_stored_path, write_json
 from artifacts import write_text
+from _verifier_artifacts import response_complete
 from _verdicts import _known_prompts, _validate_verdict
 from _reporting import item_detail, new_run_stats, record_result, report_cost_summary
 
@@ -316,20 +317,6 @@ def run_verifier(
                 _run_post_verification_analysis(args, verdict_dir)
 
 
-def _response_complete(destination: Path, artifact: dict[str, Any]) -> bool:
-    response = artifact.get("response")
-    if not isinstance(response, dict):
-        return False
-    if response.get("available") is False:
-        return False
-    path_value = response.get("path")
-    expected_sha = response.get("sha256")
-    if not isinstance(path_value, str) or not isinstance(expected_sha, str):
-        return False
-    response_path = resolve_stored_path(path_value, base=destination.parent)
-    return response_path.is_file() and digest(response_path) == expected_sha
-
-
 def pending_verifier_pairs(
     *,
     args: Any,
@@ -360,10 +347,10 @@ def pending_verifier_pairs(
                 _, schema_error = _validate_verdict(
                     old.get("verdict"), prompt, backend, known_prompts
                 )
-                response_complete = (
-                    old.get("status") in (None, "success") and _response_complete(destination, old)
+                response_is_complete = (
+                    old.get("status") in (None, "success") and response_complete(destination, old)
                 )
-                if schema_error is None and response_complete:
+                if schema_error is None and response_is_complete:
                     continue
             if matches and getattr(args, "continue_run", False):
                 # Retry only matching failed/incomplete artifacts. Conflicting

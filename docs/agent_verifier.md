@@ -201,3 +201,41 @@ Creates an empty verifier-development workspace
 `.data/s4-agent/verifier/experiments/NAME/` (`experiment.json`, `templates.json`,
 `manifests/*.jsonl`, `audio/`, `reports/`, `checkpoints/`). It refuses an existing
 target and performs no model or data operations.
+
+## Handing a run to a transcript reviewer
+
+Use `scripts/s5-export/export_verifier_handoff.sh` with one run directory, its
+expected audio inventory, and a ZIP destination under `.data/exports/`. See
+[command example](commands.md#dataset-export-s5-export). This standalone offline
+command reads existing artifacts; it never regenerates verifier results.
+
+A finished verifier run can include rejected clips. The export keeps two distinct
+states: verifier processing complete/partial, and human transcript review pending.
+A complete expected inventory plus valid results proves processing completion;
+discovered files alone cannot prove coverage. Resolve missing/failed results using
+the original verifier command and settings before export. For Gemini, existing
+`--continue` behavior applies; saved Batch failures may require a fresh explicit
+regeneration as described above. Export itself never retries or spends model usage.
+Alternatively, `--allow-partial` issues a visibly labeled partial review package.
+
+The recipient extracts the ZIP and opens `START_HERE.html` to listen, search,
+filter and enter corrected transcripts/review notes. They save progress JSON to
+resume and download a review CSV to return. HTML changes are not saved automatically.
+Alternatively they edit `clip_catalog.xlsx` in Excel or `clip_catalog.csv`, both
+of which include relative audio paths and the original transcripts. XLSX paths are
+clickable links. Keep catalogs at the package root; keep all audio folders together.
+Choose one editing method; spreadsheet changes do not sync to HTML.
+
+Rejected/unresolved audio is separated in `audio/needs_attention/`, with an audit
+CSV. Unavailable/changed non-pass audio is omitted in a partial delivery but its
+issue remains visible. Missing transcripts explicitly say `needs_transcription`:
+the reviewer can enter a full transcript or exclude the clip. Missing emotion is
+shown as not provided. Narrow/custom verifier profiles and VibeVoice do not promise
+the acoustic v3 transcript/emotion fields. No invalid model transcript is promoted
+into the original transcript column.
+
+Review status is `pending`, `approved` (original text correct), `corrected` (full
+replacement supplied), or `exclude`. Human feedback never changes original model
+outcomes or resolves processing errors; the sender must assess corrections and
+resolve remaining processing separately. This package is a review handoff, not a
+declaration that every delivered clip is approved training data.

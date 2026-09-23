@@ -568,8 +568,39 @@ count and audio seconds for each minimum-duration cutoff.
 ### Dataset export (`s5-export`)
 
 ```bash
-bash scripts/s5-export/index.sh  --input-dir .data/audio --output-manifest .data/manifest.json --tag raw
-bash scripts/s5-export/filter.sh --input-manifest .data/manifest.json --output-manifest .data/filtered.json --min-duration 1.0 --max-duration 15.0
-bash scripts/s5-export/export.sh --input-manifest .data/filtered.json --output-file .data/dataset.jsonl --format jsonl
-bash scripts/s5-export/bundle.sh --input-manifest .data/filtered.json --output-file .data/bundle.zip
+bash scripts/s5-export/index_audio_manifest.sh  --input-dir .data/audio --output-manifest .data/manifest.json --tag raw
+bash scripts/s5-export/filter_audio_manifest.sh --input-manifest .data/manifest.json --output-manifest .data/filtered.json --min-duration 1.0 --max-duration 15.0
+bash scripts/s5-export/export_manifest_table.sh --input-manifest .data/filtered.json --output-file .data/dataset.jsonl --format jsonl
+bash scripts/s5-export/bundle_manifest_audio.sh --input-manifest .data/filtered.json --output-file .data/bundle.zip
 ```
+
+The four manifest commands were renamed from `index`, `filter`, `export`, and
+`bundle`, respectively. Update local invocations to the names above; old launchers
+are removed. `export_manifest_table` writes metadata only; `bundle_manifest_audio`
+packs the audio named by a manifest. Neither selects verifier outcomes.
+
+For a nontechnical audio/transcript review handoff:
+
+```bash
+bash scripts/s5-export/export_verifier_handoff.sh \
+  --input-dir .data/s4-agent/verifier/<backend>/<selected-run> \
+  --input-manifest .data/clips/<family>/segments.json \
+  --output-file .data/exports/speech_dataset_v1.zip \
+  --dataset-name speech_dataset --version v1
+```
+
+`--input-manifest` is repeatable and accepts complete indexed audio manifests or
+exported segment manifests with clip paths and SHA-256 values. Select the inventory
+actually submitted to the verifier. A complete run requires valid pass/reject
+results for every expected clip; rejected clips do not make it incomplete.
+Missing/failed/uncertain/invalid results or unknown coverage block export unless
+`--allow-partial` is explicitly used. Changed/missing passed audio always blocks it.
+Mixed settings or duplicate verdicts require selecting a single run directory.
+
+Output must be a ZIP under `.data/`, outside the run. Use a new version or explicit
+`--overwrite` for an existing destination. No model is called. The ZIP contains
+HTML, CSV **and XLSX**, original audio in `passed/` and `needs_attention/`, instructions,
+summary, provenance and checksums. Human review starts pending. Missing transcripts
+are flagged for manual transcription, not synthesized. See the
+[handoff contract](data_contract.md#verifier-review-handoff) for the exact fields
+and [review workflow](agent_verifier.md#handing-a-run-to-a-transcript-reviewer).
