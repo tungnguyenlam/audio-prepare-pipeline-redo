@@ -570,15 +570,15 @@ count and audio seconds for each minimum-duration cutoff.
 ### Dataset export (`s5-export`)
 
 ```bash
-bash scripts/s5-export/index_audio_manifest.sh  --input-dir .data/audio --output-manifest .data/manifest.json --tag raw
-bash scripts/s5-export/filter_audio_manifest.sh --input-manifest .data/manifest.json --output-manifest .data/filtered.json --min-duration 1.0 --max-duration 15.0
-bash scripts/s5-export/export_manifest_table.sh --input-manifest .data/filtered.json --output-file .data/dataset.jsonl --format jsonl
-bash scripts/s5-export/bundle_manifest_audio.sh --input-manifest .data/filtered.json --output-file .data/bundle.zip
+bash scripts/s5-export/index.sh  --input-dir .data/audio --output-manifest .data/manifest.json --tag raw
+bash scripts/s5-export/filter.sh --input-manifest .data/manifest.json --output-manifest .data/filtered.json --min-duration 1.0 --max-duration 15.0
+bash scripts/s5-export/export.sh --input-manifest .data/filtered.json --output-file .data/dataset.jsonl --format jsonl
+bash scripts/s5-export/bundle.sh --input-manifest .data/filtered.json --output-file .data/bundle.zip
 ```
 
-The four manifest commands were renamed from `index`, `filter`, `export`, and
-`bundle`, respectively. Update local invocations to the names above; old launchers
-are removed. `export_manifest_table` writes metadata only; `bundle_manifest_audio`
+The four manifest commands use the short names `index`, `filter`, `export`, and
+`bundle`; the longer `*_audio_manifest`/`*_manifest_table`/`bundle_manifest_audio`
+launchers are removed. `export` writes metadata only; `bundle`
 packs the audio named by a manifest. Neither selects verifier outcomes.
 
 For a nontechnical audio/transcript review handoff (only these two paths are needed):
