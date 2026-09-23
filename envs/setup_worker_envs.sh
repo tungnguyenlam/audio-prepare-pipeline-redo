@@ -6,7 +6,6 @@ cd "$REPO_ROOT"
 
 print_usage() {
     echo "Usage: $0 [TARGET] [OPTIONS]"
-    echo ""
     echo "Device-agnostic environment provisioner for audio processing models."
     echo "If TARGET is omitted, displays current status and prompts interactively."
     echo ""
@@ -241,12 +240,11 @@ setup_main() {
     if [ ! -d "$venv_dir" ]; then
         echo "📦 Creating Python 3.13 virtual environment ${venv_dir} via uv..."
         uv venv --python 3.13 "$venv_dir"
-        uv sync
+        UV_PROJECT_ENVIRONMENT="$venv_dir" uv sync
     fi
 
     echo "⚙️ Configuring hardware acceleration..."
     reconcile_py313_hardware "$venv_dir"
-    ln -sfn "$venv_dir" ".venv"
 
     echo "✅ Verifying Main installation..."
     "${venv_dir}/bin/python" -c "
@@ -277,7 +275,6 @@ setup_audio() {
     echo "📦 Installing audio requirements..."
     uv pip install --python "${venv_dir}/bin/python" -r "$REPO_ROOT/envs/requirements-audio.txt"
     ensure_silero_model
-    ln -sfn "$venv_dir" ".venv-audio"
     echo "🎉 ${venv_dir} ready!"
 }
 
@@ -323,7 +320,6 @@ print(f'   -> Torch: {torch.__version__} ({dev_type})')
 import demucs, mel_band_roformer, bs_roformer
 print('   -> Demucs, MelBandRoformer, BSRoformer: successfully loaded')
 "
-    ln -sfn "$venv_dir" ".venv-separation"
     echo "🎉 ${venv_dir} ready!"
 }
 
@@ -362,7 +358,6 @@ import pyannote.audio
 print('   -> Pyannote Audio: successfully loaded')
 "
     ensure_silero_model
-    ln -sfn "$venv_dir" ".venv-pyannote"
     echo "🎉 ${venv_dir} ready!"
 }
 
@@ -404,7 +399,6 @@ print(f'   -> Torch: {torch.__version__} ({dev_type})')
 import transformers, peft, accelerate
 print('   -> Transformers, PEFT, Accelerate: successfully loaded')
 "
-    ln -sfn "$venv_dir" ".venv-verify"
     echo "🎉 ${venv_dir} ready!"
 }
 
@@ -443,7 +437,6 @@ import whisper_timestamped
 print('   -> Whisper-timestamped: successfully loaded')
 "
     ensure_silero_model
-    ln -sfn "$venv_dir" ".venv-align"
     echo "🎉 ${venv_dir} ready!"
 }
 
@@ -482,7 +475,6 @@ import nemo.collections.asr.models as nemo_asr
 print('   -> NeMo ASR collection: successfully loaded')
 "
     ensure_silero_model
-    ln -sfn "$venv_dir" ".venv-sortformer"
     echo "🎉 ${venv_dir} ready!"
 }
 
@@ -521,7 +513,6 @@ import modelscope
 print(f'   -> ModelScope: {modelscope.__version__} successfully loaded')
 "
     ensure_silero_model
-    ln -sfn "$venv_dir" ".venv-3dspeaker"
     echo "🎉 ${venv_dir} ready!"
 }
 
@@ -566,7 +557,6 @@ import librosa
 print(f'   -> Librosa: {librosa.__version__} successfully loaded')
 "
     ensure_silero_model
-    ln -sfn "$venv_dir" ".venv-vibevoice"
     echo "🎉 ${venv_dir} ready!"
 }
 
@@ -665,18 +655,15 @@ print(f'   -> Torch: {torch.__version__} ({dev_type})')
 print('   -> DiariZenPipeline: successfully loaded')
 "
     ensure_silero_model
-    ln -sfn "$venv_dir" ".venv-diarizen"
     echo "🎉 ${venv_dir} ready!"
 }
 
 setup_minicpmo() {
     bash "$REPO_ROOT/envs/setup_minicpmo_env.sh" "$@"
-    ln -sfn ".venvs/minicpmo" ".venv-minicpmo"
 }
 
 setup_kimi() {
     bash "$REPO_ROOT/envs/setup_kimi_env.sh" "$@"
-    ln -sfn ".venvs/kimi" ".venv-kimi"
 }
 
 setup_core() {

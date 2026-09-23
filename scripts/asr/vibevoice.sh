@@ -11,8 +11,8 @@ python_bin="${ASR_PYTHON:-${VIBEVOICE_PYTHON:-}}"
 if [[ -z "$python_bin" ]]; then
     if [[ -x "$repo_root/.venvs/vibevoice/bin/python" ]]; then
         python_bin="$repo_root/.venvs/vibevoice/bin/python"
-    elif [[ -x "$repo_root/.venv-vibevoice/bin/python" ]]; then
-        python_bin="$repo_root/.venv-vibevoice/bin/python"
+    elif [[ -x "$repo_root/.venvs/main/bin/python" ]]; then
+        python_bin="$repo_root/.venvs/main/bin/python"
     else
         python_bin="$repo_root/.venvs/vibevoice/bin/python"
     fi

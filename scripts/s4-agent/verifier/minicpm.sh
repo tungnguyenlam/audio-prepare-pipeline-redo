@@ -5,8 +5,6 @@ python_bin="${VERIFIER_PYTHON:-}"
 if [[ -z "$python_bin" ]]; then
     if [[ -x "$repo_root/.venvs/minicpmo/bin/python" ]]; then
         python_bin="$repo_root/.venvs/minicpmo/bin/python"
-    elif [[ -x "$repo_root/.venv-minicpmo/bin/python" ]]; then
-        python_bin="$repo_root/.venv-minicpmo/bin/python"
     else
         python_bin="$repo_root/.venvs/minicpmo/bin/python"
     fi

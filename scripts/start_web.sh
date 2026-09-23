@@ -26,9 +26,10 @@ if [ -n "$OCCUPIED_PIDS" ]; then
 fi
 
 # Ensure python virtual environment exists
-if [ ! -d ".venv" ]; then
-    echo "📦 Virtual environment .venv not found. Creating with uv..."
-    uv venv
+if [ ! -d ".venvs/main" ]; then
+    echo "📦 Virtual environment .venvs/main not found. Creating with uv..."
+    uv venv --python 3.13 .venvs/main
+    UV_PROJECT_ENVIRONMENT=".venvs/main" uv sync
 fi
 
 # Detect hardware accelerators: AMD GPU vs NVIDIA GPU vs Apple Silicon vs CPU
@@ -151,37 +152,39 @@ if [ "$HAS_AMD_GPU" -eq 1 ]; then
     fi
     export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1
 
-    # Reconcile primary .venv
-    reconcile_venv_rocm ".venv"
+    # Reconcile primary .venvs/main
+    reconcile_venv_rocm ".venvs/main"
 
     # Reconcile any existing isolated worker environments
-    for venv_path in ".venv-sortformer" ".venv-3dspeaker" ".venv-vibevoice"; do
+    for venv_path in ".venvs/sortformer" ".venvs/3dspeaker" ".venvs/vibevoice"; do
         if [ -d "$venv_path" ]; then
             reconcile_venv_rocm "$venv_path"
         fi
     done
 
-    if [ -d ".venv-diarizen" ]; then
-        reconcile_diarizen_hardware ".venv-diarizen"
+    if [ -d ".venvs/diarizen" ]; then
+        reconcile_diarizen_hardware ".venvs/diarizen"
     fi
 
 elif [ "$HAS_NVIDIA_GPU" -eq 1 ]; then
     echo "🔍 Detected NVIDIA GPU hardware."
 
-    # Reconcile primary .venv
-    reconcile_venv_cuda ".venv"
+    # Reconcile primary .venvs/main
+    reconcile_venv_cuda ".venvs/main"
 
     # Reconcile any existing isolated worker environments
-    for venv_path in ".venv-sortformer" ".venv-3dspeaker" ".venv-vibevoice"; do
+    for venv_path in ".venvs/sortformer" ".venvs/3dspeaker" ".venvs/vibevoice"; do
         if [ -d "$venv_path" ]; then
             reconcile_venv_cuda "$venv_path"
         fi
     done
 
-    if [ -d ".venv-diarizen" ]; then
-        reconcile_diarizen_hardware ".venv-diarizen"
+    if [ -d ".venvs/diarizen" ]; then
+        reconcile_diarizen_hardware ".venvs/diarizen"
     fi
 fi
 
 echo "🚀 Starting the shared Sonic backend on http://${HOST}:${PORT}..."
-exec uv run --no-sync python scripts/start_web.py --host "$HOST" --port "$PORT"
+export VIRTUAL_ENV="$REPO_ROOT/.venvs/main"
+export PATH="$REPO_ROOT/.venvs/main/bin:$PATH"
+exec "$REPO_ROOT/.venvs/main/bin/python" scripts/start_web.py --host "$HOST" --port "$PORT"

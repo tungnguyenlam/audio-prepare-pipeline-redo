@@ -7,7 +7,7 @@ candidates=()
 if [[ -n "${AUDIO_PYTHON:-}" ]]; then
     candidates+=("${AUDIO_PYTHON}")
 fi
-for env_dir in .venvs/3dspeaker .venv-3dspeaker .venvs/audio .venv-audio .venvs/main .venv; do
+for env_dir in .venvs/3dspeaker .venvs/audio .venvs/main; do
     if [[ -x "$repo_root/$env_dir/bin/python" ]]; then
         candidates+=("$repo_root/$env_dir/bin/python")
     fi

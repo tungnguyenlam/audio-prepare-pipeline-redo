@@ -5,8 +5,6 @@ python_bin="${VERIFIER_PYTHON:-}"
 if [[ -z "$python_bin" ]]; then
     if [[ -x "$repo_root/.venvs/moss/bin/python" ]]; then
         python_bin="$repo_root/.venvs/moss/bin/python"
-    elif [[ -x "$repo_root/.venv-moss/bin/python" ]]; then
-        python_bin="$repo_root/.venv-moss/bin/python"
     elif [[ -x "$repo_root/.venvs/verify/bin/python" ]]; then
         python_bin="$repo_root/.venvs/verify/bin/python"
     elif [[ -x "$repo_root/.venvs/main/bin/python" ]]; then

@@ -5,8 +5,8 @@ python_bin="${DIARIZATION_PYTHON:-}"
 if [[ -z "$python_bin" ]]; then
     if [[ -x "$repo_root/.venvs/sortformer/bin/python" ]]; then
         python_bin="$repo_root/.venvs/sortformer/bin/python"
-    elif [[ -x "$repo_root/.venv-sortformer/bin/python" ]]; then
-        python_bin="$repo_root/.venv-sortformer/bin/python"
+    elif [[ -x "$repo_root/.venvs/main/bin/python" ]]; then
+        python_bin="$repo_root/.venvs/main/bin/python"
     else
         python_bin="$repo_root/.venvs/sortformer/bin/python"
     fi

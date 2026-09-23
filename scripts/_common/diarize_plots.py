@@ -372,7 +372,7 @@ def _write_duration_histogram(
     end = math.ceil(max(durations) / step) * step
     if end <= start:
         end = start + step
-    num_bins = max(1, round((end - start) / step))
+    num_bins = max(1, round((end - start) / step))\
     bins = [round(start + i * step, 4) for i in range(num_bins + 1)]
     ax.hist(durations, bins=bins, color='#3b82f6', edgecolor='white')
 
@@ -498,7 +498,7 @@ def _audio_python() -> Path:
         path = Path(env)
         if path.is_file() and os.access(path, os.X_OK):
             return path
-    for candidate in ('.venvs/audio', '.venv-audio', '.venvs/main', '.venv'):
+    for candidate in ('.venvs/audio', '.venvs/main'):
         path = ROOT / candidate / 'bin/python'
         if path.is_file() and os.access(path, os.X_OK):
             return path

@@ -204,5 +204,4 @@ for executable in ("deno", "node", "npm", "bun", "qjs"):
         raise SystemExit(f"Missing JavaScript runtime: {executable}")
 '
 
-ln -sfn "$VENV_DIR" "$REPO_ROOT/.venv-download"
 echo "🎉 ${VENV_DIR} ready!"

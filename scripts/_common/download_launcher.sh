@@ -7,12 +7,9 @@ shift
 
 python_bin="${DOWNLOAD_PYTHON:-}"
 if [[ -z "$python_bin" ]]; then
-    for candidate in .venvs/download .venv-download; do
-        if [[ -x "$repo_root/$candidate/bin/python" ]]; then
-            python_bin="$repo_root/$candidate/bin/python"
-            break
-        fi
-    done
+    if [[ -x "$repo_root/.venvs/download/bin/python" ]]; then
+        python_bin="$repo_root/.venvs/download/bin/python"
+    fi
 fi
 
 if [[ -z "$python_bin" || ! -x "$python_bin" ]]; then
@@ -31,12 +28,9 @@ if [[ -z "$python_bin" || ! -x "$python_bin" ]]; then
     if [[ "$auto_provision" == "1" ]]; then
         echo "🚀 Provisioning download environment via: $setup_script download" >&2
         bash "$setup_script" download
-        for candidate in .venvs/download .venv-download; do
-            if [[ -x "$repo_root/$candidate/bin/python" ]]; then
-                python_bin="$repo_root/$candidate/bin/python"
-                break
-            fi
-        done
+        if [[ -x "$repo_root/.venvs/download/bin/python" ]]; then
+            python_bin="$repo_root/.venvs/download/bin/python"
+        fi
     fi
 fi
 
