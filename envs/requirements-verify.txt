@@ -1,0 +1,13 @@
+# HF/Gemma and HTTP verifier environment (.venv-verify).
+numpy>=2.4.6
+soundfile>=0.14.0
+librosa>=0.11.0
+torch>=2.4.0
+torchaudio>=2.4.0
+torchvision>=0.19.0
+pillow>=10.0.0
+transformers>=5.10.1
+accelerate>=1.14.0
+peft>=0.14.0
+pysocks>=1.7.1
+httpx[socks]>=0.28.1

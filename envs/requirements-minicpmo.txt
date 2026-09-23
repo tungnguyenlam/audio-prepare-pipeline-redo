@@ -1,0 +1,11 @@
+# Requirements for MiniCPM-o (tested with openbmb/MiniCPM-o-4_5 and MiniCPM-o-2_6)
+# OpenBMB specifically requires transformers==4.51.0 and torch <= 2.8.0.
+# Keep in an isolated environment (.venv-minicpmo) rather than downgrading the primary pipeline environment.
+torch>=2.3.0,<=2.8.0
+torchaudio<=2.8.0
+transformers==4.51.0
+accelerate
+minicpmo-utils>=1.0.5
+librosa
+pysocks>=1.7.1
+httpx[socks]>=0.28.1
