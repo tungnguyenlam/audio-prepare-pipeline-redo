@@ -379,13 +379,14 @@ def pending_verifier_pairs(
 ) -> list[tuple[Path, Path]]:
     """Preflight verdict outputs so a paid batch only contains missing artifacts."""
     known_prompts = _known_prompts()
-    prompt = parameters.get("prompt")
+    continuing = getattr(args, "continue_run", False)
+    kept_other_settings = 0
     pending = []
     for source, destination in pairs:
         wanted = request(identity(source), "verify", parameters, backend)
         response_path = destination.with_suffix(".txt")
         if (destination.exists() or response_path.exists()) and not args.overwrite:
-            if getattr(args, "continue_run", False) and not destination.exists():
+            if continuing and not destination.exists():
                 # Publication may have stopped between the text and JSON writes.
                 # Batch can recover its response; synchronous modes must retry.
                 pending.append((source, destination))
@@ -396,18 +397,21 @@ def pending_verifier_pairs(
                 )
             old = read_json(destination)
             matches = all(old.get(key) == value for key, value in wanted.items())
-            if matches and "verdict" in old:
+            if (matches or continuing) and "verdict" in old:
+                # Validate against the prompt that produced the artifact.
+                old_prompt = (old.get("parameters") or {}).get("prompt")
                 _, schema_error = _validate_verdict(
-                    old.get("verdict"), prompt, backend, known_prompts
+                    old.get("verdict"), old_prompt, backend, known_prompts
                 )
                 response_is_complete = (
                     old.get("status") in (None, "success") and response_complete(destination, old)
                 )
                 if schema_error is None and response_is_complete:
+                    # --continue keeps valid outputs made with other settings;
+                    # delete an output to regenerate it with the current ones.
+                    kept_other_settings += not matches
                     continue
-            if matches and getattr(args, "continue_run", False):
-                # Retry only matching failed/incomplete artifacts. Conflicting
-                # source, prompt, or generation settings still require overwrite.
+            if continuing:
                 pending.append((source, destination))
                 continue
             if matches and old.get("status") == "fail":
@@ -418,6 +422,11 @@ def pending_verifier_pairs(
                     f"Cached failed verifier artifact ({code}: {message}): "
                     f"{destination}; use --overwrite to retry"
                 )
-            raise ValueError(f"Conflicting output: {destination}; use --overwrite")
+            raise ValueError(f"Conflicting output: {destination}; use --continue or --overwrite")
         pending.append((source, destination))
+    if kept_other_settings:
+        progress(
+            "VERIFIER_CONTINUE",
+            f"Kept {kept_other_settings} complete output(s) made with other prompt/settings",
+        )
     return pending
