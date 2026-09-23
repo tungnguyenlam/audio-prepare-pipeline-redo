@@ -1,4 +1,4 @@
-"""Package one verifier run for offline audio and transcript review (HTML, CSV, XLSX)."""
+"""Package selected verifier results for offline audio and transcript review (HTML, CSV, XLSX)."""
 from __future__ import annotations
 
 from collections import Counter
@@ -6,6 +6,7 @@ import csv
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -18,7 +19,7 @@ from xml.etree import ElementTree as ET
 SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
 sys.path.insert(0, str(SCRIPTS / 's4-agent' / 'verifier'))
-from _common.files import (AUDIO_SUFFIXES, ROOT, LoggingArgumentParser, digest, probe,
+from _common.files import (AUDIO_SUFFIXES, ROOT, LoggingArgumentParser, digest,
                            progress, read_json, resolve_stored_path, safe_name, write_json)
 from _verdicts import _known_prompts, _validate_verdict
 from _verifier_artifacts import response_complete, verifier_json_paths
@@ -33,9 +34,10 @@ def fingerprint(value: object) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
-def expected_inputs(paths: list[Path]) -> tuple[dict, bool]:
+def expected_inputs(paths: list[Path]) -> tuple[dict, bool, dict]:
     """Accept existing indexed audio manifests or exported segments manifests."""
     expected = {}
+    durations = {}
     complete = bool(paths)
     for path in paths:
         data = read_json(path)
@@ -45,14 +47,16 @@ def expected_inputs(paths: list[Path]) -> tuple[dict, bool]:
         if isinstance(data.get('entries'), list):
             if not all(isinstance(item, dict) for item in data['entries']):
                 raise ValueError('Expected inventory entries must be objects')
-            entries = [(item.get('path'), item.get('sha256'), False) for item in data['entries']]
+            entries = [(item.get('path'), item.get('sha256'), False, item.get('duration_s')) for item in data['entries']]
         elif isinstance(data.get('turns'), list):
             if not all(isinstance(item, dict) for item in data['turns']):
                 raise ValueError('Expected segment turns must be objects')
-            entries = [(item.get('clip'), item.get('clip_sha256'), True) for item in data['turns']]
+            entries = [(item.get('clip'), item.get('clip_sha256'), True,
+                        item['end_s'] - item['start_s'] if all(isinstance(item.get(key), (int, float))
+                        for key in ('start_s', 'end_s')) else None) for item in data['turns']]
         else:
             raise ValueError('Expected inventory must contain entries or exported turns')
-        for name, sha, relative_clip in entries:
+        for name, sha, relative_clip, duration in entries:
             if not isinstance(name, str) or not name or not isinstance(sha, str) or not re.fullmatch(r'[0-9a-f]{64}', sha):
                 raise ValueError('Every expected clip needs a path and SHA-256; use an exported or indexed manifest')
             audio = ((path.parent / name).resolve() if relative_clip
@@ -60,14 +64,17 @@ def expected_inputs(paths: list[Path]) -> tuple[dict, bool]:
             if audio in expected:
                 raise ValueError('Duplicate audio in expected inventories; select non-overlapping manifests')
             expected[audio] = sha
+            if isinstance(duration, (int, float)) and math.isfinite(duration) and duration >= 0:
+                durations[audio] = duration
     if paths and not expected:
         raise ValueError('Expected inventory is empty')
-    return expected, complete
+    return expected, complete, durations
 
 
-def collect_run(directory: Path, manifests: list[Path]) -> tuple[list[dict], dict]:
-    expected, inventory_complete = expected_inputs(manifests)
-    artifacts = {}
+def collect_run(directory: Path, manifests: list[Path], configuration: str | None = None) -> tuple[list[dict], dict]:
+    expected, inventory_complete, durations = expected_inputs(manifests)
+    candidates = []
+    ignored = 0
     configurations = {}
     for path in verifier_json_paths(directory):
         try:
@@ -84,8 +91,9 @@ def collect_run(directory: Path, manifests: list[Path]) -> tuple[list[dict], dic
         if not isinstance(source, dict) or not isinstance(source.get('path'), str) or not source['path']:
             raise ValueError(f'Verifier artifact has no source identity: {path.name}')
         audio = resolve_stored_path(source['path'], base=path.parent)
-        if audio in artifacts:
-            raise ValueError('Multiple verdicts for one clip; select one final run directory')
+        if expected and audio not in expected:
+            ignored += 1
+            continue
         params = data.get('parameters')
         if not isinstance(params, dict):
             raise ValueError('Verifier parameters are missing or malformed')
@@ -94,13 +102,34 @@ def collect_run(directory: Path, manifests: list[Path]) -> tuple[list[dict], dic
         configurations[config_hash] = {'backend': data.get('model'), 'model': params.get('model_id', ''),
                                      'settings_sha256': config_hash,
                                      'prompt_sha256': fingerprint(params.get('prompt'))}
-        artifacts[audio] = (path, data)
-    if not artifacts:
-        raise ValueError('No production verifier artifacts found')
-    if len(configurations) != 1:
-        raise ValueError('Mixed verifier configurations; select one model/prompt/settings run')
-    if expected and artifacts.keys() - expected.keys():
-        raise ValueError('Run contains clips outside the expected inventory; select the matching run/inventory')
+        candidates.append((audio, path, data, config_hash))
+    if not candidates:
+        raise ValueError('No verifier results match the supplied inventory. Check --input-dir and source paths; no files were exported.')
+    if ignored:
+        progress('HANDOFF_SELECT', f'Ignored {ignored} verdicts outside the supplied inventory')
+    if configuration:
+        matches = [key for key in configurations if key.startswith(configuration)]
+        if len(matches) != 1:
+            raise ValueError('--configuration must uniquely match one settings hash: ' + ', '.join(sorted(configurations)))
+        candidates = [item for item in candidates if item[3] == matches[0]]
+    artifacts = {}
+    conflicts = []
+    for audio, path, data, config_hash in candidates:
+        if audio in artifacts:
+            conflicts.append(audio)
+        artifacts[audio] = (path, data, config_hash)
+    if conflicts:
+        lines = [f'{len(set(conflicts))} clips have multiple verifier results. No result was chosen automatically.',
+                 'Narrow --input-dir to a listed folder or add --configuration HASH (unique prefix accepted):']
+        for key in sorted({item[3] for item in candidates}):
+            group = [item for item in candidates if item[3] == key]
+            folders = sorted({item[1].parent.relative_to(directory).as_posix() for item in group})
+            lines.append(f'  --configuration {key}: {len(group)} results; folders: {", ".join(folders[:5])}')
+        raise ValueError('\n'.join(lines))
+    selected = sorted({item[3] for item in candidates})
+    configurations = {key: configurations[key] for key in selected}
+    if len(configurations) > 1:
+        progress('HANDOFF_SELECT', f'{len(configurations)} settings groups; each selected clip has exactly one result. All groups will be recorded.')
     known = _known_prompts()
     rows = []
     for audio in sorted(expected.keys() | artifacts.keys(), key=str):
@@ -109,7 +138,8 @@ def collect_run(directory: Path, manifests: list[Path]) -> tuple[list[dict], dic
                    transcript_status='needs_transcription', schema_profile='', source_name=audio.name,
                    source_sha256=expected.get(audio, ''), verdict_sha256='')
         if audio in artifacts:
-            path, data = artifacts[audio]
+            path, data, config_hash = artifacts[audio]
+            row["configuration_sha256"] = config_hash
             source_sha = data['source'].get('sha256', '')
             if not isinstance(source_sha, str) or not re.fullmatch(r'[0-9a-f]{64}', source_sha):
                 raise ValueError('Verifier source hash is missing or invalid')
@@ -148,7 +178,7 @@ def collect_run(directory: Path, manifests: list[Path]) -> tuple[list[dict], dic
             row['audio_issue'] = 'Audio hash mismatch'
         else:
             row['_source'] = audio
-            row['duration_s'] = probe(audio)['duration_s']
+            row['duration_s'] = durations.get(audio, '')
         if row.get('audio_issue'):
             if row['verifier_status'] == 'pass':
                 raise ValueError('A passed clip has missing or changed audio; restore it before export')
@@ -169,7 +199,8 @@ def collect_run(directory: Path, manifests: list[Path]) -> tuple[list[dict], dic
                'needs_transcription': sum(row['transcript_status'] == 'needs_transcription' for row in rows),
                'audio_files': sum(bool(row['audio_path']) for row in rows),
                'duration_s': round(sum(row['duration_s'] or 0 for row in rows), 3),
-               'configuration': next(iter(configurations.values())),
+               'configurations': list(configurations.values()),
+               'unknown_duration_clips': sum(bool(row['audio_path']) and row['duration_s'] == '' for row in rows),
                'schema_profiles': sorted({row['schema_profile'] for row in rows if row['schema_profile']}),
                'inventory_sha256': [digest(path) for path in manifests]}
     return rows, summary
@@ -246,28 +277,36 @@ def write_excel(path: Path, rows: list[dict]) -> None:
 
 def main() -> int:
     parser = LoggingArgumentParser(description=__doc__)
-    parser.add_argument('--input-dir', '-id', type=Path, required=True, help='One final verifier run directory')
+    parser.add_argument('--input-dir', '-id', type=Path, required=True, help='Verifier folder to search recursively; manifest selects its clips')
     parser.add_argument('--input-manifest', '-im', type=Path, action='append', default=[], help='Expected indexed audio or exported segments manifest; repeat for multiple families')
-    parser.add_argument('--output-file', '-of', type=Path, required=True, help='Exact ZIP destination under .data/')
-    parser.add_argument('--dataset-name', default='speech_dataset', help='Delivery name')
+    parser.add_argument('--output-file', '-of', type=Path, help='Exact ZIP destination under .data/; default .data/s5-export/<dataset>_<version>.zip')
+    parser.add_argument('--dataset-name', help='Delivery name; defaults to manifest family or input folder name')
+    parser.add_argument('--configuration', help='Select one settings hash or unique prefix when clips have multiple results')
     parser.add_argument('--version', default='v1', help='Delivery version')
     parser.add_argument('--allow-partial', action='store_true', help='Explicitly deliver unresolved processing or unknown input coverage')
     parser.add_argument('--overwrite', action='store_true', help='Replace an existing ZIP')
     args = parser.parse_args()
-    directory, destination = args.input_dir.resolve(), args.output_file.resolve()
+    directory = args.input_dir.resolve()
+    if not args.dataset_name:
+        manifest = args.input_manifest[0].resolve() if args.input_manifest else None
+        args.dataset_name = (manifest.parent.name if manifest and manifest.name == 'segments.json'
+                             else manifest.stem if manifest else directory.name)
+    default_name = safe_name(args.dataset_name + '_' + args.version) + '.zip'
+    destination = (args.output_file or ROOT / '.data' / 's5-export' / default_name).resolve()
     if not directory.is_dir():
         parser.error('Input directory does not exist')
     if not destination.is_relative_to(ROOT / '.data') or destination.suffix.lower() != '.zip':
-        parser.error('Output must be a .zip under repository .data/')
+        parser.error('Output must be an exact .zip path under .data/, e.g. .data/s5-export/review_v1.zip. Omit --output-file to use ' + str(ROOT / '.data' / 's5-export' / default_name))
     if destination.is_relative_to(directory):
         parser.error('Output must be outside the verifier run')
     if destination.exists() and not args.overwrite:
-        parser.error('Output already exists; choose a new version or use --overwrite')
+        parser.error(f'Output already exists: {destination}. Use --version v2, --output-file, or --overwrite.')
     try:
+        progress('HANDOFF_OUTPUT', str(destination))
         progress('HANDOFF_SCAN', 'Checking verifier artifacts and expected inputs')
-        rows, summary = collect_run(directory, args.input_manifest)
+        rows, summary = collect_run(directory, args.input_manifest, args.configuration)
         if summary['processing_status'] != 'complete' and not args.allow_partial:
-            raise ValueError('Run is not complete: provide a complete expected manifest and resolve failed/missing results, or explicitly use --allow-partial')
+            raise ValueError(f"Cannot label this delivery complete: coverage={summary['coverage']}; outcomes={summary['counts']}; unresolved={summary['unresolved_clips']}. Provide the complete expected --input-manifest and resolve those inputs, or add --allow-partial for an explicitly partial review package.")
         summary.update(dataset_name=args.dataset_name, version=args.version,
                        created_at=datetime.now(timezone.utc).isoformat())
         package_name = safe_name(args.dataset_name + '_' + args.version)
@@ -297,10 +336,11 @@ def main() -> int:
             summary_text = (f"{args.dataset_name} — {args.version}\n"
                             f"Verifier processing: {summary['processing_status'].upper()}\n"
                             f"Input coverage: {summary['coverage']}\nHuman transcript review: PENDING\n"
-                            f"Clips: {len(rows)}; audio files: {summary['audio_files']}; hours: {summary['duration_s'] / 3600:.3f}\n"
+                            f"Clips: {len(rows)}; audio files: {summary['audio_files']}; known hours: {summary['duration_s'] / 3600:.3f}\n"
                             f"Verdicts: {json.dumps(summary['counts'])}\n"
                             f"Needs transcription: {summary['needs_transcription']}\n"
-                            f"Verifier: {summary['configuration']['backend']} / {summary['configuration']['model']}\n"
+                            f"Verifier configurations: {len(summary['configurations'])} (see release_manifest.json)\n"
+                            f"Clips with unknown duration: {summary['unknown_duration_clips']}\n"
                             f"Profiles: {', '.join(summary['schema_profiles'])}\n")
             (support / 'delivery_summary.txt').write_text(summary_text, encoding='utf-8')
             (root / 'READ_ME.txt').write_text(summary_text + '''

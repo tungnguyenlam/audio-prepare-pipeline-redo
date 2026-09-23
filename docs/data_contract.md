@@ -525,15 +525,20 @@ also preserved in JSON. Excel row/cell limits cause an explicit error, never tru
 and `clips`. Clips add source filename/hash, relative verdict filename/hash and
 schema profile; unavailable audio adds `audio_issue`. Summary includes the
 processing status, coverage, human review status, counts, total duration, inventory
-hashes, backend/model and configuration/prompt hashes. Raw provider data stays in
+hashes, a `configurations` list of backend/model/settings/prompt hashes, and
+`unknown_duration_clips`. Each clip with a verifier artifact carries
+`configuration_sha256`. Duration totals cover known inventory durations only. Raw provider data stays in
 the original run. Clip IDs hash source path identity plus source hash; they remain
 stable for unchanged source paths and bytes. Moving sources changes IDs.
 
 Expected inventories are supplied explicitly with repeatable `--input-manifest`:
 indexed `entries[].path/sha256` or exported `turns[].clip/clip_sha256`. Each must
 have `complete: true` and no failures for verified coverage. Turns lacking an
-exported clip identity cannot serve as an expected inventory. Duplicate inventory
-paths, extra run clips, duplicate verdicts or mixed configurations are errors.
+exported clip identity cannot serve as an expected inventory. Duplicate inventory paths are errors. Verdicts outside the explicit inventory are
+ignored before configuration checks. Different configurations across unique clips
+are retained and recorded; competing verdicts for one clip are errors with folder
+and `--configuration HASH` guidance. That selector accepts an unambiguous hash prefix
+and never suppresses missing expected inputs from coverage accounting.
 Raw response hashes are checked with the production completion helper. Missing or
 failed processing requires remediation or `--allow-partial`; no expected inventory
 means unknown coverage. Passed audio integrity failures always block export.
@@ -547,3 +552,13 @@ are independent of HTML. Review files are feedback, not changes to source artifa
 Checksums cover delivered originals except the checksum file itself; subsequent
 review edits naturally differ. Browser/Excel playback depends on local format and
 application support; original audio is never transcoded during handoff export.
+
+The handoff output path is optional: `.data/s5-export/<dataset>_<version>.zip`
+(default version v1). Dataset defaults to the first segment manifest's parent,
+indexed manifest stem, or verifier input folder name. Explicit --output-file stays
+exact and must be a ZIP under .data/. The launcher prefers existing audio/main
+Python environments or AUDIO_PYTHON and falls back to python3, without provisioning.
+Audio bytes/hashes are verified and copied; no audio decoding dependency is needed.
+Catalog duration uses finite nonnegative duration_s from an indexed manifest or
+end_s minus start_s from exported segments. Missing duration stays blank and does
+not falsely contribute zero-duration audio to reported known hours.

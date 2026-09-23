@@ -70,14 +70,17 @@ IDs. The source run stays untouched and supplies full internal provenance.
 2. Extract only currently shared verifier discovery and response integrity helpers
    for production/analysis/export; reuse the production verdict validator across
    all backends. Preserve profile differences, including prompt-free VibeVoice.
-3. Add export_verifier_handoff.py/.sh in s5-export. Select one consistent run;
-   reject duplicates or mixed settings. Reconcile repeatable --input-manifest
+3. Add export_verifier_handoff.py/.sh in s5-export with an optional output path
+   defaulting to .data/s5-export/<manifest-family>_v1.zip. Select expected clips before checking settings;
+   retain differing configurations across unique clips and offer explicit hash/folder
+   selection when competing verdicts exist. Reconcile repeatable --input-manifest
    arguments (indexed audio entries or exported segment turns). Never infer full
    coverage from discovered verdicts alone. Reject malformed/unidentifiable JSON.
 4. Build all catalogs/views from one inventory. Copy audio unchanged; generate
    CSV safely for Excel and XLSX with stdlib ZIP/XML. Keep exact original text in
    XLSX/JSON; reject text exceeding Excel limits rather than truncate it silently.
-5. Stage and atomically publish under .data/; checksum delivered files; prevent
+5. Use existing Python without provisioning audio packages; use inventory duration
+   metadata and explicitly count unavailable durations. Stage and atomically publish under .data/; checksum delivered files; prevent
    accidental overwrite. Document the independent command and recipient workflow.
 
 ## Validation and limits

@@ -38,7 +38,7 @@ const edits = new Map(data.clips.map(c=>[c.clip_id,{review_status:'pending',corr
 let page=0, dirty=false;
 const size=25;
 $('title').textContent = `${data.summary.dataset_name} — ${data.summary.version}`;
-$('summary').textContent = `${data.summary.total_clips} clips · ${(data.summary.duration_s/3600).toFixed(2)} hours · ${data.summary.needs_transcription} need transcription`;
+$('summary').textContent = `${data.summary.total_clips} clips · ${(data.summary.duration_s/3600).toFixed(2)} known hours (${data.summary.unknown_duration_clips} clips without duration metadata) · ${data.summary.needs_transcription} need transcription`;
 $('coverage').textContent = `Verifier processing: ${data.summary.processing_status.toUpperCase()}. Coverage: ${data.summary.coverage}. Human transcript review: PENDING. Verifier counts: ${JSON.stringify(data.summary.counts)}. Profiles: ${data.summary.schema_profiles.join(', ')}. Model labels do not imply human approval.`;
 function node(tag,text){const n=document.createElement(tag); if(text!==undefined)n.textContent=text; return n;}
 function feedback(text){$('feedback').textContent=text;}

@@ -57,7 +57,7 @@ secret-valued options or long prompt contents.
 | Launchers | Default venv (fallbacks) | Override variable |
 |---|---|---|
 | `s1-download/*.sh` | `.venvs/download` (`.venv-download`) | `DOWNLOAD_PYTHON` |
-| `audio/*.sh`, `s5-export/*.sh`, `evaluate/*.sh`, `mix/mix.sh`, `speaker/{enroll,filter}.sh`, `purity/{consensus,cleanup,merge,collar,snap,segment}.sh`, `s4-agent/verifier/{plot_verifier_analysis,analysis,analyze,compare,evaluate_verifier,scaffold_experiment}.sh` | `.venvs/audio` (`.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
+| `audio/*.sh`, `s5-export/*.sh` (handoff exception below), `evaluate/*.sh`, `mix/mix.sh`, `speaker/{enroll,filter}.sh`, `purity/{consensus,cleanup,merge,collar,snap,segment}.sh`, `s4-agent/verifier/{plot_verifier_analysis,analysis,analyze,compare,evaluate_verifier,scaffold_experiment}.sh` | `.venvs/audio` (`.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
 | `s2-separate/*.sh` | `.venvs/separation` (`.venv-separation`, `.venvs/main`, `.venv`) | `SEPARATION_PYTHON` |
 | `s3-diarize/{pyannote,pyannote_31,pyannote_community1}.sh`, `speaker/{score,purity}.sh` | `.venvs/pyannote` (`.venv-pyannote`, `.venvs/main`, `.venv`) | `DIARIZATION_PYTHON` |
 | `s3-diarize/{sortformer,clustering}.sh` | `.venvs/sortformer` (`.venv-sortformer`) | `DIARIZATION_PYTHON` |
@@ -579,14 +579,12 @@ The four manifest commands were renamed from `index`, `filter`, `export`, and
 are removed. `export_manifest_table` writes metadata only; `bundle_manifest_audio`
 packs the audio named by a manifest. Neither selects verifier outcomes.
 
-For a nontechnical audio/transcript review handoff:
+For a nontechnical audio/transcript review handoff (only these two paths are needed):
 
 ```bash
 bash scripts/s5-export/export_verifier_handoff.sh \
-  --input-dir .data/s4-agent/verifier/<backend>/<selected-run> \
-  --input-manifest .data/clips/<family>/segments.json \
-  --output-file .data/exports/speech_dataset_v1.zip \
-  --dataset-name speech_dataset --version v1
+  --input-dir .data/s4-agent/verifier/<backend>/<model> \
+  --input-manifest .data/clips/<family>/segments.json
 ```
 
 `--input-manifest` is repeatable and accepts complete indexed audio manifests or
@@ -595,9 +593,25 @@ actually submitted to the verifier. A complete run requires valid pass/reject
 results for every expected clip; rejected clips do not make it incomplete.
 Missing/failed/uncertain/invalid results or unknown coverage block export unless
 `--allow-partial` is explicitly used. Changed/missing passed audio always blocks it.
-Mixed settings or duplicate verdicts require selecting a single run directory.
+The manifest selects its clips from the supplied directory before checking settings;
+unrelated verdicts are ignored. Different settings are allowed when each selected
+clip has one result and are recorded per clip and in the summary. Competing results
+for a clip produce a list of folders/settings hashes: narrow `--input-dir` or pass
+`--configuration HASH` (unique prefix accepted). The exporter never guesses the
+latest/best verdict. Configuration selection may leave missing inputs, which still
+require resolution or explicit partial export.
 
-Output must be a ZIP under `.data/`, outside the run. Use a new version or explicit
+Without `--output-file`, output is `.data/s5-export/<family>_v1.zip`; the name comes
+from the first segments manifest's parent (or an indexed manifest's stem, or the
+input folder if no manifest is given). Override with `--dataset-name`, `--version`,
+or an exact `--output-file .data/s5-export/custom.zip`. Output remains under `.data/`,
+outside the run. The resolved path is printed before scanning.
+
+This command needs only an existing Python interpreter, preferring `AUDIO_PYTHON`
+or an existing local environment and falling back to `python3`. It does **not**
+provision the audio environment or install packages. Duration comes from the
+inventory metadata; missing durations are blank and the summary reports known
+hours plus the number of clips without duration metadata. Use a new version or explicit
 `--overwrite` for an existing destination. No model is called. The ZIP contains
 HTML, CSV **and XLSX**, original audio in `passed/` and `needs_attention/`, instructions,
 summary, provenance and checksums. Human review starts pending. Missing transcripts

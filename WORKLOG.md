@@ -366,3 +366,11 @@
 - Python syntax compilation passed for all five export commands and the three changed verifier modules. Bash syntax and --help passed for all five s5-export launchers. Verifier analysis and Gemini launcher --help passed. Embedded browser JavaScript syntax passed node --check.
 - Reviewed new implementation, template, shared helper changes and final diff; checked renamed-command references and git diff whitespace. Included intended new files.
 - No tests were written or run per repository instructions. No model calls, media exports or package installation. End-to-end export, archive relocation, browser playback/save/load and Excel opening remain unverified; syntax/help checks do not establish runtime acceptance.
+
+## 2026-09-23 - Simplify verifier handoff invocation after operator feedback
+
+- Made --output-file optional with a visible .data/s5-export/<manifest-family>_<version>.zip default; keep explicit output paths exact and provide concrete path/collision guidance. Dataset names derive from the first inventory or input directory.
+- Apply the expected inventory selection before configuration grouping, ignoring unrelated source clips in a broad model directory. Allow differing settings when each selected clip has one result, recording all configuration hashes and each clip's configuration. Competing results now list folder/hash choices and support an explicit --configuration selector; never automatically pick a verdict or drop missing expected inputs from coverage.
+- Removed handoff audio decoding dependency: use finite inventory duration metadata, leave missing durations blank, and label known hours/unknown counts. The dedicated launcher uses existing Python and never invokes provisioning; this avoids the reported missing envs/requirements-audio.txt path without changing unrelated audio setup or installing packages.
+- Improved incomplete-run errors with coverage/outcome/unresolved counts. Updated command examples, verifier instructions, data contract and plan to reflect the simpler workflow.
+- Validation: Python syntax, Bash syntax, normal launcher --help and --help with system Python override passed; embedded JavaScript syntax and final whitespace checks passed. Reviewed final diff. No tests, package installation, inference or actual exports were run; the operator's remote run was not available here for runtime verification.

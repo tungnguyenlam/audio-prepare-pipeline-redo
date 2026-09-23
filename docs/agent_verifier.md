@@ -204,10 +204,14 @@ target and performs no model or data operations.
 
 ## Handing a run to a transcript reviewer
 
-Use `scripts/s5-export/export_verifier_handoff.sh` with one run directory, its
-expected audio inventory, and a ZIP destination under `.data/exports/`. See
+Use `scripts/s5-export/export_verifier_handoff.sh` with a verifier directory and its
+expected audio inventory. The manifest selects its clips recursively; the default
+ZIP is `.data/s5-export/<manifest-family>_v1.zip`. An explicit destination is optional. See
 [command example](commands.md#dataset-export-s5-export). This standalone offline
-command reads existing artifacts; it never regenerates verifier results.
+command reads existing artifacts; it never regenerates verifier results or provisions
+an environment. Existing Python is enough. Each selected clip must have one result;
+multiple settings across different clips are recorded, while competing results
+produce actionable `--configuration HASH` choices or folders to select.
 
 A finished verifier run can include rejected clips. The export keeps two distinct
 states: verifier processing complete/partial, and human transcript review pending.
