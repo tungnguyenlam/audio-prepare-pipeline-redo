@@ -216,8 +216,12 @@ It accepts transcribable multilingual speech, including foreign names and code
 switching. Each occurrence gets IPA only when the audio supports a native
 British/American English pronunciation; other foreign pronunciations use
 ViePhoneme written directly from the heard sounds, without IPA conversion tables
-or forced Vietnamese rhymes, tones, or coda deletion. Uncertain native status
-falls back to the clearly heard sounds in ViePhoneme, without asserting a
+or forced Vietnamese rhymes, tones, or coda deletion. Its sound-level notation
+distinguishes fricative place/voicing and vowel/glide movement; extended letter groups
+are selected by audible cues, never by a word's spelling or language. Ambiguous
+readings are compared by the sound feature that distinguishes them, separately
+from recognizing the word. Uncertain native status falls back to the clearly
+heard sounds in ViePhoneme, without asserting a
 pronunciation error. `unsupported_language` applies only when language content
 cannot be reliably transcribed, not merely because it is outside Vietnamese or
 English. Audible fillers remain in order; `~` marks short/medium unexpected
