@@ -339,3 +339,9 @@
 - Batch per-request errors and invalid verifier responses remain saved responses on continuation; obtaining fresh responses for those clips requires --overwrite. Standard/Flex cannot recover responses interrupted before publication, so retries may incur another charge.
 - Updated command examples and continuation contracts, including the actual Standard default. Reviewed every changed file and the final diff.
 - Validation passed: Python compilation for all three changed modules, Bash syntax for both Gemini launchers, both launcher --help outputs exposing --continue, and git diff --check. No tests were written or run, and no paid model calls were made; runtime recovery remains untested per repository instructions.
+
+## 2026-09-23 - Confirm Gemini verifier Standard continuation
+
+- Requested Standard-mode `--continue` support is already implemented in commit `d95f0ae` and present on the tracked upstream branch. No code or documentation changes were needed: shared Gemini arguments accept the flag for all modes, synchronous dispatch uses the existing generation path, and verifier preflight skips matching complete artifacts while retrying matching failed/incomplete work.
+- Validated the verifier Bash launcher syntax and its `--inference-mode standard --continue --help` invocation; help exposes both options and Standard remains the default. Reviewed existing continuation documentation and command examples.
+- No tests were written or run, and no paid model calls were made. Runtime recovery was not exercised because tests were not requested.
