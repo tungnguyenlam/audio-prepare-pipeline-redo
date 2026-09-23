@@ -345,3 +345,10 @@
 - Requested Standard-mode `--continue` support is already implemented in commit `d95f0ae` and present on the tracked upstream branch. No code or documentation changes were needed: shared Gemini arguments accept the flag for all modes, synchronous dispatch uses the existing generation path, and verifier preflight skips matching complete artifacts while retrying matching failed/incomplete work.
 - Validated the verifier Bash launcher syntax and its `--inference-mode standard --continue --help` invocation; help exposes both options and Standard remains the default. Reviewed existing continuation documentation and command examples.
 - No tests were written or run, and no paid model calls were made. Runtime recovery was not exercised because tests were not requested.
+
+## 2026-09-23 - Plan verifier run handoff for nontechnical recipients
+
+- Inspected verifier artifact/analysis documentation, shared verdict validation and completion paths, dataset indexing/bundling, and the bundle launcher.
+- Added docs/plans/verifier_handoff_export_plan.md proposing a standalone verifier-aware ZIP export with accepted audio, offline listening/search page, CSV catalog, instructions, summary, exclusions and portable provenance/checksums.
+- Defined explicit completeness evidence, partial delivery labeling, source integrity checks, configuration conflict handling, and metadata exceptions across verifier profiles. Existing bundle/index commands do not implement this handoff.
+- Planning only: no implementation, media export, model calls or tests. CLI/launcher changes and runtime validation are not applicable; reviewed the plan and checked the final diff for whitespace errors.
