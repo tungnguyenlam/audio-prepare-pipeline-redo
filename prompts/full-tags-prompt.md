@@ -73,19 +73,17 @@ Không tag hơi thở thường, cách phát giọng (cười trong giọng, run
 # 3. PHIÊN ÂM TỪ NGOẠI
 Gắn `[...]` dính liền sau mỗi lần xuất hiện của từ/tên ngoại (mọi ngôn ngữ), số, viết tắt, ngày giờ, ký hiệu. Không gắn cho từ đã Việt hóa chữ viết, tag, nhãn. Một ngoặc cho một từ.
 
-## 3.1 Chỉ từ tai
-Ngoặc ghi cách chính speaker này đã phát lần xuất hiện này, không ghi cách đọc của từ. Người thật đọc từ ngoại theo đủ kiểu: đúng bản ngữ, kiểu Anh, kiểu Việt, theo mặt chữ, sai, hoặc trộn nhiều kiểu giữa các âm tiết của cùng một từ, và có thể phát thêm, bớt hay đổi âm so với mọi cách đọc đã biết. Không kiểu nào là mặc định; ngôn ngữ gốc của từ và người nói là ai không cho biết speaker đã đọc kiểu nào.
+## 3.1 Chọn hệ trước: IPA hay ViePhoneme
+Đây là quyết định đầu tiên cho mỗi lần xuất hiện, trước khi viết bất kỳ chuỗi nào.
+- **Từ tiếng Anh**: so từng âm đã nghe với phát âm Anh-Mỹ chuẩn của từ. Speaker phát đúng các âm vị tiếng Anh (không thay bằng âm Việt gần nhất), đủ âm cuối và cụm phụ âm, không chèn nguyên âm, đúng số âm tiết và trọng âm, không có thanh Việt → **BẮT BUỘC `word[/IPA/]`**. Chất giọng người Việt, âm sắc, tốc độ, ngữ điệu câu tiếng Việt xung quanh, từ ngắn hay quen đều không làm mất IPA; nối âm, dạng yếu, rút gọn, âm tắc hay âm cuối không bật là cách nói bản ngữ, không phải lệch. IPA ghi đúng biến thể đã nghe, không chép từ điển.
+- Chỉ chọn ViePhoneme cho từ tiếng Anh khi nghe được dấu hiệu đọc kiểu Việt cụ thể: âm tiết mang thanh Việt; âm tiếng Anh bị thay bằng âm Việt; âm cuối hay cụm phụ âm bị nuốt, đổi hoặc chèn nguyên âm; thêm hay bớt âm tiết; trọng âm bị san đều hoặc đặt sai. Không nêu được dấu hiệu cụ thể nào → IPA.
+- **Từ không phải tiếng Anh** (kể cả khi đọc đúng bản ngữ của nó) → `word[ViePhoneme]`.
 
-Vì vậy nguồn duy nhất của chuỗi trong ngoặc là âm thanh:
-- Coi mỗi lần xuất hiện như một chuỗi âm vô nghĩa do người lạ phát ra. Khi viết ngoặc, không dùng chính tả, phiên âm La-tinh, cách đọc bản ngữ, từ điển, IPA đã biết hay cách Việt hóa quen của từ; không xác định ngôn ngữ gốc để chọn cách ghi.
-- Viết ViePhoneme thẳng từ âm nghe; không soạn IPA hay bản phiên âm trung gian nào rồi chuyển sang.
-- Lập luận về ngoặc chỉ mô tả âm đã nghe: âm tiết mở đầu bằng gì, nguyên âm đứng yên hay trượt, có âm lướt nối không, kết thúc bằng gì, có tiếng gió/hơi nào còn lại sau âm cuối không, có thanh không. Lập luận kiểu "từ này trong tiếng X đọc là…" hay "chữ này thường đọc là…" là kiến thức lấn át tai: bỏ nó và nghe lại. Lập luận dài không làm tai nghe rõ hơn; ghi theo ấn tượng âm thanh rõ nhất của đoạn audio.
-- Kết quả trùng mặt chữ, trùng cách đọc bản ngữ hay trùng cách Việt hóa phổ biến vẫn được, miễn mỗi âm có mặt vì đã nghe thấy chứ không vì quen. Phần nghe không chắc → ghi âm nghe gần nhất, không lấp bằng cách đọc chuẩn.
-
-## 3.2 IPA hay ViePhoneme
-- **`word[/IPA/]`**: từ tiếng Anh mà speaker phát âm như người bản ngữ Anh-Mỹ: đúng âm, số âm tiết, trọng âm, không có thanh Việt. Từ tiếng Anh đọc chuẩn như vậy BẮT BUỘC ghi IPA, dù nằm giữa câu tiếng Việt, dù từ ngắn hay quen, dù speaker là người Việt. Nối âm, dạng yếu, rút gọn, âm tắc hay âm cuối không bật là cách nói bản ngữ, không phải lệch. IPA ghi đúng biến thể đã nghe, không chép từ điển.
-- **`word[ViePhoneme]`**: từ không phải tiếng Anh (kể cả khi đọc đúng bản ngữ của nó), và từ tiếng Anh đọc lệch khỏi Anh-Mỹ theo cách nghe được (âm bị thay bằng âm Việt, nguyên âm bị phẳng, thiếu hay thừa âm, thêm âm tiết, sai trọng âm, có thanh Việt).
-- Với từ tiếng Anh, không nghiêng mặc định về bên nào: nghe giống người Mỹ nói từ đó → IPA; nghe giống người Việt đọc từ đó → ViePhoneme. Chỉ ở bước này mới so âm đã nghe với chuẩn Anh-Mỹ. Khi đã chọn ViePhoneme, viết lại từ âm nghe theo 3.1, không sửa từ dạng chuẩn.
+## 3.2 Viết ViePhoneme chỉ từ tai
+Nhận ra từ và chuẩn Anh-Mỹ chỉ dùng cho quyết định ở 3.1. Khi đã chọn ViePhoneme, ngoặc ghi cách chính speaker này đã phát lần xuất hiện này, không ghi cách đọc của từ. Người thật đọc từ ngoại theo đủ kiểu: đúng bản ngữ, kiểu Anh, kiểu Việt, theo mặt chữ, sai, hoặc trộn nhiều kiểu giữa các âm tiết của cùng một từ, và có thể phát thêm, bớt hay đổi âm so với mọi cách đọc đã biết. Không kiểu nào là mặc định.
+- Coi lần xuất hiện đó như một chuỗi âm vô nghĩa do người lạ phát ra. Không dùng chính tả, phiên âm La-tinh, cách đọc bản ngữ, từ điển, IPA đã biết hay cách Việt hóa quen của từ; không soạn IPA hay bản phiên âm trung gian rồi chuyển sang.
+- Lập luận chỉ mô tả âm đã nghe: âm tiết mở đầu bằng gì, nguyên âm đứng yên hay trượt, có âm lướt nối không, kết thúc bằng gì, có tiếng gió/hơi nào còn lại sau âm cuối không, có thanh không. Lập luận kiểu "từ này trong tiếng X đọc là…" hay "chữ này thường đọc là…" là kiến thức lấn át tai: bỏ nó. Lập luận dài không làm tai nghe rõ hơn; ghi theo ấn tượng âm thanh rõ nhất của đoạn audio.
+- Kết quả trùng mặt chữ, trùng cách đọc bản ngữ hay trùng cách Việt hóa phổ biến vẫn được, miễn mỗi âm có mặt vì đã nghe thấy. Phần nghe không chắc → ghi âm nghe gần nhất, không lấp bằng cách đọc chuẩn.
 
 `[/…/]` chỉ chứa ký hiệu IPA chuẩn (và space khi tách tên chữ cái); không chữ Việt, dấu thanh Việt, `-`, `_`. ViePhoneme không chứa `/`, dấu trọng âm/độ dài hay ký tự IPA chuyên dụng. Không trộn hai hệ trong một ngoặc.
 
@@ -125,7 +123,7 @@ Không dùng `d`, `gi`, `tr` cho âm ngoại vì cách đọc của chúng đổ
 # 6. TỰ KIỂM (nội bộ)
 1. **Gate/JSON**: nhất quán, đúng tập giá trị; không reject vì xen ngôn ngữ hay accent.
 2. **Lời**: mỗi từ có âm tương ứng; không thêm, sửa hay bỏ lặp.
-3. **Phiên âm**: đủ mọi lần xuất hiện; mỗi âm trong ngoặc đến từ audio, không từ mặt chữ, cách đọc đã biết hay IPA; đã đối chiếu ngược; mỗi chữ phụ âm đọc đúng một ô trong bảng mục 4; từ tiếng Anh đọc chuẩn bản ngữ Anh-Mỹ có IPA, không bị hạ xuống ViePhoneme; IPA chỉ cho những từ đó.
+3. **Phiên âm**: đủ mọi lần xuất hiện; mỗi âm trong ngoặc đến từ audio, không từ mặt chữ, cách đọc đã biết hay IPA; đã đối chiếu ngược; mỗi chữ phụ âm đọc đúng một ô trong bảng mục 4; hệ đã chọn trước khi viết; từ tiếng Anh chỉ thành ViePhoneme khi nêu được dấu hiệu đọc kiểu Việt cụ thể; từ không phải tiếng Anh luôn ViePhoneme.
 4. **Filler/sự kiện**: đủ số lần, đúng âm, đúng vị trí và thứ tự.
 5. **Khoảng nghỉ**: mọi khe im lặng có dấu đúng loại (`~` khựng, `*` im dài giữa câu); không dấu nào thiếu im lặng thật hay ngữ điệu tương ứng.
 6. **Emotion**: nhãn đến từ giọng, đã quyết trước khi chép lời; nhãn khác nền có bằng chứng prosody; không nhãn nào chỉ dựa vào nội dung.
