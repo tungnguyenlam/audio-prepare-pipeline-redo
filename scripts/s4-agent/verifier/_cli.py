@@ -146,8 +146,7 @@ def _write_verdict_artifacts(
     artifact: dict[str, Any] = request(identity(source), "verify", parameters, backend)
     artifact["status"] = "fail" if error is not None else "success"
     artifact["response"] = response_meta
-    if generation is not None:
-        artifact["generation"] = {key: value for key, value in generation.items() if key != "text"}
+    # Provider bodies are runtime-only here; the exact answer is in the .txt sidecar.
     if error is not None:
         code, message, exception_type = error
         artifact["error"] = {
@@ -184,8 +183,6 @@ def verdict_processor(
 
         try:
             verdict = verify(source)
-            if isinstance(verdict, dict):
-                generation = verdict.pop("_generation", None)
             raw_response = (
                 str(verdict.pop("_raw_response"))
                 if isinstance(verdict, dict) and "_raw_response" in verdict

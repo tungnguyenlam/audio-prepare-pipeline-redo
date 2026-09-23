@@ -48,7 +48,6 @@ class GeminiVerifier(GeminiAgent):
         except VerifierResponseError as exc:
             exc.generation = generated
             raise
-        parsed["_generation"] = generated
         parsed["_latency_s"] = generated["latency_s"]
         parsed["_usage"] = generated["usage"]
         parsed["_cost"] = generated["cost"]

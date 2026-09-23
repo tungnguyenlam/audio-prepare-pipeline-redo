@@ -53,12 +53,15 @@ schema. Neither directory orchestrates other pipeline stages.
   resubmitted; saved failures replay on `--continue`, requiring fresh work via
   `--overwrite` (scope input to the affected clips to avoid rerunning successes).
 - Gemini raw failures retain their text/provider evidence with `status: fail`.
-  Verifier artifacts retain `generation` on success, parse/schema failure, and
-  unusable provider answers, including provider finish/block reasons, response ID,
-  model version, and usage/cost. If more than one response was received, `attempts`
-  retains each original text/body/usage/cost; top-level usage/cost sum those
-  responses. HTTP failures without a provider generation cannot supply token
-  usage. Exhausted response retries are failures, never successful empty output.
+  Raw generation artifacts retain received retry responses in `attempts` and sum
+  their usage/cost. Verifier JSON uses the compact verdict layout: source,
+  parameters, status, response-file metadata, and verdict (or error/invalid_verdict
+  on failure). It does not embed `generation`, provider bodies, thought signatures,
+  or retry response copies. Final unparsed answer text remains in the sibling
+  `.txt`; verdict metadata retains latency, aggregate usage/cost, model version
+  and response ID. Provider completion failures keep their safe code/message in
+  `error`; generation evidence is used internally for retry and run cost reporting.
+  Exhausted response retries are failures, never successful empty output.
   Existing continuation and overwrite rules below apply.
 - Verifier metadata now records `prompt_role=system` so old user-prompt runs cannot
   silently mix with the new generation behavior. Older artifacts require a separate

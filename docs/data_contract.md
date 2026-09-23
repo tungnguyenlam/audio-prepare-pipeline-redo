@@ -343,11 +343,14 @@ and `max_response_retries` (default 3 additional Standard/Flex generations).
 These affect artifact identity; old runs require a new output directory or
 explicit overwrite. Gemini never treats empty/incomplete provider output as a
 successful raw pair: a retained diagnostic pair has `status: fail` and `error`.
-Its `response` retains the provider body and `generation_error`; verifier JSON
-stores the corresponding evidence in top-level `generation`, including on
-parse/schema failure. That contains final usage/cost plus `attempts` when multiple
-responses were received (each exact text, provider body, usage and cost).
-Top-level usage/cost then aggregate all received responses, including retries.
+Raw agent `response` retains the provider body and `generation_error`, plus
+`attempts` when multiple responses were received (each exact text, provider body,
+usage and cost). Its top-level usage/cost aggregate those responses.
+Verifier JSON omits `generation`, provider bodies, thought signatures and retry
+response copies. It retains the exact final answer in the `.txt` sidecar and
+latency, aggregate usage/cost, model version and response ID in `verdict` metadata.
+Failures retain `error` and, for schema failures, `invalid_verdict`; provider
+completion errors expose their safe code/message without embedding the body.
 Provider blocks and MAX_TOKENS are terminal; transient empty/incomplete answers
 have a bounded response retry budget. Batch validates completion but does not
 resubmit individual failed results automatically. A nonempty final answer that
