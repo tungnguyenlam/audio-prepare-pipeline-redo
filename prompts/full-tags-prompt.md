@@ -73,54 +73,48 @@ Không tag hơi thở thường, cách phát giọng (cười trong giọng, run
 # 3. PHIÊN ÂM TỪ NGOẠI
 Gắn `[...]` dính liền sau mỗi lần xuất hiện của từ/tên ngoại (mọi ngôn ngữ), số, viết tắt, ngày giờ, ký hiệu. Không gắn cho từ đã Việt hóa chữ viết, tag, nhãn. Một ngoặc cho một từ.
 
-## 3.1 Âm trước, chữ sau
-Ngoặc là bản ghi âm thanh, không phải cách đọc của từ. Với mỗi lần xuất hiện, làm theo thứ tự:
-1. **Nghe như âm vô nghĩa**: chưa nghĩ đến từ, chính tả hay ngôn ngữ gốc; nghe đúng đoạn audio đó và xác định từng âm tiết: số âm tiết; âm đầu (tắc/xát/tắc-xát, vị trí trước hay sau trong miệng, hữu thanh hay vô thanh, bật hơi); nguyên âm (đơn hay đôi, có trượt về `i`/`u`, có âm lướt nối sang âm tiết sau); âm cuối; trọng âm; thanh Việt nếu thực có.
-2. **Viết chuỗi âm đó** theo mục 4 (hoặc IPA nếu đủ điều kiện ở 3.2), rồi mới ghép với chính tả của từ.
-3. **Soát ba lực kéo**, vì chúng tạo ra chuỗi nghe hợp lý nhưng khác audio:
-   - đọc chữ gốc theo luật chính tả tiếng Việt;
-   - nhớ cách đọc "đúng" trong ngôn ngữ gốc, từ điển, hoặc cách Việt hóa phổ biến;
-   - kéo âm lạ về âm tiết tiếng Việt quen gần nhất: gộp hai âm khác nhau, dùng chữ có cách đọc theo vùng, làm phẳng nguyên âm đôi, bỏ âm lướt, đổi âm cuối lạ thành âm cuối tiếng Việt, đổi loại âm đầu, thêm thanh.
-   Chỗ nào chuỗi trùng với một trong ba lực này, nghe lại đúng đoạn đó; chỉ giữ khi audio xác nhận. Trùng không sai; trùng vì không nghe mới sai.
-4. **Phân vân** giữa hai cách ghi → xác định đặc điểm âm học phân biệt chúng, nghe lại và chọn theo tín hiệu; không mặc định chọn phương án giống chính tả, giống tiếng Việt hay giống cách đọc phổ biến.
+## 3.1 Chỉ từ tai
+Ngoặc ghi cách chính speaker này đã phát lần xuất hiện này, không ghi cách đọc của từ. Người thật đọc từ ngoại theo đủ kiểu: đúng bản ngữ, kiểu Anh, kiểu Việt, theo mặt chữ, sai, hoặc trộn nhiều kiểu giữa các âm tiết của cùng một từ, và có thể phát thêm, bớt hay đổi âm so với mọi cách đọc đã biết. Không kiểu nào là mặc định; ngôn ngữ gốc của từ và người nói là ai không cho biết speaker đã đọc kiểu nào.
+
+Vì vậy nguồn duy nhất của chuỗi trong ngoặc là âm thanh:
+- Coi mỗi lần xuất hiện như một chuỗi âm vô nghĩa do người lạ phát ra. Khi viết ngoặc, không dùng chính tả, phiên âm La-tinh, cách đọc bản ngữ, từ điển, IPA đã biết hay cách Việt hóa quen của từ; không xác định ngôn ngữ gốc để chọn cách ghi.
+- Viết ViePhoneme thẳng từ âm nghe; không soạn IPA hay bản phiên âm trung gian nào rồi chuyển sang.
+- Lập luận về ngoặc chỉ mô tả âm đã nghe: âm tiết mở đầu bằng gì, nguyên âm đứng yên hay trượt, có âm lướt nối không, kết thúc bằng gì, có tiếng gió/hơi nào còn lại sau âm cuối không, có thanh không. Lập luận kiểu "từ này trong tiếng X đọc là…" hay "chữ này thường đọc là…" là kiến thức lấn át tai: bỏ nó và nghe lại. Lập luận dài không làm tai nghe rõ hơn; ghi theo ấn tượng âm thanh rõ nhất của đoạn audio.
+- Kết quả trùng mặt chữ, trùng cách đọc bản ngữ hay trùng cách Việt hóa phổ biến vẫn được, miễn mỗi âm có mặt vì đã nghe thấy chứ không vì quen. Phần nghe không chắc → ghi âm nghe gần nhất, không lấp bằng cách đọc chuẩn.
 
 ## 3.2 IPA hay ViePhoneme
-- **`word[/IPA/]`**: CHỈ khi từ là tiếng Anh VÀ speaker phát âm như người bản ngữ Anh-Mỹ ở mọi âm, số âm tiết và trọng âm. Ghi IPA của đúng biến thể đã nghe, không chép từ điển.
-- **`word[ViePhoneme]`**: mọi trường hợp còn lại: tiếng Anh đọc sai, Việt hóa, pha giọng vùng, thêm thanh hay âm; và mọi từ/tên thuộc ngôn ngữ khác, kể cả khi đọc đúng bản ngữ của ngôn ngữ đó.
+- **`word[/IPA/]`**: CHỈ khi từ là tiếng Anh VÀ speaker phát âm chuẩn bản ngữ Anh-Mỹ ở mọi âm, số âm tiết và trọng âm. IPA ghi đúng biến thể đã nghe, không chép từ điển.
+- **`word[ViePhoneme]`**: mọi trường hợp còn lại: mọi từ không phải tiếng Anh (kể cả khi đọc đúng bản ngữ của nó), và từ tiếng Anh có bất kỳ lệch nghe rõ nào (âm bị thay, nguyên âm bị phẳng, thiếu hay thừa âm, thêm âm tiết, sai trọng âm, có thanh Việt).
+- Chỉ ở bước này và chỉ với từ tiếng Anh mới so âm đã nghe với chuẩn Anh-Mỹ. Không hạ từ đọc chuẩn xuống ViePhoneme vì speaker là người Việt; nối âm, dạng yếu, rút gọn, âm tắc không bật là đặc trưng bản ngữ. Thiếu bằng chứng cho chuẩn bản ngữ → ViePhoneme. Khi đã chọn ViePhoneme, viết lại từ âm nghe theo 3.1, không sửa từ dạng chuẩn.
 
-Quyết định bằng cách so từng âm đã nghe (bước 1) với phát âm bản ngữ Anh-Mỹ. Cân bằng hai lỗi:
-- **IPA nhầm**: gán IPA vì nhận ra từ, vì từ quen, hay vì bỏ qua một lệch nhỏ nhưng rõ (âm bị thay, nguyên âm bị phẳng, thiếu âm cuối, thêm âm tiết, sai trọng âm, có thanh Việt). Một lệch nghe rõ như vậy là đủ để chọn ViePhoneme cho cả từ; chọn IPA phải chắc không có lệch nào.
-- **ViePhoneme nhầm**: hạ một từ đọc đúng xuống ViePhoneme vì speaker là người Việt hay vì kỳ vọng họ đọc sai. Nối âm, dạng yếu, rút gọn, âm tắc không bật là đặc trưng bản ngữ, không phải lỗi.
-Thiếu bằng chứng cho chuẩn bản ngữ → ViePhoneme theo phần âm nghe chắc.
+`[/…/]` chỉ chứa ký hiệu IPA chuẩn (và space khi tách tên chữ cái); không chữ Việt, dấu thanh Việt, `-`, `_`. ViePhoneme không chứa `/`, dấu trọng âm/độ dài hay ký tự IPA chuyên dụng. Không trộn hai hệ trong một ngoặc.
 
-Hai hệ viết độc lập, cùng từ âm nghe được: không suy ViePhoneme từ IPA, không suy IPA từ ViePhoneme. `[/…/]` chỉ chứa ký hiệu IPA chuẩn (và space khi tách tên chữ cái); không chữ Việt, dấu thanh Việt, `-`, `_`. ViePhoneme không chứa `/`, dấu trọng âm/độ dài hay ký tự IPA chuyên dụng. Không trộn hai hệ trong một ngoặc.
+# 4. VIEPHONEME — CHỮ ĐỂ NHẠI LẠI SPEAKER
+ViePhoneme là chuỗi chữ mà một người Việt đọc to lên sẽ nhại lại gần nhất đúng âm speaker đã phát, cho mọi ngôn ngữ. Dùng chữ Việt cộng chữ Latin, tự do ghép khi cần; không buộc là âm tiết tiếng Việt hợp lệ, không phải cách Việt hóa chuẩn của từ, không có bảng vần hay phép thay chữ cố định theo từ hoặc ngôn ngữ.
 
-# 4. VIEPHONEME — CHỮ VIỆT MỞ RỘNG GHI ÂM THẬT
-ViePhoneme ghi âm đã nghe, cho mọi ngôn ngữ, bằng chữ Việt cộng chữ Latin sao cho một người Việt đọc chuỗi này sẽ phát ra gần nhất với speaker. Nó không phải cách Việt hóa chuẩn của từ, không phải chuyển tự từ IPA hay từ chính tả gốc, và không buộc phải là âm tiết tiếng Việt hợp lệ. Không có bảng vần hay phép thay chữ cố định theo từ hoặc ngôn ngữ.
+**Cách đọc chữ phụ âm — mỗi chữ đúng một âm, không theo vùng.** Chọn chữ mà người đọc sẽ phát ra đúng âm đã nghe:
 
-**Bảng phụ âm — mỗi chữ đúng một âm.** Nhiều chữ tiếng Việt đọc khác nhau theo vùng hoặc gộp âm (`s`/`x`, `d`/`gi`/`r`, `ch`/`tr`); ViePhoneme không kế thừa các cách đọc đó. Chọn chữ theo âm nghe, không theo chữ gốc hay chữ quen dùng khi Việt hóa:
-
-| Âm nghe được | Chữ |
+| Chữ | Người đọc phát ra |
 |---|---|
-| xát vô thanh, đầu lưỡi phía trước, tiếng xì mảnh | `x` hoặc `s` (cùng một âm) |
-| xát vô thanh, lưỡi lùi sau, tiếng xì dày, môi thường tròn | `sh` |
-| xát hữu thanh phía trước / phía sau | `z` / `zh` |
-| tắc-xát vô thanh / hữu thanh | `ch` / `j` |
-| tắc hữu thanh ở lợi / ở mạc (cuống lưỡi) | `đ` / `g` (`gh` trước `i e ê`) |
-| tắc vô thanh; tắc bật hơi | `p t c/k`; `ph`=`f`, `th`, `kh` theo tiếng Việt |
-| `b m n ng nh l v f h`; `r` chỉ khi có âm r thật | như thường |
+| `x` hoặc `s` | xát vô thanh đầu lưỡi phía trước, tiếng xì mảnh (hai chữ cùng một âm) |
+| `sh` | xát vô thanh lưỡi lùi sau, tiếng xì dày, môi thường tròn |
+| `z` / `zh` | xát hữu thanh phía trước / phía sau |
+| `ch` / `j` | tắc-xát vô thanh / hữu thanh: tắc rồi xả ra tiếng xì |
+| `đ` / `g` (`gh` trước `i e ê`) | tắc hữu thanh ở lợi / ở cuống lưỡi |
+| `p t c/k`; `ph`=`f`, `th`, `kh` | tắc vô thanh; bật hơi và xát theo tiếng Việt |
+| `b m n ng nh l v f h`; `r` | như thường; `r` chỉ khi có âm r thật |
 
-Không dùng `d`, `gi`, `tr` cho âm ngoại. Mỗi phụ âm xát hoặc tắc-xát phải được quyết định giữa các ô liền kề của bảng (trước/sau, xát/tắc-xát, hữu/vô thanh) bằng tín hiệu nghe; không đổi tắc thành xát hay ngược lại.
+Không dùng `d`, `gi`, `tr` cho âm ngoại vì cách đọc của chúng đổi theo vùng. Xát, tắc-xát và tắc là ba loại khác nhau; hữu thanh và vô thanh, trước và sau cũng vậy; chọn theo tai.
 
-- Âm lướt `y` (ngạc) và `w` (tròn môi) khi nghe có. Âm tiết bắt đầu bằng nguyên âm ngay sau nguyên âm đôi → nghe xem có âm lướt nối vào không, có thì ghi. Nguyên âm đôi giữ đường trượt (`ây`, `ai`, `âu`, `ao`, `oi`…); nguyên âm đơn ghi đơn.
-- Âm cuối: tiếng Việt chỉ có vài âm cuối, âm ngoại thì không bị giới hạn. Âm cuối nằm trong bộ tiếng Việt → viết liền âm tiết. Âm cuối ngoài bộ đó (xát, tắc-xát, `l`, `r`, cụm phụ âm) → viết thành khối phụ âm rời nối bằng `-`, giữ đúng loại âm; không thay bằng âm cuối tiếng Việt gần nhất, không nuốt, không thêm nguyên âm.
-- Nối âm tiết bằng `-`; mỗi khối có nguyên âm là một âm tiết đã phát; khối chỉ có phụ âm không phải âm tiết; không chèn nguyên âm cho dễ đọc.
+- Âm lướt `y` (ngạc) và `w` (tròn môi) khi nghe có, kể cả âm lướt nối giữa hai âm tiết. Nguyên âm đôi giữ đường trượt; nguyên âm đơn ghi đơn.
+- Âm cuối trong bộ âm cuối tiếng Việt → viết liền âm tiết. Âm cuối ngoài bộ đó (xát, tắc-xát, `l`, `r`, cụm phụ âm, hay tiếng gió/xì còn phát ra sau âm cuối) → viết thành khối phụ âm rời nối bằng `-`, giữ đúng loại âm; không thay bằng âm cuối tiếng Việt gần nhất, không nuốt, không thêm nguyên âm.
+- Nối âm tiết bằng `-`; mỗi khối có nguyên âm là một âm tiết đã phát; khối chỉ có phụ âm không phải âm tiết.
 - Dấu thanh chỉ khi nghe thanh Việt rõ; không suy thanh từ trọng âm hay vị trí.
-- Giữ âm yếu thật sự có; không phục hồi âm không phát. Giữ đặc điểm giọng vùng đúng chỗ nghe thấy.
-- Âm không có tương đương trong tiếng Việt → chữ hoặc cụm chữ gần nhất mà vẫn giữ mọi đối lập nghe được.
+- Giữ âm yếu thật sự có; không phục hồi âm không phát. Giữ giọng vùng đúng chỗ nghe thấy.
+- Âm không có tương đương → chữ hoặc cụm chữ gần nhất vẫn giữ mọi đối lập nghe được.
 - Số, ngày giờ, ký hiệu, viết tắt đọc bằng tiếng Việt → nối đúng các từ đã nói bằng `_`, chính tả và thanh đầy đủ; không khai triển phần chưa đọc.
 
-**Đối chiếu ngược**: che chữ ngoài ngoặc, đọc chuỗi trong ngoặc và so với audio về số âm tiết, âm đầu, nguyên âm/âm lướt, âm cuối, thanh. Người đọc chuỗi sẽ phát khác speaker ở điểm nào nghe rõ → sửa chuỗi.
+**Đối chiếu ngược**: che chữ ngoài ngoặc, đọc to chuỗi trong ngoặc theo bảng trên và so với audio về số âm tiết, âm đầu, nguyên âm/âm lướt, âm cuối và phần gió sau nó, thanh. Chỗ nào người đọc sẽ phát khác speaker → sửa chuỗi theo audio, không theo cách đọc của từ.
 
 # 5. OUTPUT
 Đúng **một JSON object** trên một dòng; không markdown, không bình luận, không trường phụ.
@@ -131,7 +125,7 @@ Không dùng `d`, `gi`, `tr` cho âm ngoại. Mỗi phụ âm xát hoặc tắc-
 # 6. TỰ KIỂM (nội bộ)
 1. **Gate/JSON**: nhất quán, đúng tập giá trị; không reject vì xen ngôn ngữ hay accent.
 2. **Lời**: mỗi từ có âm tương ứng; không thêm, sửa hay bỏ lặp.
-3. **Phiên âm**: đủ mọi lần xuất hiện; mỗi ngoặc đã đi qua "âm trước, chữ sau", soát ba lực kéo và đối chiếu ngược; mỗi chữ phụ âm khớp đúng một ô trong bảng mục 4; IPA chỉ khi không nghe thấy lệch nào so với bản ngữ Anh-Mỹ.
+3. **Phiên âm**: đủ mọi lần xuất hiện; mỗi âm trong ngoặc đến từ audio, không từ mặt chữ, cách đọc đã biết hay IPA; đã đối chiếu ngược; mỗi chữ phụ âm đọc đúng một ô trong bảng mục 4; IPA chỉ cho từ tiếng Anh đọc chuẩn bản ngữ Anh-Mỹ.
 4. **Filler/sự kiện**: đủ số lần, đúng âm, đúng vị trí và thứ tự.
 5. **Khoảng nghỉ**: mọi khe im lặng có dấu đúng loại (`~` khựng, `*` im dài giữa câu); không dấu nào thiếu im lặng thật hay ngữ điệu tương ứng.
 6. **Emotion**: nhãn khác nền có bằng chứng prosody.
