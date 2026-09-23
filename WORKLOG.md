@@ -468,3 +468,10 @@
 - Diagnosis: Vietnamese letters `s`, `d`, `gi`, `tr` have dialect-dependent or merged readings, so the model could treat Vietnamese-style spellings as faithful; the coda rule only listed some Latin codas.
 - Change: ViePhoneme consonant table with one sound per letter (and `d`/`gi`/`tr` banned for foreign sounds), explicit contrast decision for every fricative/affricate, general rule for codas outside the Vietnamese set, glide check after diphthongs, sentence-final particle and `?` by audible tone/intonation, non-empty `reason`. No word-specific examples.
 - Validation: diff review only; no tests (not requested), no model/API calls.
+
+## 2026-09-23 - Ear-only foreign-word brackets
+
+- Follow-up run still produced brackets from spelling/romanization or remembered native readings (velar onset for a front fricative, back fricative merged into `s`, diphthong and glide flattened) and missed audible frication after a coda. User notes speakers mix reading styles and languages freely; high reasoning was worse than medium, so medium stays the default.
+- Diagnosis: the sound-first procedure named the "correct/dictionary/common" pronunciations as pulls to check and asked for IPA-like feature analysis, which invites the model to recall exactly those readings; longer text reasoning drifts further toward knowledge.
+- Change: section 3.1 is now "ear only" — no language identification, spelling, romanization, dictionary/IPA or intermediate transcription when writing brackets; knowledge-style reasoning is flagged as a signal to re-listen. Native American English comparison is confined to the IPA decision for English words. ViePhoneme is framed as a script to mimic the speaker; the consonant table became a letter reading key; post-coda frication is kept as a consonant block. No word-specific examples.
+- Validation: diff review only; no tests (not requested), no model/API calls.

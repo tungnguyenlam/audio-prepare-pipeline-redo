@@ -217,16 +217,16 @@ Prompts in `prompts/`: `full-tags-prompt.md` is the active verifier default.
 It accepts transcribable multilingual speech, including foreign names and code
 switching. Each occurrence gets IPA only when no audible deviation from native
 American English is heard; other foreign pronunciations use ViePhoneme written
-directly from the heard sounds. Pronunciation follows "sound first, spelling
-after": each occurrence is described as meaningless sound before the word is
-attached, then checked against three pulls (Vietnamese reading of the source
-spelling, remembered dictionary/common Vietnamized pronunciation, snapping to
-the nearest familiar Vietnamese syllable). ViePhoneme need not form valid
-Vietnamese syllables. A one-letter-one-sound consonant table replaces
-Vietnamese letters with dialect-dependent or merged readings (`s`/`x`, `d`/`gi`,
-`ch`/`tr`); codas outside the Vietnamese set stay as hyphenated consonant blocks
-instead of the nearest Vietnamese coda. Letters are selected by audible cues,
-never by spelling or language.
+directly from the heard sounds. Brackets come from the ear only: each occurrence
+is treated as meaningless sound from a stranger, and reasoning about a word's
+language, spelling, romanization, dictionary/IPA or common Vietnamized reading is
+treated as knowledge overriding listening. Speakers may mix reading styles within
+one word, so no style is assumed. ViePhoneme is a script a Vietnamese reader can
+read aloud to mimic the speaker; it need not form valid Vietnamese syllables. A
+one-letter-one-sound consonant reading key replaces Vietnamese letters with
+dialect-dependent or merged readings (`s`/`x`, `d`/`gi`, `ch`/`tr`); codas and
+audible post-coda frication outside the Vietnamese set stay as hyphenated
+consonant blocks. No word-specific examples.
 The IPA decision guards both false IPA and false downgrades. Uncertain native status falls back to the clearly
 heard sounds in ViePhoneme, without asserting a
 pronunciation error. `unsupported_language` applies only when language content
