@@ -503,3 +503,10 @@
 - User chose the short names `index`, `filter`, `export`, `bundle` (byte-identical copies already existed untracked); removed the long-named Python/Bash entrypoints and updated README and `docs/commands.md`. This reverses the earlier long-name rename.
 - Also committed pending local files: per-backend `requirements-*.txt`, `.python-version`, `playlist-url.txt`, and the `.gitignore` change (root `/.data` ignore).
 - Validation: `bash -n`, `py_compile`, and `--help` through each renamed launcher; no tests (not requested).
+
+## 2026-09-24 - Phoneme-based IPA choice, pitch-true ViePhoneme, fillers before pauses
+
+- User report: mispronounced English words still got IPA; correctly pronounced words with weaker-than-native stress became ViePhoneme; ViePhoneme sounded like stock Vietnamized spellings; connective + filler (`thì ờ`, `thì <uhm>`) came out as `thì ~`.
+- Recent Gemini 3.8 Flash outputs matched the report: pause marks where fillers belong, stock Vietnamized ViePhoneme spellings mostly without tones, and IPA applied to every word in some sentences.
+- Prompt changes: IPA vs ViePhoneme is now decided phoneme by phoneme (correct / clearly off). Stress, emphasis, pitch and voice quality never decide. Any substituted, dropped or added phoneme, or a spelling-based or wrong-word reading, forces ViePhoneme, never IPA. ViePhoneme syllables take the Vietnamese tone closest to the heard pitch contour (unmarked means level), plus heard length and syllable grouping. `~` covers silence or breath only. Voiced hesitations, including a word's lengthening that shifts vowel or closes to a nasal, are filler tokens placed before any pause mark. Focused verifier docs updated.
+- Validation: reviewed the prompt/docs diff and ran git diff --check. No tests or model calls (not requested), so the quality effect is unmeasured.

@@ -215,8 +215,9 @@ endpoints without pricing metadata explicitly report cost as unavailable.
 
 Prompts in `prompts/`: `full-tags-prompt.md` is the active verifier default.
 It accepts transcribable multilingual speech, including foreign names and code
-switching. Each occurrence gets IPA only when no audible deviation from native
-American English is heard; other foreign pronunciations use ViePhoneme written
+switching. An English occurrence gets IPA only when every phoneme matches the
+word's American English phonemes; mispronounced words and other foreign
+pronunciations use ViePhoneme written
 directly from the heard sounds. Brackets come from the ear only: each occurrence
 is treated as meaningless sound from a stranger, and reasoning about a word's
 language, spelling, romanization, dictionary/IPA or common Vietnamized reading is
@@ -227,17 +228,20 @@ one-letter-one-sound consonant reading key replaces Vietnamese letters with
 dialect-dependent or merged readings (`s`/`x`, `d`/`gi`, `ch`/`tr`); codas and
 audible post-coda frication outside the Vietnamese set stay as hyphenated
 consonant blocks. No word-specific examples.
-The IPA/ViePhoneme choice is made first, per occurrence, by phonemes: an English
-word whose sounds, codas/clusters, syllable count and stress match American
-English must get IPA regardless of Vietnamese voice quality; it becomes
-ViePhoneme only when a concrete Vietnamese-style cue is heard (Vietnamese tone,
-substituted sound, dropped/changed coda or cluster, inserted vowel, flattened or
-misplaced stress). The ear-only rule applies to writing ViePhoneme. Both the IPA choice and ViePhoneme writing require a
+The IPA/ViePhoneme choice is made first, per occurrence, by comparing each
+phoneme (syllable count, onsets, vowels, codas/clusters) with the American
+English form: when all match, the word must get IPA even with weak stress,
+flat emphasis, Vietnamese pitch or voice quality; any substituted, dropped or
+added phoneme, or a spelling-based/wrong-word reading, makes it ViePhoneme and
+never IPA. Each ViePhoneme syllable carries the Vietnamese tone closest to its
+heard pitch contour (unmarked means level), plus heard length and syllable
+grouping. The ear-only rule applies to writing ViePhoneme. Both the IPA choice and ViePhoneme writing require a
 focused second listen to the word's own segment, syllable by syllable
 (including aspiration). `unsupported_language` applies only when language content
 cannot be reliably transcribed, not merely because it is outside Vietnamese or
 English. Audible fillers, including vague ones, remain in order after a dedicated
-word-boundary sweep; a pause is silence or a breath intake, so `~` marks
+word-boundary sweep; a voiced hesitation after a connective is a filler token,
+never replaced by a pause mark; a pause is silence or a breath intake, so `~` marks
 short/medium unexpected pauses and breath catches and `*` marks long pauses within an unfinished sentence. Punctuation
 requires audible phrasing or sentence closure. Emotion is decided from the voice before transcription, and follows the voice
 when it differs from the content. The default keeps emotion labels
