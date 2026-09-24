@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 from threading import Lock
+import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger("verifier")
 
 from _audio import VerifierResponseError
 from _common.files import ROOT, batch, digest, identity, persist_path, progress, read_json, request, resolve_output_dir, resolve_stored_path, write_json
@@ -173,6 +177,23 @@ def verdict_processor(
 ) -> Callable[[Path, Path], None]:
     known_prompts = _known_prompts()
     prompt = parameters.get("prompt")
+    inference_mode = parameters.get("inference_mode") or getattr(args, "inference_mode", "standard")
+
+    raw_max_retry = getattr(args, "max_retry", None)
+    if raw_max_retry is not None:
+        max_retry = max(0, int(raw_max_retry))
+    elif "max_retry" in parameters and parameters["max_retry"] is not None:
+        max_retry = max(0, int(parameters["max_retry"]))
+    elif "max_retries" in parameters and parameters["max_retries"] is not None:
+        max_retry = max(0, int(parameters["max_retries"]) - 1)
+    elif inference_mode == "flex":
+        max_retry = 11
+    else:
+        max_retry = 4
+
+    # Online per-item regeneration cannot retry batch jobs inline
+    if inference_mode == "batch":
+        max_retry = 0
 
     def process(source: Path, destination: Path) -> None:
         verdict: dict[str, Any] | None = None
@@ -181,32 +202,77 @@ def verdict_processor(
         invalid_verdict: dict[str, Any] | None = None
         generation: dict[str, Any] | None = None
 
-        try:
-            verdict = verify(source)
-            raw_response = (
-                str(verdict.pop("_raw_response"))
-                if isinstance(verdict, dict) and "_raw_response" in verdict
-                else None
-            )
-            profile, schema_error = _validate_verdict(verdict, prompt, backend, known_prompts)
-            del profile
-            if schema_error is not None:
-                error = (schema_error, _error_message(schema_error), "VerifierResponseError")
-                invalid_verdict = verdict
-                verdict = None
-        except VerifierResponseError as exc:
-            generation = getattr(exc, "generation", None)
-            raw_response = exc.raw_response
-            error = (exc.code, _error_message(exc.code), type(exc).__name__)
-        except Exception as exc:
-            generation = getattr(exc, "generation", None)
-            raw_error = getattr(exc, "raw_response", None)
-            if isinstance(raw_error, str):
-                raw_response = raw_error
-            error = _generation_failure(exc)
-            if isinstance(generation, dict) and generation.get("generation_error"):
-                failure = generation["generation_error"]
-                error = (failure["code"], failure["message"], type(exc).__name__)
+        max_attempts = max_retry + 1
+        for attempt in range(1, max_attempts + 1):
+            verdict = None
+            raw_response = None
+            error = None
+            invalid_verdict = None
+            is_json_failure = False
+            failure_reason = ""
+
+            try:
+                verdict = verify(source)
+                raw_response = (
+                    str(verdict.pop("_raw_response"))
+                    if isinstance(verdict, dict) and "_raw_response" in verdict
+                    else None
+                )
+                profile, schema_error = _validate_verdict(verdict, prompt, backend, known_prompts)
+                del profile
+                if schema_error is not None:
+                    error = (schema_error, _error_message(schema_error), "VerifierResponseError")
+                    invalid_verdict = verdict
+                    verdict = None
+                    is_json_failure = True
+                    failure_reason = f"{schema_error} ({_error_message(schema_error)})"
+            except VerifierResponseError as exc:
+                raw_response = exc.raw_response
+                error = (exc.code, _error_message(exc.code), type(exc).__name__)
+                is_json_failure = True
+                failure_reason = f"{exc.code} ({_error_message(exc.code)})"
+            except Exception as exc:
+                raw_error = getattr(exc, "raw_response", None)
+                if isinstance(raw_error, str):
+                    raw_response = raw_error
+                error = _generation_failure(exc)
+                exc_str = str(exc).lower()
+                if any(k in exc_str for k in ("json", "parse", "syntaxerror", "decode")) or error[0] in (
+                    "invalid_json",
+                    "json_not_object",
+                    "verdict_not_object",
+                ):
+                    is_json_failure = True
+                    failure_reason = f"{error[0]}: {exc}"
+                else:
+                    is_json_failure = False
+                    failure_reason = f"{error[0]}: {error[1]}"
+
+            if error is None:
+                break
+
+            if is_json_failure and attempt < max_attempts:
+                raw_snippet = ""
+                if raw_response:
+                    cleaned_raw = raw_response.replace("\r", " ").replace("\n", " ").strip()
+                    raw_snippet = f" | output: {cleaned_raw[:200]!r}" if cleaned_raw else " | output was empty"
+                msg = (
+                    f"{source.name}: Model failed to return a valid JSON object ({failure_reason}){raw_snippet} "
+                    f"-> retrying ({attempt}/{max_retry})..."
+                )
+                logger.warning(msg)
+                progress("VERIFIER_RETRY", msg)
+                time.sleep(min(1.0 * (1.5 ** (attempt - 1)), 5.0))
+                continue
+            else:
+                if is_json_failure and attempt >= max_attempts and max_retry > 0:
+                    logger.warning(
+                        "%s: Model failed to return a valid JSON object (%s) after %d retries.",
+                        source.name,
+                        failure_reason,
+                        max_retry,
+                    )
+                break
 
         _write_verdict_artifacts(
             source=source,

@@ -30,38 +30,15 @@ schema. Neither directory orchestrates other pipeline stages.
   transient failed HTTP request (network errors or HTTP 429/500/502/503/504).
   `0` means one attempt, with no retries; defaults are 4 retries for Standard/Batch
   and 11 for Flex. SDK internal retries are disabled so they cannot multiply this
-  limit. Retry delays respect a longer provider `Retry-After` header when present.
-  Legacy `--max-retries` still means total attempts, including the first;
-  the two flags are mutually exclusive. Nonretryable errors stop immediately.
+  limit. Nonretryable errors stop immediately.
   Cache creation and Batch submission do not retry ambiguous network failures,
   preventing duplicate resources/jobs. Batch polling requests use the same limit,
   but failed Batch results are not automatically resubmitted by this flag.
 - A valid verifier `reject` is a successful completed verdict, never a retry trigger.
-  `--max-response-retries N` separately retries empty or transient incomplete
-  provider answers in Standard/Flex (default: 3 additional generations; 0 disables
-  response retries). It handles HTTP 200 responses with no final text, missing
-  completion reason, or transient OTHER/malformed/tool-call finish reasons.
-  Each generation has its own HTTP retry budget: with defaults Standard can make
-  up to 4 × 5 generation HTTP attempts, plus preflight/cache requests. Retries can
-  incur charges; they stop at the configured limit, not an unbounded loop.
-  Prompt blocks, safety/recitation blocks, unknown terminal finish reasons, and
-  MAX_TOKENS fail explicitly without identical automatic resubmission. Review the
-  recorded reason/configuration; retry cannot guarantee a usable response.
-  Nonempty STOP text that fails verifier JSON/schema validation remains a failure;
-  response retries do not repair task output or reroll valid acoustic rejections.
-  Batch answers receive the same completion checks but are not automatically
-  resubmitted; saved failures replay on `--continue`, requiring fresh work via
-  `--overwrite` (scope input to the affected clips to avoid rerunning successes).
-- Gemini raw failures retain their text/provider evidence with `status: fail`.
-  Raw generation artifacts retain received retry responses in `attempts` and sum
-  their usage/cost. Verifier JSON uses the compact verdict layout: source,
-  parameters, status, response-file metadata, and verdict (or error/invalid_verdict
-  on failure). It does not embed `generation`, provider bodies, thought signatures,
-  or retry response copies. Final unparsed answer text remains in the sibling
-  `.txt`; verdict metadata retains latency, aggregate usage/cost, model version
-  and response ID. Provider completion failures keep their safe code/message in
-  `error`; generation evidence is used internally for retry and run cost reporting.
-  Exhausted response retries are failures, never successful empty output.
+  When a model response fails to parse into a valid JSON object or conformant verdict
+  (e.g. malformed JSON, missing object, or schema failure), the failure reason and output
+  snippet are logged to stderr and the item is retried up to `--max-retry` times.
+  If retries are exhausted, a failed artifact is written with the raw text retained.
   Existing continuation and overwrite rules below apply.
 - Verifier metadata now records `prompt_role=system` so old user-prompt runs cannot
   silently mix with the new generation behavior. Older artifacts require a separate
@@ -215,34 +192,32 @@ endpoints without pricing metadata explicitly report cost as unavailable.
 
 Prompts in `prompts/`: `full-tags-prompt.md` is the active verifier default.
 It accepts transcribable multilingual speech, including foreign names and code
-switching. Each occurrence gets IPA only when no audible deviation from native
-American English is heard; other foreign pronunciations use ViePhoneme written
-directly from the heard sounds. Brackets come from the ear only: each occurrence
-is treated as meaningless sound from a stranger, and reasoning about a word's
-language, spelling, romanization, dictionary/IPA or common Vietnamized reading is
-treated as knowledge overriding listening. Speakers may mix reading styles within
-one word, so no style is assumed. ViePhoneme is a script a Vietnamese reader can
-read aloud to mimic the speaker; it need not form valid Vietnamese syllables. A
-one-letter-one-sound consonant reading key replaces Vietnamese letters with
-dialect-dependent or merged readings (`s`/`x`, `d`/`gi`, `ch`/`tr`); codas and
-audible post-coda frication outside the Vietnamese set stay as hyphenated
-consonant blocks. No word-specific examples.
-The IPA/ViePhoneme choice is made first, per occurrence, by phonemes: an English
-word whose sounds, codas/clusters, syllable count and stress match American
-English must get IPA regardless of Vietnamese voice quality; it becomes
-ViePhoneme only when a concrete Vietnamese-style cue is heard (Vietnamese tone,
-substituted sound, dropped/changed coda or cluster, inserted vowel, flattened or
-misplaced stress). The ear-only rule applies to writing ViePhoneme. Both the IPA choice and ViePhoneme writing require a
-focused second listen to the word's own segment, syllable by syllable
-(including aspiration). `unsupported_language` applies only when language content
-cannot be reliably transcribed, not merely because it is outside Vietnamese or
-English. Audible fillers, including vague ones, remain in order after a dedicated
-word-boundary sweep; a pause is silence or a breath intake, so `~` marks
-short/medium unexpected pauses and breath catches and `*` marks long pauses within an unfinished sentence. Punctuation
-requires audible phrasing or sentence closure. Emotion is decided from the voice before transcription, and follows the voice
-when it differs from the content. The default keeps emotion labels
-inside `transcript`, with no separate `emotion` field. These are prompt
-instructions; the runtime schema validator does not verify phonetic accuracy.
+switching. Audio is the only evidence: adding a word the speaker did not say is
+treated as worse than omitting one, knowledge of titles, names, quotes and idioms
+never fills gaps, and high-risk spans are checked by counting heard syllables.
+Each occurrence of a foreign word first gets a raw per-syllable listening note
+(onset with aspiration, vowel, coda, Vietnamese tone, stress) in the model's
+reasoning. There is no default branch: an English word gets IPA of the heard
+variant only when every syllable matches a native reading (allowing native
+connected-speech variants), and ViePhoneme for the whole word when any syllable
+deviates (different phoneme, syllable count, Vietnamese tone, Vietnamese
+substitution, spelling reading). Anti-bias rules forbid choosing ViePhoneme
+because the speaker is Vietnamese and forbid choosing IPA because a name is famous
+or the correct reading is known; the raw listening note decides, and both
+branches get a mandatory read-back check. Non-English foreign words use
+ViePhoneme. ViePhoneme is written from the ear as Vietnamese syllables: heard
+Vietnamese-like syllables are spelled as Vietnamese, only non-Vietnamese sounds
+are approximated by mapping rules, every rhyme must pass an allowed-rhyme list,
+codas follow Vietnamese coda rules (no invented consonant block after a final
+stop), `z` is the only extra letter (`/dʒ ʒ/`), and tones are the heard
+Vietnamese tone or, for English-intonation syllables, derived from stress and
+syllable shape. Words read in Vietnamese join with `_`. Dropping a heard filler is treated
+as seriously as adding a word: a dedicated listening pass lists non-lexical sounds
+with positions, fillers are never replaced by pause marks, and pause marks encode
+silence length relative to the file (`~` < `,` < `.` < `*`). Emotion comes from prosody against a neutral baseline, never from content. The default
+keeps emotion labels inside `transcript`, with no separate `emotion` field. These
+are prompt instructions; the runtime schema validator does not verify phonetic
+accuracy.
 
 `acoustic_defect.txt` and `acoustic_defect-2.txt` are retained unchanged as
 deprecated, reference-only revisions and are not registered validation profiles.
