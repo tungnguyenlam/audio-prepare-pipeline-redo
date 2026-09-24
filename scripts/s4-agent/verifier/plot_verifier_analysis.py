@@ -563,8 +563,18 @@ def _write_sample_costs_markdown(rows: list[dict[str, Any]], output_dir: Path) -
     total_samples = len(rows)
     pass_samples = sum(1 for r in rows if r.get("final_verdict") == "pass")
     reject_samples = sum(1 for r in rows if r.get("final_verdict") == "reject")
-    other_samples = total_samples - pass_samples - reject_samples
-    pass_rate = (pass_samples / total_samples * 100.0) if total_samples > 0 else 0.0
+    missing_samples = sum(
+        1 for r in rows
+        if (r.get("verifier_status") or "").strip().lower() == "missing"
+        or str(r.get("is_missing", "")).strip().lower() in ("true", "1")
+        or (not r.get("final_verdict") and (r.get("verifier_status") or "").strip().lower() != "fail")
+    )
+    fail_samples = sum(
+        1 for r in rows
+        if (r.get("verifier_status") or "").strip().lower() == "fail"
+    )
+    evaluated_samples = pass_samples + reject_samples
+    pass_rate = (pass_samples / evaluated_samples * 100.0) if evaluated_samples > 0 else 0.0
 
     cost_rows = [r for r in rows if _number(r.get("cost_usd", 0.0)) > 0]
     costs = [_number(r["cost_usd"]) for r in cost_rows]
@@ -579,7 +589,14 @@ def _write_sample_costs_markdown(rows: list[dict[str, Any]], output_dir: Path) -
     durations = [_number(r.get("duration_s", 0.0)) for r in rows]
     total_duration = sum(durations)
     pass_duration = sum(_number(r.get("duration_s", 0.0)) for r in rows if r.get("final_verdict") == "pass")
-    rate_per_min = (total_cost / total_duration * 60.0) if total_duration > 0 else None
+    evaluated_duration = sum(
+        _number(r.get("duration_s", 0.0))
+        for r in rows
+        if (r.get("verifier_status") or "").strip().lower() == "success"
+        or r.get("final_verdict") in ("pass", "reject")
+    )
+    calc_duration = evaluated_duration if missing_samples > 0 and evaluated_duration > 0 else total_duration
+    rate_per_min = (total_cost / calc_duration * 60.0) if calc_duration > 0 else None
 
     tot_tokens = sum(int(r.get("tokens_total") or 0) for r in cost_rows)
     tot_prompt = sum(int(r.get("tokens_prompt") or 0) for r in cost_rows)
@@ -611,25 +628,52 @@ def _write_sample_costs_markdown(rows: list[dict[str, Any]], output_dir: Path) -
         return cleaned if cleaned else "-"
 
     def _pass_status(r: dict[str, Any]) -> str:
-        verdict = r.get("final_verdict")
+        status = (r.get("verifier_status") or "").strip().lower()
+        is_missing = str(r.get("is_missing", "")).strip().lower() in ("true", "1")
+        if status == "missing" or is_missing:
+            return "not run"
+        if status == "fail":
+            return "fail"
+        verdict = (r.get("final_verdict") or "").strip().lower()
         if verdict == "pass":
             return "pass"
-        return "not pass"
+        if verdict == "reject":
+            return "not pass"
+        return "not pass" if verdict else "not run"
+
+    sample_breakdown = [f"{pass_samples} pass", f"{reject_samples} reject"]
+    if missing_samples:
+        sample_breakdown.append(f"{missing_samples} not run")
+    if fail_samples:
+        sample_breakdown.append(f"{fail_samples} fail")
+    other_samples = total_samples - pass_samples - reject_samples - missing_samples - fail_samples
+    if other_samples > 0:
+        sample_breakdown.append(f"{other_samples} other")
 
     lines = [
         "# Verifier Sample Costs and Verdicts",
         "",
         "## Summary",
         "",
-        f"- **Total samples:** {total_samples} ({pass_samples} pass, {reject_samples} reject" + (f", {other_samples} other)" if other_samples else ")"),
-        f"- **Pass rate:** {pass_rate:.1f}%",
-        f"- **Total duration:** {total_duration:.2f}s (pass: {pass_duration:.2f}s)",
+        f"- **Total samples:** {total_samples} ({', '.join(sample_breakdown)})",
+    ]
+    if missing_samples > 0:
+        lines.append(f"- **Pass rate:** {pass_rate:.1f}% (evaluated: {pass_samples}/{evaluated_samples} samples; {pass_samples / total_samples * 100.0:.1f}% of total manifest)")
+        lines.append(f"- **Total duration:** {total_duration:.2f}s (evaluated: {evaluated_duration:.2f}s, pass: {pass_duration:.2f}s)")
+    else:
+        lines.append(f"- **Pass rate:** {pass_rate:.1f}%")
+        lines.append(f"- **Total duration:** {total_duration:.2f}s (pass: {pass_duration:.2f}s)")
+
+    lines.extend([
         f"- **Total cost:** ${total_cost:.4f} USD",
         f"- **Cost breakdown:** input ${input_cost:.4f} ({input_cost / total_cost * 100:.1f}%) | output ${output_cost:.4f} ({output_cost / total_cost * 100:.1f}%) | cache storage ${storage_cost:.4f} ({storage_cost / total_cost * 100:.1f}%)" if total_cost > 0 else "- **Cost breakdown:** $0.0000 USD",
         f"- **Cost per sample:** mean ${mean_cost:.4f} | median ${median_cost:.4f} | min ${sorted_costs[0]:.4f} | max ${sorted_costs[-1]:.4f}",
-    ]
+    ])
     if rate_per_min is not None:
-        lines.append(f"- **Cost rate:** ${rate_per_min:.4f} USD / audio minute")
+        if missing_samples > 0 and evaluated_duration > 0:
+            lines.append(f"- **Cost rate:** ${rate_per_min:.4f} USD / evaluated audio minute")
+        else:
+            lines.append(f"- **Cost rate:** ${rate_per_min:.4f} USD / audio minute")
     if tot_tokens > 0:
         lines.append(f"- **Token usage:** {tot_tokens:,} total ({tot_prompt:,} prompt, {tot_output:,} output, {tot_thinking:,} thinking)")
 

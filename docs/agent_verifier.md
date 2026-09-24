@@ -30,38 +30,15 @@ schema. Neither directory orchestrates other pipeline stages.
   transient failed HTTP request (network errors or HTTP 429/500/502/503/504).
   `0` means one attempt, with no retries; defaults are 4 retries for Standard/Batch
   and 11 for Flex. SDK internal retries are disabled so they cannot multiply this
-  limit. Retry delays respect a longer provider `Retry-After` header when present.
-  Legacy `--max-retries` still means total attempts, including the first;
-  the two flags are mutually exclusive. Nonretryable errors stop immediately.
+  limit. Nonretryable errors stop immediately.
   Cache creation and Batch submission do not retry ambiguous network failures,
   preventing duplicate resources/jobs. Batch polling requests use the same limit,
   but failed Batch results are not automatically resubmitted by this flag.
 - A valid verifier `reject` is a successful completed verdict, never a retry trigger.
-  `--max-response-retries N` separately retries empty or transient incomplete
-  provider answers in Standard/Flex (default: 3 additional generations; 0 disables
-  response retries). It handles HTTP 200 responses with no final text, missing
-  completion reason, or transient OTHER/malformed/tool-call finish reasons.
-  Each generation has its own HTTP retry budget: with defaults Standard can make
-  up to 4 × 5 generation HTTP attempts, plus preflight/cache requests. Retries can
-  incur charges; they stop at the configured limit, not an unbounded loop.
-  Prompt blocks, safety/recitation blocks, unknown terminal finish reasons, and
-  MAX_TOKENS fail explicitly without identical automatic resubmission. Review the
-  recorded reason/configuration; retry cannot guarantee a usable response.
-  Nonempty STOP text that fails verifier JSON/schema validation remains a failure;
-  response retries do not repair task output or reroll valid acoustic rejections.
-  Batch answers receive the same completion checks but are not automatically
-  resubmitted; saved failures replay on `--continue`, requiring fresh work via
-  `--overwrite` (scope input to the affected clips to avoid rerunning successes).
-- Gemini raw failures retain their text/provider evidence with `status: fail`.
-  Raw generation artifacts retain received retry responses in `attempts` and sum
-  their usage/cost. Verifier JSON uses the compact verdict layout: source,
-  parameters, status, response-file metadata, and verdict (or error/invalid_verdict
-  on failure). It does not embed `generation`, provider bodies, thought signatures,
-  or retry response copies. Final unparsed answer text remains in the sibling
-  `.txt`; verdict metadata retains latency, aggregate usage/cost, model version
-  and response ID. Provider completion failures keep their safe code/message in
-  `error`; generation evidence is used internally for retry and run cost reporting.
-  Exhausted response retries are failures, never successful empty output.
+  When a model response fails to parse into a valid JSON object or conformant verdict
+  (e.g. malformed JSON, missing object, or schema failure), the failure reason and output
+  snippet are logged to stderr and the item is retried up to `--max-retry` times.
+  If retries are exhausted, a failed artifact is written with the raw text retained.
   Existing continuation and overwrite rules below apply.
 - Verifier metadata now records `prompt_role=system` so old user-prompt runs cannot
   silently mix with the new generation behavior. Older artifacts require a separate
