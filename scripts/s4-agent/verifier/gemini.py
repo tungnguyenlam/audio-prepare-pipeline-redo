@@ -14,7 +14,7 @@ SCRIPTS_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(SCRIPTS_DIR))
 sys.path.insert(0, str(AGENT_DIR))
 
-from _audio import parse_verifier_response  # noqa: E402
+from _audio import VerifierResponseError, parse_verifier_response  # noqa: E402
 from _cli import (  # noqa: E402
     load_prompt,
     pending_verifier_pairs,
@@ -63,7 +63,11 @@ class GeminiVerifier(GeminiAgent):
     ) -> dict[str, Any]:
         """Parse a standard or Batch generation through the same verdict path."""
         raw_text = generated["text"]
-        parsed = parse_verifier_response(raw_text)
+        try:
+            parsed = parse_verifier_response(raw_text)
+        except VerifierResponseError as exc:
+            exc.generation = generated
+            raise
         parsed["_latency_s"] = generated["latency_s"]
         parsed["_usage"] = generated["usage"]
         parsed["_cost"] = generated["cost"]

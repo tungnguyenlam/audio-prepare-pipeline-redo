@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
+from threading import Lock
 import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -15,7 +16,7 @@ logger = logging.getLogger("verifier")
 from _audio import VerifierResponseError
 from _common.files import ROOT, batch, digest, identity, persist_path, progress, read_json, request, resolve_output_dir, resolve_stored_path, write_json
 from artifacts import write_text
-from _verifier_artifacts import response_complete
+from _verifier_artifacts import response_complete, verifier_json_paths
 from _verdicts import _known_prompts, _validate_verdict
 from _reporting import item_detail, new_run_stats, record_result, report_cost_summary
 
@@ -131,6 +132,7 @@ def _write_verdict_artifacts(
     raw_response: str | None,
     error: tuple[str, str, str] | None = None,
     invalid_verdict: dict[str, Any] | None = None,
+    generation: dict[str, Any] | None = None,
 ) -> None:
     text_path = destination.with_suffix(".txt")
     if raw_response is not None:
@@ -148,10 +150,11 @@ def _write_verdict_artifacts(
     artifact: dict[str, Any] = request(identity(source), "verify", parameters, backend)
     artifact["status"] = "fail" if error is not None else "success"
     artifact["response"] = response_meta
+    # Provider bodies are runtime-only here; the exact answer is in the .txt sidecar.
     if error is not None:
         code, message, exception_type = error
         artifact["error"] = {
-            "stage": "verifier",
+            "stage": "generation" if generation and generation.get("generation_error") else "verifier",
             "code": code,
             "message": message,
             "exception": exception_type,
@@ -170,6 +173,7 @@ def verdict_processor(
     parameters: dict[str, Any],
     verify: Callable[[Path], dict[str, Any]],
     stats: dict[str, Any],
+    update_sample_costs: Callable[[Path], None],
 ) -> Callable[[Path, Path], None]:
     known_prompts = _known_prompts()
     prompt = parameters.get("prompt")
@@ -196,6 +200,7 @@ def verdict_processor(
         raw_response: str | None = None
         error: tuple[str, str, str] | None = None
         invalid_verdict: dict[str, Any] | None = None
+        generation: dict[str, Any] | None = None
 
         max_attempts = max_retry + 1
         for attempt in range(1, max_attempts + 1):
@@ -278,18 +283,23 @@ def verdict_processor(
             raw_response=raw_response,
             error=error,
             invalid_verdict=invalid_verdict,
+            generation=generation,
         )
+
+        update_sample_costs(destination)
 
         decision = verdict.get('decision') if isinstance(verdict, dict) else None
         running_total = record_result(
             stats,
-            verdict if verdict is not None else invalid_verdict,
+            verdict if verdict is not None else invalid_verdict or generation,
             success=error is None,
             decision=decision,
         )
         progress(
             'VERIFIER_ITEM',
-            f'{source.name}: decision={decision or "unknown"}; {item_detail(verdict, running_total_usd=running_total)}',
+            f'{source.name}: decision={decision or "unknown"}; '
+            f'{"error=" + error[0] + "; " if error else ""}'
+            f'{item_detail(verdict or generation, running_total_usd=running_total)}',
         )
 
     return process
@@ -309,6 +319,42 @@ def _resolve_verdict_dir(args: Any, pairs: list[tuple[Path, Path]]) -> Path | No
         except ValueError:
             return parents[0]
     return None
+
+
+def _sample_costs_updater(verdict_dir: Path | None) -> Callable[[Path], None]:
+    """Keep the cumulative report current after each published verdict."""
+    from plot_verifier_analysis import _artifact_values, _write_sample_costs_markdown
+
+    rows: dict[Path, dict[str, Any]] = {}
+    known_prompts = _known_prompts()
+    lock = Lock()
+
+    def load(path: Path) -> None:
+        data = read_json(path)
+        if data.get("operation") == "verify" or "verdict" in data or "decision" in data:
+            rows[path.resolve()] = _artifact_values(path, data, known_prompts)
+
+    if verdict_dir is not None and verdict_dir.is_dir():
+        for path in verifier_json_paths(verdict_dir):
+            try:
+                load(path)
+            except Exception as exc:
+                progress("VERIFIER_COSTS_FAIL", f"Cannot read {path.name}: {type(exc).__name__}")
+
+    def update(destination: Path | None = None) -> None:
+        if verdict_dir is None:
+            return
+        try:
+            with lock:
+                if destination is not None:
+                    load(destination)
+                if rows:
+                    _write_sample_costs_markdown(list(rows.values()), verdict_dir / "plot")
+        except Exception as exc:
+            progress("VERIFIER_COSTS_FAIL", f"Cannot update sample_costs.md: {type(exc).__name__}")
+
+    update()
+    return update
 
 
 def _run_post_verification_analysis(args: Any, verdict_dir: Path) -> None:
@@ -353,6 +399,7 @@ def run_verifier(
     stats = new_run_stats()
     result = 1
     initial_pairs = list(pairs)
+    update_sample_costs = _sample_costs_updater(_resolve_verdict_dir(args, initial_pairs))
     try:
         pairs = pending_verifier_pairs(
             args=args,
@@ -374,6 +421,7 @@ def run_verifier(
                 parameters=parameters,
                 verify=verify,
                 stats=stats,
+                update_sample_costs=update_sample_costs,
             ),
             concurrency=getattr(args, "concurrency", 1),
             batch_size=getattr(args, "batch_size", 1),
@@ -397,13 +445,14 @@ def pending_verifier_pairs(
 ) -> list[tuple[Path, Path]]:
     """Preflight verdict outputs so a paid batch only contains missing artifacts."""
     known_prompts = _known_prompts()
-    prompt = parameters.get("prompt")
+    continuing = getattr(args, "continue_run", False)
+    kept_other_settings = 0
     pending = []
     for source, destination in pairs:
         wanted = request(identity(source), "verify", parameters, backend)
         response_path = destination.with_suffix(".txt")
         if (destination.exists() or response_path.exists()) and not args.overwrite:
-            if getattr(args, "continue_run", False) and not destination.exists():
+            if continuing and not destination.exists():
                 # Publication may have stopped between the text and JSON writes.
                 # Batch can recover its response; synchronous modes must retry.
                 pending.append((source, destination))
@@ -414,18 +463,21 @@ def pending_verifier_pairs(
                 )
             old = read_json(destination)
             matches = all(old.get(key) == value for key, value in wanted.items())
-            if matches and "verdict" in old:
+            if (matches or continuing) and "verdict" in old:
+                # Validate against the prompt that produced the artifact.
+                old_prompt = (old.get("parameters") or {}).get("prompt")
                 _, schema_error = _validate_verdict(
-                    old.get("verdict"), prompt, backend, known_prompts
+                    old.get("verdict"), old_prompt, backend, known_prompts
                 )
                 response_is_complete = (
                     old.get("status") in (None, "success") and response_complete(destination, old)
                 )
                 if schema_error is None and response_is_complete:
+                    # --continue keeps valid outputs made with other settings;
+                    # delete an output to regenerate it with the current ones.
+                    kept_other_settings += not matches
                     continue
-            if matches and getattr(args, "continue_run", False):
-                # Retry only matching failed/incomplete artifacts. Conflicting
-                # source, prompt, or generation settings still require overwrite.
+            if continuing:
                 pending.append((source, destination))
                 continue
             if matches and old.get("status") == "fail":
@@ -436,6 +488,11 @@ def pending_verifier_pairs(
                     f"Cached failed verifier artifact ({code}: {message}): "
                     f"{destination}; use --overwrite to retry"
                 )
-            raise ValueError(f"Conflicting output: {destination}; use --overwrite")
+            raise ValueError(f"Conflicting output: {destination}; use --continue or --overwrite")
         pending.append((source, destination))
+    if kept_other_settings:
+        progress(
+            "VERIFIER_CONTINUE",
+            f"Kept {kept_other_settings} complete output(s) made with other prompt/settings",
+        )
     return pending

@@ -5,7 +5,7 @@ __pycache__/
 
 # C extensions
 *.so
-
+/.data
 # Distribution / packaging
 .Python
 build/
@@ -157,9 +157,7 @@ env.bak/
 venv.bak/
 
 # Local data artifacts
-/data
-/data/
-.data/
+
 /temp/
 .temp/
 /demucsed/

@@ -11,7 +11,7 @@ schema. Neither directory orchestrates other pipeline stages.
 
 | Backend | Transport | Notes |
 |---|---|---|
-| `gemini` | Google Gemini API | Standard synchronous API by default; opt into Batch (`--inference-mode batch`, ≤ `--batch-size 10` requests per job, split further under the 20 MB inline limit, polled up to `--batch-timeout-s 86400`); `--inference-mode flex` for synchronous calls on Google's Flex tier (same 50% discount as Batch, 1–15 min latency, defaults `--timeout-s 900 --max-retry 11` because Flex answers 503 when capacity is short); `--inference-mode standard` for full-price synchronous calls. Default `--model gemini-3.8-flash --reasoning-effort medium` (`low/medium/high` → `thinkingLevel`) and `--max-tokens 65536` (the model's 64k ceiling, matching AI Studio's unlimited output). No `temperature`/`top-p`/`top-k` flags and no JSON response mode: Gemini 3 ignores sampling parameters and AI Studio does not force `responseMimeType`, so requests carry only `thinkingConfig` and `maxOutputTokens` to keep API behaviour aligned with the web UI. Needs `GEMINI_API_KEY`. |
+| `gemini` | Google Gemini API | Standard synchronous API by default; opt into Batch (`--inference-mode batch`, ≤ `--batch-size 10` requests per job, split further under the 20 MB inline limit, polled up to `--batch-timeout-s 86400`); `--inference-mode flex` for synchronous calls on Google's Flex tier (same 50% discount as Batch, 1–15 min latency, defaults `--timeout-s 900 --max-retry 11` because Flex answers 503 when capacity is short); `--inference-mode standard` for full-price synchronous calls. Default `--model gemini-3.8-flash --reasoning-effort medium` (`low/medium/high` → `thinkingLevel`) and `--max-tokens 65536` (the model's 64k ceiling). Sampling controls are omitted as required by the Gemini 3.8 migration guide. No forced JSON response mode: the raw command preserves free-form answers and the verifier validates the requested JSON afterward. AI Studio settings must be matched explicitly. Needs `GEMINI_API_KEY`. |
 | `endpoint` | OpenAI-compatible `/v1/chat/completions` | Served vLLM, Unsloth, etc. Optional `OPENAI_API_KEY`. |
 | `hf` | Local `transformers` model | Multimodal `AutoProcessor` / `AutoModelForMultimodalLM` path for Gemma 4; `--model-id`, `--adapter-path` (LoRA), `--load-in-4bit/-8bit`, `--device`. |
 
@@ -19,8 +19,11 @@ schema. Neither directory orchestrates other pipeline stages.
   optional. Their user message places the prompt before the audio.
 - Raw Gemini loads `prompts/full-tags-prompt.md` as a system instruction, overridable
   with `GEMINI_SYSTEM_PROMPT` in the environment or repository `.env`. It has no
-  prompt CLI flags. The Gemini verifier retains `--prompt-file` and sends that
-  prompt as a system instruction too. User content contains only audio.
+  system-prompt file CLI flag. The Gemini verifier retains `--prompt-file` and sends that
+  prompt as a system instruction too. User content contains audio followed by
+  `--user-prompt` text (default: "Analyze the attached audio according to the system
+  instructions."). The Gemini 3.8 migration guide requires nonempty text in the
+  final user turn; blank user instructions are rejected locally.
   Standard uses `google-genai`; Flex/Batch use REST. The verify requirements now
   declare the SDK; existing environments need it provisioned separately.
 - Both Gemini commands accept `--max-retry N`: at most N additional attempts per
@@ -45,17 +48,20 @@ schema. Neither directory orchestrates other pipeline stages.
   is applied: the text may be prose, JSON, XML, a transcript, or anything the prompt
   asked for.
 - Both Gemini commands accept `--continue` in Standard, Flex, and Batch mode.
-  Matching completed output pairs are skipped; source, prompt, or generation
-  setting conflicts require `--overwrite`. The two flags cannot be combined.
-- Standard/Flex continuation retries missing, failed, or incomplete outputs.
-  These synchronous requests cannot recover an in-flight response after a local
-  interruption; retrying that clip may incur another charge.
+  Completed valid output pairs are skipped even if made with another prompt,
+  source digest, or settings (the run logs how many), so deleting bad outputs and
+  rerunning with `--continue` regenerates only those. Without `--continue`, such
+  conflicts require `--overwrite` or a new output directory.
+  `--continue` and `--overwrite` cannot be combined.
+- Continuation retries missing, failed, or incomplete outputs. Standard/Flex
+  requests cannot recover an in-flight response after a local interruption;
+  retrying that clip may incur another charge.
 - Batch continuation reconnects to saved jobs under `work/batch_jobs/` and
-  republishes their responses. The run manifest retains the original submitted
-  subset and validates the full input set (root, paths, source digests, output
-  destinations), prompts, settings, and batch size before resuming. Keep those
-  unchanged when continuing. Without `--continue`, pending work submits a fresh
-  Batch job. `--overwrite` regenerates all outputs with fresh requests.
+  republishes their responses when the run manifest (root, paths, source digests,
+  output destinations, prompts, settings, batch size) is unchanged and covers
+  every missing output. Otherwise the missing outputs are submitted as a new Batch
+  run. Without `--continue`, pending work submits a fresh Batch job.
+  `--overwrite` regenerates all outputs with fresh requests.
   Failed provider jobs are resubmitted while successful jobs are retained.
   Saved per-request errors or responses that fail verdict validation are replayed
   on continuation; use `--overwrite` to request new responses for those clips.
@@ -99,6 +105,54 @@ schema. Neither directory orchestrates other pipeline stages.
 - Cache settings are part of artifact identity. Existing verifier outputs from
   earlier versions may require `--overwrite` or a new output directory.
 
+## Gemini launcher dependency errors
+
+The Gemini launchers select `VERIFIER_PYTHON` when set, otherwise
+`.venvs/verify/bin/python`, then `.venvs/main/bin/python`. Activating Conda
+`(base)` does not override that selection. If startup reports missing `httpx` or
+`google.genai`, check the selected interpreter; both dependencies are already
+listed in `envs/requirements-verify.txt`.
+
+If the active Python already has both dependencies, select it explicitly:
+
+```bash
+export VERIFIER_PYTHON="$(command -v python)"
+"$VERIFIER_PYTHON" -c 'import httpx; from google import genai'
+bash scripts/s4-agent/verifier/gemini.sh --help
+```
+
+Then rerun the normal command in that shell. Quote input paths containing spaces.
+To provision the dedicated environment instead, use the existing
+`bash envs/setup_worker_envs.sh verify` command; it installs the full verifier
+stack, including local HF dependencies, not only the Gemini client.
+
+## Comparing Gemini with Google AI Studio
+
+Reviewed against Google's [Gemini 3.8 migration guide](https://ai.google.dev/gemini-api/docs/generate-content/latest-model)
+and [model specification](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash)
+on 2026-09-23. The documented generateContent path still includes Gemini 3.8;
+Google labels it Legacy while also offering Interactions. That label alone does
+not establish a model-quality difference. Model ID, medium thinking by default,
+65,536 output tokens, and omitted sampling controls match the model guidance.
+The audio-only final user turn was the concrete request mismatch corrected here.
+
+For an informative comparison, use the exact same audio bytes, model version,
+system rubric, user text, thinking level, output limit, safety configuration,
+response format and tools, with a fresh AI Studio conversation. Compare the code
+exported from AI Studio with these settings. Text pasted into its user chat is
+not the same message layout as the rubric in this command's system instruction.
+The raw command honors GEMINI_SYSTEM_PROMPT; the verifier instead uses its
+--prompt-file/default, so check both resolved prompts. No sampling/JSON/safety
+settings or conversation history are added by this command. This audit did not
+have the user's AI Studio request export and did not run paid comparisons, so it
+cannot attribute remaining quality differences or acoustic false rejections.
+
+Google's [response reference](https://ai.google.dev/api/generate-content#FinishReason)
+distinguishes provider completion/block reasons from a JSON verdict's `reject`.
+Use the saved generation evidence to identify which happened before changing the
+rubric. See the [troubleshooting guide](https://ai.google.dev/gemini-api/docs/troubleshooting)
+for request errors.
+
 All agent and verifier progress is written to stderr so stdout remains a clean
 stream of successful artifact paths. Each run logs its backend/model, item start
 and completion, latency, and response size or verifier decision. Token usage and
@@ -136,7 +190,35 @@ endpoints without pricing metadata explicitly report cost as unavailable.
 - `vibevoice` remains a prompt-free speaker-count verifier and therefore does not
   run the acoustic v3 rubric or emit its transcript field.
 
-Prompts in `prompts/`: `full-tags-prompt.md` is the active verifier default;
+Prompts in `prompts/`: `full-tags-prompt.md` is the active verifier default.
+It accepts transcribable multilingual speech, including foreign names and code
+switching. Audio is the only evidence: adding a word the speaker did not say is
+treated as worse than omitting one, knowledge of titles, names, quotes and idioms
+never fills gaps, and high-risk spans are checked by counting heard syllables.
+Each occurrence of a foreign word first gets a raw per-syllable listening note
+(onset with aspiration, vowel, coda, Vietnamese tone, stress) in the model's
+reasoning. There is no default branch: an English word gets IPA of the heard
+variant only when every syllable matches a native reading (allowing native
+connected-speech variants), and ViePhoneme for the whole word when any syllable
+deviates (different phoneme, syllable count, Vietnamese tone, Vietnamese
+substitution, spelling reading). Anti-bias rules forbid choosing ViePhoneme
+because the speaker is Vietnamese and forbid choosing IPA because a name is famous
+or the correct reading is known; the raw listening note decides, and both
+branches get a mandatory read-back check. Non-English foreign words use
+ViePhoneme. ViePhoneme is written from the ear as Vietnamese syllables: heard
+Vietnamese-like syllables are spelled as Vietnamese, only non-Vietnamese sounds
+are approximated by mapping rules, every rhyme must pass an allowed-rhyme list,
+codas follow Vietnamese coda rules (no invented consonant block after a final
+stop), `z` is the only extra letter (`/dʒ ʒ/`), and tones are the heard
+Vietnamese tone or, for English-intonation syllables, derived from stress and
+syllable shape. Words read in Vietnamese join with `_`. Dropping a heard filler is treated
+as seriously as adding a word: a dedicated listening pass lists non-lexical sounds
+with positions, fillers are never replaced by pause marks, and pause marks encode
+silence length relative to the file (`~` < `,` < `.` < `*`). Emotion comes from prosody against a neutral baseline, never from content. The default
+keeps emotion labels inside `transcript`, with no separate `emotion` field. These
+are prompt instructions; the runtime schema validator does not verify phonetic
+accuracy.
+
 `acoustic_defect.txt` and `acoustic_defect-2.txt` are retained unchanged as
 deprecated, reference-only revisions and are not registered validation profiles.
 `speaker_purity.txt` and `word_boundary.txt` are narrower verifier alternatives.
@@ -167,6 +249,16 @@ schema failures remain failures and retain their raw response for diagnosis.
 ### `plot_verifier_analysis.sh --input-dir DIR` (aliases: `analysis.sh`, `analyze.sh`)
 
 All verifiers invoke this script automatically upon completing a run unless `--skip-analysis` / `--no-analyze` is passed. It can also be run or re-run standalone at any time.
+
+All verifier backends update `plot/sample_costs.md` atomically after each saved
+result, including failed results, even with `--skip-analysis`. Continuing a run
+includes previously saved artifacts and replaces the row for a retried/overwritten
+artifact, so samples are not duplicated. The summary reflects the currently saved
+artifacts, not a history of overwritten attempts. A partial run therefore retains
+its completed results without waiting for plotting; an in-flight request without
+a saved artifact is not included. During processing the report lists saved results;
+full analysis also adds missing turns from diarization manifests. Standalone
+analysis writes this report before rendering plots.
 
 Automatic analysis writes `plot/` inside the run's verdict output directory:
 the parent of an explicit `--output-file`, an explicit `--output-dir`, or the

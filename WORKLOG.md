@@ -419,3 +419,135 @@
 - Added --max-retry N to both Gemini commands for N additional transient HTTP failure retries; zero disables retries. Kept legacy --max-retries total-attempt semantics mutually exclusive and disabled nested SDK retries. Valid verifier rejections and invalid response parsing never trigger transport retries. Batch result resubmission remains governed by existing continuation/overwrite behavior.
 - Fixed direct verifier generation to use keyword-only system_prompt, distinguished new system-prompt verifier metadata, declared the SDK dependency, and corrected affected prompt/cache/retry documentation. No packages installed.
 - Validation: Python AST syntax, both Bash launcher syntax checks and both launcher --help invocations passed with system Python; reviewed the merged diff, retained local file inventory, and whitespace checks. Verified SDK retry/ThinkingLevel definitions in upstream v1.56.0 and set that dependency floor. The SDK is absent locally; no installation, tests or paid inference were performed, so runtime provider behavior remains unverified.
+
+## 2026-09-23 - Ground full-tags pronunciation and disfluencies in audio
+
+- Request: revise the working-copy full-tags prompt without word-specific examples, preserving heard pronunciation across languages, fillers, and unexpected pauses. Existing uncommitted prompt edits are the starting point; unrelated local files are outside this task.
+- Inspected Gemini raw/verifier prompt loading, adjacent endpoint/HF backends, shared verdict validation, launchers, and documented contracts. Keep the JSON fields, verifier profile, and provider paths; no inference implementation changes.
+- Decisions: require audible evidence for native British/American English IPA; write other foreign pronunciations directly as open ViePhoneme, without IPA conversion tables, forced Vietnamese rhymes, dropped codas, or automatic tones. Permit transcribable multilingual speech; retain unsupported_language only for language content that cannot be reliably transcribed. Distinguish real fillers and mid-sentence silences from lexical normalization and editorial punctuation.
+- Result: shortened the working prompt from 4,098 to 3,136 whitespace-delimited words (214 to 141 logical lines), removed all word-specific examples and lossy conversion/rhyme/tone rules, and retained the response schema, tags, and emotion catalog. Updated focused verifier documentation and corrected the default-versus-legacy emotion-field description in the data contract.
+- Validation: reviewed the prompt against both the pre-edit working copy and HEAD, reviewed documentation diffs, and passed git diff --check and Bash syntax checks. Both Gemini launchers passed --help with the existing Miniforge Python via VERIFIER_PYTHON; system Python and the default verify environment lack httpx, so their help attempts failed before argument parsing. No packages installed. Static inspection confirmed both Gemini paths load the prompt as system instructions and the validator still recognizes its acoustic_defect_v3 profile.
+- No tests were written or run because the user did not request them. No model/API calls or audio evaluation were performed; actual transcription/phonetic accuracy remains unverified. Only the prompt, two affected documentation files, and this worklog are included; unrelated pre-existing untracked files are preserved.
+
+## 2026-09-23 - Audit Gemini 3.8 API requests and empty-response retries
+
+- Inspected raw/verifier Gemini generation, adjacent endpoint, parsing/validation, artifact/continuation helpers, launchers, dependencies and contracts; preserve pre-existing prompt/export/doc edits.
+- Local saved Gemini artifacts: 506 successful pass verdicts and 5 invalid_json failures, all five with empty text; existing failure artifacts omit provider finish/block diagnostics, so their upstream cause cannot be recovered.
+- Google's Gemini 3.8 migration checklist explicitly requires nonempty text in the final user turn; current requests contain audio only. Keep the system rubric and add a visible, configurable user instruction consistently across SDK Standard and REST Flex/Batch.
+- Keep bounded retries for transient failures; add a separate bounded response retry budget for empty/transient incomplete answers, preserve attempt diagnostics and usage, and report terminal blocks/token exhaustion as generation failures. Valid acoustic reject verdicts must remain completed verdicts.
+- Implemented nonempty configurable --user-prompt across SDK/REST payloads; explicitly selected Developer API/v1beta for Standard. Model, thinking and output-token settings already match the 3.8 guide; no sampler/SDK migration needed. Installed system google-genai is 2.18.1 and exposes the used configuration and response-error fields.
+- Added --max-response-retries (default 3 additional Standard/Flex generations), separate from transport attempts, plus Retry-After handling. Preserve successful and failed provider evidence in raw/verifier artifacts; retain every received retry response and aggregate usage/cost without double counting the session. Never retry a valid acoustic reject, permanent provider block, or MAX_TOKENS; nonempty JSON/schema errors and individual Batch resubmission remain explicit exceptions.
+- Corrected docs that assumed Standard guarantees AI Studio parity. Added comparison guidance and new artifact/CLI contracts. Existing outputs need a fresh directory or explicit overwrite because user text and response retry settings change run identity.
+- Validation: changed Python files passed AST syntax checks; both Bash launchers passed bash -n and --help through system Python. Inspected installed SDK definitions without creating a client. Reviewed implementation/documentation diff and whitespace. No tests written or run, no package installation and no model/API calls; runtime retry behavior and AI Studio quality equivalence remain unverified.
+- Publication: implementation committed locally; push to origin was blocked because this environment has no GitHub HTTPS credentials (no credential helper, gh CLI, GH_TOKEN or GITHUB_TOKEN). Existing unrelated staged/working edits were excluded using an isolated commit index.
+
+## 2026-09-23 - Full-tags prompt delivery status
+
+- Prompt, focused documentation, and task results are committed locally. Push to origin/main is blocked because HTTPS GitHub authentication is unavailable in this session; GitHub CLI is not installed, and strict SSH host verification cannot establish the alternative connection. No credentials were read, recorded, or changed. Remote delivery remains pending authentication.
+
+## 2026-09-23 - Diagnose Gemini launcher missing httpx
+
+- The default Gemini launchers select .venvs/verify/bin/python even when Conda base is active. On this machine that venv lacks both httpx and google-genai; /home/hault16/miniforge3/bin/python already has httpx and google-genai 2.18.1. Requirements already declare both dependencies, so no source/dependency changes or package installation are needed.
+- Confirmed the existing VERIFIER_PYTHON override selects the usable Miniforge environment for both raw and verifier commands. Documented the override and existing dedicated-env provisioning alternative. The reported input path also requires quotes around its space-containing directory.
+- Validation: dependency imports in Miniforge, both Gemini launcher --help invocations with the override, and Bash syntax passed. Reviewed the focused documentation/worklog diff. No tests, model/API calls, package installation, or changes to the user's .gitignore/prompt/untracked files.
+
+## 2026-09-23 - Persist partial verifier sample cost reports
+
+- Inspected shared verifier execution, Gemini/endpoint/HF and other backend call sites, artifact discovery, report rendering, launchers and file contracts. Existing reporting ran only after plot rendering at shutdown.
+- Update plot/sample_costs.md after every saved verdict through the shared verifier path, including failures and --skip-analysis. Seed from existing artifacts for continuation and replace rows by artifact path to avoid duplicate samples; this is a cumulative current-artifact report, not overwritten-attempt billing history.
+- Reuse production analysis extraction/rendering without plotting or provider calls; serialize worker updates and publish Markdown atomically. Standalone analysis now publishes sample costs before plotting. Document partial-run and in-flight limitations.
+- Validation: changed Python files passed AST syntax checks; Gemini and analysis Bash launchers passed bash -n and --help using the existing Miniforge Python. Reviewed the final focused diff and git diff --check. All verifier backends use the updated shared runner. No tests were written/run (not requested), no models/API calls, package installation or runtime dataset modifications; interrupted/concurrent execution was reviewed statically only.
+- Publication: committed the five intended source/documentation/worklog files, excluding unrelated existing changes. Push failed because GitHub HTTPS credentials are unavailable (could not read Username); remote delivery remains pending authentication.
+
+## 2026-09-23 - Restore compact Gemini verifier JSON
+
+- Compared the requested assistant-response reference with the Nga Levi artifact: the extra top-level generation object embeds provider candidates/thoughtSignature and duplicates transcript, usage/cost and model metadata already represented by the text sidecar/verdict.
+- Removed full generation attachment from parsed Gemini verdicts and provider-body serialization from the shared verifier writer (Gemini was its only producer). Successful artifacts retain the reference layout; failures keep error/invalid_verdict and exact final text without a provider dump. Current generation parameters remain for continuation identity.
+- Generation exceptions still carry in-memory information for safe error classification and run cost reporting; raw generation, retry behavior and aggregate verdict usage/cost are unchanged. Updated focused artifact documentation. Existing runtime outputs are not rewritten.
+- Validation: Python AST syntax passed for both changed modules; raw/verifier Gemini launchers passed bash -n and --help through Miniforge. Reviewed final source/documentation diff and git diff --check. No tests written/run (not requested), no inference/API calls and no runtime artifacts modified.
+
+## 2026-09-23 - Preserve audible contrasts in ViePhoneme
+
+- Follow-up: user reports persistent loss of fricative distinctions, incorrect onset substitution, and flattened vowel/glide transitions in foreign names. Treat the supplied corrections as user reference, not independently verified listening; do not hardcode the names or corrected words into the prompt.
+- Reviewed the working prompt, shared schema/loading, adjacent endpoint/HF paths, Gemini launchers and focused documentation. Existing user change renaming section 2.5 to Non-verbal is preserved; .gitignore and runtime artifacts are outside the edit scope. Previously found local example paths disappeared before they could be read, so no saved-prompt or acoustic verification is claimed.
+- Decision: distinguish word recognition, acoustic discrimination and spelling the heard sounds. Add a small sound-level notation convention for fricatives and glides, then compare ambiguous candidates by the audible feature that separates them. Keep the IPA eligibility, JSON schema, filler and pause contracts intact.
+- Result: refined only the pronunciation listening/representation sections and their documentation. The prompt now separates consonant manner/place/voicing, vowel trajectories, glides and syllable count; compares ambiguous readings using distinguishing audible cues; defines reusable extended-letter sound notation; and checks the bracketed sounds independently of the recognized word. No word-specific pronunciation examples or automatic substitutions were added.
+- Validation: reviewed the final focused diff and passed whitespace checks, both Gemini launcher Bash syntax checks, and both --help invocations using existing Miniforge Python. No tests were written or run because none were requested; no model/API calls, audio evaluation, installation, or runtime artifact changes. The expected improvement is unmeasured.
+- Delivery: stage only this task's prompt changes, focused documentation and worklog; retain the user's section-heading edit and .gitignore change in the working tree. Push preflight failed because HTTPS GitHub authentication is unavailable; remote publication remains pending authentication.
+
+## 2026-09-23 - Sound-first foreign-word transcription prompt
+
+- Follow-up: Gemini 3.8 Flash still wrote brackets from spelling or familiar Vietnamese syllables (onset changed, back fricative merged into front, diphthong/glide flattened) across non-English names. User corrections are treated as reference, not verified listening; no word-specific examples were added.
+- Decision: replace accumulated rules with one ordered procedure ("sound first, spelling after"): describe each occurrence as meaningless sound, write it, then attach spelling; check three named pulls (Vietnamese reading of spelling, remembered/dictionary/common Vietnamized pronunciation, snapping to nearest Vietnamese syllable). ViePhoneme explicitly need not be a valid Vietnamese syllable. IPA decision now names both error directions (false IPA, false downgrade) and is limited to native American English. Brackets are decided before the final transcript is written. Punctuation restated as rhythm, not grammar; filler/pause contracts unchanged.
+- Validation: reviewed diff only. No tests (not requested), no model/API calls; improvement unmeasured.
+
+## 2026-09-23 - One-sound consonant letters in ViePhoneme
+
+- Follow-up run of the sound-first prompt still merged back fricatives into `s`, wrote velar `gh`/`d` for a front voiced onset, replaced a foreign affricate coda with a Vietnamese stop coda plus tone, dropped an inter-syllable glide, misheard a sentence-final particle as a question and returned an empty `reason`.
+- Diagnosis: Vietnamese letters `s`, `d`, `gi`, `tr` have dialect-dependent or merged readings, so the model could treat Vietnamese-style spellings as faithful; the coda rule only listed some Latin codas.
+- Change: ViePhoneme consonant table with one sound per letter (and `d`/`gi`/`tr` banned for foreign sounds), explicit contrast decision for every fricative/affricate, general rule for codas outside the Vietnamese set, glide check after diphthongs, sentence-final particle and `?` by audible tone/intonation, non-empty `reason`. No word-specific examples.
+- Validation: diff review only; no tests (not requested), no model/API calls.
+
+## 2026-09-23 - Ear-only foreign-word brackets
+
+- Follow-up run still produced brackets from spelling/romanization or remembered native readings (velar onset for a front fricative, back fricative merged into `s`, diphthong and glide flattened) and missed audible frication after a coda. User notes speakers mix reading styles and languages freely; high reasoning was worse than medium, so medium stays the default.
+- Diagnosis: the sound-first procedure named the "correct/dictionary/common" pronunciations as pulls to check and asked for IPA-like feature analysis, which invites the model to recall exactly those readings; longer text reasoning drifts further toward knowledge.
+- Change: section 3.1 is now "ear only" — no language identification, spelling, romanization, dictionary/IPA or intermediate transcription when writing brackets; knowledge-style reasoning is flagged as a signal to re-listen. Native American English comparison is confined to the IPA decision for English words. ViePhoneme is framed as a script to mimic the speaker; the consonant table became a letter reading key; post-coda frication is kept as a consonant block. No word-specific examples.
+- Validation: diff review only; no tests (not requested), no model/API calls.
+
+## 2026-09-23 - Why six prompt edits did not move the pronunciation errors
+
+- Checked delivery: every verifier metadata JSON stores the full system prompt it sent. The 22:08 medium run used the current file byte-for-byte (minus trailing newline), so edits were loaded; nothing stale was served from cache.
+- Outputs are overwritten per `<model>/<reasoning>/<family>` directory, so earlier prompt versions' outputs for the same clip are lost; comparisons between versions relied on one clip and one sample each.
+- Across versions and reasoning levels the same clip kept `ghen-zi`/`si-ki-bu` while only the diphthong moved (`hê-an` → `hây-an`). High reasoning spent 3–16k thinking tokens with no gain. Likely limit: reasoning operates on the already-encoded audio, so "listen again"/"back-check" instructions cannot add acoustic detail; text reasoning pulls toward priors. Prompt text alone may not fix these errors.
+- Change: IPA decision made symmetric (native-sounding English words must get IPA; removed "uncertain → ViePhoneme" default that biased toward ViePhoneme). Emotion is decided from the voice before transcription and follows the voice when content differs; content never selects a label.
+- Validation: diff review only; no tests (not requested), no model/API calls.
+
+## 2026-09-23 - IPA chosen first, by phonemes
+
+- The 23:36–23:41 run used the current prompt and still downgraded English words the user heard as correctly pronounced to ViePhoneme.
+- Diagnosis: the ear-only section preceded the IPA decision and applied to every bracket ("meaningless sound", no language identification, no known IPA), so the model wrote ViePhoneme first; "sounds like a native speaker" let any Vietnamese voice quality disqualify IPA.
+- Change: 3.1 now chooses the system first. English words matching American English phonemes, codas/clusters, syllable count and stress must get IPA; voice quality, rate and surrounding Vietnamese intonation do not count. ViePhoneme requires a named Vietnamese-style cue. The ear-only rule moved to 3.2 and applies only to writing ViePhoneme.
+- Validation: diff review only; no tests (not requested), no model/API calls.
+
+## 2026-09-24 - Filler sweep, breath pauses, focused re-listen
+
+- Across 614 saved Gemini transcripts only 8 contain any tag and 167 any `~`; the user reports missed breath-catch pauses and missed clear (`ừm`, `ừ`) and vague (`<hm>`, `<mm>`) fillers.
+- Causes in the prompt: pauses were defined as "real silence", so breath intakes could not carry `~`; "not sure there is a sound → add nothing" applied to fillers too.
+- Change: a pause is silence or breath intake (`~` mid-flow, `,` at a phrasing boundary; breathing still untagged); a dedicated word-boundary sweep for fillers after transcription; vague fillers must be written as tags rather than dropped. Bracket decisions now require a focused second listen to the word's own segment, syllable by syllable, including aspiration, with ties resolved by the distinguishing cue rather than the spelling/standard/Vietnamized default. This supersedes the earlier "long reasoning does not help, write the first impression" line; the re-listen is targeted, not open-ended.
+- Validation: diff review only; no tests (not requested), no model/API calls.
+
+## 2026-09-24 - Short s5-export command names
+
+- User chose the short names `index`, `filter`, `export`, `bundle` (byte-identical copies already existed untracked); removed the long-named Python/Bash entrypoints and updated README and `docs/commands.md`. This reverses the earlier long-name rename.
+- Also committed pending local files: per-backend `requirements-*.txt`, `.python-version`, `playlist-url.txt`, and the `.gitignore` change (root `/.data` ignore).
+- Validation: `bash -n`, `py_compile`, and `--help` through each renamed launcher; no tests (not requested).
+
+## 2026-09-24 - Phoneme-based IPA choice, pitch-true ViePhoneme, fillers before pauses
+
+- User report: mispronounced English words still got IPA; correctly pronounced words with weaker-than-native stress became ViePhoneme; ViePhoneme sounded like stock Vietnamized spellings; connective + filler (`thì ờ`, `thì <uhm>`) came out as `thì ~`.
+- Recent Gemini 3.8 Flash outputs matched the report: pause marks where fillers belong, stock Vietnamized ViePhoneme spellings mostly without tones, and IPA applied to every word in some sentences.
+- Prompt changes: IPA vs ViePhoneme is now decided phoneme by phoneme (correct / clearly off). Stress, emphasis, pitch and voice quality never decide. Any substituted, dropped or added phoneme, or a spelling-based or wrong-word reading, forces ViePhoneme, never IPA. ViePhoneme syllables take the Vietnamese tone closest to the heard pitch contour (unmarked means level), plus heard length and syllable grouping. `~` covers silence or breath only. Voiced hesitations, including a word's lengthening that shifts vowel or closes to a nasal, are filler tokens placed before any pause mark. Focused verifier docs updated.
+- Validation: reviewed the prompt/docs diff and ran git diff --check. No tests or model calls (not requested), so the quality effect is unmeasured.
+
+## 2026-09-24 - Rebuild full-tags prompt around default IPA, Vietnamese-syllable ViePhoneme and no word insertion
+
+### Decisions
+- Outputs of the previous prompt (`output-fix-defect-2/`) showed invented post-coda blocks (`Hamlet[ham-lét-s]`, `Juliet[giu-li-ét-s]`), split onsets (`Wright[r-ai-t]`), forbidden `gi`, dotted IPA and inconsistent IPA/ViePhoneme choices within one name.
+- Adopted the reference prompt's structure in shorter form (~16.9k chars vs 20.4k reference, 18.1k previous): "adding a word is worse than omitting", listen-as-foreign-language, commonly inserted function words and syllable counting in titles/names.
+- IPA is the default; ViePhoneme requires a named sign H0–H7 with position; accent, connected-speech reductions and fast speech are explicit non-signs; doubt → IPA.
+- ViePhoneme switches from the free Latin reading key to Vietnamese syllables: heard Vietnamese syllables spelled as Vietnamese, mapping rules only for non-Vietnamese sounds, allowed-rhyme list, Vietnamese coda rules, no consonant block for final-stop release, heard tone first then stress-based tone rules.
+- Kept the previous filler sweep, pause marks, non-verbal order, voice-first emotion and multilingual acceptance, condensed.
+
+### Results
+- Updated `prompts/full-tags-prompt.md` and the prompt description in `docs/agent_verifier.md`. Verified the prompt still maps to profile `acoustic_defect_v3`. No model calls or tests were run.
+
+## 2026-09-24 - Remove the IPA default and merge the second reference prompt
+
+### Decisions
+- User direction: IPA must not be the default, because Vietnamese speakers often mispronounce English and a default overfits. The branch is now decided only by a mandatory raw per-syllable listening note (onset with aspiration, vowel, coda, Vietnamese tone, stress): all syllables match a native reading → IPA of the heard variant; any deviating syllable → ViePhoneme for the whole word. Anti-bias rules apply in both directions, and "doubt → IPA" is removed.
+- Merged from the second reference: three-way principle (no add / no drop / no normalize), a dedicated non-lexical listening pass listed in reasoning, silence-length pause scale, filler table and scan points, aspiration (`th` for [tʰ]), `qu` glide, read-back checks for IPA and ViePhoneme, neutral-baseline emotion thresholds with content/voice mismatch examples, and never deleting heard fillers when counting excess syllables.
+- Kept multilingual acceptance (`unsupported_language` only when unreliable) instead of the reference's Vietnamese/English-only gate.
+
+### Results
+- `prompts/full-tags-prompt.md` is ~20.7k chars; still maps to `acoustic_defect_v3`. `docs/agent_verifier.md` updated. No model calls or tests were run.

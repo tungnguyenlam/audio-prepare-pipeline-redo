@@ -138,8 +138,17 @@ def run_agent(
     )
 
     def process_item(src: Path, dst: Path) -> None:
+        generation_error = None
+        res = None
         try:
-            res = generate(src)
+            try:
+                res = generate(src)
+            except Exception as exc:
+                # Providers can attach a response even when generation is unusable.
+                res = getattr(exc, "generation", None)
+                if not isinstance(res, dict):
+                    raise
+                generation_error = exc
             if not isinstance(res, dict) or not isinstance(res.get('text'), str):
                 raise TypeError('Agent generator must return a dict with string text')
 
@@ -165,14 +174,19 @@ def run_agent(
                     "sha256": digest(dst),
                 },
             }
+            if generation_error is not None:
+                sidecar_payload["status"] = "fail"
+                sidecar_payload["error"] = res["generation_error"]
             write_json(sidecar_path, sidecar_payload)
+            if generation_error is not None:
+                raise generation_error
             running_total = record_result(stats, res, success=True)
             progress(
                 'AGENT_RESULT',
                 f'{src.name}: {item_detail(res, text_length=len(res["text"]), running_total_usd=running_total)}',
             )
         except Exception:
-            record_result(stats, None, success=False)
+            record_result(stats, res, success=False)
             raise
 
     try:

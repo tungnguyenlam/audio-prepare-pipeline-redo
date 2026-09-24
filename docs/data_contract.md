@@ -338,16 +338,36 @@ these new runs rather than being silently reused. `--max-retry N` is normalized
 to the existing `max_retries: N + 1` total-attempt parameter in sidecars and Batch
 signatures; changing the retry budget therefore changes run identity. Valid
 `reject` verdicts remain completed artifacts, not failed requests.
+Gemini additionally records `user_prompt` (nonempty text sent alongside audio)
+and `max_response_retries` (default 3 additional Standard/Flex generations).
+These affect artifact identity; old runs require a new output directory or
+explicit overwrite. Gemini never treats empty/incomplete provider output as a
+successful raw pair: a retained diagnostic pair has `status: fail` and `error`.
+Raw agent `response` retains the provider body and `generation_error`, plus
+`attempts` when multiple responses were received (each exact text, provider body,
+usage and cost). Its top-level usage/cost aggregate those responses.
+Verifier JSON omits `generation`, provider bodies, thought signatures and retry
+response copies. It retains the exact final answer in the `.txt` sidecar and
+latency, aggregate usage/cost, model version and response ID in `verdict` metadata.
+Failures retain `error` and, for schema failures, `invalid_verdict`; provider
+completion errors expose their safe code/message without embedding the body.
+Provider blocks and MAX_TOKENS are terminal; transient empty/incomplete answers
+have a bounded response retry budget. Batch validates completion but does not
+resubmit individual failed results automatically. A nonempty final answer that
+fails JSON/schema parsing is not a response-retry trigger.
 Gemini Batch state lives under the variant's `work/batch_jobs/` for resume.
 Both Gemini commands accept `--continue` in Standard, Flex, and Batch mode.
-Matching complete pairs are skipped. Standard/Flex retry missing, failed, or
-incomplete pairs; an interrupted in-flight response cannot be recovered and its
-retry may incur another charge. Conflicting source/prompt/settings metadata
-requires `--overwrite`; it cannot be combined with `--continue`.
-Batch `--continue` reconnects to saved jobs and republishes their responses. A run
-manifest retains the original submitted subset and checks the full input root,
-source paths/digests, output destinations, prompts, generation settings, and batch
-size before resuming. Without the flag, pending work submits fresh Batch jobs.
+Complete valid pairs are skipped even when they were made with a different
+source digest, prompt, or settings; delete an output to regenerate it with the
+current ones. Missing, failed, or incomplete pairs are retried; an interrupted
+in-flight Standard/Flex response cannot be recovered and its retry may incur
+another charge. Without `--continue`, conflicting metadata requires `--overwrite`;
+the two flags cannot be combined.
+Batch `--continue` reconnects to saved jobs and republishes their responses when
+the run manifest (full input root, source paths/digests, output destinations,
+prompts, generation settings, batch size) is unchanged and covers every missing
+output; otherwise the missing outputs are submitted as a new Batch run. Without
+the flag, pending work submits fresh Batch jobs.
 Failed provider jobs are resubmitted while successful jobs are retained. Saved
 per-request errors or responses that fail verdict validation are replayed;
 `--overwrite` is needed to request new responses for those clips.
@@ -393,9 +413,11 @@ Gemini `_inference_mode` is `batch`, `flex`, or `standard`, mirrored by
 `_cost.pricing_tier` (`paid_batch` / `paid_flex` / `paid_standard`); Batch and Flex
 share the same discounted rates.
 
-For a pass, the public verdict fields use the same order, include a nonempty
-`"emotion": "…"`, and end with a nonempty `"transcript": "…"`. Reject verdicts
-omit `transcript` entirely and may omit `emotion`. Runtime schema errors include
+For a pass, the public verdict fields end with a nonempty `"transcript": "…"`.
+The default `full-tags-prompt.md` puts emotion labels inside that transcript and
+emits no separate `emotion` field. The legacy `acoustic_defect-3.txt` prompt
+additionally requires a nonempty `"emotion": "…"` field. Reject verdicts omit
+`transcript` entirely and may omit `emotion`. Runtime schema errors include
 `missing_emotion`, `invalid_emotion`, `missing_transcript`,
 `unexpected_transcript`, and `transcript_not_last`; the exact raw model response
 remains in the sibling text artifact for diagnosis.
@@ -431,7 +453,7 @@ Validation profile is selected by the prompt text (`scripts/s4-agent/verifier/_v
 
 | Profile | Selected when prompt equals | Required fields and consistency |
 |---|---|---|
-| `acoustic_defect_v3` | `prompts/full-tags-prompt.md` (default) | Three acoustic dimensions as below; `failure_codes` contains exactly their non-clean values plus optional `unsupported_language` / `singing`; `decision` = pass iff no codes; pass requires nonempty `emotion` and final `transcript`; reject forbids the transcript field |
+| `acoustic_defect_v3` | `prompts/full-tags-prompt.md` (default) | Three acoustic dimensions as below; `failure_codes` contains exactly their non-clean values plus optional `unsupported_language` / `singing`; `decision` = pass iff no codes; pass requires a nonempty final `transcript` (`emotion` is additionally required by the legacy `acoustic_defect-3.txt` prompt); reject forbids the transcript field |
 | `speaker_purity_v1` | `prompts/speaker_purity.txt` | `speaker_purity`; pass iff `pure` |
 | `word_boundary_v1` | `prompts/word_boundary.txt` | `boundary_start`, `boundary_end` ∈ clean/clipped; pass iff both clean |
 | `vibevoice_v1` | VibeVoice backend (no prompt) | `decision` ∈ pass/reject/uncertain, `num_speakers`, `secondary_speech_s`, `dominant_speaker_id`; `uncertain` is excluded from pass/reject metrics; `parameters.quantization` is `none` / `int8` / `nf4` |
@@ -458,6 +480,16 @@ plot/
   coverage.png decisions.png defects.png transcripts.png emotions.png cost_distribution.png cost_total.png
   dimensions.png measurements.png processing_errors.png by_model.png by_speaker.png emotions_by_speaker.png timeline*.png   (when applicable)
 ```
+
+All verifier backends update `plot/sample_costs.md` atomically after each saved
+result, including failed results, even with `--skip-analysis`. Continuing a run
+includes previously saved artifacts and replaces the row for a retried/overwritten
+artifact, so samples are not duplicated. The summary reflects the currently saved
+artifacts, not a history of overwritten attempts. A partial run therefore retains
+its completed results without waiting for plotting; an in-flight request without
+a saved artifact is not included. During processing the report lists saved results;
+full analysis also adds missing turns from diarization manifests. Standalone
+analysis writes this report before rendering plots.
 
 Both CSVs share a column order beginning `audio_path, final_verdict,
 assistant_raw_response, transcript, transcript_chars, transcript_words, emotion`, followed

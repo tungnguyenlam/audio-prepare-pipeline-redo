@@ -558,9 +558,7 @@ def _markdown_relpath(path_str: str, base_dir: Path) -> str:
         return path_str
 
 
-def _write_sample_costs_markdown(all_csv: Path, output_dir: Path) -> Path:
-    with all_csv.open("r", encoding="utf-8", newline="") as stream:
-        rows = list(csv.DictReader(stream))
+def _write_sample_costs_markdown(rows: list[dict[str, Any]], output_dir: Path) -> Path:
 
     total_samples = len(rows)
     pass_samples = sum(1 for r in rows if r.get("final_verdict") == "pass")
@@ -719,7 +717,16 @@ def _write_sample_costs_markdown(all_csv: Path, output_dir: Path) -> Path:
         lines.append(f"| {path_cell} | {st_fmt} | {en_fmt} | {status_fmt} | {transcript_fmt} | {cost_fmt} |")
 
     sample_costs_md = output_dir / "sample_costs.md"
-    sample_costs_md.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile("w", dir=output_dir, encoding="utf-8", delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write("\n".join(lines) + "\n")
+        temporary.replace(sample_costs_md)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
     return sample_costs_md
 
 def _write_error_reports(all_csv: Path, output_dir: Path, verdict_dir: Path) -> dict[str, Any]:
@@ -1514,11 +1521,12 @@ def main() -> int:
     _write_csv(successful_csv, successful_rows)
     progress("ANALYZE_CSV", f"Wrote {len(rows)} total and {len(successful_rows)} successful row(s)")
 
+    sample_costs_file = _write_sample_costs_markdown(_read_csv(all_csv), output_dir)
+
     progress("ANALYZE_PLOTS", "Rendering coverage, decisions, defects and available measurements")
     plots = _make_plots(all_csv, successful_csv, output_dir)
     summary = _summary_from_csv(all_csv, successful_csv, plots, verdict_dir)
     details = _write_error_reports(all_csv, output_dir, verdict_dir)
-    sample_costs_file = _write_sample_costs_markdown(all_csv, output_dir)
     summary.update(details)
     summary["sample_costs_md"] = str(sample_costs_file)
     for previous_plot in previous_plots:
