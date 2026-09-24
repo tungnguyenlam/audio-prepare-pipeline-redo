@@ -574,3 +574,11 @@
 - Downloaded the pinned checkpoint and restored it strictly through the production loader on the Radeon RX 9060 XT (`cuda:0`): 99,230,547 parameters, eight speakers, 10 ms output frames. Native config accepts the offline preset; NeMo notes update period 300 effectively rounds to the 340-frame chunk.
 - Validated Bash syntax, Python compilation, actual launcher `--help`, provisioner help wiring, and final diff whitespace. No tests or audio inference were run because tests were not requested; diarization accuracy, end-to-end export, and long-recording memory behavior remain unmeasured. No paid models invoked.
 - Unrelated pre-existing untracked `data` path left untouched.
+
+## 2026-09-24 - Unset SETUPTOOLS_USE_DISTUTILS in worker provisioner
+
+### Decisions
+- Added `unset SETUPTOOLS_USE_DISTUTILS` to `envs/setup_worker_envs.sh`. Ambient shell environments (such as Conda base environments) often export `SETUPTOOLS_USE_DISTUTILS=stdlib`, which causes `setuptools` to attempt importing the removed standard library `distutils` in Python 3.12+ and fails source builds (such as `nemo-toolkit`).
+
+### Results
+- Validated `envs/setup_worker_envs.sh` syntax and diff.

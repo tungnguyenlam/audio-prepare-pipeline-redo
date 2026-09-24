@@ -4,6 +4,9 @@ set -e
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# Unset legacy distutils override which breaks setuptools under Python 3.12+
+unset SETUPTOOLS_USE_DISTUTILS
+
 print_usage() {
     echo "Usage: $0 [TARGET] [OPTIONS]"
     echo "Device-agnostic environment provisioner for audio processing models."
