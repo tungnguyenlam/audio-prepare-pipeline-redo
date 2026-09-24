@@ -582,3 +582,11 @@
 
 ### Results
 - Validated `envs/setup_worker_envs.sh` syntax and diff.
+
+## 2026-09-24 - Fix syntax error in diarization plots
+
+### Decisions
+- Removed stray trailing backslash on line 375 of `scripts/_common/diarize_plots.py` that caused a `SyntaxError` during duration histogram plotting when `segments.py` called `ensure_family_plots`.
+
+### Results
+- Validated via `python3 -m compileall scripts`. All scripts compile cleanly.
