@@ -2,8 +2,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-REMOTE_HOST="${SYNC_ANHNCT_HOST:-hault16@10.148.0.90}"
-REMOTE_REPO="${SYNC_ANHNCT_REPO:-Documents/tts-data-pipeline/audio-prepare-pipeline-redo}"
+REMOTE_HOST="${SYNC_LAM_HOST:-hault16@10.148.0.90}"
+REMOTE_REPO="${SYNC_LAM_REPO:-Documents/tts-data-pipeline/audio-prepare-pipeline-redo}"
 EXCLUDES="$REPO_ROOT/scripts/sync/data_excludes.txt"
 
 EXTRA_ARGS=()

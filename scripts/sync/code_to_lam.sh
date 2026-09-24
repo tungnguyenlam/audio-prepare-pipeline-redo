@@ -2,8 +2,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-REMOTE_HOST="${SYNC_LOI_HOST:-hault16@10.148.0.90}"
-REMOTE_REPO="${SYNC_LOI_REPO:-Documents/tts-data-pipeline/audio-prepare-pipeline-redo}"
+REMOTE_HOST="${SYNC_LAM_HOST:-hault16@10.148.0.90}"
+REMOTE_REPO="${SYNC_LAM_REPO:-Documents/tts-data-pipeline/audio-prepare-pipeline-redo}"
 
 cd "$REPO_ROOT"
 
@@ -19,4 +19,5 @@ rsync -avzP \
   --exclude='*.pyc' \
   --exclude='.pytest_cache/' \
   --exclude='.ipynb_checkpoints/' \
+  "$@" \
   ./ "${REMOTE_HOST}:${REMOTE_REPO}/"

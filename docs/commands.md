@@ -13,6 +13,37 @@ directory, and never install dependencies. `ffmpeg`/`ffprobe` must be on `PATH`.
 environment variables; the shared parser logs parsed options without printing
 secret-valued options or long prompt contents.
 
+## Sync with Lam
+
+Run code and data synchronization separately:
+
+```bash
+bash scripts/sync/code_to_lam.sh --dry-run
+bash scripts/sync/code_to_lam.sh
+bash scripts/sync/code_from_lam.sh --dry-run
+bash scripts/sync/data_to_lam.sh
+bash scripts/sync/data_from_lam.sh
+```
+
+All four Lam scripts use `SYNC_LAM_HOST` (default `hault16@10.148.0.90`)
+and `SYNC_LAM_REPO` (default `Documents/tts-data-pipeline/audio-prepare-pipeline-redo`,
+relative to the remote user's home). Other machines' `SYNC_*` settings do not
+configure Lam. Arguments are forwarded to rsync; code synchronization excludes
+`.git`, `.env`, virtual environments, and `.data`. The remote repository directory
+must already exist for code synchronization. Data commands can create directories
+and migrate legacy notebook data even when rsync receives `--dry-run`.
+
+If synchronization hangs, check SSH connectivity first:
+
+```bash
+ssh -o ConnectTimeout=10 hault16@10.148.0.90
+```
+
+A connection timeout occurs before authentication or file transfer: check access
+to the private network (LAN/VPN), the configured IP address, and remote SSH/firewall
+availability. Once connected, ensure `rsync` is installed on both machines and the
+remote repository directory is writable.
+
 ## CLI and file rules
 
 - **Flag shorthands**: All pipeline commands support concise standard shorthands alongside their canonical long names:

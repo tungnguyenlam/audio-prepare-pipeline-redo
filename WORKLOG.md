@@ -522,3 +522,10 @@
 - User chose the short names `index`, `filter`, `export`, `bundle` (byte-identical copies already existed untracked); removed the long-named Python/Bash entrypoints and updated README and `docs/commands.md`. This reverses the earlier long-name rename.
 - Also committed pending local files: per-backend `requirements-*.txt`, `.python-version`, `playlist-url.txt`, and the `.gitignore` change (root `/.data` ignore).
 - Validation: `bash -n`, `py_compile`, and `--help` through each renamed launcher; no tests (not requested).
+
+## 2026-09-24 - Diagnose and fix Lam sync configuration
+
+- Inspected all four new Lam launchers, adjacent host launchers, legacy server launcher, and command documentation. Lam scripts copied override names from Loi, Server, and Anhnct, so `SYNC_LAM_HOST`/`SYNC_LAM_REPO` were ignored; code launchers also dropped rsync arguments.
+- Changed all Lam launchers to use `SYNC_LAM_HOST`/`SYNC_LAM_REPO`; code launchers now forward arguments, including `--dry-run`. Documented defaults, separate code/data commands, destination prerequisites, and connectivity diagnosis.
+- Read-only SSH diagnosis to the default `hault16@10.148.0.90` with BatchMode and a 10-second connection timeout failed with port 22 connection timeout. Local routing sends this private address through the Wi-Fi default gateway. No sync override variables were set in this session. This connection failure precedes authentication/rsync; remote path, permissions, and rsync availability remain unverified.
+- Validation: Bash syntax checks passed for all four launchers; reviewed argument wiring and final diff; `git diff --check` passed. No tests were written or run (not requested), no paid models invoked, and no files transferred to Lam. Left the existing untracked `data` symlink untouched.
