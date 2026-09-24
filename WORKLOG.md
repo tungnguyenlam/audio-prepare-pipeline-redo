@@ -522,3 +522,13 @@
 
 ### Results
 - Updated `prompts/full-tags-prompt.md` and the prompt description in `docs/agent_verifier.md`. Verified the prompt still maps to profile `acoustic_defect_v3`. No model calls or tests were run.
+
+## 2026-09-24 - Remove the IPA default and merge the second reference prompt
+
+### Decisions
+- User direction: IPA must not be the default, because Vietnamese speakers often mispronounce English and a default overfits. The branch is now decided only by a mandatory raw per-syllable listening note (onset with aspiration, vowel, coda, Vietnamese tone, stress): all syllables match a native reading → IPA of the heard variant; any deviating syllable → ViePhoneme for the whole word. Anti-bias rules apply in both directions, and "doubt → IPA" is removed.
+- Merged from the second reference: three-way principle (no add / no drop / no normalize), a dedicated non-lexical listening pass listed in reasoning, silence-length pause scale, filler table and scan points, aspiration (`th` for [tʰ]), `qu` glide, read-back checks for IPA and ViePhoneme, neutral-baseline emotion thresholds with content/voice mismatch examples, and never deleting heard fillers when counting excess syllables.
+- Kept multilingual acceptance (`unsupported_language` only when unreliable) instead of the reference's Vietnamese/English-only gate.
+
+### Results
+- `prompts/full-tags-prompt.md` is ~20.7k chars; still maps to `acoustic_defect_v3`. `docs/agent_verifier.md` updated. No model calls or tests were run.

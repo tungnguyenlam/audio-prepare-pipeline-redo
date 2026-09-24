@@ -218,23 +218,26 @@ It accepts transcribable multilingual speech, including foreign names and code
 switching. Audio is the only evidence: adding a word the speaker did not say is
 treated as worse than omitting one, knowledge of titles, names, quotes and idioms
 never fills gaps, and high-risk spans are checked by counting heard syllables.
-Each occurrence of a foreign word is first listened to syllable by syllable. An
-English word defaults to IPA (American broad transcription, one primary stress
-mark, no syllable dots); it becomes ViePhoneme only when the model can name a
-concrete mispronunciation sign (H0–H7: extra/wrong syllable, misplaced stress,
-full vowel for schwa, Vietnamese tone, inserted vowel, dropped sound, Vietnamese
-substitution, spelling reading) and its position. Accent, connected-speech
-reductions and fast speech are listed as non-signs. Non-English foreign words use
+Each occurrence of a foreign word first gets a raw per-syllable listening note
+(onset with aspiration, vowel, coda, Vietnamese tone, stress) in the model's
+reasoning. There is no default branch: an English word gets IPA of the heard
+variant only when every syllable matches a native reading (allowing native
+connected-speech variants), and ViePhoneme for the whole word when any syllable
+deviates (different phoneme, syllable count, Vietnamese tone, Vietnamese
+substitution, spelling reading). Anti-bias rules forbid choosing ViePhoneme
+because the speaker is Vietnamese and forbid choosing IPA because a name is famous
+or the correct reading is known; the raw listening note decides, and both
+branches get a mandatory read-back check. Non-English foreign words use
 ViePhoneme. ViePhoneme is written from the ear as Vietnamese syllables: heard
 Vietnamese-like syllables are spelled as Vietnamese, only non-Vietnamese sounds
 are approximated by mapping rules, every rhyme must pass an allowed-rhyme list,
 codas follow Vietnamese coda rules (no invented consonant block after a final
 stop), `z` is the only extra letter (`/dʒ ʒ/`), and tones are the heard
 Vietnamese tone or, for English-intonation syllables, derived from stress and
-syllable shape. Words read in Vietnamese join with `_`. Audible fillers stay in
-order after a word-boundary sweep and are never replaced by a pause mark;
-`~` marks short pauses or breath catches and `*` long pauses inside an unfinished
-sentence. Emotion is decided from the voice before transcription. The default
+syllable shape. Words read in Vietnamese join with `_`. Dropping a heard filler is treated
+as seriously as adding a word: a dedicated listening pass lists non-lexical sounds
+with positions, fillers are never replaced by pause marks, and pause marks encode
+silence length relative to the file (`~` < `,` < `.` < `*`). Emotion comes from prosody against a neutral baseline, never from content. The default
 keeps emotion labels inside `transcript`, with no separate `emotion` field. These
 are prompt instructions; the runtime schema validator does not verify phonetic
 accuracy.
