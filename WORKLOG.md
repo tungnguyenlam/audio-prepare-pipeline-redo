@@ -551,3 +551,12 @@
 
 ### Results
 - `prompts/full-tags-prompt.md` is ~20.7k chars; still maps to `acoustic_defect_v3`. `docs/agent_verifier.md` updated. No model calls or tests were run.
+
+## 2026-09-24 - Plan Nemotron 3 diarization integration
+
+- User requested a plan before implementation for an isolated model environment and matching Python/Bash command pair.
+- Inspected the official NVIDIA model card, existing Sortformer and DiariZen commands, shared file/export helpers, environment provisioner, command documentation, and local machine notes.
+- Proposed scripts/s3-diarize/nemotron3_diarization.py and .sh, with a dedicated .venvs/nemotron3 environment and an explicit setup_worker_envs.sh target plus pinned requirements.
+- Prefer the official NeMo generation path with native speaker-cache chunking and the documented offline preset; verify a compatible NeMo version rather than reusing the older Sortformer 2.7.3 pin. Keep raw outputs separate from shared segment export.
+- Target local Python 3.13 and ROCm using existing hardware setup logic; ROCm model compatibility remains unverified. Preserve input/output contracts and keep runtime artifacts under .data/.
+- Implementation will update focused command/setup documentation and perform syntax, import, and launcher/help checks. No tests or inference were run, no packages installed, and no backend files created during planning.
