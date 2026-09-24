@@ -60,6 +60,7 @@ secret-valued options or long prompt contents.
 | `audio/*.sh`, `s5-export/*.sh` (handoff exception below), `evaluate/*.sh`, `mix/mix.sh`, `speaker/{enroll,filter}.sh`, `purity/{consensus,cleanup,merge,collar,snap,segment}.sh`, `s4-agent/verifier/{plot_verifier_analysis,analysis,analyze,compare,evaluate_verifier,scaffold_experiment}.sh` | `.venvs/audio` (`.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
 | `s2-separate/*.sh` | `.venvs/separation` (`.venv-separation`, `.venvs/main`, `.venv`) | `SEPARATION_PYTHON` |
 | `s3-diarize/{pyannote,pyannote_31,pyannote_community1}.sh`, `speaker/{score,purity}.sh` | `.venvs/pyannote` (`.venv-pyannote`, `.venvs/main`, `.venv`) | `DIARIZATION_PYTHON` |
+| `s3-diarize/nemotron3_diarization.sh` | `.venvs/nemotron3` | `DIARIZATION_PYTHON` |
 | `s3-diarize/{sortformer,clustering}.sh` | `.venvs/sortformer` (`.venv-sortformer`) | `DIARIZATION_PYTHON` |
 | `s3-diarize/threed_speaker.sh` | `.venvs/3dspeaker` (`.venv-3dspeaker`) | `DIARIZATION_PYTHON` |
 | `s3-diarize/diarizen.sh` | `.venvs/diarizen` (`.venv-diarizen`) | `DIARIZATION_PYTHON` |
@@ -82,7 +83,7 @@ provisions project-local JavaScript runtimes for yt-dlp.
 ```bash
 ./envs/setup_worker_envs.sh all        # core + workers
 ./envs/setup_worker_envs.sh core       # download, audio, separation, pyannote, verify, align
-./envs/setup_worker_envs.sh workers    # sortformer, 3dspeaker, vibevoice, diarizen, minicpmo, kimi
+./envs/setup_worker_envs.sh workers    # nemotron3, sortformer, 3dspeaker, vibevoice, diarizen, minicpmo
 ./envs/setup_worker_envs.sh download   # YouTube + JavaScript runtime environment
 ./envs/setup_worker_envs.sh <target>   # one env; add --force to recreate
 ./envs/setup_worker_envs.sh status     # health + accelerator report
@@ -96,6 +97,7 @@ provisions project-local JavaScript runtimes for yt-dlp.
 | `pyannote` | `.venvs/pyannote` | 3.13 | Pyannote 3.1 / Community-1, speaker scoring and purity |
 | `verify` | `.venvs/verify` | 3.13 | Gemini, OpenAI-compatible endpoints, HF Gemma, Unsloth |
 | `align` | `.venvs/align` | 3.13 | whisper-timestamped word alignment |
+| `nemotron3` | `.venvs/nemotron3` | 3.13 | Nemotron 3 eight-speaker diarization; pinned NeMo source |
 | `sortformer` | `.venvs/sortformer` | 3.13 | NeMo Sortformer and clustering diarizers |
 | `3dspeaker` | `.venvs/3dspeaker` | 3.13 | ModelScope 3D-Speaker |
 | `vibevoice` | `.venvs/vibevoice` | 3.13 | VibeVoice-ASR transcription, PhoWhisper/whisper-timestamped alignment, speaker-count verifier |
@@ -234,6 +236,51 @@ bash scripts/s3-diarize/diarizen.sh            --input-file x.wav --segmentation
 # (before merge, after merge/before filtering, and after filtering respectively)
 # directory runs additionally write collection-level aggregate duration and cutoff plots under _plot/
 ```
+
+### Nemotron 3 diarization
+
+```bash
+./envs/setup_worker_envs.sh nemotron3
+bash scripts/s3-diarize/nemotron3_diarization.sh \
+  --input-file .data/recording.wav --output-dir .data/diarized/nemotron3
+```
+
+Uses [NVIDIA Nemotron 3 Diarization](https://huggingface.co/nvidia/Nemotron-3-Diarization)
+with eight speaker channels and 10 ms output frames. NeMo is pinned to source
+revision `cf724ac337d1ebc7d0dda1e23fb80916f52927a5`: the PyPI 3.0.0 release
+predates this model's high-resolution implementation. Setup selects the host's
+ROCm or CUDA PyTorch stack in `.venvs/nemotron3`; CPU inference is available
+with `--device cpu`. FFmpeg must be installed for audio conversion.
+
+The checkpoint revision defaults to `a435e9867d79e789e90053f9b6d6834053af564a`
+and downloads into `.data/models/nemotron3/` on first inference. Use
+`--checkpoint-path` for a local `.nemo` file, or `--model-id` and `--revision`
+for another compatible checkpoint. Optional authentication uses `HF_TOKEN`.
+
+Inference converts audio to 16 kHz mono with FFmpeg and loads it with SoundFile.
+Native cached chunks preserve speaker state through each recording, using the
+official offline preset: cache 264, FIFO 40, chunk 340, right context 40, and
+cache update period 300 (80 ms frames). NeMo rounds the effective update period
+up to one chunk (340 frames) for this preset. Speaker state starts afresh per file;
+speaker labels do not identify the same person across different recordings.
+The model has eight speaker channels; no arbitrary speaker-count override is
+provided. Full waveform/features and output probabilities still consume memory
+proportional to recording length, despite chunked encoder inference.
+
+`--input-file` takes precedence over `--input-dir`. With `--output-dir`, each
+recording produces `<output-dir>/<stem>/segments.json`, raw/merged manifests,
+clips and plots through the shared export path. Output clips default to the
+source sample rate and mono; `--sample-rate` and `--channels` override them.
+The usual duration, merge and VAD split flags apply. Files are processed
+sequentially (`--concurrency 1`); `--batch-size` groups work/export items, while
+NeMo inference processes one recording at a time.
+
+Two additional artifacts retain the model response before turn validation:
+`nemotron3.native.json` contains native segment strings and frame duration;
+`nemotron3.probabilities.npy` contains float32 activity probabilities shaped
+`[frames, 8]`. Their SHA-256 hashes are tracked in the segment manifest.
+An interrupted run before segment export may require `--overwrite` to reuse
+its output directory. Logs go to stderr and completed manifest paths to stdout.
 
 You can still prepare a report before a run that may emit overlong turns. This
 remains an independent stage and can be reused by diarization and later

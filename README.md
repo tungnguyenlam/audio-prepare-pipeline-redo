@@ -32,7 +32,7 @@ verifiers) are provisioned per target with the same script; see
 |---|---|
 | `scripts/s1-download/` | `youtube`, `playlist`, `channel`, multi-source `crawl` |
 | `scripts/s2-separate/` | `htdemucs`, `htdemucs_ft`, `bs_roformer`, `mel_roformer`, `mvsep_mdx23` |
-| `scripts/s3-diarize/` | `sortformer`, `pyannote_community1`, `pyannote_31`, `clustering`, `threed_speaker`, `diarizen` |
+| `scripts/s3-diarize/` | `nemotron3_diarization`, `sortformer`, `pyannote_community1`, `pyannote_31`, `clustering`, `threed_speaker`, `diarizen` |
 | `scripts/audio/` | `info`, `convert`, `cut`, `segment_vad`, `segment_tts`, `export_segments`, `compare_waveforms`, `compare_spectrograms` |
 | `scripts/speaker/` | `enroll`, `score`, `filter`, `purity` |
 | `scripts/purity/` | `consensus`, `cleanup`, `merge`, `collar`, `snap`, `align`, `segment` |

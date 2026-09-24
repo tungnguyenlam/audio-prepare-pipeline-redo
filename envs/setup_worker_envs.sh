@@ -21,6 +21,7 @@ print_usage() {
     echo ""
     echo "Isolated Worker Targets:"
     echo "  workers      Provision all isolated worker environments"
+    echo "  nemotron3    Nemotron 3 diarization (.venvs/nemotron3, Python 3.13)"
     echo "  sortformer   NeMo Sortformer & Clustering (.venvs/sortformer, Python 3.13)"
     echo "  3dspeaker    ModelScope 3D-Speaker (.venvs/3dspeaker, Python 3.13)"
     echo "  vibevoice    VibeVoice-ASR purity verifier (.venvs/vibevoice, Python 3.13)"
@@ -478,6 +479,44 @@ print('   -> NeMo ASR collection: successfully loaded')
     echo "🎉 ${venv_dir} ready!"
 }
 
+setup_nemotron3() {
+    local venv_dir=".venvs/nemotron3"
+    echo ""
+    echo "========================================================"
+    echo "  Setting up Nemotron 3 diarization worker (${venv_dir})"
+    echo "========================================================"
+
+    if [ "$FORCE" -eq 1 ] && [ -d "$venv_dir" ]; then
+        echo "🗑️  Removing existing ${venv_dir} (--force)..."
+        rm -rf "$venv_dir"
+    fi
+
+    if [ ! -d "$venv_dir" ]; then
+        echo "📦 Creating virtual environment ${venv_dir}..."
+        uv venv --python 3.13 "$venv_dir"
+    fi
+
+    echo "⚙️ Configuring hardware acceleration..."
+    reconcile_py313_hardware "$venv_dir"
+
+    echo "📦 Installing Nemotron 3 requirements..."
+    uv pip install --python "${venv_dir}/bin/python" -r "$REPO_ROOT/envs/requirements-nemotron3.txt"
+
+    echo "⚙️ Re-verifying hardware acceleration..."
+    reconcile_py313_hardware "$venv_dir"
+
+    echo "✅ Verifying Nemotron 3 installation..."
+    "${venv_dir}/bin/python" -c "
+import torch
+dev_type = 'ROCm/HIP: ' + torch.cuda.get_device_name(0) if getattr(torch.version, 'hip', None) and torch.cuda.is_available() else ('CUDA: ' + torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')
+print(f'   -> Torch: {torch.__version__} ({dev_type})')
+import nemo.collections.asr.models as nemo_asr
+print('   -> NeMo ASR collection: successfully loaded')
+"
+    ensure_silero_model
+    echo "🎉 ${venv_dir} ready!"
+}
+
 setup_3dspeaker() {
     local venv_dir=".venvs/3dspeaker"
     echo ""
@@ -676,6 +715,7 @@ setup_core() {
 }
 
 setup_workers() {
+    setup_nemotron3
     setup_sortformer
     setup_3dspeaker
     setup_vibevoice
@@ -696,6 +736,7 @@ status_report() {
         ".venvs/pyannote"
         ".venvs/verify"
         ".venvs/align"
+        ".venvs/nemotron3"
         ".venvs/sortformer"
         ".venvs/3dspeaker"
         ".venvs/vibevoice"
@@ -758,7 +799,7 @@ if [ -z "$TARGET" ]; then
         echo "  2) download   Provision YouTube downloader and JavaScript runtimes (.venvs/download)"
         echo "  3) audio      Provision audio utilities & Silero VAD (.venvs/audio)"
         echo "  4) all        Provision all core + isolated worker environments"
-        echo "  5) workers    Provision isolated workers (sortformer, 3dspeaker, vibevoice, diarizen, minicpmo)"
+        echo "  5) workers    Provision isolated workers (nemotron3, sortformer, 3dspeaker, vibevoice, diarizen, minicpmo)"
         echo "  6) custom     Enter target name manually"
         echo "  q) quit       Exit without changes"
         echo ""
@@ -825,6 +866,9 @@ case "$TARGET" in
     workers)
         setup_workers
         status_report
+        ;;
+    nemotron3)
+        setup_nemotron3
         ;;
     sortformer|clustering|nemo)
         setup_sortformer

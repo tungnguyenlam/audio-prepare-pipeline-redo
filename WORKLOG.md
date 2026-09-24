@@ -560,3 +560,17 @@
 - Prefer the official NeMo generation path with native speaker-cache chunking and the documented offline preset; verify a compatible NeMo version rather than reusing the older Sortformer 2.7.3 pin. Keep raw outputs separate from shared segment export.
 - Target local Python 3.13 and ROCm using existing hardware setup logic; ROCm model compatibility remains unverified. Preserve input/output contracts and keep runtime artifacts under .data/.
 - Implementation will update focused command/setup documentation and perform syntax, import, and launcher/help checks. No tests or inference were run, no packages installed, and no backend files created during planning.
+
+## 2026-09-24 - Implement and provision Nemotron 3 diarization
+
+### Decisions
+- Added the standalone `scripts/s3-diarize/nemotron3_diarization.py` command and same-name Bash launcher, selecting `.venvs/nemotron3` (or `DIARIZATION_PYTHON`). Added a dedicated requirements file and wired the `nemotron3` setup target into workers/status/help.
+- PyPI NeMo 3.0.0 lacks the required high-resolution Sortformer implementation. Pinned upstream NeMo revision `cf724ac337d1ebc7d0dda1e23fb80916f52927a5` (3.1.0) and model revision `a435e9867d79e789e90053f9b6d6834053af564a` instead.
+- Use native speaker-cache chunking with NVIDIA's offline preset; process recordings sequentially to avoid sharing mutable NeMo state between threads. FFmpeg/SoundFile supply 16 kHz mono arrays, avoiding ROCm-incompatible audio loaders. Keep native strings and float32 probabilities before validation; reuse shared manifests, merges, VAD splitting, clips, and plots. Model downloads and setup inspection artifacts are under `.data/`.
+- Updated README's command inventory and focused setup/CLI documentation. The existing four-speaker backend/environment remains independent.
+
+### Results
+- Provisioned Python 3.13.15, NeMo 3.1.0 from the pinned source, and PyTorch 2.13.0+rocm10.0.0 in `.venvs/nemotron3`. Re-running the final setup target succeeds; `uv pip check` reports all 156 installed packages compatible.
+- Downloaded the pinned checkpoint and restored it strictly through the production loader on the Radeon RX 9060 XT (`cuda:0`): 99,230,547 parameters, eight speakers, 10 ms output frames. Native config accepts the offline preset; NeMo notes update period 300 effectively rounds to the 340-frame chunk.
+- Validated Bash syntax, Python compilation, actual launcher `--help`, provisioner help wiring, and final diff whitespace. No tests or audio inference were run because tests were not requested; diarization accuracy, end-to-end export, and long-recording memory behavior remain unmeasured. No paid models invoked.
+- Unrelated pre-existing untracked `data` path left untouched.

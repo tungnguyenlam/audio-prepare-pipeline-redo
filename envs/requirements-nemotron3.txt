@@ -1,0 +1,7 @@
+# Isolated NeMo 3 environment; PyTorch is selected by setup_worker_envs.sh.
+# PyPI 3.0.0 predates Nemotron 3's high-resolution Sortformer implementation.
+nemo-toolkit[asr] @ https://github.com/NVIDIA-NeMo/NeMo/archive/cf724ac337d1ebc7d0dda1e23fb80916f52927a5.zip
+soundfile>=0.13.1
+matplotlib>=3.10
+pysocks>=1.7.1
+httpx[socks]>=0.28.1
