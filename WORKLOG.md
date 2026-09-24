@@ -510,3 +510,15 @@
 - Recent Gemini 3.8 Flash outputs matched the report: pause marks where fillers belong, stock Vietnamized ViePhoneme spellings mostly without tones, and IPA applied to every word in some sentences.
 - Prompt changes: IPA vs ViePhoneme is now decided phoneme by phoneme (correct / clearly off). Stress, emphasis, pitch and voice quality never decide. Any substituted, dropped or added phoneme, or a spelling-based or wrong-word reading, forces ViePhoneme, never IPA. ViePhoneme syllables take the Vietnamese tone closest to the heard pitch contour (unmarked means level), plus heard length and syllable grouping. `~` covers silence or breath only. Voiced hesitations, including a word's lengthening that shifts vowel or closes to a nasal, are filler tokens placed before any pause mark. Focused verifier docs updated.
 - Validation: reviewed the prompt/docs diff and ran git diff --check. No tests or model calls (not requested), so the quality effect is unmeasured.
+
+## 2026-09-24 - Rebuild full-tags prompt around default IPA, Vietnamese-syllable ViePhoneme and no word insertion
+
+### Decisions
+- Outputs of the previous prompt (`output-fix-defect-2/`) showed invented post-coda blocks (`Hamlet[ham-lét-s]`, `Juliet[giu-li-ét-s]`), split onsets (`Wright[r-ai-t]`), forbidden `gi`, dotted IPA and inconsistent IPA/ViePhoneme choices within one name.
+- Adopted the reference prompt's structure in shorter form (~16.9k chars vs 20.4k reference, 18.1k previous): "adding a word is worse than omitting", listen-as-foreign-language, commonly inserted function words and syllable counting in titles/names.
+- IPA is the default; ViePhoneme requires a named sign H0–H7 with position; accent, connected-speech reductions and fast speech are explicit non-signs; doubt → IPA.
+- ViePhoneme switches from the free Latin reading key to Vietnamese syllables: heard Vietnamese syllables spelled as Vietnamese, mapping rules only for non-Vietnamese sounds, allowed-rhyme list, Vietnamese coda rules, no consonant block for final-stop release, heard tone first then stress-based tone rules.
+- Kept the previous filler sweep, pause marks, non-verbal order, voice-first emotion and multilingual acceptance, condensed.
+
+### Results
+- Updated `prompts/full-tags-prompt.md` and the prompt description in `docs/agent_verifier.md`. Verified the prompt still maps to profile `acoustic_defect_v3`. No model calls or tests were run.
