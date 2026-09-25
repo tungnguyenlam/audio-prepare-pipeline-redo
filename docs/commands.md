@@ -136,6 +136,23 @@ provisions project-local JavaScript runtimes for yt-dlp.
 | `minicpmo` | `.venvs/minicpmo` | 3.11 | MiniCPM-o (also `envs/setup_minicpmo_env.sh [--clean]`) |
 | `kimi` | `.venvs/kimi` | 3.11 | Kimi-Audio (also `envs/setup_kimi_env.sh [--clean]`, submodule + FlashAttention) |
 
+If DiariZen setup reports `No module named 'torch.hub'` after uv only reports
+`Checked` packages, the existing PyTorch installation may be incomplete. The
+earlier `torchaudio._internal.fb` exception is handled by torchaudio; the missing
+`torch.hub` is the terminating error. Rebuild only the DiariZen environment:
+
+```bash
+./envs/setup_worker_envs.sh diarizen --force
+```
+
+This removes `.venvs/diarizen` and reinstalls its dependencies; dataset files and
+other environments are unaffected. If the same error remains, inspect the import
+location for a local module or `PYTHONPATH` shadowing the installed package:
+
+```bash
+.venvs/diarizen/bin/python -c 'import torch; print(torch.__file__); print(list(torch.__path__))'
+```
+
 Manual equivalent (repeat per environment; pick the torch index for your driver,
 e.g. `--index-url https://download.pytorch.org/whl/cu128`):
 
