@@ -746,3 +746,47 @@ summary, provenance and checksums. Human review starts pending. Missing transcri
 are flagged for manual transcription, not synthesized. See the
 [handoff contract](data_contract.md#verifier-review-handoff) for the exact fields
 and [review workflow](agent_verifier.md#handing-a-run-to-a-transcript-reviewer).
+
+### Convert an annotated CSV to spoken form
+
+```bash
+bash make_spoken_form.sh \
+  --input-file .data/output-data-separation/spoken-form-thu-am-studio-transcript.csv \
+  --audio-root .data/s3-diarize/diarizen/thu-am-studio \
+  --output-file .data/spoken-form-thu-am-studio-transcript.csv
+```
+
+Requires `transcripts` and either `id` or `audio-path` in the source CSV (`id`
+takes precedence). Writes exactly `stt,audio-path,transcripts`, numbered from 1,
+with audio filenames only (including extension), matched uniquely by filename
+stem against existing local audio under `--audio-root`. Missing or duplicate
+audio matches abort before output replacement; narrow `--audio-root` to the
+intended clip inventory. The output omits `id` and directory prefixes. Consumers resolve filenames against
+their audio inventory. Existing `path`/`audio-path` values are replaced by this lookup.
+
+Attached words are removed while their complete bracketed pronunciation is kept:
+`Omni[om-ni]` → `[om-ni]`, `AI[/eɪ ˈaɪ/]` → `[/eɪ ˈaɪ/]`.
+Standalone brackets, other text, punctuation and whitespace remain unchanged.
+Annotate each word separately for multiword names. Unlike the TTS ZIP exporter,
+this command keeps square brackets and standalone emotion tags, including `[neutral]`.
+Input and output may be the same file: all rows are read and validated first,
+then the output is replaced atomically. `--input`/`--output` are accepted aliases.
+Progress goes to stderr; stdout contains the completed CSV path. Store additional
+generated CSVs under `.data/`.
+
+### Extract and convert transcript CSVs
+
+```bash
+bash scripts/extract_transcripts-spoken-form.sh \
+  --input .data/s4-agent/verifier/gemini \
+  --output .data/extracted-transcripts.csv
+bash scripts/make_written_form.sh \
+  --input .data/extracted-transcripts.csv \
+  --output .data/written-form-thu-am-studio-transcript.csv
+```
+
+The extractor reads `*_gemini.txt` files recursively and writes
+`stt,id,path,transcripts`, skipping files without a transcript field. The written
+form command removes pronunciation brackets attached to written words while
+retaining standalone brackets. Both commands report progress on stderr and print
+the completed CSV path on stdout.

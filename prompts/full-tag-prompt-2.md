@@ -45,7 +45,7 @@ Chỉ xuất JSON ở mục 6; không xuất ghi chú nghe hay suy luận.
 - `failure_codes`: liệt kê mọi lỗi, mỗi lỗi một lần, chỉ trong tập `clipped_word_start clipped_word_end secondary_speaker overlapping_speech music_bleed noisy_reverberant distorted unsupported_language singing`. Pass → `[]`. Âm phi lời của chính speaker không phải lỗi.
 
 # 4. TRANSCRIPT
-Token hợp lệ: lời · dấu nghỉ `~ , . ? ! *` và `?*` `!*` · `<tag>` · `[emotion]` · `word[/IPA/]` · `word[ViePhoneme]`.
+Token hợp lệ: lời · dấu nghỉ `~ , . ? ! *` và `?*` `!*` · `<tag>` · `[emotion]` · `word[/IPA/]` · `word[ViePhoneme]`. Trong ViePhoneme, `<phụ âm>` nằm bên trong `[...]` theo mục 4; nó không phải tag sự kiện `<tag>` đứng riêng.
 
 ## 2.1 Lời
 - Khi nhận diện được từ ngoại, giữ chính tả gốc ở ngoài ngoặc; cách phát âm thực tế nằm trong ngoặc. Không để chính tả sửa phiên âm. Giữ số, viết tắt; không dịch, sửa ngữ pháp, hoàn thiện câu, gộp lặp hay đoán từ chưa nhận diện được.
@@ -142,18 +142,59 @@ Chưa chắc nhánh → đối chiếu lại audio. Nếu vẫn thiếu bằng c
 - `[…]` của ViePhoneme chỉ dùng quy ước mục 4; không chứa `/`, dấu trọng âm/độ dài IPA hay ký tự phiên âm IPA chuyên dụng. Chữ Latin dùng chung không biến ViePhoneme thành IPA. Không trộn hai hệ trong cùng một ngoặc.
 
 # 4. VIEPHONEME — GHI TRỰC TIẾP ÂM ĐÃ NGHE
-ViePhoneme dùng chữ Việt và cụm chữ Latin để mô tả âm thực phát, không ép âm ngoại vào cách đọc của một giọng Việt mặc định. Dạng viết phải giữ các khác biệt nghe được dù cách Việt hóa quen thuộc thường gộp chúng.
+ViePhoneme ghi âm thực phát bằng cách diễn đạt gần nhất theo tiếng Việt. Phần mang nguyên âm phải đọc được như một khối âm tiếng Việt; chữ gốc tiếng Anh không phải cách viết phiên âm. Khác biệt không có tương đương hoàn toàn trong tiếng Việt được xấp xỉ sát âm nhất, không thêm hay bỏ âm để làm từ trông quen.
 
-- Dùng chữ Việt đủ sáu thanh và chữ Latin; cho phép cách ghép ngoài vần/chính tả tiếng Việt khi sát âm hơn. Không có bảng vần đóng hay phép thay chữ cố định theo từ/ngôn ngữ.
-- **Quy ước tiếng xát trong hệ này**: `s`/`x` ghi xát vô thanh phía trước, `z` ghi xát hữu thanh phía trước; `sh` ghi xát vô thanh phía sau lợi/ngạc, `zh` ghi xát hữu thanh phía sau lợi/ngạc. Giữ đối lập vị trí và hữu thanh; không rút `sh` thành `s`/`x`, hoặc đổi âm xát thành âm tắc. `sh`/`zh` là cụm ký âm, không phải phụ âm cộng thêm một tiếng `h`.
-- **Âm lướt**: dùng `y` cho âm lướt ngạc, `ou` cho âm lướt tròn môi khi nghe có. Giữ chuyển động của nguyên âm đôi và âm lướt đầu âm tiết kế nếu cả hai thực sự có; không làm phẳng chúng thành nguyên âm đơn hay hai nguyên âm rời.
-- Các chữ mở rộng được chọn từ âm thanh, không từ spelling. Có chữ trong từ gốc không có nghĩa audio có âm đó; không tự thêm tiếng xát, hữu thanh hay âm lướt để khớp quy ước.
+- Viết phần có nguyên âm bằng chữ và dấu tiếng Việt theo âm nghe được; cho phép cách ghép ngoài vần/chính tả Việt khi cần xấp xỉ sát hơn, nhưng không giữ lối ghi nguyên âm/âm lướt theo tiếng Anh. Không có bảng vần đóng hoặc phép đổi chữ cố định theo từ gốc.
+- **Tiếng xát**: chọn cách viết tiếng Việt gần nhất với vị trí, độ xát và hữu thanh nghe được. `s`/`x` chỉ được bọc `<>` khi chúng là phụ âm rời ở đúng vị trí có trong bảng 4.2. Không chép `z`, `sh`, `zh` hay cụm chữ Anh như một cách giữ nguyên spelling; nếu không có tương đương chính xác, vẫn chọn cách xấp xỉ tiếng Việt sát nhất và không tạo nhãn `<>` ngoài bảng.
+- **Nguyên âm và âm lướt**: ghi bằng tổ hợp nguyên âm tiếng Việt gần âm nghe được (`i`, `u`, `o`, `ươ`, `uy`, `ây`… khi phù hợp); giữ chuyển động của nguyên âm đôi và số âm tiết thực nghe. Không giữ `w` ở bất kỳ vị trí nào của ViePhoneme, không dùng `ou`/`way` theo lối ký âm tiếng Anh, và không dùng `y` ở đầu khối để ghi âm lướt Anh. `y` vẫn được dùng khi nó là chữ nguyên âm trong cách ghi tiếng Việt, như `ây` hay `uy`. Không đổi mọi `w` thành cùng một chữ: nghe đoạn chuyển âm rồi chọn cách ghi Việt sát nhất.
+- Chọn chữ Việt xấp xỉ từ âm thanh, không từ spelling. Có chữ trong từ gốc không có nghĩa audio có âm đó; không tự thêm tiếng xát, hữu thanh hay âm lướt để khớp chữ gốc. Phụ âm rời ngoài bảng 4.2 vẫn được ghi nếu thực sự nghe thấy, nhưng không bọc `<>`, như `-k` cuối trong `[uốc-k]`.
 - Nối các khối âm bằng `-`. Khối có nguyên âm tương ứng một âm tiết đã phát; phụ âm rời không tự tạo âm tiết. Không tách nguyên âm đôi thành hai âm tiết hoặc chèn nguyên âm để cụm phụ âm dễ đọc.
 - Giữ âm đầu, nguyên âm, âm lướt, âm cuối và thứ tự thực nghe. Âm thực sự có → giữ, kể cả âm yếu, phụ âm cuối và hậu tố; âm thực sự không phát → không phục hồi. Không tự đổi nguyên âm, bỏ phụ âm hay làm tròn âm tiết theo quy tắc chính tả.
 - Giữ đặc điểm địa phương khi thực sự nghe thấy, không áp toàn bộ khuôn giọng vùng lên mọi từ. Trong một từ pha cách đọc, mô tả từng phần như đã phát, không đồng nhất cả từ về một accent.
-- Dấu thanh theo thanh thực nghe, không suy từ trọng âm, vị trí âm tiết hay loại âm cuối. Không có thanh Việt rõ → không tự thêm thanh. Phụ âm rời không mang thanh.
+- Dấu thanh theo thanh thực nghe, không suy từ trọng âm, vị trí âm tiết hay loại âm cuối. Không có thanh Việt rõ → không tự thêm thanh. Chỉ đặt dấu thanh và dấu phụ của chữ Việt trên nguyên âm thuộc khối có nguyên âm; phụ âm rời trong `<>` không mang thanh. Chữ `đ` là ký hiệu phụ âm riêng, không phải chữ `d` được thêm dấu thanh.
 - Âm không có tương đương chính xác trong tiếng Việt → chọn chữ/cụm chữ gần nhất với âm đó, giữ các đối lập nghe rõ; không đổi thành âm khác chỉ vì có cách viết quen. Đây là xấp xỉ âm, không phải sửa về phát âm chuẩn.
 - Số, ngày giờ, ký hiệu, viết tắt đọc bằng tiếng Việt → nối đúng các từ đã nói bằng `_`, dùng chính tả và đủ sáu thanh; không tự khai triển phần speaker chưa đọc.
+
+## 4.1 Viết ViePhoneme chuẩn và tách phụ âm non-Viet
+Nghe và viết **cách speaker thực sự phát từng lần**, kể cả âm yếu, âm cuối, âm lướt, số âm tiết và thanh nghe được. Cách viết trong bảng dưới chỉ minh họa định dạng khi âm đó **có trong audio**; không dùng spelling ngoài ngoặc hoặc phát âm từ điển để thêm âm. Phần có nguyên âm được viết gần âm nghe được bằng chữ Việt và dấu trên nguyên âm; không tự chèn nguyên âm để tạo thêm một tiếng Việt.
+
+- Chỉ các **phụ âm rời** thuộc bảng 4.2 mới được bọc `<>`. Bảng đóng theo **cả âm và vị trí**: có `<g>-` ở đầu không có nghĩa được viết `-<g>-` ở giữa. Chữ `w`, `y` hoặc cụm nguyên âm viết theo tiếng Anh không được giữ làm phần mang nguyên âm; `z`, `sh`, `r` và ký hiệu khác không có trong bảng không được bọc `<>`. Một chữ trùng với bảng nhưng nằm trong âm tiết Việt bình thường cũng không được tách: `t` trong `tuýt` hay `tr` trong `trét` không phải một `<t>` rời.
+- **Thứ tự bắt buộc**: (1) nghe và dựng các khối có nguyên âm bằng cách viết tiếng Việt sát âm nhất; (2) xác định phụ âm nào thực sự rời khỏi khối đó; (3) chỉ với cặp âm + vị trí có trong bảng 4.2, đặt `-` để tách và bọc riêng `<>`; (4) nghe đối chiếu lại toàn từ. Không suy âm rời từ chính tả hay từ dấu gạch nối đang có trong bản nháp.
+- Ví dụ khi audio phù hợp: `[t-wít-stơ]` là bản nháp lai chữ Anh; âm đầu là **một** khối `tuýt`, còn `s` trước `tơ` là âm rời → `[tuýt-<s>-tơ]`. Không tạo `<t>` đầu từ, không để `w` trong khối nguyên âm, không giữ `stơ` dính nhau. Tương tự, `world` có thể xấp xỉ `[ưo-<l>]`, `work` có thể là `[uốc-k]` nếu speaker đọc như vậy: `<l>` cuối nằm trong bảng, `k` cuối không nằm trong bảng nên không bọc. Đây là ví dụ cách biểu diễn, không phải phiên âm bắt buộc cho mọi lượt đọc. Những dạng trong CSV như `[ki-wớt]`, `[hai-way]`, `[wép]` hoặc `[ya-ma-ha]` là tín hiệu phải nghe lại phần nguyên âm/âm lướt và chọn cách ghi Việt tương ứng; không thay hàng loạt bằng một phép đổi chữ.
+- Trước khi chốt một từ, rà `ph`, `th`, `ch`, `kh`, `gh`, `ng`, `nh`, `tr` và các tổ hợp đang biểu diễn **một phụ âm hoặc một âm đầu Việt**: không tách từng chữ cái chỉ vì chúng chứa `p`, `t`, `c` hay `g`. `phây` không phải `<p>-hây`; `trét` không phải `<t>-rét`. Chỉ tách khi audio có phụ âm rời ngoài âm đầu đó và đúng vị trí trong bảng. Kiểm cả phụ âm cuối bị dính như `lis` → `li-<s>` hoặc `pol` → `po-<l>` khi âm cuối thực sự nghe được.
+- Rà cả **đầu, giữa và cuối từ**. Nếu phụ âm thuộc bảng còn dính vào khối sau, tách nó bằng `-` rồi bọc riêng: `glô-bồ` → `<g>-lô-bồ`; `blết` → `<b>-lết`; `próp` → `<p>-róp`. Nếu nó đã là khối rời, giữ ranh giới và thêm ngoặc: `éc-s-p-rét-sừn-nít-s` → `éc-<s>-<p>-rét-sừn-nít-<s>`. Dấu `-` chỉ tách đơn vị âm, không biểu thị im lặng hay thêm âm tiết.
+- Bọc **đúng một phụ âm/cụm ký âm được liệt kê** trong mỗi cặp `<>`. Cụm như `gw`, `sp`, `xp` không tự thành một nhãn mới; chỉ bọc phụ âm nếu đúng dạng **âm + vị trí** có trong bảng và audio xác nhận âm đó. Phần còn lại giữ theo âm nghe được. Có nhiều phụ âm thuộc bảng trong cùng từ thì đánh dấu **tất cả** các âm nghe được, kể cả cùng một ký hiệu ở nhiều vị trí; không chỉ đánh dấu âm mà một hàng ví dụ đang minh họa.
+- Với cụm `dr` mà speaker thực sự đọc phụ âm đầu theo `đ` tiếng Việt, viết `<đ>-r...` hoặc `-<đ>-r...`: `Dream[<đ>-rim]`, `Mandrake[men-<đ>-rếch]`. Không dùng `<d>` cho hai cách đọc này; cũng không tự đổi một âm khác thành `đ` chỉ theo chính tả.
+- Phụ âm cuối được nghe như một âm riêng thì giữ nó ở cuối và bọc sau dấu `-`: `in-te-li-zừns` → `in-te-li-zừn-<s>`. Không biến `<s>` thành `sờ`, `<g>` thành `gờ`, hay thêm nguyên âm để dễ đọc. Nếu audio không có âm đó, không ghi phụ âm hoặc ngoặc.
+- Ký hiệu `<>` trong ViePhoneme chỉ đánh dấu cách biểu diễn phụ âm để huấn luyện; nó không chứng minh một cách đọc chuẩn của từ gốc, không thay cho nghe audio và không áp dụng trong `[/IPA/]`, từ tiếng Việt thông thường, số đọc bằng `_` hay tag phi lời.
+
+## 4.2 Danh sách đóng các âm được bọc theo vị trí
+`Đầu`, `giữa`, `cuối` là vị trí trong **toàn từ**, không phải trọng âm. Mỗi dạng theo vị trí là một trường hợp riêng. Một ví dụ trong bảng có thể bọc một hoặc nhiều âm; khi xuất transcript thật, bọc mọi âm thuộc bảng có nghe được trong cùng từ, không bỏ âm khác vì hàng đó đang minh họa một vị trí.
+
+| id | Âm non-Viet cần tách | Ví dụ định dạng |
+|---:|---|---|
+| 1 | `<b>-` đầu | `Blade[<b>-lết]` |
+| 2 | `-<b>-` giữa | `Abraham[a-<b>-ra-ham]` |
+| 3 | `<c>-` đầu | `Club[<c>-lắp]` |
+| 4 | `-<c>-` giữa | `Patroclus[pa-tro-<c>-lơ-s]` |
+| 5 | `-<ch>` cuối | `Doge[đô-<ch>]` |
+| 6 | `<đ>-` đầu | `Dragon[<đ>-ra-gân]`; `Dream[<đ>-rim]` |
+| 7 | `-<đ>-` giữa | `Children[chiu-<đ>-rần]`; `Mandrake[men-<đ>-rếch]` |
+| 8 | `<f>-` đầu | `Flex[<f>-lếch]` |
+| 9 | `-<f>-` giữa | `Affleck[áp-<f>-lếch]` |
+| 10 | `-<f>` cuối | `Self[seo-<f>]` |
+| 11 | `<g>-` đầu | `Global[<g>-lô-bồ]` |
+| 13 | `<k>-` đầu | `Kraken[<k>-ra-ken]` |
+| 14 | `-<k>-` giữa | `Scrum[s-<k>-răm]` |
+| 15 | `-<l>` cuối | `all[o-<l>]` |
+| 16 | `<p>-` đầu | `problem[<p>-róp]` |
+| 17 | `-<p>-` giữa | `Expressionism[éc-<s>-<p>-rét-sừn-nít-<s>]` |
+| 18 | `<s>-` đầu | `Stress[<s>-trét]` |
+| 19 | `-<s>-` giữa | `Expressionism[éc-<s>-<p>-rét-sừn-nít-<s>]` |
+| 20 | `-<s>` cuối | `Expressionism[éc-s-p-rét-sừn-nít-<s>]` |
+| 22 | `-<t>` cuối | `product[pro-đắc-<t>]` |
+| 23 | `-<v>` cuối | `love[lơ-<v>]` |
+| 26 | `-<x>` cuối | `Cash[két-<x>]` |
 
 **Đối chiếu ngược**: tạm bỏ spelling ngoài ngoặc, so riêng chuỗi âm trong ngoặc với audio. Kiểm số âm tiết, đầu–giữa–cuối, loại/vị trí tiếng xát, hữu thanh, chuyển động nguyên âm, âm lướt và thanh. Nếu cách viết làm mất một khác biệt nghe rõ, sửa cách viết; không chấp nhận chỉ vì vẫn đoán được từ. Với IPA, kiểm thêm điều kiện bản ngữ. Mỗi lần xuất hiện đối chiếu riêng; không sao chép phiên âm chỉ vì cùng một từ.
 
@@ -166,7 +207,7 @@ ViePhoneme dùng chữ Việt và cụm chữ Latin để mô tả âm thực ph
 # 6. TỰ KIỂM (nội bộ)
 1. **Gate/JSON**: các trường nhất quán, đúng tập giá trị; không reject chỉ vì xen ngôn ngữ hoặc accent; transcript theo đúng decision.
 2. **Lời**: mỗi từ có âm tương ứng; không thêm từ từ ngữ cảnh, không sửa lời, không bỏ lặp. Xóa từ bịa không được xóa filler hay khoảng nghỉ có thật.
-3. **Phiên âm**: đủ từng lần xuất hiện; IPA chỉ cho tiếng Anh bản ngữ Anh/Mỹ có bằng chứng. ViePhoneme từ âm nghe, không từ IPA/chính tả; giữ số âm tiết, âm đầu/cuối, nguyên âm và thanh; không trộn hai hệ.
+3. **Phiên âm**: đủ từng lần xuất hiện; IPA chỉ cho tiếng Anh bản ngữ Anh/Mỹ có bằng chứng. ViePhoneme từ âm nghe, không từ IPA/chính tả; giữ số âm tiết, âm đầu/cuối, nguyên âm và thanh; không trộn hai hệ. Trước khi đánh dấu phụ âm, rà mọi khối mang nguyên âm: chuyển mọi `w`, `y` đầu khối dùng làm âm lướt Anh, `ou` và `way` sang cách ghi tiếng Việt sát âm nghe được, không thêm âm tiết. Sau đó rà đầu–giữa–cuối theo bảng 4.2, tách và bọc tất cả phụ âm đủ điều kiện; kiểm lại không có `<p>-h` do tách `ph` hoặc `<t>-r` do tách `tr`, và không còn phụ âm cuối đủ điều kiện dính vào nguyên âm.
 4. **Filler/sự kiện**: đủ số lần, đúng âm, độ dài tương đối, vị trí và thứ tự; không biến filler thành im lặng hoặc âm nối thành filler; tag đúng mục 2.4–2.5.
 5. **Khoảng nghỉ**: rà mọi khe; khựng ngắn/vừa là `~`, im dài giữa câu là `*`, chỉ dùng dấu câu khi có ngữ điệu tương ứng. Không chèn dấu theo văn viết.
 6. **Emotion**: mỗi nhãn khác nền có bằng chứng prosody, không suy từ nội dung lời.
