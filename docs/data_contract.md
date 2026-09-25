@@ -368,13 +368,21 @@ the run manifest (full input root, source paths/digests, output destinations,
 prompts, generation settings, batch size) is unchanged and covers every missing
 output; otherwise the missing outputs are submitted as a new Batch run. Without
 the flag, pending work submits fresh Batch jobs.
-Failed provider jobs are resubmitted while successful jobs are retained. Saved
-per-request errors or responses that fail verdict validation are replayed;
-`--overwrite` is needed to request new responses for those clips.
+Each terminal Batch job is checkpointed with its raw per-request responses before
+publication. The verifier writes its output pairs immediately while other jobs
+remain pending. The raw command uses the same incremental job checkpoints but
+publishes output pairs after its Batch call returns. State retains prior attempts.
+On `--continue`, published failed samples receive one new attempt; new failures
+are not automatically resubmitted within the same invocation. In-flight retry
+jobs reconnect, missing artifacts recover saved responses, and complete valid
+pass/reject pairs remain untouched. Failed verifier artifacts preserve available
+`_usage`, `_cost`, `_batch_job`, `_batch_request_key` and `_latency_s` at the top
+level. Their costs describe the latest published attempt; historical attempts
+remain in Batch state. Verifier invocations with failures exit nonzero.
 Gemini's `cache_prompt` parameter defaults to false; `cache_ttl_s` records the
 explicit prompt cache lifetime. Cost records include `cache_storage_usd`, charged
-once for each cache's full TTL and assigned to the first subsequent priced
-response. `total_usd` includes storage as well as input and output. The run summary
+once for each cache's full TTL and assigned to a priced response (within the
+creating job for Batch, so resuming does not shift it onto another job). `total_usd` includes storage as well as input and output. The run summary
 also reports `unpriced_caches` when storage cannot be estimated. Explicit caches
 contain text only; generation responses preserve the requested inference mode
 alongside the effective pricing mode.
@@ -600,3 +608,55 @@ Audio bytes/hashes are verified and copied; no audio decoding dependency is need
 Catalog duration uses finite nonnegative duration_s from an indexed manifest or
 end_s minus start_s from exported segments. Missing duration stays blank and does
 not falsely contribute zero-duration audio to reported known hours.
+
+
+## TTS spoken/written ZIP
+
+`export_tts_zip.sh` writes one ZIP under `.data/`, containing only `audio/<clip_id><suffix>`,
+`spoken.csv` and `written.csv` at the archive root. There is no enclosing dataset
+folder, metadata sidecar, review file or JSON inside the delivery. Audio bytes and
+extension case remain unchanged. Clip IDs reuse the verifier-export identity hash
+(source path and audio SHA-256); moving the source paths changes IDs. Collisions
+block export. Both tables use the same deterministic source-path order and unique
+relative POSIX audio paths, with header `audio_path,transcript`, comma delimiter,
+UTF-8 without BOM and standard CSV quoting. Training text is not prefixed with a
+spreadsheet apostrophe. CSV readers must support quoted commas, quotes and newlines.
+
+Selection requires complete expected inventories (`entries` or exported `turns`)
+and complete, production-valid pass/reject artifacts with intact raw responses and
+audio hashes. Valid rejects are excluded. Every selected pass must have a nonempty
+transcript, regardless of backend/profile. No transcription is synthesized, and
+corrected human-review CSVs are not imported. Unknown coverage, competing verdicts,
+processing failures, changed/missing audio and zero selected clips block publication.
+The exporter does not claim that a model pass represents human approval or broader
+quality checks than the original verifier profile supplies.
+
+The transcript scanner recognizes the current full-tags grammar:
+
+| Source | Spoken | Written |
+|---|---|---|
+| `AI[ây_ai]` | `ây_ai` | `AI` |
+| `hello[/həˈləʊ/]` | `/həˈləʊ/` | `hello` |
+| `9:15[chín_giờ_mười_lăm]` | `chín_giờ_mười_lăm` | `9:15` |
+| `[neutral]` | removed | removed |
+| `[happy]`, `<laugh>`, `<uh>`, punctuation/pauses | preserved | preserved |
+
+Speech outside annotations remains in both complete sentences. An emotion label
+stands separately from words; a pronunciation bracket attaches directly to one
+written token. Number grouping/decimal separators and numeric dates/times remain
+inside their token; ambiguous dotted/slashed compounds must be annotated separately.
+IPA payloads retain their enclosing slashes, spaces and phonetic characters;
+ViePhoneme retains Latin letters, combining marks, hyphens and underscores. No
+phonetic correctness is inferred. Empty/nested/unmatched brackets, unknown standalone
+square-bracket labels, unsupported legacy `[written][spoken]` pairs and malformed
+sound tags fail with clip ID and character position. Supported `<...>` tags use
+lowercase letters with underscore/hyphen separators. All non-neutral emotions from
+the current prompt catalog are retained. Removing `[neutral]` everywhere also
+removes emotion-reset markers intentionally. Only whitespace at deleted neutral
+tags and sentence edges is cleaned; annotation payloads are preserved.
+
+Both CSVs are generated from the same validated records. Audio is streamed into
+ZIP64 while hashing those exact bytes, and the completed temporary ZIP is published
+atomically; failures remove staging files and leave any previous destination intact.
+Without `--overwrite`, concurrent output creation cannot be silently overwritten.
+No intermediate audio copies, transcoding, model calls or package installs occur.

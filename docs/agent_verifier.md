@@ -62,9 +62,52 @@ schema. Neither directory orchestrates other pipeline stages.
   every missing output. Otherwise the missing outputs are submitted as a new Batch
   run. Without `--continue`, pending work submits a fresh Batch job.
   `--overwrite` regenerates all outputs with fresh requests.
-  Failed provider jobs are resubmitted while successful jobs are retained.
-  Saved per-request errors or responses that fail verdict validation are replayed
-  on continuation; use `--overwrite` to request new responses for those clips.
+  Each completed job's raw responses are checkpointed immediately. The verifier
+  publishes its verdict/text pairs, per-item logs and sample-cost table while
+  other jobs are still running; the raw command checkpoints jobs incrementally
+  but publishes its output pairs after its Batch call returns.
+  On `--continue`, already-published failed samples get one new Batch attempt,
+  including request errors, invalid JSON and schema failures. Completed valid
+  pass/reject pairs are skipped. Previously submitted retries reconnect by job ID;
+  newly retrieved failures remain visible until the next `--continue`, preventing
+  an unlimited paid retry loop. Missing artifacts recover saved responses first.
+  Keep the same input, output, work directory and settings when continuing;
+  run only one collector per work directory at a time. Retries are new paid
+  requests. `--max-retry` remains an HTTP retry control, not a Batch retry loop.
+  Old job attempts and raw responses remain in Batch state after retries.
+  Failed verifier artifacts retain available usage/cost and Batch job/request IDs.
+  Item cost and offline totals describe the latest published attempt, not all
+  historical spending; prior attempts remain in Batch state. Pending requests are
+  identified in terminal cost summaries rather than reported as no model requests.
+  Final plots run when the invocation ends; verifier runs with failed items exit
+  nonzero.
+  Batch execution exposes internal activity across each stage: payload preparation
+  (`BATCH_PREPARE`), submission and resume planning (`BATCH_PLAN`), per-job
+  submissions (`BATCH_SUBMIT` / `BATCH_SUBMITTED`), provider state changes
+  (`BATCH_JOB`), job completion milestones (`BATCH_JOB_DONE` / `BATCH_JOB_FAIL`),
+  and sample retrieval (`BATCH_RETRIEVE`). Each polling sweep reports a structured
+  status summary (`BATCH_STATUS`) with total submitted, completed, remaining, and
+  retrieved items alongside active job counts and countdown to the next poll.
+  Batch completion or interruption records full retrieved versus remaining counts
+  (`BATCH_COMPLETE` / `BATCH_INTERRUPTED`).
+- Gemini can mark a Batch job `SUCCEEDED` while every request inside it failed
+  (for example `RESOURCE_EXHAUSTED`, code 8, when the project's Batch quota is
+  used up). Each failed request logs and records the provider status and message
+  (`error.code = gemini_batch_request_failed`); provider completion errors in
+  every mode persist their Gemini code instead of `generation_failed`. Between
+  submissions the command polls the oldest unfinished job and stops submitting,
+  with a clear error, once a finished job is all quota errors. Rerun with
+  `--continue` after the quota resets, or use `--inference-mode standard`/`flex`.
+- Default Gemini runtime paths live under `<model>/<reasoning>/` (for example
+  `.data/s4-agent/verifier/gemini/gemini-3-8-flash/medium/work/batch_jobs/`);
+  the printed configuration shows the generic default, and the command logs the
+  per-model `work_dir` it actually uses. A new run warns about unfinished Batch
+  state files from other runs (e.g. after moving the input folder), since their
+  jobs may still hold quota or paid results.
+- Ctrl-C stops a verifier run immediately: queued items are dropped, the cost
+  summary prints, post-verification analysis is skipped, and the process exits
+  130 without waiting for in-flight provider retries. Artifacts are written
+  atomically, so no partial files remain.
 - Both Gemini commands share one mode selector and request implementation.
   Standard is the default. Python callers use
   `inference_mode="batch" | "flex" | "standard"`; call `generate_batch()` for Batch
@@ -358,3 +401,16 @@ replacement supplied), or `exclude`. Human feedback never changes original model
 outcomes or resolves processing errors; the sender must assess corrections and
 resolve remaining processing separately. This package is a review handoff, not a
 declaration that every delivered clip is approved training data.
+
+
+### Exporting paired TTS transcripts
+
+After verification, use `scripts/s5-export/export_tts_zip.sh` with the run directory,
+complete expected inventory and an explicit ZIP output path. It selects pass clips
+and produces `audio/`, `spoken.csv`, `written.csv`; see the
+[command and flags](commands.md#dataset-export-s5-export) and
+[transcript contract](data_contract.md#tts-spokenwritten-zip). It uses original
+verifier transcripts, preserves annotation payloads for spoken form, retains written
+words for written form, and removes only `[neutral]` from both. Review CSV edits
+are not reimported by this command. Resolve incomplete/invalid verifier results
+before export; valid rejects are excluded automatically.

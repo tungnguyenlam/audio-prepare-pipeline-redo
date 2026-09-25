@@ -541,3 +541,9 @@
 - Added `bao_cao_tom_tat_verifier.md`, a concise Vietnamese summary of the detailed report covering production yield, mean/min/max durations, silence versus short-clip losses, thinking and cache economics, estimated costs including separate testing, and all reject/processing-failure categories.
 - Preserved the distinction between schema consistency and listening-based accuracy, and between recorded estimates and final billing. Reviewed figures and links against `statistíc.md`; no tests requested or run, and no paid model calls.
 - Push remains blocked by the previous automatic approval review pending confirmation of the GitHub destination; the user has not supplied that confirmation.
+
+## 2026-09-25 - Recalculate s4 verifier statistics and costs
+
+- Added Vietnamese `statistíc.md` from 1,633 verifier artifacts and 17 matching manifests: 1,626 pass, 2 reject, 5 processing failures; 13,578.94 seconds input and 13,537.24 seconds pass. Explained diarization gaps, merge recovery and 85 short clips removed (77.88 seconds), with mean/min/max and per-source breakdowns.
+- Decimal cost totals: USD 16.254857750 in verdicts, separate pending batch cache USD 0.104487500, and user-confirmed separate testing USD 7.400700000: USD 23.760045250 estimated total. Documented billing uncertainty and unavailable testing breakdown. Existing costs match the stale 1,348-row CSV; 285 new artifacts add USD 2.686015375.
+- Verified official pricing; thinking accounts for 95.9374% of billed output tokens. Audited verdicts with the shared validator, response hashes, manifest source metadata, report links and arithmetic; read relevant runners, launchers, helpers and docs. No tests (not requested), paid model calls or listening-based accuracy claims. Unrelated changes left untouched.

@@ -27,6 +27,7 @@ from _common.files import (  # noqa: E402
     digest,
     persist_path,
     positive_int,
+    progress,
     read_json,
     resolve_stored_path,
     safe_name,
@@ -256,6 +257,7 @@ def configure_gemini_paths(args: Any, operation: str) -> Path:
     variant_base = old_base / safe_name(args.model) / safe_name(args.reasoning_effort)
     if Path(args.work_dir) == old_base / "work":
         args.work_dir = variant_base / "work"
+        logger.info("Using per-model work_dir (overrides the printed default): %s", args.work_dir)
     args._default_base = variant_base
     return variant_base
 
@@ -856,13 +858,23 @@ class GeminiAgent:
         batch_timeout_s: float = 86400.0,
         state_dir: Path,
         reuse_state: bool = True,
+        on_result: Callable[[Path, dict[str, Any] | Exception], None] | None = None,
+        pending_paths: set[Path] | None = None,
+        retry_jobs: dict[Path, str | None] | None = None,
+        session_identity: str | None = None,
     ) -> dict[Path, dict[str, Any] | Exception]:
-        """Submit missing audio requests to Gemini Batch and wait for results."""
+        """Checkpoint each completed job and optionally publish its samples immediately.
+
+        retry_jobs identifies failed artifacts from before this invocation. New
+        failures are published once; a later continuation may retry them.
+        """
         if self.inference_mode != "batch":
             raise ValueError("generate_batch() requires inference_mode='batch'")
         if self.cache_prompt and self.cache_ttl_s < 90000:
             raise ValueError("Batch prompt caching requires --cache-ttl-s >= 90000 (25 hours)")
-        initial_storage = self._cost_totals["cache_storage_usd"]
+        total_audio = len(audio_paths)
+        if total_audio > 0:
+            progress("BATCH_PREPARE", f"Preparing {total_audio} audio request(s) for Gemini Batch...")
         descriptors: list[dict[str, Any]] = []
         for index, source_value in enumerate(audio_paths):
             source = Path(source_value).resolve()
@@ -899,25 +911,16 @@ class GeminiAgent:
                 "entry": entry,
                 "bytes": entry_bytes,
             })
+            if total_audio >= 20 and ((index + 1) % 25 == 0 or index + 1 == total_audio):
+                progress(
+                    "BATCH_PREPARE",
+                    f"Prepared {index + 1}/{total_audio} payload(s)",
+                    current=index + 1,
+                    total=total_audio,
+                )
 
         if not descriptors:
             return {}
-
-        groups: list[list[dict[str, Any]]] = []
-        current: list[dict[str, Any]] = []
-        current_bytes = 0
-        for descriptor in descriptors:
-            if current and (
-                len(current) >= batch_size
-                or current_bytes + int(descriptor["bytes"]) > BATCH_MAX_INLINE_BYTES
-            ):
-                groups.append(current)
-                current = []
-                current_bytes = 0
-            current.append(descriptor)
-            current_bytes += int(descriptor["bytes"])
-        if current:
-            groups.append(current)
 
         state_dir = Path(state_dir)
         state_dir.mkdir(parents=True, exist_ok=True)
@@ -926,6 +929,8 @@ class GeminiAgent:
             "reasoning_effort": self.reasoning_effort,
             "request_keys": [item["key"] for item in descriptors],
         }
+        if session_identity is not None:
+            session_material["run_identity"] = session_identity
         session_id = hashlib.sha256(
             json.dumps(session_material, sort_keys=True, separators=(",", ":")).encode("utf-8")
         ).hexdigest()[:20]
@@ -946,187 +951,370 @@ class GeminiAgent:
             if state_path.exists():
                 state_path = state_dir / f"batch_{session_id}_{time.time_ns()}.json"
             saved = {
-                "schema_version": 1,
+                "schema_version": 2,
                 "session": session_material,
                 "status": "submitting",
                 "groups": [],
             }
             write_json(state_path, saved)
+        for other in state_dir.glob("batch_*.json"):
+            try:
+                unfinished = other != state_path and read_json(other).get("status") != "completed"
+            except (OSError, ValueError):
+                unfinished = True
+            if unfinished:
+                logger.warning(
+                    "Unfinished Gemini Batch state from another run: %s. Its jobs may still hold "
+                    "Batch quota or paid results (moving inputs starts a new run); delete it once handled.",
+                    other,
+                )
 
-        saved_results = saved.get("results")
-        if saved.get("status") == "succeeded" and isinstance(saved_results, dict):
-            response_items = saved_results
-            job_by_key = {
-                key: value
-                for group in saved.get("groups", [])
-                if isinstance(group, dict)
-                for key in group.get("request_keys", [])
-                for value in [group.get("job_name")]
-                if isinstance(key, str) and isinstance(value, str)
-            }
-            batch_latency = float(saved.get("latency_s", 0.0) or 0.0)
-        else:
-            saved_groups = saved.get("groups") if isinstance(saved.get("groups"), list) else []
-            for group_index, group in enumerate(groups):
-                keys = [str(item["key"]) for item in group]
-                existing = saved_groups[group_index] if group_index < len(saved_groups) else None
-                if (
-                    not isinstance(existing, dict)
-                    or existing.get("request_keys") != keys
-                    or not existing.get("job_name")
-                    or existing.get("state")
-                    in BATCH_TERMINAL_STATES
-                    - {"JOB_STATE_SUCCEEDED", "BATCH_STATE_SUCCEEDED"}
-                ):
-                    previous_storage = self._cost_totals["cache_storage_usd"]
-                    for item in group:
-                        self._apply_prompt_cache(item["entry"]["request"], system_prompt)
-                    saved["cache_storage_usd"] = saved.get("cache_storage_usd", 0.0) + (
-                        self._cost_totals["cache_storage_usd"] - previous_storage
-                    )
-                    write_json(state_path, saved)
-                    body = {
-                        "batch": {
-                            "display_name": (
-                                f"{safe_name(self.model)}-"
-                                f"{safe_name(self.reasoning_effort)}-"
-                                f"{session_id}-{group_index + 1}"
-                            ),
-                            "input_config": {
-                                "requests": {"requests": [item["entry"] for item in group]}
-                            },
-                        }
-                    }
-                    created, _ = self._request_json(
-                        "POST",
-                        f"{API_ROOT}/models/{self.model}:batchGenerateContent",
-                        body,
-                        retry_network_errors=False,
-                        operation="batch submission",
-                    )
-                    existing = {
-                        "request_keys": keys,
-                        "job_name": self._batch_job_name(created),
-                        "state": self._batch_state(created),
-                    }
-                    if group_index < len(saved_groups):
-                        saved_groups[group_index] = existing
-                    else:
-                        saved_groups.append(existing)
-                    saved["groups"] = saved_groups
-                    write_json(state_path, saved)
-                    logger.info(
-                        "Submitted Gemini Batch job %s with %d request(s).",
-                        existing["job_name"],
-                        len(group),
-                    )
-
-            started = time.monotonic()
-            final_jobs: dict[str, dict[str, Any]] = {}
-            while len(final_jobs) < len(saved_groups):
-                for group in saved_groups:
-                    job_name = str(group["job_name"])
-                    if job_name in final_jobs:
-                        continue
-                    job_url = (
-                        job_name
-                        if job_name.startswith("http")
-                        else f"https://generativelanguage.googleapis.com/{job_name}"
-                        if job_name.startswith("v1beta/")
-                        else f"{API_ROOT}/{job_name.lstrip('/')}"
-                    )
-                    job, _ = self._request_json("GET", job_url, operation="batch polling")
-                    state = self._batch_state(job)
-                    group["state"] = state
-                    logger.info("Gemini Batch job %s: %s", job_name, state)
-                    if state in BATCH_TERMINAL_STATES:
-                        final_jobs[job_name] = job
-                saved["status"] = "polling"
-                saved["groups"] = saved_groups
-                write_json(state_path, saved)
-                if len(final_jobs) == len(saved_groups):
-                    break
-                if time.monotonic() - started >= batch_timeout_s:
-                    raise TimeoutError(
-                        f"Gemini Batch did not finish within {batch_timeout_s:g}s; "
-                        f"resume with the same command plus --continue. State: {state_path}"
-                    )
-                time.sleep(min(poll_interval_s, 60.0))
-
-            batch_latency = time.monotonic() - started
-            response_items: dict[str, Any] = {}
-            job_by_key: dict[str, str] = {}
-            failed_jobs = []
+        descriptor_by_key = {str(item["key"]): item for item in descriptors}
+        pending_paths = {
+            Path(path).resolve() for path in (pending_paths if pending_paths is not None else audio_paths)
+        }
+        retry_jobs = {Path(path).resolve(): job for path, job in (retry_jobs or {}).items()}
+        saved_groups = saved["groups"]
+        # Older state files stored responses only after every job finished.
+        if isinstance(saved.get("results"), dict):
             for group in saved_groups:
-                job_name = str(group["job_name"])
-                job = final_jobs[job_name]
-                state = self._batch_state(job)
-                keys = [str(key) for key in group.get("request_keys", [])]
-                if state not in ("JOB_STATE_SUCCEEDED", "BATCH_STATE_SUCCEEDED"):
-                    failed_jobs.append(job_name)
-                    error = self._batch_resource(job).get("error") or job.get("error") or {"state": state}
-                    for key in keys:
-                        response_items[key] = {"error": error}
-                        job_by_key[key] = job_name
-                    continue
-                inline_responses = self._inline_responses(job)
-                for index, item in enumerate(inline_responses):
-                    metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
-                    key = metadata.get("key") or metadata.get("custom_id") or metadata.get("customId")
-                    if not isinstance(key, str) or key not in keys:
-                        key = keys[index] if index < len(keys) else None
-                    if key is not None:
-                        response_items[key] = item
-                        job_by_key[key] = job_name
-                for key in keys:
-                    if key not in response_items:
-                        response_items[key] = {"error": {"message": "missing inline response"}}
-                        job_by_key[key] = job_name
-
-            saved.update({
-                "status": "failed" if failed_jobs else "succeeded",
-                "latency_s": round(batch_latency, 3),
-                "results": response_items,
-                "failed_jobs": failed_jobs,
-            })
+                if "results" not in group:
+                    group["results"] = {
+                        key: saved["results"][key]
+                        for key in group["request_keys"] if key in saved["results"]
+                    }
+                    group["latency_s"] = saved.get("latency_s", 0.0)
+            saved.pop("results")
+            write_json(state_path, saved)
+        if saved.get("schema_version") == 1:
+            if saved_groups:
+                saved_groups[0].setdefault("cache_storage_usd", saved.get("cache_storage_usd", 0.0))
+            saved["schema_version"] = 2
             write_json(state_path, saved)
 
-        # Batch artifacts include the job's storage estimate even after a restart.
-        with self._lock:
-            storage = float(saved.get("cache_storage_usd", 0.0))
-            new_storage = self._cost_totals["cache_storage_usd"] - initial_storage
-            self._cost_totals["total_usd"] += storage - new_storage
-            self._cost_totals["cache_storage_usd"] += storage - new_storage
-            self._pending_storage_usd += storage - new_storage
+        latest = {key: group for group in saved_groups for key in group["request_keys"]}
+        self._cost_totals["pending_requests"] = sum(
+            len(group["request_keys"]) for group in saved_groups if "results" not in group
+        )
+        # Retry only failures already published before this invocation. A retry
+        # submitted before interruption is the latest job and is reconnected.
+        missing = [item for item in descriptors if item["key"] not in latest or (
+            item["source"] in retry_jobs and "results" in latest[item["key"]]
+            and (retry_jobs[item["source"]] == latest[item["key"]]["job_name"]
+                 or (retry_jobs[item["source"]] is None and not latest[item["key"]].get("retry")))
+        )]
+        groups = []
+        current, current_bytes = [], 0
+        for item in missing:
+            if current and (len(current) >= batch_size or current_bytes + item["bytes"] > BATCH_MAX_INLINE_BYTES):
+                groups.append(current)
+                current, current_bytes = [], 0
+            current.append(item)
+            current_bytes += item["bytes"]
+        if current:
+            groups.append(current)
+
+        cached_items = sum(len(g["request_keys"]) for g in saved_groups if "results" in g)
+        reconnected_jobs = [g for g in saved_groups if "results" not in g]
+        reconnected_items = sum(len(g["request_keys"]) for g in reconnected_jobs)
+        to_submit_items = len(missing)
+        total_items = len(descriptors)
+
+        progress(
+            "BATCH_PLAN",
+            f"session={session_id}; total={total_items}; "
+            f"cached={cached_items}; reconnected={reconnected_items} ({len(reconnected_jobs)} job(s)); "
+            f"submitting={to_submit_items} ({len(groups)} job(s))",
+        )
+
+        submitted_jobs: set[str] = set()
+        started = time.monotonic()
+
+        # Assign each cache charge to a stable response within the creating job,
+        # rather than moving historical storage onto the next missing sample.
+        self._pending_storage_usd = 0.0
+
         results: dict[Path, dict[str, Any] | Exception] = {}
-        descriptor_by_key = {str(item["key"]): item for item in descriptors}
-        for key, descriptor in descriptor_by_key.items():
-            item = response_items.get(key)
-            if not isinstance(item, dict):
-                results[descriptor["source"]] = RuntimeError(
-                    f"Gemini Batch returned no result for request {key}."
-                )
-                continue
-            error = item.get("error")
-            response = item.get("response")
-            if response is None and "candidates" in item:
-                response = item
-            if error or not isinstance(response, dict):
-                results[descriptor["source"]] = RuntimeError(
-                    f"Gemini Batch request {key} failed: {json.dumps(error or item, ensure_ascii=False)}"
-                )
-                continue
-            generated = self._generation_result(
-                response,
-                latency_s=batch_latency,
-                audio_duration_s=descriptor["duration"],
-                pricing_tier="paid_batch",
-                batch_job=job_by_key.get(key),
-                batch_request_key=key,
+
+        def publish(group: dict[str, Any]) -> None:
+            ready_count = sum(
+                latest[key] is group and descriptor_by_key[key]["source"] in pending_paths
+                and descriptor_by_key[key]["source"] not in results for key in group["request_keys"]
             )
-            results[descriptor["source"]] = (
-                GeminiResponseError(generated) if generated.get("generation_error") else generated
+            if ready_count:
+                logger.info("Collecting %d saved result(s) from Gemini Batch job %s.",
+                            ready_count, group["job_name"])
+                progress(
+                    "BATCH_RETRIEVE",
+                    f"Retrieving {ready_count} sample(s) from job {group['job_name']}",
+                )
+            for key in group["request_keys"]:
+                descriptor = descriptor_by_key[key]
+                source = descriptor["source"]
+                if latest[key] is not group or source not in pending_paths or source in results:
+                    continue
+                item = group["results"].get(key, {"error": {"message": "missing inline response"}})
+                response = item.get("response")
+                if response is None and "candidates" in item:
+                    response = item
+                if item.get("error") or not isinstance(response, dict):
+                    with self._lock:
+                        accumulate_usage(self._usage_totals, {})
+                        accumulate_cost(self._cost_totals, None)
+                    provider = item.get("error") if isinstance(item.get("error"), dict) else {}
+                    message = (f"Gemini Batch request failed ({provider.get('status') or provider.get('code')}): "
+                               f"{provider.get('message')}" if provider
+                               else f"Gemini Batch result has no response object (keys: {sorted(item)}).")
+                    logger.warning("%s: %s", source.name, message)
+                    value = GeminiResponseError({
+                        "text": "", "batch_job": group["job_name"], "batch_request_key": key,
+                        "generation_error": {"code": "gemini_batch_request_failed", "message": message,
+                                             "provider_status": provider.get("status"),
+                                             "provider_code": provider.get("code")},
+                    })
+                else:
+                    storage_key = group.setdefault("storage_request_key", next(
+                        (candidate for candidate in group["request_keys"]
+                         if isinstance(group["results"].get(candidate, {}).get("response"), dict)), key,
+                    ))
+                    storage = float(group.get("cache_storage_usd", 0.0)) if key == storage_key else 0.0
+                    with self._lock:
+                        self._pending_storage_usd = storage
+                        if group["job_name"] not in submitted_jobs:
+                            self._cost_totals["cache_storage_usd"] += storage
+                            self._cost_totals["total_usd"] += storage
+                    generated = self._generation_result(
+                        response, latency_s=group.get("latency_s", 0.0),
+                        audio_duration_s=descriptor["duration"], pricing_tier="paid_batch",
+                        batch_job=group["job_name"], batch_request_key=key,
+                    )
+                    value = GeminiResponseError(generated) if generated.get("generation_error") else generated
+                results[source] = value
+                if on_result is not None:
+                    on_result(source, value)
+
+        def poll(group: dict[str, Any]) -> None:
+            job_name = str(group["job_name"])
+            job_url = (
+                job_name if job_name.startswith("http")
+                else f"https://generativelanguage.googleapis.com/{job_name}"
+                if job_name.startswith("v1beta/") else f"{API_ROOT}/{job_name.lstrip('/')}"
             )
+            job, _ = self._request_json("GET", job_url, operation="batch polling")
+            prev_state = group.get("state")
+            state = self._batch_state(job)
+            group["state"] = state
+            if state != prev_state:
+                logger.info("Gemini Batch job %s: %s -> %s", job_name, prev_state or "UNKNOWN", state)
+                progress(
+                    "BATCH_JOB",
+                    f"{job_name}: {prev_state or 'UNKNOWN'} -> {state} ({len(group['request_keys'])} items)",
+                )
+            else:
+                logger.info("Gemini Batch job %s: %s", job_name, state)
+
+            if state in BATCH_TERMINAL_STATES:
+                keys = group["request_keys"]
+                if state in ("JOB_STATE_SUCCEEDED", "BATCH_STATE_SUCCEEDED"):
+                    response_items = {}
+                    for index, item in enumerate(self._inline_responses(job)):
+                        metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+                        key = metadata.get("key") or metadata.get("custom_id") or metadata.get("customId")
+                        if key not in keys:
+                            key = keys[index] if index < len(keys) else None
+                        if key is not None:
+                            response_items[key] = item
+                else:
+                    error = self._batch_resource(job).get("error") or job.get("error") or {"state": state}
+                    response_items = {key: {"error": error} for key in keys}
+                group["results"] = response_items
+                self._cost_totals["pending_requests"] -= len(keys)
+                group["latency_s"] = round(
+                    time.time() - group["submitted_at"] if "submitted_at" in group
+                    else time.monotonic() - started, 3,
+                )
+                if state in ("JOB_STATE_SUCCEEDED", "BATCH_STATE_SUCCEEDED"):
+                    progress(
+                        "BATCH_JOB_DONE",
+                        f"Job {job_name} ({len(keys)} items) {state} in {group['latency_s']:.1f}s",
+                    )
+                else:
+                    err_text = ""
+                    if isinstance(response_items.get(keys[0], {}).get("error"), dict):
+                        err_text = f": {response_items[keys[0]]['error'].get('message', state)}"
+                    progress(
+                        "BATCH_JOB_FAIL",
+                        f"Job {job_name} ({len(keys)} items) entered {state}{err_text}",
+                    )
+            # Persist the complete raw job before validation/publication can
+            # fail or the process can be interrupted. Never discard attempts.
+            write_json(state_path, saved)
+            if "results" in group:
+                publish(group)
+
+        def quota_exhausted(group: dict[str, Any]) -> bool:
+            errors = [item.get("error") for item in group.get("results", {}).values()]
+            return bool(errors) and all(
+                isinstance(error, dict)
+                and (error.get("code") in (8, 429) or error.get("status") == "RESOURCE_EXHAUSTED")
+                for error in errors
+            )
+
+        for idx, group in enumerate(groups, start=1):
+            # Gemini accepts jobs whose every request then fails on quota, so check
+            # a finished job before queueing more work behind it.
+            unfinished = next((g for g in saved_groups if "results" not in g), None)
+            if unfinished is not None:
+                poll(unfinished)
+                if quota_exhausted(unfinished):
+                    raise RuntimeError(
+                        f"Gemini Batch quota exhausted: job {unfinished['job_name']} returned "
+                        f"RESOURCE_EXHAUSTED for every request; stopped with "
+                        f"{sum(map(len, groups[idx - 1:]))} request(s) unsubmitted. Wait for the "
+                        "Batch quota to reset and rerun with --continue, or use --inference-mode "
+                        f"standard/flex. State: {state_path}"
+                    )
+            previous_storage = self._cost_totals["cache_storage_usd"]
+            for item in group:
+                self._apply_prompt_cache(item["entry"]["request"], system_prompt)
+            saved["cache_storage_usd"] = saved.get("cache_storage_usd", 0.0) + (
+                self._cost_totals["cache_storage_usd"] - previous_storage
+            )
+            write_json(state_path, saved)
+            body = {"batch": {
+                "display_name": f"{safe_name(self.model)}-{session_id}-{len(saved_groups) + 1}",
+                "input_config": {"requests": {"requests": [item["entry"] for item in group]}},
+            }}
+            created, _ = self._request_json(
+                "POST", f"{API_ROOT}/models/{self.model}:batchGenerateContent", body,
+                retry_network_errors=False, operation="batch submission",
+            )
+            record = {
+                "request_keys": [item["key"] for item in group],
+                "job_name": self._batch_job_name(created),
+                "state": self._batch_state(created),
+                "submitted_at": time.time(),
+                "retry": any(item["key"] in latest for item in group),
+                "cache_storage_usd": self._cost_totals["cache_storage_usd"] - previous_storage,
+            }
+            self._cost_totals["pending_requests"] += len(record["request_keys"])
+            submitted_jobs.add(record["job_name"])
+            saved_groups.append(record)
+            latest.update({key: record for key in record["request_keys"]})
+            saved["status"] = "polling"
+            write_json(state_path, saved)
+            logger.info("Submitted Gemini Batch %sjob %s with %d request(s).",
+                        "retry " if record["retry"] else "", record["job_name"], len(group))
+            progress(
+                "BATCH_SUBMIT",
+                f"{'retry ' if record['retry'] else ''}job {record['job_name']} with {len(group)} request(s)",
+                current=idx,
+                total=len(groups),
+            )
+
+        if groups:
+            total_active_jobs = len(saved_groups)
+            total_submitted_items = sum(len(g["request_keys"]) for g in saved_groups)
+            progress(
+                "BATCH_SUBMITTED",
+                f"submitted {len(groups)} new job(s) ({to_submit_items} item(s)); "
+                f"total submitted={total_submitted_items} across {total_active_jobs} job(s)",
+            )
+
+        # Publish saved responses before the polling loop.
+        for group in saved_groups:
+            if "results" in group:
+                publish(group)
+
+        loop_executed = False
+        try:
+            while any("results" not in group for group in saved_groups):
+                loop_executed = True
+                for group in saved_groups:
+                    if "results" in group:
+                        continue
+                    if time.monotonic() - started >= batch_timeout_s:
+                        raise TimeoutError(
+                            f"Gemini Batch did not finish within {batch_timeout_s:g}s; "
+                            f"completed results are saved. Resume with --continue. State: {state_path}"
+                        )
+                    poll(group)
+
+                total_items = sum(len(g["request_keys"]) for g in saved_groups)
+                completed_items = sum(len(g["request_keys"]) for g in saved_groups if "results" in g)
+                remaining_items = total_items - completed_items
+                retrieved_items = len(results)
+                total_jobs = len(saved_groups)
+                completed_jobs = sum(1 for g in saved_groups if "results" in g)
+                active_jobs = [g for g in saved_groups if "results" not in g]
+                running_jobs = sum(1 for g in active_jobs if g.get("state") in ("JOB_STATE_RUNNING", "BATCH_STATE_RUNNING"))
+                pending_jobs = sum(1 for g in active_jobs if g.get("state") not in ("JOB_STATE_RUNNING", "BATCH_STATE_RUNNING"))
+                failed_jobs = sum(1 for g in saved_groups if g.get("state") in (
+                    "JOB_STATE_FAILED", "JOB_STATE_CANCELLED", "JOB_STATE_EXPIRED",
+                    "BATCH_STATE_FAILED", "BATCH_STATE_CANCELLED", "BATCH_STATE_EXPIRED",
+                ))
+                elapsed = time.monotonic() - started
+
+                job_detail_parts = []
+                if running_jobs:
+                    job_detail_parts.append(f"{running_jobs} running")
+                if pending_jobs:
+                    job_detail_parts.append(f"{pending_jobs} pending")
+                if failed_jobs:
+                    job_detail_parts.append(f"{failed_jobs} failed")
+                job_detail_str = f" ({', '.join(job_detail_parts)})" if job_detail_parts else ""
+
+                if any("results" not in group for group in saved_groups):
+                    remaining_time = max(0.0, batch_timeout_s - elapsed)
+                    sleep_s = min(poll_interval_s, remaining_time)
+                    progress(
+                        "BATCH_STATUS",
+                        f"submitted={total_items}, completed={completed_items}, remaining={remaining_items}, retrieved={retrieved_items} | "
+                        f"jobs: {completed_jobs}/{total_jobs} done{job_detail_str} | "
+                        f"next poll in {sleep_s:.1f}s",
+                        current=completed_items,
+                        total=total_items,
+                        elapsed_s=round(elapsed, 2),
+                    )
+                    time.sleep(sleep_s)
+                else:
+                    progress(
+                        "BATCH_STATUS",
+                        f"submitted={total_items}, completed={completed_items}, remaining=0, retrieved={retrieved_items} | "
+                        f"jobs: {total_jobs}/{total_jobs} done{job_detail_str}",
+                        current=completed_items,
+                        total=total_items,
+                        elapsed_s=round(elapsed, 2),
+                    )
+        except BaseException as exc:
+            elapsed = time.monotonic() - started
+            total_items = sum(len(g["request_keys"]) for g in saved_groups)
+            completed_items = sum(len(g["request_keys"]) for g in saved_groups if "results" in g)
+            remaining_items = total_items - completed_items
+            retrieved_items = len(results)
+            progress(
+                "BATCH_ABORT" if isinstance(exc, KeyboardInterrupt) else "BATCH_ERROR",
+                f"submitted={total_items}, completed={completed_items}, remaining={remaining_items}, "
+                f"retrieved={retrieved_items} | interrupted after {elapsed:.1f}s: {type(exc).__name__}",
+            )
+            raise
+
+        if not loop_executed and saved_groups:
+            total_items = sum(len(g["request_keys"]) for g in saved_groups)
+            completed_items = sum(len(g["request_keys"]) for g in saved_groups if "results" in g)
+            retrieved_items = len(results)
+            progress(
+                "BATCH_STATUS",
+                f"submitted={total_items}, completed={completed_items}, remaining=0, retrieved={retrieved_items} | "
+                f"jobs: {len(saved_groups)}/{len(saved_groups)} done",
+                current=completed_items,
+                total=total_items,
+                elapsed_s=round(time.monotonic() - started, 2),
+            )
+
+        saved["status"] = "completed"
+        write_json(state_path, saved)
+
         return results
 
 
@@ -1279,6 +1467,7 @@ def generation_callback(
     system_prompt: str,
     *,
     all_pairs: list[tuple[Path, Path]],
+    on_result: Callable[[Path, dict[str, Any] | Exception], None] | None = None,
 ) -> Callable[[Path], dict[str, Any]]:
     """Select the provider API once; both commands consume raw results."""
     if pairs:
@@ -1307,7 +1496,11 @@ def generation_callback(
     sources = [source for source, _ in pairs]
     manifest = read_json(manifest_path) if args.continue_run and manifest_path.exists() else {}
     saved = [resolve_stored_path(value) for value in manifest.get("sources", [])]
-    if manifest.get("signature") == signature and all(source in saved for source in sources):
+    matching_manifest = manifest.get("signature") == signature and all(source in saved for source in sources)
+    session_identity = manifest.get("session_identity") if matching_manifest else hashlib.sha256(
+        json.dumps(signature, sort_keys=True).encode()
+    ).hexdigest()
+    if matching_manifest:
         # Resubmitting the saved subset reproduces its request keys, reconnecting saved jobs.
         sources = saved
     elif pairs:
@@ -1316,6 +1509,7 @@ def generation_callback(
                         "submitting the %d missing output(s) as a new Batch run", len(pairs))
         write_json(manifest_path, {
             "signature": signature,
+            "session_identity": session_identity,
             "sources": [persist_path(source) for source in sources],
         })
     if not pairs:
@@ -1325,12 +1519,22 @@ def generation_callback(
             sources, system_prompt=system_prompt,
             batch_size=args.batch_size, poll_interval_s=args.batch_poll_interval_s,
             batch_timeout_s=args.batch_timeout_s, state_dir=args.work_dir / "batch_jobs",
-            reuse_state=args.continue_run,
+            reuse_state=args.continue_run and matching_manifest,
+            session_identity=session_identity,
+            on_result=on_result,
+            pending_paths={source.resolve() for source, _ in pairs},
+            retry_jobs={source.resolve(): old.get("_batch_job") or (old.get("response") or {}).get("batch_job")
+                        for source, destination in pairs
+                        if args.continue_run and destination.with_suffix(".json").exists()
+                        for old in [read_json(destination.with_suffix(".json"))] if old.get("status") == "fail"},
         )
     except BaseException:
+        logger.warning("Batch interrupted: saved responses are recoverable with --continue; "
+                       "remote jobs are not cancelled and their costs may not yet be available.")
         from _reporting import new_run_stats, report_cost_summary
 
-        report_cost_summary("gemini/batch", new_run_stats(), client.get_cost_summary())
+        if on_result is None:
+            report_cost_summary("gemini/batch", new_run_stats(), client.get_cost_summary())
         raise
 
     def generate(source: Path) -> dict[str, Any]:
