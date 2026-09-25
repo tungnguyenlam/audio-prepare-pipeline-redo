@@ -596,3 +596,18 @@
 - Batch now polls the oldest unfinished job between submissions and stops submitting once a finished job is all quota errors; warns about unfinished state files from other runs; logs the per-model work_dir that overrides the printed default.
 - Ctrl-C: shared `batch()` cancels queued futures on exit; `run_verifier` prints cost, skips analysis and `os._exit(130)` so in-flight provider retries no longer keep the process alive (artifacts are atomic).
 - Unstaged the accidental `data -> .data` symlink. Committed together with pending Antigravity progress-logging edits. Validation: py_compile and launcher --help only; no tests or paid calls.
+
+## 2026-09-25 - Debug session record: Gemini Batch verifier on slp-vsf (thu-am-studio/remaining)
+- Symptom: `gemini.sh -id .data/s3-diarize/diarizen/thu-am-studio/remaining --inference-mode batch` (314 clips, batch_size 10, 32 jobs). Submission took ~15 s per job (11:49-11:57); every job reported BATCH_STATE_SUCCEEDED, yet 314/314 items were saved as `decision=unknown; error=generation_failed; cost=unavailable`, TOTAL_COST "provider did not expose pricing", analysis 0 valid / 314 invalid. A follow-up `--continue` resubmitted failures as retry jobs (10 submitted before Ctrl-C).
+- Code reasoning: gemini-3.8-flash is priced, so `cost=unavailable` meant no inline result reached `_generation_result`; every item hit the batch error branch, which replaced the provider error with "details retained in Batch state", and the verifier classified it as `generation_failed`.
+- Checks run on slp-vsf (snippets in docs/gemini_batch_debugging.md):
+  - Input audio: 314 WAVs, all 44100 Hz mono PCM_16, 0 unreadable/empty. Moving the diarization folder did not corrupt inputs (audio is inlined, paths do not reach Gemini).
+  - First state-file scan printed nothing: the printed `work_dir` is the generic default; real state is under `.data/s4-agent/verifier/gemini/gemini-3-8-flash/medium/work/batch_jobs/`.
+  - Local state: `batch_cf86c06f8bc00ecb94d0.json` (42 groups = 32 original + 10 retry): 314 saved results, all `{"code": 8, "message": "Resource has been exhausted (e.g. check quota)."}`. `batch_a37e4157d704293ac5bf.json` (107 groups, older run on the pre-move folder path, batch size 3): no saved results.
+  - Remote job states: a37e = 102 SUCCEEDED + 5 status lookups returning INTERNAL; cf86 = 42 SUCCEEDED. Nothing pending or running.
+  - Remote per-request outcomes: a37e = 14 ok, 265 code 8, 25 code 1 (CANCELLED); jobs 97 all-error, 4 all-ok (jobs 69, 70, 85, 86), 1 mixed (job 4: 2 ok, 1 cancelled). cf86 = 0 ok, 414 code 8 (includes the 10 retry jobs submitted ~12:00).
+  - Standard probe (1-token generateContent) succeeded: serviceTier standard, modelVersion gemini-3.8-flash. Only Batch quota is exhausted.
+  - Flex attempt (`--inference-mode flex --overwrite -c 4`): immediate HTTP 503 Service Unavailable with backoff retries; Ctrl-C printed cost and started analysis while worker threads kept retrying.
+- Conclusion: root cause is exhausted Gemini Batch quota for this project (RESOURCE_EXHAUSTED per request inside SUCCEEDED jobs), not a code or data bug. The folder move only orphaned the older a37e run (new paths = new run identity); its 14 paid ok responses were never published and were judged not worth recovering. Failed requests are presumably unbilled but Batch exposes no cost for them.
+- Recommendation: use `--inference-mode standard -c 2 --overwrite` until Batch quota resets (check AI Studio rate limits); Flex is half price but was overloaded; delete the a37e state file once handled.
+- Code fixes shipped in f2c6b11 (see previous entry); debugging snippets documented in docs/gemini_batch_debugging.md.
