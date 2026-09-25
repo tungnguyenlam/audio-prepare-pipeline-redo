@@ -544,3 +544,9 @@
 - Added docs/plans/tts_spoken_written_zip_export_plan.md: a proposed standalone export_tts_zip command, audio/ plus two two-column CSVs at ZIP root, shared verifier inventory validation, pass-only selection, structured transcript splitting and removal of every [neutral]. No implementation code changed.
 - Asked whether spoken payload retains IPA slashes/underscores and whether other emotions remain. Plan marks these as pending and shows explicit proposed defaults; no inferred user confirmation.
 - Validation: documentation/contract review only; no tests written or run, no model calls, no runtime export or new CLI to validate. Existing staged data entry belongs to prior work and is excluded from this task's commit.
+
+## 2026-09-25 - Confirm TTS transcript export rules
+
+- User confirmed that spoken form preserves the exact annotation payload, including IPA slashes, underscores and hyphens. Both CSVs remove only [neutral] and retain other emotion tags, sound/filler tags and pause markers.
+- Updated the TTS ZIP export plan to replace pending questions with confirmed rules and align the implementation sequence. Code implementation remains outside this planning task.
+- Validation: reviewed the documentation diff and ran git diff --check; no tests requested or run, no CLI/code changes or model calls. Existing staged data entry remains excluded.

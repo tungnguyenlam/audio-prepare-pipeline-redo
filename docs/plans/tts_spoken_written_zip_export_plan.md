@@ -1,6 +1,7 @@
 # Kế hoạch export ZIP cho TTS: spoken form và written form
 
-Trạng thái: đề xuất ngày 2026-09-25; chưa triển khai code.
+Trạng thái: plan ngày 2026-09-25; quy tắc transcript đã được người dùng xác nhận;
+chưa triển khai code.
 Phạm vi hiện tại là lập plan implementation, CLI và quy tắc tag.
 
 ## 1. Contract đầu ra
@@ -76,7 +77,7 @@ annotation của token đó. Chữ không có annotation giữ ở cả hai bả
 | Filler mô phỏng `<uh>`, `<mmm>`… | giữ | giữ |
 | Dấu câu/dấu nghỉ `. , ? ! ~ *` | giữ | giữ |
 
-Ví dụ theo mặc định đề xuất:
+Ví dụ theo quy tắc đã xác nhận:
 
 ```text
 Gốc:    [neutral] Tôi dùng AI[ây_ai], [happy] hello[/həˈləʊ/]! <laugh>
@@ -84,12 +85,12 @@ Spoken: Tôi dùng ây_ai, [happy] /həˈləʊ/! <laugh>
 Written:Tôi dùng AI, [happy] hello! <laugh>
 ```
 
-Hai chi tiết đã hỏi người dùng và còn chờ xác nhận:
-- Giữ nguyên nội dung trong ngoặc gồm `/.../`, `_`, `-` (đề xuất), hay bỏ `/`
-  bao IPA và đổi `_` thành space. Không tự đổi IPA sang chữ Việt.
-- Giữ emotion khác `[neutral]` và event/filler (đề xuất), hay bỏ thêm emotion.
+Người dùng đã xác nhận:
+- Giữ nguyên nội dung trong ngoặc gồm `/.../`, `_`, `-`; không bỏ `/` bao IPA,
+  không đổi `_` thành space, không tự đổi IPA sang chữ Việt.
+- Chỉ xóa `[neutral]`; giữ các emotion khác, event/filler và dấu nghỉ ở cả hai CSV.
 
-Mặc định đề xuất chưa phải lựa chọn đã được người dùng xác nhận. Việc bỏ
+Việc bỏ
 `[neutral]` áp dụng ở mọi vị trí, kể cả điểm trở về giọng nền sau emotion khác;
 điều này bỏ marker reset của quy ước emotion nguồn theo đúng yêu cầu.
 
@@ -131,7 +132,7 @@ response vào log; không đưa credentials/config payload vào package.
 
 ## 6. Implementation theo thứ tự
 
-1. Chốt hai quy tắc text còn mở và thêm ví dụ vào contract.
+1. Đưa quy tắc text và ví dụ đã xác nhận ở mục 4 vào contract implementation.
 2. Tách phần inventory/thu thập verdict hiện dùng ở handoff sang helper riêng
    `scripts/s5-export/_verifier_export_inventory.py`, để handoff và TTS cùng dùng.
    Giữ folder/catalog/progress đặc thù handoff trong command handoff; helper trả
