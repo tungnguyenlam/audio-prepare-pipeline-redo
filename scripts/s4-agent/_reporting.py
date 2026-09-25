@@ -149,6 +149,8 @@ def report_cost_summary(
             cost_text += ' (estimated)'
         if unpriced:
             cost_text += f'; {unpriced} unpriced'
+    elif cost.get('pending_requests'):
+        cost_text = 'total=unavailable (Batch requests still pending)'
     elif requests:
         cost_text = 'total=unavailable (provider did not expose pricing)'
     else:
@@ -162,6 +164,8 @@ def report_cost_summary(
         f'requests={requests}',
         cost_text,
     ]
+    if cost.get('pending_requests'):
+        details.append(f"pending_requests={cost['pending_requests']} (costs not yet available)")
     if cost.get('cache_storage_usd'):
         details.append(f"cache_storage=${float(cost['cache_storage_usd']):.6f} (full TTL)")
     if cost.get('unpriced_caches'):

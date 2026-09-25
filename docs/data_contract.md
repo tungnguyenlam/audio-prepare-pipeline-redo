@@ -368,13 +368,21 @@ the run manifest (full input root, source paths/digests, output destinations,
 prompts, generation settings, batch size) is unchanged and covers every missing
 output; otherwise the missing outputs are submitted as a new Batch run. Without
 the flag, pending work submits fresh Batch jobs.
-Failed provider jobs are resubmitted while successful jobs are retained. Saved
-per-request errors or responses that fail verdict validation are replayed;
-`--overwrite` is needed to request new responses for those clips.
+Each terminal Batch job is checkpointed with its raw per-request responses before
+publication. The verifier writes its output pairs immediately while other jobs
+remain pending. The raw command uses the same incremental job checkpoints but
+publishes output pairs after its Batch call returns. State retains prior attempts.
+On `--continue`, published failed samples receive one new attempt; new failures
+are not automatically resubmitted within the same invocation. In-flight retry
+jobs reconnect, missing artifacts recover saved responses, and complete valid
+pass/reject pairs remain untouched. Failed verifier artifacts preserve available
+`_usage`, `_cost`, `_batch_job`, `_batch_request_key` and `_latency_s` at the top
+level. Their costs describe the latest published attempt; historical attempts
+remain in Batch state. Verifier invocations with failures exit nonzero.
 Gemini's `cache_prompt` parameter defaults to false; `cache_ttl_s` records the
 explicit prompt cache lifetime. Cost records include `cache_storage_usd`, charged
-once for each cache's full TTL and assigned to the first subsequent priced
-response. `total_usd` includes storage as well as input and output. The run summary
+once for each cache's full TTL and assigned to a priced response (within the
+creating job for Batch, so resuming does not shift it onto another job). `total_usd` includes storage as well as input and output. The run summary
 also reports `unpriced_caches` when storage cannot be estimated. Explicit caches
 contain text only; generation responses preserve the requested inference mode
 alongside the effective pricing mode.

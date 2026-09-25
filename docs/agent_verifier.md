@@ -62,9 +62,25 @@ schema. Neither directory orchestrates other pipeline stages.
   every missing output. Otherwise the missing outputs are submitted as a new Batch
   run. Without `--continue`, pending work submits a fresh Batch job.
   `--overwrite` regenerates all outputs with fresh requests.
-  Failed provider jobs are resubmitted while successful jobs are retained.
-  Saved per-request errors or responses that fail verdict validation are replayed
-  on continuation; use `--overwrite` to request new responses for those clips.
+  Each completed job's raw responses are checkpointed immediately. The verifier
+  publishes its verdict/text pairs, per-item logs and sample-cost table while
+  other jobs are still running; the raw command checkpoints jobs incrementally
+  but publishes its output pairs after its Batch call returns.
+  On `--continue`, already-published failed samples get one new Batch attempt,
+  including request errors, invalid JSON and schema failures. Completed valid
+  pass/reject pairs are skipped. Previously submitted retries reconnect by job ID;
+  newly retrieved failures remain visible until the next `--continue`, preventing
+  an unlimited paid retry loop. Missing artifacts recover saved responses first.
+  Keep the same input, output, work directory and settings when continuing;
+  run only one collector per work directory at a time. Retries are new paid
+  requests. `--max-retry` remains an HTTP retry control, not a Batch retry loop.
+  Old job attempts and raw responses remain in Batch state after retries.
+  Failed verifier artifacts retain available usage/cost and Batch job/request IDs.
+  Item cost and offline totals describe the latest published attempt, not all
+  historical spending; prior attempts remain in Batch state. Pending requests are
+  identified in terminal cost summaries rather than reported as no model requests.
+  Final plots run when the invocation ends; verifier runs with failed items exit
+  nonzero.
 - Both Gemini commands share one mode selector and request implementation.
   Standard is the default. Python callers use
   `inference_mode="batch" | "flex" | "standard"`; call `generate_batch()` for Batch

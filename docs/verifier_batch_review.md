@@ -1,8 +1,16 @@
 # Verifier Batch review — 2026-09-25
 
-Static review of the current implementation; no tests, paid requests, package
-installation, or remote-machine validation were performed. No runtime code was
-changed. See [the verifier guide](agent_verifier.md) for the full command contract.
+Historical review of the implementation before incremental retrieval. The
+subsequent implementation now checkpoints each completed job and publishes
+verifier samples while other jobs run. `--continue` retries already-published
+failed samples once per invocation and reconnects any in-flight retries. Available
+failure usage/cost is preserved, Batch item failures log as failures and verifier
+exit status is nonzero. Poll intervals are no longer capped at 60 seconds. CLI
+state reuse is gated by the full run signature. See the current
+[verifier guide](agent_verifier.md) for behavior and retry/cost limitations.
+
+The findings and example below describe the original review snapshot; statements
+about waiting for all jobs and replaying published failed samples are superseded.
 
 ## Assessment
 

@@ -150,6 +150,10 @@ def _write_verdict_artifacts(
     artifact: dict[str, Any] = request(identity(source), "verify", parameters, backend)
     artifact["status"] = "fail" if error is not None else "success"
     artifact["response"] = response_meta
+    if generation:
+        for key in ("usage", "cost", "batch_job", "batch_request_key", "latency_s"):
+            if key in generation:
+                artifact[f"_{key}"] = generation[key]
     # Provider bodies are runtime-only here; the exact answer is in the .txt sidecar.
     if error is not None:
         code, message, exception_type = error
@@ -208,6 +212,7 @@ def verdict_processor(
             raw_response = None
             error = None
             invalid_verdict = None
+            generation = None
             is_json_failure = False
             failure_reason = ""
 
@@ -223,15 +228,20 @@ def verdict_processor(
                 if schema_error is not None:
                     error = (schema_error, _error_message(schema_error), "VerifierResponseError")
                     invalid_verdict = verdict
+                    generation = {key: verdict[f"_{key}"] for key in
+                                  ("usage", "cost", "batch_job", "batch_request_key", "latency_s")
+                                  if f"_{key}" in verdict}
                     verdict = None
                     is_json_failure = True
                     failure_reason = f"{schema_error} ({_error_message(schema_error)})"
             except VerifierResponseError as exc:
+                generation = getattr(exc, "generation", None)
                 raw_response = exc.raw_response
                 error = (exc.code, _error_message(exc.code), type(exc).__name__)
                 is_json_failure = True
                 failure_reason = f"{exc.code} ({_error_message(exc.code)})"
             except Exception as exc:
+                generation = getattr(exc, "generation", None)
                 raw_error = getattr(exc, "raw_response", None)
                 if isinstance(raw_error, str):
                     raw_response = raw_error
@@ -395,6 +405,7 @@ def run_verifier(
     parameters: dict[str, Any],
     verify: Callable[[Path], dict[str, Any]],
     cost_summary: Callable[[], Mapping[str, Any]] | None = None,
+    run_batch: Callable[[Callable[[Path, Path], None]], None] | None = None,
 ) -> int:
     stats = new_run_stats()
     result = 1
@@ -413,20 +424,31 @@ def run_verifier(
             'VERIFIER_START',
             f'backend={backend}; model={model}; items={len(pairs)}',
         )
-        result = batch(
-            pairs,
-            verdict_processor(
-                args=args,
-                backend=backend,
-                parameters=parameters,
-                verify=verify,
-                stats=stats,
-                update_sample_costs=update_sample_costs,
-            ),
-            concurrency=getattr(args, "concurrency", 1),
-            batch_size=getattr(args, "batch_size", 1),
+        process = verdict_processor(
+            args=args, backend=backend, parameters=parameters, verify=verify,
+            stats=stats, update_sample_costs=update_sample_costs,
         )
-        return result
+        if run_batch is not None and pairs:
+            completed = 0
+
+            def publish(source: Path, destination: Path) -> None:
+                nonlocal completed
+                failures_before = stats['failed']
+                process(source, destination)
+                completed += 1
+                failed = stats['failed'] > failures_before
+                progress('ITEM_FAIL' if failed else 'ITEM_DONE', source.name,
+                         current=completed, total=len(pairs))
+                print(destination, flush=True)
+
+            run_batch(publish)
+            result = int(stats['failed'] > 0)
+        else:
+            result = batch(
+                pairs, process, concurrency=getattr(args, "concurrency", 1),
+                batch_size=getattr(args, "batch_size", 1),
+            )
+        return int(bool(result or stats['failed']))
     finally:
         provider = cost_summary() if cost_summary is not None else None
         report_cost_summary(f'verifier/{backend}', stats, provider)

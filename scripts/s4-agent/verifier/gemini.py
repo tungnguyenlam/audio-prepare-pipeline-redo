@@ -6,6 +6,7 @@ import logging
 import sys
 from pathlib import Path
 from typing import Any
+from collections.abc import Callable
 
 logger = logging.getLogger("verifier.gemini")
 
@@ -119,7 +120,26 @@ def main() -> int:
         backend="gemini",
         parameters=parameters,
     )
-    generate = generation_callback(verifier, args, pairs, prompt, all_pairs=all_pairs)
+    run_batch = None
+    if args.inference_mode == "batch":
+        ready: dict[Path, dict[str, Any] | Exception] = {}
+        destinations_by_source = {source.resolve(): destination for source, destination in pairs}
+
+        def generate(source: Path) -> dict[str, Any]:
+            value = ready.pop(source.resolve())
+            if isinstance(value, Exception):
+                raise value
+            return value
+
+        def run_batch(publish: Callable[[Path, Path], None]) -> None:
+            def on_result(source: Path, value: dict[str, Any] | Exception) -> None:
+                ready[source] = value
+                publish(source, destinations_by_source[source])
+
+            generation_callback(verifier, args, pairs, prompt,
+                                all_pairs=all_pairs, on_result=on_result)
+    else:
+        generate = generation_callback(verifier, args, pairs, prompt, all_pairs=all_pairs)
 
     return run_verifier(
         args=args,
@@ -128,6 +148,7 @@ def main() -> int:
         parameters=parameters,
         verify=lambda source: verifier.parse_generated(source, generate(source)),
         cost_summary=verifier.get_cost_summary,
+        run_batch=run_batch,
     )
 
 
