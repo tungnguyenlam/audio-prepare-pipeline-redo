@@ -537,3 +537,10 @@
 - Static findings: all/workers omit Kimi, and all also omits main; four root requirements files differ from the active envs copies; impurity contains 340 tracked WAVs and 9 tracked PNGs (121,528,094 bytes total); untracked data symlink points correctly to ignored .data; legacy web entrypoints and target_speaker.py reference absent src modules, and target_speaker.py has no matching Bash launcher.
 - Local du reports .venvs 65G, uv cache 53G, and .data 8.8G; these are not remote measurements or guaranteed reclaimable bytes, especially with Btrfs sharing. Existing data symlink left untouched.
 - Validation: inspected setup dispatch, requirements paths, launcher wiring and documented contracts; setup --help succeeded without provisioning; no broken symlinks found under scripts/envs/docs or among inspected environment bin/python paths. No tests or paid model calls (not requested). Consulted official uv cache/storage/link-mode documentation for advice.
+
+## 2026-09-25 - Plan spoken/written TTS ZIP export
+
+- User requested a plan covering implementation, scripts/flags and transcript tags. Inspected current manifest exports, ZIP bundler, verifier handoff/collector, production validator references, launchers, shared path/hash helpers and full-tags prompt grammar.
+- Added docs/plans/tts_spoken_written_zip_export_plan.md: a proposed standalone export_tts_zip command, audio/ plus two two-column CSVs at ZIP root, shared verifier inventory validation, pass-only selection, structured transcript splitting and removal of every [neutral]. No implementation code changed.
+- Asked whether spoken payload retains IPA slashes/underscores and whether other emotions remain. Plan marks these as pending and shows explicit proposed defaults; no inferred user confirmation.
+- Validation: documentation/contract review only; no tests written or run, no model calls, no runtime export or new CLI to validate. Existing staged data entry belongs to prior work and is excluded from this task's commit.
