@@ -550,3 +550,11 @@
 - User confirmed that spoken form preserves the exact annotation payload, including IPA slashes, underscores and hyphens. Both CSVs remove only [neutral] and retain other emotion tags, sound/filler tags and pause markers.
 - Updated the TTS ZIP export plan to replace pending questions with confirmed rules and align the implementation sequence. Code implementation remains outside this planning task.
 - Validation: reviewed the documentation diff and ran git diff --check; no tests requested or run, no CLI/code changes or model calls. Existing staged data entry remains excluded.
+
+## 2026-09-25 - Implement paired spoken/written TTS ZIP export
+
+- Added export_tts_zip.py/.sh with required verifier directory, repeatable complete inventory manifests and exact ZIP destination under .data/. Reuses production verdict/response validation across backends; exports only pass clips with transcripts, excludes valid rejects, and blocks incomplete/conflicting/changed inputs and empty datasets.
+- Extracted existing verifier inventory collection into _verifier_export_inventory.py for both exporters. Kept review-specific paths, fields and review state in export_verifier_handoff. Both launchers now share metadata_launcher.sh, selecting existing Python without package provisioning.
+- Implemented a transcript scanner preserving exact IPA/ViePhoneme payloads, written tokens, non-neutral emotion tags, sound/filler tags and pause markers. Removes standalone [neutral] everywhere and rejects malformed/ambiguous annotation structures with clip/character diagnostics; no model transcription or review-CSV reimport.
+- ZIP contains audio/ and paired UTF-8 spoken.csv/written.csv with exactly audio_path,transcript. Streams original audio into ZIP64 while hashing the bytes written; stages under .data/ and atomically publishes without clobbering an existing output unless --overwrite is supplied.
+- Updated README, command/contract/verifier documentation and implementation-plan status. Reviewed final diff, shared consumer wiring and intended new files; Python compilation, Bash syntax, both launcher --help commands and git diff --check passed. No tests written or run (not requested), no end-to-end export/relocation validation, no paid models or package installs. Existing staged data entry excluded from the commit.

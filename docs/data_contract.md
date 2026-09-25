@@ -600,3 +600,55 @@ Audio bytes/hashes are verified and copied; no audio decoding dependency is need
 Catalog duration uses finite nonnegative duration_s from an indexed manifest or
 end_s minus start_s from exported segments. Missing duration stays blank and does
 not falsely contribute zero-duration audio to reported known hours.
+
+
+## TTS spoken/written ZIP
+
+`export_tts_zip.sh` writes one ZIP under `.data/`, containing only `audio/<clip_id><suffix>`,
+`spoken.csv` and `written.csv` at the archive root. There is no enclosing dataset
+folder, metadata sidecar, review file or JSON inside the delivery. Audio bytes and
+extension case remain unchanged. Clip IDs reuse the verifier-export identity hash
+(source path and audio SHA-256); moving the source paths changes IDs. Collisions
+block export. Both tables use the same deterministic source-path order and unique
+relative POSIX audio paths, with header `audio_path,transcript`, comma delimiter,
+UTF-8 without BOM and standard CSV quoting. Training text is not prefixed with a
+spreadsheet apostrophe. CSV readers must support quoted commas, quotes and newlines.
+
+Selection requires complete expected inventories (`entries` or exported `turns`)
+and complete, production-valid pass/reject artifacts with intact raw responses and
+audio hashes. Valid rejects are excluded. Every selected pass must have a nonempty
+transcript, regardless of backend/profile. No transcription is synthesized, and
+corrected human-review CSVs are not imported. Unknown coverage, competing verdicts,
+processing failures, changed/missing audio and zero selected clips block publication.
+The exporter does not claim that a model pass represents human approval or broader
+quality checks than the original verifier profile supplies.
+
+The transcript scanner recognizes the current full-tags grammar:
+
+| Source | Spoken | Written |
+|---|---|---|
+| `AI[ây_ai]` | `ây_ai` | `AI` |
+| `hello[/həˈləʊ/]` | `/həˈləʊ/` | `hello` |
+| `9:15[chín_giờ_mười_lăm]` | `chín_giờ_mười_lăm` | `9:15` |
+| `[neutral]` | removed | removed |
+| `[happy]`, `<laugh>`, `<uh>`, punctuation/pauses | preserved | preserved |
+
+Speech outside annotations remains in both complete sentences. An emotion label
+stands separately from words; a pronunciation bracket attaches directly to one
+written token. Number grouping/decimal separators and numeric dates/times remain
+inside their token; ambiguous dotted/slashed compounds must be annotated separately.
+IPA payloads retain their enclosing slashes, spaces and phonetic characters;
+ViePhoneme retains Latin letters, combining marks, hyphens and underscores. No
+phonetic correctness is inferred. Empty/nested/unmatched brackets, unknown standalone
+square-bracket labels, unsupported legacy `[written][spoken]` pairs and malformed
+sound tags fail with clip ID and character position. Supported `<...>` tags use
+lowercase letters with underscore/hyphen separators. All non-neutral emotions from
+the current prompt catalog are retained. Removing `[neutral]` everywhere also
+removes emotion-reset markers intentionally. Only whitespace at deleted neutral
+tags and sentence edges is cleaned; annotation payloads are preserved.
+
+Both CSVs are generated from the same validated records. Audio is streamed into
+ZIP64 while hashing those exact bytes, and the completed temporary ZIP is published
+atomically; failures remove staging files and leave any previous destination intact.
+Without `--overwrite`, concurrent output creation cannot be silently overwritten.
+No intermediate audio copies, transcoding, model calls or package installs occur.

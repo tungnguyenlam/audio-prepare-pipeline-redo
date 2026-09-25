@@ -1,8 +1,9 @@
 # Kế hoạch export ZIP cho TTS: spoken form và written form
 
-Trạng thái: plan ngày 2026-09-25; quy tắc transcript đã được người dùng xác nhận;
-chưa triển khai code.
-Phạm vi hiện tại là lập plan implementation, CLI và quy tắc tag.
+Trạng thái: đã triển khai ngày 2026-09-25 theo quy tắc transcript người dùng xác nhận.
+Command: `scripts/s5-export/export_tts_zip.py/.sh`.
+Validation: review diff, syntax Python/Bash và launcher `--help`; không chạy tests
+hay export end-to-end vì chưa được yêu cầu.
 
 ## 1. Contract đầu ra
 
@@ -30,13 +31,14 @@ Chỉ đưa audio có đủ cả hai transcript vào ZIP; không xuất dataset 
 - `index.py` tạo inventory audio/hash/metadata, không thu thập transcript.
 - `export.py` chỉ xuất bảng manifest JSONL/CSV; `bundle.py` đóng audio và
   `manifest.json`. Hai lệnh này không chọn verifier pass và không tách transcript.
-- `export_verifier_handoff.py` đã có `expected_inputs`, `collect_run`, kiểm tra
-  source hash, raw response và verdict qua `_verifier_artifacts`/`_verdicts`.
-  Package hiện tại phục vụ review, gồm cả reject và các file HTML/XLSX.
+- `_verifier_export_inventory.py` chứa `expected_inputs`, `collect_run`, được tách
+  từ handoff để hai exporter dùng chung kiểm tra source hash, raw response và
+  verdict qua `_verifier_artifacts`/`_verdicts`. Package handoff vẫn phục vụ review,
+  gồm cả reject và các file HTML/XLSX.
 - `prompts/full-tags-prompt.md` mục 2–4 quy định emotion `[label]`, event/filler
   `<...>`, `word[ViePhoneme]`, `word[/IPA/]`, `_`, `-` và dấu nghỉ.
 
-Đề xuất thêm command độc lập `export_tts_zip.py/.sh`, dùng kết quả verifier có sẵn
+Đã thêm command độc lập `export_tts_zip.py/.sh`, dùng kết quả verifier có sẵn
 và inventory audio. Đây là đầu ra TTS mới; command review vẫn phục vụ review.
 Không đổi tên hàng loạt các command ngắn đã được chọn trước đây.
 Không gọi model, không chạy nối tiếp các stage khác, không cài package.
@@ -104,7 +106,7 @@ Giữ nguyên payload và Unicode; chỉ dọn whitespace ở chỗ xóa tag và
 Không dùng regex xóa toàn bộ `[...]`; không xóa nhầm emotion hoặc mất lời.
 Không xác nhận lại độ đúng ngữ âm bằng model; đây là chuyển đổi text có cấu trúc.
 
-## 5. CLI dự kiến
+## 5. CLI
 
 ```bash
 bash scripts/s5-export/export_tts_zip.sh \
@@ -125,7 +127,7 @@ Hai CSV luôn được tạo cùng nhau; chưa cần flag chọn riêng spoken/w
 flag biến đổi từng loại tag. Launcher chọn `AUDIO_PYTHON`, môi trường có sẵn,
 rồi `python3`, theo hành vi nhẹ của handoff; truyền nguyên arguments.
 
-Log stderr dự kiến: `TTS_EXPORT_SCAN`, `TTS_EXPORT_SELECT`, `TTS_EXPORT_PARSE`,
+Log stderr: `TTS_EXPORT_SCAN`, `TTS_EXPORT_SELECT`, `TTS_EXPORT_PARSE`,
 `TTS_EXPORT_AUDIO`, `TTS_EXPORT_DONE`. Báo số pass/reject, số dòng và lỗi theo clip;
 stdout chỉ in đường dẫn ZIP khi thành công. Không dump toàn bộ transcript/raw
 response vào log; không đưa credentials/config payload vào package.

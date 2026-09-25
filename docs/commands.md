@@ -88,7 +88,7 @@ remote repository directory is writable.
 | Launchers | Default venv (fallbacks) | Override variable |
 |---|---|---|
 | `s1-download/*.sh` | `.venvs/download` (`.venv-download`) | `DOWNLOAD_PYTHON` |
-| `audio/*.sh`, `s5-export/*.sh` (handoff exception below), `evaluate/*.sh`, `mix/mix.sh`, `speaker/{enroll,filter}.sh`, `purity/{consensus,cleanup,merge,collar,snap,segment}.sh`, `s4-agent/verifier/{plot_verifier_analysis,analysis,analyze,compare,evaluate_verifier,scaffold_experiment}.sh` | `.venvs/audio` (`.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
+| `audio/*.sh`, `s5-export/*.sh` (metadata export exceptions below), `evaluate/*.sh`, `mix/mix.sh`, `speaker/{enroll,filter}.sh`, `purity/{consensus,cleanup,merge,collar,snap,segment}.sh`, `s4-agent/verifier/{plot_verifier_analysis,analysis,analyze,compare,evaluate_verifier,scaffold_experiment}.sh` | `.venvs/audio` (`.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
 | `s2-separate/*.sh` | `.venvs/separation` (`.venv-separation`, `.venvs/main`, `.venv`) | `SEPARATION_PYTHON` |
 | `s3-diarize/{pyannote,pyannote_31,pyannote_community1}.sh`, `speaker/{score,purity}.sh` | `.venvs/pyannote` (`.venv-pyannote`, `.venvs/main`, `.venv`) | `DIARIZATION_PYTHON` |
 | `s3-diarize/nemotron3_diarization.sh` | `.venvs/nemotron3` | `DIARIZATION_PYTHON` |
@@ -658,6 +658,37 @@ The four manifest commands use the short names `index`, `filter`, `export`, and
 `bundle`; the longer `*_audio_manifest`/`*_manifest_table`/`bundle_manifest_audio`
 launchers are removed. `export` writes metadata only; `bundle`
 packs the audio named by a manifest. Neither selects verifier outcomes.
+
+For a TTS training ZIP with paired spoken/written transcripts:
+
+```bash
+bash scripts/s5-export/export_tts_zip.sh \
+  --input-dir .data/s4-agent/verifier/<backend>/<model> \
+  --input-manifest .data/clips/<family>/segments.json \
+  --output-file .data/s5-export/tts_dataset.zip
+```
+
+All three paths are required. Repeat `--input-manifest` for disjoint complete
+inventories. `--configuration HASH` selects a unique settings hash/prefix when
+results compete; `--overwrite` replaces an existing ZIP after successful export.
+Only `pass` clips with nonempty transcripts are included; valid rejects are counted
+and excluded. Missing/invalid/failed/uncertain results, incomplete inventory,
+audio/hash issues, malformed transcript annotations and empty datasets block export.
+There is no partial-training export flag. Profiles without transcripts cannot supply
+TTS data, even if their verdict is pass. All backends use the production validator.
+
+Extraction produces `audio/`, `spoken.csv`, `written.csv` directly, with no enclosing
+dataset folder. Both CSVs have exactly `audio_path,transcript` and matching rows;
+paths are relative to the CSVs. Spoken replaces `word[pronunciation]` with the exact
+payload (including `/`, `_`, `-`); written retains the word. Both remove `[neutral]`
+and preserve other emotion tags, sound/filler tags and pause markers. Audio bytes
+and original extensions are preserved. This consumes original verifier transcripts,
+not edited review CSVs. See the [TTS ZIP contract](data_contract.md#tts-spokenwritten-zip).
+
+Both `export_tts_zip.sh` and `export_verifier_handoff.sh` use an existing interpreter:
+`AUDIO_PYTHON`, `.venvs/audio`, `.venvs/main`, then `python3`. They never provision
+packages or call models. Export progress goes to stderr; success prints the ZIP
+path to stdout. The ZIP must stay under `.data/` and outside the verifier run.
 
 For a nontechnical audio/transcript review handoff (only these two paths are needed):
 

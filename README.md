@@ -39,7 +39,7 @@ verifiers) are provisioned per target with the same script; see
 | `scripts/s4-agent/` | raw audio-LLM generation: `gemini`, `endpoint`, `hf` |
 | `scripts/s4-agent/verifier/` | pass/reject verifiers `gemini`, `hf`, `endpoint`, `unsloth`, `vllm`, `moss`, `minicpm`, `kimi`, `vibevoice`; offline `plot_verifier_analysis` (aliases `analysis`, `analyze`), `compare`, `evaluate_verifier`, `scaffold_experiment` |
 | `scripts/mix/`, `scripts/evaluate/` | `mix`; `separation`, `diarization`, `plot_diarization`, `plot_metrics`, `prepare_viyt_diar`, `run_viyt_diar` |
-| `scripts/s5-export/` | `index`, `filter`, `export`, `bundle`, `export_verifier_handoff` |
+| `scripts/s5-export/` | `index`, `filter`, `export`, `bundle`, `export_verifier_handoff`, `export_tts_zip` |
 | `scripts/sync/` | rsync code/data to the model server and auxiliary hosts |
 
 Every `.py` has a same-name `.sh` launcher that selects the right virtualenv.

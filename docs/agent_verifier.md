@@ -358,3 +358,16 @@ replacement supplied), or `exclude`. Human feedback never changes original model
 outcomes or resolves processing errors; the sender must assess corrections and
 resolve remaining processing separately. This package is a review handoff, not a
 declaration that every delivered clip is approved training data.
+
+
+### Exporting paired TTS transcripts
+
+After verification, use `scripts/s5-export/export_tts_zip.sh` with the run directory,
+complete expected inventory and an explicit ZIP output path. It selects pass clips
+and produces `audio/`, `spoken.csv`, `written.csv`; see the
+[command and flags](commands.md#dataset-export-s5-export) and
+[transcript contract](data_contract.md#tts-spokenwritten-zip). It uses original
+verifier transcripts, preserves annotation payloads for spoken form, retains written
+words for written form, and removes only `[neutral]` from both. Review CSV edits
+are not reimported by this command. Resolve incomplete/invalid verifier results
+before export; valid rejects are excluded automatically.
