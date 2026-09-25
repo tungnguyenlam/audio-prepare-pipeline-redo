@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
+import sys
 from threading import Lock
 import time
 from collections.abc import Callable, Mapping
@@ -245,7 +246,12 @@ def verdict_processor(
                 raw_error = getattr(exc, "raw_response", None)
                 if isinstance(raw_error, str):
                     raw_response = raw_error
-                error = _generation_failure(exc)
+                provider_error = (generation or {}).get("generation_error")
+                error = (
+                    (str(provider_error["code"]), str(provider_error["message"]), type(exc).__name__)
+                    if isinstance(provider_error, dict) and provider_error.get("code")
+                    else _generation_failure(exc)
+                )
                 exc_str = str(exc).lower()
                 if any(k in exc_str for k in ("json", "parse", "syntaxerror", "decode")) or error[0] in (
                     "invalid_json",
@@ -409,6 +415,7 @@ def run_verifier(
 ) -> int:
     stats = new_run_stats()
     result = 1
+    interrupted = False
     initial_pairs = list(pairs)
     update_sample_costs = _sample_costs_updater(_resolve_verdict_dir(args, initial_pairs))
     try:
@@ -430,6 +437,7 @@ def run_verifier(
         )
         if run_batch is not None and pairs:
             completed = 0
+            batch_started = time.monotonic()
 
             def publish(source: Path, destination: Path) -> None:
                 nonlocal completed
@@ -441,17 +449,45 @@ def run_verifier(
                          current=completed, total=len(pairs))
                 print(destination, flush=True)
 
-            run_batch(publish)
-            result = int(stats['failed'] > 0)
+            try:
+                run_batch(publish)
+                batch_elapsed = time.monotonic() - batch_started
+                progress(
+                    'BATCH_COMPLETE',
+                    f'{completed - stats["failed"]} succeeded; {stats["failed"]} failed '
+                    f'(retrieved {completed}/{len(pairs)} items)',
+                    elapsed_s=batch_elapsed,
+                )
+                result = int(stats['failed'] > 0)
+            except BaseException:
+                batch_elapsed = time.monotonic() - batch_started
+                progress(
+                    'BATCH_INTERRUPTED',
+                    f'retrieved {completed}/{len(pairs)} items before interruption '
+                    f'({completed - stats["failed"]} succeeded, {stats["failed"]} failed; '
+                    f'{len(pairs) - completed} remaining)',
+                    elapsed_s=batch_elapsed,
+                )
+                raise
         else:
             result = batch(
                 pairs, process, concurrency=getattr(args, "concurrency", 1),
                 batch_size=getattr(args, "batch_size", 1),
             )
         return int(bool(result or stats['failed']))
+    except KeyboardInterrupt:
+        interrupted = True
+        raise
     finally:
         provider = cost_summary() if cost_summary is not None else None
         report_cost_summary(f'verifier/{backend}', stats, provider)
+        if interrupted:
+            # In-flight worker threads (e.g. provider retry loops) would otherwise keep
+            # the process alive; artifacts are written atomically, so exit now.
+            progress('VERIFIER_INTERRUPTED', 'Stopped by user; skipped post-verification analysis')
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os._exit(130)
         if not getattr(args, "skip_analysis", False):
             verdict_dir = _resolve_verdict_dir(args, initial_pairs)
             if verdict_dir is not None and verdict_dir.is_dir():

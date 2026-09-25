@@ -231,6 +231,21 @@ reconcile_py313_hardware() {
             gpu_name=$("$py_bin" -c "import torch; print(torch.cuda.get_device_name(0))" 2>/dev/null || echo "CUDA GPU")
             echo "   -> CUDA acceleration verified: ${gpu_name}"
         fi
+
+        # If torchvision is present, ensure its CUDA ABI matches PyTorch
+        if "$py_bin" -c "import importlib.util; exit(0 if importlib.util.find_spec('torchvision') else 1)" 2>/dev/null; then
+            if ! "$py_bin" -c "import torchvision" >/dev/null 2>&1; then
+                local index_url
+                index_url=$(get_cuda_wheel_index)
+                if [ -n "$index_url" ]; then
+                    echo "⚡ Aligning torchvision with NVIDIA CUDA stack (${index_url})..."
+                    uv pip install --python "$py_bin" --index-url "$index_url" --upgrade "torchvision>=0.19.0"
+                else
+                    echo "⚡ Aligning torchvision with PyPI CUDA stack..."
+                    uv pip install --python "$py_bin" --upgrade "torchvision>=0.19.0"
+                fi
+            fi
+        fi
     fi
 }
 
@@ -340,7 +355,7 @@ setup_pyannote() {
     fi
 
     if [ ! -d "$venv_dir" ]; then
-        echo "📦 Creating Python 3.13 virtual environment ${venv_dir}......"
+        echo "📦 Creating Python 3.13 virtual environment ${venv_dir}..."
         uv venv --python 3.13 "$venv_dir"
     fi
 
@@ -386,10 +401,29 @@ setup_verify() {
     reconcile_py313_hardware "$venv_dir"
 
     echo "📦 Installing verifier requirements..."
-    uv pip install --python "${venv_dir}/bin/python" -r "$REPO_ROOT/envs/requirements-verify.txt"
+    local py_bin="${venv_dir}/bin/python"
+    local req_args=()
+    if [ "$HAS_NVIDIA_GPU" -eq 1 ]; then
+        local index_url
+        index_url=$(get_cuda_wheel_index)
+        if [ -n "$index_url" ]; then
+            req_args+=(--extra-index-url "$index_url")
+        fi
+    fi
+    uv pip install --python "$py_bin" "${req_args[@]}" -r "$REPO_ROOT/envs/requirements-verify.txt"
     if [ "$HAS_AMD_GPU" -eq 1 ]; then
         echo "⚡ Installing CPU torchvision for Gemma multimodal processor on ROCm..."
-        uv pip install --python "${venv_dir}/bin/python" "torchvision==0.28.0+cpu" --index-url https://download.pytorch.org/whl/cpu >/dev/null 2>&1 || true
+        uv pip install --python "$py_bin" "torchvision==0.28.0+cpu" --index-url https://download.pytorch.org/whl/cpu >/dev/null 2>&1 || true
+    elif [ "$HAS_NVIDIA_GPU" -eq 1 ]; then
+        # Ensure torchvision matches CUDA wheel index if PyPI's build was picked
+        if ! "$py_bin" -c "import torchvision" >/dev/null 2>&1; then
+            local index_url
+            index_url=$(get_cuda_wheel_index)
+            if [ -n "$index_url" ]; then
+                echo "⚡ Aligning torchvision with NVIDIA CUDA stack (${index_url})..."
+                uv pip install --python "$py_bin" --index-url "$index_url" --upgrade "torchvision>=0.19.0"
+            fi
+        fi
     fi
 
     echo "⚙️ Re-verifying hardware acceleration..."

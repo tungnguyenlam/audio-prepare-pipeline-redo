@@ -81,6 +81,33 @@ schema. Neither directory orchestrates other pipeline stages.
   identified in terminal cost summaries rather than reported as no model requests.
   Final plots run when the invocation ends; verifier runs with failed items exit
   nonzero.
+  Batch execution exposes internal activity across each stage: payload preparation
+  (`BATCH_PREPARE`), submission and resume planning (`BATCH_PLAN`), per-job
+  submissions (`BATCH_SUBMIT` / `BATCH_SUBMITTED`), provider state changes
+  (`BATCH_JOB`), job completion milestones (`BATCH_JOB_DONE` / `BATCH_JOB_FAIL`),
+  and sample retrieval (`BATCH_RETRIEVE`). Each polling sweep reports a structured
+  status summary (`BATCH_STATUS`) with total submitted, completed, remaining, and
+  retrieved items alongside active job counts and countdown to the next poll.
+  Batch completion or interruption records full retrieved versus remaining counts
+  (`BATCH_COMPLETE` / `BATCH_INTERRUPTED`).
+- Gemini can mark a Batch job `SUCCEEDED` while every request inside it failed
+  (for example `RESOURCE_EXHAUSTED`, code 8, when the project's Batch quota is
+  used up). Each failed request logs and records the provider status and message
+  (`error.code = gemini_batch_request_failed`); provider completion errors in
+  every mode persist their Gemini code instead of `generation_failed`. Between
+  submissions the command polls the oldest unfinished job and stops submitting,
+  with a clear error, once a finished job is all quota errors. Rerun with
+  `--continue` after the quota resets, or use `--inference-mode standard`/`flex`.
+- Default Gemini runtime paths live under `<model>/<reasoning>/` (for example
+  `.data/s4-agent/verifier/gemini/gemini-3-8-flash/medium/work/batch_jobs/`);
+  the printed configuration shows the generic default, and the command logs the
+  per-model `work_dir` it actually uses. A new run warns about unfinished Batch
+  state files from other runs (e.g. after moving the input folder), since their
+  jobs may still hold quota or paid results.
+- Ctrl-C stops a verifier run immediately: queued items are dropped, the cost
+  summary prints, post-verification analysis is skipped, and the process exits
+  130 without waiting for in-flight provider retries. Artifacts are written
+  atomically, so no partial files remain.
 - Both Gemini commands share one mode selector and request implementation.
   Standard is the default. Python callers use
   `inference_mode="batch" | "flex" | "standard"`; call `generate_batch()` for Batch

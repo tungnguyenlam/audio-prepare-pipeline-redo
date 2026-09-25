@@ -562,7 +562,8 @@ def batch(pairs: list[tuple[Path, Path]], process, *, concurrency: int = 1, batc
                     failed += 1
                     progress('ITEM_FAIL', msg, current=completed, total=total)
     else:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=concurrency)
+        try:
             for batch_chunk in batches:
                 futures = []
                 for src, dest in batch_chunk:
@@ -579,6 +580,9 @@ def batch(pairs: list[tuple[Path, Path]], process, *, concurrency: int = 1, batc
                         else:
                             failed += 1
                             progress('ITEM_FAIL', msg, current=completed, total=total)
+        finally:
+            # On Ctrl-C, drop queued items instead of waiting for them to start.
+            pool.shutdown(wait=False, cancel_futures=True)
 
     total_elapsed = time.perf_counter() - t_start
     progress('BATCH_COMPLETE', f'{total - failed} succeeded; {failed} failed', elapsed_s=total_elapsed)
