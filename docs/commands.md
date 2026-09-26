@@ -747,6 +747,41 @@ are flagged for manual transcription, not synthesized. See the
 [handoff contract](data_contract.md#verifier-review-handoff) for the exact fields
 and [review workflow](agent_verifier.md#handing-a-run-to-a-transcript-reviewer).
 
+### Clean spoken pronunciations, filler tags and pauses
+
+```bash
+bash scripts/s5-export/clean_viephoneme_brackets_and_pauses.sh \
+  --input-file .data/output-data-separation/spoken-form-thu-am-studio-transcript.csv \
+  --output-file .data/output-data-separation/spoken-form-thu-am-studio-transcript-cleaned.csv \
+  --remove-tilde-ratio 0.8 --seed 42
+```
+
+Run on the original spoken CSV with standalone pronunciation annotations. The
+command detects `transcript` or `transcripts`; use `--transcript-column NAME` if
+both exist or the column has another name. Rows, column order and other cells are
+preserved. Output must be a separate CSV under `.data/`; use `--overwrite` to
+replace an existing output. Keep output beside input for relative audio paths.
+
+- `[vin-iu-ni]` → `vin-iu-ni`; `[/ˌdʒiː piː ˈjuː/]` → `/ˌdʒiː piː ˈjuː/`.
+  Pronunciation spelling, slash delimiters and internal spaces are retained.
+- Emotion tags in the export catalog, including `[neutral]`, stay bracketed.
+  Add custom labels with repeated `--preserve-tag LABEL`.
+- Filler/sound tags become square tags: `<mmm>` → `[mmm]`,
+  `<throat_clear>` → `[throat_clear]`, `<laugh>` → `[laugh]`,
+  `<uh-oh>` → `[uh-oh]`. Lowercase tag names with `_`/`-` are supported.
+  This runs after pronunciation unwrapping, so newly created square tags survive.
+- Legacy consonant markers keep angle brackets when directly joined by `-` to
+  another pronunciation block: `<p>-ro-đắc`, `rét-<s>`, `<s>-<k>-răm`.
+  A standalone `<m>` becomes `[m]`. Unsupported bracket payloads are retained.
+- Randomly remove `floor(total ~ occurrences × ratio)` across all rows, using
+  seed 42 by default. Set `--remove-tilde-ratio 0` to retain all pauses.
+  Whitespace remains unchanged, including spaces on either side of removed `~`.
+
+Regenerate from the original CSV when changing options: output square filler tags
+can be ambiguous with ViePhoneme on another cleanup pass, and pause deletion is
+cumulative. Logs include converted tag counts on stderr; stdout prints the output
+path. The existing metadata launcher requires no packages or model calls.
+
 ### Convert an annotated CSV to spoken form
 
 ```bash

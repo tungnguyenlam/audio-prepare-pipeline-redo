@@ -24,7 +24,6 @@ from _cli import (  # noqa: E402
 )
 from _common.files import destinations, parser, positive_int  # noqa: E402
 from gemini import (  # noqa: E402
-    GEMINI_MODEL,
     GeminiAgent,
     add_gemini_arguments,
     configure_gemini_paths,
@@ -73,10 +72,6 @@ class GeminiVerifier(GeminiAgent):
         parsed["_usage"] = generated["usage"]
         parsed["_cost"] = generated["cost"]
         parsed["_model"] = self.model
-        if self.model != GEMINI_MODEL:
-            raise RuntimeError(
-                f"Verifier must use {GEMINI_MODEL!r}, not {self.model!r}."
-            )
         parsed["_reasoning_effort"] = self.reasoning_effort
         parsed["_inference_mode"] = generated.get("inference_mode", "standard")
         parsed["_requested_inference_mode"] = self.inference_mode

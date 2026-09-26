@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "title": "Verifier Evaluation",
+  "matched_clips": 118,
+  "evaluated_clips": 117,
+  "invalid_pairs": [
+    {
+      "key": "ngalevi_assistant2_mel_roformer_diarizen_spk00_001026512-001029932_0073",
+      "prediction_error": null,
+      "reference_error": "verifier_failed"
+    }
+  ],
+  "metrics": {
+    "accuracy": 0.9487,
+    "reject_precision": 0.0,
+    "reject_recall": 0.0,
+    "reject_f1": 0.0,
+    "false_rejection_rate": 0.0089
+  },
+  "confusion_matrix": {
+    "true_rejects_caught": 0,
+    "bad_accepts_missed": 5,
+    "true_passes_kept": 111,
+    "false_rejects_dropped": 1
+  },
+  "latency_stats": {
+    "mean_s": 3.669,
+    "p50_s": 2.376,
+    "p95_s": 11.118
+  },
+  "transcripts": {
+    "reference_available": 112,
+    "statuses": {
+      "different": 109,
+      "exact_match": 3
+    },
+    "exact_match_rate": 0.0268
+  },
+  "emotions": {
+    "reference_available": 0,
+    "statuses": {},
+    "exact_match_rate": null
+  },
+  "reasons_breakdown": {
+    "The initial word 'người' is clipped at the start of the audio.": {
+      "caught": 0,
+      "missed": 1
+    },
+    "The initial word is cut off at the start of the audio file.": {
+      "caught": 0,
+      "missed": 1
+    },
+    "The audio is clipped at the beginning, cutting off the first syllable of the initial word (likely 'Yankees').": {
+      "caught": 0,
+      "missed": 1
+    },
+    "The final word is clipped abruptly at the end of the audio.": {
+      "caught": 0,
+      "missed": 1
+    },
+    "The audio cuts off abruptly at the end, clipping the word being spoken after 'pháp sư'.": {
+      "caught": 0,
+      "missed": 1
+    }
+  },
+  "predictions_dir": ".data/s4-agent/verifier/gemini/gemini-3-1-flash-lite/high/ngalevi_assistant2_mel_roformer",
+  "reference_dir": ".data/s4-agent/verifier/gemini/gemini-3-8-flash/medium/ngalevi_assistant2_mel_roformer"
+}

@@ -689,3 +689,11 @@
 - Kept the current code, prompt, and documentation changes. Added same-name launchers for the two new public Python commands, routed CLI progress to stderr and completed paths to stdout, and changed generated CSV defaults/examples to .data/. Fixed a prompt Markdown delimiter and removed an unrelated trailing space.
 - Validated launcher shell syntax, each command's --help wiring, and git diff --check without invoking models. No tests were written or run.
 - Created one local commit from the final source tree. HTTPS push failed because no GitHub credential is configured; the SSH agent key was not accepted by GitHub. No remote update occurred, and GitHub authentication is required before retrying.
+
+## 2026-09-26 - Convert filler and sound tags to square brackets
+
+- Extended clean_viephoneme_brackets_and_pauses.py to convert lowercase filler/event angle tags, including <mmm>, <throat_clear>, <laugh> and <uh-oh>, to square brackets after pronunciation unwrapping. Added a converted-tag count to stderr progress.
+- Retain legacy consonant angle markers when directly hyphen-joined to another pronunciation block, including <p>-ro-đắc, rét-<s> and <s>-<k>-răm. Standalone consonant-shaped filler tags such as <m> convert to [m]. Remaining square annotations are skipped by the tag conversion pass.
+- Read the current cleaner, adjacent spoken-form/ZIP conversion, common launcher, prompt grammar and current docs. Restored focused cleanup usage documentation without replacing concurrent documentation edits. Documented rerunning from original input because square filler labels can be ambiguous with phoneme payloads on a later pass.
+- Validation: Python AST parsing, Bash syntax and launcher --help passed; reviewed the complete before/after code and docs diffs. No tests written or run (not requested), no paid models invoked, and no dataset outputs modified.
+- Commit/push unavailable: git status still reports this workspace is not a Git repository.

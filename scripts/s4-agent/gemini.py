@@ -74,6 +74,8 @@ _load_repo_env()
 
 API_ROOT = "https://generativelanguage.googleapis.com/v1beta"
 GEMINI_MODEL = "gemini-3.8-flash"
+# Same REST API and thinkingLevel config; each has a versioned price card entry.
+GEMINI_MODELS = (GEMINI_MODEL, "gemini-3.5-flash-lite", "gemini-3.1-flash-lite")
 DEFAULT_USER_PROMPT = "Analyze the attached audio according to the system instructions."
 # Portable default: <repo>/prompts/full-tags-prompt.md, overridable per machine.
 DEFAULT_SYSTEM_PROMPT_PATH = ROOT / "prompts" / "full-tags-prompt.md"
@@ -87,7 +89,7 @@ HTTP_HINTS = {
     400: "request rejected; check audio format/size and generation config",
     401: "check GEMINI_API_KEY",
     403: "check GEMINI_API_KEY and its project permissions/billing",
-    404: f"model {GEMINI_MODEL!r} is not available to this API key",
+    404: "model is not available to this API key",
     429: "quota or rate limit exhausted",
 }
 BATCH_TERMINAL_STATES = {
@@ -281,10 +283,8 @@ class GeminiAgent:
         user_prompt: str = DEFAULT_USER_PROMPT,
         max_response_retries: int = 3,
     ) -> None:
-        if model != GEMINI_MODEL:
-            raise ValueError(
-                f"This pipeline is pinned to {GEMINI_MODEL!r}; received {model!r}."
-            )
+        if model not in GEMINI_MODELS:
+            raise ValueError(f"Unsupported Gemini model {model!r}; choose one of {GEMINI_MODELS}.")
         if inference_mode not in ("standard", "flex", "batch"):
             raise ValueError(f"Unsupported Gemini inference mode: {inference_mode}")
         self.model = model
@@ -654,10 +654,10 @@ class GeminiAgent:
         returned_model = response.get("modelVersion")
         if isinstance(returned_model, str) and returned_model:
             normalized = returned_model.removeprefix("models/")
-            if not normalized.startswith(GEMINI_MODEL):
+            if not normalized.startswith(self.model):
                 raise RuntimeError(
                     f"Gemini returned unexpected modelVersion {returned_model!r}; "
-                    f"expected {GEMINI_MODEL!r}. No fallback is allowed."
+                    f"expected {self.model!r}. No fallback is allowed."
                 )
 
         usage = normalize_gemini_usage(
@@ -1335,9 +1335,9 @@ def add_gemini_arguments(command: argparse.ArgumentParser) -> None:
     )
     command.add_argument(
         "-m", "--model",
-        choices=(GEMINI_MODEL,),
+        choices=GEMINI_MODELS,
         default=GEMINI_MODEL,
-        help=f"Gemini model name (pinned to {GEMINI_MODEL})",
+        help=f"Gemini model name (default: {GEMINI_MODEL})",
     )
     command.add_argument(
         "--reasoning-effort",
