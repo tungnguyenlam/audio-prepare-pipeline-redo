@@ -5,3 +5,4 @@ librosa>=0.11.0
 matplotlib>=3.11.1
 pysocks>=1.7.1
 httpx[socks]>=0.28.1
+pyarrow>=21.0.0

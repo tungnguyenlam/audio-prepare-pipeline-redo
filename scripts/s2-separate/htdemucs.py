@@ -32,8 +32,9 @@ def main() -> int:
         p.error('Require shifts >= 0, 0 <= overlap < 1, and 0 < segment <= 7.8')
     # Match the selected FT model for defaults without changing user paths.
     for attr in ('output_dir', 'work_dir'):
-        if getattr(args, attr) == p.get_default(attr):
-            setattr(args, attr, getattr(args, attr).parent.parent / args.model / getattr(args, attr).name)
+        val = getattr(args, attr)
+        if val is not None and val == p.get_default(attr):
+            setattr(args, attr, val.parent.parent / args.model / val.name)
     pairs = destinations(args, '_' + args.model)
     import torch
     import soundfile as sf

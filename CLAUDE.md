@@ -48,6 +48,7 @@ audio-model verification, evaluation, mixing, and dataset export.
 | `scripts/s4-agent/` | free-form raw audio-model generation |
 | `scripts/s4-agent/verifier/` | validated pass/reject behaviors using shared generation |
 | `scripts/evaluate/` | metrics and plots |
+| `scripts/vicut_bench/` | ViCut-Bench clean anchors and controlled defects |
 | `scripts/s5-export/` | dataset indexing, filtering, export, bundles |
 | `scripts/_common/` | private shared file/segment behavior |
 | `scripts/sync/` | code/data synchronization between machines |

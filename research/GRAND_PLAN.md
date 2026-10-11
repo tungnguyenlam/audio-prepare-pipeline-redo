@@ -17,7 +17,7 @@ draft, whose citations and premises did not survive checking (see §7).
 | Gemini | AI Studio **free** key, tight daily quota | Gemini is a *judge under test* on a stratified subset, not the source of ground truth. Trickle requests over days with `--continue`. |
 | OpenRouter | Optional key | One or two extra commercial audio judges through the existing `scripts/s4-agent/verifier/endpoint.sh` (OpenAI-compatible `input_audio`). |
 | Human time | The authors | ~400 real clips double-annotated (≈ 2–3 h listening each). Required for any real-data claim. |
-| Clean Vietnamese audio | `.data/s1-download/thu-am-studio/` (~4 h studio recordings); PhoAudiobook test splits (manually verified, non-commercial) | In-domain clean anchors. Check speaker inventory and redistribution rights before releasing derived audio. |
+| Clean Vietnamese audio | PhoAudiobook test split (non-commercial) and VIVOS test (CC BY-NC-SA): 300 anchors in `.data/vicut_bench/anchors/`. Have A Sip (2 YouTube episodes, copyrighted) for the real subset only | In-domain clean anchors. No derived-audio release. `thu-am-studio` archived on 2026-10-11 for rights reasons. |
 | Prior measurements | `docs/experiments.md`: 288-clip gold set, E2B LoRA V1–V3, Flash-Lite prompt tuning, ViYT-Diar DER | Real baselines and motivation; no invented numbers. |
 
 ## 2. Motivation from our own data (not from literature)
@@ -65,7 +65,10 @@ dataset release. These can be follow-ups once C1–C4 exist.
 - If an OpenRouter key is provided, list audio-input models and run 5 clips
   through `verifier/endpoint.sh --endpoint https://openrouter.ai/api/v1/chat/completions`.
   The endpoint reads `OPENAI_API_KEY` from the shell environment, not from `.env`.
-- Inventory `thu-am-studio`: speakers, total single-speaker duration, rights.
+- Select and inventory alternative clean audio anchors: verify licenses, speaker count,
+  and speech purity from PhoAudiobook test splits, VIVOS, or a dedicated fresh studio
+  interview crawl (`thu-am-studio` was archived on 2026-10-11 due to rights restrictions).
+  Target ~300 clean 3–12 s utterances.
 - TTS smoke test on ROCm (1 h): choose a recipe that fine-tunes on one speaker
   in ≤ 3 h (F5-TTS from a Vietnamese checkpoint if available and licensed;
   otherwise a single-speaker VITS/Matcha-class model). If ROCm blocks it, run
@@ -76,8 +79,8 @@ dataset release. These can be follow-ups once C1–C4 exist.
 
 ### Phase 1 — ViCut-Bench (weeks 2–4)
 
-**Anchors.** ~300 clean 3–12 s utterances from studio audio, trimmed with a
-measured speech offset (energy/VAD), source-disjoint splits by recording.
+**Anchors.** ~300 clean 3–12 s utterances from the selected clean source, trimmed
+with a measured speech offset (energy/VAD), source-disjoint splits by recording.
 
 **Defect operators** (applied relative to detected speech onset/offset, never file
 edges; SNR is target-to-interferer, so larger = quieter interferer):
@@ -131,7 +134,7 @@ responses via the production verifier commands.
 
 ### Phase 4 — TTS dose-response (weeks 8–11)
 
-- One speaker, fixed clean training set (1–2 h from studio audio), fixed text,
+- One speaker, fixed clean training set (1–2 h from clean anchor source), fixed text,
   steps and seed.
 - Conditions: clean; each of clipped end, secondary speaker and separation
   residue injected at 30 % of clips; mixed defects at 10 % and 30 %. That is 6 runs,

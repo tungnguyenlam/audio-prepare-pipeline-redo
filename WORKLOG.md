@@ -728,3 +728,105 @@
 
 ### Results
 - Documentation only. No code changed; no tests written or run; no models or APIs invoked except two web searches for venue deadlines.
+
+## 2026-10-11 - Archive thu-am-studio and update clean anchor strategy
+
+### Decisions
+- User requested archiving `thu-am-studio` as it is no longer permitted for project use due to usage/rights restrictions, requiring reliance on alternative data sources for clean anchors.
+- Compressed all three pipeline instances of `thu-am-studio` using tar + zstd into `.data/archive/`:
+  - `thu-am-studio_s1_download.tar.zst` (1.7 GB, compressed from 2.7 GB in `.data/s1-download/thu-am-studio`)
+  - `thu-am-studio_s2_separate.tar.zst` (773 MB, compressed from 1.3 GB in `.data/s2-separate/mel_roformer/thu-am-studio`)
+  - `thu-am-studio_s3_diarize.tar.zst` (749 MB, compressed from 1.1 GB in `.data/s3-diarize/diarizen/thu-am-studio`)
+- Deleted the uncompressed active working directories under `s1-download`, `s2-separate`, and `s3-diarize` to prevent accidental consumption in downstream tasks.
+- Updated `research/GRAND_PLAN.md` to note the deprecation and archival of `thu-am-studio`, shifting anchor source selection to PhoAudiobook test splits, VIVOS, or fresh licensed studio interview crawls.
+
+### Results
+- Preserved historical recordings in `.data/archive/` while removing 5.1 GB of active uncompressed restricted data from the pipeline workspace.
+- Updated `research/GRAND_PLAN.md` accordingly. No model calls or test runs executed.
+
+## 2026-10-11 - Provision alternative clean audio sources (VIVOS, Have A Sip crawl, PhoAudiobook check)
+
+### Decisions
+- In response to user direction to use all 3 clean data sources (VIVOS, PhoAudiobook, and studio interview crawl):
+  - Downloaded and extracted the open studio corpus `AILAB-VNUHCM/vivos` into `.data/s1-download/vivos/vivos/` (1.37 GB tar.gz; removed tarball after extraction). Evaluated inventory: 760 test WAVs (0.75 h) and 11,660 train WAVs (14.92 h), all clean 16 kHz mono speech with prompt sidecars.
+  - Selected Vietcetera's official "Have A Sip" playlist (`PLWrhnsc6Cvcrp7HmEWu8q0p95pRyGmpHi`) as the high-fidelity studio interview source per user selection. Launched `scripts/s1-download/playlist.sh` with `--limit 2` to `.data/s1-download/` in the background (task-169).
+  - Probed `thivux/phoaudiobook` via Hugging Face API with existing token in `~/.cache/huggingface/token`. Confirmed dataset is gated and requires web-based access agreement (HTTP 403 Forbidden until granted).
+
+### Results
+- VIVOS test/train sets ready on disk under `.data/s1-download/vivos/vivos/`.
+- Have A Sip studio interview download active in background.
+- Gated status of PhoAudiobook identified for user resolution.
+
+## 2026-10-11 - Complete Have A Sip studio interview download
+
+### Decisions
+- Downloaded 2 full episodes of Vietcetera's Have A Sip podcast via `scripts/s1-download/playlist.sh` into `.data/s1-download/Have-A-Sip/`:
+  - `gZMb2uK8HiE` (Episode 256, The Tri Way): 96.50 min (5,790.2 s), 48 kHz mono WAV + metadata sidecar.
+  - `Ifao8aYrwd8` (Episode 255, Nguyễn Bá Cảnh Sơn): 86.43 min (5,185.8 s), 48 kHz mono WAV + metadata sidecar.
+- Total crawled duration: 3.05 hours (10,976.0 s) of acoustically clean, high-fidelity studio dialogue.
+
+### Results
+- Both audio files and `index.jsonl` verified in `.data/s1-download/Have-A-Sip/`.
+- Re-tested PhoAudiobook via HF API; remains HTTP 403 pending user authorization on the Hugging Face website.
+
+## 2026-10-11 - Download and profile PhoAudiobook test and validation splits
+
+### Decisions
+- Re-probed `thivux/phoaudiobook` on Hugging Face after user confirmed access authorization; HTTP 200 confirmed.
+- Downloaded both evaluation splits into `.data/s1-download/phoaudiobook/`:
+  - `test-00000-of-00001.parquet` (132.63 MB): 383 clips, 40 distinct speakers, 16 kHz mono, total duration 74.37 min (1.24 h). 279 clips fall precisely in the [3.0, 12.0] s window.
+  - `validation-00000-of-00001.parquet` (49.28 MB): 141 clips, 5 distinct speakers, 16 kHz mono, total duration 27.41 min (0.46 h).
+- Confirmed audio schema with `.venvs/main/bin/python` (pyarrow + soundfile): embedded raw audio bytes (`audio`), transcript (`text`), and speaker attribution (`speaker`).
+
+### Results
+- All three target clean data sources (VIVOS, PhoAudiobook, Have A Sip) are now provisioned locally and profiled on disk under `.data/s1-download/`.
+
+## 2026-10-11 - Materialize ViCut-Bench 300 anchors and launch Have A Sip separation
+
+### Decisions
+- Created `scripts/vicut_bench/extract_anchors.py` and `scripts/vicut_bench/extract_anchors.sh` to curate and extract the canonical Phase 1 clean anchors from PhoAudiobook and VIVOS test splits.
+- Extracted all 383 PhoAudiobook test clips to WAV files and linked 760 VIVOS test clips into `.data/vicut_bench/anchors/`.
+- Screened 1,143 candidates down to 802 valid utterances within the $3.0\text{--}12.0\text{ s}$ duration window.
+- Formed the canonical frozen 300-anchor pool (`vicut_bench_anchors_300.jsonl`):
+  - Balanced coda distribution: 100 stop consonants (`-p/-t/-c/-ch`) for clipped-word boundary testing and 200 open/nasal syllable controls.
+  - Balanced source distribution: 140 PhoAudiobook + 160 VIVOS clips across 55 distinct speakers.
+  - Duration statistics: 36.29 min total, min 3.00 s, max 12.00 s, mean 7.26 s.
+- Launched Mel-Band RoFormer vocal separation on Have A Sip (`scripts/s2-separate/mel_roformer.sh -id .data/s1-download/Have-A-Sip`) as background task-259 on ROCm.
+
+### Results
+- 300 clean anchor audio clips, identity sidecars, and canonical manifest ready on disk at `.data/vicut_bench/anchors/vicut_bench_anchors_300.jsonl`.
+- Background vocal separation progressing steadily on GPU.
+
+## 2026-10-11 - ViCut-Bench Anchor Pool Materialization & Have A Sip S2/S3 Pipeline Execution
+
+### Decisions
+- Replaced restricted `thu-am-studio` audio source across `research/GRAND_PLAN.md` with compliant public & crawled sources. Archived and purged legacy `.data/s1-download/thu-am-studio` into `.data/archive/`.
+- Crawled high-fidelity studio dialogue from Vietcetera *Have A Sip* (episodes 255 & 256, 3.05 hours total) into `.data/s1-download/Have-A-Sip/`.
+- Ingested PhoAudiobook test and validation splits (`thivux/phoaudiobook`, ACL 2025) and VIVOS open studio corpus (`AILAB-VNUHCM/vivos`).
+- Implemented `scripts/vicut_bench/extract_anchors.py` and materialized the canonical 300 clean anchor pool in `.data/vicut_bench/anchors/`:
+  - 100 stop-consonant coda clips (`-p/-t/-c/-ch`) for word-end truncation experiments.
+  - 200 open/nasal syllable controls.
+  - 140 PhoAudiobook clips + 160 VIVOS clips across 55 unique speakers (mean duration 7.26s, range 3.0-12.0s).
+- Fixed `AttributeError: 'NoneType' object has no attribute 'parent'` in `scripts/s2-separate/htdemucs.py` when `--output-file` is specified without `--output-dir`.
+- Solved harness command timeout (600s) on long-form audio by chaptering *Have A Sip* into 15-minute dialogue segments.
+- Executed S2 vocal separation with HTDemucs on RX 9060 XT (ROCm 10.0), processing 15 minutes of studio audio in 39.0 seconds (~23x faster than realtime).
+- Executed S3 Sortformer multi-speaker diarization with TitaNet speaker clustering and Silero VAD boundary refinement in 36.4 seconds, isolating 96 conversational turns across 2 speakers (host `spk_00`: 40 turns, 3.16 min; guest `spk_01`: 56 turns, 6.45 min; yield 64.1%).
+
+### Results
+- Canonical clean anchor dataset materialized at `.data/vicut_bench/anchors/vicut_bench_anchors_300.jsonl` with audio and JSON sidecars.
+- Fully verified S1 -> S2 -> S3 pipeline on real multi-speaker studio interview data with zero errors.
+- Both PhoAudiobook/VIVOS clean anchors and Have A Sip separated/diarized speech are ready for ViCut-Bench defect synthesis.
+
+## 2026-10-11 - Tidy ViCut-Bench anchor command and Have A Sip artifacts
+
+### Decisions
+- Moved `extract_anchors.sh` onto the shared audio launcher (`AUDIO_PYTHON`, `.venvs/audio`, then `.venvs/main`) and added `pyarrow` to `envs/requirements-audio.txt` for its Parquet input; `.venvs/audio` still needs `uv pip install --python .venvs/audio/bin/python -r envs/requirements-audio.txt`.
+- `extract_anchors.py` now accepts `-od`, sends progress to stderr and prints the 300-anchor manifest path on stdout.
+- Documented the command in `docs/commands.md` and `scripts/vicut_bench/` in `CLAUDE.md`.
+- Moved the non-standard `.data/s3-diarize/Have-A-Sip/` to `.data/s3-diarize/sortformer/Have-A-Sip/`; its manifests store input paths only.
+- The Mel-RoFormer run on Have A Sip (task-259) produced no stems; removed its leftover temp input under `.data/s2-separate/mel_roformer/work/`. Only the first 15 minutes of `Ifao8aYrwd8` have been separated (HTDemucs) and diarized (Sortformer).
+- Have A Sip is copyrighted YouTube content: use it only for the internal real subset, not as the Phase 4 TTS speaker or released audio.
+
+### Results
+- Launcher `--help` validated with `AUDIO_PYTHON=.venvs/main/bin/python`; script byte-compiles. Anchors were not regenerated; no tests or model calls run.
+- Open before defect synthesis: measured speech onset/offset per anchor (energy refinement of VAD for the 10 ms severity), a cleanliness screen of PhoAudiobook clips (already Demucs-processed and machine-segmented), and a speaker-disjoint split.

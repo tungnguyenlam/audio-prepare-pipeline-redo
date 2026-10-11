@@ -88,7 +88,7 @@ remote repository directory is writable.
 | Launchers | Default venv (fallbacks) | Override variable |
 |---|---|---|
 | `s1-download/*.sh` | `.venvs/download` (`.venv-download`) | `DOWNLOAD_PYTHON` |
-| `audio/*.sh`, `s5-export/*.sh` (metadata export exceptions below), `evaluate/*.sh`, `mix/mix.sh`, `speaker/{enroll,filter}.sh`, `purity/{consensus,cleanup,merge,collar,snap,segment}.sh`, `s4-agent/verifier/{plot_verifier_analysis,analysis,analyze,compare,evaluate_verifier,scaffold_experiment}.sh` | `.venvs/audio` (`.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
+| `audio/*.sh`, `vicut_bench/*.sh`, `s5-export/*.sh` (metadata export exceptions below), `evaluate/*.sh`, `mix/mix.sh`, `speaker/{enroll,filter}.sh`, `purity/{consensus,cleanup,merge,collar,snap,segment}.sh`, `s4-agent/verifier/{plot_verifier_analysis,analysis,analyze,compare,evaluate_verifier,scaffold_experiment}.sh` | `.venvs/audio` (`.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
 | `s2-separate/*.sh` | `.venvs/separation` (`.venv-separation`, `.venvs/main`, `.venv`) | `SEPARATION_PYTHON` |
 | `s3-diarize/{pyannote,pyannote_31,pyannote_community1}.sh`, `speaker/{score,purity}.sh` | `.venvs/pyannote` (`.venv-pyannote`, `.venvs/main`, `.venv`) | `DIARIZATION_PYTHON` |
 | `s3-diarize/nemotron3_diarization.sh` | `.venvs/nemotron3` | `DIARIZATION_PYTHON` |
@@ -661,6 +661,21 @@ are under `_plot/before_merge/` and `_plot/after_merge/`.
 `timeline_duration.png` is the pooled segment-duration histogram (with count,
 mean, and median), and `timeline_cutoff.png` shows pooled remaining segment
 count and audio seconds for each minimum-duration cutoff.
+
+### ViCut-Bench anchors (`vicut_bench`)
+
+```bash
+bash scripts/vicut_bench/extract_anchors.sh                  # writes .data/vicut_bench/anchors/
+bash scripts/vicut_bench/extract_anchors.sh --phoaudiobook-parquet .data/s1-download/phoaudiobook/test-00000-of-00001.parquet \
+    --vivos-test-dir .data/s1-download/vivos/vivos/test -od .data/vicut_bench/anchors --target-count 300 --seed 42
+```
+
+Extracts PhoAudiobook test clips from Parquet, hardlinks VIVOS test clips, and
+writes a per-clip JSON sidecar, `all_candidates.jsonl`, the frozen
+`vicut_bench_anchors_300.jsonl` (100 final stop-coda `-p/-t/-c/-ch` clips and
+200 open/nasal controls, 3–12 s) and `anchors_summary.json`. The coda is read
+from the final word of the transcript. Prints the 300-anchor manifest path on stdout.
+Both sources are non-commercial; do not redistribute derived audio.
 
 ### Dataset export (`s5-export`)
 
