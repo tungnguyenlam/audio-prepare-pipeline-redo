@@ -707,3 +707,13 @@
 
 ### Results
 - Staged tree: 20 files (docs + research notes/papers). No tests written or run per repo policy.
+
+## 2026-10-11 - Quick commit and push follow-through
+
+### Decisions
+- Remote `main` was one commit ahead (`b45d908 add: new code in s5-export`); rebased local docs payload onto it instead of merging.
+- Resolved the `WORKLOG.md` append-append conflict by keeping the remote 2026-09-26 filler-tag entry first, then the local 2026-10-11 entry; no content lost on either side.
+- Used `GIT_EDITOR=true` for `git rebase --continue` after `vi` proved unavailable in this shell.
+
+### Results
+- Pushed `c376e09 docs: add TTS training guide, research grand plan, notes and papers` (20 files: docs + research notes/papers) and `f4590e6 docs: record quick commit and push session` to `origin/main` (`b45d908..f4590e6`). Working tree clean except untracked local `data -> .data` symlink, intentionally left uncommitted. No tests written or run per repo policy.
