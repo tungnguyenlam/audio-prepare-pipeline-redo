@@ -830,3 +830,19 @@
 ### Results
 - Launcher `--help` validated with `AUDIO_PYTHON=.venvs/main/bin/python`; script byte-compiles. Anchors were not regenerated; no tests or model calls run.
 - Open before defect synthesis: measured speech onset/offset per anchor (energy refinement of VAD for the 10 ms severity), a cleanliness screen of PhoAudiobook clips (already Demucs-processed and machine-segmented), and a speaker-disjoint split.
+
+## 2026-10-11 - Measure anchor edges, screen sources, re-freeze 300 VIVOS anchors
+
+### Decisions
+- Split anchor building into three file-based commands: `extract_anchors` (catalog only; selection removed), new `measure_anchors` (Silero region from the shared `.data/vad/auto/` reports + 1 ms RMS envelope of 100 Hz high-passed audio, edges at floor + 10 dB, ±3 ms) and new `select_anchors` (unflagged clips, stop-coda quota, 10 clips/speaker cap, speaker-disjoint split).
+- PhoAudiobook test fails as a clean source: all 279 eligible clips have exactly 50 ms of digital zeros per side, and 274 have speech running into the pad (`tight_end`). Only 1 clip passed.
+- VIVOS test alone gave 382 clean clips from 19 speakers and 77 stop codas, short of the 300/100 target under the speaker cap. Added a seeded sample of up to 40 clips per speaker from VIVOS train (same corpus and licence); test is 40 per speaker, so it stays whole.
+- Some VIVOS speakers (e.g. VIVOSDEV19) carry broadband buzz modulated at 50 Hz that the high-pass cannot remove; `low_snr` (< 30 dB) excludes them.
+- Selected with `--dataset vivos`, so the single surviving PhoAudiobook clip doesn't add a one-clip corpus confound.
+- Plan: Phase 4's 1–2 h single-speaker TTS source is now open (VIVOS has ~15 min per speaker).
+
+### Results
+- `.data/vicut_bench/anchors/measured_candidates.jsonl`: 2,231 eligible candidates; VIVOS 1,400/1,952 unflagged.
+- `vicut_bench_anchors_300.jsonl` re-frozen (the earlier unscreened pool is replaced): 300 VIVOS clips, 100 stop / 200 open, 62 speakers, 210 train (43 speakers) / 90 test (19 speakers), no speaker overlap, mean 4.97 s, SNR ≥ 31 dB, ≥ 52 ms silence after every offset.
+- Spot-checked edge placement on 12 envelope plots. Nothing has been listened to yet: ~30 anchors and ~20 flagged PhoAudiobook clips still need a listening check. No tests run (not requested); no paid model calls.
+

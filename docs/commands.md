@@ -88,7 +88,7 @@ remote repository directory is writable.
 | Launchers | Default venv (fallbacks) | Override variable |
 |---|---|---|
 | `s1-download/*.sh` | `.venvs/download` (`.venv-download`) | `DOWNLOAD_PYTHON` |
-| `audio/*.sh`, `vicut_bench/*.sh`, `s5-export/*.sh` (metadata export exceptions below), `evaluate/*.sh`, `mix/mix.sh`, `speaker/{enroll,filter}.sh`, `purity/{consensus,cleanup,merge,collar,snap,segment}.sh`, `s4-agent/verifier/{plot_verifier_analysis,analysis,analyze,compare,evaluate_verifier,scaffold_experiment}.sh` | `.venvs/audio` (`.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
+| `audio/*.sh`, `vicut_bench/{extract,select}_anchors.sh`, `s5-export/*.sh` (metadata export exceptions below), `evaluate/*.sh`, `mix/mix.sh`, `speaker/{enroll,filter}.sh`, `purity/{consensus,cleanup,merge,collar,snap,segment}.sh`, `s4-agent/verifier/{plot_verifier_analysis,analysis,analyze,compare,evaluate_verifier,scaffold_experiment}.sh` | `.venvs/audio` (`.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
 | `s2-separate/*.sh` | `.venvs/separation` (`.venv-separation`, `.venvs/main`, `.venv`) | `SEPARATION_PYTHON` |
 | `s3-diarize/{pyannote,pyannote_31,pyannote_community1}.sh`, `speaker/{score,purity}.sh` | `.venvs/pyannote` (`.venv-pyannote`, `.venvs/main`, `.venv`) | `DIARIZATION_PYTHON` |
 | `s3-diarize/nemotron3_diarization.sh` | `.venvs/nemotron3` | `DIARIZATION_PYTHON` |
@@ -469,9 +469,10 @@ bash scripts/audio/export_segments.sh --input-manifest .data/tts/plan/segments.j
   --output-dir .data/tts/clips --min-duration-s 1.5 --max-duration-s 15
 ```
 
-`silero_jit.sh` searches `.venvs/vibevoice`, `.venv-vibevoice`, `.venvs/align`, and
-`.venv-align`; worker setup targets also cache the pinned native JIT model at
-`~/.cache/silero-vad/silero_vad.jit`. Its JSON retains every frame probability,
+`silero_jit.sh` and `vicut_bench/measure_anchors.sh` search `.venvs/vibevoice`,
+`.venv-vibevoice`, `.venvs/align`, and `.venv-align`; worker setup targets also
+cache the pinned native JIT model at `~/.cache/silero-vad/silero_vad.jit`. The
+`silero_jit` JSON retains every frame probability,
 source/model hashes, device versions, synchronized timing, repeat differences,
 and CPU/GPU threshold disagreements. `--devices auto` (the default) records a
 GPU error when necessary and returns success after a CPU retry; explicit device
@@ -665,17 +666,36 @@ count and audio seconds for each minimum-duration cutoff.
 ### ViCut-Bench anchors (`vicut_bench`)
 
 ```bash
-bash scripts/vicut_bench/extract_anchors.sh                  # writes .data/vicut_bench/anchors/
-bash scripts/vicut_bench/extract_anchors.sh --phoaudiobook-parquet .data/s1-download/phoaudiobook/test-00000-of-00001.parquet \
-    --vivos-test-dir .data/s1-download/vivos/vivos/test -od .data/vicut_bench/anchors --target-count 300 --seed 42
+bash scripts/vicut_bench/extract_anchors.sh   # .data/vicut_bench/anchors/all_candidates.jsonl
+bash scripts/vicut_bench/measure_anchors.sh   # -> measured_candidates.jsonl (Silero + energy edges, flags)
+bash scripts/vicut_bench/select_anchors.sh --dataset vivos   # -> vicut_bench_anchors_300.jsonl + anchors_summary.json
+bash scripts/vicut_bench/measure_anchors.sh -im <anchors.jsonl> -om <measured.jsonl> -d cpu --edge-db 10 -w
+bash scripts/vicut_bench/select_anchors.sh --stop-count 100 --max-per-speaker 10 --test-fraction 0.3 --seed 42 -w
 ```
 
-Extracts PhoAudiobook test clips from Parquet, hardlinks VIVOS test clips, and
-writes a per-clip JSON sidecar, `all_candidates.jsonl`, the frozen
-`vicut_bench_anchors_300.jsonl` (100 final stop-coda `-p/-t/-c/-ch` clips and
-200 open/nasal controls, 3–12 s) and `anchors_summary.json`. The coda is read
-from the final word of the transcript. Prints the 300-anchor manifest path on stdout.
-Both sources are non-commercial; do not redistribute derived audio.
+`extract_anchors` extracts PhoAudiobook test clips from Parquet, hardlinks a
+seeded sample of up to `--vivos-per-speaker` (40) clips per speaker from each
+`--vivos-dir` (default VIVOS test and train; test has 40 per speaker, so it stays
+whole), and writes a JSON sidecar per clip and `all_candidates.jsonl`. The coda is
+read from the final word of the transcript (`-p/-t/-c/-ch` = stop).
+
+`measure_anchors` (Silero environment, like `evaluate/silero_jit.sh`) reuses the
+shared automatic VAD reports under `.data/vad/auto/` and refines each Silero edge
+on a 1 ms envelope of 100 Hz high-passed audio. It records `speech_onset_s`,
+`speech_offset_s`, non-zero silence margins, digital-zero padding, floor/peak
+level and `screen_flags` (`low_snr`, `tight_start`, `tight_end`,
+`leading_activity`, `trailing_activity`, `no_energy_edge`, `no_vad_speech`). Flags
+are measurements; listen to flagged clips before drawing conclusions.
+
+`select_anchors` keeps unflagged 3–12 s clips, fills the stop-coda quota and then
+open/nasal controls round-robin across datasets with a per-speaker cap, and
+assigns whole speakers to `split: test` until each dataset reaches the test
+fraction. It reports a shortfall instead of relaxing the screen.
+
+Both sources are non-commercial; do not redistribute derived audio. PhoAudiobook
+clips carry exactly 50 ms of digital zeros at each end and most have speech
+energy running into that padding, so they fail `tight_end`; the frozen pool is
+therefore selected with `--dataset vivos`.
 
 ### Dataset export (`s5-export`)
 
