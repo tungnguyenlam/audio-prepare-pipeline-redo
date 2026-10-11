@@ -32,7 +32,7 @@ flowchart LR
 | **08** | [**Model Parameters & Trade-offs**](08_model_parameters_and_tradeoffs.md) | Parameter mechanics, directional sensitivity, and guaranteed vs empirical trade-offs | All separation, diarization, purity, and zero-contamination parameters |
 | **09** | [**AMD GPU Compatibility**](09_amd_gpu_compatibility.md) | AMD Radeon RX 9060 XT (16 GB) hardware execution, ROCm setup, and CPU fallbacks | ROCm 7.2, `gfx1200`, MIOpen, rocBLAS, rocFFT, SDPA, CPU fallback breakdown |
 | **10** | [**TTS Training & Evaluation**](10_tts_model_training_and_evaluation.md) | TTS dataset export, SOTA benchmarks, Vietnamese evaluation, and ASR landscape | Dual-transcript contract, PhoAudiobook/VieNeu-TTS benchmarks, SECS, UTMOS, Qualcomm PhoASR |
-| **11** | [**Research Paper Grand Plan**](../research/GRAND_PLAN.md) | Conference paper roadmap (Interspeech/ICASSP), counterfactual benchmark, and downstream TTS proof | ALLD, SpeechLLM, QualiSpeech, Logit-Adjusted Distillation, Downstream F5-TTS proof |
+| **11** | [**Research Paper Grand Plan**](../research/GRAND_PLAN.md) | Interspeech 2027 paper plan: controlled curation-defect benchmark, audio-LLM judge audit, encoder probes, TTS dose-response | ViCut-Bench, judge audit, linear probes, dose-response |
 | **C** | [**Speech-Domain Concepts**](concepts/README.md) | Beginner-first explainers with diagrams: audio, separation, diarization, DER/Hungarian, embeddings, ASR/alignment, purity, boundaries, benchmarks, infra | Newcomer on-ramp; links back into `01_`–`11_` |
 
 ---

@@ -717,3 +717,14 @@
 
 ### Results
 - Pushed `c376e09 docs: add TTS training guide, research grand plan, notes and papers` (20 files: docs + research notes/papers) and `f4590e6 docs: record quick commit and push session` to `origin/main` (`b45d908..f4590e6`). Working tree clean except untracked local `data -> .data` symlink, intentionally left uncommitted. No tests written or run per repo policy.
+
+## 2026-10-11 - Revise research grand plan to fit current resources
+
+### Decisions
+- Checked every literature claim in `research/GRAND_PLAN.md` against `research/notes/`. Removed unsupported claims: the PhoAudiobook 95.9 % filter discard (the final step is a 4 h/speaker cap), DAC/Seed-TTS data-hygiene corruption, VoiceCraft clipping-induced repetition, and SpeechLLM-as-Judges score compression.
+- Dropped the logit-adjusted/InfoNCE distillation thesis. `docs/experiments.md` shows the E2B student went all-pass despite balanced data and synthetic hard negatives, so class imbalance is not the root cause.
+- Re-scoped to an Interspeech 2027 paper runnable on one RX 9060 XT, a free Gemini key and an optional OpenRouter key (via the existing OpenAI-compatible endpoint verifier). Four parts: ViCut-Bench controlled defects with perceptual calibration and a human-labelled real subset, judge audit vs signal baselines, encoder linear probes, TTS dose-response. Invented result tables replaced with hypotheses and decision points.
+- Corrected paper summaries and the evidence section in `research/README.md`; updated the `docs/README.md` index entry.
+
+### Results
+- Documentation only. No code changed; no tests written or run; no models or APIs invoked except two web searches for venue deadlines.
