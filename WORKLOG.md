@@ -697,3 +697,13 @@
 - Read the current cleaner, adjacent spoken-form/ZIP conversion, common launcher, prompt grammar and current docs. Restored focused cleanup usage documentation without replacing concurrent documentation edits. Documented rerunning from original input because square filler labels can be ambiguous with phoneme payloads on a later pass.
 - Validation: Python AST parsing, Bash syntax and launcher --help passed; reviewed the complete before/after code and docs diffs. No tests written or run (not requested), no paid models invoked, and no dataset outputs modified.
 - Commit/push unavailable: git status still reports this workspace is not a Git repository.
+
+## 2026-10-11 - Quick commit and push research docs
+
+### Decisions
+- Unstaged local `data -> .data` symlink before commit; runtime artifact link stays local per repo policy.
+- Kept staged `docs/10_*`, `docs/README.md`, `research/GRAND_PLAN.md`, `research/README.md`, 8 research notes, and 8 paper PDFs as the commit payload.
+- Scanned staged diff for credential patterns (`api key`, `secret`, `password`, tokens, cookies); only benign "task-specific" prose matched, no credentials found.
+
+### Results
+- Staged tree: 20 files (docs + research notes/papers). No tests written or run per repo policy.
