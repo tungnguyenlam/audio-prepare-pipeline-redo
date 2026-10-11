@@ -16,6 +16,8 @@ flowchart LR
     A & B --> E["05. Benchmark & Mixing"]
     A & B & C & D & E --> F["06. Web Applications"]
     A & B & C & D & E & F --> G["07. Data Contracts"]
+    G --> H["10. TTS Training & Evaluation"]
+    H --> I["11. Research Paper Grand Plan"]
 ```
 
 | Order | Module | Description | Key Components |
@@ -29,7 +31,9 @@ flowchart LR
 | **07** | [**Data Contracts & Schemas**](07_data_contracts.md) | Canonical schemas, sidecar specs, and serialization | `DiarizationResult`, `SpeakerProfile`, `ZeroContaminationResult`, `AudioItem`, `.data/` layout |
 | **08** | [**Model Parameters & Trade-offs**](08_model_parameters_and_tradeoffs.md) | Parameter mechanics, directional sensitivity, and guaranteed vs empirical trade-offs | All separation, diarization, purity, and zero-contamination parameters |
 | **09** | [**AMD GPU Compatibility**](09_amd_gpu_compatibility.md) | AMD Radeon RX 9060 XT (16 GB) hardware execution, ROCm setup, and CPU fallbacks | ROCm 7.2, `gfx1200`, MIOpen, rocBLAS, rocFFT, SDPA, CPU fallback breakdown |
-| **C** | [**Speech-Domain Concepts**](concepts/README.md) | Beginner-first explainers with diagrams: audio, separation, diarization, DER/Hungarian, embeddings, ASR/alignment, purity, boundaries, benchmarks, infra | Newcomer on-ramp; links back into `01_`–`08_` |
+| **10** | [**TTS Training & Evaluation**](10_tts_model_training_and_evaluation.md) | TTS dataset export, SOTA benchmarks, Vietnamese evaluation, and ASR landscape | Dual-transcript contract, PhoAudiobook/VieNeu-TTS benchmarks, SECS, UTMOS, Qualcomm PhoASR |
+| **11** | [**Research Paper Grand Plan**](../research/GRAND_PLAN.md) | Conference paper roadmap (Interspeech/ICASSP), counterfactual benchmark, and downstream TTS proof | ALLD, SpeechLLM, QualiSpeech, Logit-Adjusted Distillation, Downstream F5-TTS proof |
+| **C** | [**Speech-Domain Concepts**](concepts/README.md) | Beginner-first explainers with diagrams: audio, separation, diarization, DER/Hungarian, embeddings, ASR/alignment, purity, boundaries, benchmarks, infra | Newcomer on-ramp; links back into `01_`–`11_` |
 
 ---
 
@@ -39,6 +43,8 @@ For direct access to specific contracts:
 - [**API Contract Summary**](api_contract.md): High-level method catalog and quick-reference behavior matrix.
 - [**Data Contract Summary**](data_contract.md): Field specifications, serialized payloads, and sidecar definitions.
 - [**Diarization Benchmark Paper Reference**](bench-paper-diarize.md): Published benchmark comparisons (DER) across Pyannote, 3D-Speaker, NeMo Sortformer, NeMo Clustering, and DiariZen.
+- [**TTS Training & SOTA Evaluation Guide**](10_tts_model_training_and_evaluation.md): End-to-end dataset export, Vietnamese SOTA metrics, and ASR model comparisons.
+- [**Research Grand Plan & Downloaded Papers**](../research/README.md): Primary literature index and conference paper execution roadmap.
 
 ---
 
