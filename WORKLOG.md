@@ -846,3 +846,14 @@
 - `vicut_bench_anchors_300.jsonl` re-frozen (the earlier unscreened pool is replaced): 300 VIVOS clips, 100 stop / 200 open, 62 speakers, 210 train (43 speakers) / 90 test (19 speakers), no speaker overlap, mean 4.97 s, SNR ≥ 31 dB, ≥ 52 ms silence after every offset.
 - Spot-checked edge placement on 12 envelope plots. Nothing has been listened to yet: ~30 anchors and ~20 flagged PhoAudiobook clips still need a listening check. No tests run (not requested); no paid model calls.
 
+
+## 2026-10-12 - Add GOAL.md acceptance criteria for agent-driven research
+
+### Decisions
+- Added `GOAL.md` as the acceptance test for research work: a curation method must lower R at matched yield on a frozen, human-labelled, recording-disjoint test set (CI by recording excluding 0), with ablations, ViCut-Bench mechanism curves, and an equal-hours TTS comparison. Milestones run to the Interspeech 2027 deadline; if no method beats baselines on dev by 2026-12-01, fall back to the GRAND_PLAN benchmark/audit paper.
+- Listed what does not count: test-set tuning, Gemini agreement as ground truth (the gold set is Gemini-labelled and not source-disjoint, and the working agent is Gemini 3.8 Flash), lowering R by cutting yield, synthetic-only wins and clean-twin shortcuts, leakage, silent model failures (E2B all-pass), single runs, invented citations.
+- Added a pre-/post-experiment WORKLOG protocol, a dead-end procedure (diagnose, read papers into `research/`, ≥ 3 hypotheses, cheapest discriminating experiment, timebox), and Gemini 3.8 Flash free-key audio-check rules (measurement first, ≤ 20 ad-hoc calls/day until quota measured, standard mode, `--continue` on quota exhaustion).
+- Pointed `AGENTS.md`, `CLAUDE.md` and `research/GRAND_PLAN.md` at `GOAL.md`.
+
+### Results
+- Documentation only. No code changed; no tests written or run; no models or APIs invoked.

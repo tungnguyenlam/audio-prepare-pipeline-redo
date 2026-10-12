@@ -6,6 +6,8 @@ Curation Defects for Vietnamese TTS Data*
 announced yet; past deadlines fell 12–25 February, so plan for **early February
 2027**. ICASSP 2027 (16 Sep 2026) and SLT 2026 have passed. Fallback: ICASSP 2028
 or a journal extension.
+**Acceptance criteria:** [`../GOAL.md`](../GOAL.md) defines what counts as done and
+overrides this plan's priorities where they conflict.
 **Revised:** 2026-10-11. Supersedes the "Logit-Adjusted Contrastive Distillation"
 draft, whose citations and premises did not survive checking (see §7).
 

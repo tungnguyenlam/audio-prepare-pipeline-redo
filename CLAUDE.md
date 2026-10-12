@@ -2,6 +2,8 @@
 
 ## Non-negotiable rules
 
+- Before any research or experiment task, read `GOAL.md`: acceptance criteria,
+  what does not count, the critical-work protocol, and Gemini audio-check limits.
 - Do not write or run tests unless the user explicitly asks.
 - Commit and push after every completed task.
 - Keep every pipeline stage as an independent command. Never add orchestration
