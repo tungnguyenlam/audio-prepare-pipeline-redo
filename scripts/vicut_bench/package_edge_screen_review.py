@@ -59,8 +59,186 @@ def one_per_flag_combination(rows: list[dict], count: int, rng: random.Random) -
     return chosen
 
 
+def review_html(out_dir: Path, rows: list[dict], seed: int, minutes: float) -> str:
+    import html
+    cards = []
+    for r in rows:
+        rel_audio = html.escape(str(Path(r['abs_path']).relative_to(out_dir.parent.parent.parent)))
+        # Path relative to repo root: .data/...
+        repo_rel = f"../../../../{html.escape(str(Path(r['abs_path']).relative_to(out_dir.resolve().parents[3])))}"
+        rid = html.escape(r['review_id'])
+        listen_for = html.escape(r['listen_for'])
+        dur = f"{r['duration_s']:.2f}"
+        cards.append(f"""
+      <tr id="row-{rid}">
+        <td class="id-col">{rid}</td>
+        <td class="dur-col">{dur}s</td>
+        <td class="inst-col">{listen_for}</td>
+        <td class="audio-col">
+          <audio id="audio-{rid}" src="{repo_rel}" preload="none" controls></audio>
+          <button type="button" class="btn-sub" onclick="playLastSec('{rid}')">Last 1s</button>
+        </td>
+        <td class="lbl-col">
+          <select id="lbl-{rid}" onchange="updateRow('{rid}')">
+            <option value="">-- select --</option>
+            <option value="pass">pass</option>
+            <option value="fail">fail</option>
+            <option value="unsure">unsure</option>
+          </select>
+        </td>
+        <td class="note-col">
+          <input type="text" id="note-{rid}" placeholder="start_cut, end_cut, etc." oninput="updateRow('{rid}')">
+        </td>
+      </tr>""")
+
+    tbody = "\n".join(cards)
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Edge-Screen Review ({len(rows)} clips)</title>
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 20px; background: #121212; color: #e0e0e0; }}
+    h1 {{ font-size: 1.4rem; color: #fff; margin-bottom: 4px; }}
+    .meta {{ font-size: 0.9rem; color: #888; margin-bottom: 16px; }}
+    .panel {{ background: #1e1e1e; padding: 12px 16px; border-radius: 6px; margin-bottom: 20px; border: 1px solid #333; }}
+    table {{ width: 100%; border-collapse: collapse; font-size: 0.9rem; }}
+    th, td {{ padding: 8px 10px; border-bottom: 1px solid #2a2a2a; text-align: left; vertical-align: middle; }}
+    th {{ background: #252525; color: #aaa; font-weight: 600; position: sticky; top: 0; }}
+    tr:hover {{ background: #1a1a1a; }}
+    tr.done {{ background: #172417; }}
+    audio {{ height: 32px; vertical-align: middle; width: 220px; }}
+    button.btn-sub {{ background: #333; color: #ccc; border: 1px solid #555; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; margin-left: 4px; }}
+    button.btn-sub:hover {{ background: #444; color: #fff; }}
+    button.btn-primary {{ background: #2e7d32; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600; margin-right: 8px; }}
+    button.btn-primary:hover {{ background: #388e3c; }}
+    select, input[type="text"] {{ background: #222; color: #fff; border: 1px solid #444; padding: 4px 8px; border-radius: 4px; }}
+    input[type="text"] {{ width: 95%; }}
+    .id-col {{ font-family: monospace; font-weight: bold; width: 60px; }}
+    .dur-col {{ width: 50px; color: #888; }}
+    .lbl-col {{ width: 100px; }}
+  </style>
+</head>
+<body>
+  <h1>Edge-Screen Human Review</h1>
+  <div class="meta">
+    {len(rows)} clips (~{minutes:.0f} min). Shuffled with seed {seed}. Labels saved to browser storage and downloadable as <code>review.csv</code>.
+  </div>
+
+  <div class="panel">
+    <strong>Instructions:</strong>
+    <ul>
+      <li><strong>pass:</strong> clean speech, whole first/last word, single speaker, no noise/bleed.</li>
+      <li><strong>fail:</strong> start cut, end cut, extra voice, or noise (note reason in Note column).</li>
+      <li><strong>unsure:</strong> uncertain after 2 listens.</li>
+    </ul>
+    <div style="margin-top: 12px;">
+      <button class="btn-primary" onclick="exportCSV()">Download review.csv</button>
+      <button class="btn-sub" onclick="copyCSV()">Copy CSV to Clipboard</button>
+      <span id="save-status" style="margin-left: 10px; color: #888; font-size: 0.85rem;"></span>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Dur</th>
+        <th>Listen For</th>
+        <th>Audio</th>
+        <th>Your Label</th>
+        <th>Your Note</th>
+      </tr>
+    </thead>
+    <tbody>
+      {tbody}
+    </tbody>
+  </table>
+
+  <script>
+    const rowsData = {json.dumps([{'review_id': r['review_id'], 'abs_path': r['abs_path'], 'sha256': r['sha256'], 'duration_s': f"{r['duration_s']:.2f}", 'listen_for': r['listen_for']} for r in rows])};
+
+    function playLastSec(id) {{
+      const a = document.getElementById('audio-' + id);
+      if (!a) return;
+      if (isNaN(a.duration) || a.duration === 0) {{
+        a.addEventListener('loadedmetadata', () => {{
+          a.currentTime = Math.max(0, a.duration - 1.0);
+          a.play();
+        }}, {{ once: true }});
+        a.load();
+      }} else {{
+        a.currentTime = Math.max(0, a.duration - 1.0);
+        a.play();
+      }}
+    }}
+
+    function updateRow(id) {{
+      const lbl = document.getElementById('lbl-' + id).value;
+      const note = document.getElementById('note-' + id).value;
+      const tr = document.getElementById('row-' + id);
+      if (lbl) {{
+        tr.classList.add('done');
+      }} else {{
+        tr.classList.remove('done');
+      }}
+      localStorage.setItem('review_' + id, JSON.stringify({{ lbl, note }}));
+      document.getElementById('save-status').innerText = 'Saved locally at ' + new Date().toLocaleTimeString();
+    }}
+
+    function loadSaved() {{
+      rowsData.forEach(r => {{
+        const saved = localStorage.getItem('review_' + r.review_id);
+        if (saved) {{
+          try {{
+            const data = JSON.parse(saved);
+            if (data.lbl) document.getElementById('lbl-' + r.review_id).value = data.lbl;
+            if (data.note) document.getElementById('note-' + r.review_id).value = data.note;
+            if (data.lbl) document.getElementById('row-' + r.review_id).classList.add('done');
+          }} catch(e) {{}}
+        }}
+      }});
+    }}
+
+    function buildCSV() {{
+      const lines = ['review_id,abs_path,sha256,duration_s,listen_for,your_label,your_note'];
+      rowsData.forEach(r => {{
+        const lbl = (document.getElementById('lbl-' + r.review_id).value || '').replace(/"/g, '""');
+        const note = (document.getElementById('note-' + r.review_id).value || '').replace(/"/g, '""');
+        const inst = r.listen_for.replace(/"/g, '""');
+        lines.push(`"${{r.review_id}}","${{r.abs_path}}","${{r.sha256}}","${{r.duration_s}}","${{inst}}","${{lbl}}","${{note}}"`);
+      }});
+      return lines.join('\\n') + '\\n';
+    }}
+
+    function exportCSV() {{
+      const csv = buildCSV();
+      const blob = new Blob([csv], {{ type: 'text/csv;charset=utf-8;' }});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'review.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    }}
+
+    function copyCSV() {{
+      const csv = buildCSV();
+      navigator.clipboard.writeText(csv).then(() => {{
+        alert('CSV copied to clipboard! Paste it into .data/goal/review/edge_screen_anchors/review.csv');
+      }});
+    }}
+
+    window.addEventListener('DOMContentLoaded', loadSaved);
+  </script>
+</body>
+</html>
+"""
+
+
 def review_markdown(out_dir: Path, rows: list[dict], seed: int, minutes: float) -> str:
     first = rows[0]['abs_path']
+    rel_html = out_dir / 'review.html'
     return f"""# Edge-screen listening batch
 
 **Question.** Does each clip contain one complete, clean utterance from start to end?
@@ -91,6 +269,20 @@ with seed `{seed}`. Which clips are anchors and which were flagged is hidden on 
 
 ## How to listen
 
+### Option A: Web Browser via SSH Port-Forward (Recommended)
+1. In another terminal on your local machine, run:
+   ```bash
+   ssh -L 8080:localhost:8080 <your-ssh-host>
+   ```
+2. On this remote machine, serve the repository root:
+   ```bash
+   python3 -m http.server 8080
+   ```
+3. Open in your local browser:
+   `http://localhost:8080/{rel_html}`
+4. Fill in labels, test "Last 1s" buttons, and click **Download review.csv** or **Copy CSV to Clipboard**, then save to `{out_dir / 'review.csv'}`.
+
+### Option B: Local mpv
 ```bash
 mpv --playlist={out_dir / 'playlist.m3u'}
 mpv --keep-open=no {first}        # replay one clip (path from review.csv)
@@ -148,6 +340,7 @@ def main() -> int:
     rng.shuffle(rows)
     for index, row in enumerate(rows, 1):
         row['review_id'] = f'edge{index:02d}'
+        row['listen_for'] = f"start and end complete; last word '{row['final_word']}'"
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     out_dir = args.output_dir.resolve()
@@ -156,7 +349,7 @@ def main() -> int:
         writer.writerow(['review_id', 'abs_path', 'sha256', 'duration_s', 'listen_for', 'your_label', 'your_note'])
         for row in rows:
             writer.writerow([row['review_id'], row['abs_path'], row['sha256'], f"{row['duration_s']:.2f}",
-                             f"start and end complete; last word '{row['final_word']}'", '', ''])
+                             row['listen_for'], '', ''])
     (out_dir / 'playlist.m3u').write_text('#EXTM3U\n' + ''.join(r['abs_path'] + '\n' for r in rows), encoding='utf-8')
     with (out_dir / 'key.jsonl').open('w', encoding='utf-8') as stream:
         for row in rows:
@@ -164,8 +357,10 @@ def main() -> int:
                                     ensure_ascii=False) + '\n')
     minutes = sum(r['duration_s'] + SECONDS_PER_LABEL for r in rows) / 60
     (out_dir / 'REVIEW.md').write_text(review_markdown(out_dir, rows, args.seed, minutes), encoding='utf-8')
+    (out_dir / 'review.html').write_text(review_html(out_dir, rows, args.seed, minutes), encoding='utf-8')
     progress('PACKAGED', json.dumps({g: len(m) for g, m in groups.items()} | {'minutes': round(minutes, 1)}))
     print(out_dir / 'REVIEW.md')
+    print(out_dir / 'review.html')
     return 0
 
 

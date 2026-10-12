@@ -267,3 +267,10 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
 ### Results
 - `.data/goal/review/edge_screen_anchors/`: 40 clips (24 anchors from 21 speakers, 12 stop; 10 VIVOS flagged; 6 PhoAudiobook, 5 with tight_start+tight_end), seed 42, ~10.6 min including 10 s labelling per clip. All hashes taken from the files; frozen-artifact check passes.
 - `py_compile`, `bash -n` and `--help` pass. No tests (not requested); no Gemini or GPU use. Awaiting user labels; H1–H3 are not yet evaluated.
+
+## 2026-10-12 - Proposal: add reusable browser playback template for remote review
+
+### Decisions (Proposal awaiting user commit with GOAL_CHANGE_APPROVED=1)
+- User listens via SSH without native audio forwarding; `mpv` cannot output audio to local speakers.
+- Propose updating `GOAL.md` §6: permit a standardized, reusable static HTML playback template (`review.html`) generated alongside `REVIEW.md`, `review.csv`, and `playlist.m3u`.
+- Contract for `review.html`: strictly blind (no group, model verdict, or defect leaking), serves audio via relative paths, includes standard play/pause and "play last 1s" controls, and allows downloading or copying updated CSV rows directly to `review.csv`.
