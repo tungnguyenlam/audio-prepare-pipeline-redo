@@ -3,8 +3,8 @@
 Rewritten (not appended) at the end of every session; ≤ 60 lines. See `GOAL.md` §7.
 
 **Updated:** 2026-10-12
-**Current milestone:** 2026-10-31: freeze the G1 test set, prepare annotation sheets, measure the free Gemini quota.
-**Next single task:** not set. Pick one that serves G1.
+**Current milestone:** 2026-10-31: freeze the G1 test set, prepare annotation sheets.
+**Next single task:** Package edge-screen human review batch (G1/anchor validation).
 
 ## Verified (each with the file that proves it)
 
@@ -24,12 +24,14 @@ Rewritten (not appended) at the end of every session; ≤ 60 lines. See `GOAL.md
   `research/frozen_artifacts.sha256`
 - Only the AMD RX 9060 XT host is available (user, 2026-10-12). No CUDA, so no
   bitsandbytes quantization. `docs/hardware.md`
+- Gemini audio token rate is ~25 tokens/s; free tier requires -c 1 and 2-5 s backoff
+  on 503 demand spikes; latency is 1.75 s (Flash-Lite) to 34.1 s (Flash with full rubric).
+  `docs/gemini_quota.md`, `.data/goal/gemini_checks/quota_probe/`
 
 ## Unverified (treat as unknown until a file proves it)
 
 - The anchor edge screen agrees with listening: ~30 anchors and ~20 flagged
   PhoAudiobook clips have not been heard yet.
-- The free Gemini 3.8 Flash quota (requests/day, audio limits) has not been measured.
 - Whether any TTS recipe fine-tunes on ROCm within ≤ 3 h (go/no-go for G4).
 - Whether Qwen2-Audio-7B, MiniCPM-o or Kimi-Audio load in bf16 within 16 GB.
 - Whether the E2B all-pass came from adapter loading, missing audio tokens or loss

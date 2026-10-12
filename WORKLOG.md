@@ -232,3 +232,17 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
 
 ### Results
 - Documentation only. No code changed; no tests written or run; no models or APIs invoked.
+
+## 2026-10-12 - Measure free Gemini 3.8 Flash quota and audio operational limits
+
+### Decisions
+- Installed `google-genai` into `.venvs/verify` with user approval to resolve launcher dependency failure.
+- Measured Gemini AI Studio free tier behavior using `scripts/s4-agent/gemini.sh` and direct REST API across 5 audio calls (within GOAL §5 budget).
+- Verified audio tokenization rate: 25.0 tokens/s (118 tokens for 4.72 s, 270 tokens for 10.78 s). Input limit 1M tokens allows ~40 h audio in theory.
+- Measured latency: 1.75 s for `gemini-3.5-flash-lite`, 14.5 s for `gemini-3.8-flash` on brief prompts, and 34.1 s on full verifier rubric with medium reasoning (4,073 thinking tokens).
+- Observed rate behavior: rapid back-to-back calls trigger HTTP 503 `UNAVAILABLE`; resolved by 2–5 s backoff. Concurrency must stay at `-c 1`.
+- Documented findings in `docs/gemini_quota.md` and updated `research/STATUS.md`.
+
+### Results
+- Production launcher `scripts/s4-agent/gemini.sh` executed successfully on clean anchor; artifacts saved to `.data/goal/gemini_checks/quota_probe/`.
+- No tests written or run; paid models not invoked.
