@@ -214,3 +214,12 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
 - Generated preview defect set (240 defect clips across 15 anchors in 14 seconds) and verified sibling sidecars and JSONL manifest.
 - Generated full interactive HTML dashboard at `.data/vicut_bench/reports/vicut_bench_dashboard.html` (254 KB) with 50 edge-screen audit cards and 80 defect audition cards. All relative audio files verified on disk.
 - Launchers byte-compiled and `--help` verified with `audio_launcher.sh`. Tests were not requested and therefore not run; no paid models invoked.
+
+## 2026-10-12 - Add human-facing research workflow guide
+
+### Decisions
+- Added `docs/research_workflow_guide.md` for the user: file map, a paste-in session-start prompt, a 2-minute end-of-session review, a red-flag checklist, listening-batch steps, GOAL change approval, catch-up commands, a weekly routine with an outside-audit prompt, and user-only responsibilities. Linked from `README.md` and `docs/README.md`.
+- Noted for the user: commit 6aeb3d4 (agent session) added `scripts/vicut_bench/report_template.html`, a listening dashboard that conflicts with GOAL §6. It was committed right after §6 landed. Left untouched pending the user's decision.
+
+### Results
+- Documentation only. No code changed; no tests written or run; no models or APIs invoked.

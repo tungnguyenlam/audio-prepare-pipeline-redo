@@ -10,6 +10,7 @@ mentions `src/`, `ManagedModel`, `SonicStudio` or a web backend, it is outdated.
 
 | Document | Contents |
 |---|---|
+| [`research_workflow_guide.md`](research_workflow_guide.md) | For the human: session routine, review checklist, catching up. Agents don't need it. |
 | [`../GOAL.md`](../GOAL.md) | Acceptance criteria and working protocol for research. Read first. |
 | [`../research/STATUS.md`](../research/STATUS.md) | Current state: verified results, unverified assumptions, open decisions. Read second. |
 | [`../research/GRAND_PLAN.md`](../research/GRAND_PLAN.md) | Interspeech 2027 experiment plan: ViCut-Bench, judge audit, probes, TTS dose-response. |

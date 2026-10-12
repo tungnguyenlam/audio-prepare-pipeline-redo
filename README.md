@@ -89,6 +89,7 @@ bash scripts/s4-agent/verifier/plot_verifier_analysis.sh --input-dir .data/s4-ag
 
 ## Documentation
 
+- [Research workflow guide for humans: start here when catching up](docs/research_workflow_guide.md)
 - [Research goal and acceptance criteria](GOAL.md)
 - [Documentation index](docs/README.md)
 - [Setup, CLI rules, and command cookbook](docs/commands.md)
