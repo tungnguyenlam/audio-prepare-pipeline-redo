@@ -364,3 +364,14 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
   - `g1_test_annotations_template.csv`
   - `g1_annotation_sheet.html` (interactive playback interface with play/last-1s buttons, auto-saving to localStorage and CSV export).
 - Hash of `test_manifest.jsonl`: `23d707561605e39e5ad07dfc0b85e156a922c5ce282fc92240073e00c688b04f`.
+
+## 2026-10-13 - Add unsure option and guide to G1 human annotation sheet
+
+### Decisions
+- Permitted `unsure` as an overall label choice alongside `pass` and `reject` in `.data/goal/annotation_sheets/g1_annotation_sheet.html`.
+- Policy: `unsure` prevents forced binary coin-flips on borderline clips (subtle final-consonant decay or faint room reverb) and requires explanatory notes. In downstream evaluation, `unsure` will be evaluated under strict policy (treated as non-pass for TTS) and sensitivity analysis.
+- Added detailed `.data/goal/annotation_sheets/ANNOTATION_GUIDE.md` for the two independent human annotators.
+
+### Results
+- Updated all 300 clip rows in `g1_annotation_sheet.html` with `<option value="unsure">unsure</option>`.
+- Preserved local storage auto-save and CSV export schema.
