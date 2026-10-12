@@ -4,8 +4,8 @@ Rewritten (not appended) at the end of every session; ≤ 60 lines. See `GOAL.md
 
 **Updated:** 2026-10-12
 **Current milestone:** 2026-10-31: freeze the G1 test set, prepare annotation sheets.
-**Next single task:** Select ≥ 3 untouched recordings for G1 test set and prepare annotation manifests.
-**Blocked on the user:** Nominating the ≥ 3 untouched candidate recordings for G1 (need 1 studio, 1 music-backed).
+**Next single task:** Run separation/VAD on the 3 chosen G1 candidate recordings, sample ≥ 300 clips, and freeze test manifest.
+**Blocked on the user:** Nominating the two human annotators who will label the G1 test set.
 
 ## Verified (each with the file that proves it)
 
