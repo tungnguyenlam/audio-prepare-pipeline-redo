@@ -79,9 +79,11 @@ audio-model verification, evaluation, mixing, and dataset export.
 
 - `tungnl5@VF-TUNGNL5-L`: primary AMD Radeon RX 9060 XT development host
   (16 GB VRAM, ROCm 10.0/HIP).
-- `vsf@vsf-242` (`10.148.21.12`): NVIDIA separation/diarization model server.
-- `loi` (`loinh8@10.148.1.176`) and `anhnct@10.148.21.113`: auxiliary nodes.
-- Use `scripts/sync/*_{server,loi,anhnct}.sh`; keep credentials and artifacts local.
+- **Only the AMD host is available (since 2026-10-12).** Run everything there; do not
+  plan work on CUDA-only features (bitsandbytes 4/8-bit, `onnxruntime-gpu`).
+- Unavailable for now: `vsf@vsf-242` (`10.148.21.12`, NVIDIA), `loi`
+  (`loinh8@10.148.1.176`) and `anhnct@10.148.21.113`. Their `scripts/sync/` scripts
+  stay for when they return.
 
 ## Out of scope unless requested
 

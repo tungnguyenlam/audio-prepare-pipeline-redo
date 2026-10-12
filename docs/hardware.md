@@ -7,8 +7,8 @@
 | Host | Role | Accelerator |
 |---|---|---|
 | `tungnl5@VF-TUNGNL5-L` | primary development | AMD Radeon RX 9060 XT, 16 GB, RDNA 4 (`gfx1200`), ROCm 10.0 / HIP, PyTorch `2.13.0+rocm10.0.0` |
-| `vsf@10.148.21.12` (`server`) | model server | NVIDIA CUDA |
-| `loi` (ssh alias; `loinh8@10.148.1.176`), `anhnct@10.148.21.113` | auxiliary compute | — |
+| `vsf@10.148.21.12` (`server`) | model server — **unavailable since 2026-10-12** | NVIDIA CUDA |
+| `loi` (ssh alias; `loinh8@10.148.1.176`), `anhnct@10.148.21.113` | auxiliary compute — **unavailable since 2026-10-12** | — |
 
 `scripts/sync/{code,data}_{to,from}_{server,loi,anhnct}.sh` rsync code and
 `.data/` between machines; hosts and remote paths are overridable via

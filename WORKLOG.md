@@ -223,3 +223,12 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
 
 ### Results
 - Documentation only. No code changed; no tests written or run; no models or APIs invoked.
+
+## 2026-10-12 - Resources: AMD host only
+
+### Decisions
+- User edited GOAL.md §8: the NVIDIA server `vsf-242` is no longer available. The same edit had also dropped "a free Gemini key"; the user confirmed the key is still available, so it was restored. Added the consequence: no CUDA, so no bitsandbytes 4/8-bit.
+- Propagated: GRAND_PLAN (GPU row, TTS smoke test is now go/no-go with no NVIDIA fallback, ~7B local judges only if they load in bf16 within 16 GB, TTS budget local only), AGENTS.md/CLAUDE.md machines (AMD only; `vsf-242`, `loi`, `anhnct` unavailable, sync scripts kept), docs/hardware.md, research/STATUS.md (verified constraint + two new unverified items).
+
+### Results
+- Documentation only. No code changed; no tests written or run; no models or APIs invoked.

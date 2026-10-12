@@ -265,7 +265,7 @@ instead.
 
 ## 8. Resources
 
-One RX 9060 XT (16 GB, ROCm), the NVIDIA server `vsf-242` for separation and
-diarization, a free Gemini key, an optional OpenRouter key, and the authors' time
-for listening. Details are in GRAND_PLAN §1 and `CURRENT_MACHINE.md`. Methods that
+One RX 9060 XT (16 GB, ROCm) is the only machine for now: no CUDA, so no
+bitsandbytes 4/8-bit quantization. Also a free Gemini key, an optional OpenRouter
+key, and the authors' time for listening. Details are in GRAND_PLAN §1 and `CURRENT_MACHINE.md`. Methods that
 need more compute than this are out of scope.

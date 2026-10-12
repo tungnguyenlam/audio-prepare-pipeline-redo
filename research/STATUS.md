@@ -22,12 +22,16 @@ Rewritten (not appended) at the end of every session; ≤ 60 lines. See `GOAL.md
   `WORKLOG.md` entry "Measure anchor edges, screen sources, re-freeze 300 VIVOS anchors"
 - Frozen artifacts (gold set and 300 anchors, 591 files) match their hashes.
   `research/frozen_artifacts.sha256`
+- Only the AMD RX 9060 XT host is available (user, 2026-10-12). No CUDA, so no
+  bitsandbytes quantization. `docs/hardware.md`
 
 ## Unverified (treat as unknown until a file proves it)
 
 - The anchor edge screen agrees with listening: ~30 anchors and ~20 flagged
   PhoAudiobook clips have not been heard yet.
 - The free Gemini 3.8 Flash quota (requests/day, audio limits) has not been measured.
+- Whether any TTS recipe fine-tunes on ROCm within ≤ 3 h (go/no-go for G4).
+- Whether Qwen2-Audio-7B, MiniCPM-o or Kimi-Audio load in bf16 within 16 GB.
 - Whether the E2B all-pass came from adapter loading, missing audio tokens or loss
   masking has not been audited.
 

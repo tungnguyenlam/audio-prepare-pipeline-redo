@@ -15,7 +15,7 @@ draft, whose citations and premises did not survive checking (see §7).
 
 | Resource | What we actually have | Consequence |
 |---|---|---|
-| GPU | 1× RX 9060 XT, 16 GB, ROCm 10.0 (`docs/hardware.md`); NVIDIA server `vsf-242` for separation/diarization | Inference, feature probes and small fine-tunes only. Gemma 4 E2B bf16 LoRA is proven here; 7B models need 4-bit. |
+| GPU | 1× RX 9060 XT, 16 GB, ROCm 10.0 (`docs/hardware.md`). Since 2026-10-12 this AMD host is the **only** machine; the NVIDIA server and auxiliary nodes are unavailable | Inference, feature probes and small fine-tunes only. Gemma 4 E2B bf16 LoRA is proven here. No CUDA means no bitsandbytes 4/8-bit, so ~7B+ models must fit in bf16 within 16 GB or be dropped. Separation, diarization and ONNX CPU fallbacks also run here. |
 | Gemini | AI Studio **free** key, tight daily quota | Gemini is a *judge under test* on a stratified subset, not the source of ground truth. Trickle requests over days with `--continue`. |
 | OpenRouter | Optional key | One or two extra commercial audio judges through the existing `scripts/s4-agent/verifier/endpoint.sh` (OpenAI-compatible `input_audio`). |
 | Human time | The authors | ~400 real clips double-annotated (≈ 2–3 h listening each). Required for any real-data claim. |
@@ -79,8 +79,8 @@ dataset release. These can be follow-ups once C1–C4 exist.
   and PhoAudiobook clips fail the edge screen, so the TTS speaker source is undecided.
 - TTS smoke test on ROCm (1 h): choose a recipe that fine-tunes on one speaker
   in ≤ 3 h (F5-TTS from a Vietnamese checkpoint if available and licensed;
-  otherwise a single-speaker VITS/Matcha-class model). If ROCm blocks it, run
-  Phase 4 on `vsf-242`.
+  otherwise a single-speaker VITS/Matcha-class model). If ROCm blocks it, try
+  another recipe. There is no NVIDIA fallback, so this smoke test is a go/no-go for C4.
 - One-day audit of the E2B all-pass failure: adapter actually loaded, audio tokens
   present in the forward pass, loss masked to the answer only. Record the result;
   it becomes a paragraph in §C3 either way.
@@ -118,7 +118,7 @@ human–Gemini agreement. Humans are the ground truth; the gold set stays frozen
 | Judge | Where | Clips |
 |---|---|---|
 | Signal baselines: final/initial frame energy and spectral flux at edges, pyannote overlapped-speech detection, speaker-embedding variance across windows, separated-accompaniment RMS, DNSMOS | local CPU/GPU | all |
-| Local audio LLMs: Gemma 4 E2B/E4B, Qwen2-Audio-7B (4-bit), MiniCPM-o, Kimi-Audio (existing `verifier/*.sh`) | RX 9060 XT | all (~3.5 s/clip ⇒ ~6 h/model) |
+| Local audio LLMs: Gemma 4 E2B/E4B; Qwen2-Audio-7B, MiniCPM-o and Kimi-Audio only if each loads in bf16 within 16 GB (4-bit is CUDA-only; unverified on this GPU) (existing `verifier/*.sh`) | RX 9060 XT | all (~3.5 s/clip ⇒ ~6 h/model) |
 | Gemini (free tier) | API | stratified subset (e.g. 15 clips per defect × severity + 60 clean ≈ 360) + real subset |
 | 1–2 OpenRouter audio models | API | same stratified subset |
 
@@ -179,7 +179,7 @@ class at audible severities, consider shifting weight to C3/C4.
 | Synthetic generation, signal baselines | CPU, hours |
 | Local judge inference | ~6 GPU-h per model × 4–5 models |
 | Feature extraction + probes | ~5 GPU-h |
-| TTS dose-response | ~24 GPU-h (local or `vsf-242`) |
+| TTS dose-response | ~24 GPU-h (local only) |
 | Gemini free tier | ~800 requests total, spread over days |
 | OpenRouter | ~800 short audio requests per model, only if a key is provided |
 | Human annotation | ~400 real clips × 2 annotators + ~800 calibration pairs |
