@@ -314,3 +314,12 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
   - When a model cannot fit fully in GPU VRAM, use Accelerate/PyTorch device offloading across GPU and CPU.
   - Strict ceiling: allocate at most 16 GB from VRAM + at most 16 GB from system RAM (32 GB maximum combined footprint), leaving the remaining system RAM for OS and audio I/O buffers.
   - Recorded in `CURRENT_MACHINE.md`.
+
+### Results
+- Executed `scripts/vicut_bench/synthesize_defects.sh -w`.
+- Successfully synthesized 4,800 defect clips across all 300 clean anchors (3,360 train, 1,440 test):
+  - 1,200 `clipped_word_end` (10, 20, 40, 80 ms)
+  - 1,200 `clipped_word_start` (10, 20, 40, 80 ms)
+  - 1,200 `secondary_speaker` (24, 18, 12, 6 dB SIR)
+  - 1,200 `background_music` (30, 24, 18, 12 dB SNR)
+- All defect clips paired with clean anchor twins in `.data/vicut_bench/defects/vicut_bench_defects.jsonl`.
