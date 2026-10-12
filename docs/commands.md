@@ -88,7 +88,7 @@ remote repository directory is writable.
 | Launchers | Default venv (fallbacks) | Override variable |
 |---|---|---|
 | `s1-download/*.sh` | `.venvs/download` (`.venv-download`) | `DOWNLOAD_PYTHON` |
-| `audio/*.sh`, `vicut_bench/{extract,select}_anchors.sh`, `s5-export/*.sh` (metadata export exceptions below), `evaluate/*.sh`, `mix/mix.sh`, `speaker/{enroll,filter}.sh`, `purity/{consensus,cleanup,merge,collar,snap,segment}.sh`, `s4-agent/verifier/{plot_verifier_analysis,analysis,analyze,compare,evaluate_verifier,scaffold_experiment}.sh` | `.venvs/audio` (`.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
+| `audio/*.sh`, `vicut_bench/{extract,select}_anchors.sh`, `vicut_bench/package_edge_screen_review.sh`, `s5-export/*.sh` (metadata export exceptions below), `evaluate/*.sh`, `mix/mix.sh`, `speaker/{enroll,filter}.sh`, `purity/{consensus,cleanup,merge,collar,snap,segment}.sh`, `s4-agent/verifier/{plot_verifier_analysis,analysis,analyze,compare,evaluate_verifier,scaffold_experiment}.sh` | `.venvs/audio` (`.venv-audio`, `.venvs/main`, `.venv`) | `AUDIO_PYTHON` |
 | `s2-separate/*.sh` | `.venvs/separation` (`.venv-separation`, `.venvs/main`, `.venv`) | `SEPARATION_PYTHON` |
 | `s3-diarize/{pyannote,pyannote_31,pyannote_community1}.sh`, `speaker/{score,purity}.sh` | `.venvs/pyannote` (`.venv-pyannote`, `.venvs/main`, `.venv`) | `DIARIZATION_PYTHON` |
 | `s3-diarize/nemotron3_diarization.sh` | `.venvs/nemotron3` | `DIARIZATION_PYTHON` |
@@ -695,6 +695,18 @@ Both sources are non-commercial; do not redistribute derived audio. PhoAudiobook
 clips carry exactly 50 ms of digital zeros at each end and most have speech
 energy running into that padding, so they fail `tight_end`; the frozen pool is
 therefore selected with `--dataset vivos`.
+
+```bash
+bash scripts/vicut_bench/package_edge_screen_review.sh   # -> .data/goal/review/edge_screen_anchors/
+```
+
+`package_edge_screen_review` builds the blind GOAL §6 listening batch that checks
+the edge screen: 24 frozen anchors (12 stop coda, 12 open, one per speaker within
+each class), 10 screen-flagged VIVOS clips (one per flag combination, largest
+first) and 6 randomly sampled flagged PhoAudiobook clips, shuffled with `--seed`.
+It writes `REVIEW.md`, `review.csv`, `playlist.m3u` and a separate `key.jsonl`
+(group and measurements per `review_id`), refuses more than 40 clips, and won't
+replace an existing `review.csv` without `-w`.
 
 ```bash
 bash scripts/vicut_bench/synthesize_defects.sh   # .data/vicut_bench/defects/vicut_bench_defects.jsonl (all defects)

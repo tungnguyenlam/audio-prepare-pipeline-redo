@@ -246,3 +246,24 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
 ### Results
 - Production launcher `scripts/s4-agent/gemini.sh` executed successfully on clean anchor; artifacts saved to `.data/goal/gemini_checks/quota_probe/`.
 - No tests written or run; paid models not invoked.
+
+## 2026-10-12 - Pre-registration: edge-screen listening batch (anchor validation)
+
+### Plan (before the experiment)
+- Serves the G1 milestone (2026-10-31) and G3: ViCut-Bench clean twins must really be clean. Single human batch per GOAL §6, ≤ 40 clips, no Gemini calls, no GPU.
+- Composition (hidden from the listener; key in `key.jsonl`): 24 frozen VIVOS anchors (12 stop coda, 12 open, one per speaker within each class; 21 speakers), 10 VIVOS clips the screen flagged (one per flag combination, largest groups first), 6 flagged PhoAudiobook clips (random sample, so flag prevalence is kept: 225/274 carry tight_start+tight_end). Down from the earlier "~30 anchors + ~20 PhoAudiobook" to respect the 40-clip cap.
+- H1: frozen anchors are clean. Refuted if ≥ 2 of 24 are labelled `fail` (≈ 8 %). Then: stop, compare the failures with their measurements, and propose a screen change and re-freeze to the user. 0–1 fail: anchors stay frozen and defect generation proceeds.
+- H2: VIVOS flags mark audible problems. ≥ 5 of 10 `fail` supports it; ≤ 2 means the screen mostly rejects clean speech (costs supply only, but noted for clean-twin false-reject interpretation in G3).
+- H3: PhoAudiobook `tight_*` flags mean audible truncation. ≥ 4 of 6 `fail` keeps PhoAudiobook excluded; ≤ 2 means the flag measures padding, so PhoAudiobook is re-examined as a source.
+- Metric: per-group fail count (`unsure` reported separately, never counted as pass). Cost: ~15 min of user listening.
+
+## 2026-10-12 - Package edge-screen listening batch
+
+### Decisions
+- Added `scripts/vicut_bench/package_edge_screen_review.{py,sh}` (audio venv): writes the GOAL §6 files plus a separate `key.jsonl`, refuses > 40 clips and won't overwrite an existing `review.csv` without `-w`. `listen_for` is the same instruction for every row plus the expected last word from the transcript; no flags, groups or measurements are shown.
+- PhoAudiobook is randomly sampled (prevalence kept) rather than one per flag combination, because H3 asks about the corpus as a whole; the pre-registration was corrected before any labels existed. VIVOS flagged clips stay one per flag combination (H2 asks about each flag).
+- Known leak: PhoAudiobook clips are audibly a different corpus and ~10 s long, so the listener can tell them apart. Only flagged-vs-anchor within VIVOS is blind.
+
+### Results
+- `.data/goal/review/edge_screen_anchors/`: 40 clips (24 anchors from 21 speakers, 12 stop; 10 VIVOS flagged; 6 PhoAudiobook, 5 with tight_start+tight_end), seed 42, ~10.6 min including 10 s labelling per clip. All hashes taken from the files; frozen-artifact check passes.
+- `py_compile`, `bash -n` and `--help` pass. No tests (not requested); no Gemini or GPU use. Awaiting user labels; H1–H3 are not yet evaluated.
