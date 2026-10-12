@@ -305,3 +305,12 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
 ### Decisions
 - Confirmed execution rule with user: All neural models (diarization, separation, ASR, LLM/audio encoders) must run on the AMD Radeon RX 9060 XT (16 GB VRAM, `cuda:0` via ROCm/HIP) by default.
 - If a model exceeds 16 GB VRAM and cannot fit in GPU memory (e.g. models requiring >=20 GB without 4/8-bit bitsandbytes support on ROCm), execution can fall back to 32 GB system RAM + CPU as the last resort.
+
+## 2026-10-13 - Memory offloading policy: max 16 GB VRAM + 16 GB RAM (32 GB total)
+
+### Decisions
+- Clarified memory ceiling policy for models exceeding 16 GB VRAM (e.g. Qwen2-Audio-7B, MiniCPM-o, Kimi-Audio in bf16):
+  - Primary execution target: GPU (`cuda:0` / ROCm).
+  - When a model cannot fit fully in GPU VRAM, use Accelerate/PyTorch device offloading across GPU and CPU.
+  - Strict ceiling: allocate at most 16 GB from VRAM + at most 16 GB from system RAM (32 GB maximum combined footprint), leaving the remaining system RAM for OS and audio I/O buffers.
+  - Recorded in `CURRENT_MACHINE.md`.
