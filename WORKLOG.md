@@ -288,3 +288,20 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
 ### Results
 - `.data/goal/review/edge_screen_anchors/review_labelled.csv` materialized and verified.
 - Frozen anchors validated; ViCut-Bench defect generation unblocked.
+
+## 2026-10-13 - Synthesize full ViCut-Bench defect pool
+
+### Decisions
+- Validated 300 VIVOS anchors unblock full ViCut-Bench defect generation.
+- Running `scripts/vicut_bench/synthesize_defects.sh -w` over all 300 clean twins across the 4 mathematical operators:
+  - `clipped_word_end` (10, 20, 40, 80 ms)
+  - `clipped_word_start` (10, 20, 40, 80 ms)
+  - `secondary_speaker` (SIR 24, 18, 12, 6 dB with disjoint speaker fragments)
+  - `background_music` (SNR 30, 24, 18, 12 dB additive music bed)
+- Generates 4,800 synthetic defect clips (16 defect variations x 300 anchors) linked to clean twins in `.data/vicut_bench/defects/vicut_bench_defects.jsonl`.
+
+## 2026-10-13 - Execution policy: prioritize AMD GPU; CPU+RAM as explicit fallback
+
+### Decisions
+- Confirmed execution rule with user: All neural models (diarization, separation, ASR, LLM/audio encoders) must run on the AMD Radeon RX 9060 XT (16 GB VRAM, `cuda:0` via ROCm/HIP) by default.
+- If a model exceeds 16 GB VRAM and cannot fit in GPU memory (e.g. models requiring >=20 GB without 4/8-bit bitsandbytes support on ROCm), execution can fall back to 32 GB system RAM + CPU as the last resort.
