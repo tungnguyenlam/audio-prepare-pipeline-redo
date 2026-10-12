@@ -11,6 +11,7 @@ mentions `src/`, `ManagedModel`, `SonicStudio` or a web backend, it is outdated.
 | Document | Contents |
 |---|---|
 | [`../GOAL.md`](../GOAL.md) | Acceptance criteria and working protocol for research. Read first. |
+| [`../research/STATUS.md`](../research/STATUS.md) | Current state: verified results, unverified assumptions, open decisions. Read second. |
 | [`../research/GRAND_PLAN.md`](../research/GRAND_PLAN.md) | Interspeech 2027 experiment plan: ViCut-Bench, judge audit, probes, TTS dose-response. |
 | [`../research/README.md`](../research/README.md) | Downloaded papers and what each actually supports. |
 | [`experiments.md`](experiments.md) | Past measurements, metric R, gold set rules, lessons learned. |
@@ -36,3 +37,4 @@ mentions `src/`, `ManagedModel`, `SonicStudio` or a web backend, it is outdated.
 | [`verifier_batch_review.md`](verifier_batch_review.md) | Historical review of Gemini Batch verifier behavior. |
 | [`gemini_batch_debugging.md`](gemini_batch_debugging.md) | Read-only snippets for diagnosing Gemini Batch/quota failures. |
 | [`verifier_cost_summary_vi.md`](verifier_cost_summary_vi.md) | Vietnamese management summary of yield and Gemini cost (2026-09-25). |
+| [`worklog_archive/`](worklog_archive/) | Older `WORKLOG.md` entries by month. Search with `grep -n`; don't read whole. |

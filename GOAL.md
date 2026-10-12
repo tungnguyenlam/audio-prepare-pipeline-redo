@@ -1,7 +1,7 @@
 # GOAL
 
 Read this before any research task. It defines what "done" means, what doesn't
-count, and how to work. Repository rules in `AGENTS.md` still apply. When this
+count, and how to work. Follow the session protocol in §7 every time. Repository rules in `AGENTS.md` still apply. When this
 file and `research/GRAND_PLAN.md` conflict, this file wins; the plan is the menu
 of experiments, this file is the acceptance test.
 
@@ -20,7 +20,7 @@ metric, or getting closer to Gemini's labels does not count.
 
 | ID | Criterion | Evidence required |
 |---|---|---|
-| G1 | **Ground truth exists and is frozen first.** A real test set of ≥ 300 clips from ≥ 3 recordings that no development step has touched, covering at least one studio and one music-backed source. Two human annotators label it blind to every model using the rubric in `docs/experiments.md`. | `.data/goal/test_manifest.jsonl` with recording IDs and SHA-256 per clip, annotation files, Cohen's κ per dimension. Frozen (commit the manifest's hash in `WORKLOG.md`) before any method is tuned. |
+| G1 | **Ground truth exists and is frozen first.** A real test set of ≥ 300 clips from ≥ 3 recordings that no development step has touched, covering at least one studio and one music-backed source. Two human annotators label it blind to every model using the rubric in `docs/experiments.md`. | `.data/goal/test_manifest.jsonl` with recording IDs and SHA-256 per clip, annotation files, Cohen's κ per dimension. Frozen before any method is tuned: its hashes are added to `research/frozen_artifacts.sha256` in a user-approved commit. |
 | G2 | **The method beats every baseline on the test set.** It achieves lower R = bad accepted / accepted at matched accepted-minute yield (±10 %), or its R–yield curve dominates the baseline's. | Full R–yield curves; 95 % bootstrap CI resampled **by recording**, and the CI of the R reduction must exclude 0. Baselines: no gate (`recipe_nolock`), signal baselines (GRAND_PLAN Phase 2), Gemini 3.5 Flash-Lite with the V2 defect-first prompt, Gemini 3.8 Flash MEDIUM, and Gemma 4 E2B V3. |
 | G3 | **The mechanism is understood.** An ablation shows which component produces the gain. On ViCut-Bench, the method's detection-vs-severity curve is compared with the human perceptual threshold for each defect. | Ablation table plus per-defect detection curves with clean-twin false-reject rates. |
 | G4 | **It matters downstream.** Train TTS on **equal hours** curated by the new gate and by the best baseline gate (same speaker pool, text, steps, ≥ 2 seeds), then compare the pre-declared primary metrics: CER (PhoASR-whisper-small) and truncated-ending rate on 200 held-out sentences, plus a small listening test. | Every run is reported, including runs that show no gain. A null G4 is still a result: report it and don't rescue it by switching metrics. |
@@ -223,7 +223,47 @@ the batch will take.
 For a read-only listening page, use the maintained `START_HERE.html` from
 `scripts/s5-export/export_verifier_handoff.sh`. Labels still live only in the CSV.
 
-## 7. Resources
+## 7. Session protocol and drift control
+
+Drift means slowly departing from the goal while each step looks reasonable. The
+guards below live in files and git, not in your memory, because a drifting agent
+cannot reliably judge itself.
+
+**Start of every session (in this order, nothing else first):**
+
+1. Read `GOAL.md` and `research/STATUS.md`.
+2. Read the newest `WORKLOG.md` entries bottom-up as described in `AGENTS.md`.
+   Never read the whole file.
+3. Run `sha256sum --quiet -c research/frozen_artifacts.sha256`. If anything fails,
+   stop and report it to the user. Do not repair or re-hash it.
+4. State the session's single task in one sentence, and say which milestone and
+   criterion (G1–G5) it serves. If it serves none, don't do it.
+
+Do one task per session. When the task is done, or the conversation has become
+long, finish the end-of-session steps and ask the user to start a fresh session.
+Never keep going on rules remembered from a summarised context. Re-read this file
+instead.
+
+**Guards by drift type:**
+
+| Drift | What it looks like | Guard |
+|---|---|---|
+| Goal | The target slides to something easier to measure (agreement with Gemini, dev-set accuracy, a new metric). | `GOAL.md` is read-only for you. To change it, write a proposal in `WORKLOG.md` and ask the user. The `pre-commit` hook (`research/pre_commit_goal_guard.sh`) blocks commits to `GOAL.md`, `research/frozen_artifacts.sha256` and itself unless the user sets `GOAL_CHANGE_APPROVED=1`. Never set it yourself or use `--no-verify`. |
+| Rule | Rules fade as the context grows or is summarised. | Short sessions and re-reading at the start of each one (above). |
+| Belief | An unchecked guess becomes a "fact" a few steps later. | `research/STATUS.md` keeps **Verified** results (each with the file that proves it) apart from **Unverified** assumptions. A claim moves to Verified only with a file path. Anything not under Verified is treated as unknown. |
+| Data | A frozen file is "fixed", a threshold is re-picked after a test look, or labels are edited. | `research/frozen_artifacts.sha256` (gold set, 300 anchors, and later the G1 test set) is checked at session start and before every evaluation. Each test-set evaluation is logged in `research/STATUS.md` under "Test-set evaluations". |
+
+**End of every session:**
+
+1. Rewrite `research/STATUS.md` (≤ 60 lines; replace it, don't append).
+2. Append one `WORKLOG.md` entry, then commit and push.
+3. Report to the user in this exact format:
+   - **Changed:** files and commands.
+   - **Numbers:** each with the path of the file it came from.
+   - **Deviations:** any departure from `GOAL.md` or the plan, or "none".
+   - **Assumed, not verified:** list it, or "none".
+
+## 8. Resources
 
 One RX 9060 XT (16 GB, ROCm), the NVIDIA server `vsf-242` for separation and
 diarization, a free Gemini key, an optional OpenRouter key, and the authors' time

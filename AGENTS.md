@@ -5,7 +5,9 @@
 - Before any research or experiment task, read `GOAL.md`: acceptance criteria,
   what does not count, the critical-work protocol, and Gemini audio-check limits.
 - Do not write or run tests unless the user explicitly asks.
-- Append decisions and results to `WORKLOG.md` using bash to maintain continuous tracking and avoid losing track of work.
+- Append decisions and results to the bottom of `WORKLOG.md` with `cat >> WORKLOG.md`
+  (oldest entry first). Start each entry with `## YYYY-MM-DD - title`, keep it under
+  ~20 lines, and put long detail in a `.data/` report that the entry links to.
 - Commit and push after every completed task.
 - File and script names must be explicit about what the file does; never use vague or overly general names (e.g. use `plot_verifier_analysis.py` instead of generic names like `analyze.py`).
 - Keep every pipeline stage as an independent command. Never add orchestration
@@ -16,6 +18,24 @@
   in the area being changed, but do not broaden focused work into unrelated docs.
 - Never log, persist, or echo credentials. Because parsed CLI options are logged,
   secrets must come from environment variables unless explicitly redacted.
+
+## Reading the worklog and large files
+
+Never read `WORKLOG.md` or any file over ~300 lines in full. This keeps context and
+quota small. Read the newest entries from the bottom up:
+
+```bash
+grep -n '^## ' WORKLOG.md | tail -15                                  # index of recent entries
+tac WORKLOG.md | awk '/^## /{if(++n==2){print; exit}} {print}' | tac  # last 2 entries in full
+sed -n '120,150p' WORKLOG.md                                         # one entry by line range
+grep -n -i 'anchor' WORKLOG.md docs/worklog_archive/*.md | tail      # older history by keyword
+```
+
+For research work, read `research/STATUS.md` first; it is the short summary of
+current state. Read older entries only when the task needs a specific decision.
+At the start of a new month, move the previous month's entries to
+`docs/worklog_archive/YYYY-MM.md`. Use the same `grep -n` then `sed -n` approach for
+large docs such as `docs/commands.md`.
 
 ## Implementation and completion
 
