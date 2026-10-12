@@ -48,18 +48,29 @@ audio-model verification, evaluation, mixing, and dataset export.
 | `scripts/s1-download/`, `audio/`, `mix/` | ingest and deterministic audio operations |
 | `scripts/s2-separate/` | HTDemucs, BS/Mel-RoFormer, MVSEP-MDX23 |
 | `scripts/s3-diarize/` | Sortformer, Pyannote, clustering, 3D-Speaker, DiariZen |
+| `scripts/asr/` | VibeVoice-ASR / PhoWhisper transcription with word-level alignment |
 | `scripts/speaker/`, `purity/` | enrollment, scoring, filtering, boundary refinement |
 | `scripts/s4-agent/` | free-form raw audio-model generation |
 | `scripts/s4-agent/verifier/` | validated pass/reject behaviors using shared generation |
 | `scripts/evaluate/` | metrics and plots |
+| `scripts/vicut_bench/` | ViCut-Bench clean anchors and controlled defects |
 | `scripts/s5-export/` | dataset indexing, filtering, export, bundles |
 | `scripts/_common/` | private shared file/segment behavior |
 | `scripts/sync/` | code/data synchronization between machines |
 | `envs/`, `prompts/`, `docs/` | environments, prompts, focused documentation |
+| `GOAL.md`, `research/` | research acceptance criteria, plan, papers |
+| `archive/` | unmaintained reference code; never run or import |
 
 ## CLI and artifact contracts
 
 - Commands accept paths/flags and communicate through files; callers compose them.
+- Standard flag shorthands are supported across all pipeline tools:
+  `-i`/`-if` (`--input-file`), `-id` (`--input-dir`), `-o`/`-of` (`--output-file`),
+  `-od` (`--output-dir`), `-wd` (`--work-dir`), `-w`/`-ow` (`--overwrite`),
+  `-c` (`--concurrency`), `-b`/`-bs` (`--batch-size`), `-sr` (`--sample-rate`),
+  `-ch` (`--channels`), `-m` (`--model`/`--model-id`), `-d` (`--device`),
+  `-v` (`--verbose`), `-p`/`-pf` (`--prompt-file`), `-im` (`--input-manifest`),
+  `-om` (`--output-manifest`).
 - `--input-file` takes precedence over `--input-dir`; `--output-file` is exact.
 - Audio commands write sibling JSON sidecars. Diarizers write
   `<stem>/segments.json` plus clips.

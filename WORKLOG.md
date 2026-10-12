@@ -857,3 +857,16 @@
 
 ### Results
 - Documentation only. No code changed; no tests written or run; no models or APIs invoked.
+
+## 2026-10-12 - Clean up and reorganize repository for agent use
+
+### Decisions
+- Commit 63b4582 had re-added files deliberately deleted earlier (3a42795, d805b62, 3ec64e2, 4ad1d5b) that describe a removed class/web-app architecture. Deleted them again: `docs/01`–`09_*.md`, `docs/api_contract.md`, `docs/bench-paper-diarize.md`, `docs/concepts/`, `scripts/start_{pipeline,studio,web}.*`, `scripts/target_speaker.py`, `scripts/sync_{from,to}_server.sh`, orphan `scripts/s4-agent/verifier/analyze.py`, and stale root `requirements-*.txt` (the `envs/` copies are newer supersets).
+- Removed forwarding shims `scripts/setup_*.sh` (use `envs/setup_*.sh`), the vague verifier aliases `analyze.sh`/`analysis.sh` (use `plot_verifier_analysis.sh`), the older root duplicate `make_written_form.py`, and the implemented `docs/plans/`.
+- Untracked media: `impurity/` (340 WAV, 118 MB) and `.test` moved to `.data/archive/`. They remain in git history.
+- Moved the transcript CSV commands to `scripts/s5-export/`: `make_spoken_form`, `make_written_form`, and `extract_transcripts-spoken-form` renamed to `extract_gemini_transcripts`. Merged `playlist.txt` + `playlist-url.txt` into `scripts/s1-download/youtube_playlists.txt`. Moved `bao_cao_tom_tat_verifier.md` to `docs/verifier_cost_summary_vi.md`, renamed `docs/10_tts_model_training_and_evaluation.md` to `docs/tts_training_and_evaluation.md` and `prompts/full-tag-prompt-2.md` to `prompts/full-tags-prompt-detached-consonants.md`.
+- Moved the unintegrated `speech_cleanup_pack/` to `archive/` with a do-not-run README.
+- Rewrote `docs/README.md` as an index of current docs; added `prompts/README.md`; updated `README.md`, `AGENTS.md`, `CLAUDE.md` tables (asr, vicut_bench, GOAL/research, archive) and added flag shorthands to `AGENTS.md`. Added `GEMINI.md` as a symlink to `AGENTS.md` so Gemini CLI loads the same rules.
+
+### Results
+- `bash -n` and `--help` pass for the three moved launchers; `py_compile` passes. All relative markdown links outside `archive/` and `WORKLOG.md` resolve. No tests written or run; no models or APIs invoked.

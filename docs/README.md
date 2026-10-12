@@ -1,57 +1,38 @@
-# Documentation Index & Architecture Map
+# Documentation index
 
-Welcome to the **audio-prepare-pipeline-redo** documentation. This pipeline provides tools for ingesting audio (YouTube or local files), separating musical stems, performing high-precision speaker diarization, verifying speaker purity, running separation benchmarks, and orchestrating batch workflows through unified web platforms.
+[← Repository README](../README.md)
 
----
+The repository is a set of standalone commands that communicate through files under
+`.data/`. There is no orchestrator, web app or Python package API. If a document
+mentions `src/`, `ManagedModel`, `SonicStudio` or a web backend, it is outdated.
 
-## 🧭 Reading Order & Operational Flow
+## Goal and research
 
-The documentation is organized modularly to match the natural audio processing lifecycle:
+| Document | Contents |
+|---|---|
+| [`../GOAL.md`](../GOAL.md) | Acceptance criteria and working protocol for research. Read first. |
+| [`../research/GRAND_PLAN.md`](../research/GRAND_PLAN.md) | Interspeech 2027 experiment plan: ViCut-Bench, judge audit, probes, TTS dose-response. |
+| [`../research/README.md`](../research/README.md) | Downloaded papers and what each actually supports. |
+| [`experiments.md`](experiments.md) | Past measurements, metric R, gold set rules, lessons learned. |
 
-```mermaid
-flowchart LR
-    A["01. Ingestion & Audio Core"] --> B["02. Source Separation"]
-    B --> C["03. Speaker Diarization"]
-    C --> D["04. Zero Contamination"]
-    A & B --> E["05. Benchmark & Mixing"]
-    A & B & C & D & E --> F["06. Web Applications"]
-    A & B & C & D & E & F --> G["07. Data Contracts"]
-    G --> H["10. TTS Training & Evaluation"]
-    H --> I["11. Research Paper Grand Plan"]
-```
+## Using the commands
 
-| Order | Module | Description | Key Components |
-|---|---|---|---|
-| **01** | [**Audio & Ingestion**](01_audio_and_ingestion.md) | File-backed audio representation and YouTube crawling | `Audio`, `YtCrawler`, `probe_wav`, `normalize_wav` |
-| **02** | [**Source Separation**](02_source_separation.md) | Vocal/instrumental separation and managed model lifecycle | `BaseSeparator`, `HTDemucs`, `BSRoFormer`, `MelRoFormer`, `MVSepMDX23`, `ManagedModel` |
-| **03** | [**Speaker Diarization**](03_speaker_diarization.md) | Diarization backends, turn cleanup, evaluation, and verifiers | `Sortformer`, `DiariZen`, `Pyannote`, `ThreeDSpeaker`, `Clustering`, `SpeakerVerifier`, `OverlapVerifier`, `VibeVoicePurityVerifier` |
-| **04** | [**Zero-Contamination Diarization**](04_zero_contamination_diarization.md) | Extreme-precision TTS data harvesting pipeline | `run_zero_contamination_pipeline`, Dual-engine consensus, Whisper syllable lock, Micro-energy snapping, WeSpeaker homogeneity |
-| **05** | [**Benchmark & Mixing**](05_benchmark_and_mixing.md) | Speech+music mixture generation and evaluation | `AudioMixer`, `BenchmarkDefinition`, `AudioMixResult`, `bench-paper-diarize` |
-| **06** | [**Web Applications**](06_web_applications.md) | SonicStudio & SonicPipeline web platforms | REST backend (port 8765), `/studio/`, `/pipeline/`, FIFO queues, SSE, Hardware monitor |
-| **07** | [**Data Contracts & Schemas**](07_data_contracts.md) | Canonical schemas, sidecar specs, and serialization | `DiarizationResult`, `SpeakerProfile`, `ZeroContaminationResult`, `AudioItem`, `.data/` layout |
-| **08** | [**Model Parameters & Trade-offs**](08_model_parameters_and_tradeoffs.md) | Parameter mechanics, directional sensitivity, and guaranteed vs empirical trade-offs | All separation, diarization, purity, and zero-contamination parameters |
-| **09** | [**AMD GPU Compatibility**](09_amd_gpu_compatibility.md) | AMD Radeon RX 9060 XT (16 GB) hardware execution, ROCm setup, and CPU fallbacks | ROCm 7.2, `gfx1200`, MIOpen, rocBLAS, rocFFT, SDPA, CPU fallback breakdown |
-| **10** | [**TTS Training & Evaluation**](10_tts_model_training_and_evaluation.md) | TTS dataset export, SOTA benchmarks, Vietnamese evaluation, and ASR landscape | Dual-transcript contract, PhoAudiobook/VieNeu-TTS benchmarks, SECS, UTMOS, Qualcomm PhoASR |
-| **11** | [**Research Paper Grand Plan**](../research/GRAND_PLAN.md) | Interspeech 2027 paper plan: controlled curation-defect benchmark, audio-LLM judge audit, encoder probes, TTS dose-response | ViCut-Bench, judge audit, linear probes, dose-response |
-| **C** | [**Speech-Domain Concepts**](concepts/README.md) | Beginner-first explainers with diagrams: audio, separation, diarization, DER/Hungarian, embeddings, ASR/alignment, purity, boundaries, benchmarks, infra | Newcomer on-ramp; links back into `01_`–`11_` |
+| Document | Contents |
+|---|---|
+| [`commands.md`](commands.md) | Environments, CLI rules, cookbook for every command group. |
+| [`data_contract.md`](data_contract.md) | File formats: sidecars, manifests, verifier outputs, export ZIPs. |
+| [`agent_verifier.md`](agent_verifier.md) | Raw audio-LLM generation and pass/reject verifiers. |
+| [`hardware.md`](hardware.md) | Machines, ROCm/CUDA notes, sync scripts. |
 
----
+## Topic notes
 
-## 📑 Contract Gateways
-
-For direct access to specific contracts:
-- [**API Contract Summary**](api_contract.md): High-level method catalog and quick-reference behavior matrix.
-- [**Data Contract Summary**](data_contract.md): Field specifications, serialized payloads, and sidecar definitions.
-- [**Diarization Benchmark Paper Reference**](bench-paper-diarize.md): Published benchmark comparisons (DER) across Pyannote, 3D-Speaker, NeMo Sortformer, NeMo Clustering, and DiariZen.
-- [**TTS Training & SOTA Evaluation Guide**](10_tts_model_training_and_evaluation.md): End-to-end dataset export, Vietnamese SOTA metrics, and ASR model comparisons.
-- [**Research Grand Plan & Downloaded Papers**](../research/README.md): Primary literature index and conference paper execution roadmap.
-
----
-
-## 🏛️ System Philosophy & Design Principles
-
-1. **File-Backed State (`Audio`):** Identity is a path plus metadata (`source_id`, `title`, rates, duration, channels, format). In-memory waveforms are never passed across public boundaries.
-2. **Identity Preservation:** Transformations preserve `source_id`, `title`, and `native_sample_rate`. Derived files record step history tags.
-3. **Managed Model Lifecycles:** Heavy neural models (`BSRoFormer`, `MelRoFormer`, diarizers, verifiers) inherit `ManagedModel` (`load()`, `unload()`, `with model:`).
-4. **Isolated Environments:** NeMo, DiariZen, 3D-Speaker, and VibeVoice dependencies are isolated in dedicated worker environments (`.venv-*`) to prevent package version conflicts in the primary runtime.
-5. **Precision Over Recall:** Diarization and purity verification prioritize zero multi-speaker leakage over retaining turn volume.
+| Document | Contents |
+|---|---|
+| [`tts_segmentation_testing.md`](tts_segmentation_testing.md) | Current sentence-end TTS cutter (`experimental-v3`) recipe. |
+| [`tts_segmentation_verification.md`](tts_segmentation_verification.md) | Superseded `experimental-v2` results and why they failed. |
+| [`tts_segmentation_proposal.md`](tts_segmentation_proposal.md) | Target design for acoustic-aware segmentation (partly unimplemented). |
+| [`vad_segmentation_baseline.md`](vad_segmentation_baseline.md) | One recorded run of the VAD-only baseline. |
+| [`tts_training_and_evaluation.md`](tts_training_and_evaluation.md) | TTS training, Vietnamese evaluation metrics, ASR models. |
+| [`verifier_batch_review.md`](verifier_batch_review.md) | Historical review of Gemini Batch verifier behavior. |
+| [`gemini_batch_debugging.md`](gemini_batch_debugging.md) | Read-only snippets for diagnosing Gemini Batch/quota failures. |
+| [`verifier_cost_summary_vi.md`](verifier_cost_summary_vi.md) | Vietnamese management summary of yield and Gemini cost (2026-09-25). |

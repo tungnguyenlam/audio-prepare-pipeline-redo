@@ -34,12 +34,14 @@ verifiers) are provisioned per target with the same script; see
 | `scripts/s2-separate/` | `htdemucs`, `htdemucs_ft`, `bs_roformer`, `mel_roformer`, `mvsep_mdx23` |
 | `scripts/s3-diarize/` | `nemotron3_diarization`, `sortformer`, `pyannote_community1`, `pyannote_31`, `clustering`, `threed_speaker`, `diarizen` |
 | `scripts/audio/` | `info`, `convert`, `cut`, `segment_vad`, `segment_tts`, `export_segments`, `compare_waveforms`, `compare_spectrograms` |
+| `scripts/asr/` | `vibevoice`, `phowhisper` |
 | `scripts/speaker/` | `enroll`, `score`, `filter`, `purity` |
 | `scripts/purity/` | `consensus`, `cleanup`, `merge`, `collar`, `snap`, `align`, `segment` |
 | `scripts/s4-agent/` | raw audio-LLM generation: `gemini`, `endpoint`, `hf` |
-| `scripts/s4-agent/verifier/` | pass/reject verifiers `gemini`, `hf`, `endpoint`, `unsloth`, `vllm`, `moss`, `minicpm`, `kimi`, `vibevoice`; offline `plot_verifier_analysis` (aliases `analysis`, `analyze`), `compare`, `evaluate_verifier`, `scaffold_experiment` |
+| `scripts/s4-agent/verifier/` | pass/reject verifiers `gemini`, `hf`, `endpoint`, `unsloth`, `vllm`, `moss`, `minicpm`, `kimi`, `vibevoice`; offline `plot_verifier_analysis`, `compare`, `evaluate_verifier`, `scaffold_experiment` |
 | `scripts/mix/`, `scripts/evaluate/` | `mix`; `separation`, `diarization`, `plot_diarization`, `plot_metrics`, `prepare_viyt_diar`, `run_viyt_diar` |
-| `scripts/s5-export/` | `index`, `filter`, `export`, `bundle`, `export_verifier_handoff`, `export_tts_zip` |
+| `scripts/s5-export/` | `index`, `filter`, `export`, `bundle`, `export_verifier_handoff`, `export_tts_zip`; transcript CSVs `extract_gemini_transcripts`, `make_spoken_form`, `make_written_form`, `clean_viephoneme_brackets_and_pauses` |
+| `scripts/vicut_bench/` | `extract_anchors`, `measure_anchors`, `select_anchors` |
 | `scripts/sync/` | rsync code/data to the model server and auxiliary hosts |
 
 Every `.py` has a same-name `.sh` launcher that selects the right virtualenv.
@@ -87,6 +89,8 @@ bash scripts/s4-agent/verifier/plot_verifier_analysis.sh --input-dir .data/s4-ag
 
 ## Documentation
 
+- [Research goal and acceptance criteria](GOAL.md)
+- [Documentation index](docs/README.md)
 - [Setup, CLI rules, and command cookbook](docs/commands.md)
 - [Data and file contracts](docs/data_contract.md)
 - [Agent generation and verifier behavior](docs/agent_verifier.md)

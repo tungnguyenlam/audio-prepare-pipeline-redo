@@ -107,8 +107,7 @@ remote repository directory is writable.
 ## Provisioning
 
 `envs/setup_worker_envs.sh` detects AMD ROCm / NVIDIA CUDA / CPU and provisions
-one venv per requirements file under `envs/`. `scripts/setup_*.sh` are thin
-wrappers to the same scripts. The `download` target is CPU-only and also
+one venv per requirements file under `envs/`. The `download` target is CPU-only and also
 provisions project-local JavaScript runtimes for yt-dlp.
 
 ```bash
@@ -157,7 +156,7 @@ Manual equivalent (repeat per environment; pick the torch index for your driver,
 e.g. `--index-url https://download.pytorch.org/whl/cu128`):
 
 ```bash
-./scripts/setup_download_env.sh       # Python, current yt-dlp, and local JavaScript runtimes
+./envs/setup_download_env.sh          # Python, current yt-dlp, and local JavaScript runtimes
 
 uv venv --python 3.13 .venvs/audio
 uv pip install --python .venvs/audio/bin/python -r envs/requirements-audio.txt
@@ -175,7 +174,7 @@ resolved, sanitized collection name below the output root.
 bash scripts/s1-download/youtube.sh  --url 'https://www.youtube.com/watch?v=VIDEO' --output-dir .data/downloads
 bash scripts/s1-download/youtube.sh  --url-file urls.txt                                # one URL/ID per line
 bash scripts/s1-download/playlist.sh --url 'https://www.youtube.com/playlist?list=PL' --limit 5
-bash scripts/s1-download/playlist.sh --url-file playlists.txt --limit 5                  # one playlist URL per line
+bash scripts/s1-download/playlist.sh --url-file scripts/s1-download/youtube_playlists.txt --limit 5  # one playlist URL per line
 bash scripts/s1-download/channel.sh  --url 'https://www.youtube.com/@CHANNEL/videos' --limit 10
 bash scripts/s1-download/channel.sh  --url-file channels.txt --limit 10                  # one /videos URL per line
 bash scripts/s1-download/crawl.sh --source-file scripts/s1-download/sources/vi_en_codeswitch.json --metadata-only
@@ -820,7 +819,7 @@ path. The existing metadata launcher requires no packages or model calls.
 ### Convert an annotated CSV to spoken form
 
 ```bash
-bash make_spoken_form.sh \
+bash scripts/s5-export/make_spoken_form.sh \
   --input-file .data/output-data-separation/spoken-form-thu-am-studio-transcript.csv \
   --audio-root .data/s3-diarize/diarizen/thu-am-studio \
   --output-file .data/spoken-form-thu-am-studio-transcript.csv
@@ -847,10 +846,10 @@ generated CSVs under `.data/`.
 ### Extract and convert transcript CSVs
 
 ```bash
-bash scripts/extract_transcripts-spoken-form.sh \
+bash scripts/s5-export/extract_gemini_transcripts.sh \
   --input .data/s4-agent/verifier/gemini \
   --output .data/extracted-transcripts.csv
-bash scripts/make_written_form.sh \
+bash scripts/s5-export/make_written_form.sh \
   --input .data/extracted-transcripts.csv \
   --output .data/written-form-thu-am-studio-transcript.csv
 ```

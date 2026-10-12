@@ -55,6 +55,8 @@ audio-model verification, evaluation, mixing, and dataset export.
 | `scripts/_common/` | private shared file/segment behavior |
 | `scripts/sync/` | code/data synchronization between machines |
 | `envs/`, `prompts/`, `docs/` | environments, prompts, focused documentation |
+| `GOAL.md`, `research/` | research acceptance criteria, plan, papers |
+| `archive/` | unmaintained reference code; never run or import |
 
 ## CLI and artifact contracts
 
