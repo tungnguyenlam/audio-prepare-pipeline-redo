@@ -274,3 +274,17 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
 - User listens via SSH without native audio forwarding; `mpv` cannot output audio to local speakers.
 - Propose updating `GOAL.md` §6: permit a standardized, reusable static HTML playback template (`review.html`) generated alongside `REVIEW.md`, `review.csv`, and `playlist.m3u`.
 - Contract for `review.html`: strictly blind (no group, model verdict, or defect leaking), serves audio via relative paths, includes standard play/pause and "play last 1s" controls, and allows downloading or copying updated CSV rows directly to `review.csv`.
+
+## 2026-10-12 - Evaluate edge-screen human review labels
+
+### Decisions
+- Processed 40 human labels from `.data/goal/review/edge_screen_anchors/review.csv` per GOAL §6.
+- All 40 audio files matched their recorded SHA-256 (0 dropped). Copied to `review_labelled.csv` (SHA-256: `b198a924f10455f3cdef57363c42c5ead599c6156b7bc33573d5190a626f4edd`).
+- Joined blind labels with `key.jsonl` to test pre-registered hypotheses H1–H3:
+  - **H1 (Frozen anchors clean):** 23 pass, 1 unsure (edge40: `vivos_VIVOSDEV08_032`, note: missing slight decay at end, sound cut abruptly, but words whole), 0 fail. H1 is **supported** (0 fail < 2 fail threshold). 300 VIVOS anchors remain frozen and validated as clean twins for defect synthesis.
+  - **H2 (VIVOS edge flags):** 5 pass, 3 fail, 2 unsure. Failures align with low SNR + tight boundary (`low_snr,tight_start,tight_end` fail; buzz noted on dev19). Flag threshold screens out defects without over-penalizing clean speech.
+  - **H3 (PhoAudiobook truncation):** 2 fail, 2 unsure, 2 pass. Audible reverb and boundary clicks/cut words observed. Keeps PhoAudiobook excluded from clean anchor twins.
+
+### Results
+- `.data/goal/review/edge_screen_anchors/review_labelled.csv` materialized and verified.
+- Frozen anchors validated; ViCut-Bench defect generation unblocked.
