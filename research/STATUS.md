@@ -29,6 +29,8 @@ Rewritten (not appended) at the end of every session; ≤ 60 lines. See `GOAL.md
 - Gemini audio token rate is ~25 tokens/s; free tier requires -c 1 and 2-5 s backoff
   on 503 demand spikes; latency is 1.75 s (Flash-Lite) to 34.1 s (Flash with full rubric).
   `docs/gemini_quota.md`, `.data/goal/gemini_checks/quota_probe/`
+- Full ViCut-Bench defect pool synthesized: 4,800 clips (16 severities x 300 anchors).
+  `.data/vicut_bench/defects/vicut_bench_defects.jsonl`
 
 ## Unverified (treat as unknown until a file proves it)
 
