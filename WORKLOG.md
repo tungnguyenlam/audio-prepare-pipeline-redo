@@ -323,3 +323,17 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
   - 1,200 `secondary_speaker` (24, 18, 12, 6 dB SIR)
   - 1,200 `background_music` (30, 24, 18, 12 dB SNR)
 - All defect clips paired with clean anchor twins in `.data/vicut_bench/defects/vicut_bench_defects.jsonl`.
+
+## 2026-10-13 - Download Have A Sip candidate for G1 test set
+
+### Decisions
+- Selected 3 candidate recordings for the G1 frozen test set (zero dev overlap):
+  1. Have A Sip Ep 254 (`Mo1if0ifEP8`: Chủ tịch Vietnam Foundation Phạm Đức Trung Kiên, studio interview).
+  2. Truyện Chêm (`9buWDyEZ5f8`: 36 Từ Vựng Mùa Cô Vy, music-backed vlog).
+  3. Truyện Chêm (`K2RTaM3igeI`: 70 Từ Vựng Căn Hộ 100tr, music-backed vlog).
+- Downloading `Mo1if0ifEP8` to `.data/goal/g1_test_candidates/` at 16 kHz mono WAV via `scripts/s1-download/youtube.sh`.
+
+### Results
+- Downloaded `Mo1if0ifEP8` (Have A Sip Ep 254: 84.4 min, 16 kHz mono) into `.data/goal/g1_test_candidates/`.
+- Copied `9buWDyEZ5f8` (Truyện Chêm: 10.6 min) and `K2RTaM3igeI` (Truyện Chêm: 12.6 min) into `.data/goal/g1_test_candidates/`.
+- Total candidate pool: 3 recordings (1 studio interview, 2 music-backed vlogs), ~1.8 hours total audio, zero overlap with gold dev benchmark.
