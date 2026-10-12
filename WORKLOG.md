@@ -870,3 +870,11 @@
 
 ### Results
 - `bash -n` and `--help` pass for the three moved launchers; `py_compile` passes. All relative markdown links outside `archive/` and `WORKLOG.md` resolve. No tests written or run; no models or APIs invoked.
+
+## 2026-10-12 - Define human review workflow in GOAL.md
+
+### Decisions
+- Added GOAL.md §6 "Human review": the agent delivers `REVIEW.md` + `review.csv` + `playlist.m3u` under `.data/goal/review/<topic>/`; the user plays exact files with `mpv`. No ad-hoc HTML (wrong mapping, verdict leakage, lost labels). The CSV is blind and shuffled with a recorded seed; labels are joined by `review_id` only after SHA-256 re-check; the answer key is kept separately; batches are ≤ 40 clips / 15 min. The maintained `START_HERE.html` from `export_verifier_handoff` stays an optional read-only viewer.
+
+### Results
+- Documentation only. No code changed; no tests written or run; no models or APIs invoked.

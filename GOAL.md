@@ -184,7 +184,46 @@ scripts/s4-agent/verifier/gemini.sh -id <dir> -m gemini-3.8-flash \
   it disagrees with a measurement, check the measurement again before believing
   either. Keep the raw responses.
 
-## 6. Resources
+## 6. Human review (how the user checks your output)
+
+The user listens to exact files in `mpv`. **Do not write HTML pages for review.**
+Ad-hoc pages can map clips to the wrong labels, leak model verdicts, and lose
+labels in browser storage. For every request to listen, create
+`.data/goal/review/<topic>/` containing exactly these three files:
+
+1. `REVIEW.md`:
+   - The question, in one sentence, and the decision it controls.
+   - What to listen for, with pass and fail written out.
+   - The result that would change the plan.
+   - Replay commands with absolute paths, e.g. `mpv --keep-open=no /abs/clip.wav`
+     and, for end-boundary checks, `mpv --start=-1 /abs/clip.wav`.
+   - The batch command `mpv --playlist=/abs/.../playlist.m3u`.
+2. `review.csv` with the columns
+   `review_id,abs_path,sha256,duration_s,listen_for,your_label,your_note`:
+   - Shuffle rows with a fixed seed and record the seed in `REVIEW.md`.
+   - Never include model verdicts, defect types or severities, or which twin of a
+     clean/defect pair a clip is.
+   - Leave `your_label` and `your_note` empty.
+3. `playlist.m3u` with the same absolute paths in the same order as `review.csv`.
+
+**Size.** Keep each batch to ≤ 40 clips or ≤ 15 min of listening. Say how long
+the batch will take.
+
+**Reading labels back.**
+
+- Join by `review_id`.
+- Recompute each file's SHA-256 and drop any row whose hash no longer matches,
+  reporting the dropped rows.
+- Never fill in, guess or "correct" an empty label.
+- Copy the labelled CSV to `review_labelled.csv` and record its hash in
+  `WORKLOG.md`.
+- Keep the answer key (clip → condition) in a separate `key.jsonl` that is never
+  shown in `REVIEW.md`.
+
+For a read-only listening page, use the maintained `START_HERE.html` from
+`scripts/s5-export/export_verifier_handoff.sh`. Labels still live only in the CSV.
+
+## 7. Resources
 
 One RX 9060 XT (16 GB, ROCm), the NVIDIA server `vsf-242` for separation and
 diarization, a free Gemini key, an optional OpenRouter key, and the authors' time
