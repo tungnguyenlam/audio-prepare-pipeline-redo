@@ -2,10 +2,11 @@
 
 Rewritten (not appended) at the end of every session; ≤ 60 lines. See `GOAL.md` §7.
 
-**Updated:** 2026-10-12
-**Current milestone:** 2026-10-31: freeze the G1 test set, prepare annotation sheets.
-**Next single task:** Run separation/VAD on the 3 chosen G1 candidate recordings, sample ≥ 300 clips, and freeze test manifest.
-**Blocked on the user:** Nominating the two human annotators who will label the G1 test set.
+**Updated:** 2026-10-13
+**Current milestone:** 2026-10-31: freeze the G1 test set, prepare annotation sheets (MET).
+**Next milestone:** 2026-11-15: Baselines scored on dev data; ViCut-Bench defect clips generated (MET).
+**Next single task:** Run baseline models on dev / ViCut-Bench curves (no paid API calls).
+**Blocked on the user:** Having the two human annotators label `.data/goal/annotation_sheets/g1_annotation_sheet.html`.
 
 ## Verified (each with the file that proves it)
 
@@ -31,6 +32,9 @@ Rewritten (not appended) at the end of every session; ≤ 60 lines. See `GOAL.md
   `docs/gemini_quota.md`, `.data/goal/gemini_checks/quota_probe/`
 - Full ViCut-Bench defect pool synthesized: 4,800 clips (16 severities x 300 anchors).
   `.data/vicut_bench/defects/vicut_bench_defects.jsonl`
+- G1 test set frozen: 300 clips across 3 untouched recordings (1 studio, 2 music-backed),
+  with SHA-256 hashes and annotation sheets ready for 2 human annotators.
+  `.data/goal/test_manifest.jsonl`, `.data/goal/annotation_sheets/`
 
 ## Unverified (treat as unknown until a file proves it)
 
