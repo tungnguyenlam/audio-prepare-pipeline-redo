@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ViCut-Bench • Curation Defect Benchmark & Verification Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #090d16;
+            --bg-card: rgba(17, 24, 39, 0.85);
+            --bg-card-hover: rgba(24, 33, 53, 0.95);
+            --border-subtle: rgba(255, 255, 255, 0.08);
+            --border-highlight: rgba(99, 102, 241, 0.35);
+            --text-primary: #f9fafb;
+            --text-secondary: #9ca3af;
+            --text-muted: #6b7280;
+            --accent-indigo: #6366f1;
+            --accent-cyan: #06b6d4;
+            --accent-emerald: #10b981;
+            --accent-rose: #f43f5e;
+            --accent-amber: #f59e0b;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-primary);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            line-height: 1.5;
+            padding: 24px;
+            min-height: 100vh;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.12) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(6, 182, 212, 0.08) 0%, transparent 40%);
+            background-attachment: fixed;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        
+        header {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 16px;
+            padding: 28px 32px;
+            backdrop-filter: blur(12px);
+            margin-bottom: 28px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+        }
+        .header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, #fff 40%, var(--accent-cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.4);
+            color: #34d399;
+            font-size: 13px;
+            font-weight: 600;
+            border-radius: 9999px;
+        }
+        .status-dot { width: 8px; height: 8px; background: #10b981; border-radius: 50%; box-shadow: 0 0 8px #10b981; }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin-top: 20px;
+        }
+        .stat-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 16px 20px;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+        .stat-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--border-highlight);
+        }
+        .stat-val { font-size: 24px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+        .stat-label { font-size: 13px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+        
+        .tab-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+            border-bottom: 1px solid var(--border-subtle);
+            padding-bottom: 8px;
+        }
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 15px;
+            font-weight: 600;
+            padding: 10px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .tab-btn:hover { color: #fff; background: rgba(255, 255, 255, 0.05); }
+        .tab-btn.active {
+            color: #fff;
+            background: var(--accent-indigo);
+            box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+        }
+        
+        .filter-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 20px;
+            background: var(--bg-card);
+            padding: 12px 18px;
+            border-radius: 12px;
+            border: 1px solid var(--border-subtle);
+        }
+        .filter-group { display: flex; gap: 8px; align-items: center; }
+        .filter-label { font-size: 13px; color: var(--text-muted); font-weight: 600; margin-right: 6px; }
+        .filter-pill {
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+            transition: all 0.15s;
+        }
+        .filter-pill:hover, .filter-pill.active {
+            background: rgba(6, 182, 212, 0.15);
+            border-color: var(--accent-cyan);
+            color: #fff;
+        }
+
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+            gap: 20px;
+        }
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 14px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            backdrop-filter: blur(12px);
+            transition: all 0.2s;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        .card:hover {
+            border-color: var(--border-highlight);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.35);
+        }
+        .card-header {
+            padding: 14px 18px;
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(255,255,255,0.02);
+        }
+        .card-title-group { display: flex; align-items: center; gap: 10px; }
+        .card-body { padding: 18px; flex-grow: 1; display: flex; flex-direction: column; gap: 14px; }
+        .card-footer {
+            padding: 10px 18px;
+            border-top: 1px solid var(--border-subtle);
+            background: rgba(0,0,0,0.15);
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-muted);
+            word-break: break-all;
+        }
+
+        .badge {
+            padding: 4px 10px;
+            font-size: 11px;
+            font-weight: 700;
+            border-radius: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .badge-clean { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); }
+        .badge-flagged { background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.4); }
+        .badge-defect { background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.4); }
+        .badge-defect.sev-end { background: rgba(244, 63, 94, 0.15); color: #fb7185; border-color: rgba(244, 63, 94, 0.4); }
+        .badge-defect.sev-start { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border-color: rgba(245, 158, 11, 0.4); }
+        .badge-defect.sev-spk { background: rgba(168, 85, 247, 0.15); color: #c084fc; border-color: rgba(168, 85, 247, 0.4); }
+        .badge-defect.sev-music { background: rgba(6, 182, 212, 0.15); color: #22d3ee; border-color: rgba(6, 182, 212, 0.4); }
+        .severity-pill {
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            background: rgba(255, 255, 255, 0.08);
+            color: #fff;
+        }
+        .source-tag { font-size: 12px; color: var(--text-muted); font-weight: 500; }
+        .duration-tag { font-size: 12px; font-weight: 600; color: var(--accent-cyan); }
+
+        .transcript-box {
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 8px;
+            padding: 12px 14px;
+        }
+        .transcript { font-size: 13.5px; color: #e5e7eb; font-style: italic; line-height: 1.45; }
+        .word-tags { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+        .final-word-label { font-size: 12px; color: var(--text-secondary); }
+        .final-word-label strong { color: #fff; }
+        .coda-pill { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+        .coda-pill.stop { background: rgba(239, 68, 68, 0.12); color: #fca5a5; }
+        .coda-pill.open { background: rgba(59, 130, 246, 0.12); color: #93c5fd; }
+
+        .metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        .metric-item {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-subtle);
+            border-radius: 6px;
+            padding: 8px 10px;
+        }
+        .metric-label { font-size: 10.5px; color: var(--text-muted); text-transform: uppercase; display: block; }
+        .metric-val { font-size: 13px; font-weight: 600; color: #fff; }
+        .zero-warn { font-size: 10px; color: #f87171; }
+
+        .flags-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .flags-title { font-size: 11.5px; color: var(--text-muted); font-weight: 600; }
+        .flag-pill {
+            padding: 2px 8px;
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #fca5a5;
+            font-size: 11px;
+            font-weight: 600;
+            border-radius: 4px;
+        }
+
+        .defect-desc-box {
+            background: rgba(99, 102, 241, 0.08);
+            border: 1px solid rgba(99, 102, 241, 0.25);
+            border-radius: 8px;
+            padding: 10px 14px;
+        }
+        .defect-desc { font-size: 13px; color: #c7d2fe; }
+
+        .audio-control-wrap { margin-top: 4px; }
+        audio.custom-audio {
+            width: 100%;
+            height: 38px;
+            border-radius: 8px;
+            outline: none;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+        }
+
+        .ab-compare-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            background: rgba(0,0,0,0.3);
+            padding: 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+        .ab-player-lane { display: flex; flex-direction: column; gap: 6px; }
+        .lane-header { display: flex; justify-content: space-between; align-items: center; }
+        .lane-title { font-size: 12px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+        .clean-lane .lane-title { color: #34d399; }
+        .defect-lane .lane-title { color: #fb7185; }
+
+        .section-view { display: none; }
+        .section-view.active { display: block; }
+
+        .roadmap-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--bg-card);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--border-subtle);
+        }
+        .roadmap-table th, .roadmap-table td {
+            padding: 14px 18px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .roadmap-table th {
+            background: rgba(255, 255, 255, 0.03);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+        }
+        .roadmap-table td { font-size: 13.5px; }
+        .roadmap-table tr:hover td { background: rgba(255, 255, 255, 0.02); }
+
+        @media (max-width: 768px) {
+            .cards-grid { grid-template-columns: 1fr; }
+            .ab-compare-container { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-top">
+                <div>
+                    <h1>ViCut-Bench • Curation Defect Benchmark & Verification Dashboard</h1>
+                    <p style="color: var(--text-secondary); font-size: 14px; margin-top: 4px;">
+                        Phase 0 Edge Screening Audit & Phase 1 Controlled Defect Synthesis
+                    </p>
+                </div>
+                <div class="status-badge">
+                    <span class="status-dot"></span>
+                    <span>Synthesis Active • VIVOS Pool Frozen</span>
+                </div>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-val">300 Anchors</div>
+                    <div class="stat-label">Frozen VIVOS Corpus</div>
+                    <div class="stat-sub">210 train / 90 test (62 spk, disjoint)</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-val">100 / 200</div>
+                    <div class="stat-label">Stop-Coda Balance</div>
+                    <div class="stat-sub">100 final -p/-t/-c/-ch • 200 open/nasal</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-val" style="color: #fb7185;">99.6% Rejected</div>
+                    <div class="stat-label">PhoAudiobook Screen</div>
+                    <div class="stat-sub">274 / 279 have speech running into 50ms pad</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-val" style="color: #34d399;">1,400 Clean</div>
+                    <div class="stat-label">VIVOS Candidates</div>
+                    <div class="stat-sub">SNR &ge; 31 dB, &ge; 52ms clean silence</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-val">6,000 Clips</div>
+                    <div class="stat-label">ViCut Defect Matrix</div>
+                    <div class="stat-sub">5 defects &times; 4 severities &times; 300 anchors</div>
+                </div>
+            </div>
+        </header>
+
+        <div class="tab-bar">
+            <button class="tab-btn active" onclick="switchTab('tab-edge')">🎧 1. Edge Screening Audit (PhoAudiobook vs VIVOS)</button>
+            <button class="tab-btn" onclick="switchTab('tab-defects')">🔬 2. Defect Synthesis AB Audition (Paired Twins)</button>
+            <button class="tab-btn" onclick="switchTab('tab-roadmap')">📑 3. Paper Roadmap & Math Contracts</button>
+        </div>
+
+        <!-- TAB 1: EDGE SCREEN AUDIT -->
+        <div id="tab-edge" class="section-view active">
+            <div class="filter-bar">
+                <div class="filter-group">
+                    <span class="filter-label">Filter:</span>
+                    <button class="filter-pill active" onclick="filterEdge('all')">All Samples ({{TOTAL_EDGE_COUNT}})</button>
+                    <button class="filter-pill" onclick="filterEdge('clean')">Clean VIVOS Anchors ({{CLEAN_COUNT}})</button>
+                    <button class="filter-pill" onclick="filterEdge('flagged')">Screen-Flagged PhoAudiobook ({{FLAGGED_COUNT}})</button>
+                    <button class="filter-pill" onclick="filterEdge('stop')">Stop Coda Only</button>
+                </div>
+                <div style="font-size: 13px; color: var(--text-muted);">
+                    Listen to confirm edge measurement: PhoAudiobook cuts into speech vs VIVOS pristine silence.
+                </div>
+            </div>
+
+            <div class="cards-grid">
+                {{EDGE_CARDS}}
+            </div>
+        </div>
+
+        <!-- TAB 2: DEFECT AUDITION -->
+        <div id="tab-defects" class="section-view">
+            <div class="filter-bar">
+                <div class="filter-group">
+                    <span class="filter-label">Defect Type:</span>
+                    <button class="filter-pill active" onclick="filterDefect('all')">All Types</button>
+                    <button class="filter-pill" onclick="filterDefect('clipped_word_end')">Clipped End (10-80ms)</button>
+                    <button class="filter-pill" onclick="filterDefect('clipped_word_start')">Clipped Start (10-80ms)</button>
+                    <button class="filter-pill" onclick="filterDefect('secondary_speaker')">Secondary Speaker (6-24dB)</button>
+                    <button class="filter-pill" onclick="filterDefect('background_music')">Background Music (12-30dB)</button>
+                </div>
+                <div style="font-size: 13px; color: var(--text-muted);">
+                    Compare Clean Twin (A) vs Defective Twin (B) for perceptual calibration.
+                </div>
+            </div>
+
+            <div class="cards-grid" id="defect-cards-container">
+                {{DEFECT_CARDS}}
+            </div>
+        </div>
+
+        <!-- TAB 3: ROADMAP & SPECS -->
+        <div id="tab-roadmap" class="section-view">
+            <div style="background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 14px; padding: 24px; margin-bottom: 24px;">
+                <h2 style="font-size: 18px; margin-bottom: 12px; color: #fff;">Interspeech 2027 Scoped Contributions</h2>
+                <table class="roadmap-table">
+                    <thead>
+                        <tr>
+                            <th>Contribution</th>
+                            <th>Description</th>
+                            <th>Current State</th>
+                            <th>Artifact Location</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>C1 • ViCut-Bench</strong></td>
+                            <td>Controlled curation defects on clean Vietnamese anchors (clipped end/start, secondary speaker, music leakage, separation residue) with exact severities.</td>
+                            <td><span style="color: #34d399; font-weight: 600;">Phase 0 Complete • Phase 1 Active</span></td>
+                            <td><code>.data/vicut_bench/anchors/</code><br><code>.data/vicut_bench/defects/</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>C2 • Judge Audit</strong></td>
+                            <td>Detection-vs-severity curves and paired clean/defect consistency for Gemini API, local audio-LLMs (Gemma 4 E2B, Qwen2-Audio), and signal baselines.</td>
+                            <td><span style="color: #fbbf24; font-weight: 600;">Phase 2 Scheduled</span></td>
+                            <td><code>scripts/s4-agent/verifier/</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>C3 • Encoder Probes</strong></td>
+                            <td>Layer-wise linear probes on frozen audio encoders compared with model generated verdicts to pinpoint where acoustic defect information is lost.</td>
+                            <td><span style="color: var(--text-muted);">Phase 3 Planned</span></td>
+                            <td><code>scripts/evaluate/</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>C4 • TTS Dose-Response</strong></td>
+                            <td>Controlled injection of each defect type into clean training set to measure downstream TTS deterioration per defect type.</td>
+                            <td><span style="color: var(--text-muted);">Phase 4 Planned (1-2h single speaker)</span></td>
+                            <td><code>scripts/s5-export/</code></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 14px; padding: 24px;">
+                <h2 style="font-size: 18px; margin-bottom: 12px; color: #fff;">Exact Defect Operator Formulations</h2>
+                <table class="roadmap-table">
+                    <thead>
+                        <tr>
+                            <th>Defect</th>
+                            <th>Operator Formula</th>
+                            <th>Severities</th>
+                            <th>Hypothesis / Acoustic Significance</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Clipped Word End</strong></td>
+                            <td><code>t_cut = speech_offset - &Delta;t</code></td>
+                            <td>10, 20, 40, 80 ms</td>
+                            <td>Final unreleased stop codas (-p/-t/-c/-ch) will have higher perceptual/LLM detection sensitivity than open codas.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Clipped Word Start</strong></td>
+                            <td><code>t_cut = speech_onset + &Delta;t</code></td>
+                            <td>10, 20, 40, 80 ms</td>
+                            <td>Initial acoustic burst and voicing onset clipped; models notice once first phoneme is destroyed.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Secondary Speaker</strong></td>
+                            <td><code>Target + Donor &times; 10^(-SIR/20)</code></td>
+                            <td>SIR 24, 18, 12, 6 dB</td>
+                            <td>Overlapped turns or speaker bleeding from diarization errors.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Background Music</strong></td>
+                            <td><code>Target + Music &times; 10^(-SNR/20)</code></td>
+                            <td>SNR 30, 24, 18, 12 dB</td>
+                            <td>Additive background accompaniment bed leakage from podcast or video.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.section-view').forEach(s => s.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        }
+
+        function filterEdge(type) {
+            document.querySelectorAll('#tab-edge .filter-pill').forEach(p => p.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            const cards = document.querySelectorAll('.edge-card');
+            cards.forEach(card => {
+                if (type === 'all') card.style.display = 'flex';
+                else if (type === 'clean') card.style.display = card.classList.contains('clean-item') ? 'flex' : 'none';
+                else if (type === 'flagged') card.style.display = card.classList.contains('flagged-item') ? 'flex' : 'none';
+                else if (type === 'stop') card.style.display = card.classList.contains('stop-coda') ? 'flex' : 'none';
+            });
+        }
+
+        function filterDefect(type) {
+            document.querySelectorAll('#tab-defects .filter-pill').forEach(p => p.classList.remove('active'));
+            event.target.classList.add('active');
+
+            const cards = document.querySelectorAll('.defect-card');
+            cards.forEach(card => {
+                if (type === 'all') card.style.display = 'flex';
+                else card.style.display = card.dataset.defectType === type ? 'flex' : 'none';
+            });
+        }
+
+        document.addEventListener('play', function(e) {
+            const audios = document.getElementsByTagName('audio');
+            for (let i = 0; i < audios.length; i++) {
+                if (audios[i] !== e.target) {
+                    audios[i].pause();
+                }
+            }
+        }, true);
+    </script>
+</body>
+</html>

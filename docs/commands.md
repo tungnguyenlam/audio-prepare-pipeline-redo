@@ -696,6 +696,22 @@ clips carry exactly 50 ms of digital zeros at each end and most have speech
 energy running into that padding, so they fail `tight_end`; the frozen pool is
 therefore selected with `--dataset vivos`.
 
+```bash
+bash scripts/vicut_bench/synthesize_defects.sh   # .data/vicut_bench/defects/vicut_bench_defects.jsonl (all defects)
+bash scripts/vicut_bench/synthesize_defects.sh --max-anchors 15 -w   # fast preview subset
+bash scripts/vicut_bench/generate_bench_report.sh   # -> .data/vicut_bench/reports/vicut_bench_dashboard.html
+```
+
+`synthesize_defects` applies exact parameterised defect operators relative to detected
+speech onset/offset (`clipped_word_end` at 10/20/40/80 ms, `clipped_word_start` at 10/20/40/80 ms,
+`secondary_speaker` at SIR 24/18/12/6 dB, and `background_music` at SNR 30/24/18/12 dB), writing
+audio and sibling JSON sidecars linked to their exact clean anchor twin.
+
+`generate_bench_report` builds a standalone dark-themed interactive HTML dashboard at
+`.data/vicut_bench/reports/vicut_bench_dashboard.html` with playable audio cards for edge-screen
+validation (30 clean VIVOS anchors vs 20 screen-flagged PhoAudiobook clips) and AB listening
+audition for synthesized defects.
+
 ### Dataset export (`s5-export`)
 
 ```bash

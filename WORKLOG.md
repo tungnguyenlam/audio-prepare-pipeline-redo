@@ -193,3 +193,24 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
 
 ### Results
 - Hook blocks an unapproved GOAL.md commit and allows it with approval (checked on this commit). No tests written or run; no models or APIs invoked.
+
+## 2026-10-12 - Implement ViCut-Bench defect synthesis and HTML listening dashboard
+
+### Decisions
+- Implemented `scripts/vicut_bench/synthesize_defects.py` and its launcher `synthesize_defects.sh`:
+  - Mathematical operators applied relative to detected speech onset/offset (never file edges).
+  - Four operators implemented: `clipped_word_end` (10, 20, 40, 80 ms), `clipped_word_start` (10, 20, 40, 80 ms), `secondary_speaker` (SIR 24, 18, 12, 6 dB with donor speech fragments from disjoint anchors), and `background_music` (SNR 30, 24, 18, 12 dB additive music bed).
+  - Materializes audio, sibling JSON sidecars, and unified JSONL manifest linking every defect clip to its clean anchor twin.
+  - Used HTDemucs-separated instrumental stem from `a9aVQCWi9MY` as standard background music source.
+- Implemented `scripts/vicut_bench/generate_bench_report.py` and `generate_bench_report.sh` with `report_template.html`:
+  - Builds standalone interactive HTML dashboard (`.data/vicut_bench/reports/vicut_bench_dashboard.html`).
+  - Section 1: Edge Screening Audit with 30 clean VIVOS anchors (15 stop coda, 15 open syllable) vs 20 screen-flagged PhoAudiobook clips (`tight_end`, `tight_start`, `leading_activity`).
+  - Section 2: Defect Synthesis AB Audition for perceptual threshold calibration (clean twin A vs defective twin B with instant switching).
+  - Section 3: Paper Roadmap (C1-C4) and mathematical operator contracts.
+  - Uses relative paths to audio so the dashboard works standalone in browser or via local server.
+- Documented commands in `docs/commands.md`.
+
+### Results
+- Generated preview defect set (240 defect clips across 15 anchors in 14 seconds) and verified sibling sidecars and JSONL manifest.
+- Generated full interactive HTML dashboard at `.data/vicut_bench/reports/vicut_bench_dashboard.html` (254 KB) with 50 edge-screen audit cards and 80 defect audition cards. All relative audio files verified on disk.
+- Launchers byte-compiled and `--help` verified with `audio_launcher.sh`. Tests were not requested and therefore not run; no paid models invoked.
