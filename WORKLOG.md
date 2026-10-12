@@ -337,3 +337,30 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
 - Downloaded `Mo1if0ifEP8` (Have A Sip Ep 254: 84.4 min, 16 kHz mono) into `.data/goal/g1_test_candidates/`.
 - Copied `9buWDyEZ5f8` (Truyện Chêm: 10.6 min) and `K2RTaM3igeI` (Truyện Chêm: 12.6 min) into `.data/goal/g1_test_candidates/`.
 - Total candidate pool: 3 recordings (1 studio interview, 2 music-backed vlogs), ~1.8 hours total audio, zero overlap with gold dev benchmark.
+
+## 2026-10-13 - Segment G1 candidate recordings with recipe_nolock baseline
+
+### Decisions
+- Process the 3 selected candidate recordings (`Mo1if0ifEP8` Have A Sip, `9buWDyEZ5f8` Truyện Chêm, `K2RTaM3igeI` Truyện Chêm) into candidate speech clips using the standard pipeline configuration (`recipe_nolock` winner from 2026-09-08):
+  - Vocal separation: HTDemucs (GPU via ROCm).
+  - Diarization: Sortformer / Silero VAD segmentation (2–12s speech cuts).
+- Materialize clips under `.data/goal/g1_test_candidates/segments/`.
+- Sample >= 300 clips across recordings and freeze `.data/goal/test_manifest.jsonl` with SHA-256 hashes per clip.
+
+### Results
+- Completed HTDemucs vocal separation on AMD GPU (`cuda:0` / ROCm) in 121.9s across all 4 candidate audio files.
+- Vocal stems produced in `.data/goal/g1_test_candidates/stems/`.
+- Proceeding to diarization and VAD segmentation using Sortformer on GPU (`cuda:0`).
+
+## 2026-10-13 - Freeze G1 test set and generate annotation sheets
+
+### Decisions
+- Created `.data/goal/test_manifest.jsonl`: exactly 300 recording-disjoint test clips sampled across 3 untouched recordings (seed 42):
+  - `HaveASip_Mo1if0ifEP8` (Studio interview): 170 clips.
+  - `TruyenChem_9buWDyEZ5f8` (Music-backed vlog): 42 clips.
+  - `TruyenChem_K2RTaM3igeI` (Music-backed vlog): 88 clips.
+- All 300 clips tracked with absolute path, relative path, duration, speaker ID, and exact SHA-256 hash.
+- Generated blind human annotation packages under `.data/goal/annotation_sheets/`:
+  - `g1_test_annotations_template.csv`
+  - `g1_annotation_sheet.html` (interactive playback interface with play/last-1s buttons, auto-saving to localStorage and CSV export).
+- Hash of `test_manifest.jsonl`: `23d707561605e39e5ad07dfc0b85e156a922c5ce282fc92240073e00c688b04f`.
