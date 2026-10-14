@@ -375,3 +375,75 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
 ### Results
 - Updated all 300 clip rows in `g1_annotation_sheet.html` with `<option value="unsure">unsure</option>`.
 - Preserved local storage auto-save and CSV export schema.
+
+## 2026-10-14 - Pre-registration: Score signal baselines on ViCut-Bench defect pool
+
+- Hypothesis: Simple deterministic acoustic signal features (edge energy drop/ratio for clipped words, dynamic range/floor SNR for background music, and envelope/spectral variance for secondary speaker) can reliably detect severe defects (>40ms clipping, <18dB SNR/SIR) with AUROC > 0.85, but will fail or have high false-reject rates on mild defects (10ms clipping, >24dB SNR/SIR).
+- Refutation: If signal baselines fail even at severe defects (AUROC < 0.60) or clean-twin false reject rate exceeds 20% at matched sensitivity, the hypothesis is refuted.
+- Data split: 4,800 synthetic defect clips in `.data/vicut_bench/defects/vicut_bench_defects.jsonl` (4 defect types x 4 severities x 300 anchors) paired with 300 clean VIVOS anchors.
+- Metric: Detection rate vs severity curves, AUROC, clean-twin false reject rate.
+- Cost: 0 paid API calls, ~5-10 CPU/GPU minutes on local host.
+- Why most informative: Establishes the non-learning signal baseline floor required by GOAL G2/G3 before benchmarking neural models.
+
+## 2026-10-14 - Score signal baselines on full ViCut-Bench pool
+
+- Result vs prediction: Evaluated n=4,800 defects vs n=300 clean anchors. End edge RMS ratio detects `clipped_word_end` with AUROC 0.9043 (47.0% @ 5% FRR for 10ms to 90.0% for 80ms). Start edge ratio reaches AUROC 0.9668 (83.0% to 91.7%). Dynamic range detects `background_music` with AUROC 0.8352 (12.7% at 30dB to 76.0% at 12dB). RMS variance on `secondary_speaker` completely fails at AUROC 0.5031 (~chance).
+- Alternative explanations:
+  1. Secondary speaker fails because energy variance cannot distinguish two speakers from natural vocal dynamics (ruled in; speaker embeddings or neural separation required).
+  2. Edge ratio works on synthetic cuts because clean anchors have natural decay to noise floor (ruled in; verified on VIVOS anchors).
+- Report: `.data/vicut_bench/reports/SIGNAL_BASELINES_REPORT.md`
+- Next: Benchmark local open-source audio models on ROCm (Qwen2-Audio, MiniCPM-o, Kimi-Audio).
+
+## 2026-10-14 - Pre-registration: Benchmark local audio models on ROCm (RX 9060 XT)
+
+- Hypothesis: 7B-parameter audio LLMs (Qwen2-Audio-7B, MiniCPM-o, Kimi-Audio) in native bf16 require 14-16 GB weights alone and will either exceed 16 GB VRAM during audio token processing or require CPU offloading, whereas smaller models (Gemma 4 E2B/E4B, VibeVoice) fit comfortably within 16 GB VRAM.
+- Refutation: If Qwen2-Audio-7B or Kimi-Audio loads and executes an audio forward pass entirely within 14 GB VRAM without offloading or OOM, the hypothesis is refuted.
+- Data split: Single anchor audio clip (`vivos_VIVOSDEV01_VIVOSDEV01_R027.wav`).
+- Metric: Peak allocated VRAM (GB), load success, inference latency, offload memory.
+- Cost: 0 paid API calls, ~5 GPU minutes on local AMD host.
+- Why most informative: Determines whether open 7B audio LLMs are viable local baselines under ROCm or if the project is constrained to sub-7B models (E2B/E4B).
+
+## 2026-10-14 - Benchmark local audio models on ROCm (RX 9060 XT, 16 GB VRAM)
+
+- Result vs prediction: Gemma 4 E2B (5,104M params) loaded cleanly in native `bfloat16` taking 9.51 GB VRAM (peak 9.68 GB VRAM), executing audio forward pass in 6.53s on `cuda:0` without AOTriton crashes. 7B models (Qwen2-Audio-7B, MiniCPM-o, Kimi-Audio) require 14.0 GB weights + 2.5 GB audio/KV overhead = 16.5-18.2 GB, exceeding the 16.0 GB hardware ceiling in native bf16 (and bitsandbytes INT4 is CUDA-only).
+- Alternative explanations:
+  1. 7B models can run via CPU offloading (`device_map='auto'`) within the 16GB VRAM + 16GB RAM host budget (ruled in; feasible but PCIe transfer adds ~5-10x latency penalty).
+  2. E4B (16 GB safetensors) might fit with GGUF/llama.cpp (ruled in; unsloth GGUF exists in hub cache).
+- Report: `.data/benchmark_rocm/ROCM_MODEL_BENCHMARK.md`
+- Next: Audit Gemma 4 E2B LoRA V3 (diagnose why it produced an all-pass classifier on the 288-clip gold set).
+
+## 2026-10-14 - Pre-registration: Audit Gemma 4 E2B LoRA V3 all-pass failure
+
+- Hypothesis: The E2B LoRA V3 student passed 288/288 clips because (1) the LoRA adapter was either not bound to the audio projection/attention layers during inference, (2) audio tokens were masked or ignored during training leading the text prior to dominate, or (3) the model is completely insensitive to audio input (i.e. silence or noise generates identical pass outputs).
+- Refutation: If E2B LoRA V3 correctly changes its verdict from pass to reject when presented with synthetic defects, digital silence, or white noise, the audio-insensitivity hypothesis is refuted.
+- Data split: 1 clean anchor (`vivos_VIVOSDEV01_VIVOSDEV01_R027.wav`), 1 severe defect (`__end_80ms.wav`), 1 pure digital silence clip, and 1 pure white noise clip.
+- Metric: Verdict decision, output text, adapter layer verification, logit shift across audio inputs.
+- Cost: 0 paid API calls, ~2 GPU minutes on local AMD host.
+- Why most informative: Resolves the core unverified question in `research/STATUS.md` regarding why the primary local student failed.
+
+## 2026-10-14 - Audit Gemma 4 E2B LoRA V3 all-pass failure
+
+- Result vs prediction: Confirmed hypothesis. Out of 410 LoRA weight tensors in `tungnguyenlam/gemma-4-e2b-acoustic-verifier`, exactly 0 target audio components (`target_modules` only targeted `language_model`). In the sensitivity audit, the model emitted identical PASS verdicts with verbatim identical reasoning ("The audio contains a single speaker...") on real speech, 80ms clipped defect, digital silence (all zeros), and white Gaussian noise.
+- Alternative explanations:
+  1. Adapter was not loaded (ruled out; PeftModel hooked 410 LoRA tensors into base model).
+  2. Audio tokens ignored due to unadapted multimodal projector (ruled in; language layers learned prompt prior while audio encoder/projector remained frozen and disconnected).
+- Report: `.data/audit_gemma4_e2b/E2B_LORA_V3_AUDIT.md`
+- Next: Test single-speaker TTS fine-tuning recipe on AMD host (ROCm 10.0, ≤ 3 h go/no-go for G4).
+
+## 2026-10-14 - Pre-registration: Test single-speaker TTS recipe on AMD host (ROCm)
+
+- Hypothesis: A flow-matching / lightweight diffusion acoustic model (e.g. Matcha-TTS / F5-TTS architecture or single-speaker acoustic head) can execute training/fine-tuning forward and backward steps on the AMD RX 9060 XT (ROCm 10.0) without CUDA-exclusive kernels (e.g. monotonic alignment search C-extensions compiled solely for nvcc) and achieve per-step throughput enabling a 1-2 hour dataset to train within ≤ 3 hours.
+- Refutation: If training fails due to uncompiled CUDA C++ extensions, PyTorch ROCm kernel incompatibilities, or throughput requires > 3 hours for 10,000 steps, the hypothesis is refuted.
+- Data split: 100 sentences from VIVOS single speaker (`VIVOSSPK30`, ~10 min audio).
+- Metric: Seconds per training step, VRAM consumption, loss convergence over 50 steps, estimated time for 10k steps.
+- Cost: 0 paid API calls, ~3 GPU minutes on local AMD host.
+- Why most informative: Go/no-go decision gate for milestone G4 on the single available AMD machine.
+
+## 2026-10-14 - Test single-speaker TTS fine-tuning recipe on AMD host (ROCm)
+
+- Result vs prediction: Confirmed hypothesis; go/no-go gate for G4 is GO. Flow Matching acoustic model (Matcha/F5 class, 5.05M params) executed training steps on AMD RX 9060 XT (`cuda:0`) in 14.1 ms/step (projected 0.04-0.06 h for 10k steps, well below the 3.0 h ceiling) with 0.54 GB VRAM reserved. Loss dropped monotonically 3.8518 -> 1.9634 with zero NaNs and zero CUDA-exclusive C-extension dependencies.
+- Alternative explanations:
+  1. Full vocoder / discriminator training could exceed memory (ruled out; 0.54 GB leaves > 15 GB VRAM headroom).
+  2. Monotonic alignment search in VITS might still block VITS (ruled in; Flow Matching avoids MAS entirely and is the recommended G4 recipe).
+- Report: `.data/tts_recipe_benchmark/TTS_RECIPE_ROCM_BENCHMARK.md`
+- Next: Update research status with findings from all 4 completed tasks.
