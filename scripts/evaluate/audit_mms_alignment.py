@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Align Vietnamese utterances using MMS-FA and prepare exact boundary cuts for Gemini audit."""
+"""Align all 100 Vietnamese stop-coda utterances using MMS-FA and prepare exact boundary cuts."""
 from __future__ import annotations
 
 import json
@@ -16,39 +16,6 @@ import torchaudio
 logger = logging.getLogger("audit.mms_fa")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-CLIPS = [
-    {
-        "id": "vivos_VIVOSDEV01_R027",
-        "audio_path": ".data/vicut_bench/anchors/vivos/vivos_VIVOSDEV01_VIVOSDEV01_R027.wav",
-        "text": "DI TÍCH CÓ BẢY PHỖNG ÔNG VÀ HAI PHỖNG BÀ ĐƯỢC LÀM BẰNG GỖ MÍT",
-        "final_word": "mít",
-    },
-    {
-        "id": "vivos_VIVOSDEV03_R136",
-        "audio_path": ".data/vicut_bench/anchors/vivos/vivos_VIVOSDEV03_VIVOSDEV03_R136.wav",
-        "text": "NÀY BÓN CHO CON THƯƠNG ĐỠ YẾU ĐAU CÒI CỌC",
-        "final_word": "cọc",
-    },
-    {
-        "id": "vivos_VIVOSDEV05_043",
-        "audio_path": ".data/vicut_bench/anchors/vivos/vivos_VIVOSDEV05_VIVOSDEV05_043.wav",
-        "text": "NGUYÊN THỨ TRƯỞNG MAI VĂN DÂU ĐÃ BỊ BẮT",
-        "final_word": "bắt",
-    },
-    {
-        "id": "vivos_VIVOSDEV05_120",
-        "audio_path": ".data/vicut_bench/anchors/vivos/vivos_VIVOSDEV05_VIVOSDEV05_120.wav",
-        "text": "NHƯNG MÙI HÔI VẪN XỘC VÀO TẬN ÓC",
-        "final_word": "óc",
-    },
-    {
-        "id": "vivos_VIVOSDEV06_070",
-        "audio_path": ".data/vicut_bench/anchors/vivos/vivos_VIVOSDEV06_VIVOSDEV06_070.wav",
-        "text": "RỒI KHỀ KHÀ ĐÔI CÂU VỌNG CỔ VỚI CHÂN CHUỘT",
-        "final_word": "chuột",
-    },
-]
-
 
 def strip_accents(s: str) -> str:
     return "".join(
@@ -57,9 +24,15 @@ def strip_accents(s: str) -> str:
 
 
 def main() -> None:
-    output_dir = Path(".data/goal/gemini_checks/mms_fa_audit/clips")
+    base_anchors_dir = Path(".data/vicut_bench/anchors")
+    manifest_path = base_anchors_dir / "vicut_bench_anchors_300.jsonl"
+    output_dir = Path(".data/goal/gemini_checks/mms_fa_audit_100/clips")
     output_dir.mkdir(parents=True, exist_ok=True)
-    report_file = Path(".data/goal/gemini_checks/mms_fa_audit/alignment_report.json")
+    report_file = Path(".data/goal/gemini_checks/mms_fa_audit_100/alignment_report.json")
+
+    anchors = [json.loads(line) for line in manifest_path.read_text().splitlines() if line.strip()]
+    stop_codas = [a for a in anchors if a.get("is_stop_coda")]
+    logger.info("Found %d stop-coda anchors in %s", len(stop_codas), manifest_path)
 
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     logger.info("Loading MMS_FA on %s...", device)
@@ -69,8 +42,8 @@ def main() -> None:
     tok = bundle.get_tokenizer()
 
     results = []
-    for item in CLIPS:
-        audio_path = Path(item["audio_path"])
+    for idx, item in enumerate(stop_codas, 1):
+        audio_path = base_anchors_dir / item["rel_path"]
         data, sr = sf.read(audio_path, dtype="float32", always_2d=True)
         mono = data.mean(axis=1)
         waveform = torch.from_numpy(mono).unsqueeze(0)
@@ -102,27 +75,22 @@ def main() -> None:
 
         info = {
             "id": item["id"],
+            "speaker": item.get("speaker"),
             "text": item["text"],
-            "final_word": item["final_word"],
+            "final_word": item.get("final_word"),
             "source_path": str(audio_path),
             "mms_clip_path": str(out_clip_path),
-            "original_duration_s": len(mono) / sr,
+            "original_duration_s": round(len(mono) / sr, 4),
             "mms_start_s": round(start_time_s, 4),
             "mms_end_s": round(end_time_s, 4),
             "mms_cut_duration_s": round(duration_s, 4),
         }
         results.append(info)
-        logger.info(
-            "%s: aligned %.3fs -> %.3fs (dur: %.3fs) written to %s",
-            item["id"],
-            start_time_s,
-            end_time_s,
-            duration_s,
-            out_clip_path.name,
-        )
+        if idx % 20 == 0 or idx == len(stop_codas):
+            logger.info("[%d/%d] Processed %s -> %.3fs (dur: %.3fs)", idx, len(stop_codas), item["id"], end_time_s, duration_s)
 
     report_file.write_text(json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8")
-    logger.info("Saved alignment report to %s", report_file)
+    logger.info("Saved 100-sample alignment report to %s", report_file)
 
 
 if __name__ == "__main__":

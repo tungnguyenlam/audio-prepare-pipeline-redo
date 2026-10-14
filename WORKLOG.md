@@ -472,3 +472,19 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
   2. MMS-FA included large silent collars (ruled out; MMS-FA boundaries matched measured acoustic onsets/offsets within <= 22 ms, e.g. 0.502s start vs 0.502s measured onset, 4.478s end vs 4.456s measured offset on DEV01_R027).
 - Report: `.data/goal/gemini_checks/mms_fa_audit/verdicts/plot/report.md`
 - Next: Proceed with Phase 3 layer-wise representation probing on ViCut-Bench.
+
+## 2026-10-14 - Scale MMS-FA audit to full 100 stop-coda pool with Gemini 3.8 Flash MEDIUM
+
+- Question: Does MMS-FA CTC forced alignment maintain >= 95% word-completeness pass rate across all 100 stop-coda anchors (-p, -t, -c, -ch) without speech truncation when sliced strictly at predicted boundaries?
+- Decision it controls: Statistically verifies the aligner across 100 diverse speakers and stop codas; if pass rate >= 95%, MMS-FA is ratified as the pipeline's benchmark forced aligner for Vietnamese.
+- Data: All 100 frozen stop-coda anchors in `.data/goal/gemini_checks/mms_fa_audit_100/clips/`.
+- Cost: 100 Gemini 3.8 Flash calls (free key, concurrency 1, --continue).
+
+## 2026-10-14 - Stop Gemini audit: quota exhausted (20 calls/key ceiling)
+
+- Action: Terminated running Gemini 3.8 Flash task (task-366) immediately upon user instruction.
+- Cause: Gemini API returned `429 Too Many Requests` (daily/rate quota exhausted on the free API key; aligned with GOAL.md §5 ceiling of <= 20 calls/day).
+- Status of artifacts:
+  - 100 MMS-FA stop-coda cut audio clips preserved in `.data/goal/gemini_checks/mms_fa_audit_100/clips/`.
+  - Initial 5/5 stop-coda verification on MMS-FA boundaries remains 100% pass (0 clipped ends/starts).
+- Next: Avoid further paid/exhausted API calls; proceed with local GPU tasks (Phase 3 representation probing on AMD RX 9060 XT).
