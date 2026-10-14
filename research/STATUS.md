@@ -10,6 +10,7 @@ Rewritten (not appended) at the end of every session; ≤ 60 lines. See `GOAL.md
 
 ## Verified (each with the file that proves it)
 
+- MMS-FA CTC forced alignment verified by Gemini 3.8 Flash MEDIUM: 5/5 stop-coda cuts passed (0 clipped words, 0 distortions, boundaries matched within <= 22 ms). `.data/goal/gemini_checks/mms_fa_audit/verdicts/plot/report.md`
 - Signal baselines scored on full ViCut-Bench pool (4,800 defects + 300 anchors): end-edge RMS AUROC 0.9043, start-edge AUROC 0.9668, music dynamic range AUROC 0.8352; energy variance fails on secondary speech (AUROC 0.5031). `.data/vicut_bench/reports/SIGNAL_BASELINES_REPORT.md`
 - Gemma 4 E2B LoRA V3 all-pass failure audited: 0 of 410 LoRA tensors target audio (`target_modules` only hit `language_model`); empirical sensitivity test confirmed audio-deafness (identical PASS on speech, 80ms defect, digital silence, white noise). `.data/audit_gemma4_e2b/E2B_LORA_V3_AUDIT.md`
 - Local model ROCm footprint verified: Gemma 4 E2B takes 9.51 GB VRAM (peak 9.68 GB) and executes audio forward pass in 6.53 s; 7B models (14 GB weights + 2.5 GB KV/audio overhead) exceed 16 GB VRAM in native bf16 and require CPU offloading. `.data/benchmark_rocm/ROCM_MODEL_BENCHMARK.md`

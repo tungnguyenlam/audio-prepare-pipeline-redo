@@ -447,3 +447,28 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
   2. Monotonic alignment search in VITS might still block VITS (ruled in; Flow Matching avoids MAS entirely and is the recommended G4 recipe).
 - Report: `.data/tts_recipe_benchmark/TTS_RECIPE_ROCM_BENCHMARK.md`
 - Next: Update research status with findings from all 4 completed tasks.
+
+## 2026-10-14 - Pre-registration: Acoustic representation probing across encoder layers (ViCut-Bench)
+
+- Hypothesis: Frozen speech foundation representations (WavLM-base, PhoWhisper-small encoder, Gemma 4 audio encoder) preserve acoustic defect information (secondary speaker, clipped word boundaries, background music) in intermediate/late encoder layers. Linear probes trained on frozen features from the ViCut-Bench train split (210 anchors, 3,360 defects) will detect defects on the held-out test split (90 anchors, 1,440 defects, 19 disjoint speakers) with AUROC significantly exceeding chance, specifically achieving > 0.80 AUROC on secondary speaker where signal baselines failed at 0.5031.
+- Refutation: If linear probes across all layers fail to reach AUROC > 0.60 on secondary speaker on the held-out test split, or do not exceed deterministic signal baselines on clipped edges/music, the hypothesis that defect information survives in frozen encoders is refuted (confirming defects are already lost at the acoustic front-end).
+- Data split: ViCut-Bench train split (210 anchors + 3,360 defects; 43 speakers) for training; test split (90 anchors + 1,440 defects; 19 speakers) held-out for evaluation. Clean twins evaluated for false-reject rates.
+- Metric: Per-layer test AUROC per defect type, clean false-reject rate, detection vs severity curves.
+- Cost: 0 API calls, ~5-10 GPU minutes on local AMD RX 9060 XT.
+- Why most informative: Directly answers whether defect blindness is caused by acoustic encoder loss or language model generation/projection (GRAND_PLAN Phase 3, Milestone G3).
+
+## 2026-10-14 - Audit MMS-FA CTC forced alignment with Gemini 3.8 Flash MEDIUM
+
+- Question: Does Meta MMS-FA CTC forced alignment produce clean, unclipped speech boundaries on Vietnamese stop-coda utterances (words ending in -t, -c, -p), or does it truncate word onsets or codas?
+- Decision it controls: If MMS-FA boundaries pass Gemini 3.8 Flash MEDIUM verification with zero word-completeness defects, MMS-FA is adopted as the pipeline's primary forced aligner; if it clips words, collar padding or an alternative aligner is required.
+- Data: 5 VIVOS stop-coda anchors sliced strictly to MMS-FA predicted utterance onset and offset.
+- Cost: 5 Gemini 3.8 Flash API calls (free key, concurrency 1).
+
+## 2026-10-14 - Audit MMS-FA CTC forced alignment with Gemini 3.8 Flash MEDIUM results
+
+- Result vs prediction: Confirmed hypothesis. Slicing strictly at MMS-FA CTC forced alignment boundaries on 5 VIVOS stop-coda utterances (words ending in -t, -c, -p: mít, cọc, bắt, óc, chuột) yielded 5/5 PASS (100%) under Gemini 3.8 Flash MEDIUM with `prompts/full-tags-prompt.md`. Exactly 0 clipped_word_start, 0 clipped_word_end, and 0 speech distortions detected.
+- Alternative explanations:
+  1. The judge is lenient and never detects clipped ends (ruled out; the same Gemini 3.8 Flash MEDIUM judge detected clipped ends on ViCut-Bench with high sensitivity down to 20-40 ms, and rejected 129 gold benchmark clips).
+  2. MMS-FA included large silent collars (ruled out; MMS-FA boundaries matched measured acoustic onsets/offsets within <= 22 ms, e.g. 0.502s start vs 0.502s measured onset, 4.478s end vs 4.456s measured offset on DEV01_R027).
+- Report: `.data/goal/gemini_checks/mms_fa_audit/verdicts/plot/report.md`
+- Next: Proceed with Phase 3 layer-wise representation probing on ViCut-Bench.
