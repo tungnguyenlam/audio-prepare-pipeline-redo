@@ -711,6 +711,8 @@ replace an existing `review.csv` without `-w`.
 ```bash
 bash scripts/vicut_bench/synthesize_defects.sh   # .data/vicut_bench/defects/vicut_bench_defects.jsonl (all defects)
 bash scripts/vicut_bench/synthesize_defects.sh --max-anchors 15 -w   # fast preview subset
+bash scripts/vicut_bench/score_signal_baselines.sh -od .data/vicut_bench/reports
+bash scripts/vicut_bench/probe_encoder_layers.sh -m wavlm,phowhisper,gemma4_audio -b 16 -od .data/vicut_bench/reports/phase3_probes
 bash scripts/vicut_bench/generate_bench_report.sh   # -> .data/vicut_bench/reports/vicut_bench_dashboard.html
 ```
 
@@ -718,6 +720,18 @@ bash scripts/vicut_bench/generate_bench_report.sh   # -> .data/vicut_bench/repor
 speech onset/offset (`clipped_word_end` at 10/20/40/80 ms, `clipped_word_start` at 10/20/40/80 ms,
 `secondary_speaker` at SIR 24/18/12/6 dB, and `background_music` at SNR 30/24/18/12 dB), writing
 audio and sibling JSON sidecars linked to their exact clean anchor twin.
+
+`score_signal_baselines` measures deterministic physical signal baselines (10/20 ms edge energy
+ratios, boundary jump, dynamic range, minimum 50 ms window RMS, and 250 ms window variance) across
+clean anchors and defect severities.
+
+`probe_encoder_layers` (`.venvs/verify`) extracts per-layer unpadded representations (`mean`, `std`,
+`start_edge`, `end_edge`) from frozen speech and audio-LLM encoders (`microsoft/wavlm-base`,
+`vinai/PhoWhisper-small`, and `google/gemma-4-E2B-it` USM audio tower), caches them under
+`<output-dir>/cache/`, fits speaker-disjoint L2 logistic regression probes on the `train` split,
+and evaluates per-layer test AUROC, pooling ablations, `0 ms` tight-cut clean-twin controls,
+unseen-donor generalization, label-shuffle sanity controls, and zero-shot diagnostic transfer to
+the 288-clip dev benchmark.
 
 `generate_bench_report` builds a standalone dark-themed interactive HTML dashboard at
 `.data/vicut_bench/reports/vicut_bench_dashboard.html` with playable audio cards for edge-screen

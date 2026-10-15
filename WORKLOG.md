@@ -488,3 +488,14 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
   - 100 MMS-FA stop-coda cut audio clips preserved in `.data/goal/gemini_checks/mms_fa_audit_100/clips/`.
   - Initial 5/5 stop-coda verification on MMS-FA boundaries remains 100% pass (0 clipped ends/starts).
 - Next: Avoid further paid/exhausted API calls; proceed with local GPU tasks (Phase 3 representation probing on AMD RX 9060 XT).
+
+## 2026-10-15 - Acoustic representation probing across encoder layers (ViCut-Bench Phase 3)
+
+- Result vs prediction ($n=1{,}620$ test clips across 19 speakers; 95% speaker-cluster bootstrap CIs): Confirmed Hypothesis H3. Frozen encoder probes (`mean_std` pooling) detect `secondary_speaker` with test AUROC **0.9495** [0.9307, 0.9701] on `gemma4_audio` L4 ($\Delta = +0.4447$ [+0.4264, +0.4607] vs `window_rms_var` baseline `0.5055`), **0.8869** [0.8561, 0.9176] on `phowhisper` L4, and **0.8835** [0.8587, 0.9120] on `wavlm` L2. On `background_music`, probes reach **0.9962** (`gemma4_audio` L1) vs `0.8356` signal baseline ($\Delta = +0.1570$).
+- Boundary clean-twin audit (`0 ms` tight-cut twins at `[speech_onset_s, speech_offset_s]`): Naive training on raw VIVOS anchors causes 92.2%–100.0% false rejection on `0 ms` tight cuts, and `combined` pooling exploits an opposite-boundary silence shortcut. Twin-calibrated single-edge pooling (`end_edge` only) eliminates the shortcut and exposes a 40 ms vs 20 ms frame-rate bottleneck on `clipped_word_end`: 20 ms hop encoders (`wavlm` L12: **0.9459** [0.9072, 0.9793], `phowhisper` L12: **0.9077** [0.8781, 0.9379]) beat the 10 ms energy ratio (`0.7834`) by +0.1612 / +0.1220, whereas 40 ms subsampled `gemma4_audio` L2 drops to **0.7080** [0.6797, 0.7415] (10.0% recall at 10 ms).
+- Alternative explanations ruled out:
+  1. *Donor speaker memorization on `secondary_speaker`*: Ruled out; on the $n=96$ test clips where both target and donor speakers are unseen `test` speakers, AUROC remains **0.9446** (`gemma4_audio` L4) and **0.8977** (`wavlm` L2).
+  2. *Trivial duration/loudness/leakage*: Ruled out; test duration/RMS/peak baselines yield 0.5010–0.5136 AUROC on speaker/music, and label-shuffle controls yield 0.3624–0.5512 AUROC.
+- Zero-shot dev transfer (`gold_benchmark_20260908`, $n=288$): Synthetic-trained probe gatekeepers reach **0.8303** (`phowhisper`), **0.8199** (`gemma4_audio`), and **0.8146** (`wavlm`) reject AUROC, lowering $R$ from `0.4479` (`recipe_nolock`) to `0.2886` at 70% yield.
+- Report: `.data/vicut_bench/reports/phase3_probes/PHASE3_PROBE_REPORT.md`
+- Next: Evaluate a composite local gatekeeper (pairing 20 ms boundary features/WavLM L12 with Gemma 4 L4 / PhoWhisper L4 speaker+music probes) on the 288-clip dev set with recording-level bootstrap CIs (Milestone 2026-12-01, G2).
