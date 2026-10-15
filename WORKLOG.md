@@ -499,3 +499,28 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
 - Zero-shot dev transfer (`gold_benchmark_20260908`, $n=288$): Synthetic-trained probe gatekeepers reach **0.8303** (`phowhisper`), **0.8199** (`gemma4_audio`), and **0.8146** (`wavlm`) reject AUROC, lowering $R$ from `0.4479` (`recipe_nolock`) to `0.2886` at 70% yield.
 - Report: `.data/vicut_bench/reports/phase3_probes/PHASE3_PROBE_REPORT.md`
 - Next: Evaluate a composite local gatekeeper (pairing 20 ms boundary features/WavLM L12 with Gemma 4 L4 / PhoWhisper L4 speaker+music probes) on the 288-clip dev set with recording-level bootstrap CIs (Milestone 2026-12-01, G2).
+
+## 2026-10-15 - Pre-registration: Composite probe gate on real dev audio
+
+- Hypothesis: A fixed maximum-risk composite (WavLM selected boundary heads + Gemma selected speaker/music heads) reduces bad accepted / accepted versus every individual encoder at 70% accepted-minute yield; refuted if any paired recording-bootstrap reduction CI includes zero or is negative.
+- Data: existing 288 Gemini-labelled dev clips only; synthetic train heads/layers from the prior inner-speaker selection, no real-dev fitting or G1 evaluation.
+- Compare all three single encoders, composite, PhoWhisper content alternative, boundary/content ablations, signal-only gate and duration control; retain every configuration.
+- Primary metric: clip-count R at 70% accepted-minute yield, full attainable R–minute-yield curves, paired recording bootstrap (1,000 replicates, seeds 42 and 123). Keep tied scores together; report unattainable matches rather than splitting ties.
+- Controls: per-recording results and clean tight-twin rejection at synthetic-train 5% FRR thresholds; known Gemini labels make this diagnostic only.
+- Audit: old Phase 3 yield targets use clip quantiles, not duration-weighted acceptance. Preserve historical report and label new corrected metrics explicitly.
+- Budget: <= 30 CPU minutes from existing feature caches, 0 GPU-hours and 0 API calls. No tests requested or run.
+- Why: cheapest direct check whether complementary synthetic probes transfer together without sacrificing minute yield; speaker drift deferred because no established cached drift scores are available in the current probe contract.
+
+## 2026-10-15 - Composite gate dev evaluation: no demonstrated gain
+
+- Added standalone `evaluate_composite_probe_gate.py`/`.sh`, documented in `docs/commands.md`; reused existing feature matrices, selected layers and production probe-fitting functions, no inference/API calls.
+- Command: `OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 bash scripts/vicut_bench/evaluate_composite_probe_gate.sh`; reran with `--overwrite` after report-format/provenance/diagnostic-output changes (same deterministic fit/evaluation, same results).
+- Refuted the pre-registered gain hypothesis: n=288 clips / 11 recordings; composite R=0.287179 (56/195) at 69.9705% minute yield; PhoWhisper R=0.279188 at 69.6509%.
+- Paired recording-bootstrap PhoWhisper-minus-composite R 95% CI [-0.040261, 0.047362] (seed 42), [-0.040723, 0.045846] (seed 123); 1,000/1,000 valid replicates each. Comparisons against WavLM/Gemma also cross zero.
+- Alternative 1, boundary/content complementarity: removing boundaries leaves the same full-dev operating point; composite tight-twin FRR 35.6% (n=90), content-only 1.1%, thresholds set on synthetic train clean. Calibration/scale mismatch remains plausible, not proven.
+- Alternative 2, duration shortcut: duration control R=0.515152 at 69.9700% yield; paired reduction CI [0.082788, 0.284531], ruling out this particular duration ranking as the source of the composite ranking advantage. Other acoustic shortcuts remain possible.
+- Alternative 3, recording stability: full per-recording metrics saved; baseline reduction CIs cross zero across both bootstrap seeds. Gemini labels cannot establish human-perceived improvement.
+- Corrected accepted-minute yields without rewriting historical Phase 3 results. Binary/all-pass baselines with unmatched yields are unavailable; Gemini 3.8 comparison omitted because it supplied labels. Signal-only bootstrap matches 775/1,000 seed-42 replicates; Flash-Lite only 95/1,000, not a valid 70% comparison.
+- Report, full curves/CIs/input hashes, raw head probabilities and 20 accepted-reject diagnostics: `.data/vicut_bench/reports/composite_probe_gate/COMPOSITE_PROBE_GATE_REPORT.md` and sibling JSON/JSONL files. Cache UID/audio checks pass, but original extraction audio/model hash binding is unavailable.
+- Validation: real dev evaluation and launcher `--help`, Bash syntax and diff checks; no tests written/run because none requested. Frozen hashes pass; G1 never evaluated; 0 GPU-hours / 0 API calls.
+- Next: diagnose boundary transfer/calibration from saved failures before a new pre-registered fusion experiment; human G1 labels and G4 source remain outstanding.

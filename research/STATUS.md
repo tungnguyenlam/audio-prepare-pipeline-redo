@@ -5,10 +5,14 @@ Rewritten (not appended) at the end of every session; ≤ 60 lines. See `GOAL.md
 **Updated:** 2026-10-15
 **Current milestone:** 2026-10-31: freeze the G1 test set, prepare annotation sheets (MET).
 **Next milestone:** 2026-12-01: Candidate method beats best baseline on dev with CI excluding 0 (IN PROGRESS).
-**Next single task:** Build and evaluate the composite local gatekeeper (combining frozen encoder probe heads + speaker-drift/edge signals) on the 288-clip real dev set with recording-level bootstrap CIs (G2).
-**Blocked on the user:** Having the two human annotators label `.data/goal/annotation_sheets/g1_annotation_sheet.html`.
+**Next single task:** Diagnose synthetic-to-real boundary transfer and probability-scale mismatch using the saved 20 accepted-reject diagnostics; pre-register a discriminating check before changing the fusion rule (G2/G3).
+**Blocked on the user:** Two humans must label G1; the existing HTML handoff needs conversion to the blind CSV/mpv protocol in GOAL §6 before listening.
 
 ## Verified (each with the file that proves it)
+
+- Fixed composite dev experiment is negative (288 clips, 11 recordings): at 69.97% accepted-minute yield, R=0.2872 (56/195), versus PhoWhisper R=0.2792 at 69.65%; paired recording-bootstrap baseline-minus-composite CI [-0.0403, 0.0474], 1,000 replicates, seed 42 (seed 123 also crosses zero). No demonstrated gain over any single encoder. `.data/vicut_bench/reports/composite_probe_gate/COMPOSITE_PROBE_GATE_REPORT.md`
+- At synthetic-train-clean 5% FRR thresholds, composite rejects 35.6% of 90 clean tight twins versus content-only 1.1%; boundary calibration remains unresolved. Same report; per-head scores and first 20 accepted Gemini-labelled rejects saved alongside it.
+- Audit: historical Phase 3 “70% yield” used clip quantiles; composite report corrects accepted-minute matching and preserves historical outputs. Cached features have current hashes/UID checks but lack original audio/model hash binding.
 
 - Phase 3 layer-wise encoder probing on ViCut-Bench (5,688 clips across `wavlm`, `phowhisper`, `gemma4_audio`) confirmed Hypothesis H3:
   - Secondary speaker (`mean_std` pooling) reaches test AUROC **0.9495** [0.9307, 0.9701] on `gemma4_audio` L4, **0.8869** on `phowhisper` L4, and **0.8835** on `wavlm` L2, beating signal baseline (`0.5055`) by +0.38 to +0.44 AUROC; generalizes to unseen test-split donor speakers (**0.9446** on `gemma4_audio` L4, $n=96$).
@@ -26,11 +30,11 @@ Rewritten (not appended) at the end of every session; ≤ 60 lines. See `GOAL.md
 ## Unverified (treat as unknown until a file proves it)
 
 - The 1–2 h single-speaker clean TTS audio source for G4 (VIVOS has only ~15 min per speaker).
-- Whether combining `wavlm` L12 boundary probes with `gemma4_audio` L4 / `phowhisper` L4 speaker+music probes beats all single-model baselines on the 288-clip dev set with recording-bootstrapped 95% CI excluding 0.
+- Whether a revised fusion/calibration rule or additional speaker-drift signal improves dev ranking; the fixed max-risk composite did not establish a gain. No frozen deployment threshold or human-test improvement established.
 
 ## Open decisions (need the user)
 
-- Completion of 2-annotator human labelling on `.data/goal/annotation_sheets/g1_annotation_sheet.html`.
+- Completion of 2-annotator G1 labelling after a compliant blind CSV/mpv handoff is prepared.
 - The 1–2 h single-speaker TTS source for G4.
 - Keep or delete `scripts/vicut_bench/report_template.html` / `generate_bench_report` (HTML listening page, conflicts with GOAL §6).
 
