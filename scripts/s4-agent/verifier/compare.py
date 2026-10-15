@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from _common.files import ROOT, persist_path, progress, read_json, resolve_stored_path, write_json
 from _verdicts import FAILURE_CODES, _known_prompts, _validate_verdict
 
-BACKEND_SUFFIX = re.compile(r"_(gemini|hf|vllm|unsloth|endpoint|minicpm|kimi|moss|vibevoice)$")
+BACKEND_SUFFIX = re.compile(r"_(gemini|hf|vllm|unsloth|endpoint|minicpm|kimi|moss|vibevoice|subagent)$")
 SKIP_DIRS = {"comparisons", "work", "plot", "plots", "experiments", "__pycache__"}
 PAIR_FIELDS = (
     "candidate", "family", "key", "status", "ref_decision", "cand_decision",

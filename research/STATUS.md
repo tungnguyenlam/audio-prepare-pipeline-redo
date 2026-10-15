@@ -2,7 +2,7 @@
 
 Rewritten (not appended) at the end of every session; ≤ 60 lines. See `GOAL.md` §7.
 
-**Updated:** 2026-10-15
+**Updated:** 2026-10-16
 **Current milestone:** 2026-10-31: freeze the G1 test set, prepare annotation sheets (MET).
 **Next milestone:** 2026-12-01: Candidate method beats best baseline on dev with CI excluding 0 (IN PROGRESS).
 **Next single task:** Diagnose synthetic-to-real boundary transfer and probability-scale mismatch using the saved 20 accepted-reject diagnostics; pre-register a discriminating check before changing the fusion rule (G2/G3).
@@ -10,6 +10,7 @@ Rewritten (not appended) at the end of every session; ≤ 60 lines. See `GOAL.md
 
 ## Verified (each with the file that proves it)
 
+- Gemini Flash subagent labelling (data labels only) failed its pre-registered check on 200 items: clean pass 12/12, strong-defect reject 17/27 (end-clip 80 ms only 2/8), and digital silence passed with a hallucinated transcript. It hears speech content (control transcripts median WER 0.0, n=22). Labels are not used for training. `.data/goal/subagent_labels/real_nontest_20261016/SUBAGENT_LABEL_REPORT.md`
 - Antigravity agent direct native audio perception via `view_file` verified (attaches raw `audio/wav` binary media directly into multimodal model context, zero ASR/transcription proxy). Verified on `g1_001.wav`.
 - Fixed composite dev experiment is negative (288 clips, 11 recordings): at 69.97% accepted-minute yield, R=0.2872 (56/195), versus PhoWhisper R=0.2792 at 69.65%; paired recording-bootstrap baseline-minus-composite CI [-0.0403, 0.0474], 1,000 replicates, seed 42 (seed 123 also crosses zero). No demonstrated gain over any single encoder. `.data/vicut_bench/reports/composite_probe_gate/COMPOSITE_PROBE_GATE_REPORT.md`
 - At synthetic-train-clean 5% FRR thresholds, composite rejects 35.6% of 90 clean tight twins versus content-only 1.1%; boundary calibration remains unresolved. Same report; per-head scores and first 20 accepted Gemini-labelled rejects saved alongside it.
@@ -34,6 +35,7 @@ Rewritten (not appended) at the end of every session; ≤ 60 lines. See `GOAL.md
 - Whether a revised fusion/calibration rule or additional speaker-drift signal improves dev ranking; the fixed max-risk composite did not establish a gain. No frozen deployment threshold or human-test improvement established.
 
 ## Open decisions (need the user)
+- Later: Vietnamese–English code-switching TTS data from the IELTS playlists in `scripts/s1-download/youtube_playlists.txt`, labelled with the code-switching prompt (needs a silence pre-gate; transcripts only, no boundary labels).
 
 - Completion of 2-annotator G1 labelling after a compliant blind CSV/mpv handoff is prepared.
 - The 1–2 h single-speaker TTS source for G4.

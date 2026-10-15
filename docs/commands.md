@@ -611,6 +611,18 @@ bash scripts/s4-agent/verifier/plot_verifier_analysis.sh --input-dir .data/s4-ag
 bash scripts/s4-agent/verifier/compare.sh  --reference-dir .data/s4-agent/verifier/gemini/gemini-3-8-flash/medium \
                                         --candidates-dir .data/s4-agent/verifier/gemini/gemini-3-8-flash/low
 bash scripts/s4-agent/verifier/evaluate_verifier.sh --predictions-dir .data/verdicts/vllm --reference-dir .data/verdicts/gemini --output-file .data/eval.json
+
+# Agent-subagent labelling (data labels only; never G1 ground truth or test evaluation)
+# 1) blind batches: targets + hidden ViCut-Bench controls, opaque IDs, key outside the labelling dir
+bash scripts/s4-agent/verifier/prepare_subagent_label_batches.sh -id <clips-dir> [-id <clips-dir> ...] \
+  -od .data/goal/subagent_labels/<run> --key-file .data/goal/subagent_label_keys/<run>/key.jsonl
+# 2) fresh agent subagents (one per batches/batch_NNN.txt, ≤ 6 clips) listen via view_file
+#    and write raw responses/<id>.txt using prompts/full-tags-prompt.md
+# 3) parse/validate, write <family>/<clip>_subagent.json artifacts (compare.sh-compatible),
+#    labels.jsonl and subagent_label_report.json with the pre-registered control checks
+bash scripts/s4-agent/verifier/collect_subagent_labels.sh -id .data/goal/subagent_labels/<run> \
+  --key-file .data/goal/subagent_label_keys/<run>/key.jsonl -od .data/goal/subagent_labels/<run>/collected \
+  --subagents-file .data/goal/subagent_labels/<run>/subagents.json
 ```
 
 ### Mix and evaluate

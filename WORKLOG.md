@@ -531,3 +531,28 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
 - Evidence & trace: Checked `transcript_full.jsonl` step 66 for `g1_001.wav`. The tool copies the binary audio file to `.tempmediaStorage` and transmits a native `audio/wav` media attachment directly into the multimodal model context.
 - Mechanism: Zero ASR/transcription proxy in the pipeline; the model's native audio encoder directly processes acoustic waveforms, hearing speech, prosody, room acoustics, and boundaries.
 - Contract boundary: Documented in `GEMINI.md`, `research/STATUS.md`, and `docs/gemini_quota.md`. Agent direct audio inspection is available for pipeline debugging, diagnostic checks, and file verification, but does not replace blind human ground truth on frozen benchmarks (per GOAL.md §1 & §2).
+
+## 2026-10-16 - Pre-registration: Gemini Flash subagent labelling of real non-test clips
+
+- Decision (user): Gemini 3.8 Flash subagents that hear audio through `view_file` are used **only to label data**, never as the method, as G1 ground truth, or for test evaluation (GOAL §2.2). Each subagent is fresh and labels ≤ 6 clips, so a filling context cannot degrade quality.
+- Data: 158 real clips from 2 recordings outside both G1 test and dev-288: `Ifao8aYrwd8` part 1 (HaveASip studio, Sortformer, 96) and `vn3KdmD0eCA` (TruyenChem music vlog, DiariZen, 62). These share channels/hosts with G1 test recordings. The user accepts this; the speaker-overlap effect is measured later on existing benchmarks and/or a non-overlap test set.
+- Prompt: production `prompts/full-tags-prompt.md` (gate plus code-switching transcript); raw responses retained; validated with `_verdicts._validate_verdict`.
+- Hidden controls (seed 42, distinct ViCut-Bench train anchors): 12 clean anchors, 8 `clipped_word_end` 80 ms, 6 `clipped_word_start` 80 ms, 7 `secondary_speaker` SIR 6 dB, 7 `background_music` SNR 12 dB, 2 digital silence. All 200 items are converted to 16 kHz mono PCM16 with opaque IDs and shuffled; the key is kept outside the labelling directory.
+- Hypothesis: the labels are usable as dev/teacher labels. Refuted (labels not used for training) if: valid-schema rate < 95%, clean-anchor pass < 80%, strong-defect reject < 70%, or any silence control passes with a transcript.
+- Diagnostic only: agreement with the existing API Gemini 3.8 Flash MEDIUM verdicts on the 62 `vn3KdmD0eCA` clips (`.data/evaluate/hana_tts/gemini_baseline`; an older prompt, so this is confounded by prompt).
+- Budget: about 34 subagent sessions, 0 API-key calls, 0 GPU-hours. No tests requested or run.
+- Why: real-audio labels are the cheapest input for the open synthetic-to-real transfer gap (Next milestone 2026-12-01, G2/G3).
+- Noted for later (user): IELTS YouTube playlists in `scripts/s1-download/youtube_playlists.txt` (YouPass Writing livestreams n=43, IELTS cùng Daniel Writing n=58, Musketeer Zone S3/S4, Cambridge Vocabulary sets, etc.). With the calibrated code-switching prompt, these could be labelled into a Vietnamese–English code-switching TTS training set. Not started.
+
+## 2026-10-16 - Subagent labelling of real non-test clips: refuted (silence hallucination, end-clip blind spot)
+
+- Added `prepare_subagent_label_batches.py`/`.sh` and `collect_subagent_labels.py`/`.sh` (production parser and `_validate_verdict`; writes `compare.sh`-compatible `_subagent.json` artifacts). `compare.py` now strips the `_subagent` suffix. Documented in `docs/commands.md`.
+- Ran 200 items (158 targets + 42 hidden controls) through 34 fresh Gemini Flash subagents (≤ 6 clips each) plus 5 retries. 0 API-key calls, 0 GPU-hours.
+- Pre-registered checks: valid 0.985 ✅, clean pass 12/12 ✅, strong-defect reject 17/27 = 0.630 ❌, silence passes 1 ❌. **Refuted; labels are not used for training.**
+- Silence: c151 (3 s digital zeros, byte-identical media confirmed attached) got the fluent transcript "…dự án của NASA" and a pass, after two listens. c082 (silence) could not be loaded.
+- Alt 1, "it cannot hear": ruled out. Control transcripts vs VIVOS text give median WER 0.0 (n=22), and music/secondary-speaker controls were rejected 6/7 each.
+- Alt 2, end-clipping blind spot: 6/8 80 ms end-cut controls passed, with the cut word transcribed in full. This contradicts the claim that word boundaries are heard accurately. The perceptual audibility of 80 ms VIVOS cuts is unmeasured, so humans might also miss some.
+- Ops: safety filter blocked a benign VIVOS clip deterministically (c028, 2×); 2 sessions went idle mid-batch; 1 stalled retry was killed. Unlabelled: c028 (control), c030 (target).
+- API-agreement diagnostic: only 13 clips matched across different diarization runs (69.2% agreement); not informative.
+- Report: `.data/goal/subagent_labels/real_nontest_20261016/SUBAGENT_LABEL_REPORT.md`; labels sha256 `a88e7810…5b6a`. No tests requested or run; frozen hashes pass; G1 untouched.
+- Next: subagent labels are usable for content checks only. Any reuse needs an energy/silence pre-gate and no boundary labels. Boundary labels still need signal/probe methods or humans.
