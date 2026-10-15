@@ -65,3 +65,13 @@ Measured with standard synchronous calls:
 1. **Concurrency:** Always maintain `-c 1` for free-tier Gemini runs.
 2. **Throughput Ceiling:** At ~34 seconds per clip with medium reasoning, sequential processing yields $\approx 100$ clips per hour.
 3. **Daily Budget:** In accordance with `GOAL.md` §5, keep ad-hoc exploratory audio calls to $\le 20$ calls/day, and trickle larger evaluation batches over days using `--continue`.
+
+---
+
+## 6. Antigravity Agent Direct Native Audio Ingestion
+
+The Antigravity agent environment supports direct audio file ingestion via `view_file`:
+- **Transport Mechanism:** Audio files (`.wav`) are copied into local session storage and attached as binary `media` objects (`mime_type: audio/wav`) directly into the agent's multimodal context.
+- **Zero ASR / Transcription Proxy:** Ingested audio is processed by the model's native multimodal audio encoder rather than an external ASR proxy. The model directly perceives acoustic features, prosody, room acoustics, and boundary events.
+- **Contract Boundary:** While direct agent audio listening is available for pipeline debugging, diagnostic inspections, and spot checks, it cannot substitute for human annotators on frozen test sets (per `GOAL.md` §1 & §2).
+

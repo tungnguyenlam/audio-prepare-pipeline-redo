@@ -4,6 +4,7 @@
 
 - Before any research or experiment task, read `GOAL.md`: acceptance criteria,
   what does not count, the critical-work protocol, and Gemini audio-check limits.
+- Agent direct audio inspection: Antigravity can directly read and hear audio files using `view_file` (attaches raw `audio/wav` into native multimodal context; zero ASR proxy). Use for development/diagnostics, but never to replace blind human ground truth (GOAL.md §1–2).
 - Do not write or run tests unless the user explicitly asks.
 - Append decisions and results to the bottom of `WORKLOG.md` with `cat >> WORKLOG.md`
   (oldest entry first). Start each entry with `## YYYY-MM-DD - title`, keep it under

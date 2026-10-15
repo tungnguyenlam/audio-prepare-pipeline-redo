@@ -10,6 +10,7 @@ Rewritten (not appended) at the end of every session; ≤ 60 lines. See `GOAL.md
 
 ## Verified (each with the file that proves it)
 
+- Antigravity agent direct native audio perception via `view_file` verified (attaches raw `audio/wav` binary media directly into multimodal model context, zero ASR/transcription proxy). Verified on `g1_001.wav`.
 - Fixed composite dev experiment is negative (288 clips, 11 recordings): at 69.97% accepted-minute yield, R=0.2872 (56/195), versus PhoWhisper R=0.2792 at 69.65%; paired recording-bootstrap baseline-minus-composite CI [-0.0403, 0.0474], 1,000 replicates, seed 42 (seed 123 also crosses zero). No demonstrated gain over any single encoder. `.data/vicut_bench/reports/composite_probe_gate/COMPOSITE_PROBE_GATE_REPORT.md`
 - At synthetic-train-clean 5% FRR thresholds, composite rejects 35.6% of 90 clean tight twins versus content-only 1.1%; boundary calibration remains unresolved. Same report; per-head scores and first 20 accepted Gemini-labelled rejects saved alongside it.
 - Audit: historical Phase 3 “70% yield” used clip quantiles; composite report corrects accepted-minute matching and preserves historical outputs. Cached features have current hashes/UID checks but lack original audio/model hash binding.

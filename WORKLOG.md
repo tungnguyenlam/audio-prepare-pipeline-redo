@@ -524,3 +524,10 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
 - Report, full curves/CIs/input hashes, raw head probabilities and 20 accepted-reject diagnostics: `.data/vicut_bench/reports/composite_probe_gate/COMPOSITE_PROBE_GATE_REPORT.md` and sibling JSON/JSONL files. Cache UID/audio checks pass, but original extraction audio/model hash binding is unavailable.
 - Validation: real dev evaluation and launcher `--help`, Bash syntax and diff checks; no tests written/run because none requested. Frozen hashes pass; G1 never evaluated; 0 GPU-hours / 0 API calls.
 - Next: diagnose boundary transfer/calibration from saved failures before a new pre-registered fusion experiment; human G1 labels and G4 source remain outstanding.
+
+## 2026-10-16 - Verify agent direct native audio perception via view_file
+
+- Action: Verified that Antigravity agent can directly ingest and perceive local `.wav` files via the `view_file` tool call.
+- Evidence & trace: Checked `transcript_full.jsonl` step 66 for `g1_001.wav`. The tool copies the binary audio file to `.tempmediaStorage` and transmits a native `audio/wav` media attachment directly into the multimodal model context.
+- Mechanism: Zero ASR/transcription proxy in the pipeline; the model's native audio encoder directly processes acoustic waveforms, hearing speech, prosody, room acoustics, and boundaries.
+- Contract boundary: Documented in `GEMINI.md`, `research/STATUS.md`, and `docs/gemini_quota.md`. Agent direct audio inspection is available for pipeline debugging, diagnostic checks, and file verification, but does not replace blind human ground truth on frozen benchmarks (per GOAL.md §1 & §2).
