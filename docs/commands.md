@@ -748,26 +748,32 @@ the 288-clip dev benchmark.
 `evaluate_composite_probe_gate` (`.venvs/verify`) reuses the Phase 3 feature caches and
 probe fitting path; it performs no encoder inference or API calls. It only accepts the
 established Gemini-labelled dev manifest, verifies its audio hashes and cache UID order,
-refits heads on synthetic train data with the prior inner-validation-selected layers,
-and evaluates fixed max-risk composites, individual encoders, ablations, signals and duration.
+refits heads on synthetic train data with the prior inner-validation-selected layers
+(plus 5-fold speaker-grouped out-of-fold predictions on synthetic clean anchors and tight
+twins), and evaluates raw max-risk composites, empirical-quantile and OOF-tail-gated
+fusions, individual encoders, ablations, continuous and reference-percentile signals,
+and duration controls.
 
 ```bash
 OPENBLAS_NUM_THREADS=2 OMP_NUM_THREADS=2 bash scripts/vicut_bench/evaluate_composite_probe_gate.sh \
   --probe-dir .data/vicut_bench/reports/phase3_probes \
-  -od .data/vicut_bench/reports/composite_probe_gate
+  -od .data/vicut_bench/reports/composite_probe_calibration_20261016
 ```
 
 Outputs are `COMPOSITE_PROBE_GATE_REPORT.md`, `composite_probe_gate_report.json`
-(full attainable R–accepted-minute-yield curves, recording-bootstrap CIs for seeds 42/123,
-input hashes, per-recording results and tight-twin controls), `dev_probe_scores.jsonl`
-(per-head probabilities and gate scores), and `accepted_defect_diagnostics.json`
-(up to 20 accepted Gemini-labelled rejects for inspection). Use `--overwrite` to replace
-an existing report directory. Binary baselines retain tied decisions; unmatched yields
-are unavailable. Gemini 3.8 is omitted as a baseline because it supplied these dev labels.
-These are diagnostic results, not G2 evidence. Historical `probe_encoder_layers` yield
-figures use clip quantiles; this command reports corrected accepted-minute yields.
-Cached features lack original audio/model hash binding; current cache hashes identify
-exact inputs but cannot retroactively establish extraction provenance.
+(full attainable R–accepted-minute-yield curves, recording-bootstrap CIs for seeds 42/123
+at 70% yield and at `flash_lite`'s native ~83.7% accepted-minute yield, input hashes,
+per-recording results, in-sample vs speaker-OOF tight-twin controls, and a probability-scale
+plus marginal-precision ceiling audit), `dev_probe_scores.jsonl` (per-head probabilities
+and gate scores), and `accepted_defect_diagnostics.json` (up to 20 accepted Gemini-labelled
+rejects for inspection). Use `--overwrite` to replace an existing report directory. Binary
+baselines retain tied decisions; unmatched yields at 70% are unavailable, while `flash_lite`
+is additionally compared at its native accepted-minute yield. Gemini 3.8 is omitted as a
+baseline because it supplied these dev labels. These are diagnostic results, not G2
+evidence. Historical `probe_encoder_layers` yield figures use clip quantiles; this command
+reports corrected accepted-minute yields. Cached features lack original audio/model hash
+binding; current cache hashes identify exact inputs but cannot retroactively establish
+extraction provenance.
 
 `generate_bench_report` builds a standalone dark-themed interactive HTML dashboard at
 `.data/vicut_bench/reports/vicut_bench_dashboard.html` with playable audio cards for edge-screen
