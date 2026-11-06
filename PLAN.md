@@ -53,7 +53,7 @@ flowchart TD
    - **Labeling Rubric Syntax (`docs/experiments.md:25-28`):**
      * `your_label` requires either `pass` (all 3 dimensions clean), `unsure`, or the exact closed-vocabulary semicolon tag string covering all three dimensions:
        `spk=<pure|secondary_speaker|overlapping_speech>;word=<complete|clipped_word_start|clipped_word_end>;aq=<studio_clean|music_bleed|noisy_reverberant|distorted>`
-     * No dimensions may be omitted. (Cohen's $\kappa$ drops `unsure` rows; secondary sensitivity analysis treats `unsure` as a separate category).
+     * No dimensions may be omitted. (Cohen's $\kappa$ primary analysis drops `unsure` rows; sensitivity analysis on $\kappa$ treats `unsure` as a separate category).
    - Place mapping `key.jsonl` outside the review directories (`.data/goal/g1_blind_audio/key.jsonl`).
 4. **Formal Hash Freeze:**
    - Compute SHA-256 for all clips and `test_manifest.jsonl`.
@@ -174,7 +174,7 @@ flowchart TD
      5. Mixed defects @ 30% (seed 1 & seed 2)
    - Verify whether downstream CER and truncated ending rates are statistically sensitive to injected defect levels via paired bootstrap across 200 held-out sentences.
 2. **Phase 4.2: Curator Comparison Experiment (Branch A only):**
-   - Pre-declared best baseline rule: the baseline with the **smallest candidate-minus-baseline $R$ reduction at that baseline's own matched yield** from Phase 2 (i.e. the hardest baseline to beat); ties broken by higher accepted-minute yield.
+   - Pre-declared best baseline rule: the baseline with the **smallest baseline $R$ minus candidate $R$ gain (i.e. hardest baseline to beat) at that baseline's own matched yield** from Phase 2 (i.e. the hardest baseline to beat); ties broken by higher accepted-minute yield.
    - Curate equal hours using: Candidate Gate vs Best Baseline Gate (same speaker pool, text, and training steps).
    - Train Flow Matching TTS ($\ge 2$ seeds per curator) on equal-hours subsets cut via fixed random seed. (Skipped under Branch B).
 3. **Independent Evaluation (GOAL G4 Metrics):**
