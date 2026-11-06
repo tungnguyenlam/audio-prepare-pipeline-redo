@@ -5,7 +5,7 @@ Rewritten (not appended) at the end of every session; ≤ 60 lines. See `GOAL.md
 **Updated:** 2026-11-06
 **Current milestone:** 2026-10-31: freeze G1 test set, prepare annotation sheets (MISSED: unfrozen pending regional expansion).
 **Next milestone:** 2026-12-01: Candidate method beats best baseline on dev with CI excluding 0 (IN PROGRESS; fallback to benchmark/audit paper if missed).
-**Next single task:** Source fresh G1 test pool (~360 clips across >= 12 untouched North/Central/South recordings), hash & freeze in research/frozen_artifacts.sha256, and generate GOAL §6 blind batches.
+**Next single task:** Source fresh G1 test pool (~360 clips across >= 12 untouched North/Central/South recordings per `PLAN.md` Phase 0), hash & freeze in research/frozen_artifacts.sha256, and generate GOAL §6 blind batches.
 **Blocked on the user:** Approve new G1 recording selection and frozen-hash commit.
 
 ## Verified (each with the file that proves it)
