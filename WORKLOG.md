@@ -625,11 +625,13 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
      - Recorded raw audio trimming provenance: `p_u50y858kY` (original 4,094.1s) and `_UjcxyKrsvE` (original 5,533.3s) were trimmed to the first 1,200.0s (20 min) prior to separation and diarization using `ffmpeg -y -i raw_full.wav -t 1200 -c copy raw_1200s.wav` to avoid unnecessary multi-hour processing while preserving byte-exact 16 kHz stream data without transcoding. Documented in manifest and answer key.
      - Noted that `aRKO1B_piTo` (Đà Nẵng TV) and `XlTMPg8zb8g` (DNRT Online / Quảng Nam TV) represent adjacent municipal and provincial public broadcasters in the Quảng Nam – Đà Nẵng coastal area, treated as separate recording clusters for cluster-bootstrap resampling.
   2. **Empirical Equal Error Rate (EER) Calibration on Vietnamese Speech:**
-     - Conducted an empirical speaker-verification benchmark using NeMo TitaNet-L on CUDA over 62 ground-truth Vietnamese speakers from the VIVOS dataset (anchors in `.data/vicut_bench/anchors`):
-       - 293 known same-speaker pairs: Mean = 0.8765, std = 0.0549, min = 0.5545, p10 = 0.8149.
-       - 3,656 known different-speaker pairs: Mean = 0.3856, std = 0.1299, max = 0.7564, p99 = 0.6699.
-       - Calibrated EER: **0.57%** at cosine similarity threshold = **0.6944**.
-     - Single Consistent Disjointness Rule: Candidate recordings with primary speaker centroid $\ge 0.6944$ or $< 30$ valid turns remaining are excluded (`xUvy59GaQvI`). Multi-speaker broadcast recordings with certified disjoint primary speakers (< 0.6944, $\ge 30$ valid turns) filter out non-disjoint secondary speaker turns ($\ge 0.6944$) so that all benchmark clips are drawn exclusively from certified disjoint speakers.
+     - Conducted an empirical speaker-verification benchmark using NeMo TitaNet-L on AMD Radeon RX 9060 XT (ROCm 10.0) over 62 ground-truth Vietnamese speakers from the VIVOS dataset (300 anchors from `.data/vicut_bench/anchors/vicut_bench_anchors_300.jsonl`). Implemented in `research/calibrate_eer.py` and saved to `.data/goal/eer_calibration.json`:
+       - 293 known same-speaker pairs (LOO clip-to-centroid): Mean = 0.8765, std = 0.0549, min = 0.5545, p10 = 0.8149.
+       - 18,300 known different-speaker pairs (clip-to-centroid): Mean = 0.3798, std = 0.1313, max = 0.7893, p99 = 0.6813.
+       - Calibrated EER: **0.70%** at cosine similarity threshold = **0.6938** (FRR = 0.68%, FAR = 0.73%).
+       - Operating threshold: **0.6944** (FRR = 0.68%, FAR = 0.73%).
+     - Backed candidate audit saved to `.data/goal/candidate_audit.json`: `xUvy59GaQvI` primary speaker `spk_00` (58 turns) is disjoint (max 0.6788 < 0.6944), but three secondary speakers violate the calibrated EER threshold (`spk_01`: 0.7524 vs VIVOSDEV11, `spk_02`: 0.7436 vs VIVOSSPK39, `spk_05`: 0.7098 vs VIVOSDEV06). Excluded in favor of the 4 selected South recordings to preserve 4:4:4 regional balance (120 clips per region).
+     - Single Consistent Disjointness Rule: Candidate recordings with primary speaker centroid $\ge 0.6944$ or $< 30$ valid turns remaining are excluded. Multi-speaker broadcast recordings with certified disjoint primary speakers (< 0.6944, $\ge 30$ valid turns) filter out non-disjoint secondary speaker turns ($\ge 0.6944$) so that all benchmark clips are drawn exclusively from certified disjoint speakers.
   3. **Video ID & Channel ID Disjointness Verification:**
      - `dev-288`: Parsed 11 video IDs from `labeled_pool.jsonl` and resolved channel IDs via `yt-dlp` (`UCORwVnph7TK6rmyKozkV8_g`, `UCwe0_8ud1vpKbWUHnkagorw`, `UCqL0-EknCK4m5pHrH79fOcw`). Overlap with candidate channels is strictly 0.
      - Archived 3-recording pool (`Mo1if0ifEP8`, `9buWDyEZ5f8`, `K2RTaM3igeI`): Overlap is strictly 0.

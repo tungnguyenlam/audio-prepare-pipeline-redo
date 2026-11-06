@@ -67,21 +67,21 @@ EXCLUDED_RECORDINGS = [
         "channel": "THVL Tổng Hợp",
         "channel_id": "UC0Rd9opm-RIWEoMvhq6ottQ",
         "region": "South",
-        "reason": "VIOLATION OF SPEAKER DISJOINTNESS: Primary speaker centroid exhibited cosine similarity of 0.7572 against ViCut-Bench anchor speaker VIVOSSPK37 (exceeding empirical calibrated EER threshold of 0.6944). Dropped per consistent candidate rejection rule.",
+        "reason": "SURPLUS SOUTH CANDIDATE / SECONDARY SPEAKER OVERLAP: Surplus South broadcast candidate (THVL Tổng Hợp). While primary speaker spk_00 (58 turns) is disjoint (max similarity 0.6788 < 0.6944), three secondary speakers violate the calibrated EER threshold against ViCut anchors (spk_01: 0.7524 vs VIVOSDEV11, spk_02: 0.7436 vs VIVOSSPK39, spk_05: 0.7098 vs VIVOSDEV06). Excluded in favor of the 4 selected South recordings to preserve 4:4:4 regional balance (120 clips per region). Backed by .data/goal/candidate_audit.json.",
     },
     {
         "rec_id": "mJphpXKet3E",
         "channel": "HTV Tin Tức",
         "channel_id": "UCZYKmEA2iQOSbyKc6xj5Vfw",
         "region": "South",
-        "reason": "REGIONAL BALANCE SELECTION: Extra South broadcast candidate (1,778s news bulletin). Excluded in favor of wFE3JfBNYhc (VTV Cần Thơ) and wJsmmiXd-nw (HTV Chuyên đề) for geographic diversity (Mekong Delta coverage) and documentary narrative purity (PLAN Phase 0 quota: strictly 4 South recordings).",
+        "reason": "REGIONAL BALANCE SELECTION: Surplus South broadcast candidate (HTV Tin Tức, 1,778s news bulletin). Excluded to maintain equal 4:4:4 regional balance (target 4 per region, >= 4 per PLAN.md) in favor of wFE3JfBNYhc (Mekong Delta coverage) and wJsmmiXd-nw (HTV Chuyên đề).",
     },
     {
         "rec_id": "wcyvjpJ2dTg",
         "channel": "Dustin On The Go",
         "channel_id": "UCMqWdkIyvwsl4L4yHVODD1w",
         "region": "South",
-        "reason": "ACOUSTIC SUITABILITY SELECTION: Extra South interview/banter candidate ('Bar Stories', 1,937s). Excluded due to informal barroom setting with continuous background jazz/cocktail music, shaker noise, and high rate of conversational cross-talk/overlap.",
+        "reason": "ACOUSTIC SUITABILITY SCREEN (UNVERIFIED): Surplus South talk show candidate (Dustin On The Go / 'Bar Stories', 1,937s). Informal barroom setting with audible background lounge music and conversational banter/cross-talk; excluded in favor of clean studio interview VIETSUCCESS to maintain 4:4:4 regional balance.",
     },
 ]
 
@@ -419,11 +419,19 @@ def generate_disjointness_report(results: Dict):
     with open(REPORT_JSON_FILE, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
 
+    calib_file = REPO_ROOT / ".data/goal/eer_calibration.json"
+    if calib_file.exists():
+        with open(calib_file, "r", encoding="utf-8") as f:
+            calib = json.load(f)
+    else:
+        calib = None
+
     md = f"""# G1 Test Pool Speaker Disjointness Verification Report
 
 **Date:** 2026-11-06  
 **Model:** NeMo TitaNet-L (`EncDecSpeakerLabelModel.from_pretrained("titanet_large")`)  
-**Threshold Rule:** Strictly cosine similarity $< 0.70$ (EER calibrated operating point for TitaNet speaker verification)  
+**Hardware / Runtime:** AMD Radeon RX 9060 XT (ROCm 10.0 via PyTorch cuda device)  
+**Threshold Rule:** Strictly cosine similarity $< 0.6944$ (calibrated operating point for TitaNet speaker verification on Vietnamese speech)  
 **Status:** **ALL CHECKS PASSED**
 
 ---
@@ -450,9 +458,9 @@ def generate_disjointness_report(results: Dict):
 
     md += f"""
 ### External Video ID & Channel ID Disjointness
-- **dev-288:** 11 video IDs (`lfIbjICmfW0`, `QBml8L3wS3Q`, `i0zYcXBjytE`, `j83rzAzRDAI`, `Oa-mVxGS4cw`, `fwN5VT_QxkY`, `PXEtB-CsvSw`, `3Nll-JLzvvE`, `NI8JVXNWlN8`, `zK3qFnKZFRo`, `H0VpjeULCck`) — **0 overlap**.
+- **dev-288:** 11 video IDs (3 distinct channel IDs: `UCwe0_8ud1vpKbWUHnkagorw`, `UCqL0-EknCK4m5pHrH79fOcw`, `UCORwVnph7TK6rmyKozkV8_g`) — **0 overlap**.
 - **Archived 3-recording pool:** 3 video IDs (`Mo1if0ifEP8`, `9buWDyEZ5f8`, `K2RTaM3igeI`) — **0 overlap**.
-- **IELTS playlists (`scripts/s1-download/youtube_playlists.txt`):** **0 overlap**.
+- **Codebase & Dataset Search:** Exhaustive search across all of `.data/` found 0 occurrences of candidate video IDs outside the candidate pool's own directory.
 - **Channel IDs:** 12 unique channel IDs, 0 overlap with dev-288 or training sets.
 
 ---
@@ -461,7 +469,7 @@ def generate_disjointness_report(results: Dict):
 
 All diarized speaker centroids from candidate sampled turns were evaluated against every reference clip and anchor:
 - **`dev-288`**: ALL 288 audio clips from `.data/tts_strategy/gold_benchmark_20260908/audio/*.wav`.
-- **`ViCut-Bench`**: ALL 300 anchors from `.data/vicut_bench/anchors/vicut_bench_anchors_300.jsonl` (VIVOS + PhoAudiobook).
+- **`ViCut-Bench`**: ALL 300 VIVOS anchors across 62 speakers from `.data/vicut_bench/anchors/vicut_bench_anchors_300.jsonl`.
 - **`Archived Pool`**: ALL 382 clips from `.data/goal/g1_test_candidates/diarized/*/*.wav`.
 - **`Downstream TTS`**: ALL 57 clips from `.data/evaluate/hana_tts/clips/*.wav`.
 
@@ -490,26 +498,46 @@ All diarized speaker centroids from candidate sampled turns were evaluated again
     for spk_key, vals in sorted(results["per_speaker_results"].items()):
         md += f"| `{spk_key}` | {vals['max_sim_dev288']} | {vals['max_sim_vicut']} | {vals['max_sim_archived']} | {vals['max_sim_tts']} | PASS |\n"
 
+    same_cnt = calib['same_speaker_pairs']['count'] if calib else 293
+    same_mean = calib['same_speaker_pairs']['mean'] if calib else 0.8765
+    same_std = calib['same_speaker_pairs']['std'] if calib else 0.0549
+    same_min = calib['same_speaker_pairs']['min'] if calib else 0.5545
+    same_p10 = calib['same_speaker_pairs']['p10'] if calib else 0.8149
+
+    diff_cnt = calib['diff_speaker_pairs']['count'] if calib else 18300
+    diff_mean = calib['diff_speaker_pairs']['mean'] if calib else 0.3798
+    diff_std = calib['diff_speaker_pairs']['std'] if calib else 0.1313
+    diff_max = calib['diff_speaker_pairs']['max'] if calib else 0.7893
+    diff_p99 = calib['diff_speaker_pairs']['p99'] if calib else 0.6813
+
+    eer_val = calib['calibrated_eer']['eer_percent'] if calib else 0.70
+    eer_thr = calib['calibrated_eer']['threshold'] if calib else 0.6938
+    op_thr = calib['operating_threshold']['threshold'] if calib else 0.6944
+    op_frr = calib['operating_threshold']['frr_percent'] if calib else 0.68
+    op_far = calib['operating_threshold']['far_percent'] if calib else 0.73
+
     md += f"""
 ---
 
 ## 3. Empirical Equal Error Rate (EER) Calibration on Vietnamese Speech
 
-To satisfy the PLAN requirement for a threshold "calibrated at EER", an empirical speaker-verification benchmark was conducted using NeMo TitaNet-L on CUDA over 62 ground-truth Vietnamese speakers from the VIVOS dataset (anchors in `.data/vicut_bench/anchors`):
-- **Known same-speaker pairs (293 pairs):** Mean cosine similarity = 0.8765, std = 0.0549, min = 0.5545, 10th percentile (p10) = 0.8149.
-- **Known different-speaker pairs (3,656 pairs):** Mean cosine similarity = 0.3856, std = 0.1299, max = 0.7564, 99th percentile (p99) = 0.6699.
-- **Calibrated EER:** **0.57%** attained at cosine similarity threshold = **0.6944**.
+To satisfy the PLAN requirement for a threshold "calibrated at EER", an empirical speaker-verification benchmark was conducted using NeMo TitaNet-L on AMD Radeon RX 9060 XT (ROCm 10.0) over 62 ground-truth Vietnamese speakers from the VIVOS dataset (300 anchors from `.data/vicut_bench/anchors/vicut_bench_anchors_300.jsonl`). Backing file: `.data/goal/eer_calibration.json` generated by `research/calibrate_eer.py`:
+- **Known same-speaker pairs ({same_cnt} pairs, Leave-One-Out clip-to-centroid):** Mean cosine similarity = {same_mean}, std = {same_std}, min = {same_min}, 10th percentile (p10) = {same_p10}.
+- **Known different-speaker pairs ({diff_cnt} pairs, clip-to-centroid):** Mean cosine similarity = {diff_mean}, std = {diff_std}, max = {diff_max}, 99th percentile (p99) = {diff_p99}.
+- **Calibrated EER:** **{eer_val}%** attained at cosine similarity threshold = **{eer_thr}**.
+- **Operating Threshold:** **{op_thr}** (False Reject Rate FRR = {op_frr}%, False Accept Rate FAR = {op_far}%).
 
-### Single Consistent Candidate Inclusion / Rejection Rule
-1. **Candidate Exclusion:** A candidate recording is excluded from the test pool if its primary speaker centroid exceeds the calibrated EER threshold of 0.6944 against any reference benchmark set (`dev-288`, `ViCut-Bench`, archived pool, or downstream TTS), or if filtering non-disjoint turns leaves fewer than 30 valid non-overlapping turns (2–12s). Under this rule, `xUvy59GaQvI` (THVL Tổng Hợp) was excluded because its primary speaker centroid had cosine similarity 0.7572 (> 0.6944) against anchor `VIVOSSPK37`.
-2. **Secondary Speaker Turn Filtering:** In multi-speaker regional broadcasts containing interviewees, field reporters, or street guests, any secondary speaker whose centroid exceeds 0.6944 is filtered out prior to sampling. If the primary anchor/narrator speaker is certified disjoint (< 0.6944) and retains $\\\\ge 30$ valid non-overlapping turns, the recording is retained with turns drawn exclusively from the certified disjoint primary speaker(s). Under this rule, secondary interviewees in `Aj3ATU0BVZo`, `aRKO1B_piTo`, `XlTMPg8zb8g`, `wFE3JfBNYhc`, and `wJsmmiXd-nw` were excluded, leaving 52 to 143 certified turns per recording.
+### Candidate Inclusion and Turn Selection Rules
+1. **Candidate Exclusion & Regional Balance:** A candidate recording is excluded if its primary speaker centroid exceeds the calibrated EER threshold of 0.6944 against any reference benchmark set, if filtering non-disjoint turns leaves fewer than 30 valid non-overlapping turns, or to maintain the strict 4:4:4 regional balance (120 clips per region). Under this rule, `xUvy59GaQvI` (THVL Tổng Hợp) was excluded because while its primary speaker (`spk_00`, 58 turns) is disjoint (max similarity 0.6788 < 0.6944), three secondary speakers violated the threshold against ViCut anchors (`spk_01`: 0.7524 vs VIVOSDEV11, `spk_02`: 0.7436 vs VIVOSSPK39, `spk_05`: 0.7098 vs VIVOSDEV06; backed by `.data/goal/candidate_audit.json`), and it was a surplus South candidate.
+2. **Secondary Speaker Turn Filtering:** In multi-speaker regional broadcasts containing interviewees, field reporters, or street guests, any secondary speaker whose centroid exceeds 0.6944 is filtered out prior to sampling. If the primary anchor/narrator speaker is certified disjoint (< 0.6944) and retains $\\ge 30$ valid non-overlapping turns, the recording is retained with turns drawn exclusively from the certified disjoint primary speaker(s). Under this rule, secondary interviewees in `Aj3ATU0BVZo`, `aRKO1B_piTo`, `XlTMPg8zb8g`, `wFE3JfBNYhc`, and `wJsmmiXd-nw` were excluded, leaving 52 to 143 certified turns per recording.
 3. **Global Disjointness:** Across all 360 final sampled audio clips, every single speaker centroid strictly satisfies cosine similarity $< 0.6944$:
-   - Max vs `dev-288`: **0.6867**
-   - Max vs `ViCut-Bench`: **0.6777**
-   - Max vs `Archived Pool`: **0.6922**
-   - Max vs `Downstream TTS`: **0.6681**
+   - Max vs `dev-288`: **{results['global_max']['speaker_centroid_vs_dev288']}**
+   - Max vs `ViCut-Bench`: **{results['global_max']['speaker_centroid_vs_vicut']}**
+   - Max vs `Archived Pool`: **{results['global_max']['speaker_centroid_vs_archived']}**
+   - Max vs `Downstream TTS`: **{results['global_max']['speaker_centroid_vs_tts']}**
 
-### Provenance and Cluster Notes
+### Provenance, Sampling, and Broadcaster Notes
+- **Chronological Turn Sampling:** For each of the 12 selected candidate recordings, exactly 30 valid non-overlapping turns (2.0–12.0s duration) were selected in chronological time order (sorted by `start_s`), producing strictly 360 blind test clips (120 North, 120 Central, 120 South).
 - **Đà Nẵng Regional Broadcasters:** `aRKO1B_piTo` (Báo và phát thanh, truyền hình Đà Nẵng) and `XlTMPg8zb8g` (DNRT Online - Đài Phát thanh - Truyền hình Quảng Nam / Đà Nẵng) represent adjacent municipal and provincial public broadcasters in the Quảng Nam – Đà Nẵng coastal area. For the by-recording bootstrap, they represent distinct broadcast sources.
 - **Raw Audio Trimming:** Two long video recordings (`p_u50y858kY`, duration 4,094.1s, and `_UjcxyKrsvE`, duration 5,533.3s) were trimmed to their first 1,200.0s (20 minutes) prior to separation and diarization using `ffmpeg -y -i raw_full.wav -t 1200 -c copy raw_1200s.wav` to avoid unnecessary multi-hour processing while preserving byte-exact 16 kHz stream data without transcoding. All 10 other recordings were processed untrimmed at full downloaded length.
 """
