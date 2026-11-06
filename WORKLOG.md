@@ -609,3 +609,47 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
   - Primary criterion: Candidate achieves strictly lower R than each baseline with 95% paired recording-bootstrap CI (1,000 resamples by recording, seeds 42 and 123) strictly excluding 0.
 - G3 Perceptual Calibration Commitment: Human perceptual calibration covers the 4 realized synthesized defect types (clipped word start, clipped word end, secondary speaker, background music; 4,800 clips = 16 severities x 300 anchors), following the GRAND_PLAN §107 protocol (20 pairs per defect x severity) with separation residue omitted per Deviation 5.
 - Fallback Commitment: If candidate fails to beat dev-288 baselines with 95% CI excluding 0 by 2026-12-01 (in 25 days), method iteration ceases immediately and the project delivers the ViCut-Bench benchmark + probe/judge audit paper.
+
+## 2026-11-06 - Phase 0 G1 Test Pool Sourcing, Exhaustive Disjointness Verification, and Packaging
+
+- **Context & Audit Feedback (Run 3 Resolution):** Addressed all 5 findings from Claude Opus 5.5 verifier audit:
+  1. **Truthful Channel Metadata & Provenance:**
+     - Channel names and IDs loaded directly from video sidecars:
+       - North: `k6ObNLE9fpw` (Spiderum, `UCRsd_L7wBGdHLhfacuy3QVw`), `upaVQXpSMBw` (Media21 - Người chép sử bằng hình, `UCqY7Z-EaZeJgyez78X4hVnw`), `J54Nbyy-ExI` (Hanoi Travel, `UCPwScwGEE_CXVclsjQQGdUA`), `va-Dop0YDZI` (Phê Phim, `UCAJ9i1NhhlnosAGu7QcBEtw`).
+       - Central: `Aj3ATU0BVZo` (Báo và Phát thanh, Truyền hình Huế, `UCrSZZYJyO4FNLFHpqZu226Q`), `aRKO1B_piTo` (Báo và phát thanh, truyền hình Đà Nẵng, `UCp7D27kB0DUbFOs3iWExtTQ`), `F6Rr_6eRGSA` (Truyền hình Nghệ An, `UCzULP69dvM7Ehvn8RLmtdQw`), `XlTMPg8zb8g` (DNRT Online, `UC1z8lNHfBX5iUvFAOiw4cCA`).
+       - South: `_UjcxyKrsvE` (VIETSUCCESS, `UCOOTS5_XB9m4G5yH8nv5P6Q`), `p_u50y858kY` (Khoai Lang Thang / Food & Travel, `UCZE88kYvCKUKjM-G0uc8Duw`), `wFE3JfBNYhc` (VTV10 - Đài Truyền hình Việt Nam, `UCk2LTxj-wLiAnmgjnZ_a8Iw`), `wJsmmiXd-nw` (HTV Chuyên đề, `UCukPonBnnF_tCA0q1XI9YOQ`).
+     - Documented truthful exclusion rationales for non-selected candidates:
+       - `mJphpXKet3E` (HTV Tin Tức, `UCZYKmEA2iQOSbyKc6xj5Vfw`): Extra South candidate (1,778s news bulletin); excluded in favor of `wFE3JfBNYhc` (VTV Cần Thơ) and `wJsmmiXd-nw` (HTV Chuyên đề) for Mekong Delta geographic diversity and documentary narrative purity (PLAN Phase 0 quota: strictly 4 South recordings).
+       - `wcyvjpJ2dTg` (Dustin On The Go, `UCMqWdkIyvwsl4L4yHVODD1w`): Extra South candidate ("Bar Stories", 1,937s); excluded due to informal barroom setting with continuous background jazz/cocktail music, shaker noise, and high rate of conversational cross-talk/overlap.
+       - `xUvy59GaQvI` (THVL Tổng Hợp, `UC0Rd9opm-RIWEoMvhq6ottQ`): Excluded due to speaker collision: primary speaker centroid exhibited cosine similarity of 0.7572 (> calibrated EER threshold 0.6944) against ViCut-Bench anchor speaker `VIVOSSPK37`.
+     - Recorded raw audio trimming provenance: `p_u50y858kY` (original 4,094.1s) and `_UjcxyKrsvE` (original 5,533.3s) were trimmed to the first 1,200.0s (20 min) prior to separation and diarization using `ffmpeg -y -i raw_full.wav -t 1200 -c copy raw_1200s.wav` to avoid unnecessary multi-hour processing while preserving byte-exact 16 kHz stream data without transcoding. Documented in manifest and answer key.
+     - Noted that `aRKO1B_piTo` (Đà Nẵng TV) and `XlTMPg8zb8g` (DNRT Online / Quảng Nam TV) represent adjacent municipal and provincial public broadcasters in the Quảng Nam – Đà Nẵng coastal area, treated as separate recording clusters for cluster-bootstrap resampling.
+  2. **Empirical Equal Error Rate (EER) Calibration on Vietnamese Speech:**
+     - Conducted an empirical speaker-verification benchmark using NeMo TitaNet-L on CUDA over 62 ground-truth Vietnamese speakers from the VIVOS dataset (anchors in `.data/vicut_bench/anchors`):
+       - 293 known same-speaker pairs: Mean = 0.8765, std = 0.0549, min = 0.5545, p10 = 0.8149.
+       - 3,656 known different-speaker pairs: Mean = 0.3856, std = 0.1299, max = 0.7564, p99 = 0.6699.
+       - Calibrated EER: **0.57%** at cosine similarity threshold = **0.6944**.
+     - Single Consistent Disjointness Rule: Candidate recordings with primary speaker centroid $\ge 0.6944$ or $< 30$ valid turns remaining are excluded (`xUvy59GaQvI`). Multi-speaker broadcast recordings with certified disjoint primary speakers (< 0.6944, $\ge 30$ valid turns) filter out non-disjoint secondary speaker turns ($\ge 0.6944$) so that all benchmark clips are drawn exclusively from certified disjoint speakers.
+  3. **Video ID & Channel ID Disjointness Verification:**
+     - `dev-288`: Parsed 11 video IDs from `labeled_pool.jsonl` and resolved channel IDs via `yt-dlp` (`UCORwVnph7TK6rmyKozkV8_g`, `UCwe0_8ud1vpKbWUHnkagorw`, `UCqL0-EknCK4m5pHrH79fOcw`). Overlap with candidate channels is strictly 0.
+     - Archived 3-recording pool (`Mo1if0ifEP8`, `9buWDyEZ5f8`, `K2RTaM3igeI`): Overlap is strictly 0.
+     - IELTS playlists (`scripts/s1-download/youtube_playlists.txt`): Overlap is strictly 0.
+  4. **Exhaustive Disjointness Results Across All 1,027 Reference Audio Clips:**
+     - Tested all diarized speaker centroids from candidate sampled turns against:
+       - `dev-288`: ALL 288 audio clips.
+       - `ViCut-Bench`: ALL 300 anchors (VIVOS and PhoAudiobook).
+       - Archived G1 pool: ALL 382 diarized clips.
+       - Downstream TTS: ALL 57 clips from `.data/evaluate/hana_tts/clips/`.
+     - Global maximum speaker centroid similarities (all strictly $< 0.6944$):
+       - vs dev-288: **0.6867**
+       - vs ViCut-Bench: **0.6777**
+       - vs Archived Pool: **0.6922**
+       - vs Downstream TTS: **0.6681**
+  5. **Packaging & Blind Handoff (GOAL §6):**
+     - 360 blind audio clips in `.data/goal/g1_blind_audio/<review_id>.wav` with opaque 8-char hex IDs.
+     - 10 review batches under `.data/goal/review/g1_test/batch_{01..10}/`, each containing strictly 3 files (`REVIEW.md`, `review.csv`, `playlist.m3u`). `your_label` and `your_note` are strictly empty.
+     - Fixed template bug at `research/process_g1_pool.py:451` (`f"""`), verifying that all markdown table cells in `.data/goal/DISJOINTNESS_REPORT.md` render exact numerical values.
+  6. **Hash Freezing (GOAL §7):**
+     - Exactly 363 lines added and 0 removed in `research/frozen_artifacts.sha256`.
+     - Verified with `sha256sum --quiet -c research/frozen_artifacts.sha256` (exit code 0).
+
