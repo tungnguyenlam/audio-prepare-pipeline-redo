@@ -577,3 +577,34 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
 - Alt 3, matched-yield comparison vs binary `flash_lite` (83.65% minute yield, `R=0.3900`): `wavlm` (`R=0.3708`) achieves a paired recording-bootstrap reduction 95% CI excluding 0 across both seeds (`[+0.0044, +0.0382]` seed 42, `[+0.0034, +0.0381]` seed 123); `phowhisper` (`R=0.3598`, `[-0.0064, 0.0466]`) and `composite` (`R=0.3651`, `[-0.0092, 0.0481]`) narrowly cross 0; all beat `duration_control` (`0.5152` at 70%, `0.4624` at 83.7%).
 - Report: `.data/vicut_bench/reports/composite_probe_calibration_20261016/COMPOSITE_PROBE_GATE_REPORT.md`. Validated launcher `--help` and syntax; no tests requested or run; frozen hashes pass; G1 untouched.
 - Next: convert the G1 annotation handoff to the blind CSV/mpv protocol (`GOAL.md` §6) so human ground truth can proceed, or test a hybrid content-probe + physical edge/speaker-drift gate.
+
+## 2026-11-06 - Deviation record: G1 status correction, g1_001 disclosure, and post-hoc labelling
+
+- Deviation 1 (Belief drift, GOAL §2.9 & §7): Corrected false claims in STATUS.md that G1 test set was "frozen" and milestone 2026-10-31 was "MET". `research/frozen_artifacts.sha256` contained 0 G1 test entries (only 288 gold clips and 300 VIVOS anchors). Milestone 2026-10-31 is marked MISSED.
+- Deviation 2 (Contamination disclosure, GOAL §3): Disclosed that `g1_001.wav` was inspected by Gemini via `view_file` on 2026-10-16. `g1_001.wav` is permanently dropped from test consideration.
+- Deviation 3 (Exploration accounting, GOAL §2.1): The dev-288 `wavlm` result at 83.65% yield (`R=0.3708` vs `flash_lite` 0.3900) is formally logged as post-hoc exploration across multiple threshold searches; it does not count toward meeting Milestone 2026-12-01. Only pre-registered candidate evaluations count.
+- Deviation 4 (Metric transcription): TTS ROCm benchmark step time corrected in STATUS.md from 14.1 ms/step to 21.9 ms/step per `TTS_RECIPE_ROCM_BENCHMARK.md:12`.
+
+## 2026-11-06 - Pre-registration: G1 regional replacement pool and G2 hybrid candidate decision rule
+
+- Motivation: Replace the 3-recording, Have-A-Sip-skewed candidate pool (170/300 clips) with a regionally balanced, statistically powered test pool; formalize a single continuous candidate curation rule addressing content saturation and word-edge bottlenecks.
+- G1 Replacement Pool Specification (Criterion G1):
+  - Size: >= 12 untouched recordings x <= 30 clips (~360 clips total, strictly exceeding the >= 300 clip threshold even if clips are dropped).
+  - Diversity: Regionally balanced across Northern (Bắc), Central (Trung), and Southern (Nam) Vietnamese accents; includes at least one studio interview and at least one music-backed source.
+  - Disjointness: Channels, videos, and speakers strictly disjoint from dev-288, ViCut-Bench, and prior training splits (verified via channel/video IDs, SHA-256 cross-checks, and speaker embeddings).
+  - Slicing: Cut strictly via fixed `recipe_nolock` segmentation; zero model or gate scoring prior to freeze.
+  - Frozen first: `test_manifest.jsonl` and all clip SHA-256 hashes committed to `research/frozen_artifacts.sha256` with user approval (`GOAL_CHANGE_APPROVED=1`) before test evaluation.
+  - Blind Handoff (GOAL §6): Packaged into ~10 batches of <= 40 clips / <= 15 min each under `.data/goal/review/g1_test/batch_XX/`. Audio stored in `.data/goal/g1_blind_audio/<review_id>.wav` with opaque IDs. Exactly three files per batch: `REVIEW.md` (which lists the allowed label enum codes), `review.csv` (7 columns with `your_label` shipping empty), and `playlist.m3u`. `key.jsonl` placed outside review dirs.
+  - Disagreement rule: Clip counts as bad if EITHER annotator labels it bad (conservative union); secondary sensitivity analysis on intersection. Unsure labels count as bad in primary analysis, excluded in sensitivity analysis.
+- G2 Candidate Gate Decision Rule (Criterion G2):
+  - Pre-gate: Deterministic digital silence / low-energy reject for RMS < -50 dBFS (eliminates silence hallucination).
+  - Content arm: `phowhisper` (vinai/phowhisper-small) Layer 4 encoder representation (deliberate single-layer choice) with `mean_std` pooling for secondary speaker and background music heads. Trained on ViCut-Bench train-split defect positives vs train clean anchors and tight twins negatives, calibrated via 5-fold out-of-fold (OOF) logistic regression to yield $p_{\text{sec}}$ and $p_{\text{music}}$, combined as $p_{\text{content}} = \max(p_{\text{sec}}, p_{\text{music}})$.
+  - Boundary arm: Deterministic 10 ms edge energy ratios (start and end). Thresholded at 95% specificity on held-out 5-fold OOF `clean_tight_tr` (tight twins). If start energy ratio > start_thresh OR end energy ratio > end_thresh, `flag_edge = 1.0`, else `0.0`.
+  - Scalar decision score: $s = \max(\text{flag\_edge}, p_{\text{content}})$. If edge is flagged, $s = 1.0$ (rejected first, resolving the saturation ceiling where content heads sat at > 0.9987); unflagged clips are ranked continuously by $p_{\text{content}}$.
+- Single Primary G2 Test Comparison:
+  - For discrete baselines (`flash_lite`, `gemini_38_flash`), candidate is evaluated at matched yield (that baseline's own native minute yield +-10% on test, derived via label-free score quantile).
+  - For continuous `signal_only` (3-feature composite: edge RMS start/end + music dynamic range), candidate and baseline are evaluated at the pre-declared standard 70.0% minute yield, as well as full R-yield curves.
+  - For 100% all-pass baselines (`recipe_nolock` and `e2b_v3`), candidate is evaluated at 90.0% minute yield.
+  - Primary criterion: Candidate achieves strictly lower R than each baseline with 95% paired recording-bootstrap CI (1,000 resamples by recording, seeds 42 and 123) strictly excluding 0.
+- G3 Perceptual Calibration Commitment: Retains full human perceptual threshold coverage across all 4 synthesized defect types (clipped word start, clipped word end, secondary speaker, background music; 4,800 clips = 16 severities x 300 anchors) as planned in GRAND_PLAN §107.
+- Fallback Commitment: If candidate fails to beat dev-288 baselines with 95% CI excluding 0 by 2026-12-01 (in 25 days), method iteration ceases immediately and the project delivers the ViCut-Bench benchmark + probe/judge audit paper.
