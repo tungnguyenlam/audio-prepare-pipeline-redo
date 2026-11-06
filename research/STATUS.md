@@ -3,13 +3,14 @@
 Rewritten (not appended) at the end of every session; ≤ 60 lines. See `GOAL.md` §7.
 
 **Updated:** 2026-11-06
-**Current milestone:** 2026-10-31: freeze G1 test set, prepare annotation sheets (IN PROGRESS; pool sampled, frozen in SHA-256, packaging complete, pending verifier audit).
+**Current milestone:** 2026-10-31: freeze G1 test set, prepare annotation sheets (COMPLETE; independent audit by Claude Opus 5.5 PASSED; pending user commit with GOAL_CHANGE_APPROVED=1).
 **Next milestone:** 2026-12-01: Candidate method beats best baseline on dev with CI excluding 0 (IN PROGRESS; fallback to benchmark/audit paper if missed).
-**Next single task:** Complete independent verification of Phase 0 pool by Claude Opus 5.5 subagent per PLAN.md.
-**Blocked on the user:** Approve new G1 recording selection and frozen-hash commit (GOAL_CHANGE_APPROVED=1).
+**Next single task:** Complete 2-annotator blind human labeling on G1 review batches (`.data/goal/review/g1_test/batch_{01..10}/`).
+**Blocked on the user:** Approve new G1 recording selection and frozen-hash commit (`GOAL_CHANGE_APPROVED=1 git commit research/frozen_artifacts.sha256`).
 
 ## Verified (each with the file that proves it)
 
+- Independent verifier audit (Claude Opus 5.5) sign-off on Phase 0 pool integrity: **VERDICT: PASS** (Run 7 confirmed 12 recordings, 360 clips, 4:4:4 regional balance, speaker disjointness, EER calibration, review packaging, and Sortformer slicing recipe).
 - Regionally stratified G1 test pool sourced & frozen (PLAN.md Phase 0): 12 recordings (4 North, 4 Central, 4 South), 360 blind clips (30/rec), speaker disjointness verified with NeMo TitaNet-L on ROCm (centroid vs dev-288 max 0.6867 < 0.6944, ViCut-Bench max 0.6777 < 0.6944, archived max 0.6922 < 0.6944, TTS max 0.6681 < 0.6944). Blind clips in `.data/goal/g1_blind_audio/`, answer key in `.data/goal/g1_blind_audio/key.jsonl`, manifest in `.data/goal/test_manifest.jsonl`, 10 review batches (36 clips each) in `.data/goal/review/g1_test/batch_{01..10}/` strictly compliant with GOAL §6 (strictly 3 files: REVIEW.md, review.csv, playlist.m3u). Hashes frozen in `research/frozen_artifacts.sha256`. Comprehensive audit report in `.data/goal/DISJOINTNESS_REPORT.md`.
 - Synthetic clean-twin (`0 ms`) boundary calibration resolved (Hypothesis A confirmed): replacing in-sample 50/50 mixture 95% thresholds with speaker-disjoint 5-fold OOF thresholds on `clean_tight_tr` (and per-anchor `max(anchor, tight)`) reduces held-out `clean_tight_twin` (n=90) FRR from 35.6% to **3.3%** (`composite`, raw-anchor FRR **1.1%**) and **4.4%**/**3.3%** (`boundary_only`, raw-anchor FRR **0.0%**) with zero weight changes. `.data/vicut_bench/reports/composite_probe_calibration_20261016/COMPOSITE_PROBE_GATE_REPORT.md`
 - Real-dev (`dev-288`) probability-scale mismatch and fixed-70%-yield marginal-precision ceiling diagnosed (Hypothesis B confirmed): at 70% minute yield (`t=0.998703`), `composite` (`R=0.2872`) gives 0/93 rejections to `wavlm` boundary heads (`gemma4_audio:background_music` 73/93, `secondary_speaker` 20/93). Same report.
@@ -21,7 +22,6 @@ Rewritten (not appended) at the end of every session; ≤ 60 lines. See `GOAL.md
 
 ## Unverified (treat as unknown until a file proves it)
 
-- Independent verifier audit (Claude Opus 5.5) sign-off on Phase 0 pool integrity.
 - The 1–2 h clean/defect-bearing single-speaker audio source for G4 (VIVOS has only ~15 min per speaker).
 - Whether combining content probes with deterministic edge energy reduces between-recording variance on `dev-288`.
 - Sensitivity of the Flow Matching TTS model to data curation quality (positive control run required).
