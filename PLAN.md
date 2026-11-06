@@ -5,13 +5,13 @@
 **Binding Research Objective (`GOAL.md` §1 verbatim):**
 > *"Build a curation method that rejects more defective clips without discarding more good speech. Show the gain on human-labelled clips from recordings never used during development, then show that the gain carries over to a TTS model trained on equal hours of the curated data."*
 
-**User Application Scope:** To maximize real-world utility across Vietnamese speech understanding and synthesis, data collection enforces balanced regional coverage across Northern (Bắc), Central (Trung), and Southern (Nam) dialects with channel deduplication.
+**User Application Scope:** To maximize real-world utility across Vietnamese speech modeling, data collection enforces balanced regional coverage across Northern (Bắc), Central (Trung), and Southern (Nam) dialects with channel deduplication.
 
 ---
 
 ## Phase Structure & Execution Rules
 
-The pipeline is organized into **strictly sequential milestone gates** with parallelizable operational tracks. Human annotation of blind batches (Phase 2) runs in parallel with Phase 1 gate development because batches are sealed, opaque, and strictly isolated from model development. Similarly, Phase 4.1 TTS positive-control training runs in parallel with Phase 3 once the speaker pool is approved, meeting the 2026-12-20 milestone.
+The pipeline is organized into **strictly sequential milestone gates** with parallelizable operational tracks. Human annotation of blind batches (Phase 2) runs in parallel with Phase 1 gate development because batches are sealed, opaque, and strictly isolated from model development. Similarly, Phase 4.1 TTS positive-control training starts once the speaker pool is approved (post-Phase 0), meeting the 2026-12-20 milestone.
 
 ```mermaid
 flowchart TD
@@ -20,7 +20,7 @@ flowchart TD
     P1 -->|Decision Point 2026-12-01: Freeze Candidate| P2
     P2 --> P3["Phase 3: ViCut-Bench Benchmark & Judge Audit\n(API & local judges, representation probing, 320-pair ABX)"]
     P0 -.->|Speaker source approved| P4A["Phase 4.1: TTS Defect Positive Control\n(7 Flow Matching TTS runs: clean & defects)"]
-    P2 --> P4B["Phase 4.2: Curator Comparison on TTS\n(Candidate vs Best Baseline Gate, >=2 seeds)"]
+    P2 -->|Branch A only| P4B["Phase 4.2: Curator Comparison on TTS\n(Candidate vs Best Baseline Gate, >=2 seeds)"]
     P4A --> P5["Phase 5: Publication Packaging & Artifact Release (G5)\n(Interspeech 2027 submission, frozen hashes, open code/models)"]
     P4B --> P5
     P3 --> P5
@@ -53,7 +53,7 @@ flowchart TD
    - **Labeling Rubric Syntax (`docs/experiments.md:25-28`):**
      * `your_label` requires either `pass` (all 3 dimensions clean), `unsure`, or the exact closed-vocabulary semicolon tag string covering all three dimensions:
        `spk=<pure|secondary_speaker|overlapping_speech>;word=<complete|clipped_word_start|clipped_word_end>;aq=<studio_clean|music_bleed|noisy_reverberant|distorted>`
-     * No dimensions may be omitted. If the user approves switching to explicit separate columns (Option B), a 9-column schema will be used instead.
+     * No dimensions may be omitted. (Cohen's $\kappa$ drops `unsure` rows; secondary sensitivity analysis treats `unsure` as a separate category).
    - Place mapping `key.jsonl` outside the review directories (`.data/goal/g1_blind_audio/key.jsonl`).
 4. **Formal Hash Freeze:**
    - Compute SHA-256 for all clips and `test_manifest.jsonl`.
@@ -84,7 +84,7 @@ flowchart TD
    - Run required G3 component ablation on real `dev-288`:
      * Full Hybrid Gate ($R$ at matched 70% yield)
      * Content arm only (ranked by continuous $p_{\text{content}}$, $R$ at 70% yield)
-     * Boundary arm only (ranked by continuous maximum 10 ms edge energy ratio, $R$ at 70% yield)
+     * Boundary arm only (ranked by continuous normalized edge ratio $\max(r_{\text{start}}/\tau_{\text{start}}, r_{\text{end}}/\tau_{\text{end}})$, $R$ at 70% yield)
      * Full Gate without Pre-gate (leave-one-out, $R$ at 70% yield)
      * Pre-gate only (reported at native yield)
 3. **Dev Benchmark Competition (dev-288, 11 recordings):**
@@ -96,7 +96,7 @@ flowchart TD
    - Compute paired recording-bootstrap 95% CI (1,000 resamples, seeds 42 and 123) for candidate $R$ minus baseline $R$.
 4. **Pre-registered Decision Gate (Deadline: 2026-12-01):**
    - **Branch A:** Candidate beats each dev baseline with 95% CI strictly excluding 0 across both seeds $\rightarrow$ Freeze candidate rule weights, config, and SHA-256 hash in `WORKLOG.md` and proceed to Phase 2 confirmatory test evaluation.
-   - **Branch B (Fallback):** CI crosses 0 by 2026-12-01 $\rightarrow$ Halt method iteration immediately; lock candidate, log honest null dev findings in `WORKLOG.md`, and proceed to Phase 2 (G1 Test Set Benchmark Characterization) and Phase 3 (ViCut-Bench Benchmark & Probe/Judge Audit Paper).
+   - **Branch B (Fallback):** CI crosses 0 by 2026-12-01 $\rightarrow$ Halt method iteration immediately; lock candidate, log honest null dev findings in `WORKLOG.md`, and proceed to Phase 2 (G1 Test Set Benchmark Characterization) and Phase 3 (ViCut-Bench Benchmark & Probe/Judge Audit Paper). Curator comparison in Phase 4.2 is skipped.
 
 ### Exit Criteria
 - [ ] Evaluation script `scripts/vicut_bench/evaluate_hybrid_gate.py` (with bash launcher `scripts/vicut_bench/evaluate_hybrid_gate.sh`) runs deterministically with raw logs and documented commands in `docs/commands.md`.
@@ -116,7 +116,7 @@ flowchart TD
 1. **Blind Human Annotation:**
    - Two annotators independently review all batches in `mpv` using the agreed labeling schema.
    - Read-back protocol (GOAL §6): Join by `review_id`, recompute audio hashes and drop mismatched rows, never fill empty labels, save `review_labelled.csv` and log SHA-256 in `WORKLOG.md`.
-   - Compute Cohen's $\kappa$ per dimension (`speaker_purity`, `word_completeness`, `audio_quality`).
+   - Compute Cohen's $\kappa$ per dimension (`speaker_purity`, `word_completeness`, `audio_quality`) dropping `unsure` rows.
 2. **Disagreement & Defect Labeling:**
    - Ground truth defect label: Clip is bad if **either** annotator marks it bad (conservative union).
    - Secondary sensitivity analysis: Clip is bad only if **both** annotators agree (intersection).
@@ -165,7 +165,7 @@ flowchart TD
 
 ### Tasks & Specifications
 1. **Phase 4.1: Positive Control Experiment (7 Flow Matching TTS Runs):**
-   - Speaker pool sourced with user approval under STATUS open decisions.
+   - Speaker pool sourced with user approval under STATUS open decisions (can run in parallel with Phase 1–3 once approved).
    - Train Flow Matching TTS recipe across 5 pre-registered defect conditions (fixed text and training steps):
      1. Clean audio (seed 1 & seed 2)
      2. Clipped word end @ 30%
@@ -173,10 +173,10 @@ flowchart TD
      4. Mixed defects @ 10%
      5. Mixed defects @ 30% (seed 1 & seed 2)
    - Verify whether downstream CER and truncated ending rates are statistically sensitive to injected defect levels via paired bootstrap across 200 held-out sentences.
-2. **Phase 4.2: Curator Comparison Experiment:**
-   - Identify the best baseline gate (pre-declared as the baseline with the lowest $R$ evaluated at matched 70.0% yield on G1).
+2. **Phase 4.2: Curator Comparison Experiment (Branch A only):**
+   - Pre-declared best baseline rule: the baseline with the **smallest candidate-minus-baseline $R$ reduction at that baseline's own matched yield** from Phase 2 (i.e. the hardest baseline to beat); ties broken by higher accepted-minute yield.
    - Curate equal hours using: Candidate Gate vs Best Baseline Gate (same speaker pool, text, and training steps).
-   - Train Flow Matching TTS ($\ge 2$ seeds per curator) on equal-hours subsets cut via fixed random seed.
+   - Train Flow Matching TTS ($\ge 2$ seeds per curator) on equal-hours subsets cut via fixed random seed. (Skipped under Branch B).
 3. **Independent Evaluation (GOAL G4 Metrics):**
    - Automated word-ending truncation measured via independent MMS-FA CTC forced alignment and energy drop on 200 held-out sentences.
    - CER evaluated with PhoASR-whisper-small on 200 held-out sentences.
