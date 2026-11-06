@@ -2,26 +2,28 @@
 
 **Governance Hierarchy:** `GOAL.md` > `research/GRAND_PLAN.md` > `PLAN.md`. All criteria and constraints in `GOAL.md` are binding and take precedence.
 
-**Core Research Question (`GOAL.md` §1):**
-> *"Can we curate training data from diverse, uncurated Vietnamese web audio so that speech models trained on the curated data perform strictly better than models trained on uncurated data of the same nominal duration, while preserving regional and acoustic diversity?"*
+**Binding Research Objective (`GOAL.md` §1 verbatim):**
+> *"Build a curation method that rejects more defective clips without discarding more good speech. Show the gain on human-labelled clips from recordings never used during development, then show that the gain carries over to a TTS model trained on equal hours of the curated data."*
 
-Downstream models evaluated under this project include TTS (Flow Matching), ASR, and SpeechLLM understanding.
+**User Application Scope:** To maximize real-world utility across Vietnamese speech understanding and synthesis, data collection enforces balanced regional coverage across Northern (Bắc), Central (Trung), and Southern (Nam) dialects with channel deduplication.
 
 ---
 
 ## Phase Structure & Execution Rules
 
-The pipeline is organized into **strictly sequential phases**. Each phase begins **only after** all exit criteria of the preceding phase have been fully met, verified on disk, and committed to git. Human annotation of blind batches (Phase 2) can occur concurrently with Phase 1 development because the batches are sealed, opaque, and strictly isolated from model development.
+The pipeline is organized into **strictly sequential milestone gates** with parallelizable operational tracks. Human annotation of blind batches (Phase 2) runs in parallel with Phase 1 gate development because batches are sealed, opaque, and strictly isolated from model development. Similarly, Phase 4.1 TTS positive-control training runs in parallel with Phase 3 once the speaker pool is approved, meeting the 2026-12-20 milestone.
 
 ```mermaid
 flowchart TD
     P0["Phase 0: Sourcing & Freezing G1 Test Pool\n(>=12 recordings, ~360 clips, 3 dialects, zero model scoring)"] --> P1["Phase 1: Dev Hybrid Gate Calibration & ViCut-Bench Ablation\n(Score: s = flag_edge + p_content, 2026-12-01 decision gate)"]
-    P0 -.->|Blind batches sealed| P2["Phase 2: Confirmatory Test Evaluation on Frozen G1\n(2-annotator blind mpv handoff, paired bootstrap CI)"]
-    P1 -->|Decision Point 2026-12-01: CI excludes 0| P2
-    P1 -->|Decision Point 2026-12-01: CI crosses 0| P3["Phase 3: ViCut-Bench Benchmark & Judge Audit Paper\n(API & local judges, representation probing, human ABX)"]
-    P2 --> P3
-    P3 --> P4["Phase 4: Downstream Speech Modeling & Defect Sensitivity (G4)\n(7 Flow Matching TTS runs, PhoASR CER, MMS-FA alignment)"]
-    P4 --> P5["Phase 5: Publication Packaging & Artifact Release (G5)\n(Interspeech 2027 submission, frozen hashes, open code/models)"]
+    P0 -.->|Sealed blind batches| P2["Phase 2: G1 Test Evaluation\n(Branch A: Confirmatory Evaluation\nBranch B: Benchmark Characterization)"]
+    P1 -->|Decision Point 2026-12-01: Freeze Candidate| P2
+    P2 --> P3["Phase 3: ViCut-Bench Benchmark & Judge Audit\n(API & local judges, representation probing, 320-pair ABX)"]
+    P0 -.->|Speaker source approved| P4A["Phase 4.1: TTS Defect Positive Control\n(7 Flow Matching TTS runs: clean & defects)"]
+    P2 --> P4B["Phase 4.2: Curator Comparison on TTS\n(Candidate vs Best Baseline Gate, >=2 seeds)"]
+    P4A --> P5["Phase 5: Publication Packaging & Artifact Release (G5)\n(Interspeech 2027 submission, frozen hashes, open code/models)"]
+    P4B --> P5
+    P3 --> P5
 ```
 
 ---
@@ -35,11 +37,11 @@ flowchart TD
    - Select $\ge 12$ untouched YouTube recordings strictly disjoint in channel IDs, video IDs, and speakers from `dev-288`, ViCut-Bench, and prior training splits.
    - Stratified regional coverage: $\ge 4$ Northern (Bắc), $\ge 4$ Central (Trung), and $\ge 4$ Southern (Nam) recordings.
    - Genre coverage: At least one studio interview and at least one music-backed vlog/broadcast.
-   - Disjointness checks: Cross-check against all URLs/video IDs in `.data/` and verify speaker embedding cosine distance $> 0.25$ against `dev-288` (embedding extraction for disjointness verification does not constitute model scoring).
+   - Disjointness checks: Cross-check against all URLs/video IDs in `.data/` and verify speaker embedding cosine similarity $< 0.70$ (using Resemblyzer / PyAnnote speaker embeddings calibrated at EER threshold) against `dev-288`, ViCut-Bench, and downstream TTS speakers. (Embedding extraction for disjointness verification does not constitute model scoring).
    - Old pool retirement: Archive existing candidate pool (`.data/goal/test_manifest.jsonl`) to `.data/goal/test_manifest_archived_3rec.jsonl`.
 2. **Audio Segmentation & Filtering:**
    - Slice fresh audio strictly using the fixed `recipe_nolock` pipeline (no model or probe scoring).
-   - Cap each recording at $\le 30$ clips to yield $\approx 360$ clips total (guaranteeing $\ge 300$ valid clips even if clips with corrupted file headers are dropped).
+   - Cap each recording at $\le 30$ clips to yield $\approx 360$ clips total. If any recording yields fewer than 30 valid clips, additional recordings are added to guarantee $\ge 300$ valid clips.
    - Exclude the previous 3 recordings entirely (automatically eliminating contaminated `g1_001.wav`).
 3. **Packaging Blind Review Batches (GOAL §6 Compliance):**
    - Copy audio to `.data/goal/g1_blind_audio/<review_id>.wav` with opaque 8-character hex IDs.
@@ -48,9 +50,10 @@ flowchart TD
      * `REVIEW.md`: Protocol, listening instructions, replay key bindings in `mpv`, estimated completion time, and allowed label syntax.
      * `review.csv`: 7 columns (`review_id`, `abs_path`, `sha256`, `duration_s`, `listen_for`, `your_label`, `your_note`) with `your_label` shipping empty. `listen_for` contains generic review instructions without leaking condition.
      * `playlist.m3u`: Absolute paths to batch WAV files.
-   - Labeling syntax options (to support Cohen's $\kappa$ across all 3 dimensions: `speaker_purity`, `word_completeness`, `audio_quality`):
-     * Option A (Default within 7-column schema): `your_label` accepts either `pass` (all 3 clean) or structured semicolon tags: `spk=<clean|bleed>;word=<clean|cut_start|cut_end>;aq=<clean|music|noise|distort>`, falling back to standalone reject codes (`reject:end`, `reject:music`, etc.) with unspecified dimensions treated as clean.
-     * Option B (User-approved 9-column schema): Separate explicit columns for `spk`, `word`, and `aq`.
+   - **Labeling Rubric Syntax (`docs/experiments.md:25-28`):**
+     * `your_label` requires either `pass` (all 3 dimensions clean), `unsure`, or the exact closed-vocabulary semicolon tag string covering all three dimensions:
+       `spk=<pure|secondary_speaker|overlapping_speech>;word=<complete|clipped_word_start|clipped_word_end>;aq=<studio_clean|music_bleed|noisy_reverberant|distorted>`
+     * No dimensions may be omitted. If the user approves switching to explicit separate columns (Option B), a 9-column schema will be used instead.
    - Place mapping `key.jsonl` outside the review directories (`.data/goal/g1_blind_audio/key.jsonl`).
 4. **Formal Hash Freeze:**
    - Compute SHA-256 for all clips and `test_manifest.jsonl`.
@@ -78,7 +81,12 @@ flowchart TD
 2. **ViCut-Bench G3 Mechanism & Ablation:**
    - Compute detection AUROC and per-severity detection curves across the 4 realized defect types strictly on the **held-out test split (90 anchors / 19 speakers)** or 5-fold OOF predictions (zero train-split leakage).
    - Measure and report clean-twin false reject rate (FRR) on held-out tight twins at 0 ms cuts.
-   - Run required G3 component ablation on real `dev-288`: measure $R$ at matched yield for Pre-gate only, Boundary arm only, Content arm only, and Full Hybrid Gate.
+   - Run required G3 component ablation on real `dev-288`:
+     * Full Hybrid Gate ($R$ at matched 70% yield)
+     * Content arm only (ranked by continuous $p_{\text{content}}$, $R$ at 70% yield)
+     * Boundary arm only (ranked by continuous maximum 10 ms edge energy ratio, $R$ at 70% yield)
+     * Full Gate without Pre-gate (leave-one-out, $R$ at 70% yield)
+     * Pre-gate only (reported at native yield)
 3. **Dev Benchmark Competition (dev-288, 11 recordings):**
    - Candidate evaluated against each non-circular dev baseline:
      * Discrete `flash_lite` at its native minute yield ($\pm 10\%$).
@@ -88,10 +96,11 @@ flowchart TD
    - Compute paired recording-bootstrap 95% CI (1,000 resamples, seeds 42 and 123) for candidate $R$ minus baseline $R$.
 4. **Pre-registered Decision Gate (Deadline: 2026-12-01):**
    - **Branch A:** Candidate beats each dev baseline with 95% CI strictly excluding 0 across both seeds $\rightarrow$ Freeze candidate rule weights, config, and SHA-256 hash in `WORKLOG.md` and proceed to Phase 2 confirmatory test evaluation.
-   - **Branch B (Fallback):** CI crosses 0 by 2026-12-01 $\rightarrow$ Halt method iteration immediately; lock candidate, document honest null dev findings, and proceed to Phase 3 (ViCut-Bench Benchmark & Probe/Judge Audit Paper). Real-subset G1 evaluation still runs as a fixed benchmark characterization without further gate tuning.
+   - **Branch B (Fallback):** CI crosses 0 by 2026-12-01 $\rightarrow$ Halt method iteration immediately; lock candidate, log honest null dev findings in `WORKLOG.md`, and proceed to Phase 2 (G1 Test Set Benchmark Characterization) and Phase 3 (ViCut-Bench Benchmark & Probe/Judge Audit Paper).
 
 ### Exit Criteria
 - [ ] Evaluation script `scripts/vicut_bench/evaluate_hybrid_gate.py` (with bash launcher `scripts/vicut_bench/evaluate_hybrid_gate.sh`) runs deterministically with raw logs and documented commands in `docs/commands.md`.
+- [ ] Held-out AUROC and per-severity detection curves computed and documented.
 - [ ] Report written to `.data/vicut_bench/reports/dev_hybrid_gate/` documenting R, yields, bootstrap CIs, and G3 real-data ablation table, with file paths and SHA-256 hashes logged in `WORKLOG.md`.
 - [ ] Clean-twin FRR reported on held-out tight twins.
 - [ ] Candidate frozen hash committed to `WORKLOG.md` before Phase 2.
@@ -99,9 +108,9 @@ flowchart TD
 
 ---
 
-## Phase 2: Confirmatory Test Evaluation on Frozen G1 (G1 & G2)
+## Phase 2: G1 Test Evaluation (Confirmatory / Benchmark Characterization)
 
-**Objective:** Conduct the one-shot confirmatory evaluation on the frozen G1 test set.
+**Objective:** Conduct the one-shot evaluation on the frozen G1 test set (Confirmatory test for Branch A; Benchmark Characterization for Branch B).
 
 ### Tasks & Specifications
 1. **Blind Human Annotation:**
@@ -113,12 +122,12 @@ flowchart TD
    - Secondary sensitivity analysis: Clip is bad only if **both** annotators agree (intersection).
    - Unsure handling: Counted as bad in primary analysis; excluded in sensitivity analysis.
 3. **One-Shot Baseline Competition:**
-   - Candidate threshold derived via label-free score quantile on G1 test to match each baseline's exact native yield (with $\pm 10\%$ tolerance band; 100% baselines matched at 90% and `signal_only` matched at 70%).
    - Baseline inference: Run fixed baselines (`signal_only`, `flash_lite`, `gemini_38_flash`, `e2b_v3`, `recipe_nolock`). API calls trickled with `--continue` to respect free-tier rate limits.
-   - Verify candidate SHA-256 against frozen hash (`sha256sum -c`) before test execution.
+   - Verify candidate SHA-256 and frozen G1 hashes (`sha256sum -c`) before test execution.
+   - Candidate threshold derived via label-free score quantile on G1 test to match each baseline's exact native yield (with $\pm 10\%$ tolerance band; 100% baselines matched at 90% and `signal_only` matched at 70%).
    - Compute paired recording-bootstrap 95% CI (1,000 resamples by recording, seeds 42 and 123) across the $\ge 12$ recordings. Full R-yield curves plotted.
 4. **Reporting:**
-   - Log results honestly regardless of outcome (confirming improvement or documenting real-world test gap per GOAL §2.7).
+   - Log results honestly regardless of outcome (confirming improvement under Branch A or documenting real-world test gap under Branch B per GOAL §2.7).
 
 ### Exit Criteria
 - [ ] Completed blind review sheets from two annotators saved under `.data/goal/review/g1_test/completed/` with SHA-256 hashes recorded in `WORKLOG.md`.
@@ -141,7 +150,7 @@ flowchart TD
    - Synthesize findings from layer-wise probe experiments across WavLM, PhoWhisper, and Gemma Audio (citing `.data/vicut_bench/reports/phase3_probes/PHASE3_PROBE_REPORT.md`).
    - Document the 40 ms (Gemma) vs 20 ms (PhoWhisper/WavLM) frame-rate bottleneck on word-edge truncation.
 3. **Human Perceptual Threshold Calibration:**
-   - Run the ABX listening protocol across the 4 realized defect types (clipped word start, clipped word end, secondary speaker, background music) using blind $\le 40$-stimulus batches (one pre-concatenated A-B-X stimulus per row without revealing twin identities) to map human perceptual thresholds against candidate detection curves.
+   - Run the ABX listening protocol (2 listeners, 20 pairs per defect $\times$ severity = 320 stimuli, packaged in 8 blind $\le 40$-stimulus batches without revealing twin identities) across the 4 realized defect types (clipped word start, clipped word end, secondary speaker, background music) to map human perceptual thresholds against model detection limits.
 
 ### Exit Criteria
 - [ ] Judge Audit report written to `.data/vicut_bench/reports/judge_audit/` with hashes logged in `WORKLOG.md`.
@@ -152,24 +161,23 @@ flowchart TD
 
 ## Phase 4: Downstream Speech Modeling & Defect Sensitivity (G4)
 
-**Objective:** Demonstrate downstream model sensitivity to data defects and evaluate curation impact on Vietnamese TTS and ASR.
+**Objective:** Demonstrate downstream TTS model sensitivity to data defects and evaluate curation impact on Vietnamese TTS synthesis.
 
 ### Tasks & Specifications
-1. **Speaker Pool Selection:**
-   - Sourced and verified with user approval under STATUS open decisions.
-2. **Positive Control Experiment (7 Flow Matching TTS Runs):**
+1. **Phase 4.1: Positive Control Experiment (7 Flow Matching TTS Runs):**
+   - Speaker pool sourced with user approval under STATUS open decisions.
    - Train Flow Matching TTS recipe across 5 pre-registered defect conditions (fixed text and training steps):
      1. Clean audio (seed 1 & seed 2)
      2. Clipped word end @ 30%
      3. Secondary speaker @ 30%
      4. Mixed defects @ 10%
      5. Mixed defects @ 30% (seed 1 & seed 2)
-   - Verify whether downstream CER and truncated ending rates are statistically sensitive to injected defect levels.
-3. **Curator Comparison Experiment:**
-   - Identify the best baseline gate (the baseline with the lowest G1 $R$ at matched yield).
-   - Curate equal hours using: Candidate Gate vs Best Baseline Gate.
-   - Train Flow Matching TTS ($\ge 2$ seeds) on equal-hours subsets cut via fixed random seed.
-4. **Independent Evaluation (GOAL G4 Metrics):**
+   - Verify whether downstream CER and truncated ending rates are statistically sensitive to injected defect levels via paired bootstrap across 200 held-out sentences.
+2. **Phase 4.2: Curator Comparison Experiment:**
+   - Identify the best baseline gate (pre-declared as the baseline with the lowest $R$ evaluated at matched 70.0% yield on G1).
+   - Curate equal hours using: Candidate Gate vs Best Baseline Gate (same speaker pool, text, and training steps).
+   - Train Flow Matching TTS ($\ge 2$ seeds per curator) on equal-hours subsets cut via fixed random seed.
+3. **Independent Evaluation (GOAL G4 Metrics):**
    - Automated word-ending truncation measured via independent MMS-FA CTC forced alignment and energy drop on 200 held-out sentences.
    - CER evaluated with PhoASR-whisper-small on 200 held-out sentences.
    - Blind listening test on held-out synthesized sentences.
