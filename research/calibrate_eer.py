@@ -210,6 +210,12 @@ def audit_xuvy_and_candidates(model, vicut_embs, vicut_rows):
         }
         logger.info(f"xUvy59GaQvI:{s} (n={len(s_turns)}): dev={sim_dev:.4f}, vicut={sim_vicut:.4f} ({closest_anchor_spk}), arch={sim_arch:.4f}, tts={sim_tts:.4f}")
 
+    violating = [
+        f"{s}: {info['sim_vicut']} vs {info['closest_vicut_speaker']}"
+        for s, info in speaker_audit.items() if info["exceeds_eer_threshold"]
+    ]
+    spk0_sim = speaker_audit['spk_00']['sim_vicut']
+    spk0_turns = speaker_audit['spk_00']['valid_turns']
     audit_out = {
         "rec_id": "xUvy59GaQvI",
         "channel": "THVL Tổng Hợp",
@@ -217,9 +223,9 @@ def audit_xuvy_and_candidates(model, vicut_embs, vicut_rows):
         "genre": "broadcast",
         "speakers": speaker_audit,
         "true_exclusion_rationale": (
-            "Surplus South broadcast candidate (THVL Tổng Hợp). While primary speaker spk_00 (58 turns) is disjoint "
-            "(max similarity 0.6788 < 0.6944), three secondary speakers violate the calibrated EER threshold against ViCut anchors "
-            "(spk_01: 0.7524 vs VIVOSDEV11, spk_02: 0.7436 vs VIVOSDEV11, spk_05: 0.7098 vs VIVOSSPK37). Excluded to maintain "
+            f"Surplus South broadcast candidate (THVL Tổng Hợp). While primary speaker spk_00 ({spk0_turns} turns) is disjoint "
+            f"(max similarity {spk0_sim} < 0.6944), secondary speakers violate the calibrated EER threshold against ViCut anchors "
+            f"({', '.join(violating)}). Excluded to maintain "
             "equal 4:4:4 regional balance (120 clips per region) and favor cleaner single-speaker narrative broadcasts."
         )
     }

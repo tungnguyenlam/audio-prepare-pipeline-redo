@@ -621,7 +621,7 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
      - Documented truthful exclusion rationales for non-selected candidates:
        - `mJphpXKet3E` (HTV Tin Tức, `UCZYKmEA2iQOSbyKc6xj5Vfw`): Extra South candidate (1,778s news bulletin); excluded in favor of `wFE3JfBNYhc` (VTV Cần Thơ) and `wJsmmiXd-nw` (HTV Chuyên đề) for Mekong Delta geographic diversity and documentary narrative purity (PLAN Phase 0 quota: strictly 4 South recordings).
        - `wcyvjpJ2dTg` (Dustin On The Go, `UCMqWdkIyvwsl4L4yHVODD1w`): Extra South candidate ("Bar Stories", 1,937s); excluded due to informal barroom setting with continuous background jazz/cocktail music, shaker noise, and high rate of conversational cross-talk/overlap.
-       - `xUvy59GaQvI` (THVL Tổng Hợp, `UC0Rd9opm-RIWEoMvhq6ottQ`): Excluded due to speaker collision: primary speaker centroid exhibited cosine similarity of 0.7572 (> calibrated EER threshold 0.6944) against ViCut-Bench anchor speaker `VIVOSSPK37`.
+       - `xUvy59GaQvI` (THVL Tổng Hợp, `UC0Rd9opm-RIWEoMvhq6ottQ`): Surplus South candidate. Diarization audit revealed 3 secondary speakers violating calibrated EER threshold against ViCut anchors (`spk_01`: 0.7524 vs VIVOSDEV11, `spk_02`: 0.7436 vs VIVOSSPK39, `spk_05`: 0.7098 vs VIVOSDEV06; backed by `.data/goal/candidate_audit.json`). Primary speaker `spk_00` (58 turns) is disjoint (0.6788 < 0.6944); recording excluded as surplus South candidate to maintain 4:4:4 regional balance (120 clips per region).
      - Recorded raw audio trimming provenance: `p_u50y858kY` (original 4,094.1s) and `_UjcxyKrsvE` (original 5,533.3s) were trimmed to the first 1,200.0s (20 min) prior to separation and diarization using `ffmpeg -y -i raw_full.wav -t 1200 -c copy raw_1200s.wav` to avoid unnecessary multi-hour processing while preserving byte-exact 16 kHz stream data without transcoding. Documented in manifest and answer key.
      - Noted that `aRKO1B_piTo` (Đà Nẵng TV) and `XlTMPg8zb8g` (DNRT Online / Quảng Nam TV) represent adjacent municipal and provincial public broadcasters in the Quảng Nam – Đà Nẵng coastal area, treated as separate recording clusters for cluster-bootstrap resampling.
   2. **Empirical Equal Error Rate (EER) Calibration on Vietnamese Speech:**
@@ -639,7 +639,7 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
   4. **Exhaustive Disjointness Results Across All 1,027 Reference Audio Clips:**
      - Tested all diarized speaker centroids from candidate sampled turns against:
        - `dev-288`: ALL 288 audio clips.
-       - `ViCut-Bench`: ALL 300 anchors (VIVOS and PhoAudiobook).
+       - `ViCut-Bench`: ALL 300 anchors across 62 speakers (all VIVOS).
        - Archived G1 pool: ALL 382 diarized clips.
        - Downstream TTS: ALL 57 clips from `.data/evaluate/hana_tts/clips/`.
      - Global maximum speaker centroid similarities (all strictly $< 0.6944$):
@@ -653,5 +653,10 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
      - Fixed template bug at `research/process_g1_pool.py:451` (`f"""`), verifying that all markdown table cells in `.data/goal/DISJOINTNESS_REPORT.md` render exact numerical values.
   6. **Hash Freezing (GOAL §7):**
      - Exactly 363 lines added and 0 removed in `research/frozen_artifacts.sha256`.
+     - Verified with `sha256sum --quiet -c research/frozen_artifacts.sha256` (exit code 0).
+  7. **Frozen Slicing Recipe & Pipeline Limitations:**
+     - **Slicing Recipe:** All 12 G1 recordings were cut using the standardized `recipe_nolock` settings: PyAnnote VAD with onset 0.70, offset 0.50, padding 0.20 s before and after, minimum speech duration 0.20 s, maximum segment length 12.0 s (splitting long segments at internal speech pauses), gap merge tolerance 1.0 s, and candidate turn filtering to 2.0–12.0 s. (Note: The archived 3-recording pool from 2026-10-13 used raw Sortformer diarizer defaults with onset 0.74, offset 0.64, padding 0.12 s before; the current G1 settings establish the permanent frozen slicing recipe for all future benchmarks).
+     - **Candidate Selection Limitations:** Exclusions of surplus South candidates (`wcyvjpJ2dTg` for unverified acoustic chatter/music screening and `xUvy59GaQvI` for secondary speaker overlap) inherently select for cleaner broadcast and interview recordings. While studio interview (`_UjcxyKrsvE`) and music-backed travel vlog (`p_u50y858kY`) remain in the pool, this selection may slightly lower the natural defect rate relative to uncurated raw streams.
+     - **External File References:** Codebase and `.data/` search found 0 candidate video ID occurrences outside the pool directory, with the exception of 12 harmless voice-activity cache files under `.data/vad/auto/` originating from processing the candidate stems themselves.
      - Verified with `sha256sum --quiet -c research/frozen_artifacts.sha256` (exit code 0).
 
