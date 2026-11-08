@@ -16,7 +16,6 @@ Rewritten (not appended) at the end of every session; ≤ 60 lines. See `GOAL.md
 - Real dev-288 component ablation documented across all 5 conditions: Full Hybrid (29.70%), Content only (28.50%), Boundary only (31.79%), Full w/o Pre-gate (29.70%), Pre-gate only (44.79%). Same report.
 - Independent verifier audit (Claude Opus 5.5) sign-off on Phase 0 pool integrity: **VERDICT: PASS** (`.data/goal/DISJOINTNESS_REPORT.md`).
 - Regionally stratified G1 test pool sourced & frozen (12 recs, 360 blind clips, 4:4:4 regional balance, speaker disjointness NeMo TitaNet max 0.6867 < 0.6944). Hashes frozen in `research/frozen_artifacts.sha256`.
-- Single-speaker TTS fine-tuning on ROCm 10.0 verified (go/no-go for G4 throughput is GO): Flow Matching model trains at 21.9 ms/step. `.data/tts_recipe_benchmark/TTS_RECIPE_ROCM_BENCHMARK.md`
 - 300 frozen VIVOS anchors validated by blind human listening. `research/frozen_artifacts.sha256`
 - Full ViCut-Bench defect pool synthesized: 4,800 clips (16 severities x 300 anchors). `.data/vicut_bench/defects/vicut_bench_defects.jsonl`
 - G4 1–2 h single-speaker TTS source sourced, profiled, disjointness-verified, edge-filtered into clean training split (1.00 h, 339 clips), and audited by Claude Opus 5.5 (`.data/downstream_experiments/G4_SPEAKER_PROFILING_REPORT.md`).
@@ -25,11 +24,13 @@ Rewritten (not appended) at the end of every session; ≤ 60 lines. See `GOAL.md
 
 - G1 test-set defect rate and curator performance under blind human review (awaiting human labels).
 - Downstream TTS sensitivity to data curation quality (positive control run required in Phase 4).
+- G4 TTS feasibility on ROCm: **no TTS model has been trained on any speech yet.** `scripts/audio/test_tts_recipe_rocm.py` is only a 10-step throughput smoke test on random noise with no text input and no vocoder; its 21.9 ms/step and the 7-run ~26 min estimate say nothing about a real text-to-speech model.
 
 ## Open decisions (need the user)
 
 - Completion of 2-annotator G1 human labelling (`.data/goal/review/g1_test/batch_{01..10}/`).
-- Final user sign-off on the 1–2 h single-speaker TTS source for G4 (`qhuy242` Southern Male primary, edge-filtered 1.00 h partition; `Diễm_Hân` PhoAudiobook secondary).
+- G4 source `qhuy242`: user did an informal listening check on 2026-11-08 (`.data/goal/review/g4_qhuy242/`, labels not recorded) and found it OK. Source has no license: internal use only, do not redistribute the audio.
+- Choose a real TTS system for Phase 4.1 (text input + vocoder, trainable on ROCm, usable from 1 h of audio) before any run; re-estimate run time on it.
 
 ## Test-set evaluations
 

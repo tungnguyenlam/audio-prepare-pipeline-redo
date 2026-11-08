@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+"""Throughput smoke test for a small Flow Matching mel model on AMD ROCm.
+
+This is NOT a TTS training recipe: it runs a few steps on random-noise audio, the
+model has no text input, and there is no vocoder. It only checks that the kernels
+run on ROCm and measures step time and VRAM. It does not show that a usable TTS
+model can be trained.
 """Benchmark and verify single-speaker TTS fine-tuning recipe on AMD ROCm.
 
 Implements a full training step loop for a Flow Matching / Transformer TTS acoustic
@@ -8,6 +14,12 @@ Evaluates the go/no-go criterion for milestone G4:
   2. Loss convergence and numerical stability in bfloat16 on RDNA 4.
   3. Step time and total time projection for 10,000 training steps (must be <= 3 hours).
   4. Peak VRAM utilization within the 16 GB hardware budget.
+"""Throughput smoke test for a small Flow Matching mel model on AMD ROCm.
+
+This is NOT a TTS training recipe: it runs a few steps on random-noise audio, the
+model has no text input, and there is no vocoder. It only checks that the kernels
+run on ROCm and measures step time and VRAM. It does not show that a usable TTS
+model can be trained.
 """
 from __future__ import annotations
 
@@ -38,7 +50,19 @@ logger = logging.getLogger("tts.rocm_smoke_test")
 
 
 class MelSpectrogramExtractor(nn.Module):
-    """GPU Mel Spectrogram extractor using native PyTorch STFT (ROCm compatible)."""
+    """Throughput smoke test for a small Flow Matching mel model on AMD ROCm.
+
+This is NOT a TTS training recipe: it runs a few steps on random-noise audio, the
+model has no text input, and there is no vocoder. It only checks that the kernels
+run on ROCm and measures step time and VRAM. It does not show that a usable TTS
+model can be trained.
+"""GPU Mel Spectrogram extractor using native PyTorch STFT (ROCm compatible)."""Throughput smoke test for a small Flow Matching mel model on AMD ROCm.
+
+This is NOT a TTS training recipe: it runs a few steps on random-noise audio, the
+model has no text input, and there is no vocoder. It only checks that the kernels
+run on ROCm and measures step time and VRAM. It does not show that a usable TTS
+model can be trained.
+"""
 
     def __init__(
         self,
@@ -75,7 +99,19 @@ class MelSpectrogramExtractor(nn.Module):
 
 
 class FlowMatchingAcousticModel(nn.Module):
-    """Flow Matching vector field estimator (Matcha/F5 class Transformer backbone)."""
+    """Throughput smoke test for a small Flow Matching mel model on AMD ROCm.
+
+This is NOT a TTS training recipe: it runs a few steps on random-noise audio, the
+model has no text input, and there is no vocoder. It only checks that the kernels
+run on ROCm and measures step time and VRAM. It does not show that a usable TTS
+model can be trained.
+"""Flow Matching vector field estimator (Matcha/F5 class Transformer backbone)."""Throughput smoke test for a small Flow Matching mel model on AMD ROCm.
+
+This is NOT a TTS training recipe: it runs a few steps on random-noise audio, the
+model has no text input, and there is no vocoder. It only checks that the kernels
+run on ROCm and measures step time and VRAM. It does not show that a usable TTS
+model can be trained.
+"""
 
     def __init__(
         self,

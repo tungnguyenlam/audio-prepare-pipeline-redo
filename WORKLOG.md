@@ -760,3 +760,12 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
 - **CTC Truncation Metric:** MMS-FA alignment cutoff before final token combined with trailing energy drop $> 25\text{ dB}$ within 200 ms of cutoff.
 - **Mixed Defect Composition:** Balanced 1:1:1 split of clipped word endings (33%), secondary speaker bleed from `Diễm_Hân` at -8 to -14 dB SNR (33%), and acoustic reverberation ($T_{60} \in [0.4, 0.8]\text{ s}$) + 15 dB SNR babble noise (34%).
 - **Scope Note:** Phase 4.1 fulfills the positive control calibration requirement for G4; full G4 acceptance also requires Phase 4.2 curator comparisons once G1–G3 datasets are finalized.
+
+## 2026-11-08 - Correction: no TTS model trained; G4 source listening check
+
+- Retracted the STATUS "Verified" claim "Single-speaker TTS fine-tuning on ROCm 10.0 verified". `scripts/audio/test_tts_recipe_rocm.py` trains 10 steps on `torch.randn` audio, conditions the model on the target mel itself (no text), has no vocoder and saves no checkpoint. It is a kernel/throughput smoke test only. The 3.65 min/run and ~26 min Phase 4.1 estimates in `G4_SPEAKER_PROFILING_REPORT.md` §7 are void; that section and the benchmark report now carry a correction note. Script docstring corrected.
+- No TTS model has been trained on `qhuy242` or any speech. Phase 4.1 is blocked on choosing a real TTS system (text input + vocoder, ROCm-trainable, 1 h fine-tune) and measuring its run time.
+- G4 source check: built `.data/goal/review/g4_qhuy242/` (20 blind clips: 15 random train-split, 5 most end-flagged; key in `key.jsonl`). User listened informally and judged it OK; labels not recorded in `review.csv`.
+- Verified: train split (339) has 0 overlap with the 388 edge-flagged clips and with the 200 held-out IDs. Source WAVs are 24 kHz although the HF card declares 16000.
+- License: the HF dataset card (revision `ae42f362a05b8d1680770a8c37e2d0e5afa54bc3`) states no license. Do not redistribute the audio; an audio-free split/ID package is the only safe release.
+- Next: decide the TTS system for Phase 4.1 with the user.
