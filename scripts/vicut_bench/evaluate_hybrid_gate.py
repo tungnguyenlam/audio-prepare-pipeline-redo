@@ -452,15 +452,12 @@ def score_manifest_inference(
         with torch.no_grad():
             for idx, r in enumerate(raw_manifest_records):
                 audio_path = Path(r.get("audio_path") or r.get("path", ""))
-                audio, sr = sf.read(str(audio_path), dtype="float32")
-                if sr != 16000:
-                    import scipy.signal
-                    num_samples = int(round(len(audio) * 16000.0 / sr))
-                    audio = scipy.signal.resample(audio, num_samples)
+                data, sr = sf.read(str(audio_path), dtype="float32", always_2d=True)
+                audio = data.mean(axis=1)
                 inp = fe([audio], sampling_rate=16000, return_tensors="pt")
                 out = model(inp["input_features"], output_hidden_states=True)
                 h4 = out.hidden_states[4][0]  # shape [T, 768]
-                dur = len(audio) / 16000.0
+                dur = len(audio) / float(sr)
                 vlen = min(1500, max(1, int(round(dur * 50.0))))
                 valid = h4[:vlen].float()
                 m_vec = valid.mean(dim=0).cpu().numpy().astype(np.float32)
@@ -517,7 +514,7 @@ def score_manifest_inference(
         scored_records.append({
             "clip_id": cid,
             "uid": uid,
-            "speaker": r.get("speaker", "unknown"),
+            "speaker": r.get("speaker") or r.get("recording_id", "unknown"),
             "duration_s": r.get("duration", r.get("duration_s", 0.0)),
             "gold_label": r.get("label", r.get("decision")),
             "rms_dbfs": round(rms_val, 2),
@@ -623,7 +620,13 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.score_manifest:
-        f_params = args.frozen_params or (args.output_dir / "hybrid_gate_frozen_params.json")
+        f_params = args.frozen_params
+        if f_params is None:
+            cand_fp = args.output_dir / "hybrid_gate_frozen_params.json"
+            if cand_fp.exists():
+                f_params = cand_fp
+            else:
+                f_params = Path(".data/vicut_bench/reports/dev_hybrid_gate/hybrid_gate_frozen_params.json")
         out_sc = args.output_dir / "manifest_scored.jsonl"
         p_cache = args.probe_cache
         if p_cache is None:
