@@ -363,6 +363,7 @@ def score_manifest_inference(
     frozen_params_path: Path,
     output_scores_path: Path,
     probe_cache_path: Path | None = None,
+    allow_non_16k: bool = False,
 ) -> None:
     """Score an arbitrary audio manifest using frozen candidate parameters without refitting."""
     logger.info("Executing score-only inference on manifest: %s", manifest_path)
@@ -410,7 +411,8 @@ def score_manifest_inference(
     if cache is not None:
         can_find_all = True
         for r in raw_manifest_records:
-            cid = r.get("id") or r.get("clip_id") or Path(r.get("audio_path", "")).stem
+            audio_p = r.get("blind_wav") or r.get("abs_path") or r.get("audio_path") or r.get("path") or r.get("rel_path", "")
+            cid = r.get("review_id") or r.get("test_id") or r.get("id") or r.get("clip_id") or Path(audio_p).stem
             uid = r.get("uid") or cid
             found_idx = None
             for cand in [uid, cid, f"dev_gold__{cid}", f"dev_gold__{uid}"]:
@@ -431,43 +433,69 @@ def score_manifest_inference(
         s = cache["std"][cached_indices, 4, :768]
         feats_content = np.concatenate([m, s], axis=1)
     else:
-        logger.info("Extracting PhoWhisper Layer 4 mean_std features via transformers...")
+        logger.info("Extracting PhoWhisper Layer 4 mean_std features via production probe_encoder_layers...")
         try:
+            import tempfile
+            import shutil
             import torch
-            from transformers import AutoFeatureExtractor, WhisperModel
+            from probe_encoder_layers import extract_encoder_features
         except ImportError as e:
             raise RuntimeError(
-                f"PhoWhisper L4 features cannot be computed without transformers and torch, and records were not found in cache: {e}"
+                f"PhoWhisper L4 features cannot be computed without torch/probe_encoder_layers, and records were not found in cache: {e}"
             ) from e
 
-        model_id = "vinai/PhoWhisper-small"
-        fe = AutoFeatureExtractor.from_pretrained(model_id, local_files_only=True)
-        dev = "cuda" if torch.cuda.is_available() else "cpu"
-        dtype = torch.bfloat16 if dev == "cuda" else torch.float32
-        model = (
-            WhisperModel.from_pretrained(model_id, local_files_only=True, torch_dtype=dtype)
-            .encoder.to(dev)
-            .eval()
-        )
+        records_to_extract: list[dict[str, Any]] = []
+        for idx, r in enumerate(raw_manifest_records):
+            audio_path = Path(
+                r.get("blind_wav")
+                or r.get("abs_path")
+                or r.get("audio_path")
+                or r.get("path")
+                or r.get("rel_path", "")
+            )
+            cid = r.get("review_id") or r.get("test_id") or r.get("id") or r.get("clip_id") or audio_path.stem
+            uid = r.get("uid") or (f"dev_gold__{cid}" if f"dev_gold__{cid}" in cache_uids_map else cid)
+            dur = float(r.get("duration", r.get("duration_s", 0.0)))
 
-        extracted_feats = []
-        with torch.no_grad():
-            for idx, r in enumerate(raw_manifest_records):
-                if (idx + 1) % 50 == 0 or (idx + 1) == len(raw_manifest_records):
-                    logger.info("Extracting PhoWhisper L4 features: %d/%d", idx + 1, len(raw_manifest_records))
-                audio_path = Path(r.get("audio_path") or r.get("path") or r.get("abs_path", ""))
-                data, sr = sf.read(str(audio_path), dtype="float32", always_2d=True)
-                audio = data.mean(axis=1)
-                inp = fe([audio], sampling_rate=16000, return_tensors="pt")
-                out = model(inp["input_features"].to(dev, dtype=dtype), output_hidden_states=True)
-                h4 = out.hidden_states[4][0]  # shape [T, 768]
-                dur = len(audio) / float(sr)
-                vlen = min(1500, max(1, int(round(dur * 50.0))))
-                valid = h4[:vlen].float()
-                m_vec = valid.mean(dim=0).cpu().numpy().astype(np.float32)
-                s_vec = valid.std(dim=0, unbiased=False).cpu().numpy().astype(np.float32) if vlen > 1 else np.zeros_like(m_vec)
-                extracted_feats.append(np.concatenate([m_vec, s_vec]))
-        feats_content = np.array(extracted_feats, dtype=np.float32)
+            if audio_path.is_file():
+                info = sf.info(str(audio_path))
+                if dur <= 0.0:
+                    dur = float(info.duration)
+                sr_clip = info.samplerate
+            else:
+                sr_clip = 16000
+
+            if sr_clip != 16000 and not allow_non_16k:
+                raise ValueError(
+                    f"Clip '{cid}' ({audio_path}) has sampling rate {sr_clip} Hz != 16000 Hz. "
+                    f"The frozen PhoWhisper small feature extractor requires 16000 Hz audio per Phase 1 specification. "
+                    f"Please resample audio to 16 kHz before scoring (or pass --allow-non-16k to override for historical reproduction)."
+                )
+
+            records_to_extract.append({
+                "uid": uid,
+                "clip_id": cid,
+                "audio_path": str(audio_path),
+                "duration_s": dur,
+            })
+
+        dev = "cuda" if torch.cuda.is_available() else "cpu"
+        tmp_extract_dir = Path(tempfile.mkdtemp(prefix="phowhisper_extract_"))
+        try:
+            logger.info("Running production extract_encoder_features on device=%s (bfloat16, batch_size=8)...", dev)
+            res = extract_encoder_features(
+                encoder_name="phowhisper",
+                records=records_to_extract,
+                cache_dir=tmp_extract_dir,
+                device=dev,
+                batch_size=8,
+                overwrite=True,
+            )
+            m = res["mean"][:, 4, :768]
+            s = res["std"][:, 4, :768]
+            feats_content = np.concatenate([m, s], axis=1)
+        finally:
+            shutil.rmtree(tmp_extract_dir, ignore_errors=True)
 
     def predict_from_head(head_dict: dict[str, Any], X_mat: np.ndarray) -> np.ndarray:
         mean = np.array(head_dict["scaler_mean"], dtype=np.float64)
@@ -484,8 +512,14 @@ def score_manifest_inference(
 
     scored_records: list[dict[str, Any]] = []
     for idx, r in enumerate(raw_manifest_records):
-        audio_path = Path(r.get("audio_path") or r.get("path") or r.get("abs_path", ""))
-        cid = r.get("id") or r.get("clip_id") or audio_path.stem
+        audio_path = Path(
+            r.get("blind_wav")
+            or r.get("abs_path")
+            or r.get("audio_path")
+            or r.get("path")
+            or r.get("rel_path", "")
+        )
+        cid = r.get("review_id") or r.get("test_id") or r.get("id") or r.get("clip_id") or audio_path.stem
         uid = r.get("uid") or (f"dev_gold__{cid}" if f"dev_gold__{cid}" in cache_uids_map else cid)
 
         rms_val: float | None = None
@@ -621,6 +655,12 @@ def main() -> None:
         default=None,
         help="Optional path to precomputed pooled feature cache (.npz).",
     )
+    parser.add_argument(
+        "--allow-non-16k",
+        action="store_true",
+        default=False,
+        help="Allow audio with sampling rate != 16000 Hz during fresh extraction (for reproducing unresampled historical runs).",
+    )
 
     args = parser.parse_args()
 
@@ -638,7 +678,13 @@ def main() -> None:
             cand_cache = args.probe_dir / "cache" / "phowhisper_pooled.npz"
             if cand_cache.exists():
                 p_cache = cand_cache
-        score_manifest_inference(args.score_manifest, f_params, out_sc, probe_cache_path=p_cache)
+        score_manifest_inference(
+            args.score_manifest,
+            f_params,
+            out_sc,
+            probe_cache_path=p_cache,
+            allow_non_16k=args.allow_non_16k,
+        )
         return
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
