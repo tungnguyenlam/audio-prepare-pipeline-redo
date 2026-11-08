@@ -2,36 +2,36 @@
 
 Rewritten (not appended) at the end of every session; ≤ 60 lines. See `GOAL.md` §7.
 
-**Updated:** 2026-11-06
-**Current milestone:** 2026-10-31: freeze G1 test set, prepare annotation sheets (COMPLETE; independent audit by Claude Opus 5.5 PASSED; pending user commit with GOAL_CHANGE_APPROVED=1).
-**Next milestone:** 2026-12-01: Candidate method beats best baseline on dev with CI excluding 0 (IN PROGRESS; fallback to benchmark/audit paper if missed).
-**Next single task:** Complete 2-annotator blind human labeling on G1 review batches (`.data/goal/review/g1_test/batch_{01..10}/`).
-**Blocked on the user:** Approve new G1 recording selection and frozen-hash commit (`GOAL_CHANGE_APPROVED=1 git commit research/frozen_artifacts.sha256`).
+**Updated:** 2026-11-08
+**Current milestone:** 2026-12-01: Candidate method dev evaluation & benchmark characterization (Branch B Fallback triggered; candidate locked; proceed to Phase 2 G1 characterization & Phase 3 benchmark paper).
+**Next milestone:** 2026-12-15: Complete blind 2-annotator human review on G1 test pool (`.data/goal/review/g1_test/batch_{01..10}/`).
+**Next single task:** Complete 2-annotator blind human labeling on G1 review batches.
+**Blocked on the user:** Completion of 2-annotator G1 human labelling (`.data/goal/review/g1_test/batch_{01..10}/`).
 
 ## Verified (each with the file that proves it)
 
-- Independent verifier audit (Claude Opus 5.5) sign-off on Phase 0 pool integrity: **VERDICT: PASS** (Run 7 confirmed 12 recordings, 360 clips, 4:4:4 regional balance, speaker disjointness, EER calibration, review packaging, and Sortformer slicing recipe).
-- Regionally stratified G1 test pool sourced & frozen (PLAN.md Phase 0): 12 recordings (4 North, 4 Central, 4 South), 360 blind clips (30/rec), speaker disjointness verified with NeMo TitaNet-L on ROCm (centroid vs dev-288 max 0.6867 < 0.6944, ViCut-Bench max 0.6777 < 0.6944, archived max 0.6922 < 0.6944, TTS max 0.6681 < 0.6944). Blind clips in `.data/goal/g1_blind_audio/`, answer key in `.data/goal/g1_blind_audio/key.jsonl`, manifest in `.data/goal/test_manifest.jsonl`, 10 review batches (36 clips each) in `.data/goal/review/g1_test/batch_{01..10}/` strictly compliant with GOAL §6 (strictly 3 files: REVIEW.md, review.csv, playlist.m3u). Hashes frozen in `research/frozen_artifacts.sha256`. Comprehensive audit report in `.data/goal/DISJOINTNESS_REPORT.md`.
-- Synthetic clean-twin (`0 ms`) boundary calibration resolved (Hypothesis A confirmed): replacing in-sample 50/50 mixture 95% thresholds with speaker-disjoint 5-fold OOF thresholds on `clean_tight_tr` (and per-anchor `max(anchor, tight)`) reduces held-out `clean_tight_twin` (n=90) FRR from 35.6% to **3.3%** (`composite`, raw-anchor FRR **1.1%**) and **4.4%**/**3.3%** (`boundary_only`, raw-anchor FRR **0.0%**) with zero weight changes. `.data/vicut_bench/reports/composite_probe_calibration_20261016/COMPOSITE_PROBE_GATE_REPORT.md`
-- Real-dev (`dev-288`) probability-scale mismatch and fixed-70%-yield marginal-precision ceiling diagnosed (Hypothesis B confirmed): at 70% minute yield (`t=0.998703`), `composite` (`R=0.2872`) gives 0/93 rejections to `wavlm` boundary heads (`gemma4_audio:background_music` 73/93, `secondary_speaker` 20/93). Same report.
-- Fixed composite dev experiment is negative (288 clips, 11 recordings): at 69.97% accepted-minute yield, R=0.2872 (56/195), versus PhoWhisper R=0.2792 at 69.65%; paired recording-bootstrap baseline-minus-composite CI [-0.0403, 0.0474], 1,000 replicates, seed 42 (seed 123 also crosses zero). `.data/vicut_bench/reports/composite_probe_gate/COMPOSITE_PROBE_GATE_REPORT.md`
-- Phase 3 layer-wise encoder probing on ViCut-Bench (5,688 clips across `wavlm`, `phowhisper`, `gemma4_audio`) confirmed Hypothesis H3: Secondary speaker reaches test AUROC **0.9495** on `gemma4_audio` L4; 20 ms hop encoders (`wavlm` L12: **0.9459** AUROC) beat 40 ms on `clipped_word_end`. `.data/vicut_bench/reports/phase3_probes/PHASE3_PROBE_REPORT.md`
-- Single-speaker TTS fine-tuning on ROCm 10.0 verified (go/no-go for G4 throughput is GO): Flow Matching model trains at 21.9 ms/step, 0.54 GB reserved VRAM. `.data/tts_recipe_benchmark/TTS_RECIPE_ROCM_BENCHMARK.md`
-- 300 frozen VIVOS anchors validated by blind human listening (23 pass, 1 unsure, 0 fail). `research/frozen_artifacts.sha256`
+- Phase 1 Single Candidate Hybrid Gate evaluated on dev-288 and ViCut-Bench (`.data/vicut_bench/reports/dev_hybrid_gate/DEV_HYBRID_GATE_REPORT.md`): Pre-gate (RMS < -50 dBFS), boundary arm (10 ms edge ratios @ 95% specificity on 5-fold OOF `clean_tight_tr`: $\tau_\text{start}=0.4235, \tau_\text{end}=0.2538$), content arm (PhoWhisper L4 `mean_std` pooling logistic regression, OOF AUROC 0.9429 secondary speaker, 0.9840 music). Continuous score $s = \text{flag\_edge} + p_\text{content}$, lexicographical tuple `(pre_gate, flag_edge, p_content, clip_id)`.
+- Dev-288 competition: Candidate lowers defect rate vs `flash_lite` ($36.78\%$ vs $39.00\%$, $\Delta R = -2.22\%$ pt at ~83.8% yield) and vs `signal_3feat` ($29.70\%$ vs $32.64\%$, $\Delta R = -2.94\%$ pt at 70% yield), and beats `recipe_nolock` ($39.84\%$ vs $44.79\%$ at 90% yield). Paired recording-bootstrap 95% CIs (1,000 resamples across 11 recordings, seeds 42 and 123) cross 0 against `flash_lite` ([-0.0399, +0.0013], [-0.0402, +0.0023]) and `signal_3feat` ([-0.0704, +0.0393], [-0.0691, +0.0402]). Pre-registered **Branch B (Fallback)** triggered; candidate locked as baseline per PLAN.md line 203.
+- ViCut-Bench G3 mechanism verified on held-out test split (90 anchors / 19 speakers): Clean-twin 0 ms cut FRR = 3.33% start ($\le 3.3\%$), 2.22% end ($\le 3.3\%$), 0.00% raw anchors. Monotonic per-severity AUROC up to 0.9123 (`clipped_word_end` 80ms), 0.9221 (`clipped_word_start` 80ms), 0.9728 (`secondary_speaker` 6dB), 0.9988 (`background_music` 12dB).
+- Real dev-288 component ablation documented across all 5 conditions: Full Hybrid (29.70%), Content only (28.50%), Boundary only (31.79%), Full w/o Pre-gate (29.70%), Pre-gate only (44.79%). Same report.
+- Independent verifier audit (Claude Opus 5.5) sign-off on Phase 0 pool integrity: **VERDICT: PASS** (`.data/goal/DISJOINTNESS_REPORT.md`).
+- Regionally stratified G1 test pool sourced & frozen (12 recs, 360 blind clips, 4:4:4 regional balance, speaker disjointness NeMo TitaNet max 0.6867 < 0.6944). Hashes frozen in `research/frozen_artifacts.sha256`.
+- Single-speaker TTS fine-tuning on ROCm 10.0 verified (go/no-go for G4 throughput is GO): Flow Matching model trains at 21.9 ms/step. `.data/tts_recipe_benchmark/TTS_RECIPE_ROCM_BENCHMARK.md`
+- 300 frozen VIVOS anchors validated by blind human listening. `research/frozen_artifacts.sha256`
 - Full ViCut-Bench defect pool synthesized: 4,800 clips (16 severities x 300 anchors). `.data/vicut_bench/defects/vicut_bench_defects.jsonl`
+- G4 1–2 h single-speaker TTS source sourced, profiled, disjointness-verified, edge-filtered into clean training split (1.00 h, 339 clips), and audited by Claude Opus 5.5 (`.data/downstream_experiments/G4_SPEAKER_PROFILING_REPORT.md`).
 
 ## Unverified (treat as unknown until a file proves it)
 
-- The 1–2 h clean/defect-bearing single-speaker audio source for G4 (VIVOS has only ~15 min per speaker).
-- Whether combining content probes with deterministic edge energy reduces between-recording variance on `dev-288`.
-- Sensitivity of the Flow Matching TTS model to data curation quality (positive control run required).
+- G1 test-set defect rate and curator performance under blind human review (awaiting human labels).
+- Downstream TTS sensitivity to data curation quality (positive control run required in Phase 4).
 
 ## Open decisions (need the user)
 
-- Human commit approval with `GOAL_CHANGE_APPROVED=1` for newly frozen G1 artifacts.
-- Completion of 2-annotator G1 labelling after verifier PASS.
-- The 1–2 h single-speaker TTS source for G4.
+- Completion of 2-annotator G1 human labelling (`.data/goal/review/g1_test/batch_{01..10}/`).
+- Final user sign-off on the 1–2 h single-speaker TTS source for G4 (`qhuy242` Southern Male primary, edge-filtered 1.00 h partition; `Diễm_Hân` PhoAudiobook secondary).
 
 ## Test-set evaluations
 
 None yet. The G1 test set has been sampled and frozen, awaiting human listening labels.
+

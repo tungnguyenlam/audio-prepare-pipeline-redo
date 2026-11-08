@@ -659,3 +659,81 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
      - **Candidate Selection Limitations:** Exclusions of surplus South candidates (`wcyvjpJ2dTg` for unverified acoustic chatter/music screening and `xUvy59GaQvI` for secondary speaker overlap) inherently select for cleaner broadcast and interview recordings. While studio interview (`_UjcxyKrsvE`) and music-backed travel vlog (`p_u50y858kY`) remain in the pool, this selection may slightly lower the natural defect rate relative to uncurated raw streams.
      - **External File References:** Codebase and `.data/` search found 0 candidate video ID occurrences outside the pool directory, with the exception of 12 harmless voice-activity cache files under `.data/vad/auto/` originating from processing the candidate stems themselves.
 
+### 2026-11-08: Phase 1 Dev Hybrid Gate Benchmark & ViCut-Bench Calibration (Branch B Fallback Triggered)
+
+- **Objective:** Implement, calibrate, and evaluate the pre-registered Single Candidate Hybrid Gate on `dev-288` (11 recordings, 288 clips, 26.28 min) and synthetic ViCut-Bench (test split: 90 anchors / 19 speakers) per `PLAN.md` Phase 1 (lines 121–210) and `WORKLOG.md` (2026-11-06 pre-registration).
+- **Candidate Gate Specification:**
+  - **Pre-gate:** Deterministic digital silence / low-energy rejection at $\text{RMS} < -50\text{ dBFS}$.
+  - **Boundary arm:** Deterministic 10 ms edge energy ratios (`start_edge_ratio_10ms`, `end_edge_ratio_10ms`), thresholded at 95% specificity on held-out 5-fold OOF `clean_tight_tr` (210 tight twins across 43 speakers): $\tau_{\text{start}} = 0.4235$, $\tau_{\text{end}} = 0.2538$. Edge flag $\text{flag\_edge} = 1.0$ if $\text{start} > \tau_{\text{start}} \lor \text{end} > \tau_{\text{end}}$, else $0.0$.
+  - **Content arm:** `vinai/phowhisper-small` Layer 4 encoder representation with `mean_std` pooling ($D=1536$), trained on ViCut-Bench train defects (840 `secondary_speaker`, 840 `background_music`) vs clean train negatives (210 anchors + 210 tight twins) via logistic regression ($C=0.01$, balanced). 5-fold OOF AUROC on train split: `secondary_speaker` = 0.9429, `background_music` = 0.9840. Content risk $p_{\text{content}} = \max(p_{\text{sec}}, p_{\text{music}})$.
+  - **Deterministic Score & Lexicographical Ordering:** Scalar score $s = \text{flag\_edge} + p_{\text{content}} \in [0.0, 2.0]$. Lexicographical sort tuple: `(pre_gate, flag_edge, p_content, clip_id)` ensuring strict determinism and whole-score group stability without label leakage.
+- **Scripts Implemented & Verified:**
+  - `scripts/vicut_bench/evaluate_hybrid_gate.py` (SHA-256: `9921c746906dfa0458f9652f3a7453b37b0bb8e91a681bee586327f62c93bb08`)
+  - `scripts/vicut_bench/evaluate_hybrid_gate.sh` (SHA-256: `dc307ac715af0b486ad3ce690e5b31b74bb7ce330f00e0054e21bfcc1ac6eaf2`)
+  - Documented CLI execution command in `docs/commands.md`.
+- **Dev-288 Competition Results (Uncurated defect rate $R = 44.79\%$):**
+  - **Point estimates at matched yields:**
+    - vs `flash_lite` (matched ~83.8% yield): Candidate $R = 36.78\%$ (accepted 22.02 min) vs `flash_lite` $R = 39.00\%$ (accepted 21.99 min), $\Delta R = -2.22\%$ pt.
+    - vs `signal_3feat` (matched 70.0% yield): Candidate $R = 29.70\%$ (accepted 18.42 min) vs `signal_3feat` $R = 32.64\%$ (accepted 18.38 min), $\Delta R = -2.94\%$ pt.
+    - vs `recipe_nolock` (matched 90.0% yield): Candidate $R = 39.84\%$ (accepted 23.62 min) vs `recipe_nolock` $R = 44.79\%$ (accepted 26.28 min), $\Delta R = -4.95\%$ pt.
+  - **Paired recording-bootstrap 95% CIs (1,000 resamples across 11 recordings):**
+    - vs `flash_lite`: Seed 42 = `[-0.0399, +0.0013]` (mean -0.0196); Seed 123 = `[-0.0402, +0.0023]` (mean -0.0201). Both seeds cross 0.
+    - vs `signal_3feat`: Seed 42 = `[-0.0704, +0.0393]` (mean -0.0173); Seed 123 = `[-0.0691, +0.0402]` (mean -0.0179). Both seeds cross 0.
+    - vs `recipe_nolock`: Seed 42 = `[-0.0596, -0.0213]` (mean -0.0428); Seed 123 = `[-0.0610, -0.0196]` (mean -0.0430). Both seeds strictly exclude 0.
+- **Pre-Registered Decision Gate Status:**
+  - While candidate shows point improvements against all dev baselines, the paired recording bootstrap 95% CIs cross 0 against `flash_lite` and `signal_3feat`.
+  - In strict compliance with `PLAN.md` lines 196–208, **Branch B (Fallback)** is triggered.
+  - Method iteration halts immediately. The candidate gate is locked as the pre-registered baseline. Honest null dev findings are logged, and the project proceeds to Phase 2 (G1 Test Set Benchmark Characterization) and Phase 3 (ViCut-Bench Benchmark & Judge Audit Paper). Curator comparison in Phase 4.2 is skipped.
+- **Real dev-288 Component Ablation (at matched 70.0% yield):**
+  1. Full Hybrid Gate: $R = 29.70\%$ (accepted 202 clips, 18.42 min, yield = 70.08%).
+  2. Content arm only ($p_{\text{content}}$): $R = 28.50\%$ (accepted 207 clips, 18.47 min, yield = 70.28%).
+  3. Boundary arm only (normalized edge ratio): $R = 31.79\%$ (accepted 195 clips, 18.39 min, yield = 69.98%).
+  4. Full without Pre-gate: $R = 29.70\%$ (accepted 202 clips, 18.42 min, yield = 70.08%). Identical on dev-288 because all clips have $\text{RMS} \ge -36\text{ dBFS}$.
+  5. Pre-gate only: $R = 44.79\%$ (accepted 288 clips, 26.28 min, yield = 100.00%).
+- **ViCut-Bench G3 Mechanism Validation (Held-out Test Split: 90 anchors / 19 speakers):**
+  - **Clean-twin FRR at 0 ms cuts:** Raw clean anchors FRR = **0.00%** (0/90). Held-out tight twins start edge FRR = **3.33%** (3/90, $\le 3.3\%$), end edge FRR = **2.22%** (2/90, $\le 3.3\%$), union edge FRR = **5.56%** (5/90).
+  - **Held-out Defect Detection AUROC:**
+    - `clipped_word_end`: AUROC vs raw = 0.6061, AUROC vs tight twins = **0.8383** (10ms: 0.7786, 20ms: 0.8019, 40ms: 0.8602, 80ms: 0.9123).
+    - `clipped_word_start`: AUROC vs raw = 0.6898, AUROC vs tight twins = **0.8286** (10ms: 0.7226, 20ms: 0.7890, 40ms: 0.8809, 80ms: 0.9221).
+    - `secondary_speaker`: AUROC vs raw = **0.8793**, AUROC vs tight twins = **0.9262** (24dB: 0.7472, 18dB: 0.8422, 12dB: 0.9551, 6dB: 0.9728).
+    - `background_music`: AUROC vs raw = **0.9672**, AUROC vs tight twins = **0.9465** (30dB: 0.9048, 24dB: 0.9690, 18dB: 0.9960, 12dB: 0.9988).
+- **Generated Deliverables & Checksums:**
+  - `.data/vicut_bench/reports/dev_hybrid_gate/DEV_HYBRID_GATE_REPORT.md` (SHA-256: `e2e4ef4f7e57d4aedf492574070cefa77b3b2f6bfeb044c338e3fd3cb9763968`)
+  - `.data/vicut_bench/reports/dev_hybrid_gate/hybrid_gate_report.json` (SHA-256: `c68bdee2998078e390a6db3131b809837e774ba5d6a6a57755100ecbfa5ab7a8`)
+
+
+
+## 2026-11-08 - Phase 4.1 Preparation for G4: Source, Profile, Verify, and Pre-Register Single-Speaker Vietnamese TTS Dataset
+
+### Context & Mission
+- Goal: Acceptance Criterion G4 (downstream Flow Matching TTS positive control calibration, `PLAN.md` lines 162–188).
+- Required: 1–2 h clean/defect-bearing single-speaker Vietnamese audio source, certified speaker disjoint from evaluation pools (dev-288, G1 blind pool, ViCut frozen anchors), verified against synthetic shortcuts (`GOAL.md` §2), and independently audited by Claude Opus 5.5.
+
+### Decisions & Candidate Screening
+- Disqualified candidates:
+  - **VIVOS** (`.data/s1-download/vivos`): 65 speakers, 15.67 h total. Max single-speaker duration is 53.22 min (`train_VIVOSSPK35`), failing $\ge 1.0\text{ h}$. Furthermore, 62 of 65 speakers constitute the ViCut frozen anchor set.
+  - **Have-A-Sip** (`.data/s1-download/Have-A-Sip`): Usable separated speech across all speakers is only 9.6 min; host Thùy Minh has ~5 min. Commercial copyright and source separation residue disqualify it.
+  - **VietTTS** (`ntt123/viet-tts-dataset`): Sourced from Android Google Text-to-Speech offline engine; explicitly tagged `synthetic-speech`. Disqualified under `GOAL.md` §2 prohibition on synthetic shortcuts.
+  - **FOSD** (`doof-ferb/fpt_fosd`): 100 h crowdsourced MP3 ASR corpus without speaker IDs; acoustic variance unsuitable for single-speaker TTS.
+  - **Tinnn-vn** (`vietnamese-tts-dataset`): 2,204 clips (24 kHz) with unstated provenance and multi-speaker variance.
+- Selected Candidates:
+  - **Secondary / Benchmark:** `thivux/phoaudiobook` (`Diễm_Hân`), Shard 0: 332 clips, 1.14 h, 16 kHz studio speech, 0% clipping, TitaNet-L max cosine 0.6616. Drawback: fixed 50 ms digital zero padding prepended/appended.
+  - **Primary Candidate:** `qhuy242/vietnam-tts-southern-male-dataset`: 823 clips, 8,990.96 s (2.50 h), 24 kHz uncompressed studio speech, mean RMS -20.28 dBFS, dynamic range 65.04 dB, estimated SNR 44.91 dB, 0% clipping (0 / 823). Transcripts are lowercase, unpunctuated ASR-normalized text with full Vietnamese diacritics (7 raw digits to normalize).
+
+### Independent Verification Audit & Remediation (Claude Opus 5.5)
+- Independent auditor Claude Opus 5.5 executed full empirical audit via delegated review task.
+- Confirmed: 2.50 h length, 24 kHz format, -20.28 dBFS RMS, 0% clipping, single speaker consistency (centroid self-similarity: 1st percentile 0.829, median 0.919), and re-verified TitaNet-L disjointness across all 823 clips (all 780,000+ pairwise similarities < 0.6944: max dev-288 = 0.6579, max G1 = 0.6696, max ViCut = 0.6429).
+- Identified Boundary Defect: 388 of 823 clips (47%) have speech reaching the audio edge due to automated slicing of continuous audio without pause margins, which would confound the word-end clipping positive control.
+- Remediation Implemented:
+  1. Classified all clips using repository boundary detector thresholds (start > 0.4235, end > 0.2538). Exactly 435 clips (1.29 h) are completely unflagged.
+  2. Materialized clean training partition `.data/downstream_experiments/g4_tts_splits.json` (SHA256: `0e1f62641225a46f222da1c27ca322c5691b61bf5bf290ec2b6ba6e3c11a51af`): exactly 339 unflagged clips totaling 3,603.68 s (1.001 h) for the clean training baseline, guaranteeing zero boundary defects.
+  3. Reserved 200 held-out sentences for post-synthesis text prompt evaluation.
+  4. Added `scripts/evaluate/profile_tts_speaker_candidate.sh` bash wrapper, standardized CLI flags (`-om`, `-of`), routed progress to stderr, and documented in `docs/commands.md`.
+  5. Saved verified disjointness results to `.data/downstream_experiments/qhuy242_disjointness.json`.
+
+### Pre-Registration of Phase 4.1 Positive Control Parameters
+- **Run Matrix:** 7 runs across 5 conditions (Clean Seed 1 & 2, Clipped Word End @ 30%, Secondary Speaker @ 30%, Mixed @ 10%, Mixed @ 30% Seed 1 & 2), each trained on exactly 339 clips (1.00 h) for 10,000 steps (~3.65 min/run on AMD Radeon RX 9060 XT `gfx1200`, total GPU time ~25.6 min).
+- **Clean Baseline Intelligibility Floor:** Run 1 must reach ASR CER $\le 15.0\%$ with `PhoASR-whisper-small` on 200 held-out sentences.
+- **CTC Truncation Metric:** MMS-FA alignment cutoff before final token combined with trailing energy drop $> 25\text{ dB}$ within 200 ms of cutoff.
+- **Mixed Defect Composition:** Balanced 1:1:1 split of clipped word endings (33%), secondary speaker bleed from `Diễm_Hân` at -8 to -14 dB SNR (33%), and acoustic reverberation ($T_{60} \in [0.4, 0.8]\text{ s}$) + 15 dB SNR babble noise (34%).
+- **Scope Note:** Phase 4.1 fulfills the positive control calibration requirement for G4; full G4 acceptance also requires Phase 4.2 curator comparisons once G1–G3 datasets are finalized.

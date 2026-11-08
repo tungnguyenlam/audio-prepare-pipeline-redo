@@ -650,6 +650,10 @@ bash scripts/evaluate/plot_metrics.sh --metrics-file a.json --metrics-file b.jso
 bash scripts/evaluate/prepare_viyt_diar.sh
 bash scripts/evaluate/run_viyt_diar.sh --systems pyannote_community1 --limit 2
 bash scripts/evaluate/run_viyt_diar.sh --all
+
+# TTS speaker profiling and disjointness audit (Phase 4.1 / G4)
+bash scripts/evaluate/profile_tts_speaker_candidate.sh --dataset qhuy242 -om .data/downstream_experiments/g4_speaker_manifest.jsonl -of .data/downstream_experiments/g4_speaker_profile.json
+bash scripts/evaluate/profile_tts_speaker_candidate.sh --dataset phoaudiobook --speaker Diễm_Hân -om .data/downstream_experiments/phoaudiobook_manifest.jsonl
 ```
 
 `prepare_viyt_diar` downloads the public 100-file `tuanduy1612/ViYT-Diar` `test`
@@ -774,6 +778,23 @@ evidence. Historical `probe_encoder_layers` yield figures use clip quantiles; th
 reports corrected accepted-minute yields. Cached features lack original audio/model hash
 binding; current cache hashes identify exact inputs but cannot retroactively establish
 extraction provenance.
+
+`evaluate_hybrid_gate` (`.venvs/main` or `.venvs/verify`) implements and evaluates the pre-registered Single Candidate Hybrid Gate on `dev-288` and synthetic ViCut-Bench per Phase 1 of `PLAN.md`. It evaluates:
+1. Deterministic digital silence / low-energy pre-gate ($\text{RMS} < -50\text{ dBFS}$).
+2. Deterministic boundary arm (10 ms edge energy ratios thresholded at 95% specificity on 5-fold OOF `clean_tight_tr`).
+3. PhoWhisper Layer 4 `mean_std` content arm heads for secondary speaker and background music calibrated via 5-fold OOF logistic regression ($C=0.01$).
+4. Continuous scalar decision score $s = \text{flag\_edge} + p_{\text{content}}$ with lexicographical ranking tuple `(pre_gate, flag_edge, p_content, clip_id)`.
+5. Paired recording-bootstrap 95% CIs (1,000 resamples across the 11 dev recordings, seeds 42 and 123) against dev baselines (`flash_lite`, continuous `signal_3feat`, and `recipe_nolock`).
+6. ViCut-Bench G3 mechanism validation on held-out test split (90 anchors / 19 speakers) including clean-twin FRR at 0 ms cuts and per-severity AUROC detection curves across all 4 defect types.
+7. Real `dev-288` component ablation across all 5 conditions.
+
+```bash
+bash scripts/vicut_bench/evaluate_hybrid_gate.sh \
+  --output-dir .data/vicut_bench/reports/dev_hybrid_gate \
+  --overwrite
+```
+
+Outputs are `DEV_HYBRID_GATE_REPORT.md` and `hybrid_gate_report.json` under `.data/vicut_bench/reports/dev_hybrid_gate/`.
 
 `generate_bench_report` builds a standalone dark-themed interactive HTML dashboard at
 `.data/vicut_bench/reports/vicut_bench_dashboard.html` with playable audio cards for edge-screen
