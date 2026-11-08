@@ -805,6 +805,11 @@ bash scripts/vicut_bench/evaluate_hybrid_gate.sh \
   --output-dir <output_dir>
 ```
 
+Audio input must be 16,000 Hz (matching the frozen PhoWhisper feature extractor). If an input file has a different sampling rate, `evaluate_hybrid_gate.py` raises an informative `ValueError` refusing processing. To override this check for historical reproduction of unresampled runs, pass `--allow-non-16k`.
+
+When `--score-manifest` is invoked, `evaluate_hybrid_gate.sh` automatically routes execution through `.venvs/verify` to utilize ROCm GPU acceleration if available.
+
+
 `generate_bench_report` builds a standalone dark-themed interactive HTML dashboard at
 `.data/vicut_bench/reports/vicut_bench_dashboard.html` with playable audio cards for edge-screen
 validation (30 clean VIVOS anchors vs 20 screen-flagged PhoAudiobook clips) and AB listening
