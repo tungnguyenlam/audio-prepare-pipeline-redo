@@ -667,36 +667,36 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
   - **Boundary arm:** Deterministic 10 ms edge energy ratios (`start_edge_ratio_10ms`, `end_edge_ratio_10ms`), thresholded at 95% specificity on held-out 5-fold OOF `clean_tight_tr` (210 tight twins across 43 speakers): $\tau_{\text{start}} = 0.423525$, $\tau_{\text{end}} = 0.253780$. Edge flag $\text{flag\_edge} = 1.0$ if $\text{start} > \tau_{\text{start}} \lor \text{end} > \tau_{\text{end}}$, else $0.0$.
   - **Content arm:** `vinai/phowhisper-small` Layer 4 encoder representation with `mean_std` pooling ($D=1536$), trained on ViCut-Bench train defects (840 `secondary_speaker`, 840 `background_music`) vs clean train negatives (210 anchors + 210 tight twins) via logistic regression ($C=0.01$, balanced). 5-fold OOF AUROC on train split: `secondary_speaker` = 0.9340, `background_music` = 0.9954. Content risk $p_{\text{content}} = \max(p_{\text{sec}}, p_{\text{music}})$.
   - **Deterministic Score & Lexicographical Ordering:** Scalar score $s = \text{flag\_edge} + p_{\text{content}} \in [0.0, 2.0]$. Lexicographical sort tuple: `(pre_gate, flag_edge, p_content, clip_id)` ensuring strict determinism and whole-score group stability without label leakage.
-  - **Frozen Parameters:** Saved and hashed to `.data/vicut_bench/reports/dev_hybrid_gate/hybrid_gate_frozen_params.json` (SHA-256: `97358ef70d70ca08e2eefbcc9beb1f3d16de4355173602a13c946f6064a78401`). Score-only inference CLI path implemented for arbitrary input manifests via `--score-manifest`.
+  - **Frozen Parameters:** Saved and hashed to `.data/vicut_bench/reports/dev_hybrid_gate/hybrid_gate_frozen_params.json` (SHA-256: `f5a2a6173a710aa7e7b561d015053b0d55561c053b7be008acfddaaa33bf472a`). Score-only inference CLI path implemented for arbitrary input manifests via `--score-manifest`.
 - **Scripts Implemented & Verified:**
-  - `scripts/vicut_bench/evaluate_hybrid_gate.py` (SHA-256: `e35cce2bfd58cc9c511234874aac25d32e9fdcc5b755314766827c9f5feb62a1`)
+  - `scripts/vicut_bench/evaluate_hybrid_gate.py` (SHA-256: `eb1f9d1f93c48abc64cda3f714b37e40c6814e9386819476042145b0cb7b59a2`)
   - `scripts/vicut_bench/evaluate_hybrid_gate.sh` (SHA-256: `d93492fb968a3d43d0649b1bc2cbe74071a1590c2a2a3dfea5b818c90105cda9`)
   - Thread pinning (`OMP_NUM_THREADS=1`, `MKL_NUM_THREADS=1`, `OPENBLAS_NUM_THREADS=1`, `PYTHONHASHSEED=42`) verified with 100% bit-deterministic output across independent runs.
   - Documented CLI execution command in `docs/commands.md`.
 - **Dev-288 Competition Results (Uncurated defect rate $R = 44.79\%$):**
-  - **Point estimates at matched yields:**
-    - vs `flash_lite` (matched ~83.8% yield): Candidate $R = 37.66\%$ (accepted 242 clips, 22.02 min, 83.77% yield) vs `flash_lite` $R = 39.00\%$ (accepted 241 clips, 21.99 min, 83.65% yield), $\Delta R = -1.34\%$ pt.
-    - vs `signal_3feat` (matched 70.0% yield): Candidate $R = 30.49\%$ (accepted 202 clips, 18.42 min, 70.08% yield) vs `signal_3feat` $R = 32.64\%$ (accepted 193 clips, 18.38 min, 69.93% yield), $\Delta R = -2.15\%$ pt.
-    - vs `signal_only` (4-feature percentile baseline): Candidate $R = 30.49\%$ vs `signal_only` $R = 29.10\%$ (accepted 189 clips, 18.09 min, 68.84% yield), $\Delta R = +1.39\%$ pt.
-    - vs `recipe_nolock` (matched 90.0% yield): Candidate $R = 41.84\%$ (accepted 256 clips, 23.62 min, 89.87% yield) vs `recipe_nolock` $R = 44.79\%$ (accepted 288 clips, 26.28 min, 100.0% yield), $\Delta R = -2.96\%$ pt.
+  - **Point estimates at matched yields (clip-count $R$):**
+    - vs `flash_lite` (matched ~83.8% yield): Candidate $R = 36.78\%$ (accepted 242 clips, 22.02 min, 83.77% yield) vs `flash_lite` $R = 39.00\%$ (accepted 241 clips, 21.99 min, 83.65% yield), $\Delta R = -2.23\%$ pt.
+    - vs `signal_3feat` (matched 70.0% yield): Candidate $R = 29.70\%$ (accepted 202 clips, 18.42 min, 70.08% yield) vs `signal_3feat` $R = 32.64\%$ (accepted 193 clips, 18.38 min, 69.93% yield), $\Delta R = -2.94\%$ pt.
+    - vs `signal_only` (4-feature percentile baseline): Candidate $R = 29.70\%$ vs `signal_only` $R = 29.10\%$ (accepted 189 clips, 18.09 min, 68.84% yield), $\Delta R = +0.60\%$ pt.
+    - vs `recipe_nolock` (matched 90.0% yield): Candidate $R = 39.84\%$ (accepted 256 clips, 23.62 min, 89.87% yield) vs `recipe_nolock` $R = 44.79\%$ (accepted 288 clips, 26.28 min, 100.0% yield), $\Delta R = -4.95\%$ pt.
   - **Paired recording-bootstrap 95% CIs (1,000 resamples across 11 recordings):**
-    - vs `flash_lite`: Seed 42 = `[-0.0600, +0.0830]` (mean -0.0067, 1000/1000 valid); Seed 123 = `[-0.0607, +0.0812]` (mean -0.0077, 1000/1000 valid). Both seeds cross 0.
-    - vs `signal_3feat`: Seed 42 = `[-0.0636, +0.0843]` (mean -0.0051, 1000/1000 valid); Seed 123 = `[-0.0625, +0.0782]` (mean -0.0065, 1000/1000 valid). Both seeds cross 0.
-    - vs `signal_only`: Seed 42 = `[-0.0358, +0.0701]` (mean +0.0166, 768/1000 valid); Seed 123 = `[-0.0333, +0.0791]` (mean +0.0164, 776/1000 valid). Both seeds cross 0.
-    - vs `recipe_nolock`: Seed 42 = `[-0.0700, +0.0410]` (mean -0.0270, 1000/1000 valid); Seed 123 = `[-0.0724, +0.0423]` (mean -0.0277, 1000/1000 valid). Both seeds cross 0.
+    - vs `flash_lite`: Seed 42 = `[-0.0520, +0.0224]` (mean -0.0194, 1000/1000 valid); Seed 123 = `[-0.0560, +0.0223]` (mean -0.0199, 1000/1000 valid). Both seeds cross 0.
+    - vs `signal_3feat`: Seed 42 = `[-0.0691, +0.0403]` (mean -0.0180, 1000/1000 valid); Seed 123 = `[-0.0658, +0.0385]` (mean -0.0192, 1000/1000 valid). Both seeds cross 0.
+    - vs `signal_only`: Seed 42 = `[-0.0462, +0.0532]` (mean +0.0054, 768/1000 valid); Seed 123 = `[-0.0455, +0.0555]` (mean +0.0051, 776/1000 valid). Both seeds cross 0.
+    - vs `recipe_nolock`: Seed 42 = `[-0.0588, -0.0208]` (mean -0.0432, 1000/1000 valid); Seed 123 = `[-0.0602, -0.0206]` (mean -0.0437, 1000/1000 valid). Both seeds strictly exclude 0.
 - **Pre-Registered Decision Gate Status:**
   - In strict compliance with `PLAN.md` line 99, because the paired recording-bootstrap 95% CIs cross 0 against `flash_lite` and `signal_3feat`, **Branch B (Fallback)** is triggered.
   - Method iteration halts immediately. The candidate gate is locked as the pre-registered baseline. Honest null dev findings are logged, and the project proceeds to Phase 2 (G1 Test Set Benchmark Characterization) and Phase 3 (ViCut-Bench Benchmark & Judge Audit Paper). Curator comparison in Phase 4.2 is skipped.
 - **Real dev-288 Component Ablation (at matched 70.0% yield):**
-  1. Full Hybrid Gate: $R = 30.49\%$ (accepted 202 clips, 18.42 min, yield = 70.08%).
-  2. Content arm only ($p_{\text{content}}$): $R = 27.55\%$ (accepted 207 clips, 18.47 min, yield = 70.28%). Lowest defect rate on dev at 70% yield.
-  3. Boundary arm only (normalized edge ratio): $R = 33.49\%$ (accepted 195 clips, 18.39 min, yield = 69.98%).
-  4. Full without Pre-gate: $R = 30.49\%$ (accepted 202 clips, 18.42 min, yield = 70.08%). Identical on dev-288 because all clips have $\text{RMS} \ge -31.6\text{ dBFS}$.
+  1. Full Hybrid Gate: $R = 29.70\%$ (accepted 202 clips, 18.42 min, yield = 70.08%).
+  2. Content arm only ($p_{\text{content}}$): $R = 28.50\%$ (accepted 207 clips, 18.47 min, yield = 70.28%). Lowest defect rate on dev at 70% yield.
+  3. Boundary arm only (normalized edge ratio): $R = 31.79\%$ (accepted 195 clips, 18.39 min, yield = 69.98%).
+  4. Full without Pre-gate: $R = 29.70\%$ (accepted 202 clips, 18.42 min, yield = 70.08%). Identical on dev-288 because all clips have $\text{RMS} \ge -31.6\text{ dBFS}$.
   5. Pre-gate only: $R = 44.79\%$ (accepted 288 clips, 26.28 min, yield = 100.00%).
 - **GOAL §3 Post-Experiment Alternative Explanations & Mechanisms (F6):**
   1. *Boundary Pre-filter Partition*: The boundary arm flags 128 of 288 dev clips (39.9% of minutes, defect rate 65.6%), leaving 160 unflagged clips (60.1% of minutes, defect rate 28.1%). At operating yields $\ge 60.1\%$ (including 70%, 83.8%, 90%), lexicographical ranking accepts 100% of unflagged clips first. The content arm probes act almost entirely to rank rejections within the edge-flagged partition.
   2. *Probability Scale Saturation*: Under domain shift from synthetic VIVOS training audio to real in-the-wild YouTube audio, PhoWhisper L4 logits saturate at operational yields ($p_{\text{content}}$ values range from 0.977 to 0.9999 at 70% to 90% yield).
-  3. *Content-Only Superiority at 70% Yield*: The content arm alone achieves lower dev defect rate (27.55%) than the full hybrid gate (30.49%) at 70% yield because it avoids the 5.56% clean speech false rejection penalty imposed by the boundary pre-filter.
+  3. *Content-Only Superiority at 70% Yield*: The content arm alone achieves lower dev defect rate (28.50%) than the full hybrid gate (29.70%) at 70% yield because it avoids the 5.56% clean speech false rejection penalty imposed by the boundary pre-filter.
   4. *Untested Pre-gate on Dev*: The silence/low-energy pre-gate (RMS < -50 dBFS) never fired on dev-288 because dev audio minimum RMS is $-31.6\text{ dBFS}$.
 - **ViCut-Bench G3 Mechanism Validation (Held-out Test Split: 90 anchors / 19 speakers):**
   - **Clean-twin FRR at 0 ms cuts:** Raw clean anchors FRR = **0.00%** (0/90). Held-out tight twins start edge FRR = **3.33%** (3/90), end edge FRR = **2.22%** (2/90), union edge FRR = **5.56%** (5/90).
@@ -705,14 +705,17 @@ Earlier months: `docs/worklog_archive/YYYY-MM.md`.
     - `clipped_word_start`: AUROC vs raw clean anchors = 0.9715, AUROC vs tight twins (0 ms) = **0.8352** (monotonic vs tight twins: 10ms: 0.7379, 20ms: 0.8021, 40ms: 0.8621, 80ms: 0.9389).
     - `secondary_speaker`: AUROC vs raw clean anchors = **0.8869**, AUROC vs tight twins (0 ms) = **0.9836** (monotonic: 24dB: 0.9621, 18dB: 0.9783, 12dB: 0.9963, 6dB: 0.9978).
     - `background_music`: AUROC vs raw clean anchors = **0.9815**, AUROC vs tight twins (0 ms) = **0.9964** (monotonic: 30dB: 0.9862, 24dB: 0.9995, 18dB: 1.0000, 12dB: 0.9999).
-- **Disclosed Technical Limitations & Ambiguities (F11):**
-  1. *Per-edge Specificity Union*: Boundary thresholds calibrated at 95% specificity per edge independently yield 91.4% union specificity on clean training twins (8.57% OOF union FRR on train, 5.56% on test).
-  2. *Full-fit vs OOF Logistic Regression*: Classifiers deployed for dev/test scoring were fitted on the full train split with $C=0.01$, while 5-fold OOF was evaluated as a diagnostic for generalization AUROC.
+- **Disclosed Technical Limitations, Clarifications & Deviations (F11):**
+  1. *Metric Unification Deviation*: In initial development, candidate defect rate $R$ was briefly evaluated using minute-weighted defects (`acc_bad_minutes / acc_minutes`), whereas all baselines used unweighted clip counts (`acc_bad_clips / acc_clips`). This has been unified across all candidates and baselines to clip-count defect rate $R = \text{defective accepted clips} / \text{total accepted clips}$, restoring consistency across the entire benchmark (29.70% at 70% yield, 36.78% at matched flash_lite yield, 39.84% at 90% yield).
+  2. *G3 AUROC Update & Resolution of "Below Chance" Anomaly*: In preliminary exploratory analysis, evaluating boundary edge ratios against raw clean anchors produced an apparent "below chance" AUROC (< 0.50) for `clipped_word_end` at 10 ms and 20 ms due to boundary zero-padding offsets on raw VIVOS anchors. In the canonical live audio evaluation, measuring edge energy ratios on precise 10 ms windows directly from clean anchors resolved this padding artifact: `clipped_word_end` AUROC vs raw clean anchors is **0.9289** across all severities (0.8838 at 10ms, 0.9019 at 20ms, 0.9505 at 40ms, 0.9794 at 80ms), definitively retiring the "below chance" finding. When evaluated against clean tight twins (0 ms cuts, which eliminate zero-padding confounds entirely), detection is strictly monotonic from 0.6517 at 10 ms to 0.9317 at 80 ms (mean 0.7834).
+  3. *Per-edge Specificity Union*: Boundary thresholds calibrated at 95% specificity per edge independently yield 91.4% union specificity on clean training twins (8.57% OOF union FRR on train, 5.56% on test).
+  4. *Full-fit vs OOF Logistic Regression*: Classifiers deployed for dev/test scoring were fitted on the full train split with $C=0.01$, while 5-fold OOF was evaluated as a diagnostic for generalization AUROC (0.9340 secondary speaker, 0.9954 background music).
 - **Generated Deliverables & Checksums:**
-  - `.data/vicut_bench/reports/dev_hybrid_gate/DEV_HYBRID_GATE_REPORT.md` (SHA-256: `426036040dab587a78433313b8c234fb6fb49e70c4037376fe3164216e488b07`)
-  - `.data/vicut_bench/reports/dev_hybrid_gate/hybrid_gate_report.json` (SHA-256: `a67b75bd45a31814bb2f524b3f39a9e7006c7e2ae9ebd685e1b2053f7eb9811c`)
-  - `.data/vicut_bench/reports/dev_hybrid_gate/hybrid_gate_frozen_params.json` (SHA-256: `97358ef70d70ca08e2eefbcc9beb1f3d16de4355173602a13c946f6064a78401`)
+  - `.data/vicut_bench/reports/dev_hybrid_gate/DEV_HYBRID_GATE_REPORT.md` (SHA-256: `fc7660c449b4cfbe1b438b9e87b9558c1362be78fc3afe9e8ce3a71fe91906d7`)
+  - `.data/vicut_bench/reports/dev_hybrid_gate/hybrid_gate_report.json` (SHA-256: `2521cbbb4b51b99b79676473e4cdc476748ddcd6f7bcdca101dc6ff1c7dc9d84`)
+  - `.data/vicut_bench/reports/dev_hybrid_gate/hybrid_gate_frozen_params.json` (SHA-256: `f5a2a6173a710aa7e7b561d015053b0d55561c053b7be008acfddaaa33bf472a`)
   - `.data/vicut_bench/reports/dev_hybrid_gate/per_clip_scores.jsonl` (SHA-256: `1209f8b3139a859892b43886b507bab5afc648b9fcf62b966d510b04533920ec`)
+  - `.data/vicut_bench/reports/dev_hybrid_gate/evaluate_hybrid_gate.log` (SHA-256: `5cc48eb4fd11c49fc4b809af31faf84ddc15cda282b2d0eb34d569bd60e89164`)
 
 
 

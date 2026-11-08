@@ -799,7 +799,7 @@ Outputs are `DEV_HYBRID_GATE_REPORT.md`, `hybrid_gate_report.json`, `hybrid_gate
 For score-only inference on an arbitrary input manifest using frozen gate parameters:
 
 ```bash
-python scripts/vicut_bench/evaluate_hybrid_gate.py \
+bash scripts/vicut_bench/evaluate_hybrid_gate.sh \
   --score-manifest <path_to_input.jsonl> \
   --frozen-params .data/vicut_bench/reports/dev_hybrid_gate/hybrid_gate_frozen_params.json \
   --output-dir <output_dir>

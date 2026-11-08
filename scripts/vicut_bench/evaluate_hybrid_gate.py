@@ -129,7 +129,7 @@ def curve_lexicographical(
         acc_minutes += dur_min
         acc_bad_minutes += is_bad * dur_min
 
-        r_val = acc_bad_minutes / acc_minutes if acc_minutes > 0 else 0.0
+        r_val = acc_bad_clips / acc_clips if acc_clips > 0 else 0.0
         p_c = float(item[2])
 
         curve_pts.append({
@@ -362,6 +362,7 @@ def score_manifest_inference(
     manifest_path: Path,
     frozen_params_path: Path,
     output_scores_path: Path,
+    probe_cache_path: Path | None = None,
 ) -> None:
     """Score an arbitrary audio manifest using frozen candidate parameters without refitting."""
     logger.info("Executing score-only inference on manifest: %s", manifest_path)
@@ -372,56 +373,169 @@ def score_manifest_inference(
     st_thresh = params["boundary_arm"]["start_thresh"]
     en_thresh = params["boundary_arm"]["end_thresh"]
     pre_thresh = params["pre_gate"]["threshold_rms_dbfs"]
+    heads = params["content_arm"]["heads"]
 
     import soundfile as sf
     from vicut_bench.score_signal_baselines import extract_signal_features
 
-    scored_records: list[dict[str, Any]] = []
+    raw_manifest_records: list[dict[str, Any]] = []
     with manifest_path.open("r", encoding="utf-8") as f:
         for line in f:
-            if not line.strip():
-                continue
-            r = json.loads(line)
-            audio_path = Path(r.get("audio_path") or r.get("path", ""))
-            cid = r.get("id") or r.get("clip_id") or audio_path.stem
+            if line.strip():
+                raw_manifest_records.append(json.loads(line))
 
-            if "rms_dbfs" in r and "start_edge_ratio_10ms" in r and "end_edge_ratio_10ms" in r:
-                rms_val = float(r["rms_dbfs"])
-                st_ratio = float(r["start_edge_ratio_10ms"])
-                en_ratio = float(r["end_edge_ratio_10ms"])
+    if not raw_manifest_records:
+        raise ValueError(f"No records found in manifest: {manifest_path}")
+
+    # Check if probe cache is available
+    cache = None
+    if probe_cache_path is not None and probe_cache_path.exists():
+        cache = np.load(probe_cache_path, allow_pickle=True)
+
+    cache_uids_map: dict[str, int] = {}
+    if cache is not None and "uids" in cache:
+        for idx, u in enumerate(cache["uids"]):
+            cache_uids_map[str(u)] = idx
+
+    # Check if precomputed signal features cache is available nearby
+    sig_cache: dict[str, Any] = {}
+    if probe_cache_path is not None:
+        candidate_sig_path = probe_cache_path.parent / "signal_features.json"
+        if candidate_sig_path.exists():
+            sig_cache = json.loads(candidate_sig_path.read_text(encoding="utf-8"))
+
+    # Determine whether all records can be retrieved from probe cache
+    all_in_cache = False
+    cached_indices: list[int] = []
+    if cache is not None:
+        can_find_all = True
+        for r in raw_manifest_records:
+            cid = r.get("id") or r.get("clip_id") or Path(r.get("audio_path", "")).stem
+            uid = r.get("uid") or cid
+            found_idx = None
+            for cand in [uid, cid, f"dev_gold__{cid}", f"dev_gold__{uid}"]:
+                if cand in cache_uids_map:
+                    found_idx = cache_uids_map[cand]
+                    break
+            if found_idx is not None:
+                cached_indices.append(found_idx)
             else:
+                can_find_all = False
+                break
+        all_in_cache = can_find_all
+
+    feats_content: np.ndarray
+    if all_in_cache and cache is not None:
+        logger.info("Found all %d records in probe cache. Loading Layer 4 mean_std representations...", len(raw_manifest_records))
+        m = cache["mean"][cached_indices, 4, :768]
+        s = cache["std"][cached_indices, 4, :768]
+        feats_content = np.concatenate([m, s], axis=1)
+    else:
+        logger.info("Extracting PhoWhisper Layer 4 mean_std features via transformers...")
+        try:
+            import torch
+            from transformers import AutoFeatureExtractor, WhisperModel
+        except ImportError as e:
+            raise RuntimeError(
+                f"PhoWhisper L4 features cannot be computed without transformers and torch, and records were not found in cache: {e}"
+            ) from e
+
+        model_id = "vinai/PhoWhisper-small"
+        fe = AutoFeatureExtractor.from_pretrained(model_id, local_files_only=True)
+        model = (
+            WhisperModel.from_pretrained(model_id, local_files_only=True, torch_dtype=torch.float32)
+            .encoder
+            .eval()
+        )
+
+        extracted_feats = []
+        with torch.no_grad():
+            for idx, r in enumerate(raw_manifest_records):
+                audio_path = Path(r.get("audio_path") or r.get("path", ""))
                 audio, sr = sf.read(str(audio_path), dtype="float32")
-                rms_val = compute_rms_dbfs(audio)
-                sig_feats = extract_signal_features(audio, sr)
-                st_ratio = sig_feats["start_edge_ratio_10ms"]
-                en_ratio = sig_feats["end_edge_ratio_10ms"]
+                if sr != 16000:
+                    import scipy.signal
+                    num_samples = int(round(len(audio) * 16000.0 / sr))
+                    audio = scipy.signal.resample(audio, num_samples)
+                inp = fe([audio], sampling_rate=16000, return_tensors="pt")
+                out = model(inp["input_features"], output_hidden_states=True)
+                h4 = out.hidden_states[4][0]  # shape [T, 768]
+                dur = len(audio) / 16000.0
+                vlen = min(1500, max(1, int(round(dur * 50.0))))
+                valid = h4[:vlen].float()
+                m_vec = valid.mean(dim=0).cpu().numpy().astype(np.float32)
+                s_vec = valid.std(dim=0, unbiased=False).cpu().numpy().astype(np.float32) if vlen > 1 else np.zeros_like(m_vec)
+                extracted_feats.append(np.concatenate([m_vec, s_vec]))
+        feats_content = np.array(extracted_feats, dtype=np.float32)
 
-            pre_flag = 1.0 if rms_val < pre_thresh else 0.0
-            edge_flag = 1.0 if (st_ratio > st_thresh or en_ratio > en_thresh) else 0.0
+    def predict_from_head(head_dict: dict[str, Any], X_mat: np.ndarray) -> np.ndarray:
+        mean = np.array(head_dict["scaler_mean"], dtype=np.float64)
+        scale = np.array(head_dict["scaler_scale"], dtype=np.float64)
+        coef = np.array(head_dict["coef"], dtype=np.float64)
+        intercept = float(head_dict["intercept"])
+        X_scaled = (X_mat - mean) / scale
+        logit = np.dot(X_scaled, coef) + intercept
+        return 1.0 / (1.0 + np.exp(-np.clip(logit, -50.0, 50.0)))
 
-            p_sec = float(r.get("p_secondary_speaker", 0.0))
-            p_mus = float(r.get("p_background_music", 0.0))
-            p_content = max(p_sec, p_mus)
-            s_score = edge_flag + p_content
+    p_sec_arr = predict_from_head(heads["secondary_speaker"], feats_content)
+    p_mus_arr = predict_from_head(heads["background_music"], feats_content)
+    p_content_arr = np.maximum(p_sec_arr, p_mus_arr)
 
-            scored_records.append({
-                "clip_id": cid,
-                "audio_path": str(audio_path),
-                "duration_s": r.get("duration", r.get("duration_s", 0.0)),
-                "rms_dbfs": round(rms_val, 2),
-                "pre_gate": int(pre_flag),
-                "start_edge_ratio_10ms": round(st_ratio, 4),
-                "end_edge_ratio_10ms": round(en_ratio, 4),
-                "flag_edge": int(edge_flag),
-                "p_secondary_speaker": round(p_sec, 6),
-                "p_background_music": round(p_mus, 6),
-                "p_content": round(p_content, 6),
-                "score_s": round(s_score, 6),
-            })
+    scored_records: list[dict[str, Any]] = []
+    for idx, r in enumerate(raw_manifest_records):
+        audio_path = Path(r.get("audio_path") or r.get("path", ""))
+        cid = r.get("id") or r.get("clip_id") or audio_path.stem
+        uid = r.get("uid") or (f"dev_gold__{cid}" if f"dev_gold__{cid}" in cache_uids_map else cid)
 
-    scored_records.sort(key=lambda x: (x["pre_gate"], x["flag_edge"], x["p_content"], x["clip_id"]))
+        rms_val: float | None = None
+        st_ratio: float | None = None
+        en_ratio: float | None = None
+
+        if "rms_dbfs" in r and "start_edge_ratio_10ms" in r and "end_edge_ratio_10ms" in r:
+            rms_val = float(r["rms_dbfs"])
+            st_ratio = float(r["start_edge_ratio_10ms"])
+            en_ratio = float(r["end_edge_ratio_10ms"])
+        elif uid in sig_cache:
+            rms_val = float(sig_cache[uid].get("rms_dbfs", compute_rms_dbfs(sf.read(str(audio_path), dtype="float32")[0])))
+            st_ratio = float(sig_cache[uid]["start_edge_ratio_10ms"])
+            en_ratio = float(sig_cache[uid]["end_edge_ratio_10ms"])
+        else:
+            audio, sr = sf.read(str(audio_path), dtype="float32")
+            rms_val = compute_rms_dbfs(audio)
+            sig_feats = extract_signal_features(audio, sr)
+            st_ratio = sig_feats["start_edge_ratio_10ms"]
+            en_ratio = sig_feats["end_edge_ratio_10ms"]
+
+        pre_flag = 1 if rms_val < pre_thresh else 0
+        edge_flag = 1 if (st_ratio > st_thresh or en_ratio > en_thresh) else 0
+
+        p_sec = float(p_sec_arr[idx])
+        p_mus = float(p_mus_arr[idx])
+        p_content = float(p_content_arr[idx])
+        s_score = edge_flag + p_content
+
+        scored_records.append({
+            "clip_id": cid,
+            "uid": uid,
+            "speaker": r.get("speaker", "unknown"),
+            "duration_s": r.get("duration", r.get("duration_s", 0.0)),
+            "gold_label": r.get("label", r.get("decision")),
+            "rms_dbfs": round(rms_val, 2),
+            "pre_gate": pre_flag,
+            "start_edge_ratio_10ms": round(st_ratio, 4),
+            "end_edge_ratio_10ms": round(en_ratio, 4),
+            "flag_edge": edge_flag,
+            "p_secondary_speaker": round(p_sec, 6),
+            "p_background_music": round(p_mus, 6),
+            "p_content": round(p_content, 6),
+            "score_s": round(s_score, 6),
+            "_p_raw": p_content,
+        })
+
+    scored_records.sort(key=lambda x: (x["pre_gate"], x["flag_edge"], x["_p_raw"], x["clip_id"]))
     for rank, item in enumerate(scored_records, start=1):
-        item["rank"] = rank
+        item.pop("_p_raw", None)
+        item["lexicographical_rank"] = rank
 
     output_scores_path.parent.mkdir(parents=True, exist_ok=True)
     with output_scores_path.open("w", encoding="utf-8") as out_f:
@@ -499,13 +613,24 @@ def main() -> None:
         default=None,
         help="Path to frozen candidate parameters JSON.",
     )
+    parser.add_argument(
+        "--probe-cache",
+        type=Path,
+        default=None,
+        help="Optional path to precomputed pooled feature cache (.npz).",
+    )
 
     args = parser.parse_args()
 
     if args.score_manifest:
         f_params = args.frozen_params or (args.output_dir / "hybrid_gate_frozen_params.json")
         out_sc = args.output_dir / "manifest_scored.jsonl"
-        score_manifest_inference(args.score_manifest, f_params, out_sc)
+        p_cache = args.probe_cache
+        if p_cache is None:
+            cand_cache = args.probe_dir / "cache" / "phowhisper_pooled.npz"
+            if cand_cache.exists():
+                p_cache = cand_cache
+        score_manifest_inference(args.score_manifest, f_params, out_sc, probe_cache_path=p_cache)
         return
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -642,17 +767,17 @@ def main() -> None:
             "heads": {
                 "secondary_speaker": {
                     "oof_auroc": content_cal["secondary_speaker"]["oof_auroc"],
-                    "scaler_mean": [round(float(v), 8) for v in sc_sec.mean_],
-                    "scaler_scale": [round(float(v), 8) for v in sc_sec.scale_],
-                    "coef": [round(float(v), 8) for v in clf_sec.coef_[0]],
-                    "intercept": round(float(clf_sec.intercept_[0]), 8),
+                    "scaler_mean": [float(v) for v in sc_sec.mean_],
+                    "scaler_scale": [float(v) for v in sc_sec.scale_],
+                    "coef": [float(v) for v in clf_sec.coef_[0]],
+                    "intercept": float(clf_sec.intercept_[0]),
                 },
                 "background_music": {
                     "oof_auroc": content_cal["background_music"]["oof_auroc"],
-                    "scaler_mean": [round(float(v), 8) for v in sc_mus.mean_],
-                    "scaler_scale": [round(float(v), 8) for v in sc_mus.scale_],
-                    "coef": [round(float(v), 8) for v in clf_mus.coef_[0]],
-                    "intercept": round(float(clf_mus.intercept_[0]), 8),
+                    "scaler_mean": [float(v) for v in sc_mus.mean_],
+                    "scaler_scale": [float(v) for v in sc_mus.scale_],
+                    "coef": [float(v) for v in clf_mus.coef_[0]],
+                    "intercept": float(clf_mus.intercept_[0]),
                 },
             },
             "rule": "p_content = max(p_sec, p_music)",
@@ -824,18 +949,22 @@ def main() -> None:
         r for r in records if r.get("split") == "test" and r.get("group") == "clean_tight_twin"
     ]
 
-    raw_frr = float(np.mean([1 if (r["start_edge_ratio_10ms"] > st_thresh or r["end_edge_ratio_10ms"] > en_thresh) else 0 for r in test_raw_anchors]))
-    tight_st_frr = float(np.mean([1 if r["start_edge_ratio_10ms"] > st_thresh else 0 for r in test_tight_twins]))
-    tight_en_frr = float(np.mean([1 if r["end_edge_ratio_10ms"] > en_thresh else 0 for r in test_tight_twins]))
-    tight_union_frr = float(np.mean([1 if (r["start_edge_ratio_10ms"] > st_thresh or r["end_edge_ratio_10ms"] > en_thresh) else 0 for r in test_tight_twins]))
+    raw_rejects = sum(1 for r in test_raw_anchors if (r["start_edge_ratio_10ms"] > st_thresh or r["end_edge_ratio_10ms"] > en_thresh))
+    tight_st_rejects = sum(1 for r in test_tight_twins if r["start_edge_ratio_10ms"] > st_thresh)
+    tight_en_rejects = sum(1 for r in test_tight_twins if r["end_edge_ratio_10ms"] > en_thresh)
+    tight_union_rejects = sum(1 for r in test_tight_twins if (r["start_edge_ratio_10ms"] > st_thresh or r["end_edge_ratio_10ms"] > en_thresh))
 
     clean_twin_frr = {
         "n_test_raw": len(test_raw_anchors),
         "n_test_tight": len(test_tight_twins),
-        "raw_anchor_frr": round(raw_frr, 6),
-        "start_frr": round(tight_st_frr, 6),
-        "end_frr": round(tight_en_frr, 6),
-        "union_frr": round(tight_union_frr, 6),
+        "raw_rejects": raw_rejects,
+        "tight_st_rejects": tight_st_rejects,
+        "tight_en_rejects": tight_en_rejects,
+        "tight_union_rejects": tight_union_rejects,
+        "raw_anchor_frr": round(raw_rejects / len(test_raw_anchors), 6),
+        "start_frr": round(tight_st_rejects / len(test_tight_twins), 6),
+        "end_frr": round(tight_en_rejects / len(test_tight_twins), 6),
+        "union_frr": round(tight_union_rejects / len(test_tight_twins), 6),
     }
 
     # Defect scoring on test split
@@ -978,14 +1107,18 @@ def main() -> None:
     dev_unflagged = [r for r in dev_records if r["flag_edge"] == 0.0]
     n_flagged = len(dev_flagged)
     n_unflagged = len(dev_unflagged)
-    r_flagged = float(np.mean([1 if r["label"] == "reject" else 0 for r in dev_flagged])) if n_flagged > 0 else 0.0
-    r_unflagged = float(np.mean([1 if r["label"] == "reject" else 0 for r in dev_unflagged])) if n_unflagged > 0 else 0.0
+    n_flagged_def = sum(1 for r in dev_flagged if r["label"] == "reject")
+    n_unflagged_def = sum(1 for r in dev_unflagged if r["label"] == "reject")
+    r_flagged = float(n_flagged_def / n_flagged) if n_flagged > 0 else 0.0
+    r_unflagged = float(n_unflagged_def / n_unflagged) if n_unflagged > 0 else 0.0
     flagged_min = sum(r["duration_s"] for r in dev_flagged) / 60.0
     flagged_pct_min = flagged_min / total_dev_minutes
 
     boundary_partition_diag = {
         "n_dev_flagged": n_flagged,
         "n_dev_unflagged": n_unflagged,
+        "n_flagged_defective": n_flagged_def,
+        "n_unflagged_defective": n_unflagged_def,
         "flagged_minutes": round(flagged_min, 2),
         "flagged_minute_fraction": round(flagged_pct_min, 4),
         "defect_rate_flagged": round(r_flagged, 4),
@@ -1068,6 +1201,45 @@ def main() -> None:
     abl_nop = dev_ablation["full_without_pre_gate"]
     abl_pre = dev_ablation["pre_gate_only"]
 
+    n_dev_recordings = len(set(r.get("recording_id") or r.get("speaker") for r in dev_records))
+    n_test_speakers = len(set(r["speaker"] for r in test_raw_anchors))
+
+    nolock_excludes = boot_nolock[42]["ci_excludes_zero"] and boot_nolock[123]["ci_excludes_zero"]
+    nolock_ci_str = "CI strictly excludes 0" if nolock_excludes else "CI crosses 0"
+
+    delta_sig_only = (cand_70["R"] - sig_only_70["R"]) * 100.0
+    if delta_sig_only > 0:
+        sig_only_desc = f"slightly higher than 4-feature `signal_only` ({cand_70['R'] * 100:.2f}% vs {sig_only_70['R'] * 100:.2f}%, $\\Delta R = {delta_sig_only:+.2f}$% pt)"
+    else:
+        sig_only_desc = f"lower defect rate than 4-feature `signal_only` ({cand_70['R'] * 100:.2f}% vs {sig_only_70['R'] * 100:.2f}%, $\\Delta R = {delta_sig_only:+.2f}$% pt)"
+
+    if decision_branch == "Branch A (Production Acceptance)":
+        branch_action_text = (
+            "The candidate achieves statistically significant improvements with 95% CIs excluding 0. "
+            "In accordance with PLAN.md line 85, **Branch A (Production Acceptance)** is triggered."
+        )
+    else:
+        branch_action_text = (
+            f"Because the paired recording-bootstrap 95% CIs cross 0 against `flash_lite` "
+            f"([{boot_fl[42]['ci_95_low']:.4f}, {boot_fl[42]['ci_95_high']:.4f}]) and `signal_3feat` "
+            f"([{boot_sig3[42]['ci_95_low']:.4f}, {boot_sig3[42]['ci_95_high']:.4f}]), the pre-registered criterion for Branch A is **not met**.  \n"
+            f"> In strict accordance with PLAN.md line 99, **Branch B (Fallback)** is triggered. "
+            f"Method iteration halts immediately; the candidate is locked as the pre-registered baseline, "
+            f"honest null findings are logged, and the project proceeds to Phase 2 (G1 Test Set Benchmark Characterization) "
+            f"and Phase 3 (ViCut-Bench Benchmark Paper)."
+        )
+
+    min_abl_key = min(dev_ablation.keys(), key=lambda k: dev_ablation[k]["R"])
+    min_abl_note = " (lowest defect rate on dev at 70% yield)" if min_abl_key == "content_only" else ""
+
+    unflagged_min_pct = (1.0 - boundary_partition_diag["flagged_minute_fraction"]) * 100.0
+
+    cwe_10 = vicut_results["clipped_word_end"]["severities"]["10ms"]["auroc_vs_tight_0ms"]
+    cwe_80 = vicut_results["clipped_word_end"]["severities"]["80ms"]["auroc_vs_tight_0ms"]
+    cwe_sev_vals = [s["auroc_vs_tight_0ms"] for s in vicut_results["clipped_word_end"]["severities"].values()]
+    is_cwe_monotonic = all(x <= y for x, y in zip(cwe_sev_vals, cwe_sev_vals[1:]))
+    monotonic_str = "monotonically increasing" if is_cwe_monotonic else "varying"
+
     md_content = f"""# Dev Hybrid Gate Benchmark & ViCut-Bench Calibration Report
 
 **Evaluation Date:** 2026-11-08  
@@ -1082,13 +1254,13 @@ def main() -> None:
 | :--- | :--- | :--- |
 | **Pre-gate** | Deterministic DSP Energy | Reject clip if $\\text{{RMS}} < -50\\text{{ dBFS}}$ (silence / low energy) |
 | **Boundary Arm** | Deterministic 10 ms Edge Ratios | 95% specificity on 5-fold OOF `clean_tight_tr`: $\\tau_\\text{{start}}={st_thresh:.4f}$, $\\tau_\\text{{end}}={en_thresh:.4f}$.<br>$\\text{{flag\\_edge}} = 1.0$ if $\\text{{start}} > \\tau_\\text{{start}} \\lor \\text{{end}} > \\tau_\\text{{end}}$, else $0.0$ |
-| **Content Arm** | `vinai/phowhisper-small` Layer 4 (`mean_std` pooling, $D=1536$) | 5-fold OOF logistic regression ($C={args.c_reg}$) on ViCut-Bench train split defects vs clean negatives.<br>$p_\\text{{content}} = \\max(p_\\text{{sec}}, p_\\text{{music}})$ |
+| **Content Arm** | `vinai/phowhisper-small` Layer 4 (`mean_std` pooling, $D=1536$) | Logistic regression ($C={args.c_reg}$) fit on ViCut-Bench train split; 5-fold OOF evaluated for generalization AUROC ({content_cal['secondary_speaker']['oof_auroc']:.4f} secondary speaker, {content_cal['background_music']['oof_auroc']:.4f} background music).<br>$p_\\text{{content}} = \\max(p_\\text{{sec}}, p_\\text{{music}})$ |
 | **Scoring Formula** | Continuous scalar score | $s = \\text{{flag\\_edge}} + p_\\text{{content}} \\in [0.0, 2.0]$ |
 | **Lexicographical Order** | Deterministic sorting tuple | `(pre_gate, flag_edge, p_content, clip_id)`: pre-gate rejects rejected first, followed by edge-flagged clips ($s \\in [1.0, 2.0]$) ranked by $p_\\text{{content}}$, followed by unflagged clips ($s \\in [0.0, 1.0]$) ranked by $p_\\text{{content}}$, exact ties broken by alphabetical `clip_id` |
 
 ---
 
-## 2. Dev-288 Competition Results (11 Recordings, {len(dev_records)} Clips, {total_dev_minutes:.2f} min)
+## 2. Dev-288 Competition Results ({n_dev_recordings} Recordings, {len(dev_records)} Clips, {total_dev_minutes:.2f} min)
 
 Uncurated Dev Defect Rate ($R$ at 100% yield): **{all_pass_r * 100:.2f}%** ({int(np.sum(dev_labels))} / {len(dev_records)} defective clips).
 
@@ -1121,9 +1293,8 @@ $\\Delta R = R_\\text{{candidate}} - R_\\text{{baseline}}$ (negative values indi
 
 > [!IMPORTANT]
 > **Pre-Registered Decision Rule Assessment:**  
-> The candidate achieves lower point defect rates than `flash_lite` ({cand_at_fl['R'] * 100:.2f}% vs {fl_point['R'] * 100:.2f}%) and `signal_3feat` ({cand_70['R'] * 100:.2f}% vs {sig3_70['R'] * 100:.2f}%), and beats `recipe_nolock` ({cand_90['R'] * 100:.2f}% vs {all_pass_r * 100:.2f}%, CI strictly excludes 0). It is slightly higher than 4-feature `signal_only` ({cand_70['R'] * 100:.2f}% vs {sig_only_70['R'] * 100:.2f}%).  
-> Because the paired recording-bootstrap 95% CIs cross 0 against `flash_lite` ([{boot_fl[42]['ci_95_low']:.4f}, {boot_fl[42]['ci_95_high']:.4f}]) and `signal_3feat` ([{boot_sig3[42]['ci_95_low']:.4f}, {boot_sig3[42]['ci_95_high']:.4f}]), the pre-registered criterion for Branch A is **not met**.  
-> In strict accordance with PLAN.md line 99, **Branch B (Fallback)** is triggered. Method iteration halts immediately; the candidate is locked as the pre-registered baseline, honest null findings are logged, and the project proceeds to Phase 2 (G1 Test Set Benchmark Characterization) and Phase 3 (ViCut-Bench Benchmark Paper).
+> The candidate achieves lower point defect rates than `flash_lite` ({cand_at_fl['R'] * 100:.2f}% vs {fl_point['R'] * 100:.2f}%) and `signal_3feat` ({cand_70['R'] * 100:.2f}% vs {sig3_70['R'] * 100:.2f}%), and beats `recipe_nolock` ({cand_90['R'] * 100:.2f}% vs {all_pass_r * 100:.2f}%, {nolock_ci_str}). It is {sig_only_desc}.  
+> {branch_action_text}
 
 ---
 
@@ -1134,26 +1305,26 @@ Component ablation evaluated on `dev-288` at standard 70.0% minute yield (and na
 | Condition | Operating Yield (%) | Accepted Minutes | Accepted Clips | Defect Rate $R$ (%) | Rationale / Observation |
 | :--- | :---: | :---: | :---: | :---: | :--- |
 | **{abl_full['name']}** | **{abl_full['yield_ratio'] * 100:.2f}%** | **{abl_full['accepted_minutes']:.2f}** | **{abl_full['accepted_clips']}** | **{abl_full['R'] * 100:.2f}%** | Full hybrid system combining pre-gate, boundary arm, and content arm |
-| **{abl_cnt['name']}** | {abl_cnt['yield_ratio'] * 100:.2f}% | {abl_cnt['accepted_minutes']:.2f} | {abl_cnt['accepted_clips']} | {abl_cnt['R'] * 100:.2f}% | PhoWhisper L4 probes only ($p_\\text{{content}}$); lowest defect rate on dev at 70% yield |
+| **{abl_cnt['name']}** | {abl_cnt['yield_ratio'] * 100:.2f}% | {abl_cnt['accepted_minutes']:.2f} | {abl_cnt['accepted_clips']} | {abl_cnt['R'] * 100:.2f}% | PhoWhisper L4 probes only ($p_\\text{{content}}){min_abl_note} |
 | **{abl_bnd['name']}** | {abl_bnd['yield_ratio'] * 100:.2f}% | {abl_bnd['accepted_minutes']:.2f} | {abl_bnd['accepted_clips']} | {abl_bnd['R'] * 100:.2f}% | Normalized edge ratios only; word clipping detection without secondary speaker modeling |
 | **{abl_nop['name']}** | {abl_nop['yield_ratio'] * 100:.2f}% | {abl_nop['accepted_minutes']:.2f} | {abl_nop['accepted_clips']} | {abl_nop['R'] * 100:.2f}% | Identical on dev-288 because all clips have $\\text{{RMS}} \\ge {min(dev_rms_dbfs):.1f}\\text{{ dBFS}}$ |
 | **{abl_pre['name']}** | {abl_pre['yield_ratio'] * 100:.2f}% | {abl_pre['accepted_minutes']:.2f} | {abl_pre['accepted_clips']} | {abl_pre['R'] * 100:.2f}% | Native yield 100%; rejects pure digital silence (< -50 dBFS) |
 
 ### Boundary Partition Mechanism on dev-288
 - **Flagged Clips:** {boundary_partition_diag['n_dev_flagged']} / {len(dev_records)} ({boundary_partition_diag['flagged_minute_fraction'] * 100:.1f}% of audio minutes).
-- **Defect Rate in Flagged Set:** **{boundary_partition_diag['defect_rate_flagged'] * 100:.1f}%** ({int(boundary_partition_diag['defect_rate_flagged'] * boundary_partition_diag['n_dev_flagged'])} / {boundary_partition_diag['n_dev_flagged']}).
-- **Defect Rate in Unflagged Set:** **{boundary_partition_diag['defect_rate_unflagged'] * 100:.1f}%** ({int(boundary_partition_diag['defect_rate_unflagged'] * boundary_partition_diag['n_dev_unflagged'])} / {boundary_partition_diag['n_dev_unflagged']}).
-- **Operating Consequence:** Because the unflagged set constitutes 60.1% of minutes, at target yields $\\ge 60.1\\%$ (e.g. 70%, 83.8%, 90%), the lexicographical sorting rule accepts every unflagged clip first. The content arm probes act almost entirely to rank rejections within the edge-flagged partition.
+- **Defect Rate in Flagged Set:** **{boundary_partition_diag['defect_rate_flagged'] * 100:.1f}%** ({boundary_partition_diag['n_flagged_defective']} / {boundary_partition_diag['n_dev_flagged']}).
+- **Defect Rate in Unflagged Set:** **{boundary_partition_diag['defect_rate_unflagged'] * 100:.1f}%** ({boundary_partition_diag['n_unflagged_defective']} / {boundary_partition_diag['n_dev_unflagged']}).
+- **Operating Consequence:** Because the unflagged set constitutes {unflagged_min_pct:.1f}% of minutes, at target yields $\\ge {unflagged_min_pct:.1f}\\%$ (e.g. 70%, 83.8%, 90%), the lexicographical sorting rule accepts every unflagged clip first. The content arm probes act almost entirely to rank rejections within the edge-flagged partition.
 
 ---
 
-## 4. ViCut-Bench G3 Mechanism Validation (Held-Out Test Split: {clean_twin_frr['n_test_raw']} Anchors / 19 Speakers)
+## 4. ViCut-Bench G3 Mechanism Validation (Held-Out Test Split: {clean_twin_frr['n_test_raw']} Anchors / {n_test_speakers} Speakers)
 
 ### A. Clean-Twin False Reject Rate (FRR) at 0 ms Cuts
-- **Raw Clean Anchors FRR:** **{clean_twin_frr['raw_anchor_frr'] * 100:.2f}%** (0 / {clean_twin_frr['n_test_raw']}) *(carrying 50 ms zero-pads)*
-- **Held-out Tight Twins Start Edge FRR:** **{clean_twin_frr['start_frr'] * 100:.2f}%** ({int(clean_twin_frr['start_frr'] * clean_twin_frr['n_test_tight'])} / {clean_twin_frr['n_test_tight']})
-- **Held-out Tight Twins End Edge FRR:** **{clean_twin_frr['end_frr'] * 100:.2f}%** ({int(clean_twin_frr['end_frr'] * clean_twin_frr['n_test_tight'])} / {clean_twin_frr['n_test_tight']})
-- **Held-out Tight Twins Union Edge FRR (operative boundary arm):** **{clean_twin_frr['union_frr'] * 100:.2f}%** ({int(clean_twin_frr['union_frr'] * clean_twin_frr['n_test_tight'])} / {clean_twin_frr['n_test_tight']})
+- **Raw Clean Anchors FRR:** **{clean_twin_frr['raw_anchor_frr'] * 100:.2f}%** ({clean_twin_frr['raw_rejects']} / {clean_twin_frr['n_test_raw']}) *(carrying 50 ms zero-pads)*
+- **Held-out Tight Twins Start Edge FRR:** **{clean_twin_frr['start_frr'] * 100:.2f}%** ({clean_twin_frr['tight_st_rejects']} / {clean_twin_frr['n_test_tight']})
+- **Held-out Tight Twins End Edge FRR:** **{clean_twin_frr['end_frr'] * 100:.2f}%** ({clean_twin_frr['tight_en_rejects']} / {clean_twin_frr['n_test_tight']})
+- **Held-out Tight Twins Union Edge FRR (operative boundary arm):** **{clean_twin_frr['union_frr'] * 100:.2f}%** ({clean_twin_frr['tight_union_rejects']} / {clean_twin_frr['n_test_tight']})
 
 ### B. Defect Detection AUROC Across 4 Realized Defect Classes
 
@@ -1164,7 +1335,7 @@ Component ablation evaluated on `dev-288` at standard 70.0% minute yield (and na
 | `secondary_speaker` | {vicut_results['secondary_speaker']['n_test']} | **{vicut_results['secondary_speaker']['auroc_vs_raw']:.4f}** | **{vicut_results['secondary_speaker']['auroc_vs_tight_0ms']:.4f}** | Content arm (PhoWhisper L4 secondary speaker probe) |
 | `background_music` | {vicut_results['background_music']['n_test']} | **{vicut_results['background_music']['auroc_vs_raw']:.4f}** | **{vicut_results['background_music']['auroc_vs_tight_0ms']:.4f}** | Content arm (PhoWhisper L4 background music probe) |
 
-*(Note on reference sets: For `clipped_word_end`, AUROC vs raw clean anchors is below chance (0.50) at 10 ms ({vicut_results['clipped_word_end']['severities']['10ms']['auroc_vs_raw']:.4f}) and 20 ms ({vicut_results['clipped_word_end']['severities']['20ms']['auroc_vs_raw']:.4f}) due to zero-padding artifacts on raw VIVOS anchors; vs tight twins (0 ms cuts), detection is strictly monotonic from {vicut_results['clipped_word_end']['severities']['10ms']['auroc_vs_tight_0ms']:.4f} to {vicut_results['clipped_word_end']['severities']['80ms']['auroc_vs_tight_0ms']:.4f}).*
+*(Note on reference sets: Clean tight twins (0 ms cuts) isolate edge truncation without zero-padding confounds, demonstrating {monotonic_str} detection from {cwe_10:.4f} at 10 ms to {cwe_80:.4f} at 80 ms for `clipped_word_end`).*
 
 ### C. Per-Severity Detection Breakdown
 
