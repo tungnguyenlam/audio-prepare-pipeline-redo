@@ -145,16 +145,14 @@ def curve_lexicographical(
 
 
 def matched_point_at_yield(
-    curve_pts: list[dict[str, Any]], target_yield: float
-) -> dict[str, Any]:
+    curve_pts: list[dict[str, Any]], target_yield: float, tolerance: float | None = None
+) -> dict[str, Any] | None:
     """Find the point on the empirical acceptance curve closest to the target yield ratio."""
-    best = curve_pts[0]
-    best_diff = abs(best["yield_ratio"] - target_yield)
-    for pt in curve_pts:
-        diff = abs(pt["yield_ratio"] - target_yield)
-        if diff < best_diff:
-            best_diff = diff
-            best = pt
+    if not curve_pts:
+        return None
+    best = min(curve_pts, key=lambda pt: abs(pt["yield_ratio"] - target_yield))
+    if tolerance is not None and abs(best["yield_ratio"] - target_yield) > tolerance:
+        return None
     return best
 
 
@@ -314,7 +312,9 @@ def paired_cluster_bootstrap(
                 np.array([r["p_content"] for r in sampled_records]),
                 ascending=True,
             )
-            cand_pt = matched_point_at_yield(sampled_curve, matched_yield)
+            cand_pt = matched_point_at_yield(sampled_curve, matched_yield, tolerance=matched_yield * 0.10)
+            if cand_pt is None:
+                continue
             r_cand = cand_pt["R"]
 
             # Baseline on sampled records
@@ -322,14 +322,15 @@ def paired_cluster_bootstrap(
                 base_set = set(base_indices)
                 b_accepted = [r for idx, r in enumerate(sampled_records) if sampled_idx[idx] in base_set]
                 b_acc_min = sum(r["duration_s"] for r in b_accepted) / 60.0
-                b_bad_min = sum(r["duration_s"] for r in b_accepted if r["label"] == "reject") / 60.0
-                if b_acc_min <= 0:
+                if len(b_accepted) == 0 or b_acc_min <= 0:
                     continue
-                r_base = b_bad_min / b_acc_min
+                r_base = sum(1 for r in b_accepted if r["label"] == "reject") / len(b_accepted)
             else:
                 base_curve = base_point.get("_curve")
                 if base_curve is not None:
-                    b_pt = matched_point_at_yield(base_curve(sampled_records), matched_yield)
+                    b_pt = matched_point_at_yield(base_curve(sampled_records), matched_yield, tolerance=matched_yield * 0.10)
+                    if b_pt is None:
+                        continue
                     r_base = b_pt["R"]
                 else:
                     r_base = base_point["R"]
@@ -373,7 +374,7 @@ def score_manifest_inference(
     pre_thresh = params["pre_gate"]["threshold_rms_dbfs"]
 
     import soundfile as sf
-    from vicut_bench.score_signal_baselines import compute_signal_features
+    from vicut_bench.score_signal_baselines import extract_signal_features
 
     scored_records: list[dict[str, Any]] = []
     with manifest_path.open("r", encoding="utf-8") as f:
@@ -391,7 +392,7 @@ def score_manifest_inference(
             else:
                 audio, sr = sf.read(str(audio_path), dtype="float32")
                 rms_val = compute_rms_dbfs(audio)
-                sig_feats = compute_signal_features(audio, sr)
+                sig_feats = extract_signal_features(audio, sr)
                 st_ratio = sig_feats["start_edge_ratio_10ms"]
                 en_ratio = sig_feats["end_edge_ratio_10ms"]
 
@@ -554,16 +555,14 @@ def main() -> None:
 
     # 1. Evaluate Deterministic Pre-gate (RMS < -50 dBFS)
     logger.info("Evaluating deterministic pre-gate (RMS < -50 dBFS)...")
-    dev_records = []
-    with args.input_manifest.open("r", encoding="utf-8") as f:
-        for line in f:
-            if line.strip():
-                dev_records.append(json.loads(line))
-
+    dev_records = [r for r in records if r.get("group") == "dev_gold"]
     assert len(dev_records) == 288, f"Expected 288 dev records, found {len(dev_records)}"
 
     dev_rms_dbfs = []
     for r in dev_records:
+        r["id"] = r["clip_id"]
+        r["label"] = r["decision"]
+        r["speaker"] = r["speaker"]
         r_audio, _ = read_audio_for_record(r)
         dbfs = compute_rms_dbfs(r_audio)
         dev_rms_dbfs.append(dbfs)
@@ -695,90 +694,78 @@ def main() -> None:
     logger.info("Scoring dev baselines on dev-288...")
     total_dev_minutes = sum(r["duration_s"] for r in dev_records) / 60.0
     dev_labels = np.array([1 if r["label"] == "reject" else 0 for r in dev_records])
-    all_pass_r = float(np.sum(dev_labels * np.array([r["duration_s"] for r in dev_records])) / (total_dev_minutes * 60.0))
+    all_pass_r = float(np.mean(dev_labels))
 
     # flash_lite baseline
-    fl_csv = Path(".data/tts_strategy/gold_benchmark_20260908/eval_output_flash_lite.csv")
-    fl_pass_uids = set()
-    with fl_csv.open("r", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            if row.get("decision") == "pass":
-                fl_pass_uids.add(row.get("uid") or row.get("id"))
+    fl_csv = args.input_manifest.parent / "reports" / "gemini35_flash_lite_medium_vs_gemini38_medium.csv"
+    fl_pass_ids = {r["id"] for r in csv.DictReader(fl_csv.open(encoding="utf-8")) if r.get("model_decision") == "pass"}
 
-    fl_indices = [i for i, r in enumerate(dev_records) if r["uid"] in fl_pass_uids or r["id"] in fl_pass_uids]
+    fl_indices = [i for i, r in enumerate(dev_records) if r["id"] in fl_pass_ids]
     fl_acc_min = sum(dev_records[i]["duration_s"] for i in fl_indices) / 60.0
-    fl_bad_min = sum(dev_records[i]["duration_s"] for i in fl_indices if dev_records[i]["label"] == "reject") / 60.0
+    fl_bad_clips = sum(1 for i in fl_indices if dev_records[i]["label"] == "reject")
     fl_point = {
         "accepted_clips": len(fl_indices),
         "accepted_minutes": round(fl_acc_min, 4),
         "yield_ratio": round(fl_acc_min / total_dev_minutes, 6),
-        "R": round(fl_bad_min / fl_acc_min, 6),
+        "R": round(fl_bad_clips / len(fl_indices), 6),
     }
 
     # signal_3feat composite baseline
-    st_dev = np.array([r["start_edge_ratio_10ms"] for r in dev_records])
-    en_dev = np.array([r["end_edge_ratio_10ms"] for r in dev_records])
-    win_rms_dev = np.array([r["min_window_rms_db"] for r in dev_records])
-
-    def z_score(arr: np.ndarray) -> np.ndarray:
-        q25, q75 = np.percentile(arr, [25.0, 75.0])
-        iqr = max(q75 - q25, 1e-6)
-        return (arr - np.median(arr)) / iqr
-
-    sig3_scores = z_score(st_dev) + z_score(en_dev) + z_score(win_rms_dev)
+    # signal_3feat composite baseline
+    z_risks = []
+    for feat in ["end_edge_ratio_10ms", "start_edge_ratio_10ms", "min_window_rms_db"]:
+        vals = np.array([r[feat] for r in dev_records], dtype=float)
+        med = np.median(vals)
+        iqr = np.percentile(vals, 75) - np.percentile(vals, 25)
+        if iqr <= 0:
+            iqr = 1.0
+        z_risks.append((vals - med) / iqr)
+    sig3_scores = np.max(z_risks, axis=0)
     for i, r in enumerate(dev_records):
         r["sig3_score"] = float(sig3_scores[i])
 
-    def sig3_curve_fn(recs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        s_recs = sorted(recs, key=lambda x: (x["sig3_score"], x["id"]))
-        c_pts: list[dict[str, Any]] = []
-        acc_m = 0.0
-        acc_b = 0.0
-        acc_c = 0
-        tot_m = sum(r["duration_s"] for r in recs) / 60.0
-        for r in s_recs:
-            acc_c += 1
-            is_b = int(r["label"] == "reject")
-            dm = r["duration_s"] / 60.0
-            acc_m += dm
-            acc_b += is_b * dm
-            c_pts.append({
-                "threshold_score": round(r["sig3_score"], 6),
-                "accepted_clips": acc_c,
-                "accepted_minutes": round(acc_m, 4),
-                "yield_ratio": round(acc_m / tot_m, 6),
-                "R": round(acc_b / acc_m, 6),
-            })
-        return c_pts
+    # signal_only (4-feature percentile composite) baseline
+    clean_tr_indices = [
+        i for i, r in enumerate(records)
+        if r.get("split") == "train" and r.get("group") in ("clean_anchor", "clean_tight_twin")
+    ]
+    sig_risks = []
+    for defect_type, (feature, higher_bad) in BASELINE_SPEC.items():
+        ref = np.sort([records[i][feature] for i in clean_tr_indices])
+        vals = np.array([r[feature] for r in dev_records], dtype=float)
+        perc = np.searchsorted(ref, vals, side="right") / len(ref)
+        sig_risks.append(perc if higher_bad else 1.0 - perc)
+    sig_only_scores = np.max(sig_risks, axis=0)
+    for i, r in enumerate(dev_records):
+        r["signal_only_score"] = float(sig_only_scores[i])
 
+    def make_score_curve_fn(score_key: str):
+        def _curve_fn(recs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            sc = np.array([r[score_key] for r in recs], dtype=float)
+            lb = np.array([1 if r["label"] == "reject" else 0 for r in recs])
+            dur = np.array([r["duration_s"] for r in recs])
+            order = np.argsort(sc, kind="stable")
+            ends = np.r_[np.flatnonzero(np.diff(sc[order])) + 1, len(order)]
+            minutes = np.cumsum(dur[order])[ends - 1] / 60.0
+            bad = np.cumsum(lb[order])[ends - 1]
+            tot_min = dur.sum() / 60.0
+            return [
+                {
+                    "threshold_score": float(sc[order[e - 1]]),
+                    "accepted_clips": int(e),
+                    "accepted_minutes": round(float(m), 4),
+                    "yield_ratio": float(m / tot_min),
+                    "R": float(b / e),
+                }
+                for e, b, m in zip(ends, bad, minutes)
+            ]
+        return _curve_fn
+
+    sig3_curve_fn = make_score_curve_fn("sig3_score")
     sig3_curve = sig3_curve_fn(dev_records)
     sig3_70 = matched_point_at_yield(sig3_curve, 0.70)
 
-    # signal_only (4-feature percentile composite) baseline
-    sig_only_scores = np.array([r["signal_only_score"] for r in dev_records])
-    def sig_only_curve_fn(recs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        s_recs = sorted(recs, key=lambda x: (x["signal_only_score"], x["id"]))
-        c_pts: list[dict[str, Any]] = []
-        acc_m = 0.0
-        acc_b = 0.0
-        acc_c = 0
-        tot_m = sum(r["duration_s"] for r in recs) / 60.0
-        for r in s_recs:
-            acc_c += 1
-            is_b = int(r["label"] == "reject")
-            dm = r["duration_s"] / 60.0
-            acc_m += dm
-            acc_b += is_b * dm
-            c_pts.append({
-                "threshold_score": round(r["signal_only_score"], 6),
-                "accepted_clips": acc_c,
-                "accepted_minutes": round(acc_m, 4),
-                "yield_ratio": round(acc_m / tot_m, 6),
-                "R": round(acc_b / acc_m, 6),
-            })
-        return c_pts
-
+    sig_only_curve_fn = make_score_curve_fn("signal_only_score")
     sig_only_curve = sig_only_curve_fn(dev_records)
     sig_only_70 = matched_point_at_yield(sig_only_curve, 0.70)
 
@@ -939,6 +926,8 @@ def main() -> None:
     }
 
     # 3. Boundary arm only
+    st_dev = np.array([r["start_edge_ratio_10ms"] for r in dev_records])
+    en_dev = np.array([r["end_edge_ratio_10ms"] for r in dev_records])
     norm_st = st_dev / max(st_thresh, 1e-6)
     norm_en = en_dev / max(en_thresh, 1e-6)
     norm_edge = np.maximum(norm_st, norm_en)

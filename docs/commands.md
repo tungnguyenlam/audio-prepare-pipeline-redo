@@ -794,7 +794,16 @@ bash scripts/vicut_bench/evaluate_hybrid_gate.sh \
   --overwrite
 ```
 
-Outputs are `DEV_HYBRID_GATE_REPORT.md` and `hybrid_gate_report.json` under `.data/vicut_bench/reports/dev_hybrid_gate/`.
+Outputs are `DEV_HYBRID_GATE_REPORT.md`, `hybrid_gate_report.json`, `hybrid_gate_frozen_params.json`, and `per_clip_scores.jsonl` under `.data/vicut_bench/reports/dev_hybrid_gate/`. Execution uses pinned single threads (`OMP_NUM_THREADS=1`, `MKL_NUM_THREADS=1`, `OPENBLAS_NUM_THREADS=1`, `PYTHONHASHSEED=42`) to guarantee 100% bit-deterministic output across independent runs.
+
+For score-only inference on an arbitrary input manifest using frozen gate parameters:
+
+```bash
+python scripts/vicut_bench/evaluate_hybrid_gate.py \
+  --score-manifest <path_to_input.jsonl> \
+  --frozen-params .data/vicut_bench/reports/dev_hybrid_gate/hybrid_gate_frozen_params.json \
+  --output-dir <output_dir>
+```
 
 `generate_bench_report` builds a standalone dark-themed interactive HTML dashboard at
 `.data/vicut_bench/reports/vicut_bench_dashboard.html` with playable audio cards for edge-screen
