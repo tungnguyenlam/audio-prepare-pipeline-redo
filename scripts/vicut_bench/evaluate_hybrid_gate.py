@@ -541,7 +541,16 @@ def main() -> None:
         rec_uids = [r["uid"] for r in records]
         assert cache_uids == rec_uids, "Feature cache UID order does not match loaded records order"
 
-    feats = build_feature_matrix(records, cache, layer_idx=4, pooling="mean_std")
+    sig_feats_path = args.probe_dir / "cache" / "signal_features.json"
+    if sig_feats_path.exists():
+        sig_feats = json.loads(sig_feats_path.read_text(encoding="utf-8"))
+        for r in records:
+            if r["uid"] in sig_feats:
+                r.update(sig_feats[r["uid"]])
+
+    feats_dict = {k: cache[k] for k in ("mean", "std", "start_edge", "end_edge", "layer_dims")}
+    all_indices = list(range(len(records)))
+    feats = build_feature_matrix(feats_dict, all_indices, 4, "mean_std")
 
     # 1. Evaluate Deterministic Pre-gate (RMS < -50 dBFS)
     logger.info("Evaluating deterministic pre-gate (RMS < -50 dBFS)...")
@@ -555,7 +564,7 @@ def main() -> None:
 
     dev_rms_dbfs = []
     for r in dev_records:
-        r_audio = read_audio_for_record(r)
+        r_audio, _ = read_audio_for_record(r)
         dbfs = compute_rms_dbfs(r_audio)
         dev_rms_dbfs.append(dbfs)
         r["rms_dbfs"] = dbfs
@@ -565,7 +574,7 @@ def main() -> None:
     logger.info("Calibrating deterministic boundary arm on clean_tight_tr...")
     clean_tight_tr = [
         r for r in records
-        if r.get("split") == "train" and r.get("defect_type") == "clean_tight_twin"
+        if r.get("split") == "train" and r.get("group") == "clean_tight_twin"
     ]
     st_thresh, en_thresh, boundary_stats = calibrate_boundary_arm(
         clean_tight_tr, n_splits=5, seed=seeds[0]
@@ -580,7 +589,7 @@ def main() -> None:
     logger.info("Training PhoWhisper L4 content arm heads on train split...")
     clean_train = [
         r for r in records
-        if r.get("split") == "train" and r.get("defect_type") in ("clean_anchor", "clean_tight_twin")
+        if r.get("split") == "train" and r.get("group") in ("clean_anchor", "clean_tight_twin")
     ]
     content_cal = calibrate_content_arm(
         records, clean_train, feats, c_reg=args.c_reg, seed=seeds[0], n_splits=5
@@ -822,10 +831,10 @@ def main() -> None:
     # 7. ViCut-Bench G3 Mechanism Validation on Held-Out Test Split (90 anchors / 19 speakers)
     logger.info("Evaluating ViCut-Bench G3 mechanism on held-out test split (90 anchors)...")
     test_raw_anchors = [
-        r for r in records if r.get("split") == "test" and r.get("defect_type") == "clean_anchor"
+        r for r in records if r.get("split") == "test" and r.get("group") == "clean_anchor"
     ]
     test_tight_twins = [
-        r for r in records if r.get("split") == "test" and r.get("defect_type") == "clean_tight_twin"
+        r for r in records if r.get("split") == "test" and r.get("group") == "clean_tight_twin"
     ]
 
     raw_frr = float(np.mean([1 if (r["start_edge_ratio_10ms"] > st_thresh or r["end_edge_ratio_10ms"] > en_thresh) else 0 for r in test_raw_anchors]))
