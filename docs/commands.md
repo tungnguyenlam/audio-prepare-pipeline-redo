@@ -782,7 +782,7 @@ extraction provenance.
 `evaluate_hybrid_gate` (`.venvs/main` or `.venvs/verify`) implements and evaluates the pre-registered Single Candidate Hybrid Gate on `dev-288` and synthetic ViCut-Bench per Phase 1 of `PLAN.md`. It evaluates:
 1. Deterministic digital silence / low-energy pre-gate ($\text{RMS} < -50\text{ dBFS}$).
 2. Deterministic boundary arm (10 ms edge energy ratios thresholded at 95% specificity on 5-fold OOF `clean_tight_tr`).
-3. PhoWhisper Layer 4 `mean_std` content arm heads for secondary speaker and background music calibrated via 5-fold OOF logistic regression ($C=0.01$).
+3. PhoWhisper Layer 4 `mean_std` content arm heads for secondary speaker and background music fit on ViCut-Bench train split with 5-fold OOF generalization AUROC evaluated ($C=0.01$).
 4. Continuous scalar decision score $s = \text{flag\_edge} + p_{\text{content}}$ with lexicographical ranking tuple `(pre_gate, flag_edge, p_content, clip_id)`.
 5. Paired recording-bootstrap 95% CIs (1,000 resamples across the 11 dev recordings, seeds 42 and 123) against dev baselines (`flash_lite`, continuous `signal_3feat`, and `recipe_nolock`).
 6. ViCut-Bench G3 mechanism validation on held-out test split (90 anchors / 19 speakers) including clean-twin FRR at 0 ms cuts and per-severity AUROC detection curves across all 4 defect types.

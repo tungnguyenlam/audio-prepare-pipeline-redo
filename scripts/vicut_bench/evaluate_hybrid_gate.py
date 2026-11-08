@@ -7,8 +7,8 @@ Decision rule (pre-registered 2026-11-06 in WORKLOG.md & PLAN.md Phase 1, lines 
     Thresholded at 95% specificity on held-out 5-fold OOF clean_tight_tr (tight twins).
     If start_ratio > start_thresh OR end_ratio > end_thresh: flag_edge = 1.0, else 0.0.
   - Content arm: PhoWhisper (vinai/phowhisper-small) Layer 4 encoder representation with mean_std
-    pooling for secondary speaker and background music heads. Trained on ViCut-Bench train defects
-    vs clean negatives (anchors + tight twins), calibrated via 5-fold OOF logistic regression.
+    pooling for secondary speaker and background music heads. Fit on ViCut-Bench train defects
+    vs clean negatives (anchors + tight twins), with 5-fold OOF generalization AUROC evaluated.
     p_content = max(p_sec, p_music).
   - Decision score & determinism: Scalar score s = flag_edge + p_content with lexicographical
     ranking tuple (pre_gate, flag_edge, p_content, clip_id).
@@ -1216,7 +1216,7 @@ def main() -> None:
     else:
         sig_only_desc = f"lower defect rate than 4-feature `signal_only` ({cand_70['R'] * 100:.2f}% vs {sig_only_70['R'] * 100:.2f}%, $\\Delta R = {delta_sig_only:+.2f}$% pt)"
 
-    if decision_branch == "Branch A (Production Acceptance)":
+    if decision_branch.startswith("Branch A"):
         branch_action_text = (
             "The candidate achieves statistically significant improvements with 95% CIs excluding 0. "
             "In accordance with PLAN.md line 85, **Branch A (Production Acceptance)** is triggered."
