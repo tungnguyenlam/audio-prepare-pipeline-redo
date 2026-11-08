@@ -442,20 +442,24 @@ def score_manifest_inference(
 
         model_id = "vinai/PhoWhisper-small"
         fe = AutoFeatureExtractor.from_pretrained(model_id, local_files_only=True)
+        dev = "cuda" if torch.cuda.is_available() else "cpu"
+        dtype = torch.bfloat16 if dev == "cuda" else torch.float32
         model = (
-            WhisperModel.from_pretrained(model_id, local_files_only=True, torch_dtype=torch.float32)
-            .encoder
+            WhisperModel.from_pretrained(model_id, local_files_only=True, torch_dtype=dtype)
+            .encoder.to(dev)
             .eval()
         )
 
         extracted_feats = []
         with torch.no_grad():
             for idx, r in enumerate(raw_manifest_records):
-                audio_path = Path(r.get("audio_path") or r.get("path", ""))
+                if (idx + 1) % 50 == 0 or (idx + 1) == len(raw_manifest_records):
+                    logger.info("Extracting PhoWhisper L4 features: %d/%d", idx + 1, len(raw_manifest_records))
+                audio_path = Path(r.get("audio_path") or r.get("path") or r.get("abs_path", ""))
                 data, sr = sf.read(str(audio_path), dtype="float32", always_2d=True)
                 audio = data.mean(axis=1)
                 inp = fe([audio], sampling_rate=16000, return_tensors="pt")
-                out = model(inp["input_features"], output_hidden_states=True)
+                out = model(inp["input_features"].to(dev, dtype=dtype), output_hidden_states=True)
                 h4 = out.hidden_states[4][0]  # shape [T, 768]
                 dur = len(audio) / float(sr)
                 vlen = min(1500, max(1, int(round(dur * 50.0))))
@@ -480,7 +484,7 @@ def score_manifest_inference(
 
     scored_records: list[dict[str, Any]] = []
     for idx, r in enumerate(raw_manifest_records):
-        audio_path = Path(r.get("audio_path") or r.get("path", ""))
+        audio_path = Path(r.get("audio_path") or r.get("path") or r.get("abs_path", ""))
         cid = r.get("id") or r.get("clip_id") or audio_path.stem
         uid = r.get("uid") or (f"dev_gold__{cid}" if f"dev_gold__{cid}" in cache_uids_map else cid)
 
@@ -514,7 +518,7 @@ def score_manifest_inference(
         scored_records.append({
             "clip_id": cid,
             "uid": uid,
-            "speaker": r.get("speaker") or r.get("recording_id", "unknown"),
+            "speaker": r.get("speaker") or r.get("speaker_id") or r.get("recording_id", "unknown"),
             "duration_s": r.get("duration", r.get("duration_s", 0.0)),
             "gold_label": r.get("label", r.get("decision")),
             "rms_dbfs": round(rms_val, 2),
@@ -539,6 +543,7 @@ def score_manifest_inference(
         for item in scored_records:
             out_f.write(json.dumps(item) + "\n")
     logger.info("Saved %d scored records to %s", len(scored_records), output_scores_path)
+    print(f"Scored manifest written to: {output_scores_path}")
 
 
 def main() -> None:
